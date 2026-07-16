@@ -15,7 +15,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
  *
  * <p>This log is intentionally local to the inherited Derby-facing MVCC state
  * store. It must not depend on the removed stand-alone versioned-storage
- * prototype SPI. The authoritative recovery path for page-backed MVCC is the page mutation
+ * storage interface. The authoritative recovery path for page-backed MVCC is the page mutation
  * log plus the transaction outcome log; this class only provides forced write
  * boundaries and page LSNs for the inherited state-store materialization path.</p>
  */

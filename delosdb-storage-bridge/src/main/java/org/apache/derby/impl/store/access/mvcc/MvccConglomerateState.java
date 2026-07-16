@@ -55,7 +55,7 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Shared state behind the inherited MVCC conglomerate provider.
  *
- * <p>MODULE17M keeps Derby access-method compatibility here, but routes the
+ * <p>Derby access-method compatibility remains here while row operations route through the
  * actual MVCC storage operations through {@code delosdb-storage-api}.  The
  * bridge no longer imports native MVCC implementation classes.</p>
  */

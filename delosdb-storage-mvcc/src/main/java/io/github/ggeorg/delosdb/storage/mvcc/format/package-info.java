@@ -1,5 +1,5 @@
 /**
- * Durable record formats for the experimental DelosDB MVCC storage engine.
+ * Durable record formats for the DelosDB MVCC storage engine.
  *
  * <p>These classes are deliberately below SQL execution. They define the bytes
  * that later page-backed MVCC tables will store in provider-owned page files.</p>

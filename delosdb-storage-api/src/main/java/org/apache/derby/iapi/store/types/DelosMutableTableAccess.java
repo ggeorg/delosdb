@@ -33,10 +33,10 @@ public interface DelosMutableTableAccess extends DelosTableAccess {
     /**
      * Validate whether a row identity is mutable in the supplied context.
      *
-     * <p>This is the Phase I Option A primitive: it is optimistic validation,
-     * not a lock or reservation.  Providers that cannot validate more deeply
-     * may conservatively report the identity as mutable after checking only
-     * the common physical-access and identity preconditions.</p>
+     * <p>This is optimistic validation, not a lock or reservation. Providers
+     * that cannot validate more deeply may conservatively report the identity
+     * as mutable after checking only the common physical-access and identity
+     * preconditions.</p>
      */
     default DelosMutationPreparation validateMutable(
             DelosAccessContext context,

@@ -2,7 +2,7 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 
 /**
  * Durable transaction outcome vocabulary used by the persistent MVCC status
- * store. The current MODULE5H scope treats unresolved recovered transactions as
+ * store. Unresolved recovered transactions are treated as
  * recovery-pending and therefore invisible; later WAL recovery may resolve them.
  */
 public enum MvccTransactionOutcome {

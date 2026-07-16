@@ -1,8 +1,8 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 /**
- * Minimal provider-local log sequence number used by the MODULE5J WAL/pageLSN
- * skeleton. This is not a Derby log instant and does not claim ARIES semantics.
+ * Provider-local log sequence number used by the MVCC WAL and page-LSN
+ * protocol. This is not a Derby log instant and does not claim ARIES semantics.
  */
 public record DelosLogSequenceNumber(long value) implements Comparable<DelosLogSequenceNumber> {
     public static final DelosLogSequenceNumber NONE = new DelosLogSequenceNumber(0L);

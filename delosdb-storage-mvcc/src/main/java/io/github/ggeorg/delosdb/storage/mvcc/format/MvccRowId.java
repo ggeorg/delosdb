@@ -1,11 +1,11 @@
 package io.github.ggeorg.delosdb.storage.mvcc.format;
 
 /**
- * Stable logical row identifier for the durable MVCC storage prototype.
+ * Stable logical row identifier for durable MVCC storage.
  *
- * <p>The identifier is deliberately opaque in Phase A2. Later page-backed
- * tables may allocate it from a row directory or embed page/slot location, but
- * record codecs must not depend on JVM object identity.</p>
+ * <p>The identifier is deliberately opaque. Page-backed tables may associate
+ * it with row-directory or page/slot metadata, but record codecs must not
+ * depend on JVM object identity.</p>
  */
 public record MvccRowId(long value) implements Comparable<MvccRowId> {
     public static final MvccRowId NONE = new MvccRowId(0L);

@@ -8,7 +8,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
 /**
  * Durable metadata stored with every MVCC row version.
  *
- * <p>This mirrors the PostgreSQL-guided rule for the prototype: visibility is a
+ * <p>Visibility is determined from transaction metadata rather than a
  * tuple/version property, not an index property. Indexes can point to row or
  * version candidates, but snapshots must recheck this metadata before returning
  * a row.</p>

@@ -448,10 +448,6 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         return explicitDatabaseDirectory;
     }
 
-    private Path heapSegmentDirectory(int segment) {
-        return DerbyHeapContainerFiles.segmentDirectory(databaseDirectory(), segment);
-    }
-
     private Path heapContainerPath(int segment, long containerId) {
         return DerbyHeapContainerFiles.containerPath(databaseDirectory(), segment, containerId);
     }

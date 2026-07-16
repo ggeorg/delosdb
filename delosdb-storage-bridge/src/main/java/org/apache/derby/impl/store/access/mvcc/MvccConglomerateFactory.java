@@ -42,13 +42,11 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * MODULE6B preflight access-method factory for DelosDB MVCC.
+ * Access-method factory for {@code delos_mvcc} conglomerates.
  *
- * <p>This class intentionally proves only inherited Derby access-method
- * registration/discovery for the {@code delos_mvcc} implementation id. It does
- * not create or read physical MVCC conglomerates yet; MODULE6C owns that
- * skeleton. Keeping create/read unsupported here prevents this milestone from
- * becoming another hidden execution bridge.</p>
+ * <p>The factory registers the MVCC conglomerate implementation with Derby's
+ * monitor and access-method infrastructure and reconstructs persisted
+ * conglomerate descriptors during database boot.</p>
  */
 public final class MvccConglomerateFactory
         implements ConglomerateFactory, ModuleControl, ModuleSupportable {
@@ -114,7 +112,7 @@ public final class MvccConglomerateFactory
             AccessFactory access_factory,
             Transaction xact,
             PageKey page_key) throws StandardException {
-        // MODULE6B registers the method factory only. MVCC undo/recovery is not
+        // MVCC undo and recovery are owned by the DelosDB storage engine and are not
         // wired into inherited raw-store undo notifications in this milestone.
     }
 

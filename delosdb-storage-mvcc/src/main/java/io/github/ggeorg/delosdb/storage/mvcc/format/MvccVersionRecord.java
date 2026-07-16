@@ -7,9 +7,9 @@ import java.util.Objects;
 /**
  * Durable physical MVCC row-version record.
  *
- * <p>The payload is intentionally opaque in Phase A2. SQL row encoding belongs
- * to a later page-backed table layer; this record only guarantees a stable
- * version header plus bytes that can be stored in an MVCC page.</p>
+ * <p>The payload is intentionally opaque to the physical record format. SQL
+ * row encoding belongs to the page-backed table layer; this record guarantees
+ * a stable version header plus bytes that can be stored in an MVCC page.</p>
  */
 public final class MvccVersionRecord {
     private final MvccTupleHeader header;

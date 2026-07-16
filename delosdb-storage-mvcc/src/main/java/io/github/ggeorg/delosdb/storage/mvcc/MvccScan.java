@@ -3,10 +3,10 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 import java.util.List;
 
 /**
- * Stable scan result for the experimental in-memory MVCC table.
+ * Stable scan cursor over MVCC-visible rows.
  *
  * <p>The scan owns an immutable copy of rows visible at open time. That keeps
- * this prototype deterministic while we prove visibility semantics before any
+ * deterministic while preserving visibility semantics across
  * Derby heap, B-tree, latch, or WAL integration.</p>
  */
 public final class MvccScan<K, V> implements AutoCloseable {

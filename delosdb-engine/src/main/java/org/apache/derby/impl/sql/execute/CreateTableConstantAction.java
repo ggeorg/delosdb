@@ -210,7 +210,7 @@ class CreateTableConstantAction extends DDLConstantAction
 		long conglomId = tc.createConglomerate(
 				conglomerateImplementation,
 				template.getRowArray(), // row template
-				null, // column sort order - not required for heap or MODULE6E MVCC preflight
+				null, // column sort order is not required for heap or delos_mvcc tables
                 collation_ids,
 				properties, // properties
 				tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE ?

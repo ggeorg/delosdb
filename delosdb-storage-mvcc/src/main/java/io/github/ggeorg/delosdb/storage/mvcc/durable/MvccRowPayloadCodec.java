@@ -5,7 +5,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-/** Codec for the Phase A3 table payload stored inside {@code MvccVersionRecord}. */
+/** Codec for the durable table payload stored inside {@code MvccVersionRecord}. */
 public final class MvccRowPayloadCodec {
     public static final int MAGIC = 0x444D5250; // "DMRP" - DelosDB MVCC row payload.
     public static final short FORMAT_VERSION = 1;

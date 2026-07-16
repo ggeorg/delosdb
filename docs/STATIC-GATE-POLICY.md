@@ -1,51 +1,78 @@
 # DelosDB static gate policy
 
-This document records the cleanup after the engine-depth roadmap gates became too brittle.
+## Purpose
 
-## Rule
+Static gates protect stable engineering boundaries before slower integration tests run. They must
+validate source, artifacts, dependencies, or repository safety—not roadmap prose.
 
-S0 is for stable engineering checks only. It must not fail because a roadmap document says `current`, `closed green`, `delivered by`, or uses different phase wording.
+## S0 criteria
 
-## Allowed in `s0CloseoutVerification`
+A gate belongs in `s0CloseoutVerification` when it is:
 
-S0 may include gates that check concrete code and repository safety boundaries:
+- deterministic;
+- fast enough for normal iteration;
+- based on source, bytecode, artifacts, dependency metadata, or exact repository structure;
+- stable across harmless wording or method-local refactoring;
+- responsible for a continuing product or compatibility invariant.
 
-- storage/server static analysis
-- heap compatibility and deserialization hardening
-- module dependency boundaries
-- Derby module parity
-- runtime provider discovery
-- workspace churn
-- stale Gradle scripts
-- cleanup-script hygiene
-- fork-diff classification rows, when file/classification based only
-- advisory reports that do not fail on roadmap prose
+Current examples include:
 
-## Not allowed in `s0CloseoutVerification`
+```text
+storage and server structural analysis
+heap compatibility and deserialization integration
+runtime provider discovery
+module dependency boundaries
+Derby module parity
+workspace and cleanup-script hygiene
+fork-diff classification
+absence of transitional storage routing
+```
 
-S0 must not depend on gates whose main purpose is to validate roadmap prose, phase status, commit-message text, or overlay-delivery wording. These remain useful as optional/advisory checks, but they are not closeout gates.
+## Prohibited S0 criteria
 
-Examples of forbidden S0 criteria:
+S0 must not fail because a roadmap or closeout document uses different prose.
 
-- `Execution state: current`
-- `Execution state: closed green`
-- `delivered by <overlay>.zip`
-- roadmap phase order text
-- one-line commit-message markers
-- documentation-only proof rows
+Examples that do not belong in S0:
 
-## Long-running validation
+```text
+phase status wording
+commit-message text
+overlay file names
+"current" or "closed green" markers
+document-only proof rows
+benchmark thresholds
+long-running external tools
+```
 
-Performance, concurrency, JMH, jcstress, SQLancer, long-reader soak, and benchmark tasks must stay outside S0. They should remain opt-in validation tasks.
+Performance, JMH, JFR recording runs, jcstress, SQLancer, long-reader soak, and fault campaigns remain
+opt-in or phase-specific validation.
 
-## Removed obsolete roadmap/prose tasks
+## Transitional routing rule
 
-The following historical roadmap/prose tasks were removed from Gradle registration after the engine-depth closeout cleanup. Their source documents may remain useful as design notes, but they must not be executable gates:
+Production source must not retain phase-named system-property routes such as:
 
-- `delosBalancedStorageModernizationCloseoutStaticAnalysis`
-- `delosStorageModernizationTradeoffAuditStaticAnalysis`
-- `delosStorageModernizationTradeoffAuditRound2StaticAnalysis`
-- `delosNextEngineDepthRoadmapContractsStaticAnalysis`
-- `delosSharedStorageServiceExtractionAuditStaticAnalysis`
+```text
+delosdb.storage.phase...
+```
 
-Implementation or compatibility checks should be expressed as code/test markers or normal Gradle test tasks, not as roadmap-status prose validation.
+These switches were useful while establishing experimental heap/provider paths, but they are not a
+supported product configuration surface. The authoritative heap path is Derby's normal result-set
+and access-method route; MVCC selection comes from persisted table and conglomerate identity.
+
+`delosNoTransitionalStorageRoutingStaticAnalysis` verifies that the phase-named properties and
+retired proof classes do not reappear in main source.
+
+## Historical gate cleanup
+
+Roadmap/prose gates removed after earlier closeouts include:
+
+```text
+delosBalancedStorageModernizationCloseoutStaticAnalysis
+delosStorageModernizationTradeoffAuditStaticAnalysis
+delosStorageModernizationTradeoffAuditRound2StaticAnalysis
+delosNextEngineDepthRoadmapContractsStaticAnalysis
+delosSharedStorageServiceExtractionAuditStaticAnalysis
+```
+
+Their useful conclusions remain in source, tests, current protocol documents, or historical records.
+They are not executable release authority.

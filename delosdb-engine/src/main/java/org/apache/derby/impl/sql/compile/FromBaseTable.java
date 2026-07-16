@@ -2063,7 +2063,6 @@ class FromBaseTable extends FromTable
 								   baseTableRestrictionList);
 
         applyIndexProviderCostBridge(cd, costEst);
-        DelosHeapCostProofLookup.observeIfEnabled(tableDescriptor, costEst);
         return costEst;
 	}
 

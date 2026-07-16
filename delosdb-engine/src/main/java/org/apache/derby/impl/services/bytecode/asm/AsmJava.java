@@ -808,11 +808,6 @@ public final class AsmJava implements JavaFactory {
             }
             return merged;
         }
-
-        private UnsupportedOperationException unsupported(String operation) {
-            return new UnsupportedOperationException("Experimental ASM MethodBuilder does not implement "
-                    + operation + " yet");
-        }
     }
 
     private static AsmLocalField asmField(LocalField field) {

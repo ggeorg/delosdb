@@ -32,12 +32,12 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * MODULE6F minimal optimizer cost controller for the MVCC access method.
+ * Optimizer cost controller for the {@code delos_mvcc} access method.
  *
  * <p>This is deliberately conservative. It exists so Derby's inherited
  * optimizer can prepare a normal {@code TableScanResultSet} against an MVCC
- * physical conglomerate and then open {@link MvccScanController}.  When the
- * explicit Phase K diagnostic property is enabled, it derives estimates from
+ * physical conglomerate and then open {@link MvccScanController}. When
+ * MVCC optimizer-cost diagnostics are enabled, it derives estimates from
  * MVCC storage statistics through this inherited Derby cost-controller seam
  * rather than through a parallel optimizer statistics channel.</p>
  */
@@ -64,7 +64,7 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public double getFetchFromFullKeyCost(FormatableBitSet validColumns, int accessType) {
         ensureOpen();
-        // MVCC MODULE6F has no index/keyed access path yet, so model this as
+        // Model this request through the currently available MVCC access paths.
         // a small scan rather than promising true full-key lookup semantics.
         return BASE_NONGROUPSCAN_ROW_FETCH_COST;
     }

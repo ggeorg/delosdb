@@ -1,251 +1,171 @@
 # DelosDB
 
-DelosDB is a Java 25, Gradle-only fork of Apache Derby 10.17.1.0. The project keeps Derby's embedded SQL/JDBC and DRDA compatibility surfaces intact while modernizing selected internals through small executable proofs.
+DelosDB is a Java 25 relational database management system derived from Apache Derby 10.17.1.0.
+It preserves Derby-compatible SQL, JDBC, catalog, heap, database-format, and DRDA behavior while
+modernizing selected internals through explicit, tested boundaries.
 
-DelosDB is not a production-ready database release yet. The current project is a compatibility-preserving database-kernel fork with an opt-in `delos_mvcc` storage engine and a cleaned-up Derby-compatible network server.
+DelosDB is currently a pre-1.0 project. The inherited Derby heap remains the default compatibility
+engine. The DelosDB MVCC engine is an explicit table-level alternative.
 
-## Project direction
+## Strategic commitments
 
-DelosDB's rule is simple:
+DelosDB v1.0 is defined by two complementary commitments.
+
+### Derby continuity and modernization
+
+- Existing Derby applications and databases remain viable on Java 25.
+- The Derby heap and raw store remain the durable compatibility foundation.
+- Inherited defects are corrected with source evidence and regression tests.
+- Modern storage capabilities are introduced without requiring existing applications to migrate.
+
+### A comprehensible, research-capable RDBMS
+
+- The complete path from SQL text to result delivery and durable state is documented.
+- Optimizer, execution, transaction, storage, recovery, and protocol decisions are observable.
+- Students work with a real database engine rather than a simplified teaching implementation.
+- Researchers can run reproducible experiments without creating permanent duplicate engines.
+
+The supported product must also remain understandable and releasable by a highly skilled database
+engineer with broad database-systems expertise.
+
+## Architecture
+
+DelosDB uses one SQL and execution engine for embedded JDBC and network clients:
 
 ```text
-Preserve Derby compatibility at the public boundaries.
-Modernize internals only behind small, verified seams.
-Do not replace working Derby behavior with broad rewrites.
+Embedded JDBC or DRDA
+    -> parse and bind
+    -> optimize
+    -> generate executable activations
+    -> execute result-set operators
+    -> coordinate transactions
+    -> access Derby heap or delos_mvcc storage
+    -> return JDBC or DRDA results
 ```
 
-Important compatibility boundaries:
+Storage selection does not create a second SQL engine. Heap and MVCC share the parser, catalog,
+optimizer, execution framework, transaction boundary, JDBC behavior, and DRDA server.
 
-```text
-Derby heap/raw-store format
-  existing Derby-compatible storage path; default remains unchanged
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
+[`docs/STORAGE-ARCHITECTURE.md`](docs/STORAGE-ARCHITECTURE.md).
 
-DRDA/JDBC wire protocol
-  existing network-client compatibility boundary; do not replace with protobuf,
-  gRPC, JSON, or a new protocol inside delosdb-server
+## Storage modes
 
-SQL/JDBC surface
-  inherited Derby behavior remains the default unless a DelosDB extension is
-  explicitly requested
-```
+### Derby-compatible heap
 
-## Current status
-
-### Default Derby-compatible path
-
-The normal heap-backed Derby-compatible path remains the default:
+The inherited heap is the default:
 
 ```sql
-CREATE TABLE t (id int);
+CREATE TABLE account (
+    id INTEGER PRIMARY KEY,
+    balance DECIMAL(19, 2) NOT NULL
+);
 ```
 
-No global default-store flip has been made.
+This path preserves Derby-compatible durable formats and behavior. DelosDB may improve diagnostics,
+security, build tooling, and correctness around the heap, but does not silently change its disk
+format.
 
-### Opt-in MVCC path
+### `delos_mvcc`
 
-The `delos_mvcc` engine is explicit and opt-in:
+The MVCC engine is selected explicitly:
 
 ```sql
-CREATE TABLE t (id int, value varchar(100)) USING delos_mvcc;
+CREATE TABLE account (
+    id INTEGER PRIMARY KEY,
+    balance DECIMAL(19, 2) NOT NULL
+) USING delos_mvcc;
 ```
 
-The MVCC storage path is now a serious Derby-integrated storage-engine path:
+The current MVCC implementation includes:
 
-```text
-SQL
-  -> Derby language / transaction layer
-  -> Derby access/store conglomerate bridge
-  -> delosdb-storage-api
-  -> delosdb-storage-mvcc
-```
+- statement and transaction snapshots;
+- insert, update, delete, commit, rollback, and savepoints;
+- primary, unique, and secondary indexes;
+- durable page-backed row versions and overflow values;
+- WAL, transaction-status, outcome, checkpoint, and recovery state;
+- bounded commit grouping and concurrent immutable commit preparation;
+- database-owned maintenance and vacuum scheduling;
+- database-scoped online-backup coordination;
+- consistency checks, crash tests, JFR events, and durability metrics.
 
-Current green MVCC capabilities include:
+Current pre-1.0 limitations include:
 
-```text
-CREATE TABLE ... USING delos_mvcc
-INSERT / UPDATE / DELETE
-commit / rollback
-savepoint rollback for insert/update/delete/key reuse
-same-transaction read-your-own-write behavior
-shutdown / reopen
-process-halt crash-boundary reopen proof
-mixed heap + MVCC transactions
-multiple MVCC tables in one transaction
-cross-connection visibility
-READ COMMITTED and REPEATABLE READ behavior
-primary key, secondary index, unique index behavior
-write/write conflict mapping through the public SPI
-DROP TABLE cleanup
-SQL vacuum/compress
-active-snapshot protection during vacuum
-vacuum cleanup after snapshot release
-complex-workload durable consistency checking
-crash/vacuum/checkpoint stale-metadata recovery
-vacuum chain rebasing
-Derby typed DataValueDescriptor row codec
-normal SQL type coverage
-MVCC page checksums / torn-write detection
-long VARCHAR payloads through overflow pages
-overflow lifecycle through rollback/update/delete/vacuum/reopen
-explicit JAVA_OBJECT / Derby UDT object rejection
-explicit BLOB/CLOB boundary rejection
-whole-page reuse with reusable-page index, recovery, and stale-entry protection
-MVCC page cache lifecycle and bounded eviction gate
-MVCC page-record headers, consistency validation, and slot accounting
-MVCC page-scan and diagnostics consolidation
-MVCC storage/server static closeout gates
-```
+- BLOB and CLOB values are rejected by `delos_mvcc` pending a complete streaming and lifecycle
+  design;
+- JAVA_OBJECT and Derby UDT values are rejected by `delos_mvcc` durable rows;
+- `delos_mvcc` currently maps JDBC `SERIALIZABLE` to a transaction snapshot and therefore does not
+  prevent write skew. The v1.0 contract requires early rejection until true serializability exists.
 
-Current MVCC boundary decisions:
+See [`docs/sql-extensions.md`](docs/sql-extensions.md),
+[`docs/MVCC-DURABILITY-PROTOCOL.md`](docs/MVCC-DURABILITY-PROTOCOL.md), and
+[`docs/DERBY-COMPATIBILITY.md`](docs/DERBY-COMPATIBILITY.md).
 
-```text
-JAVA_OBJECT / SQL_USERTYPE / SERIALIZABLE_FORMAT_ID
-  rejected in delos_mvcc durable rows
+## Current program
 
-BLOB / CLOB
-  rejected in delos_mvcc durable rows until a deliberate LOB lifecycle design exists
+Phases 1-7 established the storage foundation and concurrent commit pipeline. Phase 8 is the active
+v1.0 phase and focuses on product truth, security defaults, stale-surface removal, the Derby debt
+ledger, and a frozen performance and resource baseline.
 
-Derby heap format
-  preserved; do not retrofit MVCC row-format changes into heap
+The local `.delosdb-v1/` planning workspace is intentionally ignored by Git. Stable conclusions are
+promoted into tracked source, tests, this README, and `docs/` as each slice closes.
 
-Protobuf
-  not used on DRDA/JDBC wire and not the first choice for MVCC durable rows
-```
-
-### Storage closeout baseline
-
-The current storage baseline includes four completed hardening lanes:
-
-```text
-Derby heap consistency checking through SYSCS_UTIL.SYSCS_CHECK_TABLE
-explicit MVCC isolation read-view policy
-opt-in Derby heap object deserialization filtering
-provider-neutral cross-engine consistency reporting
-```
-
-The runtime artifact model also verifies `delos_mvcc` provider discovery before the focused SQL integration gate runs. This prevents the MVCC engine from compiling successfully while being absent from the Derby-compatible runtime jar set.
-
-See `docs/STORAGE-ARCHITECTURE.md` for the storage architecture and closeout baseline.
-See `docs/CLEANUP-CONSOLIDATION.md` for the cleanup/consolidation phase.
-See `docs/STORAGE-ROADMAP.md` for the closed checkpoint cycles and current fork-diff classification phase.
-See `docs/PHASE-7-CONCURRENT-COMMIT.md` for the concurrent commit measurement phase.
-
-### Network server path
-
-`delosdb-server` remains a Derby-compatible DRDA server. The current modernization slice is compatibility-safe:
-
-```text
-unused legacy server compile dependencies removed
-server static gates added
-runtimeinfo no longer forces a JVM GC
-DRDA session scheduler isolated behind DrdaSessionScheduler
-scheduler behavior gate added
-optional DRDA virtual-thread worker mode added
-large EXTDTA values spool to temp storage above threshold
-DelosDB-owned DRDA server configuration centralized
-```
-
-See `docs/DELOSDB-SERVER.md` for server details.
+See [`docs/CLEANUP-CONSOLIDATION.md`](docs/CLEANUP-CONSOLIDATION.md).
 
 ## Build requirements
 
 - JDK 25
-- Gradle Wrapper from this repository
+- the Gradle Wrapper included in this repository
 
-Use the wrapper, not a system Gradle command:
+Use the wrapper rather than a system Gradle installation:
 
-```sh
+```bash
 ./gradlew --version
 ```
 
-The inherited Ant workflow is not part of the supported DelosDB workflow.
+The inherited Ant workflow is not a supported DelosDB build path.
 
-## Main verification gates
+## Primary verification gates
 
-Runtime provider gate:
+Focused runtime-provider verification:
 
-```sh
+```bash
 ./gradlew verifyDelosRuntimeStorageProviders
 ```
 
-Focused MVCC SQL gate:
+MVCC SQL integration:
 
-```sh
+```bash
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ```
 
-Focused server gate:
+Derby language compatibility:
 
-```sh
-./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
-```
-
-Full verification:
-
-```sh
-./gradlew clean fullVerification :delosdb-storage-mvcc:check
-```
-
-Static closeout gate:
-
-```sh
-./gradlew s0CloseoutVerification
-```
-
-Broader Derby compatibility checks remain useful before a release-style push:
-
-```sh
-./gradlew derbyRuntimeSmoke
+```bash
 ./gradlew :delosdb-tests:runDerbyLangSuite
 ```
 
-## Useful Gradle tasks
+Stable static and repository gates:
 
-```sh
-./gradlew build
-./gradlew fullVerification
-./gradlew derbyRuntimeSmoke
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
-./gradlew :delosdb-tests:runDelosServerSchedulerTest
-./gradlew verifyDelosRuntimeStorageProviders
-./gradlew delosStorageStaticAnalysis
-./gradlew delosHeapObjectDeserializationFilterStaticAnalysis
-./gradlew delosCrossEngineConsistencyFrameworkStaticAnalysis
-./gradlew delosRuntimeArtifactModelStaticAnalysis
-./gradlew delosServerStaticAnalysis
+```bash
 ./gradlew s0CloseoutVerification
-./gradlew dist
 ```
 
-## Gradle subprojects
+Full storage-module verification:
 
-| Subproject | Responsibility | Runtime artifact |
-|---|---|---|
-| `:delosdb-osgi-stub` | inherited OSGi stub compatibility | `osgi-framework-stub.jar` |
-| `:delosdb-commons` | shared runtime classes | `derbyshared.jar` |
-| `:delosdb-runtime-api` | DelosDB runtime API support | packaged as needed |
-| `:delosdb-engine` | embedded SQL engine | `derby.jar` |
-| `:delosdb-client` | Derby-compatible network client | `derbyclient.jar` |
-| `:delosdb-tools` | command-line and admin tools | `derbytools.jar` |
-| `:delosdb-runner` | inherited command launcher | `derbyrun.jar` |
-| `:delosdb-optionaltools` | optional tool integrations | `derbyoptionaltools.jar` |
-| `:delosdb-server` | Derby-compatible DRDA network server | `derbynet.jar` |
-| `:delosdb-storage-api` | DelosDB storage diagnostics/API seam | development module |
-| `:delosdb-storage-bridge` | Derby access-method bridge for Delos storage | development module |
-| `:delosdb-storage-mvcc` | opt-in MVCC storage engine | development module |
-| `:delosdb-storage-derby` | inherited Derby-compatible storage implementation | packaged into Derby-compatible runtime |
-| `:delosdb-derby-store-api` | inherited Derby store API split | development module |
-| `:delosdb-storage-io` | storage IO helpers | development module |
-| `:delosdb-storeless` | compiler/optimizer boot without storage | development module |
-| `:delosdb-tests` | inherited and DelosDB-focused test gates | test module |
-| `:delosdb-pptesting` | package-private inherited tests | test module |
-| `:delosdb-buildtools` | build-time generators/scanners | build tooling |
-| `:delosdb-locales` | generated locale verification | verification module |
-| `:delosdb-demos` | local demos | development module |
+```bash
+./gradlew \
+  :delosdb-storage-api:check \
+  :delosdb-storage-derby:check \
+  :delosdb-storage-bridge:check \
+  :delosdb-storage-mvcc:check
+```
+
+See [`docs/BUILDING.md`](docs/BUILDING.md) for the complete build and validation workflow.
 
 ## Runtime artifacts
 
-Runtime jars are written to `build/libs/` and intentionally keep Derby-compatible file names during this preview phase:
+DelosDB currently retains Derby-compatible artifact names:
 
 ```text
 derby.jar
@@ -258,34 +178,33 @@ derbytools.jar
 osgi-framework-stub.jar
 ```
 
-## Documentation
+Runtime jars are written to `build/libs/`.
 
-Maintained project documentation:
+## Repository map
 
-```text
-docs/BUILDING.md
-docs/DERBY-COMPATIBILITY.md
-docs/STORAGE-ARCHITECTURE.md
-docs/CLEANUP-CONSOLIDATION.md
-docs/PHASE-7-CONCURRENT-COMMIT.md
-docs/DELOSDB-SERVER.md
-docs/sql-extensions.md
-```
+| Area | Responsibility |
+|---|---|
+| `delosdb-engine` | SQL compilation, execution, catalogs, JDBC engine integration |
+| `delosdb-client` | Derby-compatible network client |
+| `delosdb-server` | Derby-compatible DRDA server |
+| `delosdb-storage-derby` | inherited heap and raw-store implementation |
+| `delosdb-storage-api` | provider-neutral storage contracts and diagnostics |
+| `delosdb-storage-bridge` | Derby access-method integration for DelosDB storage |
+| `delosdb-storage-mvcc` | page-backed MVCC engine |
+| `delosdb-tools` | command-line and administrative tools |
+| `delosdb-tests` | inherited compatibility and DelosDB integration tests |
+| `benchmarks/jmh` | opt-in public-JDBC and storage benchmarks |
+| `docs` | tracked architecture, compatibility, operations, and historical evidence |
 
-Root-level project documents:
-
-```text
-README.md
-CONTRIBUTING.md
-GOVERNANCE.md
-SECURITY.md
-NOTICE-FORK.md
-```
+A complete documentation index is available at [`docs/README.md`](docs/README.md).
 
 ## Relationship to Apache Derby
 
-DelosDB is based on Apache Derby 10.17.1.0 source code. Apache Derby was developed by the Apache Software Foundation and distributed under the Apache License, Version 2.0.
+DelosDB is based on Apache Derby 10.17.1.0 source code. Apache Derby was developed by the Apache
+Software Foundation and distributed under the Apache License, Version 2.0.
 
-DelosDB is not an Apache Software Foundation project and is not endorsed by the Apache Software Foundation. Apache, Apache Derby, and Derby are trademarks of the Apache Software Foundation.
+DelosDB is not an Apache Software Foundation project and is not endorsed by the Apache Software
+Foundation. Apache, Apache Derby, and Derby are trademarks of the Apache Software Foundation.
 
-The original `LICENSE` and `NOTICE` files are preserved. See `NOTICE-FORK.md` for additional fork attribution.
+The original `LICENSE` and `NOTICE` files are preserved. See [`NOTICE-FORK.md`](NOTICE-FORK.md) for
+fork attribution.

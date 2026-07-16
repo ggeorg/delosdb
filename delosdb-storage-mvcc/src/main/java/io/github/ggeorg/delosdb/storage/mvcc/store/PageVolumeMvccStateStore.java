@@ -47,8 +47,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 /**
  * Page-volume backed committed-state store for the inherited MVCC conglomerate.
  *
- * <p>MODULE11A keeps Derby integration as the gate: callers still enter through
- * the caller's adapter/provider boundary. This class only replaces the MODULE9A ad-hoc
+ * <p>Callers enter through the Derby adapter/provider boundary. This class owns the
  * snapshot file as the committed-row reload authority with the existing Delos
  * page-volume backed MVCC table.</p>
  */

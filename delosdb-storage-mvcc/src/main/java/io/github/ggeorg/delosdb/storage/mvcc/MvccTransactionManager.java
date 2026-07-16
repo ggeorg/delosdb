@@ -11,12 +11,12 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Small transaction table for the experimental MVCC kernel.
+ * Transaction table and commit-sequence authority for the MVCC engine.
  *
  * <p>This class intentionally models only the MVCC vocabulary needed before any
  * Derby store integration: transaction id allocation, commit sequence
  * assignment, active-transaction snapshots, and oldest active snapshot
- * discovery. It is synchronized to keep the prototype deterministic and safe
+ * discovery. Its synchronization protects transaction state and commit-sequence publication
  * for focused tests.</p>
  */
 public final class MvccTransactionManager implements MvccTransactionCatalog {

@@ -189,8 +189,9 @@ requiring real maintenance-worker quiescence before resource close
 making store close exception-safe
 ```
 
-The authoritative protocol is `PHASE-7-DURABILITY-PROTOCOL.md`. The focused
-change and proof inventory is `PHASE-7-PRODUCTION-HARDENING.md`.
+The current authoritative protocol is `docs/MVCC-DURABILITY-PROTOCOL.md`.
+This historical record preserves the reason for the hardening but does not
+supersede current source, tests, or protocol documentation.
 
 Additional hardening gates are:
 

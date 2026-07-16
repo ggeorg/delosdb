@@ -20,7 +20,7 @@
  */
 package org.apache.derby.iapi.store.types;
 
-/** Store-neutral table statistics and coarse cost estimate for H-phase proofs. */
+/** Store-neutral table statistics and conservative optimizer cost estimate. */
 public record DelosTableCostEstimate(
         long logicalRowCount,
         long visibleRowCount,

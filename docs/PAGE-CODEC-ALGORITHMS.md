@@ -33,7 +33,7 @@ Guardrails:
 
 ### Row payload codecs
 
-`MvccRowPayloadCodec` owns simple binary row payloads. `DurableMvccSqlRowCodec` owns the SQL-facing typed row payload text envelope and explicitly avoids generic Java serialization. `MvccInheritedRowCodec` owns the Derby-storable typed inherited-row bridge boundary.
+`MvccRowPayloadCodec` owns low-level binary row payloads. `MvccInheritedRowCodec` owns the Derby-storable typed row bridge and the authoritative SQL-facing durable encoding. The retired text-envelope proof codec has been removed.
 
 ### Index tuple codec
 

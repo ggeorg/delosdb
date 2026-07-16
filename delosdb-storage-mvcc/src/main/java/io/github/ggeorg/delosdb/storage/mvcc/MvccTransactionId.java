@@ -1,7 +1,7 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 /**
- * Monotonic MVCC transaction identifier used by the experimental in-memory
+ * Monotonic transaction identifier used by the MVCC engine.
  * MVCC kernel. Transaction id {@code 0} is reserved for the absence of a
  * deleting transaction in storage-facing records; real transactions start at 1.
  */

@@ -1947,7 +1947,6 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
     description = 'Validates Phase P performance/concurrency validation harnesses and keeps long-running tools outside S0.'
 
     inputs.file(delosPerformanceConcurrencyValidationFile)
-    inputs.file('docs/ENGINE-DEPTH-ROADMAP.md')
     inputs.file('docs/PERFORMANCE-CONCURRENCY-VALIDATION.md')
     inputs.file('delosdb-storage-mvcc/build.gradle')
     inputs.file('gradle/delosdb-storage-static-analysis.gradle')
@@ -3018,6 +3017,68 @@ tasks.register('delosSqlancerProfileSkeleton') {
     }
 }
 
+tasks.register('delosNoTransitionalStorageRoutingStaticAnalysis') {
+    group = 'verification'
+    description = 'Rejects phase-named or proof-only storage routing from production Java sources.'
+
+    def productionSources = fileTree(delosRepositoryRoot) {
+        include '**/src/main/java/**/*.java'
+        exclude '**/build/**'
+    }
+    inputs.files(productionSources)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/no-transitional-storage-routing-static-analysis.txt'))
+
+    doLast {
+        def forbiddenTokens = [
+                '"delosdb.storage.phase',
+                'DelosObsoleteStorageProperties',
+                'DelosHeapScanShadowResultSet',
+                'DelosHeapLiveTableScanResultSet',
+                'DelosHeapInsertResultSet',
+                'DelosHeapDeleteResultSet',
+                'DelosHeapUpdateResultSet',
+                'DelosTableScanProviderLookup',
+                'DelosCreateIndexProviderLookup',
+                'DelosHeapCostProofLookup'
+        ]
+        def failures = []
+        productionSources.files.sort { left, right -> left.path <=> right.path }.each { sourceFile ->
+            def relative = DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, sourceFile)
+            sourceFile.readLines('UTF-8').eachWithIndex { line, index ->
+                forbiddenTokens.each { token ->
+                    if (line.contains(token)) {
+                        failures << relative + ':' + (index + 1) + ': ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/no-transitional-storage-routing-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB transitional storage routing static analysis')
+            writer.println('======================================================')
+            writer.println()
+            writer.println('Rule: production routing must not depend on phase-named proof properties or retired proof result sets.')
+            writer.println('Scanned files: ' + productionSources.files.size())
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('Transitional storage routing remains in production sources. Report: ' + reportFile)
+        }
+        println 'DelosDB transitional storage routing static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3032,6 +3093,7 @@ tasks.register('s0CloseoutVerification') {
             'delosWorkspaceChurnStaticAnalysis',
             'delosHeapRawStoreDuplicateClassificationReport',
             'delosDerbyModuleParityStaticAnalysis',
-            'delosDerbyForkDiffClassificationStaticAnalysis'
+            'delosDerbyForkDiffClassificationStaticAnalysis',
+            'delosNoTransitionalStorageRoutingStaticAnalysis'
 }
 

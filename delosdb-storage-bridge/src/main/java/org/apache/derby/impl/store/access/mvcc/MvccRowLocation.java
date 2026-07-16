@@ -34,7 +34,7 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * MODULE6C logical MVCC row-location skeleton.
+ * Logical row-location value for a {@code delos_mvcc} table.
  *
  * <p>The stable row identity is {@code rowId}. The physical page/slot locator is
  * only an optional hint and must never become the durable logical identity. This

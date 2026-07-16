@@ -25,9 +25,9 @@ import java.util.Objects;
 /**
  * Result of an optimistic row-identity mutation preparation step.
  *
- * <p>Phase I Option A is deliberately not a lock API.  A successful instance
- * means the provider has validated that the supplied row identity is currently
- * mutable for the supplied access context.  It does not claim that a row lock,
+ * <p>This is deliberately not a lock API. A successful instance means the
+ * provider has validated that the supplied row identity is currently mutable
+ * for the supplied access context. It does not claim that a row lock,
  * reservation, or write latch has been acquired.</p>
  */
 public record DelosMutationPreparation(

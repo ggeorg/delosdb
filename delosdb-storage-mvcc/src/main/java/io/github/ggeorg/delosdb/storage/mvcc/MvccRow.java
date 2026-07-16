@@ -1,9 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
 /**
- * One logical row returned by the experimental MVCC table scan.
+ * One logical row returned by an MVCC table scan.
  *
- * <p>The key is the stable logical row identifier used by the prototype. The
+ * <p>The key is the stable logical row identifier. The
  * value is the visible row payload for the scan snapshot.</p>
  */
 public record MvccRow<K, V>(K key, V value) {

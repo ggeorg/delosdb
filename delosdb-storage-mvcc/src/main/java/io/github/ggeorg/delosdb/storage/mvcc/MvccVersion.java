@@ -3,7 +3,7 @@ package io.github.ggeorg.delosdb.storage.mvcc;
 import java.util.Objects;
 import java.util.Optional;
 
-/** A physical row version in the experimental MVCC kernel. */
+/** A physical row version in the MVCC engine. */
 public final class MvccVersion<V> {
     private final V value;
     private final MvccTransactionId createdBy;

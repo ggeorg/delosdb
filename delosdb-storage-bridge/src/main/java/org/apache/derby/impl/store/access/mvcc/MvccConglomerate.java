@@ -58,12 +58,11 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
 /**
- * MODULE6C inherited Conglomerate skeleton for Delos MVCC.
+ * Derby-compatible conglomerate implementation for {@code delos_mvcc} tables.
  *
- * <p>This class proves that an MVCC access method can produce the inherited
- * Derby store/access objects: a conglomerate, scan controller, conglomerate
- * controller, and logical row-location template. It deliberately does not route
- * SQL execution or persist data yet.</p>
+ * <p>The class adapts the DelosDB MVCC table implementation to Derby's
+ * conglomerate, scan, controller, compiled-information, and row-location
+ * contracts.</p>
  */
 public final class MvccConglomerate
         extends StoreDataValueBase
@@ -974,12 +973,11 @@ public final class MvccConglomerate
     }
 
     /**
-     * MODULE6F minimal dynamic compiled info.
+     * Dynamic compiled information required by Derby's access-method contract.
      *
-     * <p>Inherited Derby compiled scans require non-null dynamic compiled
-     * information even when this MVCC preflight does not need scratch state yet.
-     * The object intentionally carries no behavior; MvccScanController remains
-     * the authority for row visibility and projection.</p>
+     * <p>The MVCC access method does not require additional mutable compiled
+     * state. Row visibility and projection remain owned by
+     * {@link MvccScanController}.</p>
      */
     private static final class MvccDynamicCompiledOpenConglomInfo
             implements DynamicCompiledOpenConglomInfo {

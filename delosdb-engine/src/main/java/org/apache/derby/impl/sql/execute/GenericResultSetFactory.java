@@ -259,8 +259,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 schemaName,
                 tableName,
                 activation);
-        ResultSet heapInsert = DelosHeapInsertResultSet.createIfEnabled(params).orElse(null);
-        if (heapInsert != null) { return heapInsert; }
         return new InsertResultSet(params);
 	}
 
@@ -299,8 +297,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 	{
 		Activation activation = source.getActivation();
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-        ResultSet heapDelete = DelosHeapDeleteResultSet.createIfEnabled(source, activation).orElse(null);
-        if (heapDelete != null) { return heapDelete; }
 		return new DeleteResultSet(source, activation );
 	}
 
@@ -359,9 +355,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 			SanityManager.ASSERT(getAuthorizer(activation) != null, "Authorizer is null");
 		}
 		getAuthorizer(activation).authorize(activation, Authorizer.SQL_WRITE_OP);
-        ResultSet heapUpdate = DelosHeapUpdateResultSet.createIfEnabled(
-                source, generationClauses, checkGM, activation).orElse(null);
-        if (heapUpdate != null) { return heapUpdate; }
 		return new UpdateResultSet(UpdateResultSetParameters.normal(
                 source, generationClauses, checkGM, activation));
 	}
@@ -801,7 +794,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new HashScanResultSet(
                 hashScanParameters(
                         activation,
@@ -858,7 +850,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new DistinctScanResultSet(
                 distinctScanParameters(
                         activation,
@@ -911,7 +902,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         TableScanResultSetParameters params = tableScanParameters(
                 activation,
                 conglomId,
@@ -938,10 +928,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 oneRowScan,
                 optimizerEstimatedRowCount,
                 optimizerEstimatedCost);
-        NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
-        if (heapLiveScan != null) { return heapLiveScan; }
-        NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);
-        if (heapShadowScan != null) { return heapShadowScan; }
         return new TableScanResultSet(params);
 	}
 
@@ -972,7 +958,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                                     double optimizerEstimatedCost)
             throws StandardException
     {
-                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new ValidateCheckConstraintResultSet(
                 tableScanParameters(
                         activation,
@@ -1043,7 +1028,6 @@ public class GenericResultSetFactory implements ResultSetFactory
         //Because of that, we can not continue to disable the prefetching for RR and Serializable, since it causes
         //severe performance degradation - bug 5953.
 
-        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         TableScanResultSetParameters params = tableScanParameters(
                 activation,
                 conglomId,
@@ -1070,10 +1054,6 @@ public class GenericResultSetFactory implements ResultSetFactory
                 oneRowScan,
                 optimizerEstimatedRowCount,
                 optimizerEstimatedCost);
-        NoPutResultSet heapLiveScan = DelosHeapLiveTableScanResultSet.createIfEnabled(params).orElse(null);
-        if (heapLiveScan != null) { return heapLiveScan; }
-        NoPutResultSet heapShadowScan = DelosHeapScanShadowResultSet.createIfEnabled(params).orElse(null);
-        if (heapShadowScan != null) { return heapShadowScan; }
         return new BulkTableScanResultSet(params, rowsPerRead, disableForHoldable);
 	}
 
@@ -1118,7 +1098,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 									double optimizerEstimatedCost)
 			throws StandardException
 	{
-		        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
 		return new MultiProbeTableScanResultSet(
                 tableScanParameters(
                         activation,
@@ -1574,7 +1553,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 		double 				optimizerEstimatedCost
 	) throws StandardException
 	{
-                DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         return new LastIndexKeyResultSet(
                 new LastIndexKeyResultSetParameters(
                         activation,
@@ -1630,7 +1608,6 @@ public class GenericResultSetFactory implements ResultSetFactory
 									int rltItem)
 			throws StandardException
 	{
-        DelosTableScanProviderLookup.observeFactoryLookupIfEnabled(activation, tableName);
         StaticCompiledOpenConglomInfo scoci = (StaticCompiledOpenConglomInfo)(activation.getPreparedStatement().
 						getSavedObject(scociItem));
 		return new DependentResultSet(

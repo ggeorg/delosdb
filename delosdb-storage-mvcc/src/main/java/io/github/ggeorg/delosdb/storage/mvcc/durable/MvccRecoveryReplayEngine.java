@@ -16,9 +16,9 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
  * Strict MVCC recovery replay coordinator.
  *
  * <p>The lower-level {@link MvccPageRecoveryRunner} knows how to replay durable
- * page mutations through the transaction-outcome log. This coordinator adds the
- * Phase L replay contract around that primitive: optional subsystem recovery
- * metadata is validated before replay, replay remains idempotent, and callers
+ * page mutations through the transaction-outcome log. This coordinator adds
+ * strict cross-subsystem validation: optional recovery metadata is validated
+ * before replay, replay remains idempotent, and callers
  * can require cross-subsystem completeness when a crash test intentionally
  * models row/index/overflow/free-space redo as one logical recovery unit.</p>
  */

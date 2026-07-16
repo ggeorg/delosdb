@@ -1,6 +1,6 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
-/** Visibility rules for the experimental MVCC kernel. */
+/** Visibility rules for MVCC row versions and snapshots. */
 public final class MvccVisibility {
     private MvccVisibility() {
     }

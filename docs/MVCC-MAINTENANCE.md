@@ -1,4 +1,4 @@
-# Phase 7.6 — Database-Owned MVCC Maintenance Service
+# MVCC database maintenance service
 
 ## Purpose
 
@@ -7,8 +7,8 @@ for every open table. That ownership model scaled thread count with table count,
 provided no database-wide prioritization, and made database shutdown depend on
 closing independent table executors in the correct order.
 
-Phase 7.6 replaces those executors with one maintenance service owned by the
-open `DelosStorageStore` for a database.
+The current implementation uses one maintenance service owned by the open
+`DelosStorageStore` for a database.
 
 The purge algorithm itself is unchanged. Tables still own:
 
@@ -154,7 +154,7 @@ skip, run, visibility-debt, and last-decision details.
 
 ## Deliberate limits
 
-This slice does not:
+The maintenance service does not:
 
 - change the vacuum or purge algorithm;
 - add a JVM-global maintenance service;
@@ -162,4 +162,4 @@ This slice does not:
 - change checkpoint format or frequency;
 - add cross-database workers;
 - tune worker count automatically;
-- bypass the Phase 7.7 database-scoped backup coordinator.
+- bypass the database-scoped backup coordinator.

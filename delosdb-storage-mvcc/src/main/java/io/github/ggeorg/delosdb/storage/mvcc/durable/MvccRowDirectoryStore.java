@@ -18,7 +18,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 /**
  * Forced append-only row-directory head store for the page-backed MVCC table.
  *
- * <p>The store is intentionally small in MODULE5M: it records the current
+ * <p>The store records the current
  * logical-row head locator after each committed insert/update/delete. Version
  * pages remain the source of row payloads and historical version records; this
  * sidecar makes the {@code MvccRowId -> head MvccVersionLocator} mapping

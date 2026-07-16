@@ -40,7 +40,7 @@ import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * MODULE6D inherited ConglomerateController preflight for Delos MVCC.
+ * Derby-compatible conglomerate controller for {@code delos_mvcc} tables.
  *
  * <p>The controller writes through the MVCC visibility kernel while staying
  * below SQL execution. A normal close aborts the controller-local writer; the

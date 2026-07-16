@@ -25,7 +25,7 @@ import java.util.Objects;
 /**
  * Immutable diagnostic snapshot for MVCC ordered-index authority.
  *
- * <p>The ordered index is no longer only a shadow page skeleton. In
+ * <p>The ordered index is a durable row-id narrowing authority. In
  * {@code delos_mvcc} it is the preferred row-id narrowing authority for
  * covered current-committed equality/range reads. Candidate indexes remain
  * populated for parity diagnostics and safe fallback only.</p>
@@ -56,7 +56,7 @@ public record DelosStorageOrderedIndexDiagnostics(
 
     /**
      * Compatibility constructor for older diagnostics callers that only exposed
-     * the page skeleton counts.
+     * the basic page-count fields.
      */
     public DelosStorageOrderedIndexDiagnostics(
             long pageCount,

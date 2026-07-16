@@ -47,12 +47,10 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * MODULE6D inherited ScanManager preflight for Delos MVCC.
+ * Derby-compatible scan controller for {@code delos_mvcc} tables.
  *
- * <p>The scan opens a statement snapshot against the MVCC kernel and returns
- * visible rows through Derby's inherited ScanController shape. MODULE6F
- * allows physical MVCC full-table SQL SELECT to reach this controller through
- * the inherited TableScanResultSet path.</p>
+ * <p>The scan opens the appropriate MVCC read view and returns visible rows
+ * through Derby's inherited {@code ScanController} and result-set path.</p>
  */
 public final class MvccScanController implements ScanManager {
     private final MvccConglomerate conglomerate;

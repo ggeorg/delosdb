@@ -1,9 +1,10 @@
-# Phase 7 database-scoped backup coordination
+# MVCC database-scoped backup coordination
 
 ## Purpose
 
-Phase 7.7 keeps the existing freeze-based online-backup algorithm and hardens
-its ownership, mutation coverage, and evidence.
+The current implementation uses a freeze-based online-backup algorithm with
+database-scoped ownership, explicit durable-mutation coverage, and measurable
+writer-stall evidence.
 
 The previous boundary was one fair read/write lock for the entire JVM. That
 made the copied MVCC sidecar image coherent, but a backup of one database could
@@ -147,7 +148,7 @@ holds a temporary lease for the duration of backup copying.
 
 ## Explicit non-goals
 
-This phase does not:
+The current backup protocol does not:
 
 - change Derby RawStore backup control flow;
 - replace coordinated freezing with a checkpoint-generation/WAL-tail design;

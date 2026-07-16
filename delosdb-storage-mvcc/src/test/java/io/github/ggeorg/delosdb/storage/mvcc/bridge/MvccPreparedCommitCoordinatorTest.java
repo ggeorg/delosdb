@@ -38,36 +38,26 @@ final class MvccPreparedCommitCoordinatorTest {
 
     @Test
     void nonConflictingWritersPrepareConcurrentlyAndPublishSerially() throws Exception {
-        String legacyMode = System.getProperty("delosdb.mvcc.commit.mode");
-        System.setProperty("delosdb.mvcc.commit.mode", "direct");
         Path recordingFile = databaseDirectory.resolve("prepared-commit-coordinator.jfr");
-        try {
-            MvccInheritedTable table = new MvccInheritedTable(0L, 761L, databaseDirectory);
-            try (Recording recording = new Recording()) {
-                recording.enable(MvccCommitJfr.EVENT_NAME).withThreshold(Duration.ZERO);
-                recording.start();
+        MvccInheritedTable table = new MvccInheritedTable(0L, 761L, databaseDirectory);
+        try (Recording recording = new Recording()) {
+            recording.enable(MvccCommitJfr.EVENT_NAME).withThreshold(Duration.ZERO);
+            recording.start();
 
-                DelosStorageTransaction first = table.beginTransaction();
-                DelosStorageTransaction second = table.beginTransaction();
-                for (int row = 1; row <= ROWS_PER_TRANSACTION; row++) {
-                    table.insert(row, emptyRow(), first);
-                    table.insert(ROWS_PER_TRANSACTION + row, emptyRow(), second);
-                }
-                commitTogether(table, first, second);
-                table.assertConsistentForTesting();
-                assertEquals(ROWS_PER_TRANSACTION * 2, table.logicalRowCountForTesting());
-
-                recording.stop();
-                recording.dump(recordingFile);
-            } finally {
-                table.close();
+            DelosStorageTransaction first = table.beginTransaction();
+            DelosStorageTransaction second = table.beginTransaction();
+            for (int row = 1; row <= ROWS_PER_TRANSACTION; row++) {
+                table.insert(row, emptyRow(), first);
+                table.insert(ROWS_PER_TRANSACTION + row, emptyRow(), second);
             }
+            commitTogether(table, first, second);
+            table.assertConsistentForTesting();
+            assertEquals(ROWS_PER_TRANSACTION * 2, table.logicalRowCountForTesting());
+
+            recording.stop();
+            recording.dump(recordingFile);
         } finally {
-            if (legacyMode == null) {
-                System.clearProperty("delosdb.mvcc.commit.mode");
-            } else {
-                System.setProperty("delosdb.mvcc.commit.mode", legacyMode);
-            }
+            table.close();
         }
 
         List<RecordedEvent> events = commitEvents(recordingFile);
@@ -85,7 +75,7 @@ final class MvccPreparedCommitCoordinatorTest {
                 "physical same-table publication remains serialized");
         assertTrue(events.stream().allMatch(event ->
                 "group".equals(event.getString("durabilityCoordinatorMode"))),
-                "normal table construction must use group mode and ignore the retired JVM property");
+                "normal table construction must use group mode");
         assertEquals(2, events.stream()
                 .mapToInt(event -> event.getInt("durabilityEnrollmentDepth"))
                 .max()

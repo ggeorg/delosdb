@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Opaque durable row payload used by the Phase A3 page-backed table proof. */
+/** Opaque durable row payload used by the page-backed MVCC table. */
 public final class MvccRowPayload {
     private final String key;
     private final byte[] value;

@@ -1,199 +1,167 @@
-# DelosDB Storage Architecture
+# DelosDB storage architecture
 
-DelosDB keeps Derby compatibility at the SQL, JDBC, DRDA, catalog, heap, and raw-store boundaries while adding DelosDB-owned storage seams behind explicit opt-in paths.
+## Purpose
 
-This document describes the storage architecture after the current storage closeout. It is intended for contributors who need to understand where compatibility is preserved, where DelosDB behavior is allowed to evolve, and which verification gates protect those boundaries.
-
-## Architecture rule
+DelosDB provides two storage modes behind one Derby-compatible SQL, catalog, transaction, JDBC, and
+DRDA engine.
 
 ```text
-Preserve Derby compatibility at public and durable boundaries.
-Modernize internals behind explicit, verified seams.
-Do not make broad rewrites where a narrow compatibility-preserving path exists.
+SQL and catalog
+    -> optimizer and generated execution
+    -> TransactionController
+    -> Derby access-method contract
+       -> heap/raw store
+       -> delos_mvcc
 ```
 
-The storage architecture is therefore not a wholesale Derby replacement. It is a compatibility-preserving fork with a growing DelosDB storage layer.
+Storage selection is persisted in table and conglomerate metadata. Production execution does not
+depend on phase-named system properties or hidden proof routes.
 
-## Storage modes
+## Derby heap
 
-### Derby-compatible heap mode
-
-The inherited Derby heap/raw-store path remains the default:
+The heap remains the default and the durable compatibility anchor:
 
 ```sql
-CREATE TABLE t (id int primary key, value varchar(100));
+CREATE TABLE t (id INTEGER PRIMARY KEY, value VARCHAR(100));
 ```
 
-This mode preserves Derby heap page format, raw-store logging behavior, catalog behavior, JDBC behavior, and DRDA compatibility. DelosDB may improve diagnostics and verification around this path, but it must not silently change the durable heap format.
+It preserves Derby page formats, row locations, raw logging, locking, recovery, catalog behavior,
+and compatibility with existing databases.
 
-### Opt-in `delos_mvcc` mode
+DelosDB extends the heap path only through explicit, tested improvements such as:
+
+- real `SYSCS_UTIL.SYSCS_CHECK_TABLE` heap validation;
+- object-deserialization filter integration;
+- safer file-copy durability;
+- corrected inherited defects;
+- provider-neutral diagnostics.
+
+## `delos_mvcc`
 
 The MVCC engine is explicit:
 
 ```sql
-CREATE TABLE t (id int primary key, value varchar(100)) USING delos_mvcc;
+CREATE TABLE t (id INTEGER PRIMARY KEY, value VARCHAR(100)) USING delos_mvcc;
 ```
 
-The active path is:
+The integration path is:
 
 ```text
-SQL
-  -> Derby language / transaction layer
-  -> Derby access-method bridge
-  -> delosdb-storage-api
-  -> delosdb-storage-mvcc
+Derby statement and result-set execution
+    -> MVCC conglomerate and scan/controller bridge
+    -> delosdb-storage-api
+    -> MvccInheritedTable
+    -> PageBackedMvccTable and page-volume stores
 ```
 
-The MVCC engine is allowed to use DelosDB-owned durable structures, page metadata, indexes, diagnostics, and consistency checks. It must still preserve the SQL/JDBC/DRDA compatibility surface that invokes it.
+### Transaction and visibility state
 
-## Compatibility boundaries
+The MVCC engine owns:
 
-The following boundaries are intentionally protected:
+- monotonic transaction identities;
+- statement and transaction read views;
+- creating and deleting transaction metadata;
+- commit sequences and transaction outcomes;
+- retained-reader horizons;
+- write-conflict detection;
+- savepoint rollback.
+
+### Durable state
+
+The page-backed engine uses:
 
 ```text
-Derby heap page format
-Derby raw log format
-Derby catalog semantics
-Derby JDBC behavior
-Derby DRDA wire compatibility
-Default heap-backed table behavior
-Derby optimizer fallback and remainder-predicate evaluation
+page-volume WAL
+prepared page-mutation batches
+transaction-status log
+local outcome mirror
+row directory
+ordered-index pages
+free-space and visibility metadata
+checkpoint state
+purge queue
+backup manifest
 ```
 
-The following boundaries are DelosDB-owned seams:
+The authoritative ordering and failure behavior are defined in
+[`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md).
 
-```text
-delos_mvcc durable row and page formats
-DelosDB storage provider discovery
-delosdb-storage-api diagnostics
-MVCC ordered-index sidecars
-MVCC vacuum/compress lifecycle
-MVCC page cache and reusable-page tracking
-Cross-engine consistency report shape
-```
+### Commit publication
 
-## Heap consistency checking
+Transactions prepare immutable payloads before entering the bounded commit coordinator. One group
+publishes a shared forced transaction-status batch and one final ordered-index rebuild. Page WAL,
+local outcome, page materialization, recovery records, and checkpoint publication remain
+transaction-owned.
 
-`SYSCS_UTIL.SYSCS_CHECK_TABLE(...)` now reaches real heap checking for Derby-compatible heap tables:
+See [`MVCC-GROUP-COMMIT.md`](MVCC-GROUP-COMMIT.md).
 
-```text
-SYSCS_UTIL.SYSCS_CHECK_TABLE
-  -> ConsistencyChecker.checkTable
-  -> ConglomerateController.checkConsistency
-  -> OpenHeap.checkConsistency
-  -> HeapSanityChecker
-```
+### Maintenance
 
-The heap checker is read-only. It validates healthy heap pages, page traversal, page accounting, record counts, and slot-table invariants. It reports failures through Derby exceptions rather than stdout, stderr, or diagnostic `PrintStream` output.
+One database-owned service schedules table maintenance with bounded workers, periodic scans,
+commit-triggered wakeups, visibility-debt priority, reader-horizon checks, and strict shutdown.
 
-The checker assumes the existing Derby consistency-check locking discipline. It is not a live unlocked corruption detector and should not be reused as a background repair worker.
+See [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md).
 
-## MVCC isolation read-view policy
+### Backup
 
-The bridge exposes an explicit isolation policy for MVCC scans:
+Each database has its own backup coordinator. Durable MVCC mutations take the shared side of the
+boundary; sidecar backup copy takes the exclusive side. Backing up one database does not freeze an
+unrelated database in the same JVM.
+
+See [`MVCC-BACKUP-COORDINATION.md`](MVCC-BACKUP-COORDINATION.md).
+
+## Isolation
+
+Current pre-1.0 behavior is:
 
 ```text
 READ COMMITTED and weaker
-  fresh statement-scoped read view
+    statement snapshot
 
 REPEATABLE READ
-  transaction-scoped stable read view
+    transaction snapshot
 
 SERIALIZABLE
-  transaction-scoped stable read view for Derby/JDBC compatibility
-  no full-serializability guarantee for delos_mvcc
+    transaction snapshot compatibility mapping
+    no predicate locking, SSI, or write-skew prevention
 ```
 
-The policy is intentionally documented in storage-bridge code rather than
-hidden as a private condition inside scan logic. SQL integration tests verify
-statement refresh for `READ COMMITTED`, stable visibility for `REPEATABLE READ`,
-read-your-writes behavior, historical page-backed snapshot use, and the current
-`SERIALIZABLE` write-skew limitation.
+The current behavior is covered by an executable write-skew proof. The v1.0 product contract
+requires early rejection of MVCC `SERIALIZABLE` until true serializability is available.
 
-`delos_mvcc` currently has no predicate or range locking, SSI dangerous-
-structure detection, or serialization-failure protocol. Full serializability
-must be implemented deliberately in a later phase or exposed as unsupported;
-it must not be inferred from the current JDBC isolation name.
+## Consistency and diagnostics
 
-## Object deserialization boundary
+Heap, B-tree, and MVCC implementations expose provider-neutral consistency reports. Diagnostics are
+read-only and must not become repair, cleanup, or hidden execution-routing mechanisms.
 
-Derby heap compatibility can still read Derby heap `JAVA_OBJECT` values in default mode. DelosDB also provides an opt-in heap object deserialization filter:
+## Protected boundaries
 
 ```text
-delosdb.heap.objectDeserializationFilter
+Derby heap page and raw-log formats
+Derby catalog semantics
+Derby optimizer authority
+Derby remainder-predicate evaluation
+JDBC behavior
+DRDA wire compatibility
 ```
 
-Unset or blank preserves Derby-compatible behavior. When configured, the filter is installed once through the central heap object stream path. Static gates prevent duplicate installation and prevent the filter from drifting into unrelated serialization infrastructure.
-
-`delos_mvcc` keeps a stricter durable-row boundary and rejects Java object rows. That is separate from heap compatibility mode.
-
-## Cross-engine consistency reporting
-
-The storage diagnostics layer exposes a provider-neutral consistency report. Its job is to surface findings from heap, B-tree, MVCC, and future storage modes using a stable report shape.
-
-The framework is diagnostic only:
+## DelosDB-owned boundaries
 
 ```text
-read-only
-provider-neutral
-no repair
-no cleanup
-no stdout/stderr side effects
+delos_mvcc durable formats
+MVCC visibility and transaction state
+MVCC page WAL and recovery
+MVCC ordered-index authority
+MVCC maintenance and vacuum
+MVCC database backup coordination
+storage diagnostics and JFR events
 ```
 
-It is intended to help tooling and SQL diagnostics reason across mixed heap and MVCC databases without making one storage engine responsible for another engine's state.
+## Verification
 
-## Runtime provider discovery
-
-The `delos_mvcc` engine is discovered through DelosDB storage provider service metadata. The runtime artifact model now treats provider jars as part of the verified runtime, not as incidental build outputs.
-
-The provider gate verifies that:
-
-```text
-MVCC runtime jar exists
-service metadata exists
-provider class is listed
-ServiceLoader can discover providerName() == "delos_mvcc"
-```
-
-This prevents the integration runtime from compiling successfully while losing the MVCC provider jar at execution time.
-
-## Verification gates
-
-Focused storage/runtime verification:
-
-```sh
+```bash
 ./gradlew verifyDelosRuntimeStorageProviders
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
-./gradlew s0CloseoutVerification
 ./gradlew :delosdb-storage-mvcc:check
-./gradlew :delosdb-storage-api:check :delosdb-storage-derby:check :delosdb-storage-bridge:check :delosdb-storage-mvcc:check
-```
-
-Important S0 static gates now protect:
-
-```text
-heap/raw-store stdout and stale-code rules
-heap compatibility behavior
-heap object deserialization filter placement
-runtime artifact/provider model
-cross-engine consistency framework shape
-server compatibility seams
-storage static analysis
-```
-
-## Design anti-goals
-
-The current storage architecture does not authorize:
-
-```text
-changing Derby heap page format
-changing Derby raw log format
-replacing DRDA/JDBC wire compatibility
-flipping default storage to MVCC
-removing Derby optimizer fallback behavior
-removing Derby remainder-predicate evaluation
-adding repair behavior to consistency diagnostics
-using Java serialization in MVCC durable rows
-hiding runtime provider discovery behind unverified jar lists
+./gradlew s0CloseoutVerification
 ```

@@ -12,7 +12,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
- * Small forced append-only transaction-status store for MODULE5H.
+ * Forced append-only transaction-status store for the MVCC database.
  *
  * <p>This is not WAL. It is the first durable MVCC transaction-status authority
  * used by the live Derby commit/rollback route. Complete final records are

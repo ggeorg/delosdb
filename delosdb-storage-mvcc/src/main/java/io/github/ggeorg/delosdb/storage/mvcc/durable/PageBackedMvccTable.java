@@ -29,7 +29,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordFlags;
 
 /**
- * Page-backed MVCC table prototype used to move delos_mvcc away from Java-map
+ * Page-backed MVCC table that owns durable row-version and materialization state.
  * storage. It stores durable version records in the A1 page file and rebuilds
  * a row directory on open. Vacuum can compact live records into existing pages
  * and mark emptied pages reusable for later writes.

@@ -1,10 +1,10 @@
-# Phase 7 — MVCC Transaction Durability Protocol
+# MVCC transaction durability protocol
 
 ## Purpose
 
-This document is the authoritative description of the inherited `delos_mvcc`
-write-transaction durability route after the Phase 7 production-hardening
-closeout.
+This document is the authoritative description of the current `delos_mvcc`
+write-transaction durability route. Historical implementation slices are
+retained under `docs/history/`; they do not override this protocol.
 
 The protocol separates three responsibilities that must not be confused:
 
