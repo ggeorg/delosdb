@@ -52,32 +52,74 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long mvccContainerId;
 
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            createTables(connection);
-            DifferentialHarness harness = new DifferentialHarness(
-                    connection, HEAP_TABLE, MVCC_TABLE, HEAP_REFERENCE_TABLE, MVCC_REFERENCE_TABLE);
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            createTables(setup);
+            setup.commit();
+        }
 
-            insertFixtureRows(connection, harness);
-            insertReferenceRows(connection, harness);
-            connection.commit();
-            mvccContainerId = mvccContainerId(connection, "MVCC_DIFF_SQL_T");
+        try (Connection heapConnection = openDatabase(databaseName, false);
+             Connection mvccConnection = openDatabase(databaseName, false)) {
+            heapConnection.setAutoCommit(false);
+            mvccConnection.setAutoCommit(false);
+            DifferentialHarness harness = new DifferentialHarness(
+                    heapConnection,
+                    mvccConnection,
+                    HEAP_TABLE,
+                    MVCC_TABLE,
+                    HEAP_REFERENCE_TABLE,
+                    MVCC_REFERENCE_TABLE);
+
+            insertFixtureRows(harness);
+            heapConnection.commit();
+            mvccConnection.commit();
+            insertReferenceRows(harness);
+            heapConnection.commit();
+            mvccConnection.commit();
+
+            assertEquals("fixture row count should match for heap",
+                    6L, countRows(heapConnection, HEAP_TABLE));
+            assertEquals("fixture row count should match for MVCC",
+                    6L, countRows(mvccConnection, MVCC_TABLE));
+            assertEquals("reference row count should match for heap",
+                    4L, countRows(heapConnection, HEAP_REFERENCE_TABLE));
+            assertEquals("reference row count should match for MVCC",
+                    4L, countRows(mvccConnection, MVCC_REFERENCE_TABLE));
+
+            mvccContainerId = mvccContainerId(mvccConnection, "MVCC_DIFF_SQL_T");
             assertMvccConsistent(diagnostics, mvccContainerId);
 
             harness.assertCheckpoint("initial committed fixture");
-            assertMvccRuntimeStatisticsAvailable(connection);
+            assertMvccRuntimeStatisticsAvailable(mvccConnection);
 
-            Savepoint rollbackPoint = connection.setSavepoint("DIFF_SQL_ROLLBACK_POINT");
+            Savepoint heapRollbackPoint = heapConnection.setSavepoint("HEAP_DIFF_SQL_ROLLBACK_POINT");
+            Savepoint mvccRollbackPoint = mvccConnection.setSavepoint("MVCC_DIFF_SQL_ROLLBACK_POINT");
             harness.executeUpdate("update ${table} set quantity = quantity + 900, "
                     + "status = 'ROLLBACK', note = 'rolled-back' where id in (1, 2)");
             harness.executeUpdate("delete from ${table} where id = 4");
-            harness.executeReferenceUpdate("update ${ref} set label = 'rolled-back' where status = 'READY'");
             harness.insertRow(7, "eta", 70, "ROLLBACK", "7.07", "rolled-back", "2026-01-07");
-            harness.assertCheckpoint("inside rollback-only mutation");
-            connection.rollback(rollbackPoint);
+            harness.assertCheckpoint("inside rollback-only row mutation");
+            heapConnection.rollback(heapRollbackPoint);
+            mvccConnection.rollback(mvccRollbackPoint);
+            heapConnection.commit();
+            mvccConnection.commit();
 
-            harness.assertCheckpoint("after rollback to fixture");
+            harness.assertCheckpoint("after row rollback to fixture");
             assertMvccConsistent(diagnostics, mvccContainerId);
+
+            Savepoint heapReferenceRollbackPoint =
+                    heapConnection.setSavepoint("HEAP_DIFF_SQL_REFERENCE_ROLLBACK_POINT");
+            Savepoint mvccReferenceRollbackPoint =
+                    mvccConnection.setSavepoint("MVCC_DIFF_SQL_REFERENCE_ROLLBACK_POINT");
+            harness.executeReferenceUpdate(
+                    "update ${ref} set label = 'rolled-back' where status = 'READY'");
+            harness.assertCheckpoint("inside rollback-only reference mutation");
+            heapConnection.rollback(heapReferenceRollbackPoint);
+            mvccConnection.rollback(mvccReferenceRollbackPoint);
+            heapConnection.commit();
+            mvccConnection.commit();
+
+            harness.assertCheckpoint("after reference rollback to fixture");
 
             harness.executeUpdate("update ${table} set quantity = quantity + 5, "
                     + "amount = amount + 10, note = 'alpha committed' where id = 1");
@@ -90,27 +132,39 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             harness.executeUpdate("update ${table} set status = 'DONE', quantity = 25, "
                     + "created_on = null where id = 6");
             harness.executeUpdate("update ${table} set note = null where id = 5");
-            harness.executeReferenceUpdate("update ${ref} set label = 'ready-current' where status = 'READY'");
-            connection.commit();
+            heapConnection.commit();
+            mvccConnection.commit();
+
+            harness.executeReferenceUpdate(
+                    "update ${ref} set label = 'ready-current' where status = 'READY'");
+            heapConnection.commit();
+            mvccConnection.commit();
 
             harness.assertCheckpoint("after committed indexed updates, delete/reinsert, and overflow rows");
-            assertIndexedLookupMatches(connection, HEAP_TABLE, "beta-u", 2);
-            assertIndexedLookupMatches(connection, MVCC_TABLE, "beta-u", 2);
+            assertIndexedLookupMatches(heapConnection, HEAP_TABLE, "beta-u", 2);
+            assertIndexedLookupMatches(mvccConnection, MVCC_TABLE, "beta-u", 2);
             assertMvccConsistent(diagnostics, mvccContainerId);
 
-            inPlaceCompressTable(connection, "HEAP_DIFF_SQL_T");
-            inPlaceCompressTable(connection, "MVCC_DIFF_SQL_T");
-            connection.commit();
+            inPlaceCompressTable(heapConnection, "HEAP_DIFF_SQL_T");
+            heapConnection.commit();
+            inPlaceCompressTable(mvccConnection, "MVCC_DIFF_SQL_T");
+            mvccConnection.commit();
             harness.assertCheckpoint("after provider maintenance");
             assertMvccConsistent(diagnostics, mvccContainerId);
-            connection.commit();
+            heapConnection.rollback();
+            mvccConnection.rollback();
         }
 
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             DifferentialHarness reopenedHarness = new DifferentialHarness(
-                    reopened, HEAP_TABLE, MVCC_TABLE, HEAP_REFERENCE_TABLE, MVCC_REFERENCE_TABLE);
+                    reopened,
+                    reopened,
+                    HEAP_TABLE,
+                    MVCC_TABLE,
+                    HEAP_REFERENCE_TABLE,
+                    MVCC_REFERENCE_TABLE);
             reopenedHarness.assertCheckpoint("after shutdown and reopen");
             assertIndexedLookupMatches(reopened, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(reopened, MVCC_TABLE, "beta-u", 2);
@@ -177,28 +231,20 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                 + "rank_value int not null) using delos_mvcc");
     }
 
-    private static void insertFixtureRows(Connection connection, DifferentialHarness harness) throws SQLException {
+    private static void insertFixtureRows(DifferentialHarness harness) throws SQLException {
         harness.insertRow(1, "alpha", 10, "READY", "1.10", "alpha initial", "2026-01-01");
         harness.insertRow(2, "beta", 20, "PENDING", "2.20", repeatedNote("beta", 300), "2026-01-02");
         harness.insertRow(3, "gamma", 30, "READY", null, null, "2026-01-03");
         harness.insertRow(4, "delta", 40, "DONE", "4.40", "delta note", null);
         harness.insertRow(5, "epsilon", 50, "READY", "5.50", repeatedNote("epsilon", 512), "2026-01-05");
         harness.insertRow(6, "zeta", 60, "PENDING", "6.60", "zeta note", "2026-01-06");
-        assertEquals("fixture row count should match for heap",
-                6L, countRows(connection, HEAP_TABLE));
-        assertEquals("fixture row count should match for MVCC",
-                6L, countRows(connection, MVCC_TABLE));
     }
 
-    private static void insertReferenceRows(Connection connection, DifferentialHarness harness) throws SQLException {
+    private static void insertReferenceRows(DifferentialHarness harness) throws SQLException {
         harness.insertReferenceRow("READY", "ready", 1);
         harness.insertReferenceRow("PENDING", "pending", 2);
         harness.insertReferenceRow("DONE", "done", 3);
         harness.insertReferenceRow("ROLLBACK", "rollback", 4);
-        assertEquals("reference row count should match for heap",
-                4L, countRows(connection, HEAP_REFERENCE_TABLE));
-        assertEquals("reference row count should match for MVCC",
-                4L, countRows(connection, MVCC_REFERENCE_TABLE));
     }
 
     private static long countRows(Connection connection, String tableName) throws SQLException {
@@ -237,7 +283,8 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
     }
 
     private static final class DifferentialHarness {
-        private final Connection connection;
+        private final Connection heapConnection;
+        private final Connection mvccConnection;
         private final String heapTable;
         private final String mvccTable;
         private final String heapReferenceTable;
@@ -245,12 +292,14 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         private final List<QueryProbe> probes;
 
         DifferentialHarness(
-                Connection connection,
+                Connection heapConnection,
+                Connection mvccConnection,
                 String heapTable,
                 String mvccTable,
                 String heapReferenceTable,
                 String mvccReferenceTable) {
-            this.connection = connection;
+            this.heapConnection = heapConnection;
+            this.mvccConnection = mvccConnection;
             this.heapTable = heapTable;
             this.mvccTable = mvccTable;
             this.heapReferenceTable = heapReferenceTable;
@@ -313,28 +362,32 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                 String amount,
                 String note,
                 String createdOn) throws SQLException {
-            insertInto(heapTable, id, code, quantity, status, amount, note, createdOn);
-            insertInto(mvccTable, id, code, quantity, status, amount, note, createdOn);
+            insertInto(heapConnection, heapTable, id, code, quantity, status, amount, note, createdOn);
+            insertInto(mvccConnection, mvccTable, id, code, quantity, status, amount, note, createdOn);
         }
 
         void insertReferenceRow(String status, String label, int rankValue) throws SQLException {
-            insertReferenceInto(heapReferenceTable, status, label, rankValue);
-            insertReferenceInto(mvccReferenceTable, status, label, rankValue);
+            insertReferenceInto(heapConnection, heapReferenceTable, status, label, rankValue);
+            insertReferenceInto(mvccConnection, mvccReferenceTable, status, label, rankValue);
         }
 
         void executeReferenceUpdate(String sqlTemplate) throws SQLException {
-            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable, heapReferenceTable));
-            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable, mvccReferenceTable));
+            int heapCount = executeSingleUpdate(
+                    heapConnection, sql(sqlTemplate, heapTable, heapReferenceTable));
+            int mvccCount = executeSingleUpdate(
+                    mvccConnection, sql(sqlTemplate, mvccTable, mvccReferenceTable));
             assertEquals("heap/MVCC reference update count mismatch for " + sqlTemplate, heapCount, mvccCount);
         }
 
         void executeUpdate(String sqlTemplate) throws SQLException {
-            int heapCount = executeSingleUpdate(sql(sqlTemplate, heapTable, heapReferenceTable));
-            int mvccCount = executeSingleUpdate(sql(sqlTemplate, mvccTable, mvccReferenceTable));
+            int heapCount = executeSingleUpdate(
+                    heapConnection, sql(sqlTemplate, heapTable, heapReferenceTable));
+            int mvccCount = executeSingleUpdate(
+                    mvccConnection, sql(sqlTemplate, mvccTable, mvccReferenceTable));
             assertEquals("heap/MVCC update count mismatch for " + sqlTemplate, heapCount, mvccCount);
         }
 
-        private int executeSingleUpdate(String sql) throws SQLException {
+        private int executeSingleUpdate(Connection connection, String sql) throws SQLException {
             try (Statement statement = connection.createStatement()) {
                 return statement.executeUpdate(sql);
             }
@@ -342,8 +395,10 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
 
         void assertCheckpoint(String checkpointName) throws SQLException {
             for (QueryProbe probe : probes) {
-                List<String> heapRows = rows(sql(probe.sqlTemplate, heapTable, heapReferenceTable));
-                List<String> mvccRows = rows(sql(probe.sqlTemplate, mvccTable, mvccReferenceTable));
+                List<String> heapRows = rows(
+                        heapConnection, sql(probe.sqlTemplate, heapTable, heapReferenceTable));
+                List<String> mvccRows = rows(
+                        mvccConnection, sql(probe.sqlTemplate, mvccTable, mvccReferenceTable));
                 assertEquals("heap/MVCC differential mismatch at checkpoint '"
                         + checkpointName + "' for probe '" + probe.name + "' using SQL "
                         + probe.sqlTemplate, heapRows, mvccRows);
@@ -351,6 +406,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         }
 
         private void insertInto(
+                Connection connection,
                 String tableName,
                 int id,
                 String code,
@@ -385,7 +441,11 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
         }
 
         private void insertReferenceInto(
-                String tableName, String status, String label, int rankValue) throws SQLException {
+                Connection connection,
+                String tableName,
+                String status,
+                String label,
+                int rankValue) throws SQLException {
             try (PreparedStatement statement = connection.prepareStatement(
                     "insert into " + tableName + " values (?, ?, ?)")) {
                 statement.setString(1, status);
@@ -396,7 +456,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             }
         }
 
-        private List<String> rows(String sql) throws SQLException {
+        private List<String> rows(Connection connection, String sql) throws SQLException {
             List<String> rows = new ArrayList<>();
             try (Statement statement = connection.createStatement(); ResultSet rs = statement.executeQuery(sql)) {
                 ResultSetMetaData metaData = rs.getMetaData();

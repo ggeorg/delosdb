@@ -44,6 +44,7 @@ public final class CrossEngineConsistencyFrameworkTest extends MvccSqlTestSuppor
                     + "(id int primary key, name varchar(32)) using delos_mvcc");
             executeUpdate(connection, "insert into cross_heap_t values (1, 'heap-alpha')");
             executeUpdate(connection, "insert into cross_heap_t values (2, 'heap-beta')");
+            connection.commit();
             executeUpdate(connection, "insert into cross_mvcc_t values (1, 'mvcc-alpha')");
             executeUpdate(connection, "insert into cross_mvcc_t values (2, 'mvcc-beta')");
             connection.commit();
@@ -103,6 +104,7 @@ public final class CrossEngineConsistencyFrameworkTest extends MvccSqlTestSuppor
             executeUpdate(connection, "create table cross_missing_heap_t (id int primary key)");
             executeUpdate(connection, "create table cross_missing_mvcc_t (id int primary key) using delos_mvcc");
             executeUpdate(connection, "insert into cross_missing_heap_t values (1)");
+            connection.commit();
             executeUpdate(connection, "insert into cross_missing_mvcc_t values (1)");
             connection.commit();
 

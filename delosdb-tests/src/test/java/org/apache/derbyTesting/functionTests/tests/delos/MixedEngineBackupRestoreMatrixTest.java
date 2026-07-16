@@ -60,6 +60,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
             executeUpdate(connection,
                     "insert into heap_mixed_backup_t values "
                             + "(2, 'heap-beta', '" + repeated('i', 128) + "')");
+            connection.commit();
             executeUpdate(connection,
                     "insert into mvcc_mixed_backup_t values "
                             + "(10, 'mvcc-alpha', '" + repeated('m', 512) + "')");
@@ -122,10 +123,11 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
                     "insert into heap_mixed_backup_t values "
                             + "(3, 'heap-gamma', '" + repeated('j', 96) + "')");
             executeUpdate(restored,
+                    "update heap_mixed_backup_t set name = 'heap-beta-restored' where id = 2");
+            restored.commit();
+            executeUpdate(restored,
                     "insert into mvcc_mixed_backup_t values "
                             + "(30, 'mvcc-gamma', '" + repeated('p', 1024) + "')");
-            executeUpdate(restored,
-                    "update heap_mixed_backup_t set name = 'heap-beta-restored' where id = 2");
             executeUpdate(restored,
                     "update mvcc_mixed_backup_t set name = 'mvcc-beta-restored' where id = 20");
             restored.commit();

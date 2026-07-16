@@ -46,7 +46,9 @@ public final class MvccSqlTableRebuildProviderTruthTest extends MvccSqlTestSuppo
             executeUpdate(connection, "create table mvcc_rebuild_drop ("
                     + "id int primary key, keep_value int, drop_value int) using delos_mvcc");
             executeUpdate(connection, "insert into mvcc_rebuild_compress values (1, 'compress-row')");
+            connection.commit();
             executeUpdate(connection, "insert into mvcc_rebuild_truncate values (2, 'truncate-row')");
+            connection.commit();
             executeUpdate(connection, "insert into mvcc_rebuild_drop values (3, 30, 300)");
             connection.commit();
 

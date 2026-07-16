@@ -53,69 +53,93 @@ public final class MvccSqlHeapParityTest extends MvccSqlTestSupport {
         String betaCommitted = "short-again";
         String epsilonCommitted = longPayload("epsilon", 9000);
 
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            createHeapAndMvccTables(connection);
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            createHeapAndMvccTables(setup);
+            setup.commit();
+        }
 
-            insertRow(connection, HEAP_TABLE, 1, "alpha", 10, "1.50", alphaInitial, 1);
-            insertRow(connection, MVCC_TABLE, 1, "alpha", 10, "1.50", alphaInitial, 1);
-            insertRow(connection, HEAP_TABLE, 2, "beta", 20, "2.75", betaLong, 0);
-            insertRow(connection, MVCC_TABLE, 2, "beta", 20, "2.75", betaLong, 0);
-            insertRow(connection, HEAP_TABLE, 3, "gamma", 30, null, null, null);
-            insertRow(connection, MVCC_TABLE, 3, "gamma", 30, null, null, null);
-            connection.commit();
+        try (Connection heapConnection = openDatabase(databaseName, false);
+             Connection mvccConnection = openDatabase(databaseName, false)) {
+            heapConnection.setAutoCommit(false);
+            mvccConnection.setAutoCommit(false);
 
-            mvccContainerId = mvccContainerId(connection, "MVCC_PARITY_T");
+            insertRow(heapConnection, HEAP_TABLE, 1, "alpha", 10, "1.50", alphaInitial, 1);
+            insertRow(heapConnection, HEAP_TABLE, 2, "beta", 20, "2.75", betaLong, 0);
+            insertRow(heapConnection, HEAP_TABLE, 3, "gamma", 30, null, null, null);
+            heapConnection.commit();
+
+            insertRow(mvccConnection, MVCC_TABLE, 1, "alpha", 10, "1.50", alphaInitial, 1);
+            insertRow(mvccConnection, MVCC_TABLE, 2, "beta", 20, "2.75", betaLong, 0);
+            insertRow(mvccConnection, MVCC_TABLE, 3, "gamma", 30, null, null, null);
+            mvccConnection.commit();
+
+            mvccContainerId = mvccContainerId(mvccConnection, "MVCC_PARITY_T");
             assertMvccConsistent(diagnostics, mvccContainerId);
-            assertHeapAndMvccSummaries(connection,
+            assertHeapAndMvccSummaries(
+                    heapConnection,
+                    mvccConnection,
                     summary(1, "alpha", 10, "1.50", alphaInitial, 1),
                     summary(2, "beta", 20, "2.75", betaLong, 0),
                     summary(3, "gamma", 30, "NULL", null, null));
 
-            Savepoint savepoint = connection.setSavepoint("HEAP_MVCC_PARITY_SP");
-            updatePayloadAndQuantity(connection, HEAP_TABLE, 1, 999, rolledBack);
-            updatePayloadAndQuantity(connection, MVCC_TABLE, 1, 999, rolledBack);
-            assertEquals(1, executeUpdate(connection, "delete from " + HEAP_TABLE + " where id = 2"));
-            assertEquals(1, executeUpdate(connection, "delete from " + MVCC_TABLE + " where id = 2"));
-            insertRow(connection, HEAP_TABLE, 4, "delta", 40, "4.40", rolledBack, 4);
-            insertRow(connection, MVCC_TABLE, 4, "delta", 40, "4.40", rolledBack, 4);
-            connection.rollback(savepoint);
+            Savepoint heapSavepoint = heapConnection.setSavepoint("HEAP_PARITY_SP");
+            Savepoint mvccSavepoint = mvccConnection.setSavepoint("MVCC_PARITY_SP");
+            updatePayloadAndQuantity(heapConnection, HEAP_TABLE, 1, 999, rolledBack);
+            updatePayloadAndQuantity(mvccConnection, MVCC_TABLE, 1, 999, rolledBack);
+            assertEquals(1, executeUpdate(heapConnection, "delete from " + HEAP_TABLE + " where id = 2"));
+            assertEquals(1, executeUpdate(mvccConnection, "delete from " + MVCC_TABLE + " where id = 2"));
+            insertRow(heapConnection, HEAP_TABLE, 4, "delta", 40, "4.40", rolledBack, 4);
+            insertRow(mvccConnection, MVCC_TABLE, 4, "delta", 40, "4.40", rolledBack, 4);
+            heapConnection.rollback(heapSavepoint);
+            mvccConnection.rollback(mvccSavepoint);
 
-            assertHeapAndMvccSummaries(connection,
+            assertHeapAndMvccSummaries(
+                    heapConnection,
+                    mvccConnection,
                     summary(1, "alpha", 10, "1.50", alphaInitial, 1),
                     summary(2, "beta", 20, "2.75", betaLong, 0),
                     summary(3, "gamma", 30, "NULL", null, null));
             assertMvccConsistent(diagnostics, mvccContainerId);
 
-            updateCommittedAlpha(connection, HEAP_TABLE, alphaCommitted);
-            updateCommittedAlpha(connection, MVCC_TABLE, alphaCommitted);
-            updateCommittedBeta(connection, HEAP_TABLE, betaCommitted);
-            updateCommittedBeta(connection, MVCC_TABLE, betaCommitted);
-            assertEquals(1, executeUpdate(connection, "delete from " + HEAP_TABLE + " where id = 3"));
-            assertEquals(1, executeUpdate(connection, "delete from " + MVCC_TABLE + " where id = 3"));
-            insertRow(connection, HEAP_TABLE, 5, "epsilon", 50, "5.55", epsilonCommitted, 5);
-            insertRow(connection, MVCC_TABLE, 5, "epsilon", 50, "5.55", epsilonCommitted, 5);
-            connection.commit();
+            updateCommittedAlpha(heapConnection, HEAP_TABLE, alphaCommitted);
+            updateCommittedBeta(heapConnection, HEAP_TABLE, betaCommitted);
+            assertEquals(1, executeUpdate(heapConnection, "delete from " + HEAP_TABLE + " where id = 3"));
+            insertRow(heapConnection, HEAP_TABLE, 5, "epsilon", 50, "5.55", epsilonCommitted, 5);
+            heapConnection.commit();
 
-            assertHeapAndMvccSummaries(connection,
+            updateCommittedAlpha(mvccConnection, MVCC_TABLE, alphaCommitted);
+            updateCommittedBeta(mvccConnection, MVCC_TABLE, betaCommitted);
+            assertEquals(1, executeUpdate(mvccConnection, "delete from " + MVCC_TABLE + " where id = 3"));
+            insertRow(mvccConnection, MVCC_TABLE, 5, "epsilon", 50, "5.55", epsilonCommitted, 5);
+            mvccConnection.commit();
+
+            assertHeapAndMvccSummaries(
+                    heapConnection,
+                    mvccConnection,
                     summary(1, "alpha", 15, "11.50", alphaCommitted, 2),
                     summary(2, "beta-u", 20, "2.75", betaCommitted, 0),
                     summary(5, "epsilon", 50, "5.55", epsilonCommitted, 5));
-            assertIndexedLookupMatches(connection, HEAP_TABLE, "beta-u", 2);
-            assertIndexedLookupMatches(connection, MVCC_TABLE, "beta-u", 2);
+            assertIndexedLookupMatches(heapConnection, HEAP_TABLE, "beta-u", 2);
+            assertIndexedLookupMatches(mvccConnection, MVCC_TABLE, "beta-u", 2);
             assertMvccConsistent(diagnostics, mvccContainerId);
 
-            inPlaceCompressTable(connection, "HEAP_PARITY_T");
-            inPlaceCompressTable(connection, "MVCC_PARITY_T");
-            connection.commit();
+            inPlaceCompressTable(heapConnection, "HEAP_PARITY_T");
+            heapConnection.commit();
+            inPlaceCompressTable(mvccConnection, "MVCC_PARITY_T");
+            mvccConnection.commit();
+
             assertFalse("MVCC heap-parity vacuum should not be skipped",
                     diagnostics.lastVacuumSkippedForTesting(0, mvccContainerId));
-            assertHeapAndMvccSummaries(connection,
+            assertHeapAndMvccSummaries(
+                    heapConnection,
+                    mvccConnection,
                     summary(1, "alpha", 15, "11.50", alphaCommitted, 2),
                     summary(2, "beta-u", 20, "2.75", betaCommitted, 0),
                     summary(5, "epsilon", 50, "5.55", epsilonCommitted, 5));
             assertMvccConsistent(diagnostics, mvccContainerId);
-            connection.commit();
+            heapConnection.rollback();
+            mvccConnection.rollback();
         }
 
         shutdownDatabase(databaseName);
@@ -236,9 +260,16 @@ public final class MvccSqlHeapParityTest extends MvccSqlTestSupport {
 
     private static void assertHeapAndMvccSummaries(Connection connection, String... expected)
             throws SQLException {
+        assertHeapAndMvccSummaries(connection, connection, expected);
+    }
+
+    private static void assertHeapAndMvccSummaries(
+            Connection heapConnection,
+            Connection mvccConnection,
+            String... expected) throws SQLException {
         List<String> expectedRows = List.of(expected);
-        List<String> heapRows = summaries(connection, HEAP_TABLE);
-        List<String> mvccRows = summaries(connection, MVCC_TABLE);
+        List<String> heapRows = summaries(heapConnection, HEAP_TABLE);
+        List<String> mvccRows = summaries(mvccConnection, MVCC_TABLE);
         assertEquals("heap summary mismatch", expectedRows, heapRows);
         assertEquals("MVCC summary mismatch", expectedRows, mvccRows);
         assertEquals("heap and MVCC summaries must match", heapRows, mvccRows);

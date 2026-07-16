@@ -129,30 +129,41 @@ public final class MvccSqlSavepointTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testMixedHeapAndMvccRollbackToSavepointIsAtomicAcrossStores() throws Exception {
-        String databaseName = databaseName("mvcc-sql-savepoint-mixed-db");
+    public void testHeapAndMvccSavepointsRemainSupportedInIndependentTransactions() throws Exception {
+        String databaseName = databaseName("mvcc-sql-savepoint-independent-providers-db");
 
-        try (Connection connection = openDatabase(databaseName, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_sp_t (id int primary key, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_sp_mixed_t (id int primary key, name varchar(32)) using delos_mvcc");
-            executeUpdate(connection, "insert into heap_sp_t values (1, 'heap-before')");
-            executeUpdate(connection, "insert into mvcc_sp_mixed_t values (1, 'mvcc-before')");
-            connection.commit();
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table heap_sp_t (id int primary key, name varchar(32))");
+            executeUpdate(setup, "create table mvcc_sp_mixed_t (id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(setup, "insert into heap_sp_t values (1, 'heap-before')");
+            setup.commit();
+            executeUpdate(setup, "insert into mvcc_sp_mixed_t values (1, 'mvcc-before')");
+            setup.commit();
+        }
 
-            Savepoint savepoint = connection.setSavepoint("S1");
-            executeUpdate(connection, "insert into heap_sp_t values (2, 'heap-after')");
-            executeUpdate(connection, "insert into mvcc_sp_mixed_t values (2, 'mvcc-after')");
-            connection.rollback(savepoint);
-            connection.commit();
+        try (Connection heapConnection = openDatabase(databaseName, false);
+             Connection mvccConnection = openDatabase(databaseName, false)) {
+            heapConnection.setAutoCommit(false);
+            mvccConnection.setAutoCommit(false);
 
-            assertRows(connection,
+            Savepoint heapSavepoint = heapConnection.setSavepoint("HEAP_S1");
+            Savepoint mvccSavepoint = mvccConnection.setSavepoint("MVCC_S1");
+            executeUpdate(heapConnection, "insert into heap_sp_t values (2, 'heap-after')");
+            executeUpdate(mvccConnection, "insert into mvcc_sp_mixed_t values (2, 'mvcc-after')");
+            heapConnection.rollback(heapSavepoint);
+            mvccConnection.rollback(mvccSavepoint);
+            heapConnection.commit();
+            mvccConnection.commit();
+
+            assertRows(heapConnection,
                     "select id, name from heap_sp_t order by id",
                     "1|heap-before");
-            assertRows(connection,
+            assertRows(mvccConnection,
                     "select id, name from mvcc_sp_mixed_t order by id",
                     "1|mvcc-before");
-            connection.rollback();
+            heapConnection.rollback();
+            mvccConnection.rollback();
         }
 
         shutdownDatabase(databaseName);

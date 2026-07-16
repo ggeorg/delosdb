@@ -168,9 +168,11 @@ public final class MvccSqlPurgeDaemonSchedulingTest extends MvccSqlTestSupport {
                     diagnostics.databaseMaintenanceAcceptingForTesting(0, firstContainerId));
 
             executeUpdate(connection, "insert into maintenance_a values (1, 'a1')");
+            connection.commit();
             executeUpdate(connection, "insert into maintenance_b values (1, 'b1')");
             connection.commit();
             executeUpdate(connection, "update maintenance_a set payload = 'a2' where id = 1");
+            connection.commit();
             executeUpdate(connection, "update maintenance_b set payload = 'b2' where id = 1");
             connection.commit();
 

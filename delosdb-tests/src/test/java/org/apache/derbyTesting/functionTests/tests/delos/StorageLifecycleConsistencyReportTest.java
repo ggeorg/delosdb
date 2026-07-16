@@ -46,6 +46,7 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
                     + "(id int primary key, payload varchar(64))");
             executeUpdate(connection, "insert into heap_lifecycle_report_t values (1, 'heap-one')");
             executeUpdate(connection, "insert into heap_lifecycle_report_t values (2, 'heap-two')");
+            connection.commit();
 
             executeUpdate(connection, "create table mvcc_lifecycle_report_t "
                     + "(id int primary key, category varchar(16), payload varchar(32672)) using delos_mvcc");

@@ -44,6 +44,7 @@ public final class StorageStatisticsFoundationTest extends MvccSqlTestSupport {
                     + "(id int primary key, name varchar(32)) using delos_mvcc");
             executeUpdate(connection, "insert into stats_heap_t values (1, 'heap-alpha')");
             executeUpdate(connection, "insert into stats_heap_t values (2, 'heap-beta')");
+            connection.commit();
             executeUpdate(connection, "insert into stats_mvcc_t values (1, 'mvcc-alpha')");
             executeUpdate(connection, "insert into stats_mvcc_t values (2, 'mvcc-beta')");
             connection.commit();

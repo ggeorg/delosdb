@@ -43,6 +43,7 @@ public final class StorageSharedServiceReadinessReportTest extends MvccSqlTestSu
                     + "(id int primary key, payload varchar(64))");
             executeUpdate(connection, "insert into heap_shared_service_t values (1, 'heap-one')");
             executeUpdate(connection, "insert into heap_shared_service_t values (2, 'heap-two')");
+            connection.commit();
 
             executeUpdate(connection, "create table mvcc_shared_service_t "
                     + "(id int primary key, category varchar(16), payload varchar(256)) using delos_mvcc");

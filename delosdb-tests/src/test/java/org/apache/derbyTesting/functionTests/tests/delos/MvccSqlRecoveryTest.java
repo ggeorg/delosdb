@@ -65,10 +65,10 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     }
 
 
-    public void testCommittedHeapAndMvccTransactionSurvivesProcessHaltAndRecovery() throws Exception {
+    public void testSequentialHeapAndMvccTransactionsSurviveProcessHaltAndRecovery() throws Exception {
         String databaseName = databaseName("mvcc-sql-crash-mixed-commit-db");
 
-        runCrashBoundaryWorker("commit-mixed-insert", databaseName);
+        runCrashBoundaryWorker("commit-sequential-heap-mvcc-inserts", databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertRows(reopened,
@@ -81,10 +81,10 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
     }
 
 
-    public void testUncommittedHeapAndMvccTransactionDoesNotSurviveProcessHaltAndRecovery() throws Exception {
+    public void testIndependentUncommittedHeapAndMvccTransactionsDoNotSurviveProcessHaltAndRecovery() throws Exception {
         String databaseName = databaseName("mvcc-sql-crash-mixed-uncommitted-db");
 
-        runCrashBoundaryWorker("uncommitted-mixed-insert", databaseName);
+        runCrashBoundaryWorker("uncommitted-independent-heap-mvcc-inserts", databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertRows(reopened,
@@ -364,11 +364,11 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             case "uncommitted-mvcc-insert":
                 uncommittedMvccInsert(databaseName);
                 break;
-            case "commit-mixed-insert":
-                commitMixedInsert(databaseName);
+            case "commit-sequential-heap-mvcc-inserts":
+                commitSequentialHeapMvccInserts(databaseName);
                 break;
-            case "uncommitted-mixed-insert":
-                uncommittedMixedInsert(databaseName);
+            case "uncommitted-independent-heap-mvcc-inserts":
+                uncommittedIndependentHeapMvccInserts(databaseName);
                 break;
             case "vacuum-stale-checkpoint":
                 vacuumWithStaleCheckpoint(databaseName);
@@ -400,13 +400,14 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             }
         }
 
-        private static void commitMixedInsert(String databaseName) throws Exception {
+        private static void commitSequentialHeapMvccInserts(String databaseName) throws Exception {
             Connection connection = openDatabase(databaseName, true);
             connection.setAutoCommit(false);
             executeUpdate(connection, "create table heap_crash_commit_t (id int primary key, name varchar(32))");
             executeUpdate(connection, "create table mvcc_crash_mixed_commit_t (id int primary key, name varchar(32)) using delos_mvcc");
             connection.commit();
             executeUpdate(connection, "insert into heap_crash_commit_t values (1, 'heap-committed')");
+            connection.commit();
             executeUpdate(connection, "insert into mvcc_crash_mixed_commit_t values (1, 'mvcc-committed')");
             connection.commit();
             Runtime.getRuntime().halt(0);
@@ -414,46 +415,58 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
 
 
         private static void heapMvccDifferentialWorkload(String databaseName) throws Exception {
-            Connection connection = openDatabase(databaseName, true);
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_recovery_diff_t "
-                    + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
-                    + "payload varchar(1200))");
-            executeUpdate(connection, "create table mvcc_recovery_diff_t "
-                    + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
-                    + "payload varchar(1200)) using delos_mvcc");
-            executeUpdate(connection, "create index heap_recovery_diff_code_idx on heap_recovery_diff_t(code)");
-            executeUpdate(connection, "create index mvcc_recovery_diff_code_idx on mvcc_recovery_diff_t(code)");
-            executeUpdate(connection, "create index heap_recovery_diff_status_qty_idx "
-                    + "on heap_recovery_diff_t(status, quantity)");
-            executeUpdate(connection, "create index mvcc_recovery_diff_status_qty_idx "
-                    + "on mvcc_recovery_diff_t(status, quantity)");
+            try (Connection setup = openDatabase(databaseName, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup, "create table heap_recovery_diff_t "
+                        + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
+                        + "payload varchar(1200))");
+                executeUpdate(setup, "create table mvcc_recovery_diff_t "
+                        + "(id int primary key, code varchar(32), status varchar(16), quantity int, "
+                        + "payload varchar(1200)) using delos_mvcc");
+                executeUpdate(setup, "create index heap_recovery_diff_code_idx on heap_recovery_diff_t(code)");
+                executeUpdate(setup, "create index mvcc_recovery_diff_code_idx on mvcc_recovery_diff_t(code)");
+                executeUpdate(setup, "create index heap_recovery_diff_status_qty_idx "
+                        + "on heap_recovery_diff_t(status, quantity)");
+                executeUpdate(setup, "create index mvcc_recovery_diff_status_qty_idx "
+                        + "on mvcc_recovery_diff_t(status, quantity)");
+                setup.commit();
+            }
 
-            seedRecoveryDifferentialTable(connection, "heap_recovery_diff_t");
-            seedRecoveryDifferentialTable(connection, "mvcc_recovery_diff_t");
-            connection.commit();
+            Connection heapConnection = openDatabase(databaseName, false);
+            Connection mvccConnection = openDatabase(databaseName, false);
+            heapConnection.setAutoCommit(false);
+            mvccConnection.setAutoCommit(false);
 
-            applyCommittedRecoveryMutations(connection, "heap_recovery_diff_t");
-            applyCommittedRecoveryMutations(connection, "mvcc_recovery_diff_t");
-            connection.commit();
+            seedRecoveryDifferentialTable(heapConnection, "heap_recovery_diff_t");
+            heapConnection.commit();
+            seedRecoveryDifferentialTable(mvccConnection, "mvcc_recovery_diff_t");
+            mvccConnection.commit();
 
-            java.sql.Savepoint savepoint = connection.setSavepoint("RECOVERY_DIFF_ROLLBACK");
-            executeUpdate(connection, "update heap_recovery_diff_t set code = 'transient' where id = 1");
-            executeUpdate(connection, "update mvcc_recovery_diff_t set code = 'transient' where id = 1");
-            executeUpdate(connection, "insert into heap_recovery_diff_t values "
+            applyCommittedRecoveryMutations(heapConnection, "heap_recovery_diff_t");
+            heapConnection.commit();
+            applyCommittedRecoveryMutations(mvccConnection, "mvcc_recovery_diff_t");
+            mvccConnection.commit();
+
+            java.sql.Savepoint heapSavepoint = heapConnection.setSavepoint("HEAP_RECOVERY_DIFF_ROLLBACK");
+            java.sql.Savepoint mvccSavepoint = mvccConnection.setSavepoint("MVCC_RECOVERY_DIFF_ROLLBACK");
+            executeUpdate(heapConnection, "update heap_recovery_diff_t set code = 'transient' where id = 1");
+            executeUpdate(mvccConnection, "update mvcc_recovery_diff_t set code = 'transient' where id = 1");
+            executeUpdate(heapConnection, "insert into heap_recovery_diff_t values "
                     + "(6, 'rolled-back', 'ready', 60, 'rolled-back')");
-            executeUpdate(connection, "insert into mvcc_recovery_diff_t values "
+            executeUpdate(mvccConnection, "insert into mvcc_recovery_diff_t values "
                     + "(6, 'rolled-back', 'ready', 60, 'rolled-back')");
-            connection.rollback(savepoint);
-            connection.commit();
+            heapConnection.rollback(heapSavepoint);
+            mvccConnection.rollback(mvccSavepoint);
+            heapConnection.commit();
+            mvccConnection.commit();
 
-            executeUpdate(connection, "update heap_recovery_diff_t set code = 'uncommitted' where id = 4");
-            executeUpdate(connection, "update mvcc_recovery_diff_t set code = 'uncommitted' where id = 4");
-            executeUpdate(connection, "delete from heap_recovery_diff_t where id = 1");
-            executeUpdate(connection, "delete from mvcc_recovery_diff_t where id = 1");
-            executeUpdate(connection, "insert into heap_recovery_diff_t values "
+            executeUpdate(heapConnection, "update heap_recovery_diff_t set code = 'uncommitted' where id = 4");
+            executeUpdate(mvccConnection, "update mvcc_recovery_diff_t set code = 'uncommitted' where id = 4");
+            executeUpdate(heapConnection, "delete from heap_recovery_diff_t where id = 1");
+            executeUpdate(mvccConnection, "delete from mvcc_recovery_diff_t where id = 1");
+            executeUpdate(heapConnection, "insert into heap_recovery_diff_t values "
                     + "(7, 'uncommitted', 'pending', 70, 'uncommitted')");
-            executeUpdate(connection, "insert into mvcc_recovery_diff_t values "
+            executeUpdate(mvccConnection, "insert into mvcc_recovery_diff_t values "
                     + "(7, 'uncommitted', 'pending', 70, 'uncommitted')");
             Runtime.getRuntime().halt(0);
         }
@@ -552,16 +565,21 @@ public final class MvccSqlRecoveryTest extends MvccSqlTestSupport {
             }
         }
 
-        private static void uncommittedMixedInsert(String databaseName) throws Exception {
-            try (Connection connection = openDatabase(databaseName, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection, "create table heap_crash_uncommitted_t (id int primary key, name varchar(32))");
-                executeUpdate(connection, "create table mvcc_crash_mixed_uncommitted_t (id int primary key, name varchar(32)) using delos_mvcc");
-                connection.commit();
-                executeUpdate(connection, "insert into heap_crash_uncommitted_t values (1, 'heap-uncommitted')");
-                executeUpdate(connection, "insert into mvcc_crash_mixed_uncommitted_t values (1, 'mvcc-uncommitted')");
-                Runtime.getRuntime().halt(0);
+        private static void uncommittedIndependentHeapMvccInserts(String databaseName) throws Exception {
+            try (Connection setup = openDatabase(databaseName, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup, "create table heap_crash_uncommitted_t (id int primary key, name varchar(32))");
+                executeUpdate(setup, "create table mvcc_crash_mixed_uncommitted_t (id int primary key, name varchar(32)) using delos_mvcc");
+                setup.commit();
             }
+
+            Connection heapConnection = openDatabase(databaseName, false);
+            Connection mvccConnection = openDatabase(databaseName, false);
+            heapConnection.setAutoCommit(false);
+            mvccConnection.setAutoCommit(false);
+            executeUpdate(heapConnection, "insert into heap_crash_uncommitted_t values (1, 'heap-uncommitted')");
+            executeUpdate(mvccConnection, "insert into mvcc_crash_mixed_uncommitted_t values (1, 'mvcc-uncommitted')");
+            Runtime.getRuntime().halt(0);
         }
     }
 

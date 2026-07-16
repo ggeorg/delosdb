@@ -50,6 +50,7 @@ public final class StorageMetadataProviderChainTest extends MvccSqlTestSupport {
                         + "(id int primary key, name varchar(32), payload varchar(128)) using delos_mvcc");
                 executeUpdate(connection, "insert into metadata_heap_t values (1, 'heap-alpha', 'heap-one')");
                 executeUpdate(connection, "insert into metadata_heap_t values (2, 'heap-beta', 'heap-two')");
+                connection.commit();
                 executeUpdate(connection, "insert into metadata_mvcc_t values (1, 'mvcc-alpha', 'mvcc-one')");
                 executeUpdate(connection, "insert into metadata_mvcc_t values (2, 'mvcc-beta', 'mvcc-two')");
                 executeUpdate(connection, "insert into metadata_mvcc_t values (3, 'mvcc-gamma', 'mvcc-three')");

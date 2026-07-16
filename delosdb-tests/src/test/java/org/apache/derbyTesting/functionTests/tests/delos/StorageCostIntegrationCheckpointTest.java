@@ -49,6 +49,7 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                         + "(id int primary key, name varchar(32), payload varchar(128)) using delos_mvcc");
                 executeUpdate(connection, "insert into cost_heap_t values (1, 'alpha', 'heap-one')");
                 executeUpdate(connection, "insert into cost_heap_t values (2, 'beta', 'heap-two')");
+                connection.commit();
                 executeUpdate(connection, "insert into cost_mvcc_t values (1, 'alpha', 'mvcc-one')");
                 executeUpdate(connection, "insert into cost_mvcc_t values (2, 'beta', 'mvcc-two')");
                 executeUpdate(connection, "insert into cost_mvcc_t values (3, 'gamma', 'mvcc-three')");

@@ -47,6 +47,7 @@ public final class StorageOptimizerReviewGateTest extends MvccSqlTestSupport {
                     + "(id int primary key, name varchar(32), payload varchar(128)) using delos_mvcc");
             executeUpdate(connection, "insert into optimizer_review_heap_t values (1, 'heap-alpha', 'one')");
             executeUpdate(connection, "insert into optimizer_review_heap_t values (2, 'heap-beta', 'two')");
+            connection.commit();
             executeUpdate(connection, "insert into optimizer_review_mvcc_t values (1, 'mvcc-alpha', 'one')");
             executeUpdate(connection, "insert into optimizer_review_mvcc_t values (2, 'mvcc-beta', 'two')");
             executeUpdate(connection, "insert into optimizer_review_mvcc_t values (3, 'mvcc-gamma', 'three')");
