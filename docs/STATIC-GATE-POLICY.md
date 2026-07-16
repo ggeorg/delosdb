@@ -87,7 +87,8 @@ They are not executable release authority.
 * MVCC diagnostics can bind to an explicit database context;
 * SQL and metadata tests do not use directory-free MVCC diagnostics;
 * explicit statistics and optimizer metadata hooks bind to Derby's owning database service;
-* embedded SQL reopen tests explicitly open persisted MVCC conglomerates without row scans;
+* embedded SQL reopen tests activate persisted MVCC base tables through `LOCK TABLE ... IN SHARE MODE`;
+* reopen helpers do not invoke internal transaction APIs outside Derby's JDBC context or scan user rows;
 * `RAMAccessManager` stops ServiceLoader-booted access-method factories and releases their runtime leases.
 
 Run it directly with:

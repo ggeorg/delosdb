@@ -3163,12 +3163,20 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             if (!sqlTestSupportText.contains('ConglomerateFactory.MVCC_FACTORY_ID')) {
                 failures << 'Embedded SQL reopen helper must select only persisted MVCC conglomerates'
             }
-            if (!sqlTestSupportText.contains('TransactionController.ISOLATION_NOLOCK')) {
-                failures << 'Embedded SQL reopen helper must not add row-read or transaction-lock semantics'
+            if (!sqlTestSupportText.contains('and c.isindex = false')) {
+                failures << 'Embedded SQL reopen helper must activate MVCC base tables rather than indexes'
             }
-            if (!sqlTestSupportText.contains('transaction.openConglomerate(')
-                    || !sqlTestSupportText.contains('controller.close();')) {
-                failures << 'Embedded SQL reopen helper must open and close conglomerate controllers explicitly'
+            if (!sqlTestSupportText.contains('lock table ')
+                    || !sqlTestSupportText.contains(' in share mode')) {
+                failures << 'Embedded SQL reopen helper must activate tables through context-safe LOCK TABLE execution'
+            }
+            if (sqlTestSupportText.contains('transaction.openConglomerate(')
+                    || sqlTestSupportText.contains('getTransactionExecute()')) {
+                failures << 'Embedded SQL reopen helper must not call internal transaction APIs outside a JDBC context'
+            }
+            if (sqlTestSupportText.contains('select * from ')
+                    || sqlTestSupportText.contains('fetch first row')) {
+                failures << 'Embedded SQL reopen helper must not activate MVCC by scanning user rows'
             }
 
             if (!sqlTestDirectory.isDirectory()) {

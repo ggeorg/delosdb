@@ -36,14 +36,10 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.derby.iapi.store.access.ConglomerateController;
-import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
-import org.apache.derby.impl.jdbc.EmbedConnection;
-import org.apache.derby.shared.common.error.StandardException;
 
 import junit.framework.TestCase;
 
@@ -59,55 +55,44 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
     /**
-     * Boot persisted MVCC access-method state without executing a row scan.
+     * Boot persisted MVCC access-method state through Derby's SQL execution context.
      *
      * <p>Derby loads external conglomerate factories lazily. After a clean
      * database shutdown and reopen, catalog access alone therefore does not
      * create the database-scoped MVCC runtime. SQL integration tests that
-     * inspect storage state immediately after reopen must explicitly open the
-     * persisted MVCC conglomerates first. Opening and closing a conglomerate
-     * controller establishes the normal Derby ownership path without changing
-     * rows or diagnostic scan counters.</p>
+     * inspect storage state immediately after reopen explicitly lock each
+     * persisted MVCC base table in share mode. Derby's LOCK TABLE execution
+     * opens and closes the owning base conglomerate without scanning rows or
+     * changing storage diagnostic counters.</p>
      */
     private static void activatePersistedMvccConglomerates(Connection connection) throws SQLException {
-        List<Long> mvccConglomerates = new ArrayList<>();
+        List<String> mvccTables = new ArrayList<>();
+        String catalogQuery = "select s.schemaname, t.tablename, c.conglomeratenumber "
+                + "from sys.sysconglomerates c, sys.systables t, sys.sysschemas s "
+                + "where c.tableid = t.tableid "
+                + "and t.schemaid = s.schemaid "
+                + "and c.isindex = false";
         try (Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery(
-                     "select conglomeratenumber from sys.sysconglomerates")) {
+             ResultSet rs = statement.executeQuery(catalogQuery)) {
             while (rs.next()) {
-                long conglomerateId = rs.getLong(1);
+                long conglomerateId = rs.getLong(3);
                 if ((conglomerateId & 0x0fL) == ConglomerateFactory.MVCC_FACTORY_ID) {
-                    mvccConglomerates.add(conglomerateId);
+                    mvccTables.add(delimitedIdentifier(rs.getString(1))
+                            + "."
+                            + delimitedIdentifier(rs.getString(2)));
                 }
             }
         }
-        if (mvccConglomerates.isEmpty()) {
-            return;
-        }
 
-        if (!(connection instanceof EmbedConnection embeddedConnection)) {
-            throw new SQLException(
-                    "Expected an embedded Derby connection while activating MVCC conglomerates");
-        }
-
-        TransactionController transaction =
-                embeddedConnection.getLanguageConnection().getTransactionExecute();
-        for (long conglomerateId : mvccConglomerates) {
-            try {
-                ConglomerateController controller = transaction.openConglomerate(
-                        conglomerateId,
-                        false,
-                        0,
-                        TransactionController.MODE_RECORD,
-                        TransactionController.ISOLATION_NOLOCK);
-                controller.close();
-            } catch (StandardException e) {
-                throw new SQLException(
-                        "Could not activate persisted MVCC conglomerate " + conglomerateId,
-                        e.getSQLState(),
-                        e);
+        try (Statement statement = connection.createStatement()) {
+            for (String tableName : mvccTables) {
+                statement.executeUpdate("lock table " + tableName + " in share mode");
             }
         }
+    }
+
+    private static String delimitedIdentifier(String identifier) {
+        return '"' + identifier.replace("\"", "\"\"") + '"';
     }
 
     protected static void shutdownDatabase(String databaseName) throws SQLException {

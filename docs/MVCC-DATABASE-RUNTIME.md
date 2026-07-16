@@ -78,15 +78,15 @@ to boot most recently.
 Derby discovers external conglomerate factories lazily. Reopening a database and reading only its
 system catalogs does not by itself open a persisted MVCC conglomerate or acquire the database's
 MVCC runtime. The runtime becomes active when Derby opens an MVCC conglomerate through the normal
-transaction-controller path.
+SQL execution and transaction-controller path.
 
 The embedded SQL integration helper therefore performs one explicit reopen step for existing
 databases:
 
 ```text
-read persisted conglomerate identifiers from SYS.SYSCONGLOMERATES
-select identifiers owned by MVCC factory id 2
-open and close each conglomerate controller with ISOLATION_NOLOCK
+read persisted base-table ownership from SYS.SYSCONGLOMERATES
+select tables whose base conglomerate is owned by MVCC factory id 2
+execute LOCK TABLE <qualified-name> IN SHARE MODE through the reopened JDBC connection
 return the connection without scanning rows or changing diagnostic counters
 ```
 
