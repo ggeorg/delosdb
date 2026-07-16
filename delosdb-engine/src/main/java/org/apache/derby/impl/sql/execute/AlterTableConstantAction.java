@@ -78,6 +78,7 @@ import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.SortController;
 import org.apache.derby.iapi.store.access.SortObserver;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
@@ -401,6 +402,8 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 				SQLState.LANG_TABLE_NOT_FOUND_DURING_EXECUTION, tableName);
 		}
 
+        rejectUnsupportedMvccTableRebuild();
+
 		if (truncateTable)
 			dm.invalidateFor(td, DependencyManager.TRUNCATE_TABLE, lcc);
 		else
@@ -697,6 +700,48 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
             truncateTable();
 		}
 	}
+
+    /**
+     * Reject inherited table-rebuild paths that would otherwise recreate an
+     * MVCC base table as a Derby heap.
+     *
+     * <p>The inherited COMPRESS, TRUNCATE, and DROP COLUMN implementations
+     * create replacement base conglomerates. DelosDB must not allow those
+     * operations to change the persisted storage provider silently. Until a
+     * provider-preserving rebuild participates in the database-level atomic
+     * transaction protocol, these operations fail before catalog or table
+     * mutation.</p>
+     */
+    private void rejectUnsupportedMvccTableRebuild() throws StandardException {
+        if (!DelosStorageProviderIds.isMvcc(td.getStorageProviderName())) {
+            return;
+        }
+
+        String feature = null;
+        if (compressTable) {
+            feature = "ALTER TABLE COMPRESS for delos_mvcc tables";
+        } else if (truncateTable) {
+            feature = "TRUNCATE TABLE for delos_mvcc tables";
+        } else if (dropsColumn()) {
+            feature = "ALTER TABLE DROP COLUMN for delos_mvcc tables";
+        }
+
+        if (feature != null) {
+            throw StandardException.newException(SQLState.NOT_IMPLEMENTED, feature);
+        }
+    }
+
+    private boolean dropsColumn() {
+        if (columnInfo == null) {
+            return false;
+        }
+        for (ColumnInfo info : columnInfo) {
+            if (info.action == ColumnInfo.DROP) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Clear the state of this constant action.

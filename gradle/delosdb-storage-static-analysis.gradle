@@ -3226,6 +3226,93 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccTableRebuildProviderTruthStaticAnalysis') {
+    group = 'verification'
+    description = 'Prevents inherited table rebuild DDL from silently converting delos_mvcc tables to heap.'
+
+    def alterTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AlterTableConstantAction.java')
+    def longRowTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.java')
+    def rebuildTruthTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTableRebuildProviderTruthTest.java')
+    inputs.files(alterTableFile, longRowTestFile, rebuildTruthTestFile)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-table-rebuild-provider-truth-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        [alterTableFile, longRowTestFile, rebuildTruthTestFile].each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required source: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def alterText = alterTableFile.getText('UTF-8')
+            def longRowText = longRowTestFile.getText('UTF-8')
+            def truthTestText = rebuildTruthTestFile.getText('UTF-8')
+
+            if (!alterText.contains('rejectUnsupportedMvccTableRebuild();')) {
+                failures << 'AlterTableConstantAction must reject unsupported MVCC rebuild DDL before mutation'
+            }
+            if (!alterText.contains('DelosStorageProviderIds.isMvcc(td.getStorageProviderName())')) {
+                failures << 'MVCC rebuild rejection must use the persisted table storage-provider identity'
+            }
+            ['ALTER TABLE COMPRESS for delos_mvcc tables',
+             'TRUNCATE TABLE for delos_mvcc tables',
+             'ALTER TABLE DROP COLUMN for delos_mvcc tables'].each { feature ->
+                if (!alterText.contains(feature)) {
+                    failures << 'Missing explicit unsupported MVCC rebuild feature: ' + feature
+                }
+            }
+            if (!alterText.contains('SQLState.NOT_IMPLEMENTED')) {
+                failures << 'Unsupported MVCC rebuild DDL must use stable SQLState 0A000'
+            }
+            def guardIndex = alterText.indexOf('rejectUnsupportedMvccTableRebuild();')
+            def activationIndex = alterText.indexOf('activation.setDDLTableDescriptor(td)')
+            if (guardIndex < 0 || activationIndex < 0 || guardIndex > activationIndex) {
+                failures << 'MVCC rebuild rejection must occur before DDL table activation and mutation work'
+            }
+            if (!longRowText.contains('inPlaceCompressTable(connection, "MVCC_LONG_ROW_T")')) {
+                failures << 'Long-row MVCC vacuum proof must use provider-preserving in-place compression'
+            }
+            if (longRowText.contains('SYSCS_COMPRESS_TABLE')) {
+                failures << 'Long-row MVCC proof must not use inherited offline table rebuild compression'
+            }
+            ['alter table mvcc_rebuild_compress compress sequential',
+             'SYSCS_COMPRESS_TABLE', 'truncate table mvcc_rebuild_truncate',
+             'drop column drop_value', 'NOT_IMPLEMENTED_SQLSTATE = "0A000"',
+             'ROUTINE_EXCEPTION_SQLSTATE = "38000"', 'assertDirectlyRejected',
+             'assertRoutineRejected', 'assertMvccStorageProvider'].each { token ->
+                if (!truthTestText.contains(token)) {
+                    failures << 'MVCC rebuild truth test is missing token: ' + token
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-table-rebuild-provider-truth-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC table rebuild provider truth static analysis')
+            writer.println('========================================================')
+            writer.println()
+            writer.println('Rule: inherited rebuild DDL must reject rather than silently converting MVCC tables to heap.')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { writer.println('- ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('MVCC table rebuild provider truth validation failed. Report: ' + reportFile)
+        }
+        println 'DelosDB MVCC table rebuild provider truth static analysis passed. Report: ' + reportFile
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3242,6 +3329,7 @@ tasks.register('s0CloseoutVerification') {
             'delosDerbyModuleParityStaticAnalysis',
             'delosDerbyForkDiffClassificationStaticAnalysis',
             'delosNoTransitionalStorageRoutingStaticAnalysis',
-            'delosMvccDatabaseRuntimeOwnershipStaticAnalysis'
+            'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
+            'delosMvccTableRebuildProviderTruthStaticAnalysis'
 }
 

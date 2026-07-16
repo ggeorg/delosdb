@@ -711,7 +711,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccSqlLongRowBoundaryTest',
-        'Runs the MVCC long-row overflow, compress-table, and reopen lifecycle proof.',
+        'Runs the MVCC long-row overflow, in-place vacuum, and reopen lifecycle proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'])
 
 
@@ -934,6 +934,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCandidateIndexRebuildTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommittedReadTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTableRebuildProviderTruthTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlAttributeOverflowStorageTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSubsystemRecoveryRecordsTest.class',
@@ -947,6 +948,12 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
         ])
 
+
+registerDelosFocusedTest(
+        'runDelosMvccTableRebuildProviderTruthTest',
+        'Proves inherited table rebuilds reject rather than silently converting delos_mvcc tables to heap.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTableRebuildProviderTruthTest.class'])
+
 registerDelosFocusedTest(
         'runDelosMvccDrdaNetworkClientTest',
         'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.',
@@ -955,6 +962,7 @@ registerDelosFocusedTest(
 [
         'runDelosMvccAnalyzeStatisticsLifecycleTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
+        'runDelosMvccTableRebuildProviderTruthTest',
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',
         'runDelosMvccOrderedIndexCompositeRangeProofTest',
         'runDelosStorageLifecycleConsistencyReportTest',

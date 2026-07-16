@@ -165,3 +165,25 @@ storage diagnostics and JFR events
 ./gradlew :delosdb-storage-mvcc:check
 ./gradlew s0CloseoutVerification
 ```
+
+## Table rebuild DDL and storage-provider truth
+
+Derby's inherited offline table-rebuild paths create replacement base conglomerates. The original
+implementation hard-coded the replacement as `heap`, which could silently change a table declared
+with `USING delos_mvcc` into a Derby heap after `ALTER TABLE ... COMPRESS`, `TRUNCATE TABLE`, or a
+column-drop rebuild.
+
+DelosDB does not permit an operation to change a table's persisted storage provider implicitly.
+Until provider-preserving rebuilds participate in the database-level failure-atomic transaction
+protocol, MVCC tables reject these operations before catalog or table mutation with SQLState
+`0A000`:
+
+```text
+ALTER TABLE ... COMPRESS
+TRUNCATE TABLE
+ALTER TABLE ... DROP COLUMN
+```
+
+Provider-preserving in-place maintenance remains available where supported. In particular,
+`SYSCS_UTIL.SYSCS_INPLACE_COMPRESS_TABLE` with the MVCC-supported purge path invokes MVCC vacuum
+without rebuilding the base conglomerate or changing storage identity.

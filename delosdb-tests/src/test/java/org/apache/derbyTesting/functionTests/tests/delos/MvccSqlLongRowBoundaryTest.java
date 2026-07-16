@@ -57,8 +57,9 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
 
         try (Connection connection = openDatabase(databaseName, false)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "call SYSCS_UTIL.SYSCS_COMPRESS_TABLE('APP', 'MVCC_LONG_ROW_T', 1)");
+            inPlaceCompressTable(connection, "MVCC_LONG_ROW_T");
             connection.commit();
+            assertMvccStorageProvider(connection, "MVCC_LONG_ROW_T");
             assertPayloadRoundTrips(connection, 1, largePayload);
             assertMvccConsistent(diagnostics, containerId);
             connection.rollback();
@@ -67,6 +68,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
+            assertMvccStorageProvider(reopened, "MVCC_LONG_ROW_T");
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_LONG_ROW_T");
             assertMvccConsistent(diagnostics, reopenedContainerId);
             assertPayloadRoundTrips(reopened, 1, largePayload);
