@@ -173,6 +173,10 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
 
         try (Connection reopened = openDefaultConnection()) {
             reopened.setAutoCommit(false);
+            try (Statement statement = reopened.createStatement()) {
+                statement.executeUpdate(
+                        "lock table " + TABLE + " in share mode");
+            }
             long reopenedContainerId = MvccSqlTestSupport.mvccContainerId(reopened, TABLE_UPPER);
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
             assertRows(reopened,
