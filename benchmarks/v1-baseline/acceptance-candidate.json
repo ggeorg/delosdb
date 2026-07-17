@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": 1,
+  "baselineId": "phase8-v1-post-correction",
+  "requiredCaptureStatus": "CAPTURED_NOT_ACCEPTED",
+  "acceptedStatus": "ACCEPTED_V1",
+  "requiredJavaMajor": 25,
+  "expectedSemanticChecksum": "e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17"
+}

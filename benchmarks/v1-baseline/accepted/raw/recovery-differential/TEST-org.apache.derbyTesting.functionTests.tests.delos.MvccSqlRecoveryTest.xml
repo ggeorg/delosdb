@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-07-17T06:59:52.941Z" hostname="Georges-MacBook-Pro.local" time="7.458">
+  <properties/>
+  <testcase name="testIndependentUncommittedHeapAndMvccTransactionsDoNotSurviveProcessHaltAndRecovery" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="1.862"/>
+  <testcase name="testCommittedMvccInsertSurvivesProcessHaltAndRecovery" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="1.353"/>
+  <testcase name="testUncommittedMvccInsertDoesNotSurviveProcessHaltAndRecovery" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="0.582"/>
+  <testcase name="testSequentialHeapAndMvccTransactionsSurviveProcessHaltAndRecovery" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="0.715"/>
+  <testcase name="testHeapAndMvccCommittedWorkloadRemainEquivalentAfterProcessHalt" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="1.246"/>
+  <testcase name="testVacuumedMvccTableRecoversWhenProcessHaltsWithStaleCheckpointMetadata" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="1.168"/>
+  <testcase name="testCorruptMvccPageRecordBodyFailsCleanlyOnReopen" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="0.302"/>
+  <testcase name="testCorruptMvccPageChecksumFailsCleanlyOnReopen" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest" time="0.222"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

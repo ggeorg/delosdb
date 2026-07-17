@@ -3499,9 +3499,23 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
             if (!s0Text.contains("'delosV1BaselineCaptureStaticAnalysis'")) {
                 failures << 'S0 must retain the cheap v1 baseline contract static analysis'
             }
+            if (!s0Text.contains("'delosV1AcceptedBaselineStaticAnalysis'")) {
+                failures << 'S0 must verify the immutable accepted v1 baseline bundle'
+            }
         }
         if (!testText.contains("status: 'CAPTURED_NOT_ACCEPTED'")) {
             failures << 'The capture manifest must not claim acceptance automatically'
+        }
+        if (!testText.contains("tasks.register('promoteDelosV1Baseline')")) {
+            failures << 'Missing explicit promoteDelosV1Baseline task'
+        }
+        def acceptanceCandidate = new File(delosRepositoryRoot,
+                'benchmarks/v1-baseline/acceptance-candidate.json')
+        if (!acceptanceCandidate.isFile()) {
+            failures << 'Missing reviewed v1 acceptance candidate'
+        } else if (!acceptanceCandidate.getText('UTF-8').contains(
+                'e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17')) {
+            failures << 'The acceptance candidate must pin the reviewed semantic checksum'
         }
         if (!testText.contains("dirty: dirty")) {
             failures << 'The capture manifest must record Git dirty state'
@@ -3537,6 +3551,236 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
     }
 }
 
+
+
+def delosV1AcceptedBaselineSha256 = { File input ->
+    def digest = java.security.MessageDigest.getInstance('SHA-256')
+    input.withInputStream { stream ->
+        byte[] buffer = new byte[64 * 1024]
+        int count
+        while ((count = stream.read(buffer)) >= 0) {
+            if (count > 0) {
+                digest.update(buffer, 0, count)
+            }
+        }
+    }
+    java.util.HexFormat.of().formatHex(digest.digest())
+}
+
+tasks.register('delosV1AcceptedBaselineStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies the tracked accepted v1 baseline manifest, review policy, lane inventory, and every evidence checksum.'
+
+    def acceptedRoot = new File(delosRepositoryRoot, 'benchmarks/v1-baseline/accepted')
+    def candidateFile = new File(delosRepositoryRoot,
+            'benchmarks/v1-baseline/acceptance-candidate.json')
+    outputs.upToDateWhen { false }
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/v1-accepted-baseline-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def acceptedManifest = null
+        def candidate = null
+        File manifestFile = new File(acceptedRoot, 'manifest.json')
+        File checksumsFile = new File(acceptedRoot, 'checksums.sha256')
+        File acceptedPolicyFile = new File(acceptedRoot, 'acceptance-policy.json')
+
+        if (!candidateFile.isFile()) {
+            failures << 'Missing tracked acceptance candidate: ' + candidateFile
+        } else {
+            try {
+                candidate = new groovy.json.JsonSlurper().parse(candidateFile)
+            } catch (Exception failure) {
+                failures << 'Invalid acceptance candidate JSON: ' + failure.message
+            }
+        }
+        if (!acceptedRoot.isDirectory()) {
+            failures << 'Missing tracked accepted v1 baseline bundle: ' + acceptedRoot
+        }
+        if (!manifestFile.isFile()) {
+            failures << 'Missing accepted baseline manifest.json'
+        } else {
+            try {
+                acceptedManifest = new groovy.json.JsonSlurper().parse(manifestFile)
+            } catch (Exception failure) {
+                failures << 'Invalid accepted manifest JSON: ' + failure.message
+            }
+        }
+        if (!checksumsFile.isFile()) {
+            failures << 'Missing accepted baseline checksums.sha256'
+        }
+        if (!acceptedPolicyFile.isFile()) {
+            failures << 'Missing accepted baseline acceptance-policy.json'
+        }
+
+        if (acceptedManifest != null && candidate != null) {
+            if (acceptedManifest.schemaVersion != 1) {
+                failures << 'Accepted manifest schema must be 1'
+            }
+            if (acceptedManifest.status != candidate.acceptedStatus) {
+                failures << 'Accepted manifest status mismatch: ' + acceptedManifest.status
+            }
+            if (acceptedManifest.baselineId != candidate.baselineId) {
+                failures << 'Accepted manifest baseline id mismatch'
+            }
+            if (acceptedManifest.semanticChecksum != candidate.expectedSemanticChecksum) {
+                failures << 'Accepted semantic checksum does not match the reviewed candidate'
+            }
+            if (acceptedManifest.source?.dirty != false) {
+                failures << 'Accepted baseline must originate from a clean capture'
+            }
+            if (!java.util.regex.Pattern.matches('[0-9a-f]{40,64}',
+                    String.valueOf(acceptedManifest.source?.revision ?: ''))) {
+                failures << 'Accepted source revision is missing or malformed'
+            }
+            String javaVersion = String.valueOf(acceptedManifest.environment?.javaVersion ?: '')
+            def javaVersionParts = javaVersion.tokenize('.')
+            String javaMajor = javaVersionParts.isEmpty() ? '' : javaVersionParts[0]
+            if (javaMajor != String.valueOf(candidate.requiredJavaMajor)) {
+                failures << 'Accepted baseline must be captured on JDK ' + candidate.requiredJavaMajor
+            }
+            def expectedMatrix = [
+                    writers: [1, 2, 4, 8, 16],
+                    providers: ['heap', 'delos_mvcc'],
+                    topologies: ['same-table', 'different-tables', 'different-databases'],
+                    workloads: ['single-row-insert', 'multi-row-insert', 'mixed-insert-update']
+            ]
+            if (acceptedManifest.matrix != expectedMatrix) {
+                failures << 'Accepted baseline matrix differs from the frozen v1 matrix'
+            }
+            def requiredLanes = [
+                    'operational',
+                    'jdbc-lifecycle',
+                    'jdbc-batch-scaling',
+                    'jdbc-transactions',
+                    'jdbc-row-scaling',
+                    'mvcc-buffer-cache',
+                    'mvcc-page-codec',
+                    'drda-stress',
+                    'recovery-differential',
+                    'failure-replay',
+                    'low-level-failure-replay'
+            ]
+            if (acceptedManifest.lanes != requiredLanes) {
+                failures << 'Accepted lane inventory differs from the frozen v1 lane inventory'
+            }
+            requiredLanes.each { lane ->
+                File laneRoot = new File(acceptedRoot, 'raw/' + lane)
+                if (!laneRoot.isDirectory() || laneRoot.listFiles() == null
+                        || laneRoot.listFiles().length == 0) {
+                    failures << 'Accepted lane is missing or empty: ' + lane
+                }
+            }
+            if (!(acceptedManifest.semanticTokenCount instanceof Number)
+                    || acceptedManifest.semanticTokenCount.intValue() <= 0) {
+                failures << 'Accepted baseline contains no semantic evidence tokens'
+            }
+            if (!(acceptedManifest.runtimeArtifacts instanceof Collection)
+                    || acceptedManifest.runtimeArtifacts.isEmpty()) {
+                failures << 'Accepted baseline contains no runtime artifact fingerprints'
+            }
+            if (!(acceptedManifest.acceptance instanceof Map)) {
+                failures << 'Accepted manifest is missing acceptance metadata'
+            } else {
+                ['captureManifestSha256', 'captureChecksumsSha256', 'acceptancePolicySha256'].each { key ->
+                    if (!java.util.regex.Pattern.matches('[0-9a-f]{64}',
+                            String.valueOf(acceptedManifest.acceptance[key] ?: ''))) {
+                        failures << 'Accepted manifest has invalid acceptance hash: ' + key
+                    }
+                }
+                if (acceptedManifest.acceptance.policyVersion != candidate.policyVersion) {
+                    failures << 'Accepted policy version mismatch'
+                }
+            }
+            if (acceptedPolicyFile.isFile()
+                    && delosV1AcceptedBaselineSha256(acceptedPolicyFile)
+                    != delosV1AcceptedBaselineSha256(candidateFile)) {
+                failures << 'Accepted policy copy differs from the tracked review candidate'
+            }
+        }
+
+        def listed = [] as Set
+        long totalBytes = 0L
+        if (checksumsFile.isFile() && acceptedRoot.isDirectory()) {
+            checksumsFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+                def matcher = java.util.regex.Pattern.compile('^([0-9a-f]{64})  (.+)$').matcher(line)
+                if (!matcher.matches()) {
+                    failures << 'Malformed accepted checksum row at line ' + (index + 1)
+                    return
+                }
+                String expected = matcher.group(1)
+                String relative = matcher.group(2)
+                if (relative.startsWith('/') || relative.contains('..')) {
+                    failures << 'Unsafe accepted checksum path: ' + relative
+                    return
+                }
+                if (!listed.add(relative)) {
+                    failures << 'Duplicate accepted checksum path: ' + relative
+                    return
+                }
+                File evidence = new File(acceptedRoot, relative)
+                if (!evidence.isFile()) {
+                    failures << 'Missing accepted evidence file: ' + relative
+                } else {
+                    totalBytes += evidence.length()
+                    String actual = delosV1AcceptedBaselineSha256(evidence)
+                    if (actual != expected) {
+                        failures << 'Accepted evidence checksum mismatch: ' + relative
+                    }
+                }
+            }
+            def actual = [] as Set
+            acceptedRoot.eachFileRecurse { file ->
+                if (file.isFile()) {
+                    String relative = acceptedRoot.toPath().relativize(file.toPath())
+                            .toString().replace('\\', '/')
+                    if (relative != 'checksums.sha256') {
+                        actual.add(relative)
+                    }
+                }
+            }
+            def unlisted = actual - listed
+            def stale = listed - actual
+            if (!unlisted.isEmpty()) {
+                failures << 'Accepted files missing checksum rows: ' + unlisted.sort().join(', ')
+            }
+            if (!stale.isEmpty()) {
+                failures << 'Accepted checksum rows missing files: ' + stale.sort().join(', ')
+            }
+        }
+
+        def reportFile = new File(delosBuildRoot,
+                'reports/delosdb/v1-accepted-baseline-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB accepted v1 baseline static analysis')
+            writer.println('============================================')
+            writer.println()
+            writer.println('Accepted root: ' + acceptedRoot)
+            writer.println('Evidence files: ' + listed.size())
+            writer.println('Evidence bytes: ' + totalBytes)
+            if (acceptedManifest != null) {
+                writer.println('Source revision: ' + acceptedManifest.source?.revision)
+                writer.println('Semantic checksum: ' + acceptedManifest.semanticChecksum)
+            }
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB accepted v1 baseline static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle('DelosDB accepted v1 baseline static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3546,6 +3790,7 @@ tasks.register('s0CloseoutVerification') {
             'delosHeapObjectDeserializationFilterStaticAnalysis',
             'delosSecurityTruthStaticAnalysis',
             'delosV1BaselineCaptureStaticAnalysis',
+            'delosV1AcceptedBaselineStaticAnalysis',
             'delosStaleGradleScriptCheck',
             'delosOverlayCleanupScriptStaticAnalysis',
             'delosRuntimeArtifactModelStaticAnalysis',

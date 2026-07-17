@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "status": "PROVISIONAL",
+  "comparisonRequirements": {
+    "sourceRevisionRequired": true,
+    "cleanWorkingTreeRequired": true,
+    "sameJdkMajorRequired": true,
+    "sameOsArchRequired": true,
+    "sameRuntimeArtifactHashesRequired": true,
+    "sameMatrixRequired": true,
+    "semanticChecksumMustMatch": true
+  },
+  "thresholds": {
+    "throughput": {
+      "warningRegressionPercent": 15,
+      "materialRegressionPercent": 30
+    },
+    "commitP95Latency": {
+      "warningRegressionPercent": 20,
+      "materialRegressionPercent": 40
+    },
+    "recoveryAndStartupLatency": {
+      "warningRegressionPercent": 25,
+      "materialRegressionPercent": 50
+    },
+    "backupWriterMaxCommitLatency": {
+      "warningRegressionPercent": 25,
+      "materialRegressionPercent": 50
+    },
+    "heapHighWaterBytes": {
+      "warningRegressionPercent": 20,
+      "materialRegressionPercent": 35
+    },
+    "physicalBytes": {
+      "warningRegressionPercent": 15,
+      "materialRegressionPercent": 30
+    },
+    "profilingDisabledQueryTime": {
+      "warningRegressionPercent": 15,
+      "materialRegressionPercent": 30
+    }
+  },
+  "decisionPolicy": {
+    "automaticReleaseFailure": false,
+    "minimumComparableCapturesBeforePromotion": 3,
+    "materialRegressionRequiresExplanationOrCorrection": true,
+    "semanticMismatchAlwaysFailsAcceptance": true
+  }
+}

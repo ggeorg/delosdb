@@ -1,0 +1,57 @@
+DelosDB JDBC execution-batch scaling baseline
+Generated: 2026-07-17T07:04:28.217195Z
+JDK: 25.0.3
+OS: Mac OS X aarch64
+Rows: [1000]
+Payload: 128
+Fixture commit batch: 100
+Operations: [PRIMARY_KEY_LOOKUP, SECONDARY_EQUALITY_LOOKUP, COMPOSITE_RANGE_SCAN, FULL_SCAN, AGGREGATE]
+Execution batch sizes: [100, 1000]
+Statement mode: REUSED_ACROSS_TRANSACTIONS
+Transaction scope: one read transaction per timing interval
+Rollback outside timing interval: true
+Batch-size order alternates by run: true
+Warmups: 1
+Iterations: 1
+Runs: 2
+
+   1000 heap PRIMARY_KEY_LOOKUP           batch=100    samples=100      run=1 rate=   32701.112 avg-ns=   30580.000 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 heap PRIMARY_KEY_LOOKUP           batch=100    samples=100      run=2 rate=  203389.693 avg-ns=    4916.670 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 heap PRIMARY_KEY_LOOKUP           batch=1000   samples=1000     run=1 rate=   70976.310 avg-ns=   14089.208 rows=1 checksum=16964 fingerprint=-8464158821896697927
+   1000 heap PRIMARY_KEY_LOOKUP           batch=1000   samples=1000     run=2 rate=   67225.576 avg-ns=   14875.291 rows=1 checksum=16964 fingerprint=-8464158821896697927
+   1000 heap SECONDARY_EQUALITY_LOOKUP    batch=100    samples=100      run=1 rate=    5620.398 avg-ns=  177923.340 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 heap SECONDARY_EQUALITY_LOOKUP    batch=100    samples=100      run=2 rate=   10185.547 avg-ns=   98178.330 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 heap SECONDARY_EQUALITY_LOOKUP    batch=1000   samples=1000     run=1 rate=    8448.720 avg-ns=  118361.125 rows=59 checksum=4724203498498060999 fingerprint=-5219814192071588895
+   1000 heap SECONDARY_EQUALITY_LOOKUP    batch=1000   samples=1000     run=2 rate=    9621.934 avg-ns=  103929.208 rows=59 checksum=4724203498498060999 fingerprint=-5219814192071588895
+   1000 heap COMPOSITE_RANGE_SCAN         batch=100    samples=100      run=1 rate=   11315.151 avg-ns=   88377.080 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 heap COMPOSITE_RANGE_SCAN         batch=100    samples=100      run=2 rate=   12144.459 avg-ns=   82342.080 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 heap COMPOSITE_RANGE_SCAN         batch=1000   samples=1000     run=1 rate=   10827.022 avg-ns=   92361.500 rows=48 checksum=3307281027342571328 fingerprint=-3652260032379732863
+   1000 heap COMPOSITE_RANGE_SCAN         batch=1000   samples=1000     run=2 rate=   11012.463 avg-ns=   90806.208 rows=48 checksum=3307281027342571328 fingerprint=-3652260032379732863
+   1000 heap FULL_SCAN                    batch=100    samples=100      run=1 rate=     444.809 avg-ns= 2248157.920 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 heap FULL_SCAN                    batch=100    samples=100      run=2 rate=     441.004 avg-ns= 2267553.750 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 heap FULL_SCAN                    batch=1000   samples=1000     run=1 rate=     451.829 avg-ns= 2213228.333 rows=1000 checksum=1266487543966429532 fingerprint=8364205503019810593
+   1000 heap FULL_SCAN                    batch=1000   samples=1000     run=2 rate=     443.182 avg-ns= 2256407.333 rows=1000 checksum=1266487543966429532 fingerprint=8364205503019810593
+   1000 heap AGGREGATE                    batch=100    samples=100      run=1 rate=     572.750 avg-ns= 1745962.080 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 heap AGGREGATE                    batch=100    samples=100      run=2 rate=     578.515 avg-ns= 1728565.000 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 heap AGGREGATE                    batch=1000   samples=1000     run=1 rate=     575.414 avg-ns= 1737878.875 rows=17 checksum=7965525936446687820 fingerprint=2296447439941767289
+   1000 heap AGGREGATE                    batch=1000   samples=1000     run=2 rate=     563.449 avg-ns= 1774783.083 rows=17 checksum=7965525936446687820 fingerprint=2296447439941767289
+   1000 mvcc PRIMARY_KEY_LOOKUP           batch=100    samples=100      run=1 rate=   35722.795 avg-ns=   27993.330 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 mvcc PRIMARY_KEY_LOOKUP           batch=100    samples=100      run=2 rate=    1564.871 avg-ns=  639030.410 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 mvcc PRIMARY_KEY_LOOKUP           batch=1000   samples=1000     run=1 rate=  101668.202 avg-ns=    9835.917 rows=1 checksum=16964 fingerprint=-8464158821896697927
+   1000 mvcc PRIMARY_KEY_LOOKUP           batch=1000   samples=1000     run=2 rate=    1200.142 avg-ns=  833234.666 rows=1 checksum=16964 fingerprint=-8464158821896697927
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    batch=100    samples=100      run=1 rate=    4749.955 avg-ns=  210528.330 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    batch=100    samples=100      run=2 rate=      31.740 avg-ns=31506312.910 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    batch=1000   samples=1000     run=1 rate=     746.742 avg-ns= 1339149.959 rows=59 checksum=4724203498498060999 fingerprint=-5219814192071588895
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    batch=1000   samples=1000     run=2 rate=      34.697 avg-ns=28820922.666 rows=59 checksum=4724203498498060999 fingerprint=-5219814192071588895
+   1000 mvcc COMPOSITE_RANGE_SCAN         batch=100    samples=100      run=1 rate=      86.436 avg-ns=11569258.330 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 mvcc COMPOSITE_RANGE_SCAN         batch=100    samples=100      run=2 rate=      22.933 avg-ns=43606087.080 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 mvcc COMPOSITE_RANGE_SCAN         batch=1000   samples=1000     run=1 rate=      32.396 avg-ns=30868190.834 rows=48 checksum=3307281027342571328 fingerprint=-3652260032379732863
+   1000 mvcc COMPOSITE_RANGE_SCAN         batch=1000   samples=1000     run=2 rate=      29.118 avg-ns=34343136.458 rows=48 checksum=3307281027342571328 fingerprint=-3652260032379732863
+   1000 mvcc FULL_SCAN                    batch=100    samples=100      run=1 rate=     862.524 avg-ns= 1159387.500 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 mvcc FULL_SCAN                    batch=100    samples=100      run=2 rate=     883.165 avg-ns= 1132291.250 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 mvcc FULL_SCAN                    batch=1000   samples=1000     run=1 rate=     863.475 avg-ns= 1158110.583 rows=1000 checksum=1266487543966429532 fingerprint=8364205503019810593
+   1000 mvcc FULL_SCAN                    batch=1000   samples=1000     run=2 rate=     848.771 avg-ns= 1178174.459 rows=1000 checksum=1266487543966429532 fingerprint=8364205503019810593
+   1000 mvcc AGGREGATE                    batch=100    samples=100      run=1 rate=    1083.529 avg-ns=  922910.420 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 mvcc AGGREGATE                    batch=100    samples=100      run=2 rate=    1303.163 avg-ns=  767363.750 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 mvcc AGGREGATE                    batch=1000   samples=1000     run=1 rate=    1033.935 avg-ns=  967178.541 rows=17 checksum=7965525936446687820 fingerprint=2296447439941767289
+   1000 mvcc AGGREGATE                    batch=1000   samples=1000     run=2 rate=    1028.406 avg-ns=  972378.375 rows=17 checksum=7965525936446687820 fingerprint=2296447439941767289

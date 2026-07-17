@@ -43,6 +43,25 @@ or resource changes do not fail S0 automatically. Semantic mismatches always blo
 material timing or resource regressions require an explanation or correction before a later phase
 can claim improvement against v1.
 
-The accepted result bundle will be added under this directory only after the complete capture is
-green from a clean source revision and has been reviewed. Until that result bundle exists, Phase
-8.6 is not closed.
+The reviewed capture is pinned by `acceptance-candidate.json`, including semantic checksum:
+
+```text
+e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17
+```
+
+Promote it once with:
+
+```bash
+./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
+```
+
+The task validates the capture checksum inventory, clean-source marker, JDK 25 environment, source
+ancestry, fixed lane contract, and reviewed semantic checksum before writing:
+
+```text
+benchmarks/v1-baseline/accepted/
+```
+
+The accepted directory is immutable. Promotion refuses to overwrite it. S0 runs
+`delosV1AcceptedBaselineStaticAnalysis`, which verifies every accepted evidence checksum and the
+reviewed manifest contract without rerunning machine-specific benchmarks.

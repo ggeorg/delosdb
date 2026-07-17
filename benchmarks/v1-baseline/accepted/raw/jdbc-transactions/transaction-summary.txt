@@ -1,0 +1,66 @@
+DelosDB JDBC explicit-transaction baseline
+Generated: 2026-07-17T07:05:36.650610Z
+JDK: 25.0.3
+OS: Mac OS X aarch64
+Rows: [1000]
+Payload: 128
+Fixture commit batch: 100
+Read widths: [1, 10]
+Indexed-update widths: [1, 10]
+Transactions per timing interval: 10
+Statement mode: REUSED_ACROSS_TRANSACTIONS
+Measured interval: operation execution plus transaction end
+Semantic verification/restoration outside timing interval: true
+Provider and transaction-shape order alternates by run: true
+Warmups: 1
+Iterations: 1
+Runs: 2
+
+   1000 heap EMPTY             COMMIT   ops/tx=0    tx/interval=10   run=1 rate=  171426.612 avg-tx-ns=    5833.400 fingerprint=787662783788559371
+   1000 heap EMPTY             COMMIT   ops/tx=0    tx/interval=10   run=2 rate= 2051282.051 avg-tx-ns=     487.500 fingerprint=787662783788559371
+   1000 heap EMPTY             ROLLBACK ops/tx=0    tx/interval=10   run=1 rate=  366972.477 avg-tx-ns=    2725.000 fingerprint=787662783788559403
+   1000 heap EMPTY             ROLLBACK ops/tx=0    tx/interval=10   run=2 rate= 2142704.093 avg-tx-ns=     466.700 fingerprint=787662783788559403
+   1000 heap PRIMARY_KEY_READ  COMMIT   ops/tx=1    tx/interval=10   run=1 rate=   21367.521 avg-tx-ns=   46800.000 fingerprint=-7385251609070717990
+   1000 heap PRIMARY_KEY_READ  COMMIT   ops/tx=1    tx/interval=10   run=2 rate=    7361.060 avg-tx-ns=  135850.000 fingerprint=-7385251609070717990
+   1000 heap PRIMARY_KEY_READ  COMMIT   ops/tx=10   tx/interval=10   run=1 rate=    4142.360 avg-tx-ns=  241408.300 fingerprint=1620657252042802080
+   1000 heap PRIMARY_KEY_READ  COMMIT   ops/tx=10   tx/interval=10   run=2 rate=   15364.925 avg-tx-ns=   65083.300 fingerprint=1620657252042802080
+   1000 heap PRIMARY_KEY_READ  ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=   23873.471 avg-tx-ns=   41887.500 fingerprint=-7385251609070717989
+   1000 heap PRIMARY_KEY_READ  ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=  120060.991 avg-tx-ns=    8329.100 fingerprint=-7385251609070717989
+   1000 heap PRIMARY_KEY_READ  ROLLBACK ops/tx=10   tx/interval=10   run=1 rate=    6828.656 avg-tx-ns=  146441.700 fingerprint=1620657252042802081
+   1000 heap PRIMARY_KEY_READ  ROLLBACK ops/tx=10   tx/interval=10   run=2 rate=   14695.984 avg-tx-ns=   68045.800 fingerprint=1620657252042802081
+   1000 heap INDEXED_UPDATE    COMMIT   ops/tx=1    tx/interval=10   run=1 rate=    8181.077 avg-tx-ns=  122233.300 fingerprint=8412556853480020310
+   1000 heap INDEXED_UPDATE    COMMIT   ops/tx=1    tx/interval=10   run=2 rate=   20026.716 avg-tx-ns=   49933.300 fingerprint=8412556853480020310
+   1000 heap INDEXED_UPDATE    COMMIT   ops/tx=10   tx/interval=10   run=1 rate=    1641.149 avg-tx-ns=  609329.200 fingerprint=8919387473428280589
+   1000 heap INDEXED_UPDATE    COMMIT   ops/tx=10   tx/interval=10   run=2 rate=    3836.133 avg-tx-ns=  260679.200 fingerprint=8919387473428280589
+   1000 heap INDEXED_UPDATE    ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=    1121.061 avg-tx-ns=  892012.500 fingerprint=8412556853480020001
+   1000 heap INDEXED_UPDATE    ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=    2690.131 avg-tx-ns=  371729.100 fingerprint=8412556853480020001
+   1000 heap INDEXED_UPDATE    ROLLBACK ops/tx=10   tx/interval=10   run=1 rate=     742.172 avg-tx-ns= 1347395.900 fingerprint=-2858488304835129230
+   1000 heap INDEXED_UPDATE    ROLLBACK ops/tx=10   tx/interval=10   run=2 rate=    1621.906 avg-tx-ns=  616558.400 fingerprint=-2858488304835129230
+   1000 heap DELETE_REINSERT   COMMIT   ops/tx=1    tx/interval=10   run=1 rate=    9236.450 avg-tx-ns=  108266.700 fingerprint=3921768570680408459
+   1000 heap DELETE_REINSERT   COMMIT   ops/tx=1    tx/interval=10   run=2 rate=    8808.632 avg-tx-ns=  113525.000 fingerprint=3921768570680408459
+   1000 heap DELETE_REINSERT   ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=    3387.773 avg-tx-ns=  295179.200 fingerprint=3921768570680408460
+   1000 heap DELETE_REINSERT   ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=    4139.359 avg-tx-ns=  241583.300 fingerprint=3921768570680408460
+   1000 mvcc EMPTY             COMMIT   ops/tx=0    tx/interval=10   run=1 rate=  810766.986 avg-tx-ns=    1233.400 fingerprint=787662783788559371
+   1000 mvcc EMPTY             COMMIT   ops/tx=0    tx/interval=10   run=2 rate= 1472537.182 avg-tx-ns=     679.100 fingerprint=787662783788559371
+   1000 mvcc EMPTY             ROLLBACK ops/tx=0    tx/interval=10   run=1 rate=  276182.059 avg-tx-ns=    3620.800 fingerprint=787662783788559403
+   1000 mvcc EMPTY             ROLLBACK ops/tx=0    tx/interval=10   run=2 rate= 1111111.111 avg-tx-ns=     900.000 fingerprint=787662783788559403
+   1000 mvcc PRIMARY_KEY_READ  COMMIT   ops/tx=1    tx/interval=10   run=1 rate=   16146.403 avg-tx-ns=   61933.300 fingerprint=-7385251609070717990
+   1000 mvcc PRIMARY_KEY_READ  COMMIT   ops/tx=1    tx/interval=10   run=2 rate=   73937.153 avg-tx-ns=   13525.000 fingerprint=-7385251609070717990
+   1000 mvcc PRIMARY_KEY_READ  COMMIT   ops/tx=10   tx/interval=10   run=1 rate=    4463.788 avg-tx-ns=  224025.000 fingerprint=1620657252042802080
+   1000 mvcc PRIMARY_KEY_READ  COMMIT   ops/tx=10   tx/interval=10   run=2 rate=   10683.293 avg-tx-ns=   93604.100 fingerprint=1620657252042802080
+   1000 mvcc PRIMARY_KEY_READ  ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=   14473.519 avg-tx-ns=   69091.700 fingerprint=-7385251609070717989
+   1000 mvcc PRIMARY_KEY_READ  ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=   90874.393 avg-tx-ns=   11004.200 fingerprint=-7385251609070717989
+   1000 mvcc PRIMARY_KEY_READ  ROLLBACK ops/tx=10   tx/interval=10   run=1 rate=    4895.563 avg-tx-ns=  204266.600 fingerprint=1620657252042802081
+   1000 mvcc PRIMARY_KEY_READ  ROLLBACK ops/tx=10   tx/interval=10   run=2 rate=    9275.362 avg-tx-ns=  107812.500 fingerprint=1620657252042802081
+   1000 mvcc INDEXED_UPDATE    COMMIT   ops/tx=1    tx/interval=10   run=1 rate=       6.477 avg-tx-ns=154399562.500 fingerprint=8412556853480020310
+   1000 mvcc INDEXED_UPDATE    COMMIT   ops/tx=1    tx/interval=10   run=2 rate=       6.789 avg-tx-ns=147300675.000 fingerprint=8412556853480020310
+   1000 mvcc INDEXED_UPDATE    COMMIT   ops/tx=10   tx/interval=10   run=1 rate=       5.875 avg-tx-ns=170227245.800 fingerprint=8919387473428280589
+   1000 mvcc INDEXED_UPDATE    COMMIT   ops/tx=10   tx/interval=10   run=2 rate=       6.091 avg-tx-ns=164180683.400 fingerprint=8919387473428280589
+   1000 mvcc INDEXED_UPDATE    ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=     110.024 avg-tx-ns= 9088908.300 fingerprint=8412556853480020001
+   1000 mvcc INDEXED_UPDATE    ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=      91.674 avg-tx-ns=10908270.800 fingerprint=8412556853480020001
+   1000 mvcc INDEXED_UPDATE    ROLLBACK ops/tx=10   tx/interval=10   run=1 rate=      57.551 avg-tx-ns=17375904.200 fingerprint=-2858488304835129230
+   1000 mvcc INDEXED_UPDATE    ROLLBACK ops/tx=10   tx/interval=10   run=2 rate=      54.393 avg-tx-ns=18384608.300 fingerprint=-2858488304835129230
+   1000 mvcc DELETE_REINSERT   COMMIT   ops/tx=1    tx/interval=10   run=1 rate=       6.314 avg-tx-ns=158368570.800 fingerprint=3921768570680408459
+   1000 mvcc DELETE_REINSERT   COMMIT   ops/tx=1    tx/interval=10   run=2 rate=       4.767 avg-tx-ns=209763229.200 fingerprint=3921768570680408459
+   1000 mvcc DELETE_REINSERT   ROLLBACK ops/tx=1    tx/interval=10   run=1 rate=      99.712 avg-tx-ns=10028875.000 fingerprint=3921768570680408460
+   1000 mvcc DELETE_REINSERT   ROLLBACK ops/tx=1    tx/interval=10   run=2 rate=     103.104 avg-tx-ns= 9698975.000 fingerprint=3921768570680408460

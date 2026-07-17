@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccLowLevelFailureReplayTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-07-17T05:46:41.559Z" hostname="Georges-MacBook-Pro.local" time="4.143">
+  <properties/>
+  <testcase name="pageAllocationOverflowAndVacuumReuseRecoverAfterCommittedFence()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccLowLevelFailureReplayTest" time="1.392"/>
+  <testcase name="checkpointAndIndexPublicationFailuresRecoverEveryParticipant()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccLowLevelFailureReplayTest" time="1.117"/>
+  <testcase name="checkpointProcessHaltReplaysFromManifestToOneDigest()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccLowLevelFailureReplayTest" time="1.623"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

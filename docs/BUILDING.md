@@ -134,4 +134,14 @@ a clean JDK 25 checkout:
 ```
 
 The task is opt-in, is not part of `check` or S0, and writes its self-contained bundle under
-`build/reports/delosdb/v1-baseline/capture/`. See [`V1-BASELINE.md`](V1-BASELINE.md).
+`build/reports/delosdb/v1-baseline/capture/`.
+
+After review, promote the pinned clean capture once:
+
+```bash
+./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
+```
+
+Promotion writes `benchmarks/v1-baseline/accepted/` and refuses to replace an existing accepted
+bundle. S0 verifies that tracked bundle through `delosV1AcceptedBaselineStaticAnalysis`; it does not
+rerun the machine-specific measurements. See [`V1-BASELINE.md`](V1-BASELINE.md).

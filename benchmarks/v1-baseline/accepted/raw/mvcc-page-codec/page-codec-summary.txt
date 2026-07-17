@@ -1,0 +1,134 @@
+DelosDB MVCC page/codec baseline
+Generated: 2026-07-17T06:59:39.514436Z
+JDK: 25.0.3
+OS: Mac OS X aarch64
+Payload sizes: [16, 128, 1024, 8192, 65536]
+Maximum operations per interval: 10000
+Payload byte budget per interval: 4194304
+Adaptive operations: max(1, min(max operations, byte budget / payload bytes))
+Workloads: [ROW_PAYLOAD_ENCODE, ROW_PAYLOAD_DECODE, VERSION_RECORD_ENCODE, VERSION_RECORD_DECODE, PAGE_RECORD_ENCODE, PAGE_RECORD_DECODE, INDEX_TUPLE_ENCODE, INDEX_TUPLE_DECODE, OVERFLOW_CHUNK_ENCODE, OVERFLOW_CHUNK_DECODE, RECOVERY_RECORD_ENCODE, RECOVERY_RECORD_DECODE]
+Allocation measurement: true
+Warmups: 1
+Iterations: 1
+Runs: 2
+
+ROW_PAYLOAD_ENCODE       payload=16      encoded=38      ops=10000   run=1 rate= 4694009.271 avg-ns=     213.038 alloc-B/op=     168.005 checksum=8605139839922018593
+ROW_PAYLOAD_DECODE       payload=16      encoded=38      ops=10000   run=1 rate= 3767542.620 avg-ns=     265.425 alloc-B/op=     216.005 checksum=-8485254729993842943
+VERSION_RECORD_ENCODE    payload=16      encoded=80      ops=10000   run=1 rate= 6578588.143 avg-ns=     152.008 alloc-B/op=     152.005 checksum=4042928740309687377
+VERSION_RECORD_DECODE    payload=16      encoded=80      ops=10000   run=1 rate= 9119577.727 avg-ns=     109.654 alloc-B/op=     352.005 checksum=-1829417205620200959
+PAGE_RECORD_ENCODE       payload=16      encoded=104     ops=10000   run=1 rate=17853157.777 avg-ns=      56.013 alloc-B/op=     192.005 checksum=1966993366461440721
+PAGE_RECORD_DECODE       payload=16      encoded=104     ops=10000   run=1 rate= 3221692.039 avg-ns=     310.396 alloc-B/op=     512.005 checksum=7686739141203458337
+INDEX_TUPLE_ENCODE       payload=16      encoded=82      ops=10000   run=1 rate= 5947364.634 avg-ns=     168.142 alloc-B/op=     288.005 checksum=1729066898242659489
+INDEX_TUPLE_DECODE       payload=16      encoded=82      ops=10000   run=1 rate= 1904580.516 avg-ns=     525.050 alloc-B/op=     432.042 checksum=-1423182287124123903
+OVERFLOW_CHUNK_ENCODE    payload=16      encoded=68      ops=10000   run=1 rate= 6737786.246 avg-ns=     148.417 alloc-B/op=     176.005 checksum=-6562448533191847391
+OVERFLOW_CHUNK_DECODE    payload=16      encoded=68      ops=10000   run=1 rate=17909111.260 avg-ns=      55.838 alloc-B/op=     224.005 checksum=-1952351485155478527
+RECOVERY_RECORD_ENCODE   payload=16      encoded=107     ops=10000   run=1 rate= 5882930.853 avg-ns=     169.983 alloc-B/op=     432.005 checksum=6489290154803555841
+RECOVERY_RECORD_DECODE   payload=16      encoded=107     ops=10000   run=1 rate= 9487666.034 avg-ns=     105.400 alloc-B/op=     464.005 checksum=-1829417205620200959
+ROW_PAYLOAD_ENCODE       payload=128     encoded=151     ops=10000   run=1 rate= 3413358.383 avg-ns=     292.967 alloc-B/op=     336.005 checksum=5650182225849433121
+ROW_PAYLOAD_DECODE       payload=128     encoded=151     ops=10000   run=1 rate=15164910.823 avg-ns=      65.942 alloc-B/op=     360.005 checksum=-4061328238190802175
+VERSION_RECORD_ENCODE    payload=128     encoded=192     ops=10000   run=1 rate=37741830.781 avg-ns=      26.496 alloc-B/op=     208.005 checksum=1256920365479935825
+VERSION_RECORD_DECODE    payload=128     encoded=192     ops=10000   run=1 rate=19132677.465 avg-ns=      52.267 alloc-B/op=     352.005 checksum=-7041081008371901951
+PAGE_RECORD_ENCODE       payload=128     encoded=216     ops=10000   run=1 rate=28804581.081 avg-ns=      34.717 alloc-B/op=     232.005 checksum=22577591284093201
+PAGE_RECORD_DECODE       payload=128     encoded=216     ops=10000   run=1 rate=14480518.634 avg-ns=      69.058 alloc-B/op=     408.005 checksum=-204078531366904399
+INDEX_TUPLE_ENCODE       payload=128     encoded=194     ops=10000   run=1 rate= 2804525.157 avg-ns=     356.567 alloc-B/op=     568.005 checksum=-3890408348635577823
+INDEX_TUPLE_DECODE       payload=128     encoded=194     ops=10000   run=1 rate= 8216926.869 avg-ns=     121.700 alloc-B/op=     712.005 checksum=6607073534513575681
+OVERFLOW_CHUNK_ENCODE    payload=128     encoded=180     ops=10000   run=1 rate=22986286.382 avg-ns=      43.504 alloc-B/op=     344.005 checksum=-7349280284276918671
+OVERFLOW_CHUNK_DECODE    payload=128     encoded=180     ops=10000   run=1 rate=18012598.011 avg-ns=      55.517 alloc-B/op=     328.005 checksum=3306172860858113025
+RECOVERY_RECORD_ENCODE   payload=128     encoded=256     ops=10000   run=1 rate= 3946590.008 avg-ns=     253.383 alloc-B/op=     832.005 checksum=-981635748276397055
+RECOVERY_RECORD_DECODE   payload=128     encoded=256     ops=10000   run=1 rate= 5093488.433 avg-ns=     196.329 alloc-B/op=     832.005 checksum=-7041081008371901951
+ROW_PAYLOAD_ENCODE       payload=1024    encoded=1048    ops=4096    run=1 rate= 5299692.706 avg-ns=     188.690 alloc-B/op=    2128.012 checksum=453599290592071681
+ROW_PAYLOAD_DECODE       payload=1024    encoded=1048    ops=4096    run=1 rate= 3888302.437 avg-ns=     257.182 alloc-B/op=    2152.012 checksum=8223903465886908417
+VERSION_RECORD_ENCODE    payload=1024    encoded=1088    ops=4096    run=1 rate=10003467.999 avg-ns=      99.965 alloc-B/op=    1104.012 checksum=834989711889551361
+VERSION_RECORD_DECODE    payload=1024    encoded=1088    ops=4096    run=1 rate= 7802528.964 avg-ns=     128.164 alloc-B/op=    1248.012 checksum=95984333402800129
+PAGE_RECORD_ENCODE       payload=1024    encoded=1112    ops=4096    run=1 rate= 3205634.905 avg-ns=     311.951 alloc-B/op=    1128.012 checksum=1164033829776003073
+PAGE_RECORD_DECODE       payload=1024    encoded=1112    ops=4096    run=1 rate= 3065391.017 avg-ns=     326.223 alloc-B/op=    1304.012 checksum=3878146247466254337
+INDEX_TUPLE_ENCODE       payload=1024    encoded=1090    ops=4096    run=1 rate= 4127126.790 avg-ns=     242.299 alloc-B/op=    3232.012 checksum=836028860623495169
+INDEX_TUPLE_DECODE       payload=1024    encoded=1090    ops=4096    run=1 rate= 4987015.011 avg-ns=     200.521 alloc-B/op=    3408.613 checksum=613981673274933249
+OVERFLOW_CHUNK_ENCODE    payload=1024    encoded=1076    ops=4096    run=1 rate=10165890.657 avg-ns=      98.368 alloc-B/op=    2136.012 checksum=5407416002758668289
+OVERFLOW_CHUNK_DECODE    payload=1024    encoded=1076    ops=4096    run=1 rate= 5742726.954 avg-ns=     174.133 alloc-B/op=    2120.012 checksum=-5109186405882658815
+RECOVERY_RECORD_ENCODE   payload=1024    encoded=1451    ops=4096    run=1 rate= 3223293.331 avg-ns=     310.242 alloc-B/op=    4072.012 checksum=6213880226653339649
+RECOVERY_RECORD_DECODE   payload=1024    encoded=1451    ops=4096    run=1 rate= 4107126.205 avg-ns=     243.479 alloc-B/op=    3824.012 checksum=95984333402800129
+ROW_PAYLOAD_ENCODE       payload=8192    encoded=8216    ops=512     run=1 rate= 1400181.039 avg-ns=     714.193 alloc-B/op=   16464.094 checksum=3361309647897854465
+ROW_PAYLOAD_DECODE       payload=8192    encoded=8216    ops=512     run=1 rate=  775071.755 avg-ns=    1290.203 alloc-B/op=   16488.094 checksum=2296025608335081473
+VERSION_RECORD_ENCODE    payload=8192    encoded=8256    ops=512     run=1 rate= 2031407.464 avg-ns=     492.270 alloc-B/op=    8272.094 checksum=4074420227600878081
+VERSION_RECORD_DECODE    payload=8192    encoded=8256    ops=512     run=1 rate= 1780869.565 avg-ns=     561.523 alloc-B/op=    8416.094 checksum=-5623803799344824319
+PAGE_RECORD_ENCODE       payload=8192    encoded=8280    ops=512     run=1 rate= 1021191.723 avg-ns=     979.248 alloc-B/op=    8296.094 checksum=6436816009588556289
+PAGE_RECORD_DECODE       payload=8192    encoded=8280    ops=512     run=1 rate=  663284.606 avg-ns=    1507.648 alloc-B/op=    8472.094 checksum=-5226462701019035647
+INDEX_TUPLE_ENCODE       payload=8192    encoded=8258    ops=512     run=1 rate=  466692.128 avg-ns=    2142.740 alloc-B/op=   24736.094 checksum=597581251502015489
+INDEX_TUPLE_DECODE       payload=8192    encoded=8258    ops=512     run=1 rate=  373779.650 avg-ns=    2675.373 alloc-B/op=   24904.094 checksum=-5650965891294896127
+OVERFLOW_CHUNK_ENCODE    payload=8192    encoded=8244    ops=512     run=1 rate=  716376.478 avg-ns=    1395.914 alloc-B/op=   16472.094 checksum=699698110886981121
+OVERFLOW_CHUNK_DECODE    payload=8192    encoded=8244    ops=512     run=1 rate=  860384.182 avg-ns=    1162.271 alloc-B/op=   16456.094 checksum=94295919809495041
+RECOVERY_RECORD_ENCODE   payload=8192    encoded=11008   ops=512     run=1 rate=  471835.042 avg-ns=    2119.385 alloc-B/op=   30344.094 checksum=-8646117974615482367
+RECOVERY_RECORD_DECODE   payload=8192    encoded=11008   ops=512     run=1 rate=  578340.907 avg-ns=    1729.084 alloc-B/op=   27712.094 checksum=-5623803799344824319
+ROW_PAYLOAD_ENCODE       payload=65536   encoded=65561   ops=64      run=1 rate=  219963.019 avg-ns=    4546.219 alloc-B/op=  131168.750 checksum=-4433590978250967103
+ROW_PAYLOAD_DECODE       payload=65536   encoded=65561   ops=64      run=1 rate=  107217.586 avg-ns=    9326.828 alloc-B/op=  131192.750 checksum=4631871239611606017
+VERSION_RECORD_ENCODE    payload=65536   encoded=65600   ops=64      run=1 rate=  747078.805 avg-ns=    1338.547 alloc-B/op=   65616.750 checksum=-2881601346701745855
+VERSION_RECORD_DECODE    payload=65536   encoded=65600   ops=64      run=1 rate=  709141.274 avg-ns=    1410.156 alloc-B/op=   65760.750 checksum=4873148340781574145
+PAGE_RECORD_ENCODE       payload=65536   encoded=65624   ops=64      run=1 rate=  128224.393 avg-ns=    7798.828 alloc-B/op=   65640.750 checksum=-6307267390159300543
+PAGE_RECORD_DECODE       payload=65536   encoded=65624   ops=64      run=1 rate=  128514.056 avg-ns=    7781.250 alloc-B/op=   65816.750 checksum=16690580978617025
+INDEX_TUPLE_ENCODE       payload=65536   encoded=65602   ops=64      run=1 rate=  190665.721 avg-ns=    5244.781 alloc-B/op=  196768.750 checksum=360301319149764737
+INDEX_TUPLE_DECODE       payload=65536   encoded=65602   ops=64      run=1 rate=   95940.085 avg-ns=   10423.172 alloc-B/op=  196936.750 checksum=5198253712002292737
+OVERFLOW_CHUNK_ENCODE    payload=65536   encoded=65588   ops=64      run=1 rate=  172467.689 avg-ns=    5798.188 alloc-B/op=  131160.750 checksum=2887590986890462657
+OVERFLOW_CHUNK_DECODE    payload=65536   encoded=65588   ops=64      run=1 rate=   91466.726 avg-ns=   10932.938 alloc-B/op=  131144.750 checksum=2322154778945155073
+RECOVERY_RECORD_ENCODE   payload=65536   encoded=87467   ops=64      run=1 rate=    3791.376 avg-ns=  263756.500 alloc-B/op=  240616.750 checksum=-83555991945208831
+RECOVERY_RECORD_DECODE   payload=65536   encoded=87467   ops=64      run=1 rate=   91712.487 avg-ns=   10903.641 alloc-B/op=  218864.750 checksum=4873148340781574145
+RECOVERY_RECORD_DECODE   payload=65536   encoded=87467   ops=64      run=2 rate=   90995.304 avg-ns=   10989.578 alloc-B/op=  218864.750 checksum=4873148340781574145
+RECOVERY_RECORD_ENCODE   payload=65536   encoded=87467   ops=64      run=2 rate=   64592.116 avg-ns=   15481.766 alloc-B/op=  240616.750 checksum=-83555991945208831
+OVERFLOW_CHUNK_DECODE    payload=65536   encoded=65588   ops=64      run=2 rate=  108920.782 avg-ns=    9180.984 alloc-B/op=  131144.750 checksum=2322154778945155073
+OVERFLOW_CHUNK_ENCODE    payload=65536   encoded=65588   ops=64      run=2 rate=  287210.602 avg-ns=    3481.766 alloc-B/op=  131160.750 checksum=2887590986890462657
+INDEX_TUPLE_DECODE       payload=65536   encoded=65602   ops=64      run=2 rate=   94383.726 avg-ns=   10595.047 alloc-B/op=  196936.750 checksum=5198253712002292737
+INDEX_TUPLE_ENCODE       payload=65536   encoded=65602   ops=64      run=2 rate=  183381.089 avg-ns=    5453.125 alloc-B/op=  196768.750 checksum=360301319149764737
+PAGE_RECORD_DECODE       payload=65536   encoded=65624   ops=64      run=2 rate=  124402.528 avg-ns=    8038.422 alloc-B/op=   65816.750 checksum=16690580978617025
+PAGE_RECORD_ENCODE       payload=65536   encoded=65624   ops=64      run=2 rate=  123930.854 avg-ns=    8069.016 alloc-B/op=   65640.750 checksum=-6307267390159300543
+VERSION_RECORD_DECODE    payload=65536   encoded=65600   ops=64      run=2 rate=  698179.279 avg-ns=    1432.297 alloc-B/op=   65760.750 checksum=4873148340781574145
+VERSION_RECORD_ENCODE    payload=65536   encoded=65600   ops=64      run=2 rate=  712425.140 avg-ns=    1403.656 alloc-B/op=   65616.750 checksum=-2881601346701745855
+ROW_PAYLOAD_DECODE       payload=65536   encoded=65561   ops=64      run=2 rate=  109957.701 avg-ns=    9094.406 alloc-B/op=  131192.750 checksum=4631871239611606017
+ROW_PAYLOAD_ENCODE       payload=65536   encoded=65561   ops=64      run=2 rate=   11798.686 avg-ns=   84755.203 alloc-B/op=  131168.750 checksum=-4433590978250967103
+RECOVERY_RECORD_DECODE   payload=8192    encoded=11008   ops=512     run=2 rate=  618606.275 avg-ns=    1616.537 alloc-B/op=   27712.094 checksum=-5623803799344824319
+RECOVERY_RECORD_ENCODE   payload=8192    encoded=11008   ops=512     run=2 rate=  517563.811 avg-ns=    1932.129 alloc-B/op=   30344.094 checksum=-8646117974615482367
+OVERFLOW_CHUNK_DECODE    payload=8192    encoded=8244    ops=512     run=2 rate=  889596.241 avg-ns=    1124.105 alloc-B/op=   16456.094 checksum=94295919809495041
+OVERFLOW_CHUNK_ENCODE    payload=8192    encoded=8244    ops=512     run=2 rate= 1720528.390 avg-ns=     581.217 alloc-B/op=   16472.094 checksum=699698110886981121
+INDEX_TUPLE_DECODE       payload=8192    encoded=8258    ops=512     run=2 rate=  741134.254 avg-ns=    1349.283 alloc-B/op=   24904.094 checksum=-5650965891294896127
+INDEX_TUPLE_ENCODE       payload=8192    encoded=8258    ops=512     run=2 rate= 1254262.533 avg-ns=     797.281 alloc-B/op=   24736.094 checksum=597581251502015489
+PAGE_RECORD_DECODE       payload=8192    encoded=8280    ops=512     run=2 rate=  867612.794 avg-ns=    1152.588 alloc-B/op=    8472.094 checksum=-5226462701019035647
+PAGE_RECORD_ENCODE       payload=8192    encoded=8280    ops=512     run=2 rate= 1017049.484 avg-ns=     983.236 alloc-B/op=    8296.094 checksum=6436816009588556289
+VERSION_RECORD_DECODE    payload=8192    encoded=8256    ops=512     run=2 rate= 2539896.717 avg-ns=     393.717 alloc-B/op=    8416.094 checksum=-5623803799344824319
+VERSION_RECORD_ENCODE    payload=8192    encoded=8256    ops=512     run=2 rate= 2607814.275 avg-ns=     383.463 alloc-B/op=    8272.094 checksum=4074420227600878081
+ROW_PAYLOAD_DECODE       payload=8192    encoded=8216    ops=512     run=2 rate=  957754.067 avg-ns=    1044.109 alloc-B/op=   16488.094 checksum=2296025608335081473
+ROW_PAYLOAD_ENCODE       payload=8192    encoded=8216    ops=512     run=2 rate= 2145257.389 avg-ns=     466.145 alloc-B/op=   16464.094 checksum=3361309647897854465
+RECOVERY_RECORD_DECODE   payload=1024    encoded=1451    ops=4096    run=2 rate= 5024996.166 avg-ns=     199.005 alloc-B/op=    3824.012 checksum=95984333402800129
+RECOVERY_RECORD_ENCODE   payload=1024    encoded=1451    ops=4096    run=2 rate= 4254850.592 avg-ns=     235.026 alloc-B/op=    4072.012 checksum=6213880226653339649
+OVERFLOW_CHUNK_DECODE    payload=1024    encoded=1076    ops=4096    run=2 rate= 7771072.108 avg-ns=     128.682 alloc-B/op=    2120.012 checksum=-5109186405882658815
+OVERFLOW_CHUNK_ENCODE    payload=1024    encoded=1076    ops=4096    run=2 rate=18911918.295 avg-ns=      52.877 alloc-B/op=    2136.012 checksum=5407416002758668289
+INDEX_TUPLE_DECODE       payload=1024    encoded=1090    ops=4096    run=2 rate= 5772404.356 avg-ns=     173.238 alloc-B/op=    3400.012 checksum=613981673274933249
+INDEX_TUPLE_ENCODE       payload=1024    encoded=1090    ops=4096    run=2 rate=13218233.159 avg-ns=      75.653 alloc-B/op=    3232.012 checksum=836028860623495169
+PAGE_RECORD_DECODE       payload=1024    encoded=1112    ops=4096    run=2 rate= 7416366.705 avg-ns=     134.837 alloc-B/op=    1304.012 checksum=3878146247466254337
+PAGE_RECORD_ENCODE       payload=1024    encoded=1112    ops=4096    run=2 rate= 8635283.651 avg-ns=     115.804 alloc-B/op=    1128.012 checksum=1164033829776003073
+VERSION_RECORD_DECODE    payload=1024    encoded=1088    ops=4096    run=2 rate=22745067.552 avg-ns=      43.966 alloc-B/op=    1248.012 checksum=95984333402800129
+VERSION_RECORD_ENCODE    payload=1024    encoded=1088    ops=4096    run=2 rate=29144312.732 avg-ns=      34.312 alloc-B/op=    1104.012 checksum=834989711889551361
+ROW_PAYLOAD_DECODE       payload=1024    encoded=1048    ops=4096    run=2 rate= 7909886.006 avg-ns=     126.424 alloc-B/op=    2152.012 checksum=8223903465886908417
+ROW_PAYLOAD_ENCODE       payload=1024    encoded=1048    ops=4096    run=2 rate=19241338.814 avg-ns=      51.971 alloc-B/op=    2128.012 checksum=453599290592071681
+RECOVERY_RECORD_DECODE   payload=128     encoded=256     ops=10000   run=2 rate=15495851.760 avg-ns=      64.533 alloc-B/op=     832.005 checksum=-7041081008371901951
+RECOVERY_RECORD_ENCODE   payload=128     encoded=256     ops=10000   run=2 rate=23264795.247 avg-ns=      42.983 alloc-B/op=     776.005 checksum=-981635748276397055
+OVERFLOW_CHUNK_DECODE    payload=128     encoded=180     ops=10000   run=2 rate=46082949.309 avg-ns=      21.700 alloc-B/op=     328.005 checksum=3306172860858113025
+OVERFLOW_CHUNK_ENCODE    payload=128     encoded=180     ops=10000   run=2 rate=72180798.464 avg-ns=      13.854 alloc-B/op=     344.005 checksum=-7349280284276918671
+INDEX_TUPLE_DECODE       payload=128     encoded=194     ops=10000   run=2 rate=18561484.919 avg-ns=      53.875 alloc-B/op=     712.005 checksum=6607073534513575681
+INDEX_TUPLE_ENCODE       payload=128     encoded=194     ops=10000   run=2 rate=43699799.855 avg-ns=      22.883 alloc-B/op=     544.005 checksum=-3890408348635577823
+PAGE_RECORD_DECODE       payload=128     encoded=216     ops=10000   run=2 rate=36199095.023 avg-ns=      27.625 alloc-B/op=     408.005 checksum=-204078531366904399
+PAGE_RECORD_ENCODE       payload=128     encoded=216     ops=10000   run=2 rate=64585297.803 avg-ns=      15.483 alloc-B/op=     232.005 checksum=22577591284093201
+VERSION_RECORD_DECODE    payload=128     encoded=192     ops=10000   run=2 rate=52689537.439 avg-ns=      18.979 alloc-B/op=     352.005 checksum=-7041081008371901951
+VERSION_RECORD_ENCODE    payload=128     encoded=192     ops=10000   run=2 rate=118694362.018 avg-ns=       8.425 alloc-B/op=     208.005 checksum=1256920365479935825
+ROW_PAYLOAD_DECODE       payload=128     encoded=151     ops=10000   run=2 rate=38923227.825 avg-ns=      25.692 alloc-B/op=     360.005 checksum=-4061328238190802175
+ROW_PAYLOAD_ENCODE       payload=128     encoded=151     ops=10000   run=2 rate=63291139.241 avg-ns=      15.800 alloc-B/op=     336.005 checksum=5650182225849433121
+RECOVERY_RECORD_DECODE   payload=16      encoded=107     ops=10000   run=2 rate=20215660.668 avg-ns=      49.467 alloc-B/op=     464.005 checksum=-1829417205620200959
+RECOVERY_RECORD_ENCODE   payload=16      encoded=107     ops=10000   run=2 rate=37111535.007 avg-ns=      26.946 alloc-B/op=     376.005 checksum=6489290154803555841
+OVERFLOW_CHUNK_DECODE    payload=16      encoded=68      ops=10000   run=2 rate=29129720.471 avg-ns=      34.329 alloc-B/op=     104.005 checksum=-1952351485155478527
+OVERFLOW_CHUNK_ENCODE    payload=16      encoded=68      ops=10000   run=2 rate=107095046.854 avg-ns=       9.338 alloc-B/op=     120.005 checksum=-6562448533191847391
+INDEX_TUPLE_DECODE       payload=16      encoded=82      ops=10000   run=2 rate=19553553.272 avg-ns=      51.142 alloc-B/op=     376.005 checksum=-1423182287124123903
+INDEX_TUPLE_ENCODE       payload=16      encoded=82      ops=10000   run=2 rate=56364702.169 avg-ns=      17.742 alloc-B/op=     208.005 checksum=1729066898242659489
+PAGE_RECORD_DECODE       payload=16      encoded=104     ops=10000   run=2 rate=41877625.204 avg-ns=      23.879 alloc-B/op=     296.005 checksum=7686739141203458337
+PAGE_RECORD_ENCODE       payload=16      encoded=104     ops=10000   run=2 rate=73937153.420 avg-ns=      13.525 alloc-B/op=     120.005 checksum=1966993366461440721
+VERSION_RECORD_DECODE    payload=16      encoded=80      ops=10000   run=2 rate=59775721.493 avg-ns=      16.729 alloc-B/op=     240.005 checksum=-1829417205620200959
+VERSION_RECORD_ENCODE    payload=16      encoded=80      ops=10000   run=2 rate=114667064.179 avg-ns=       8.721 alloc-B/op=      96.005 checksum=4042928740309687377
+ROW_PAYLOAD_DECODE       payload=16      encoded=38      ops=10000   run=2 rate=53464213.729 avg-ns=      18.704 alloc-B/op=     136.005 checksum=-8485254729993842943
+ROW_PAYLOAD_ENCODE       payload=16      encoded=38      ops=10000   run=2 rate=82958636.824 avg-ns=      12.054 alloc-B/op=     112.005 checksum=8605139839922018593

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-07-17T05:46:33.108Z" hostname="Georges-MacBook-Pro.local" time="3.781">
+  <properties/>
+  <testcase name="committedDecisionFailuresReplayToOneFinalDigest()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest" time="1.519"/>
+  <testcase name="preDecisionFailuresAbortEveryPreparedParticipant()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest" time="0.372"/>
+  <testcase name="rawStoreBoundariesDistinguishAbortFromCommittedRecovery()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest" time="0.947"/>
+  <testcase name="seededBarrierHaltAndManifestReplayAreDeterministic()" classname="io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest" time="0.925"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

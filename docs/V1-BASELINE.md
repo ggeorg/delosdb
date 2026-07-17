@@ -92,17 +92,41 @@ semantic token count and aggregate semantic checksum
 normal profiling and fault-control defaults
 ```
 
-The first capture status is `CAPTURED_NOT_ACCEPTED`. Results become the accepted frozen baseline
-only after:
+The first capture status is `CAPTURED_NOT_ACCEPTED`. The reviewed Phase 8.6 capture has semantic
+checksum:
 
 ```text
-the working tree is clean
-the complete command is green
-all raw files and checksums are present
-semantic checksums are reviewed
-no material regression is unexplained
-the reviewed capture bundle is promoted into tracked baseline evidence
+e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17
 ```
+
+Promotion is explicit and one-way:
+
+```bash
+./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
+```
+
+The promotion task requires:
+
+```text
+the capture manifest reports a clean source tree
+the capture source revision is an ancestor of the promotion checkout
+the complete checksum inventory is valid
+the capture used JDK 25
+the fixed matrix and lane inventory are complete
+the semantic checksum matches benchmarks/v1-baseline/acceptance-candidate.json
+no accepted bundle already exists
+```
+
+It writes the tracked immutable bundle under:
+
+```text
+benchmarks/v1-baseline/accepted/
+```
+
+The accepted manifest status is `ACCEPTED_V1`. `delosV1AcceptedBaselineStaticAnalysis` verifies the
+review policy, fixed matrix, lane inventory, source cleanliness, semantic checksum, runtime
+fingerprints, and every evidence-file checksum. That verification is an S0 dependency; the
+machine-specific capture and promotion tasks remain opt-in.
 
 ## Provisional thresholds
 
@@ -121,3 +145,11 @@ failure. A semantic mismatch always blocks acceptance.
 Comparisons are valid only when source, JDK major, OS architecture, runtime-jar hashes, and matrix
 are compatible. A smoke run proves operability, not confidence. Published analysis must retain raw
 results and state any nondeterministic envelope rather than selecting favorable values.
+
+
+## Immutability
+
+The promotion task refuses to overwrite `benchmarks/v1-baseline/accepted/`. A future baseline must
+use a new baseline identifier and an explicit review policy rather than replacing v1 evidence in
+place. Later comparisons may add derived reports, but they must not modify accepted raw files,
+manifest metadata, or checksums.

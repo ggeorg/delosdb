@@ -1,0 +1,11 @@
+DelosDB v1 post-correction baseline capture
+schema: 1
+capture: phase8-v1-post-correction
+JDK: 25.0.3
+OS: Mac OS X 26.5 aarch64
+writer matrix cells: 90
+lifecycle cells: 2
+backup duration nanos: 586878041
+backup writer max commit nanos: 693415125
+profiling enabled/disabled ratio: 1.744799
+semantic digest: 2496c83c13749d79ea51a1287bd58a6f7f20b094215efcb223f9badc0d9e967b

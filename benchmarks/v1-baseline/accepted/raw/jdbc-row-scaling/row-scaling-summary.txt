@@ -1,0 +1,60 @@
+DelosDB JDBC row-count scaling baseline
+Generated: 2026-07-17T07:04:33.452079Z
+JDK: 25.0.3
+OS: Mac OS X aarch64
+Rows: [100, 1000]
+Payload: 128
+Fixture commit batch: 10000
+Operations: [PRIMARY_KEY_LOOKUP, SECONDARY_EQUALITY_LOOKUP, COMPOSITE_RANGE_SCAN, FULL_SCAN, AGGREGATE]
+Target configured rows per timing interval: 100000
+Maximum operations per timing interval: 100
+Adaptive operation count: max(1, min(max operations, target rows / row count))
+Statement mode: REUSED_ACROSS_TRANSACTIONS
+Transaction scope: one read transaction per timing interval
+Rollback outside timing interval: true
+Fixture preparation outside timing interval: true
+Row, provider, and operation order alternate by run: true
+Warmups: 1
+Iterations: 1
+Runs: 2
+
+    100 heap PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=1 rate=  23385.888 avg-ns=     42760.830 ns/config-row=   427.608 fixture-ms=      92.642 db-bytes=1993450 rows=1 checksum=4773 fingerprint=-5507491179513768559
+    100 heap PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=2 rate= 228115.198 avg-ns=      4383.750 ns/config-row=    43.838 fixture-ms=       6.424 db-bytes=1997546 rows=1 checksum=4773 fingerprint=-5507491179513768559
+    100 heap SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=1 rate=  15647.616 avg-ns=     63907.500 ns/config-row=   639.075 fixture-ms=      92.642 db-bytes=1993450 rows=6 checksum=2264730969062217570 fingerprint=2452140559725987825
+    100 heap SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=2 rate=  66822.586 avg-ns=     14965.000 ns/config-row=   149.650 fixture-ms=       6.424 db-bytes=1997546 rows=6 checksum=2264730969062217570 fingerprint=2452140559725987825
+    100 heap COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=1 rate=  19861.794 avg-ns=     50347.920 ns/config-row=   503.479 fixture-ms=      92.642 db-bytes=1993450 rows=4 checksum=4076122640367 fingerprint=3798945848163470413
+    100 heap COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=2 rate=  77607.154 avg-ns=     12885.410 ns/config-row=   128.854 fixture-ms=       6.424 db-bytes=1997546 rows=4 checksum=4076122640367 fingerprint=3798945848163470413
+    100 heap FULL_SCAN                    ops=100  samples=100   run=1 rate=   8728.320 avg-ns=    114569.580 ns/config-row=  1145.696 fixture-ms=      92.642 db-bytes=1993450 rows=100 checksum=-5261781222220006194 fingerprint=-5608843732593534103
+    100 heap FULL_SCAN                    ops=100  samples=100   run=2 rate=  15841.062 avg-ns=     63127.080 ns/config-row=   631.271 fixture-ms=       6.424 db-bytes=1997546 rows=100 checksum=-5261781222220006194 fingerprint=-5608843732593534103
+    100 heap AGGREGATE                    ops=100  samples=100   run=1 rate=  13792.312 avg-ns=     72504.160 ns/config-row=   725.042 fixture-ms=      92.642 db-bytes=1993450 rows=17 checksum=-8273669598366858438 fingerprint=-2870096762841145851
+    100 heap AGGREGATE                    ops=100  samples=100   run=2 rate=  17401.391 avg-ns=     57466.670 ns/config-row=   574.667 fixture-ms=       6.424 db-bytes=1997546 rows=17 checksum=-8273669598366858438 fingerprint=-2870096762841145851
+    100 mvcc PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=1 rate=  23319.987 avg-ns=     42881.670 ns/config-row=   428.817 fixture-ms=     306.732 db-bytes=2046173 rows=1 checksum=4773 fingerprint=-5507491179513768559
+    100 mvcc PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=2 rate=  50775.391 avg-ns=     19694.580 ns/config-row=   196.946 fixture-ms=     167.978 db-bytes=2046173 rows=1 checksum=4773 fingerprint=-5507491179513768559
+    100 mvcc SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=1 rate=  17663.812 avg-ns=     56612.920 ns/config-row=   566.129 fixture-ms=     306.732 db-bytes=2046173 rows=6 checksum=2264730969062217570 fingerprint=2452140559725987825
+    100 mvcc SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=2 rate=  13667.115 avg-ns=     73168.330 ns/config-row=   731.683 fixture-ms=     167.978 db-bytes=2046173 rows=6 checksum=2264730969062217570 fingerprint=2452140559725987825
+    100 mvcc COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=1 rate=  13605.983 avg-ns=     73497.080 ns/config-row=   734.971 fixture-ms=     306.732 db-bytes=2046173 rows=4 checksum=4076122640367 fingerprint=3798945848163470413
+    100 mvcc COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=2 rate=  10548.848 avg-ns=     94797.080 ns/config-row=   947.971 fixture-ms=     167.978 db-bytes=2046173 rows=4 checksum=4076122640367 fingerprint=3798945848163470413
+    100 mvcc FULL_SCAN                    ops=100  samples=100   run=1 rate=   8218.587 avg-ns=    121675.420 ns/config-row=  1216.754 fixture-ms=     306.732 db-bytes=2046173 rows=100 checksum=-5261781222220006194 fingerprint=-5608843732593534103
+    100 mvcc FULL_SCAN                    ops=100  samples=100   run=2 rate=   9408.260 avg-ns=    106289.580 ns/config-row=  1062.896 fixture-ms=     167.978 db-bytes=2046173 rows=100 checksum=-5261781222220006194 fingerprint=-5608843732593534103
+    100 mvcc AGGREGATE                    ops=100  samples=100   run=1 rate=   8448.413 avg-ns=    118365.420 ns/config-row=  1183.654 fixture-ms=     306.732 db-bytes=2046173 rows=17 checksum=-8273669598366858438 fingerprint=-2870096762841145851
+    100 mvcc AGGREGATE                    ops=100  samples=100   run=2 rate=  10863.366 avg-ns=     92052.500 ns/config-row=   920.525 fixture-ms=     167.978 db-bytes=2046173 rows=17 checksum=-8273669598366858438 fingerprint=-2870096762841145851
+   1000 heap PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=1 rate=  90864.320 avg-ns=     11005.420 ns/config-row=    11.005 fixture-ms=      44.053 db-bytes=2337515 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 heap PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=2 rate= 186133.085 avg-ns=      5372.500 ns/config-row=     5.373 fixture-ms=      22.532 db-bytes=2337515 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 heap SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=1 rate=   6731.212 avg-ns=    148561.660 ns/config-row=   148.562 fixture-ms=      44.053 db-bytes=2337515 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 heap SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=2 rate=  10506.547 avg-ns=     95178.750 ns/config-row=    95.179 fixture-ms=      22.532 db-bytes=2337515 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 heap COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=1 rate=   7877.738 avg-ns=    126940.000 ns/config-row=   126.940 fixture-ms=      44.053 db-bytes=2337515 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 heap COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=2 rate=   9535.766 avg-ns=    104868.340 ns/config-row=   104.868 fixture-ms=      22.532 db-bytes=2337515 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 heap FULL_SCAN                    ops=100  samples=100   run=1 rate=    454.816 avg-ns=   2198691.670 ns/config-row=  2198.692 fixture-ms=      44.053 db-bytes=2337515 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 heap FULL_SCAN                    ops=100  samples=100   run=2 rate=    455.079 avg-ns=   2197420.830 ns/config-row=  2197.421 fixture-ms=      22.532 db-bytes=2337515 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 heap AGGREGATE                    ops=100  samples=100   run=1 rate=    534.720 avg-ns=   1870136.250 ns/config-row=  1870.136 fixture-ms=      44.053 db-bytes=2337515 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 heap AGGREGATE                    ops=100  samples=100   run=2 rate=    583.585 avg-ns=   1713546.250 ns/config-row=  1713.546 fixture-ms=      22.532 db-bytes=2337515 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 mvcc PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=1 rate=  85415.332 avg-ns=     11707.500 ns/config-row=    11.708 fixture-ms=     284.390 db-bytes=3179931 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 mvcc PRIMARY_KEY_LOOKUP           ops=100  samples=100   run=2 rate=  27763.634 avg-ns=     36018.340 ns/config-row=    36.018 fixture-ms=     232.860 db-bytes=3179931 rows=1 checksum=16964 fingerprint=6052877150307417389
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=1 rate=   5344.807 avg-ns=    187097.500 ns/config-row=   187.098 fixture-ms=     284.390 db-bytes=3179931 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 mvcc SECONDARY_EQUALITY_LOOKUP    ops=100  samples=100   run=2 rate=   1959.054 avg-ns=    510450.420 ns/config-row=   510.450 fixture-ms=     232.860 db-bytes=3179931 rows=59 checksum=4724203498498060999 fingerprint=1280488341593933105
+   1000 mvcc COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=1 rate=   2028.411 avg-ns=    492996.670 ns/config-row=   492.997 fixture-ms=     284.390 db-bytes=3179931 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 mvcc COMPOSITE_RANGE_SCAN         ops=100  samples=100   run=2 rate=   1508.257 avg-ns=    663017.080 ns/config-row=   663.017 fixture-ms=     232.860 db-bytes=3179931 rows=48 checksum=3307281027342571328 fingerprint=8528813925559228737
+   1000 mvcc FULL_SCAN                    ops=100  samples=100   run=1 rate=   1056.874 avg-ns=    946186.660 ns/config-row=   946.187 fixture-ms=     284.390 db-bytes=3179931 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 mvcc FULL_SCAN                    ops=100  samples=100   run=2 rate=   1066.523 avg-ns=    937626.250 ns/config-row=   937.626 fixture-ms=     232.860 db-bytes=3179931 rows=1000 checksum=1266487543966429532 fingerprint=6090687629928140369
+   1000 mvcc AGGREGATE                    ops=100  samples=100   run=1 rate=   1279.333 avg-ns=    781657.090 ns/config-row=   781.657 fixture-ms=     284.390 db-bytes=3179931 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979
+   1000 mvcc AGGREGATE                    ops=100  samples=100   run=2 rate=   1394.508 avg-ns=    717098.750 ns/config-row=   717.099 fixture-ms=     232.860 db-bytes=3179931 rows=17 checksum=7965525936446687820 fingerprint=-3120246773034004979

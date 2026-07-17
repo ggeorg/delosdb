@@ -1146,6 +1146,76 @@ def delosV1GitOutput = { List<String> command ->
     }
 }
 
+
+
+def delosV1VerifyBundleChecksums = { File bundleRoot, String label ->
+    File checksumsFile = new File(bundleRoot, 'checksums.sha256')
+    if (!checksumsFile.isFile()) {
+        throw new GradleException("${label} is missing checksums.sha256: ${bundleRoot}")
+    }
+    def listed = [] as Set
+    def failures = []
+    checksumsFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+        def matcher = java.util.regex.Pattern.compile('^([0-9a-f]{64})  (.+)$').matcher(line)
+        if (!matcher.matches()) {
+            failures << "Malformed checksum row ${index + 1}: ${line}"
+            return
+        }
+        String expected = matcher.group(1)
+        String relative = matcher.group(2)
+        if (relative.startsWith('/') || relative.contains('..')) {
+            failures << "Unsafe checksum path: ${relative}"
+            return
+        }
+        if (!listed.add(relative)) {
+            failures << "Duplicate checksum path: ${relative}"
+            return
+        }
+        File evidence = new File(bundleRoot, relative)
+        if (!evidence.isFile()) {
+            failures << "Missing checksummed file: ${relative}"
+        } else {
+            String actual = delosV1Sha256(evidence)
+            if (actual != expected) {
+                failures << "Checksum mismatch for ${relative}: expected ${expected}, found ${actual}"
+            }
+        }
+    }
+    def actual = [] as Set
+    bundleRoot.eachFileRecurse { file ->
+        if (file.isFile()) {
+            String relative = bundleRoot.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+            if (relative != 'checksums.sha256') {
+                actual.add(relative)
+            }
+        }
+    }
+    def missingRows = actual - listed
+    def staleRows = listed - actual
+    if (!missingRows.isEmpty()) {
+        failures << 'Files missing from checksums.sha256: ' + missingRows.sort().join(', ')
+    }
+    if (!staleRows.isEmpty()) {
+        failures << 'Checksum rows without files: ' + staleRows.sort().join(', ')
+    }
+    if (!failures.isEmpty()) {
+        throw new GradleException("${label} checksum verification failed:\n- " + failures.join('\n- '))
+    }
+    [fileCount: actual.size(), checksumFileSha256: delosV1Sha256(checksumsFile)]
+}
+
+def delosV1GitCommandSucceeded = { List<String> command ->
+    try {
+        def process = new ProcessBuilder(command)
+                .directory(rootProject.projectDir)
+                .redirectErrorStream(true)
+                .start()
+        process.inputStream.getText('UTF-8')
+        return process.waitFor() == 0
+    } catch (IOException ignored) {
+        return false
+    }
+}
 tasks.register('captureDelosV1Baseline') {
     group = 'benchmark'
     description = 'Runs and packages the complete post-correction v1 baseline evidence into one versioned capture manifest.'
@@ -1325,5 +1395,166 @@ tasks.register('captureDelosV1Baseline') {
         if (dirty) {
             logger.warn('The capture is marked dirty and cannot be frozen as the accepted v1 baseline.')
         }
+    }
+}
+
+def delosV1AcceptanceCandidateFile = rootProject.layout.projectDirectory.file(
+        'benchmarks/v1-baseline/acceptance-candidate.json')
+def delosV1AcceptedBaselineDirectory = rootProject.layout.projectDirectory.dir(
+        'benchmarks/v1-baseline/accepted')
+
+tasks.register('promoteDelosV1Baseline') {
+    group = 'benchmark'
+    description = 'Promotes the reviewed clean v1 capture into the tracked immutable accepted baseline bundle.'
+
+    inputs.dir(delosV1BaselineCaptureDirectory)
+    inputs.file(delosV1AcceptanceCandidateFile)
+    outputs.dir(delosV1AcceptedBaselineDirectory)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File captureRoot = delosV1BaselineCaptureDirectory.get().asFile
+        File candidateFile = delosV1AcceptanceCandidateFile.asFile
+        File acceptedRoot = delosV1AcceptedBaselineDirectory.asFile
+        File acceptedTemp = new File(acceptedRoot.parentFile, acceptedRoot.name + '.tmp')
+
+        if (!captureRoot.isDirectory()) {
+            throw new GradleException('Missing v1 capture bundle: ' + captureRoot
+                    + '. Run :delosdb-tests:captureDelosV1Baseline first.')
+        }
+        if (!candidateFile.isFile()) {
+            throw new GradleException('Missing reviewed v1 acceptance candidate: ' + candidateFile)
+        }
+        if (acceptedRoot.exists()) {
+            File[] acceptedEntries = acceptedRoot.listFiles()
+            if (acceptedEntries == null) {
+                throw new GradleException('Unable to inspect the accepted v1 baseline directory: ' + acceptedRoot)
+            }
+            if (acceptedEntries.length > 0) {
+                throw new GradleException('The accepted v1 baseline already exists and is immutable: ' + acceptedRoot)
+            }
+            if (!acceptedRoot.delete()) {
+                throw new GradleException('Unable to remove Gradle-created empty accepted baseline directory: '
+                        + acceptedRoot)
+            }
+        }
+
+        def captureVerification = delosV1VerifyBundleChecksums(captureRoot, 'Captured v1 baseline')
+        File captureManifestFile = new File(captureRoot, 'manifest.json')
+        def captureManifest = new groovy.json.JsonSlurper().parse(captureManifestFile)
+        def candidate = new groovy.json.JsonSlurper().parse(candidateFile)
+
+        if (captureManifest.schemaVersion != 1) {
+            throw new GradleException('Unsupported capture manifest schema: ' + captureManifest.schemaVersion)
+        }
+        if (captureManifest.status != candidate.requiredCaptureStatus) {
+            throw new GradleException('Capture status is not promotable: ' + captureManifest.status)
+        }
+        if (captureManifest.baselineId != candidate.baselineId) {
+            throw new GradleException('Capture baseline id does not match the reviewed candidate')
+        }
+        if (captureManifest.semanticChecksum != candidate.expectedSemanticChecksum) {
+            throw new GradleException('Capture semantic checksum does not match the reviewed candidate. Expected '
+                    + candidate.expectedSemanticChecksum + ', found ' + captureManifest.semanticChecksum)
+        }
+        if (captureManifest.source?.dirty != false) {
+            throw new GradleException('Only a capture produced from a clean source tree can be promoted')
+        }
+        String captureRevision = captureManifest.source?.revision ?: ''
+        if (!java.util.regex.Pattern.matches('[0-9a-f]{40,64}', captureRevision)) {
+            throw new GradleException('Capture source revision is missing or malformed')
+        }
+        if (!delosV1GitCommandSucceeded(['git', 'merge-base', '--is-ancestor', captureRevision, 'HEAD'])) {
+            throw new GradleException('Capture source revision is not an ancestor of the current checkout: '
+                    + captureRevision)
+        }
+        String javaVersion = String.valueOf(captureManifest.environment?.javaVersion ?: '')
+        String javaMajor = javaVersion.tokenize('.')[0]
+        if (javaMajor != String.valueOf(candidate.requiredJavaMajor)) {
+            throw new GradleException('Capture must use JDK ' + candidate.requiredJavaMajor
+                    + ', found ' + javaVersion)
+        }
+        if (!(captureManifest.semanticTokenCount instanceof Number)
+                || captureManifest.semanticTokenCount.intValue() <= 0) {
+            throw new GradleException('Capture contains no semantic evidence tokens')
+        }
+        if (!(captureManifest.runtimeArtifacts instanceof Collection)
+                || captureManifest.runtimeArtifacts.isEmpty()) {
+            throw new GradleException('Capture contains no runtime artifact fingerprints')
+        }
+
+        delete acceptedTemp
+        acceptedTemp.mkdirs()
+        copy {
+            from captureRoot
+            into acceptedTemp
+        }
+        copy {
+            from candidateFile
+            into acceptedTemp
+            rename { 'acceptance-policy.json' }
+        }
+
+        String currentRevision = delosV1GitOutput(['git', 'rev-parse', 'HEAD'])
+        def acceptedManifest = new LinkedHashMap(captureManifest as Map)
+        acceptedManifest.status = candidate.acceptedStatus
+        acceptedManifest.acceptance = [
+                policyVersion: candidate.policyVersion,
+                acceptedAtUtc: java.time.Instant.now().toString(),
+                promotedByTask: ':delosdb-tests:promoteDelosV1Baseline',
+                promotionRevision: currentRevision,
+                captureManifestSha256: delosV1Sha256(captureManifestFile),
+                captureChecksumsSha256: captureVerification.checksumFileSha256,
+                acceptancePolicySha256: delosV1Sha256(candidateFile)
+        ]
+
+        def acceptedEvidenceFiles = []
+        acceptedTemp.eachFileRecurse { file ->
+            if (file.isFile()) {
+                String relative = acceptedTemp.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                if (relative != 'manifest.json' && relative != 'checksums.sha256') {
+                    acceptedEvidenceFiles << [
+                            path: relative,
+                            bytes: file.length(),
+                            sha256: delosV1Sha256(file)
+                    ]
+                }
+            }
+        }
+        acceptedEvidenceFiles.sort { left, right -> left.path <=> right.path }
+        acceptedManifest.files = acceptedEvidenceFiles
+
+        File acceptedManifestFile = new File(acceptedTemp, 'manifest.json')
+        acceptedManifestFile.setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(acceptedManifest)) + '\n',
+                'UTF-8')
+
+        def acceptedChecksums = []
+        acceptedTemp.eachFileRecurse { file ->
+            if (file.isFile()) {
+                String relative = acceptedTemp.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                if (relative != 'checksums.sha256') {
+                    acceptedChecksums << [path: relative, sha256: delosV1Sha256(file)]
+                }
+            }
+        }
+        acceptedChecksums.sort { left, right -> left.path <=> right.path }
+        new File(acceptedTemp, 'checksums.sha256').withWriter('UTF-8') { writer ->
+            acceptedChecksums.each { entry -> writer.println("${entry.sha256}  ${entry.path}") }
+        }
+        delosV1VerifyBundleChecksums(acceptedTemp, 'Accepted v1 baseline candidate')
+
+        try {
+            java.nio.file.Files.move(
+                    acceptedTemp.toPath(),
+                    acceptedRoot.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE)
+        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+            java.nio.file.Files.move(acceptedTemp.toPath(), acceptedRoot.toPath())
+        }
+
+        logger.lifecycle('Accepted DelosDB v1 baseline written to {}', acceptedRoot)
+        logger.lifecycle('Accepted semantic checksum: {}', acceptedManifest.semanticChecksum)
+        logger.lifecycle('Accepted source revision: {}', captureRevision)
     }
 }

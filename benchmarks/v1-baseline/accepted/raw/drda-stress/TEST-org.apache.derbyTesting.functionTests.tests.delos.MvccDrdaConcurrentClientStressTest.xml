@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.apache.derbyTesting.functionTests.tests.delos.MvccDrdaConcurrentClientStressTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-07-17T06:59:48.209Z" hostname="Georges-MacBook-Pro.local" time="3.39">
+  <properties/>
+  <testcase name="testConcurrentNetworkClientsAcrossHeapAndMvcc" classname="org.apache.derbyTesting.functionTests.tests.delos.MvccDrdaConcurrentClientStressTest" time="2.166"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

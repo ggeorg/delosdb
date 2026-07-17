@@ -1,0 +1,276 @@
+{
+    "schemaVersion": 1,
+    "baselineId": "phase8-v1-post-correction",
+    "status": "ACCEPTED_V1",
+    "source": {
+        "revision": "358e919692d970000fe92bd71edeb1b813633ff1",
+        "dirty": false
+    },
+    "environment": {
+        "capturedAtUtc": "2026-07-17T07:09:56.773212Z",
+        "javaVersion": "25.0.3",
+        "javaVendor": "Oracle Corporation",
+        "vmName": "Java HotSpot(TM) 64-Bit Server VM",
+        "osName": "Mac OS X",
+        "osVersion": "26.5",
+        "osArch": "aarch64",
+        "processors": 16,
+        "maxHeapBytes": 536870912,
+        "gradleVersion": "9.5.1"
+    },
+    "matrix": {
+        "writers": [
+            1,
+            2,
+            4,
+            8,
+            16
+        ],
+        "providers": [
+            "heap",
+            "delos_mvcc"
+        ],
+        "topologies": [
+            "same-table",
+            "different-tables",
+            "different-databases"
+        ],
+        "workloads": [
+            "single-row-insert",
+            "multi-row-insert",
+            "mixed-insert-update"
+        ]
+    },
+    "lanes": [
+        "operational",
+        "jdbc-lifecycle",
+        "jdbc-batch-scaling",
+        "jdbc-transactions",
+        "jdbc-row-scaling",
+        "mvcc-buffer-cache",
+        "mvcc-page-codec",
+        "drda-stress",
+        "recovery-differential",
+        "failure-replay",
+        "low-level-failure-replay"
+    ],
+    "profilingAndFaultDefaults": {
+        "runtimeStatisticsDefault": "disabled",
+        "failureControls": "test-only-unreachable"
+    },
+    "semanticChecksum": "e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17",
+    "semanticTokenCount": 143,
+    "runtimeArtifacts": [
+        {
+            "name": "delosdb-annotations.jar",
+            "bytes": 13236,
+            "sha256": "76e99fa37e020dc432e7361db5e5037b2eab55a84113231d5c3c297368518318"
+        },
+        {
+            "name": "delosdb-runtime-api.jar",
+            "bytes": 181400,
+            "sha256": "c6ce8eb8bf8e6fdab506314f005c7437b587916078acaf6e51e263d50adbdc3e"
+        },
+        {
+            "name": "delosdb-spi.jar",
+            "bytes": 39838,
+            "sha256": "92426496e01f0fff6682cf34c7092b3aef7496377e529f1c5bc2edcea94f2870"
+        },
+        {
+            "name": "delosdb-storage-io.jar",
+            "bytes": 37230,
+            "sha256": "6b83817f69cc6a0d4d78b5427a83d0668fda86f849204148ee2863325e10202f"
+        },
+        {
+            "name": "delosdb-storage-mvcc.jar",
+            "bytes": 584846,
+            "sha256": "fcbd2269c1fa2bf3cedf5fea8cfa57321ebe78eec43e0563426fb9e0c30febf5"
+        },
+        {
+            "name": "derby.jar",
+            "bytes": 5272549,
+            "sha256": "fa68705fb8dd8717e4bb301835d7863d5cfb71e71d41fd6d3cf8c3c9640eff2b"
+        },
+        {
+            "name": "derbyclient.jar",
+            "bytes": 559864,
+            "sha256": "e1f4686a54f2112998b968de99a0822f4da80127f6635851e5a2b8fb0692ad97"
+        },
+        {
+            "name": "derbynet.jar",
+            "bytes": 333962,
+            "sha256": "8546f1db5fcae370dcafce56dbfabbba0e6fbff960736aee130317d8b0768f57"
+        },
+        {
+            "name": "derbyoptionaltools.jar",
+            "bytes": 91032,
+            "sha256": "c0f243891dad51ddd898da697f4a064c29cba7babb697eac3a8e0c89187949a2"
+        },
+        {
+            "name": "derbyrun.jar",
+            "bytes": 12595,
+            "sha256": "da951c7bd88355f5d05316787c5e067301748e511c8a24de0c40cfa6c2c4c5a9"
+        },
+        {
+            "name": "derbyshared.jar",
+            "bytes": 109415,
+            "sha256": "8e102ff61548d3c2be18d8438bfee7dbe874e154169f51549056a1f3d6c733c3"
+        },
+        {
+            "name": "derbytools.jar",
+            "bytes": 428132,
+            "sha256": "8026f08f23a8c49fd0e06e50ee4675f4bb02cf07406a68100ead339b61125ba7"
+        },
+        {
+            "name": "osgi-framework-stub.jar",
+            "bytes": 43313,
+            "sha256": "ca7e9497c71d438b1ed67d0202988c084d8cd1219cbc10c10ee66f6a717862bb"
+        }
+    ],
+    "files": [
+        {
+            "path": "acceptance-policy.json",
+            "bytes": 304,
+            "sha256": "c0c82651b6f1136ee27894333b9359d601d684b396199378f0e74d3725e1ea6e"
+        },
+        {
+            "path": "provisional-thresholds.json",
+            "bytes": 1382,
+            "sha256": "28eb2cf5334b45ba42c236b4334ebe2789e15c027ece21b756c439f1bbb68529"
+        },
+        {
+            "path": "raw/drda-stress/TEST-org.apache.derbyTesting.functionTests.tests.delos.MvccDrdaConcurrentClientStressTest.xml",
+            "bytes": 561,
+            "sha256": "206b234f7e09f75af95b71121b7adcbab20e1f05e9bac5be1a2d5438e3f47f03"
+        },
+        {
+            "path": "raw/failure-replay/TEST-io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureInjectionReplayTest.xml",
+            "bytes": 1076,
+            "sha256": "94f3045b230945043545a22172f1d61d204eecba60fa511714797aa8da74af04"
+        },
+        {
+            "path": "raw/jdbc-batch-scaling/batch-scaling-results.csv",
+            "bytes": 6361,
+            "sha256": "f4425359bbd6da97ee752e486a3e1ccd229b66c81fd73c6ec90e8bf165d8fca7"
+        },
+        {
+            "path": "raw/jdbc-batch-scaling/batch-scaling-results.json",
+            "bytes": 18155,
+            "sha256": "54e54fa46ff17145c53603d8a7bc74b08debc6b1b178c2e0fb64ce2058f74d80"
+        },
+        {
+            "path": "raw/jdbc-batch-scaling/batch-scaling-summary.txt",
+            "bytes": 7838,
+            "sha256": "8e2160ad19b784d3b77e147605276b9f7e775368719a07a808774f3cf0b5fb3f"
+        },
+        {
+            "path": "raw/jdbc-lifecycle/benchmark-results.csv",
+            "bytes": 78661,
+            "sha256": "6d5d939f9f68283733d64e79d8116c4e8315d4ee0093f3816a6628253b479ae9"
+        },
+        {
+            "path": "raw/jdbc-lifecycle/benchmark-results.json",
+            "bytes": 243779,
+            "sha256": "d692541f2b44b834521885c27029127f9b75d6ad4d7c14e0dffd0fa84f898d1a"
+        },
+        {
+            "path": "raw/jdbc-lifecycle/benchmark-summary.txt",
+            "bytes": 115554,
+            "sha256": "299fe73796aeafc1b0e78f365921c9554928ca8e3fb389c165e94df8e94f1d60"
+        },
+        {
+            "path": "raw/jdbc-row-scaling/row-scaling-results.csv",
+            "bytes": 7955,
+            "sha256": "4735b593a8f5e8e0d674e2e5f2f2d49fcbdf237efadf72127096b18e3e2048c6"
+        },
+        {
+            "path": "raw/jdbc-row-scaling/row-scaling-results.json",
+            "bytes": 25648,
+            "sha256": "6cba589a976b956b10582bf8d9626e2ec825c7cf2306c2eafebb222c0c642eef"
+        },
+        {
+            "path": "raw/jdbc-row-scaling/row-scaling-summary.txt",
+            "bytes": 10413,
+            "sha256": "482b8ea396abfad639918f96bec17067d481236d29457d88db3072cb535defc2"
+        },
+        {
+            "path": "raw/jdbc-transactions/transaction-results.csv",
+            "bytes": 5349,
+            "sha256": "b67be456a8dca762331417f13c49ac75984d2b76c603bbc046d734f2d06ac22e"
+        },
+        {
+            "path": "raw/jdbc-transactions/transaction-results.json",
+            "bytes": 20108,
+            "sha256": "8114cfc11a56b8d884203f903761d8f502ea8c19cb0243f5f0c1a277bd74913c"
+        },
+        {
+            "path": "raw/jdbc-transactions/transaction-summary.txt",
+            "bytes": 7632,
+            "sha256": "34bdf2e498ea8c75522848053b4c6e19b9035a43166c8d9a099e5802e197ce75"
+        },
+        {
+            "path": "raw/low-level-failure-replay/TEST-io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccLowLevelFailureReplayTest.xml",
+            "bytes": 920,
+            "sha256": "dfa982aed3567fea32bdb4e8013fe76ed47965ac8e4a07ba63e9fe41f32a6ac8"
+        },
+        {
+            "path": "raw/mvcc-buffer-cache/buffer-cache-results.csv",
+            "bytes": 4183,
+            "sha256": "73e0889f9f974216b67894ea914313f16d97b382781555343932554de2fb2fc1"
+        },
+        {
+            "path": "raw/mvcc-buffer-cache/buffer-cache-results.json",
+            "bytes": 12735,
+            "sha256": "e74ace1b3fca8851fb2e5e874205565bad5a3a9f170d293b7d92cbf27f67c761"
+        },
+        {
+            "path": "raw/mvcc-buffer-cache/buffer-cache-summary.txt",
+            "bytes": 6825,
+            "sha256": "7df615fe6310beb2887635e97d1b7a3a231a1ae45aca230d7d9fff09fbf334a9"
+        },
+        {
+            "path": "raw/mvcc-page-codec/page-codec-results.csv",
+            "bytes": 14878,
+            "sha256": "98f770a1d11b0463071adb8bf5bf7ac09014509bcf7df2f0a28601f57ac0b1f9"
+        },
+        {
+            "path": "raw/mvcc-page-codec/page-codec-results.json",
+            "bytes": 51497,
+            "sha256": "98a3eee83c1b4f48395925fa37286e22e444ece557f760ea8cbb236103625bf8"
+        },
+        {
+            "path": "raw/mvcc-page-codec/page-codec-summary.txt",
+            "bytes": 20570,
+            "sha256": "b8c2e821c587b1382dd6802ddcd298dbf1571992432170e21ae957cf3b76a443"
+        },
+        {
+            "path": "raw/operational/v1-baseline-operational-results.json",
+            "bytes": 46961,
+            "sha256": "0cf9fa4308a4ec41ad573b24994e50b67df1946fdf4010b4f56add1979774bb2"
+        },
+        {
+            "path": "raw/operational/v1-baseline-summary.txt",
+            "bytes": 370,
+            "sha256": "787c3939221e3d8bbc92f6da7eeb997a2926fedd3fb9118f1fe6696c25b9e924"
+        },
+        {
+            "path": "raw/operational/v1-baseline-writer-matrix.csv",
+            "bytes": 18869,
+            "sha256": "18e745b26e2c7ba05ef2082586d0f826c40ad8ed89d1abe99dd44e751afc3763"
+        },
+        {
+            "path": "raw/recovery-differential/TEST-org.apache.derbyTesting.functionTests.tests.delos.MvccSqlRecoveryTest.xml",
+            "bytes": 1801,
+            "sha256": "d765c35f9f63aa2fb4c86f11aa3d12229cc8c87e4dadc1e5ac9a4f4386eeab05"
+        }
+    ],
+    "acceptance": {
+        "policyVersion": 1,
+        "acceptedAtUtc": "2026-07-17T08:55:23.136376Z",
+        "promotedByTask": ":delosdb-tests:promoteDelosV1Baseline",
+        "promotionRevision": "358e919692d970000fe92bd71edeb1b813633ff1",
+        "captureManifestSha256": "1e5bde2934c38e614299cd32aec3d0713823d313513c6462c5a9a86555c6723d",
+        "captureChecksumsSha256": "6fa7fadeaa820f6b90b07c467df0db9b1c21dcff2d191c2588beee9e148b7181",
+        "acceptancePolicySha256": "c0c82651b6f1136ee27894333b9359d601d684b396199378f0e74d3725e1ea6e"
+    }
+}

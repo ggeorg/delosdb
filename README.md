@@ -158,11 +158,14 @@ Stable static and repository gates:
 ./gradlew s0CloseoutVerification
 ```
 
-Opt-in post-correction v1 baseline capture:
+Opt-in post-correction v1 baseline capture and one-way reviewed promotion:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
+./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
 ```
+
+S0 verifies the tracked accepted bundle without rerunning machine-specific measurements.
 
 Full storage-module verification:
 
