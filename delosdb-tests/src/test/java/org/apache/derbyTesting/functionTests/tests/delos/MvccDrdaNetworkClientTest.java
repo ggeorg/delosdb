@@ -142,6 +142,7 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
 
         try (Connection reopened = openDefaultConnection()) {
             reopened.setAutoCommit(false);
+            executeUpdate(reopened, "lock table " + TABLE + " in share mode");
             long reopenedContainerId = MvccSqlTestSupport.mvccContainerId(reopened, TABLE_UPPER);
             assertEquals("network-client reopen should preserve MVCC overflow page count",
                     overflowPagesAfterVacuum,
