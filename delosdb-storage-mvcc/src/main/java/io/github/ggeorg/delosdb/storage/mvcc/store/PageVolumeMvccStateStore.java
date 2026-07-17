@@ -44,6 +44,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumPlan;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccVacuumResult;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.PageBackedMvccTable;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
+import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
 
 
 /**
@@ -791,16 +792,36 @@ public final class PageVolumeMvccStateStore<T> {
             PreparedChanges preparedChanges,
             MvccCommitSequence commitSequence,
             long statusTransactionId) {
+        return stagePreparedChanges(
+                preparedChanges, commitSequence, statusTransactionId, 1, 1);
+    }
+
+    public StagedChanges stagePreparedChanges(
+            PreparedChanges preparedChanges,
+            MvccCommitSequence commitSequence,
+            long statusTransactionId,
+            int participantIndex,
+            int participantCount) {
         Objects.requireNonNull(preparedChanges, "preparedChanges");
         Objects.requireNonNull(commitSequence, "commitSequence");
         if (statusTransactionId < 0L) {
             throw new IllegalArgumentException("statusTransactionId must not be negative: "
                     + statusTransactionId);
         }
+        if (participantIndex <= 0 || participantCount < participantIndex) {
+            throw new IllegalArgumentException(
+                    "invalid MVCC participant position: index=" + participantIndex
+                            + ", count=" + participantCount);
+        }
         long transactionId = nextTransactionId();
         if (!enabled() || preparedChanges.isEmpty()) {
             return StagedChanges.empty(
-                    this, transactionId, statusTransactionId, commitSequence.value());
+                    this,
+                    transactionId,
+                    statusTransactionId,
+                    commitSequence.value(),
+                    participantIndex,
+                    participantCount);
         }
         long durableCommitSequence = commitSequence.value();
         nextCommitSequence = Math.max(nextCommitSequence, durableCommitSequence + 1L);
@@ -837,7 +858,12 @@ public final class PageVolumeMvccStateStore<T> {
             }
             if (plannedWrites.isEmpty()) {
                 return StagedChanges.empty(
-                        this, transactionId, statusTransactionId, durableCommitSequence);
+                        this,
+                        transactionId,
+                        statusTransactionId,
+                        durableCommitSequence,
+                        participantIndex,
+                        participantCount);
             }
 
             List<DelosLogSequenceNumber> pageLsns = writeAheadLog.appendVersionBatch(
@@ -874,6 +900,8 @@ public final class PageVolumeMvccStateStore<T> {
                     transactionId,
                     statusTransactionId,
                     durableCommitSequence,
+                    participantIndex,
+                    participantCount,
                     pageTransaction,
                     true);
         } catch (RuntimeException | Error failure) {
@@ -888,19 +916,33 @@ public final class PageVolumeMvccStateStore<T> {
      * it is never converted into WAL ABORT.
      */
     public void publishStagedChanges(StagedChanges stagedChanges) {
+        publishStagedChanges(stagedChanges, MvccStorageFailureHook.NOOP);
+    }
+
+    public void publishStagedChanges(
+            StagedChanges stagedChanges,
+            MvccStorageFailureHook failureHook) {
         StagedChanges staged = requireStagedChanges(stagedChanges);
+        MvccStorageFailureHook requiredFailureHook =
+                MvccStorageFailureHook.require(failureHook);
         if (staged.empty()) {
             return;
         }
         PublicationStage stage = PublicationStage.OUTCOME_FENCE;
         try {
             publicationHook.beforeStage(stage, staged);
-            table.publishPreparedTransaction(staged.pageTransaction());
+            table.publishPreparedTransaction(
+                    staged.pageTransaction(),
+                    requiredFailureHook,
+                    staged.failureContext());
             stage = PublicationStage.SUBSYSTEM_RECOVERY_RECORDS;
             publicationHook.beforeStage(stage, staged);
             appendSubsystemRecoveryRecords(staged.transactionId(), staged.commitSequence());
             stage = PublicationStage.CHECKPOINT;
             publicationHook.beforeStage(stage, staged);
+            requiredFailureHook.hit(
+                    MvccStorageFailureHook.Point.DURING_CHECKPOINT,
+                    staged.failureContext());
             rewriteCheckpoint();
         } catch (PageBackedMvccTable.CommittedTransactionMaterializationException failure) {
             throw new CommittedTransactionPublicationException(
@@ -1161,6 +1203,8 @@ public final class PageVolumeMvccStateStore<T> {
             long transactionId,
             long statusTransactionId,
             long commitSequence,
+            int participantIndex,
+            int participantCount,
             PageBackedMvccTable.PreparedTransaction pageTransaction,
             boolean walTransactionWritten) {
         public StagedChanges {
@@ -1175,6 +1219,11 @@ public final class PageVolumeMvccStateStore<T> {
             if (commitSequence <= 0L) {
                 throw new IllegalArgumentException("commitSequence must be positive: " + commitSequence);
             }
+            if (participantIndex <= 0 || participantCount < participantIndex) {
+                throw new IllegalArgumentException(
+                        "invalid MVCC participant position: index=" + participantIndex
+                                + ", count=" + participantCount);
+            }
             if ((pageTransaction == null) != !walTransactionWritten) {
                 throw new IllegalArgumentException("staged page transaction and WAL state must agree");
             }
@@ -1184,9 +1233,26 @@ public final class PageVolumeMvccStateStore<T> {
                 PageVolumeMvccStateStore<?> owner,
                 long transactionId,
                 long statusTransactionId,
-                long commitSequence) {
+                long commitSequence,
+                int participantIndex,
+                int participantCount) {
             return new StagedChanges(
-                    owner, transactionId, statusTransactionId, commitSequence, null, false);
+                    owner,
+                    transactionId,
+                    statusTransactionId,
+                    commitSequence,
+                    participantIndex,
+                    participantCount,
+                    null,
+                    false);
+        }
+
+        public MvccStorageFailureHook.Context failureContext() {
+            return MvccStorageFailureHook.Context.transaction(
+                    statusTransactionId == 0L ? transactionId : statusTransactionId,
+                    commitSequence,
+                    participantIndex,
+                    participantCount);
         }
 
         public boolean empty() {

@@ -79,6 +79,7 @@ final class MvccInheritedStore implements DelosStorageStore {
                 maintenanceService,
                 backupCoordinator,
                 transactionCoordinator,
+                failurePoints,
                 openTables::remove);
         openTables.add(table);
         if (closeStarted.get() || closed.get()) {

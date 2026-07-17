@@ -199,7 +199,11 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
             for (int index = 0; index < participants.size(); index++) {
                 DatabaseParticipant participant = participants.get(index);
                 prepared.add(participant.table().prepareDatabaseCommit(
-                        participant.transaction(), databaseTransactionId, commitSequence));
+                        participant.transaction(),
+                        databaseTransactionId,
+                        commitSequence,
+                        index + 1,
+                        participants.size()));
                 failurePoints.hit(
                         MvccFailurePointRegistry.Point.AFTER_PARTICIPANT_PREPARE,
                         MvccFailurePointRegistry.Context.transaction(

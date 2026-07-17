@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.SplittableRandom;
 
+import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
+
 /**
  * Database-scoped, test/research-only deterministic failure-point authority.
  *
@@ -92,6 +94,19 @@ final class MvccFailurePointRegistry {
 
     Path databaseDirectory() {
         return databaseDirectory;
+    }
+
+    MvccStorageFailureHook storageHook() {
+        if (schedule.steps().isEmpty()) {
+            return MvccStorageFailureHook.NOOP;
+        }
+        return (point, context) -> hit(
+                Point.valueOf(point.name()),
+                Context.transaction(
+                        context.transactionId(),
+                        context.commitSequence(),
+                        context.participantIndex(),
+                        context.participantCount()));
     }
 
     enum Point {

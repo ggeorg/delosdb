@@ -25,6 +25,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionManager;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccWriteConflictException;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccCommitDurabilityMetrics;
+import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore;
 
@@ -70,6 +71,7 @@ final class MvccInheritedTable implements DelosStorageTable,
     private final MvccDatabaseMaintenanceService maintenanceService;
     private final DelosStorageBackupCoordinator backupCoordinator;
     private final MvccDatabaseCommitCoordinator databaseCommitCoordinator;
+    private final MvccFailurePointRegistry failurePoints;
     private final MvccDatabaseMaintenanceService.Registration maintenanceRegistration;
     private final boolean ownsMaintenanceService;
     private final Consumer<MvccInheritedTable> closeCallback;
@@ -126,6 +128,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccDatabaseMaintenanceService maintenanceService,
             DelosStorageBackupCoordinator backupCoordinator,
             MvccDatabaseCommitCoordinator databaseCommitCoordinator,
+            MvccFailurePointRegistry failurePoints,
             Consumer<MvccInheritedTable> closeCallback) {
         this(
                 segmentId,
@@ -139,6 +142,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 maintenanceService,
                 backupCoordinator,
                 databaseCommitCoordinator,
+                failurePoints,
                 false,
                 closeCallback);
     }
@@ -180,6 +184,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
                 isolatedBackupCoordinator(segmentId, containerId, databaseDirectory),
                 new MvccDatabaseCommitCoordinator(databaseDirectory),
+                MvccFailurePointRegistry.disabled(databaseDirectory),
                 true,
                 ignored -> { });
     }
@@ -196,6 +201,7 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccDatabaseMaintenanceService maintenanceService,
             DelosStorageBackupCoordinator backupCoordinator,
             MvccDatabaseCommitCoordinator databaseCommitCoordinator,
+            MvccFailurePointRegistry failurePoints,
             boolean ownsMaintenanceService,
             Consumer<MvccInheritedTable> closeCallback) {
         this.segmentId = segmentId;
@@ -204,6 +210,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         this.transactionStatusFile = transactionStatusFile(databaseDirectory, segmentId, containerId);
         this.databaseCommitCoordinator = Objects.requireNonNull(
                 databaseCommitCoordinator, "databaseCommitCoordinator");
+        this.failurePoints = Objects.requireNonNull(failurePoints, "failurePoints");
         this.pageVolumeStateStore = PageVolumeMvccStateStore.open(
                 databaseDirectory,
                 storageId(segmentId, containerId),
@@ -433,7 +440,9 @@ final class MvccInheritedTable implements DelosStorageTable,
     DatabasePreparedCommit prepareDatabaseCommit(
             DelosStorageTransaction transaction,
             MvccTransactionId databaseTransactionId,
-            MvccCommitSequence commitSequence) {
+            MvccCommitSequence commitSequence,
+            int participantIndex,
+            int participantCount) {
         MvccInheritedHandles.Transaction handle = nativeTransactionHandle(transaction);
         if (handle.readOnly()) {
             throw new IllegalStateException("read-only delos_mvcc transaction cannot commit");
@@ -446,7 +455,9 @@ final class MvccInheritedTable implements DelosStorageTable,
                 pageVolumeStateStore.stagePreparedChanges(
                         preparedCommit.preparedPageChanges(),
                         commitSequence,
-                        databaseTransactionId.value());
+                        databaseTransactionId.value(),
+                        participantIndex,
+                        participantCount);
         return new DatabasePreparedCommit(
                 this, databaseTransactionId, preparedCommit, localStatus, stagedChanges);
     }
@@ -466,7 +477,8 @@ final class MvccInheritedTable implements DelosStorageTable,
             }
         }
         try {
-            pageVolumeStateStore.publishStagedChanges(databaseCommit.stagedChanges());
+            pageVolumeStateStore.publishStagedChanges(
+                    databaseCommit.stagedChanges(), failurePoints.storageHook());
         } catch (RuntimeException | Error publicationFailure) {
             if (failure == null) {
                 failure = publicationFailure;
@@ -477,6 +489,7 @@ final class MvccInheritedTable implements DelosStorageTable,
 
         if (failure == null && !databaseCommit.stagedChanges().empty()) {
             try {
+                hitIndexPublication(databaseCommit.stagedChanges());
                 orderedIndexPublicationHook.run();
                 indexMaintenance.rebuildFromCommittedRows();
             } catch (RuntimeException | Error indexFailure) {
@@ -509,6 +522,18 @@ final class MvccInheritedTable implements DelosStorageTable,
                     unhealthy,
                     failure);
         }
+    }
+
+    private void hitIndexPublication(
+            PageVolumeMvccStateStore.StagedChanges stagedChanges) {
+        MvccStorageFailureHook.Context context = stagedChanges.failureContext();
+        failurePoints.hit(
+                MvccFailurePointRegistry.Point.DURING_INDEX_PUBLICATION,
+                MvccFailurePointRegistry.Context.transaction(
+                        context.transactionId(),
+                        context.commitSequence(),
+                        context.participantIndex(),
+                        context.participantCount()));
     }
 
     void abortDatabaseCommit(DatabasePreparedCommit databaseCommit) {
@@ -926,7 +951,8 @@ final class MvccInheritedTable implements DelosStorageTable,
             MvccCommitDurabilityMetrics.Scope publicationScope =
                     MvccCommitDurabilityMetrics.begin(observe);
             try {
-                pageVolumeStateStore.publishStagedChanges(staged);
+                pageVolumeStateStore.publishStagedChanges(
+                        staged, failurePoints.storageHook());
                 anyMaterialized |= !staged.empty();
                 totalChangedRows += prepared.changedRowCount();
             } catch (RuntimeException | Error publicationFailure) {
@@ -955,6 +981,7 @@ final class MvccInheritedTable implements DelosStorageTable,
         if (recoveryRequired.get() == null && anyMaterialized) {
             long indexStarted = observe ? System.nanoTime() : 0L;
             try {
+                hitIndexPublication(stagedChanges.getLast());
                 orderedIndexPublicationHook.run();
                 indexMaintenance.rebuildFromCommittedRows();
             } catch (RuntimeException | Error failure) {

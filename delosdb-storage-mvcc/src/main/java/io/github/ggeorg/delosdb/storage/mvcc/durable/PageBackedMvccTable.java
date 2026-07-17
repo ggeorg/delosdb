@@ -26,6 +26,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
+import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecordFlags;
 
 /**
@@ -428,7 +429,25 @@ public final class PageBackedMvccTable implements AutoCloseable {
      */
     public synchronized List<MvccIndexTuple> publishPreparedTransaction(
             PreparedTransaction transaction) throws IOException {
+        return publishPreparedTransaction(
+                transaction,
+                MvccStorageFailureHook.NOOP,
+                MvccStorageFailureHook.Context.transaction(
+                        transaction.transactionId(),
+                        transaction.commitSequence(),
+                        1,
+                        1));
+    }
+
+    public synchronized List<MvccIndexTuple> publishPreparedTransaction(
+            PreparedTransaction transaction,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         PreparedTransaction prepared = requirePreparedTransaction(transaction);
+        MvccStorageFailureHook requiredFailureHook =
+                MvccStorageFailureHook.require(failureHook);
+        MvccStorageFailureHook.Context requiredFailureContext =
+                Objects.requireNonNull(failureContext, "failureContext");
         if (prepared.writes.isEmpty()) {
             return List.of();
         }
@@ -439,7 +458,8 @@ public final class PageBackedMvccTable implements AutoCloseable {
         }
 
         try {
-            return materializePreparedWrites(prepared.writes);
+            return materializePreparedWrites(
+                    prepared.writes, requiredFailureHook, requiredFailureContext);
         } catch (IOException | RuntimeException failure) {
             if (commitFencePublished) {
                 throw new CommittedTransactionMaterializationException(
@@ -535,10 +555,14 @@ public final class PageBackedMvccTable implements AutoCloseable {
     }
 
     private List<MvccIndexTuple> materializePreparedWrites(
-            List<PreparedCommittedWrite> prepared) throws IOException {
+            List<PreparedCommittedWrite> prepared,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         List<MvccVersionLocator> locators = store.appendTransactionBatch(
                 prepared.stream().map(PreparedCommittedWrite::record).toList(),
-                prepared.stream().map(write -> write.write().pageLsn()).toList());
+                prepared.stream().map(write -> write.write().pageLsn()).toList(),
+                failureHook,
+                failureContext);
         if (locators.size() != prepared.size()) {
             throw new IllegalStateException("MVCC transaction page batch returned " + locators.size()
                     + " locators for " + prepared.size() + " prepared writes");

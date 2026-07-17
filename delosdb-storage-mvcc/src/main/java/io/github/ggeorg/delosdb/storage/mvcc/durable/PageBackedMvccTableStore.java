@@ -22,6 +22,7 @@ import io.github.ggeorg.delosdb.storage.io.volume.DelosPageVolumeFactory;
 import io.github.ggeorg.delosdb.storage.mvcc.DelosLogSequenceNumber;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccPageRecordCodec;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionRecord;
+import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
 
 /** Page-backed store for durable MVCC version records with vacuum-created page reuse. */
 public final class PageBackedMvccTableStore implements AutoCloseable {
@@ -147,7 +148,13 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             DelosLogSequenceNumber pageLsn) throws IOException {
         return writeLockedIo(() -> {
             try (MvccPageMutationContext context = beginPageMutationContext("append-version")) {
-                MvccVersionLocator locator = appendUnlocked(record, pageLsn, context, false);
+                MvccVersionLocator locator = appendUnlocked(
+                        record,
+                        pageLsn,
+                        context,
+                        false,
+                        MvccStorageFailureHook.NOOP,
+                        MvccStorageFailureHook.Context.transaction(1L, 1L, 1, 1));
                 forceDirtyPages();
                 context.commit();
                 return locator;
@@ -170,8 +177,25 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     List<MvccVersionLocator> appendTransactionBatch(
             List<MvccVersionRecord> records,
             List<DelosLogSequenceNumber> pageLsns) throws IOException {
+        List<MvccVersionRecord> requiredRecords =
+                List.copyOf(Objects.requireNonNull(records, "records"));
+        MvccStorageFailureHook.Context context =
+                MvccStorageFailureHook.Context.transaction(1L, 1L, 1, 1);
+        return appendTransactionBatch(
+                requiredRecords, pageLsns, MvccStorageFailureHook.NOOP, context);
+    }
+
+    List<MvccVersionLocator> appendTransactionBatch(
+            List<MvccVersionRecord> records,
+            List<DelosLogSequenceNumber> pageLsns,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         records = List.copyOf(Objects.requireNonNull(records, "records"));
         pageLsns = List.copyOf(Objects.requireNonNull(pageLsns, "pageLsns"));
+        MvccStorageFailureHook requiredFailureHook =
+                MvccStorageFailureHook.require(failureHook);
+        MvccStorageFailureHook.Context requiredFailureContext =
+                Objects.requireNonNull(failureContext, "failureContext");
         if (records.isEmpty()) {
             return List.of();
         }
@@ -187,7 +211,12 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 List<MvccVersionLocator> locators = new ArrayList<>(batchRecords.size());
                 for (int index = 0; index < batchRecords.size(); index++) {
                     locators.add(appendUnlocked(
-                            batchRecords.get(index), batchLsns.get(index), context, true));
+                            batchRecords.get(index),
+                            batchLsns.get(index),
+                            context,
+                            true,
+                            requiredFailureHook,
+                            requiredFailureContext));
                 }
                 persistFreeSpaceMap();
                 forceDirtyPages();
@@ -201,17 +230,24 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             MvccVersionRecord record,
             DelosLogSequenceNumber pageLsn,
             MvccPageMutationContext context,
-            boolean deferFreeSpaceMapPersistence) throws IOException {
+            boolean deferFreeSpaceMapPersistence,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         Objects.requireNonNull(record, "record");
         pageLsn = Objects.requireNonNull(pageLsn, "pageLsn");
         Objects.requireNonNull(context, "context");
-        EncodedVersion encodedVersion = encodeForPageRecord(record);
+        EncodedVersion encodedVersion = encodeForPageRecord(
+                record, failureHook, failureContext);
         byte[] encoded = encodedVersion.bytes();
 
         int requiredBytes = Math.addExact(encoded.length, SLOT_OVERHEAD_BYTES);
         bufferFlushCoordinator.recordLogForcedThrough(pageLsn);
         context.reservePageCapacity(requiredBytes);
-        DelosPage page = writablePage(encoded.length, deferFreeSpaceMapPersistence);
+        DelosPage page = writablePage(
+                encoded.length,
+                deferFreeSpaceMapPersistence,
+                failureHook,
+                failureContext);
         int slotId = page.appendRecord(encoded);
         DelosPage writtenPage = page.withPageLsn(pageLsn.value());
         writePage(writtenPage, context);
@@ -662,7 +698,10 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return pageFile.resolveSibling(pageFile.getFileName() + ".fsm");
     }
 
-    private EncodedVersion encodeForPageRecord(MvccVersionRecord record) throws IOException {
+    private EncodedVersion encodeForPageRecord(
+            MvccVersionRecord record,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         byte[] encoded = MvccPageRecordCodec.encodeVersionRecord(Objects.requireNonNull(record, "record"));
         if (encoded.length <= maxSingleRecordBytes()) {
             return new EncodedVersion(record, encoded);
@@ -670,6 +709,9 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
         MvccRowPayload payload = MvccRowPayloadCodec.decode(record.payload());
         if (canStoreValueAsAttributeOverflow(record, payload)) {
+            failureHook.hit(
+                    MvccStorageFailureHook.Point.DURING_OVERFLOW_PUBLICATION,
+                    failureContext);
             MvccOverflowPayloadDescriptor descriptor = overflowStore.write(payload.value());
             byte[] attributeReferencePayload = MvccAttributeOverflowRowPayloadCodec.encode(
                     payload.key(),
@@ -683,6 +725,9 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
             return new EncodedVersion(attributeReferenceRecord, attributeReferenceBytes);
         }
 
+        failureHook.hit(
+                MvccStorageFailureHook.Point.DURING_OVERFLOW_PUBLICATION,
+                failureContext);
         MvccOverflowPayloadDescriptor descriptor = overflowStore.write(record.payload());
         byte[] referencePayload = MvccOverflowPayloadReferenceCodec.encode(
                 new MvccOverflowPayloadReferenceCodec.Reference(payload.key(), descriptor));
@@ -743,30 +788,41 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
 
     private DelosPage writablePage(
             int encodedRecordLength,
-            boolean deferFreeSpaceMapPersistence) throws IOException {
+            boolean deferFreeSpaceMapPersistence,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         int requiredBytes = Math.addExact(encodedRecordLength, SLOT_OVERHEAD_BYTES);
-        DelosPage mapped = pageFromFreeSpaceMap(requiredBytes, deferFreeSpaceMapPersistence);
+        DelosPage mapped = pageFromFreeSpaceMap(
+                requiredBytes,
+                deferFreeSpaceMapPersistence,
+                failureHook,
+                failureContext);
         if (mapped != null) {
             return mapped;
         }
-        DelosPage reusable = takeReusablePage(requiredBytes);
+        DelosPage reusable = takeReusablePage(
+                requiredBytes, failureHook, failureContext);
         if (reusable != null) {
             return reusable;
         }
         long count = pageVolume.pageCount();
         if (count == 0) {
-            return allocatePage(DelosPage.DATA_PAGE_TYPE);
+            return allocatePage(
+                    DelosPage.DATA_PAGE_TYPE, failureHook, failureContext);
         }
         DelosPage last = readPage(new DelosPageId(count - 1L));
         if (last.freeBytes() >= requiredBytes) {
             return last;
         }
-        return allocatePage(DelosPage.DATA_PAGE_TYPE);
+        return allocatePage(
+                DelosPage.DATA_PAGE_TYPE, failureHook, failureContext);
     }
 
     private DelosPage pageFromFreeSpaceMap(
             int requiredBytes,
-            boolean deferFreeSpaceMapPersistence) throws IOException {
+            boolean deferFreeSpaceMapPersistence,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         freeSpaceMapLookupCount++;
         boolean changed = false;
         long pageCount = pageVolume.pageCount();
@@ -790,7 +846,11 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
                 if (pageNumber != pageCount - 1L) {
                     freeSpaceMapNonLastHitCount++;
                 }
-                if (reusablePageIds.remove(pageNumber)) {
+                if (reusablePageIds.contains(pageNumber)) {
+                    failureHook.hit(
+                            MvccStorageFailureHook.Point.DURING_VACUUM_REUSE,
+                            failureContext);
+                    reusablePageIds.remove(pageNumber);
                     persistReusablePageIndex();
                 }
                 if (indexedFreeBytes != page.freeBytes()) {
@@ -813,18 +873,25 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
         return null;
     }
 
-    private DelosPage takeReusablePage(int requiredBytes) throws IOException {
+    private DelosPage takeReusablePage(
+            int requiredBytes,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
         boolean changed = false;
         java.util.Iterator<Long> ids = reusablePageIds.iterator();
         while (ids.hasNext()) {
             long pageNumber = ids.next();
             DelosPage page = readPage(new DelosPageId(pageNumber));
-            ids.remove();
-            changed = true;
             if (page.slotCount() == 0 && page.freeBytes() >= requiredBytes) {
+                failureHook.hit(
+                        MvccStorageFailureHook.Point.DURING_VACUUM_REUSE,
+                        failureContext);
+                ids.remove();
                 persistReusablePageIndex();
                 return page;
             }
+            ids.remove();
+            changed = true;
         }
         if (changed) {
             persistReusablePageIndex();
@@ -1026,6 +1093,19 @@ public final class PageBackedMvccTableStore implements AutoCloseable {
     }
 
     private DelosPage allocatePage(int pageType) throws IOException {
+        return allocatePage(
+                pageType,
+                MvccStorageFailureHook.NOOP,
+                MvccStorageFailureHook.Context.transaction(1L, 1L, 1, 1));
+    }
+
+    private DelosPage allocatePage(
+            int pageType,
+            MvccStorageFailureHook failureHook,
+            MvccStorageFailureHook.Context failureContext) throws IOException {
+        failureHook.hit(
+                MvccStorageFailureHook.Point.DURING_PAGE_ALLOCATION,
+                failureContext);
         DelosPage page = pageVolume.allocatePage(pageType);
         pageCache.putClean(page);
         return page;
