@@ -26,4 +26,12 @@ import org.apache.derby.shared.common.error.StandardException;
 public interface DelosRawStoreCommitParticipant {
     void stageDatabaseCommitDecision(DelosDatabaseCommitDecision decision)
             throws StandardException;
+
+    /**
+     * Return whether the raw store forced the staged transaction decision even
+     * if completion processing subsequently failed.
+     */
+    default boolean isDatabaseCommitDecisionDurable() {
+        return false;
+    }
 }

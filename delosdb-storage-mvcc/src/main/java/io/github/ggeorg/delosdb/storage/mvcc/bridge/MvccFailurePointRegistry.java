@@ -4,8 +4,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.SplittableRandom;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
 
@@ -19,6 +21,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.failure.MvccStorageFailureHook;
  */
 final class MvccFailurePointRegistry {
     static final int REGISTRY_VERSION = 1;
+    private static final Map<Path, Schedule> TEST_SCHEDULES = new ConcurrentHashMap<>();
 
     private final Path databaseDirectory;
     private final Schedule schedule;
@@ -37,9 +40,34 @@ final class MvccFailurePointRegistry {
         this.processTerminator = Objects.requireNonNull(processTerminator, "processTerminator");
     }
 
+    static MvccFailurePointRegistry configured(Path databaseDirectory) {
+        Path normalized = normalize(databaseDirectory);
+        Schedule testSchedule = normalized == null ? null : TEST_SCHEDULES.remove(normalized);
+        return testSchedule == null
+                ? disabled(databaseDirectory)
+                : scheduled(databaseDirectory, testSchedule);
+    }
+
     static MvccFailurePointRegistry disabled(Path databaseDirectory) {
         return new MvccFailurePointRegistry(
                 databaseDirectory, Schedule.disabled(), Runtime.getRuntime()::halt);
+    }
+
+    static void installHaltForTesting(
+            Path databaseDirectory,
+            String pointName,
+            long occurrence,
+            int haltStatus) {
+        Path normalized = Objects.requireNonNull(
+                normalize(databaseDirectory), "databaseDirectory");
+        Schedule schedule = Schedule.of(
+                "raw-store-wal-crash",
+                Step.halt(Point.valueOf(pointName), occurrence, haltStatus));
+        Schedule previous = TEST_SCHEDULES.putIfAbsent(normalized, schedule);
+        if (previous != null) {
+            throw new IllegalStateException(
+                    "failure schedule already installed for database " + normalized);
+        }
     }
 
     static MvccFailurePointRegistry scheduled(Path databaseDirectory, Schedule schedule) {
@@ -94,6 +122,12 @@ final class MvccFailurePointRegistry {
 
     Path databaseDirectory() {
         return databaseDirectory;
+    }
+
+    private static Path normalize(Path databaseDirectory) {
+        return databaseDirectory == null
+                ? null
+                : databaseDirectory.toAbsolutePath().normalize();
     }
 
     MvccStorageFailureHook storageHook() {

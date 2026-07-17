@@ -162,7 +162,8 @@ public final class DelosStorageTransactionRegistry {
      *
      * <p>Heap-only and MVCC-only transactions retain their existing paths. A mixed
      * heap/MVCC transaction durably stages every MVCC participant, then logs one
-     * raw-store decision marker in the Derby transaction. The caller must invoke
+     * raw-store decision identity in the Derby transaction. Its filesystem marker
+     * is materialized only after commit or by recovery redo. The caller must invoke
      * {@link #completeCommit(CommitPreparation)} only after the raw store commits,
      * or {@link #abortPreparedCommit(CommitPreparation)} after a successful raw-store
      * abort.</p>
@@ -264,6 +265,33 @@ public final class DelosStorageTransactionRegistry {
                 required.preparedCommit.publishAfterRawStoreCommit();
             } catch (RuntimeException | Error publicationFailure) {
                 failure = publicationFailure;
+            } finally {
+                completeWriters(required.writers);
+            }
+        }
+        for (Reader reader : readersFor(required.ownerTransaction)) {
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(required.ownerTransaction, reader));
+        }
+        clearWriteParticipation(required.ownerTransaction);
+        rethrowFailure(failure);
+    }
+
+    /**
+     * Detach prepared participants after the raw-store decision is durable but
+     * commit completion returned ambiguously. No participant outcome is changed;
+     * close/reopen recovery is the only remaining authority.
+     */
+    public static void releasePreparedCommitForRecovery(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        Throwable failure = null;
+        if (required.preparedCommit != null) {
+            try {
+                required.preparedCommit.releaseForRecovery();
+            } catch (RuntimeException | Error releaseFailure) {
+                failure = releaseFailure;
             } finally {
                 completeWriters(required.writers);
             }

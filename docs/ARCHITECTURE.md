@@ -99,4 +99,4 @@ subsystem directories assembled into one library demonstrate that distinction.
 ## Maintainability
 
 Each major subsystem has one named owner, explicit invariants and failure behavior, focused proof,
-diagnostics, and corresponding architecture/book material.
+diagnostics, and corresponding architecture and verification material.

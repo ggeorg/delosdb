@@ -263,6 +263,11 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
     // if commitNoSync() has been called rather than commit.
     private boolean         flush_log_on_xact_end;
 
+    // True only after a synchronous transaction-end record has been forced.
+    // This survives completion-processing failures so callers can distinguish
+    // an abortable transaction from an already durable commit decision.
+    private boolean         synchronousCommitDecisionDurable;
+
 	// true, if the transaction executed some operations(like unlogged
 	// operations) that block the  online backup to prevent inconsistent
 	// backup copy.
@@ -819,6 +824,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 					{
 						logger.flush(flushTo);
 						needSync = false;
+                        synchronousCommitDecisionDurable = true;
 					}
 				}
 			}
@@ -829,6 +835,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 				// for real, make sure any outstanding log is flushed.
 				logger.flushAll();
 				needSync = false;
+                synchronousCommitDecisionDurable = true;
 			}
 		} 
         catch (StandardException se) 
@@ -899,6 +906,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	private LogInstant commit(int commitflag) 
         throws StandardException 
     {
+        synchronousCommitDecisionDurable = false;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -919,6 +927,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	*/
 	public void abort() throws StandardException {
 
+        synchronousCommitDecisionDurable = false;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -2052,6 +2061,12 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 		// recovery transaction cannot handle post termination work
 		return (recoveryTransaction == false);
 	}
+
+    @Override
+    public boolean isSynchronousCommitDecisionDurable()
+    {
+        return synchronousCommitDecisionDurable;
+    }
 
 	public void recoveryTransaction()
 	{

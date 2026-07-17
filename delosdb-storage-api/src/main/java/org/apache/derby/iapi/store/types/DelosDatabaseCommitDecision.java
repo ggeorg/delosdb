@@ -30,12 +30,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Durable raw-store decision marker shared by heap and external storage.
+ * Durable raw-store decision identity shared by heap and external storage.
  *
- * <p>The marker is created and undone by Derby raw-store log operations. Its
- * presence after raw-store recovery is therefore authoritative evidence that
- * the enclosing Derby transaction committed. External participants may safely
- * repeat publication from that decision.</p>
+ * <p>The Derby raw-store log record is the transaction authority. Runtime
+ * execution materializes this marker only as immediate post-commit work, while
+ * recovery redo recreates it from the durable log. Marker presence after
+ * raw-store recovery is therefore authoritative evidence that the enclosing
+ * Derby transaction committed. External participants may safely repeat
+ * publication from that decision.</p>
  */
 public record DelosDatabaseCommitDecision(long transactionId, long commitSequence) {
     public static final String DIRECTORY = "delos_mvcc/inherited-store/database-decisions";

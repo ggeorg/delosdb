@@ -1569,7 +1569,8 @@ public class GenericLanguageConnectionContext
             {
                 if (storagePreparation.requiresRawStoreDecision())
                 {
-                    // The logged raw-store marker is the authoritative decision.
+                    // The logged raw-store operation is the authoritative decision.
+                    // Its marker is materialized only after commit or by recovery.
                     // A no-sync commit cannot provide the required durability.
                     DelosStorageTransactionRegistry.beforeRawStoreCommit(storagePreparation);
                     tc.commit();
@@ -1649,7 +1650,21 @@ public class GenericLanguageConnectionContext
             boolean requiresRawStoreDecision,
             boolean rawStoreCommitted,
             Throwable commitFailure) {
-        if (!requiresRawStoreDecision || rawStoreCommitted || tc == null) {
+        if (!requiresRawStoreDecision || tc == null) {
+            return;
+        }
+
+        boolean durableRawStoreDecision = rawStoreCommitted
+                || (tc instanceof DelosRawStoreCommitParticipant participant
+                        && participant.isDatabaseCommitDecisionDurable());
+        if (durableRawStoreDecision) {
+            try {
+                if (preparation != null) {
+                    DelosStorageTransactionRegistry.releasePreparedCommitForRecovery(preparation);
+                }
+            } catch (RuntimeException | Error releaseFailure) {
+                commitFailure.addSuppressed(releaseFailure);
+            }
             return;
         }
 

@@ -27,6 +27,8 @@ import java.io.ObjectOutput;
 import java.io.OutputStream;
 import java.util.Arrays;
 
+import org.apache.derby.iapi.services.context.ContextManager;
+import org.apache.derby.iapi.services.daemon.Serviceable;
 import org.apache.derby.iapi.services.io.LimitObjectInput;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.raw.Compensation;
@@ -86,7 +88,20 @@ public final class DelosDatabaseCommitDecisionOperation implements Undoable {
     @Override
     public void doMe(Transaction transaction, LogInstant instant, LimitObjectInput in)
             throws StandardException {
-        writeDecision(transaction, decision());
+        RawTransaction rawTransaction = (RawTransaction) transaction;
+        DelosDatabaseCommitDecision requiredDecision = decision();
+        if (rawTransaction.handlesPostTerminationWork()) {
+            // Runtime execution must not create a durable side file before the
+            // enclosing raw-store commit record is forced. The immediate
+            // post-commit work runs only after a successful raw-store commit.
+            rawTransaction.addPostCommitWork(new DecisionWriter(
+                    storageFactory(rawTransaction), requiredDecision));
+            return;
+        }
+
+        // Recovery redo is already governed by the durable raw-store log.
+        // Recreate the marker directly so external participants can recover.
+        writeDecision(storageFactory(rawTransaction), requiredDecision);
     }
 
     @Override
@@ -132,9 +147,8 @@ public final class DelosDatabaseCommitDecisionOperation implements Undoable {
     }
 
     private static void writeDecision(
-            Transaction transaction,
+            StorageFactory storageFactory,
             DelosDatabaseCommitDecision decision) throws StandardException {
-        StorageFactory storageFactory = storageFactory(transaction);
         if (!(storageFactory instanceof WritableStorageFactory writable)) {
             throw StandardException.newException(SQLState.FILE_READ_ONLY);
         }
@@ -156,6 +170,35 @@ public final class DelosDatabaseCommitDecisionOperation implements Undoable {
             writable.sync(output, true);
         } catch (IOException failure) {
             throw fileFailure(marker, failure);
+        }
+    }
+
+
+    private static final class DecisionWriter implements Serviceable {
+        private final StorageFactory storageFactory;
+        private final DelosDatabaseCommitDecision decision;
+
+        private DecisionWriter(
+                StorageFactory storageFactory,
+                DelosDatabaseCommitDecision decision) {
+            this.storageFactory = storageFactory;
+            this.decision = decision;
+        }
+
+        @Override
+        public int performWork(ContextManager context) throws StandardException {
+            writeDecision(storageFactory, decision);
+            return Serviceable.DONE;
+        }
+
+        @Override
+        public boolean serviceASAP() {
+            return true;
+        }
+
+        @Override
+        public boolean serviceImmediately() {
+            return true;
         }
     }
 

@@ -291,6 +291,12 @@ public abstract class RawTransaction extends DerbyObservable implements Transact
 	*/
 	public abstract boolean handlesPostTerminationWork();
 
+    /**
+     * Return whether the most recent synchronous commit forced its raw-store
+     * transaction-end decision before completion processing returned.
+     */
+    public abstract boolean isSynchronousCommitDecisionDurable();
+
 	/**
 		Make this transaction aware that it is being used by recovery
 	 */

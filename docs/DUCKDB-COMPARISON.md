@@ -50,7 +50,7 @@ optimizer or executor.
 
 DuckDB assembles subsystem-owned source libraries into one principal library. This demonstrates
 that readable source anatomy does not require one distribution artifact or runtime module per
-textbook chapter.
+conceptual subsystem.
 
 DelosDB therefore maintains separate artifact, Gradle ownership, and JPMS graphs. Source projects
 are split only where dependency analysis proves a stable ownership boundary.

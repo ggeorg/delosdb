@@ -503,7 +503,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
             Throwable failure = null;
             try {
                 try {
-                    // Secondary mirror. The raw-store marker is already authoritative.
+                    // Secondary mirror. The committed raw-store decision is authoritative.
                     decisionStore.recordCommitted(
                             prepared.databaseTransactionId(), prepared.commitSequence());
                 } catch (RuntimeException | Error statusFailure) {
@@ -523,6 +523,22 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
             }
             if (failure != null) {
                 throw recoveryRequired(prepared, failure);
+            }
+        }
+
+        @Override
+        public synchronized void releaseForRecovery() {
+            requireOpen();
+            Throwable failure = null;
+            try {
+                // The durable raw-store outcome is authoritative. Leave the
+                // prepared participant records untouched for reopen recovery.
+            } finally {
+                terminal = true;
+                failure = releaseOwnership(failure);
+            }
+            if (failure != null) {
+                rethrow(failure);
             }
         }
 

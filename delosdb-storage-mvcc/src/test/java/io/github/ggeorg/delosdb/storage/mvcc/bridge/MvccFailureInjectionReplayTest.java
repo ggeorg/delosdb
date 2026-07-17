@@ -101,6 +101,21 @@ final class MvccFailureInjectionReplayTest {
     }
 
     @Test
+    void ambiguousDurableRawStoreCommitReleasesOwnershipForRecovery() throws Exception {
+        Path database = root.resolve("ambiguous-raw-store");
+        MvccInheritedStore store = new MvccInheritedStore(database);
+        RawScenario scenario = prepareMixed(store);
+
+        writeRawStoreDecision(database, scenario.rawStore().decision);
+        DelosStorageTransactionRegistry.releasePreparedCommitForRecovery(scenario.preparation());
+
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(scenario.owner()));
+        store.close();
+        assertEquals(committedDigest(), reopenedDigest(database));
+        assertEquals(committedDigest(), reopenedDigest(database));
+    }
+
+    @Test
     void seededBarrierHaltAndManifestReplayAreDeterministic() {
         List<MvccFailurePointRegistry.Point> candidates = List.of(
                 MvccFailurePointRegistry.Point.BEFORE_TRANSACTION_DECISION_FORCE,

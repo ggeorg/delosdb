@@ -40,6 +40,13 @@ public interface DelosStorageRawDecisionCommitCoordinator extends DelosStorageCo
         /** Called only after Derby raw store has committed the decision marker. */
         void publishAfterRawStoreCommit();
 
+        /**
+         * Release all in-memory ownership after a durable but ambiguously
+         * completed raw-store commit. Durable participant state is left for
+         * close/reopen recovery; it is neither published nor aborted here.
+         */
+        void releaseForRecovery();
+
         /** Called only when the raw-store transaction did not commit. */
         void abortBeforeRawStoreCommit();
     }

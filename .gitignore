@@ -38,30 +38,6 @@ __MACOSX/
 .gradle-cache/
 
 
-# Book generated source notes are checked-in research/source material.
-!/docs/book/generated/
-!/docs/book/generated/*.tex
-
-# Book build artifacts
-/docs/book/derby-delosdb-internals.pdf
-/docs/book/derby-delosdb-internals.aux
-/docs/book/derby-delosdb-internals.bbl
-/docs/book/derby-delosdb-internals.bcf
-/docs/book/derby-delosdb-internals.blg
-/docs/book/derby-delosdb-internals.fdb_latexmk
-/docs/book/derby-delosdb-internals.fls
-/docs/book/derby-delosdb-internals.idx
-/docs/book/derby-delosdb-internals.ilg
-/docs/book/derby-delosdb-internals.ind
-/docs/book/derby-delosdb-internals.log
-/docs/book/derby-delosdb-internals.out
-/docs/book/derby-delosdb-internals.run.xml
-/docs/book/derby-delosdb-internals.synctex.gz
-/docs/book/derby-delosdb-internals.toc
-/docs/book/*-preview.pdf
-/docs/book/render/
-/docs/book/chapter-renders/
-
 # Stale inherited Derby root artifacts removed from DelosDB source layout
 /RELEASE-NOTES.html
 /index.html
@@ -97,8 +73,6 @@ replay_pid*.log
 # DelosDB cleanup policy: historical proposals and generated/local docs are not source.
 /docs/proposals/
 /docs/.DS_Store
-/docs/book/render/
-/docs/book/chapter-renders/
 
 # Historical storage-phase scratch smokes should not be reintroduced as source.
 /dev/storage-phase-g-*/
@@ -114,6 +88,6 @@ replay_pid*.log
 /dev/storage-phase-o3-*/
 /dev/storage-phase-o4-*/
 
-# Local DelosDB v1.0 planning, research, and book workspace.
+# Local DelosDB v1.0 planning and research workspace.
 # Stable conclusions are promoted into tracked README/docs when phases close.
 /.delosdb-v1/

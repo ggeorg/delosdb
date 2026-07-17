@@ -28,7 +28,7 @@ final class MvccInheritedStore implements DelosStorageStore {
                 databaseDirectory,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
                 DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
-                MvccFailurePointRegistry.disabled(databaseDirectory));
+                MvccFailurePointRegistry.configured(databaseDirectory));
     }
 
     MvccInheritedStore(

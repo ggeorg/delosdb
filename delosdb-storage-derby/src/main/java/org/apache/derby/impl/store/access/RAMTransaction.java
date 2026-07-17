@@ -69,6 +69,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Loggable;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
 import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
@@ -1259,6 +1260,12 @@ public class RAMTransaction
             throws StandardException
     {
         rawtran.logAndDo(new DelosDatabaseCommitDecisionOperation(decision));
+    }
+
+    @Override
+    public boolean isDatabaseCommitDecisionDurable()
+    {
+        return ((RawTransaction) rawtran).isSynchronousCommitDecisionDurable();
     }
 
     public ConglomerateController openCompiledConglomerate(
