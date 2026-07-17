@@ -21,60 +21,68 @@
 
 package org.apache.derby.impl.tools.planexporter;
 
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.stream.StreamSource;
-import javax.xml.transform.stream.StreamResult;
-
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.URL;
 
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+
+import org.apache.derby.iapi.xml.SecureXmlFactory;
+
 /**
- * This class is used by PlanExporter tool (DERBY-4587)
- * in order to create HTML output of a query plan
- * using a plain XSL style sheet and a XML data of
- * a query plan.
+ * Creates HTML query-plan output from the PlanExporter XML representation.
  */
 public class CreateHTMLFile {
-	
-	private static String xslStyleSheetName ="resources/vanilla_html.xsl";//default xsl
 
-	/**
-	 * 
-	 * @param XMLFileName name of the XML file
-	 * @param XSLSheetName name of the XSL file
-	 * @param HTMLFile name of the HTML file
-	 * @param def whether to use the default XSL or not
-	 * @throws Exception
-	 */
+    private static final String DEFAULT_XSL_STYLE_SHEET = "resources/vanilla_html.xsl";
+
+    /**
+     * @param XMLFileName name of the XML file
+     * @param XSLSheetName name of the XSL file
+     * @param HTMLFile name of the HTML file
+     * @param def whether to use the default XSL or not
+     * @throws Exception on transformation or I/O failure
+     */
     public void getHTML(String XMLFileName, String XSLSheetName,
-            String HTMLFile, boolean def) throws Exception{
+            String HTMLFile, boolean def) throws Exception {
 
-        if(!(HTMLFile.toUpperCase()).endsWith(".HTML"))
-            HTMLFile +=".html";
-
-        TransformerFactory transFactory = TransformerFactory.newInstance();
-        Transformer transformer;
-
-        if(def){
-            URL url=getClass().getResource(XSLSheetName);
-            transformer =
-                transFactory.newTransformer(new StreamSource(url.openStream()));
+        if (!HTMLFile.toUpperCase().endsWith(".HTML")) {
+            HTMLFile += ".html";
         }
-        else{
-            File style=new File(XSLSheetName);
-            if(style.exists())
-                transformer =
-                    transFactory.newTransformer(new StreamSource(XSLSheetName));
-            else{
-                URL url=getClass().getResource(xslStyleSheetName);
-                transformer =
-                    transFactory.newTransformer(new StreamSource(url.openStream()));
+
+        TransformerFactory transformerFactory = SecureXmlFactory.newTransformerFactory();
+        Transformer transformer = createTransformer(transformerFactory, XSLSheetName, def);
+
+        try (FileOutputStream output = new FileOutputStream(HTMLFile)) {
+            transformer.transform(
+                    new StreamSource(new File(XMLFileName)),
+                    new StreamResult(output));
+        }
+    }
+
+    private Transformer createTransformer(
+            TransformerFactory transformerFactory,
+            String requestedStyleSheet,
+            boolean useDefault) throws Exception {
+        if (!useDefault) {
+            File style = new File(requestedStyleSheet);
+            if (style.exists()) {
+                return transformerFactory.newTransformer(new StreamSource(style));
             }
         }
 
-        transformer.transform(new StreamSource(XMLFileName),
-                new StreamResult(new FileOutputStream(HTMLFile)));
+        String resourceName = useDefault ? requestedStyleSheet : DEFAULT_XSL_STYLE_SHEET;
+        URL resource = getClass().getResource(resourceName);
+        if (resource == null) {
+            throw new IllegalArgumentException("PlanExporter stylesheet not found: " + resourceName);
+        }
+        try (InputStream styleSheet = resource.openStream()) {
+            StreamSource source = new StreamSource(styleSheet, resource.toExternalForm());
+            return transformerFactory.newTransformer(source);
+        }
     }
 }

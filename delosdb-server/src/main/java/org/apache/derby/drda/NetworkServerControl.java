@@ -138,9 +138,10 @@ import org.apache.derby.impl.drda.NetworkServerControlImpl;
     A value of 0 causes the thread to work on the current session until the 
     session exits. If this property is not set, the default value is 0. </LI>
 
-    <LI>derby.drda.sslMode=&lt;sslmode&gt; This property sets the SSL
-    mode of the server.
-    
+    <LI>derby.drda.sslMode=&lt;sslmode&gt; sets the TLS mode of the server.
+    <code>off</code> is clear text, <code>basic</code> is encryption only
+    without certificate-based peer identity, and <code>peerAuthentication</code>
+    is certificate-authenticated TLS using the configured JSSE trust material.
 </LI>
 </UL>
 

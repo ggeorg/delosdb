@@ -118,6 +118,61 @@ final class MvccTransactionGroupCommitHardeningTest {
     }
 
     @Test
+    void fatalJvmErrorReleasesFollowerAndIsRethrownByLeader() throws Exception {
+        MvccCommitCoordinator<Integer, Integer> coordinator =
+                new MvccCommitCoordinator<>(
+                        MvccCommitCoordinator.Mode.GROUP,
+                        2,
+                        2,
+                        TimeUnit.SECONDS.toNanos(30L));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<MvccCommitCoordinator.Submission<Integer>> first = executor.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(30L, TimeUnit.SECONDS));
+                return coordinator.submit(1, false, items -> {
+                    assertEquals(2, items.size());
+                    throw new TestVirtualMachineError("injected fatal group failure");
+                });
+            });
+            Future<MvccCommitCoordinator.Submission<Integer>> second = executor.submit(() -> {
+                ready.countDown();
+                assertTrue(start.await(30L, TimeUnit.SECONDS));
+                return coordinator.submit(2, false, items -> {
+                    assertEquals(2, items.size());
+                    throw new TestVirtualMachineError("injected fatal group failure");
+                });
+            });
+
+            assertTrue(ready.await(30L, TimeUnit.SECONDS));
+            start.countDown();
+
+            Object firstResult = fatalGroupResult(first);
+            Object secondResult = fatalGroupResult(second);
+            List<Object> results = List.of(firstResult, secondResult);
+            assertEquals(1L, results.stream()
+                    .filter(TestVirtualMachineError.class::isInstance)
+                    .count());
+            assertEquals(1L, results.stream()
+                    .filter(MvccCommitCoordinator.Submission.class::isInstance)
+                    .count());
+
+            MvccCommitCoordinator.Submission<?> follower = results.stream()
+                    .filter(MvccCommitCoordinator.Submission.class::isInstance)
+                    .map(MvccCommitCoordinator.Submission.class::cast)
+                    .findFirst()
+                    .orElseThrow();
+            assertInstanceOf(TestVirtualMachineError.class, follower.failure());
+            assertFalse(follower.succeeded());
+        } finally {
+            coordinator.close();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void backupSnapshotAndTableCloseDrainAlreadyEnrolledCommits() throws Exception {
         Path directory = databaseDirectory.resolve("backup-and-close");
         Files.createDirectories(directory);
@@ -404,6 +459,15 @@ final class MvccTransactionGroupCommitHardeningTest {
         }
     }
 
+    private static Object fatalGroupResult(
+            Future<MvccCommitCoordinator.Submission<Integer>> future) throws Exception {
+        try {
+            return future.get(30L, TimeUnit.SECONDS);
+        } catch (ExecutionException failure) {
+            return failure.getCause();
+        }
+    }
+
     private static Throwable failureOf(Future<?> future) throws Exception {
         ExecutionException failure = assertThrows(
                 ExecutionException.class,
@@ -443,6 +507,14 @@ final class MvccTransactionGroupCommitHardeningTest {
 
     private static StoreDataValue[] emptyRow() {
         return new StoreDataValue[0];
+    }
+
+    private static final class TestVirtualMachineError extends VirtualMachineError {
+        private static final long serialVersionUID = 1L;
+
+        private TestVirtualMachineError(String message) {
+            super(message);
+        }
     }
 
     private static final class CloneableNonStorableStoreValue implements StoreValueOperations {

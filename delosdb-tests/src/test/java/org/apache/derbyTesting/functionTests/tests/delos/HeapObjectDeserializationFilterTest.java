@@ -36,7 +36,7 @@ import java.sql.SQLException;
 import org.apache.derby.iapi.services.io.DelosHeapObjectDeserializationFilter;
 import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
-/** SQL gate for optional Derby-compatible heap JAVA_OBJECT deserialization filtering. */
+/** SQL gate for bounded-by-default heap and general object deserialization. */
 public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSupport {
     public void testDefaultModePreservesDerbyHeapJavaObjectBehavior() throws Exception {
         String databaseName = databaseName("heap-object-filter-default-db");
@@ -57,6 +57,35 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
             }
         } finally {
             restoreFilterProperty(oldFilter);
+        }
+    }
+
+    public void testDefaultHeapLimitsRequireExplicitCompatibilityModeForDeepGraphs() throws Exception {
+        String databaseName = databaseName("heap-object-filter-default-limit-db");
+        String oldFilter = System.getProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
+        String oldCompatibility = System.getProperty(
+                DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+        System.clearProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
+        System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            createSerializableHeapTable(connection, "heap_object_default_limit_t");
+            insertPayload(connection, "heap_object_default_limit_t", 1, NestedPayload.chain(40));
+            connection.commit();
+
+            assertBlockedByFilter(connection, "heap_object_default_limit_t", 1);
+            connection.rollback();
+
+            System.setProperty(
+                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY, "true");
+            Object payload = readPayload(connection, "heap_object_default_limit_t", 1);
+            assertTrue("compatibility mode should restore the inherited deep object graph",
+                    payload instanceof NestedPayload);
+            connection.commit();
+        } finally {
+            restoreFilterProperty(oldFilter);
+            restoreCompatibilityProperty(oldCompatibility);
         }
     }
 
@@ -84,16 +113,26 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
     }
 
 
-    public void testGeneralLeafObjectInputFilterDefaultAndStrictMode() throws Exception {
+    public void testGeneralLeafObjectInputFilterDefaultStrictAndCompatibilityModes() throws Exception {
         String oldFilter = System.getProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
+        String oldCompatibility = System.getProperty(
+                DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
         System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
+        System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
 
         try {
             assertGeneralPayload(readWithGeneralFilter(new AllowedPayload(30)),
                     AllowedPayload.class, 30);
             assertGeneralPayload(readWithGeneralFilter(new BlockedPayload(40)),
                     BlockedPayload.class, 40);
+            assertGeneralBlockedByFilter(NestedPayload.chain(40));
 
+            System.setProperty(
+                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY, "true");
+            assertTrue("compatibility mode should permit the inherited deep graph",
+                    readWithGeneralFilter(NestedPayload.chain(40)) instanceof NestedPayload);
+
+            System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
             System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY,
                     AllowedPayload.class.getName() + ";java.base/*;!*");
 
@@ -102,6 +141,7 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
             assertGeneralBlockedByFilter(new BlockedPayload(60));
         } finally {
             restoreGeneralFilterProperty(oldFilter);
+            restoreCompatibilityProperty(oldCompatibility);
         }
     }
 
@@ -194,6 +234,22 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
+    private static Object readPayload(
+            Connection connection,
+            String tableName,
+            int id) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select payload from " + tableName + " where id = ?")) {
+            statement.setInt(1, id);
+            try (ResultSet rs = statement.executeQuery()) {
+                assertTrue("expected payload row " + id, rs.next());
+                Object payload = rs.getObject(1);
+                assertFalse("expected one payload row " + id, rs.next());
+                return payload;
+            }
+        }
+    }
+
     private static void assertPayload(
             Connection connection,
             String tableName,
@@ -239,6 +295,16 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
+    private static void restoreCompatibilityProperty(String oldCompatibility) {
+        if (oldCompatibility == null) {
+            System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+        } else {
+            System.setProperty(
+                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY,
+                    oldCompatibility);
+        }
+    }
+
     private interface PayloadValue {
         int value();
     }
@@ -266,6 +332,23 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
 
         public int value() {
             return value;
+        }
+    }
+
+    public static final class NestedPayload implements Serializable {
+        private static final long serialVersionUID = 1L;
+        private final NestedPayload next;
+
+        private NestedPayload(NestedPayload next) {
+            this.next = next;
+        }
+
+        static NestedPayload chain(int depth) {
+            NestedPayload payload = null;
+            for (int index = 0; index < depth; index++) {
+                payload = new NestedPayload(payload);
+            }
+            return payload;
         }
     }
 }

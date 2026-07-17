@@ -22,6 +22,7 @@
 package org.apache.derby.shared.common.drda;
 
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.security.KeyStore;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -85,8 +86,7 @@ public class NaiveTrustManager
         SSLContext ctx = SSLContext.getInstance("TLS");
         
         if (ctx.getProvider().getName().equals("SunJSSE") &&
-            (sslProperties.getProperty(SSL_KEYSTORE) != null) &&
-            (sslProperties.getProperty(SSL_KEYSTORE_PASSWORD) != null)) {
+            (sslProperties.getProperty(SSL_KEYSTORE) != null)) {
             
             // SunJSSE does not give you a working default keystore
             // when using your own trust manager. Since a keystore is
@@ -96,14 +96,18 @@ public class NaiveTrustManager
 
             String keyStore = sslProperties.getProperty(SSL_KEYSTORE);
             String keyStorePassword = sslProperties.getProperty(SSL_KEYSTORE_PASSWORD);
-            
+            char[] keyStorePasswordChars = keyStorePassword == null
+                    ? null
+                    : keyStorePassword.toCharArray();
+
             KeyStore ks = KeyStore.getInstance("JKS");
-            ks.load(new FileInputStream(keyStore),
-                    keyStorePassword.toCharArray());
-            
-            KeyManagerFactory kmf = 
+            try (InputStream keyStoreStream = new FileInputStream(keyStore)) {
+                ks.load(keyStoreStream, keyStorePasswordChars);
+            }
+
+            KeyManagerFactory kmf =
                 KeyManagerFactory.getInstance("SunX509", "SunJSSE");
-            kmf.init(ks, keyStorePassword.toCharArray());
+            kmf.init(ks, keyStorePasswordChars);
 
             ctx.init(kmf.getKeyManagers(),
                      thisManager,
@@ -117,6 +121,24 @@ public class NaiveTrustManager
         return ctx.getSocketFactory();
     }
     
+
+    /**
+     * Copy optional JSSE keystore settings without passing null values to
+     * {@link Properties#setProperty(String, String)}.
+     */
+    public static void copyKeyStoreProperties(
+            Properties target,
+            String keyStore,
+            String keyStorePassword)
+    {
+        if (keyStore != null) {
+            target.setProperty(SSL_KEYSTORE, keyStore);
+        }
+        if (keyStorePassword != null) {
+            target.setProperty(SSL_KEYSTORE_PASSWORD, keyStorePassword);
+        }
+    }
+
     /** 
      * Checks wether the we trust the client. Since this trust manager
      * is just for the Derby clients, this routine is actually never

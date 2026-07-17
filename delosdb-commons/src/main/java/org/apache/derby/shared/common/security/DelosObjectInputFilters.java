@@ -25,44 +25,57 @@ import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 
 /**
- * Optional JDK object-input filters for inherited Derby deserialization sites.
+ * JDK object-input filters for inherited Derby deserialization sites.
  *
- * <p>The default is Derby-compatible: no per-stream filter is installed unless
- * the corresponding system property is explicitly configured. Configured values
- * use {@link ObjectInputFilter.Config#createFilter(String)} and therefore follow
- * the standard JDK object-input-filter grammar.</p>
+ * <p>DelosDB installs bounded resource limits by default while preserving
+ * Derby's historical class compatibility. Deployments may replace the default
+ * pattern with the standard JDK object-input-filter grammar. The unbounded
+ * Derby-compatible behavior is available only through the explicit
+ * compatibility-mode property.</p>
  */
 public final class DelosObjectInputFilters {
-    /**
-     * General opt-in filter for non-store ObjectInputStream leaf sites such as
-     * DRDA UDT parameters, client UDT materialization, import UDT values, and
-     * replication control messages.
-     */
+    /** General filter for non-store ObjectInputStream leaf sites. */
     public static final String GENERAL_FILTER_PROPERTY = "delosdb.objectDeserializationFilter";
 
-    /**
-     * Store-specific opt-in filter for Derby heap JAVA_OBJECT reads through
-     * FormatIdInputStream.
-     */
+    /** Store-specific filter for Derby heap JAVA_OBJECT reads. */
     public static final String HEAP_FILTER_PROPERTY = "delosdb.heap.objectDeserializationFilter";
+
+    /**
+     * Explicitly restores inherited unbounded deserialization behavior when
+     * set to {@code true}. A configured general or heap filter still wins.
+     */
+    public static final String COMPATIBILITY_MODE_PROPERTY =
+            "delosdb.objectDeserializationCompatibilityMode";
+
+    /**
+     * Compatibility-preserving class policy with bounded graph and byte use.
+     * JDK resource limits are evaluated before the final class wildcard.
+     */
+    public static final String DEFAULT_FILTER_PATTERN =
+            "maxdepth=32;maxrefs=100000;maxbytes=16777216;maxarray=100000;*";
 
     private DelosObjectInputFilters() {
     }
 
     public static void applyGeneralFilterIfConfigured(ObjectInputStream stream) {
-        applyIfConfigured(stream, GENERAL_FILTER_PROPERTY);
+        apply(stream, GENERAL_FILTER_PROPERTY);
     }
 
     public static void applyHeapFilterIfConfigured(ObjectInputStream stream) {
-        applyIfConfigured(stream, HEAP_FILTER_PROPERTY);
+        apply(stream, HEAP_FILTER_PROPERTY);
     }
 
-    private static void applyIfConfigured(ObjectInputStream stream, String propertyName) {
-        String pattern = System.getProperty(propertyName);
-        if (pattern == null || pattern.isBlank()) {
+    private static void apply(ObjectInputStream stream, String propertyName) {
+        String configuredPattern = System.getProperty(propertyName);
+        if (configuredPattern != null && !configuredPattern.isBlank()) {
+            stream.setObjectInputFilter(ObjectInputFilter.Config.createFilter(configuredPattern));
             return;
         }
 
-        stream.setObjectInputFilter(ObjectInputFilter.Config.createFilter(pattern));
+        if (Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)) {
+            return;
+        }
+
+        stream.setObjectInputFilter(ObjectInputFilter.Config.createFilter(DEFAULT_FILTER_PATTERN));
     }
 }

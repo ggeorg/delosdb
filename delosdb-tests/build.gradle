@@ -710,6 +710,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosSecurityTruthTest',
+        'Runs TLS keystore lifecycle, secure PlanExporter XML, and deserialization-default proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',
         'Runs the transaction participation and retained XA restriction proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
@@ -887,6 +892,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageInspectorTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapSanityCheckerTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class',
@@ -998,7 +1004,8 @@ registerDelosFocusedTest(
 }
 
 tasks.named('check') {
-    dependsOn tasks.named('runDelosMvccSqlIntegrationTest'),
+    dependsOn tasks.named('runDelosSecurityTruthTest'),
+            tasks.named('runDelosMvccSqlIntegrationTest'),
             tasks.named('runDelosMvccDrdaNetworkClientTest'),
             tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest'),
             tasks.named('runDelosDrdaConcurrentClientStressTest')

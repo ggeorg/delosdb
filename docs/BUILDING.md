@@ -107,3 +107,19 @@ Combined closeout gate:
 - The inherited Ant workflow is not supported for DelosDB development.
 - Some inherited Derby tests are long-running; use focused DelosDB gates while iterating, then run the full gate before pushing a milestone.
 - If a previous Derby test run was interrupted, run a clean verification from the repository root.
+
+
+## Security truth gates
+
+Run the focused runtime and static security gates with:
+
+```bash
+./gradlew \
+  :delosdb-tests:runDelosSecurityTruthTest \
+  delosSecurityTruthStaticAnalysis \
+  delosHeapObjectDeserializationFilterStaticAnalysis
+```
+
+These gates protect TLS keystore null/stream handling, truthful TLS mode documentation, secure
+PlanExporter XML processing, bounded-by-default deserialization, and group-commit fatal-error
+release semantics.

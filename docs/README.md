@@ -17,6 +17,7 @@ repository behavior.
 | [`DERBY-COMPATIBILITY.md`](DERBY-COMPATIBILITY.md) | compatibility boundaries and deliberate differences |
 | [`STORAGE-ARCHITECTURE.md`](STORAGE-ARCHITECTURE.md) | heap/MVCC storage ownership and durable boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |
+| [`SECURITY.md`](SECURITY.md) | TLS truth, deserialization defaults, and secure XML processing |
 | [`sql-extensions.md`](sql-extensions.md) | DelosDB SQL syntax and storage selection |
 | [`BUILDING.md`](BUILDING.md) | supported build and verification workflow |
 

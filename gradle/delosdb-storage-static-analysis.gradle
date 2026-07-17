@@ -716,7 +716,7 @@ def delosHeapObjectFilterLeafSites = [
 
 tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
     group = 'verification'
-    description = 'Protects opt-in ObjectInputFilter hardening for heap JAVA_OBJECT reads and inherited Derby leaf ObjectInputStream sites.'
+    description = 'Protects bounded-by-default ObjectInputFilter hardening and the explicit legacy compatibility mode.'
 
     inputs.files(delosHeapObjectDeserializationFilterStaticFiles.collect { new File(delosRepositoryRoot, it) }.findAll { it.exists() }).optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt'))
@@ -740,15 +740,27 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def testText = testFile.exists() ? testFile.getText('UTF-8') : ''
 
         DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('delosdb.objectDeserializationFilter'),
-                'General object deserialization filter must remain opt-in through delosdb.objectDeserializationFilter')
+                'General object deserialization override must remain available through delosdb.objectDeserializationFilter')
         DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('delosdb.heap.objectDeserializationFilter'),
-                'Heap object deserialization filter must remain opt-in through delosdb.heap.objectDeserializationFilter')
+                'Heap object deserialization override must remain available through delosdb.heap.objectDeserializationFilter')
         DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('ObjectInputFilter.Config.createFilter'),
                 'Object deserialization filters must use ObjectInputFilter.Config.createFilter')
         DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('stream.setObjectInputFilter'),
                 'DelosObjectInputFilters must own the only production setObjectInputFilter call')
-        DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('pattern == null') && objectFilterText.contains('pattern.isBlank()'),
-                'Object deserialization filters must preserve default Derby behavior when the property is unset or blank')
+        ['delosdb.objectDeserializationCompatibilityMode',
+         'DEFAULT_FILTER_PATTERN',
+         'maxdepth=32',
+         'maxrefs=100000',
+         'maxbytes=16777216',
+         'maxarray=100000',
+         'Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains(token),
+                    'Bounded deserialization default is missing token: ' + token)
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.indexOf('configuredPattern != null')
+                        < objectFilterText.indexOf('Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)'),
+                'Explicit general/heap filters must take precedence over compatibility mode')
         DelosDbStaticAnalysisSupport.require(failures, filterText.contains('DelosObjectInputFilters.HEAP_FILTER_PROPERTY')
                         && filterText.contains('DelosObjectInputFilters.applyHeapFilterIfConfigured'),
                 'DelosHeapObjectDeserializationFilter must delegate to the common heap ObjectInputFilter helper')
@@ -766,7 +778,7 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         delosHeapObjectFilterLeafSites.each { relativePath, description ->
             def leafText = new File(delosRepositoryRoot, relativePath).exists() ? new File(delosRepositoryRoot, relativePath).getText('UTF-8') : ''
             DelosDbStaticAnalysisSupport.require(failures, leafText.contains('DelosObjectInputFilters.applyGeneralFilterIfConfigured'),
-                    'Leaf ObjectInputStream site must install the general opt-in filter: ' + relativePath + ' (' + description + ')')
+                    'Leaf ObjectInputStream site must install the general bounded/default filter: ' + relativePath + ' (' + description + ')')
         }
 
         def productionSetFilterSites = []
@@ -791,16 +803,17 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         }
 
         ['testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
-         'testGeneralLeafObjectInputFilterDefaultAndStrictMode',
+         'testDefaultHeapLimitsRequireExplicitCompatibilityModeForDeepGraphs',
+         'testGeneralLeafObjectInputFilterDefaultStrictAndCompatibilityModes',
          'testMvccStillRejectsJavaObjectTableDefinitions'].each { testName ->
             DelosDbStaticAnalysisSupport.require(failures, testText.contains(testName),
                     'HeapObjectDeserializationFilterTest must keep coverage method: ' + testName)
         }
 
         DelosDbStaticAnalysisSupport.require(failures,
-                testText.contains('testDefaultModePreservesDerbyHeapJavaObjectBehavior')
-                        || testText.contains('testUnsetFilterPreservesDerbySerializableObjectBehavior'),
-                'HeapObjectDeserializationFilterTest must keep default/unset compatibility coverage')
+                testText.contains('DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY')
+                        && testText.contains('NestedPayload.chain(40)'),
+                'HeapObjectDeserializationFilterTest must prove bounded defaults and explicit compatibility mode')
         DelosDbStaticAnalysisSupport.require(failures,
                 testText.contains('DelosObjectInputFilters.GENERAL_FILTER_PROPERTY')
                         && testText.contains('DelosObjectInputFilters.applyGeneralFilterIfConfigured'),
@@ -3314,6 +3327,123 @@ tasks.register('delosMvccTableRebuildProviderTruthStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosSecurityTruthStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects TLS, secure XML, deserialization-default, and fatal group-commit truth.'
+
+    def requiredFiles = [
+            'delosdb-commons/src/main/java/org/apache/derby/shared/common/drda/NaiveTrustManager.java',
+            'delosdb-client/src/main/java/org/apache/derby/client/net/OpenSocketAction.java',
+            'delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java',
+            'delosdb-tools/src/main/java/org/apache/derby/impl/tools/planexporter/CreateHTMLFile.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccCommitCoordinator.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.java',
+            'docs/SECURITY.md'
+    ]
+    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/security-truth-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { relativePath ->
+            DelosDbStaticAnalysisSupport.require(
+                    failures,
+                    new File(delosRepositoryRoot, relativePath).isFile(),
+                    'Missing security-truth source: ' + relativePath)
+        }
+
+        def read = { String relativePath ->
+            def source = new File(delosRepositoryRoot, relativePath)
+            source.isFile() ? source.getText('UTF-8') : ''
+        }
+        def trustText = read(requiredFiles[0])
+        def clientText = read(requiredFiles[1])
+        def serverText = read(requiredFiles[2])
+        def planText = read(requiredFiles[3])
+        def coordinatorText = read(requiredFiles[4])
+        def groupTestText = read(requiredFiles[5])
+        def securityTestText = read(requiredFiles[6])
+        def securityDocText = read(requiredFiles[7])
+
+        ['copyKeyStoreProperties',
+         'keyStorePassword == null',
+         'try (InputStream keyStoreStream = new FileInputStream(keyStore))'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, trustText.contains(token),
+                    'TLS keystore lifecycle is missing token: ' + token)
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                clientText.contains('NaiveTrustManager.copyKeyStoreProperties'),
+                'Client TLS property collection must use the null-safe shared helper')
+        DelosDbStaticAnalysisSupport.require(failures,
+                serverText.contains('NaiveTrustManager.copyKeyStoreProperties'),
+                'Server TLS property collection must use the null-safe shared helper')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !clientText.contains('setProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD, keyStorePasswordProp)')
+                        && !serverText.contains('setProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD, keyStorePasswordProp)'),
+                'Client/server TLS code must not pass a nullable password directly to Properties.setProperty')
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                planText.contains('SecureXmlFactory.newTransformerFactory()'),
+                'PlanExporter must use the centralized secure XML transformer factory')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !planText.contains('TransformerFactory.newInstance()'),
+                'PlanExporter must not instantiate an unsecured transformer factory')
+        DelosDbStaticAnalysisSupport.require(failures,
+                planText.contains('try (InputStream styleSheet')
+                        && planText.contains('try (FileOutputStream output'),
+                'PlanExporter stylesheet and output streams must close deterministically')
+
+        ['VirtualMachineError', 'ThreadDeath', 'LinkageError',
+         'queueChanged.signalAll();', 'rethrowFatal(fatalFailure);'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, coordinatorText.contains(token),
+                    'Group-commit fatal handling is missing token: ' + token)
+        }
+        def signalIndex = coordinatorText.indexOf('queueChanged.signalAll();',
+                coordinatorText.indexOf('private void executeGroup'))
+        def rethrowIndex = coordinatorText.indexOf('rethrowFatal(fatalFailure);')
+        DelosDbStaticAnalysisSupport.require(failures,
+                signalIndex >= 0 && rethrowIndex > signalIndex,
+                'Group waiters must be completed and signaled before the leader rethrows a fatal JVM error')
+        DelosDbStaticAnalysisSupport.require(failures,
+                groupTestText.contains('fatalJvmErrorReleasesFollowerAndIsRethrownByLeader'),
+                'Group-commit hardening must prove follower release and leader fatal-error rethrow')
+
+        ['testPasswordlessTlsKeyStoreConfigurationIsNullSafeAndClosesInput',
+         'testPlanExporterTransformsNormalXmlAndRejectsExternalDtd'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, securityTestText.contains(token),
+                    'SecurityTruthTest is missing method: ' + token)
+        }
+        ['`basic` | TLS encryption only',
+         '`peerAuthentication` | Certificate-authenticated TLS',
+         'delosdb.objectDeserializationCompatibilityMode=true',
+         'external DTD and stylesheet access is disabled'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, securityDocText.contains(token),
+                    'Security documentation is missing truthful token: ' + token)
+        }
+
+        def reportFile = new File(delosBuildRoot, 'reports/delosdb/security-truth-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB security truth static analysis')
+            writer.println('======================================')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException('DelosDB security truth static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle('DelosDB security truth static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3321,6 +3451,7 @@ tasks.register('s0CloseoutVerification') {
             'delosServerStaticAnalysis',
             'delosHeapCompatibilityStaticAnalysis',
             'delosHeapObjectDeserializationFilterStaticAnalysis',
+            'delosSecurityTruthStaticAnalysis',
             'delosStaleGradleScriptCheck',
             'delosOverlayCleanupScriptStaticAnalysis',
             'delosRuntimeArtifactModelStaticAnalysis',

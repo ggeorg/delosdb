@@ -27,18 +27,18 @@ import java.io.ObjectInputStream;
 import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
 /**
- * Optional DelosDB hardening hook for inherited Derby JAVA_OBJECT
- * deserialization.
+ * DelosDB hardening hook for inherited Derby JAVA_OBJECT deserialization.
  *
- * <p>The default remains Derby-compatible: no per-stream filter is installed
- * unless {@link #FILTER_PROPERTY} is explicitly configured. A configured value
- * is interpreted with {@link ObjectInputFilter.Config#createFilter(String)} so
- * deployments can use the JDK's standard object-input-filter grammar.</p>
+ * <p>Bounded resource limits are installed by default. A configured value is
+ * interpreted with {@link ObjectInputFilter.Config#createFilter(String)} so
+ * deployments can use the JDK's standard object-input-filter grammar. The
+ * inherited unbounded behavior requires the explicit compatibility mode in
+ * {@link DelosObjectInputFilters}.</p>
  */
 public final class DelosHeapObjectDeserializationFilter {
     /**
-     * Standard JDK ObjectInputFilter pattern for strict Derby heap UDT reads.
-     * Unset or blank means Derby-compatible default behavior.
+     * Standard JDK ObjectInputFilter pattern for Derby heap UDT reads.
+     * Unset or blank uses DelosDB's bounded default resource limits.
      */
     public static final String FILTER_PROPERTY = DelosObjectInputFilters.HEAP_FILTER_PROPERTY;
 

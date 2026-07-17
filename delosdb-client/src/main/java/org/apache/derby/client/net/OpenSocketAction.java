@@ -127,12 +127,9 @@ class OpenSocketAction {
         Properties retval = new Properties();
         
         String keyStoreProp = System.getProperty(NaiveTrustManager.SSL_KEYSTORE);
-        if (keyStoreProp != null)
-        { retval.setProperty(NaiveTrustManager.SSL_KEYSTORE, keyStoreProp); }
-
         String keyStorePasswordProp = System.getProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD);
-        if (keyStoreProp != null)
-        { retval.setProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD, keyStorePasswordProp); }
+        NaiveTrustManager.copyKeyStoreProperties(
+                retval, keyStoreProp, keyStorePasswordProp);
 
         return retval;
     }

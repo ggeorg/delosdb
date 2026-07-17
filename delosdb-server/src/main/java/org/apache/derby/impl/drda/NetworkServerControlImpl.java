@@ -2718,12 +2718,10 @@ public final class NetworkServerControlImpl {
         Properties retval = new Properties();
         
         String keyStoreProp = PropertyUtil.getSystemProperty(NaiveTrustManager.SSL_KEYSTORE);
-        if (keyStoreProp != null)
-        { retval.setProperty(NaiveTrustManager.SSL_KEYSTORE, keyStoreProp); }
-
-        String keyStorePasswordProp = PropertyUtil.getSystemProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD);
-        if (keyStoreProp != null)
-        { retval.setProperty(NaiveTrustManager.SSL_KEYSTORE_PASSWORD, keyStorePasswordProp); }
+        String keyStorePasswordProp = PropertyUtil.getSystemProperty(
+                NaiveTrustManager.SSL_KEYSTORE_PASSWORD);
+        NaiveTrustManager.copyKeyStoreProperties(
+                retval, keyStoreProp, keyStorePasswordProp);
 
         return retval;
     }

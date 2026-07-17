@@ -114,3 +114,17 @@ Run it directly with:
 ```bash
 ./gradlew delosMvccTableRebuildProviderTruthStaticAnalysis
 ```
+
+## Security truth
+
+`delosSecurityTruthStaticAnalysis` is a stable S0 gate. It verifies that TLS keystore properties
+are copied without nullable `Properties.setProperty` calls, keystore input streams close, the
+PlanExporter uses the centralized secure XML transformer factory, group-commit waiters are released
+before fatal JVM errors are rethrown, focused tests remain present, and tracked documentation keeps
+`basic` encryption-only TLS distinct from certificate-authenticated `peerAuthentication`.
+
+Run it directly with:
+
+```bash
+./gradlew delosSecurityTruthStaticAnalysis
+```

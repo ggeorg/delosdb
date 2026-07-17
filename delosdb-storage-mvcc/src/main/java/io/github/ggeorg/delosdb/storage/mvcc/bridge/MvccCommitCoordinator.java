@@ -212,7 +212,9 @@ final class MvccCommitCoordinator<T, R> implements AutoCloseable {
                             + " outcomes for one request");
                 }
                 outcome = Objects.requireNonNull(outcomes.get(0), "processor outcome");
+                rethrowFatal(outcome.failure());
             } catch (Throwable failure) {
+                rethrowFatal(failure);
                 outcome = Outcome.failure(failure);
             }
             return new Submission<>(
@@ -276,6 +278,7 @@ final class MvccCommitCoordinator<T, R> implements AutoCloseable {
         }
 
         List<Outcome<R>> outcomes;
+        Throwable fatalFailure = null;
         try {
             outcomes = processor.process(group.stream().map(request -> request.item).toList());
             if (outcomes.size() != group.size()) {
@@ -283,10 +286,14 @@ final class MvccCommitCoordinator<T, R> implements AutoCloseable {
                         + " outcomes for " + group.size() + " requests");
             }
             outcomes = List.copyOf(outcomes);
+            fatalFailure = firstFatalFailure(outcomes);
         } catch (Throwable failure) {
             outcomes = new ArrayList<>(group.size());
             for (int index = 0; index < group.size(); index++) {
                 outcomes.add(Outcome.failure(failure));
+            }
+            if (isFatal(failure)) {
+                fatalFailure = failure;
             }
         }
 
@@ -302,6 +309,35 @@ final class MvccCommitCoordinator<T, R> implements AutoCloseable {
             queueChanged.signalAll();
         } finally {
             queueLock.unlock();
+        }
+
+        rethrowFatal(fatalFailure);
+    }
+
+    private static Throwable firstFatalFailure(List<? extends Outcome<?>> outcomes) {
+        for (Outcome<?> outcome : outcomes) {
+            if (outcome != null && isFatal(outcome.failure())) {
+                return outcome.failure();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isFatal(Throwable failure) {
+        return failure instanceof VirtualMachineError
+                || failure instanceof ThreadDeath
+                || failure instanceof LinkageError;
+    }
+
+    private static void rethrowFatal(Throwable failure) {
+        if (failure instanceof VirtualMachineError virtualMachineError) {
+            throw virtualMachineError;
+        }
+        if (failure instanceof ThreadDeath threadDeath) {
+            throw threadDeath;
+        }
+        if (failure instanceof LinkageError linkageError) {
+            throw linkageError;
         }
     }
 

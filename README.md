@@ -100,6 +100,15 @@ See [`docs/sql-extensions.md`](docs/sql-extensions.md),
 [`docs/MVCC-DURABILITY-PROTOCOL.md`](docs/MVCC-DURABILITY-PROTOCOL.md), and
 [`docs/DERBY-COMPATIBILITY.md`](docs/DERBY-COMPATIBILITY.md).
 
+## Security defaults
+
+DRDA retains Derby-compatible mode names, but their meaning is explicit: `basic` is TLS encryption
+without peer identity verification, while `peerAuthentication` uses certificate-authenticated TLS.
+Object deserialization is resource-bounded by default, with an explicit compatibility switch for
+trusted legacy data. XML transformation paths use centralized secure factories.
+
+See [`docs/SECURITY.md`](docs/SECURITY.md).
+
 ## Current program
 
 Phases 1-7 established the storage foundation and concurrent commit pipeline. Phase 8 is the active

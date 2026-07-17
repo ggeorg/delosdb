@@ -1189,9 +1189,10 @@ public interface Property {
      * <BR>
      * This property may be set to one of the following three values
      * off: No Wire encryption
-     * basic:  Encryption, but no SSL client authentication
-     * peerAuthentication: Encryption and with SSL client
-     * authentication 
+     * basic: TLS encryption only. The client does not verify server identity
+     * and the server does not require a client certificate.
+     * peerAuthentication: TLS encryption with certificate-based peer
+     * authentication and normal JSSE trust validation.
      */
 
     public final static String DRDA_PROP_SSL_MODE = "derby.drda.sslMode";

@@ -373,12 +373,15 @@ public class BasicClientDataSource
     /** The constant indicating that SSL encryption won't be used. */
     public final static int SSL_OFF = 0;
     private final static String SSL_OFF_STR = "off";
-    /** The constant indicating that SSL encryption will be used. */
+    /**
+     * TLS encryption without peer identity verification. The client accepts
+     * any server certificate in this compatibility mode.
+     */
     public final static int SSL_BASIC = 1;
     private final static String SSL_BASIC_STR = "basic";
     /**
-     * The constant indicating that SSL encryption with peer authentication
-     * will be used.
+     * TLS encryption with JSSE trust validation and certificate-based peer
+     * authentication.
      */
     public final static int SSL_PEER_AUTHENTICATION = 2;
     private final static String SSL_PEER_AUTHENTICATION_STR =
@@ -388,8 +391,9 @@ public class BasicClientDataSource
      * Parses the string and returns the corresponding constant for the SSL
      * mode denoted.
      * <p>
-     * Valid values are <tt>off</tt>, <tt>basic</tt> and
-     * <tt>peerAuthentication</tt>.
+     * Valid values are <tt>off</tt>, <tt>basic</tt> (encryption only; no
+     * server identity verification) and <tt>peerAuthentication</tt>
+     * (certificate-authenticated TLS).
      *
      * @param s string denoting the SSL mode
      * @return A constant indicating the SSL mode denoted by the string. If the
@@ -1080,8 +1084,9 @@ public class BasicClientDataSource
     /**
      * Specifies the SSL encryption mode to use.
      * <p>
-     * Valid values are <tt>off</tt>, <tt>basic</tt> and
-     * <tt>peerAuthentication</tt>.
+     * Valid values are <tt>off</tt>, <tt>basic</tt> (encryption only; no
+     * server identity verification) and <tt>peerAuthentication</tt>
+     * (certificate-authenticated TLS).
      *
      * @param mode the SSL mode to use (<tt>off</tt>, <tt>basic</tt> or
      *      <tt>peerAuthentication</tt>)
@@ -1096,7 +1101,8 @@ public class BasicClientDataSource
     /**
      * Returns the SSL encryption mode specified for the data source.
      *
-     * @return <tt>off</tt>, <tt>basic</tt> or <tt>peerAuthentication</tt>.
+     * @return <tt>off</tt>, encryption-only <tt>basic</tt>, or
+     *         certificate-authenticated <tt>peerAuthentication</tt>.
      */
     public String getSsl() {
         switch(sslMode) {
