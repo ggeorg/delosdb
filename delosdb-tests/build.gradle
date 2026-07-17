@@ -1066,3 +1066,259 @@ registerDelosFocusedTest(
 tasks.named('check') {
     dependsOn tasks.named('runDelosHeapMvccDrdaStreamingDisconnectTest')
 }
+
+// Phase 8.6 post-correction v1 baseline capture. This lane is intentionally
+// opt-in and remains outside check and s0CloseoutVerification because it
+// produces machine-specific timing and resource evidence.
+def delosV1BaselineOperationalReportDirectory = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/benchmarks/v1-operational')
+def delosV1BaselineDatabaseRoot = rootProject.layout.buildDirectory.dir(
+        'tmp/delos-v1-baseline')
+def delosV1BaselineCaptureDirectory = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/v1-baseline/capture')
+
+registerDelosFocusedTest(
+        'runDelosV1BaselineOperationalCapture',
+        'Captures the fixed v1 writer matrix, lifecycle, backup-stall, resource, and default-overhead evidence.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.class'],
+        [
+                'delosdb.v1Baseline.databaseRoot': delosV1BaselineDatabaseRoot.get().asFile.absolutePath,
+                'delosdb.v1Baseline.reportDirectory': delosV1BaselineOperationalReportDirectory.get().asFile.absolutePath,
+                'delosdb.v1Baseline.captureId': providers.gradleProperty('delosdb.v1Baseline.captureId')
+                        .getOrElse('phase8-v1-post-correction'),
+                'delosdb.v1Baseline.writers': '1,2,4,8,16',
+                'delosdb.v1Baseline.transactionsPerWriter': providers.gradleProperty(
+                        'delosdb.v1Baseline.transactionsPerWriter').getOrElse('8'),
+                'delosdb.v1Baseline.rowsPerTransaction': providers.gradleProperty(
+                        'delosdb.v1Baseline.rowsPerTransaction').getOrElse('4'),
+                'delosdb.v1Baseline.lifecycleRows': providers.gradleProperty(
+                        'delosdb.v1Baseline.lifecycleRows').getOrElse('1000'),
+                'delosdb.v1Baseline.backupWriterTransactions': providers.gradleProperty(
+                        'delosdb.v1Baseline.backupWriterTransactions').getOrElse('40'),
+                'delosdb.v1Baseline.backupStartAfterCommits': providers.gradleProperty(
+                        'delosdb.v1Baseline.backupStartAfterCommits').getOrElse('5'),
+                'delosdb.v1Baseline.overheadRows': providers.gradleProperty(
+                        'delosdb.v1Baseline.overheadRows').getOrElse('1000'),
+                'delosdb.v1Baseline.overheadQueries': providers.gradleProperty(
+                        'delosdb.v1Baseline.overheadQueries').getOrElse('500'),
+                'delosdb.v1Baseline.caseTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.v1Baseline.caseTimeoutSeconds').getOrElse('180')
+        ])
+
+tasks.named('runDelosV1BaselineOperationalCapture') {
+    group = 'benchmark'
+    maxHeapSize = providers.gradleProperty('delosdb.v1Baseline.maxHeap').getOrElse('2048m')
+    outputs.upToDateWhen { false }
+}
+
+
+def delosV1Sha256 = { File input ->
+    def digest = java.security.MessageDigest.getInstance('SHA-256')
+    input.withInputStream { stream ->
+        byte[] buffer = new byte[64 * 1024]
+        int count
+        while ((count = stream.read(buffer)) >= 0) {
+            if (count > 0) {
+                digest.update(buffer, 0, count)
+            }
+        }
+    }
+    java.util.HexFormat.of().formatHex(digest.digest())
+}
+
+def delosV1GitOutput = { List<String> command ->
+    try {
+        def process = new ProcessBuilder(command)
+                .directory(rootProject.projectDir)
+                .redirectErrorStream(true)
+                .start()
+        def text = process.inputStream.getText('UTF-8').trim()
+        return process.waitFor() == 0 ? text : ''
+    } catch (IOException ignored) {
+        return ''
+    }
+}
+
+tasks.register('captureDelosV1Baseline') {
+    group = 'benchmark'
+    description = 'Runs and packages the complete post-correction v1 baseline evidence into one versioned capture manifest.'
+
+    dependsOn tasks.named('runDelosV1BaselineOperationalCapture'),
+            tasks.named('runDelosJdbcBenchmarkBaseline'),
+            tasks.named('runDelosJdbcBenchmarkBatchScaling'),
+            tasks.named('runDelosJdbcBenchmarkTransactions'),
+            tasks.named('runDelosJdbcBenchmarkRowScaling'),
+            tasks.named('runDelosDrdaConcurrentClientStressTest'),
+            tasks.named('runDelosHeapMvccRecoveryDifferentialTest'),
+            rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
+            project(':delosdb-storage-mvcc').tasks.named('runDelosMvccBufferCacheBenchmark'),
+            project(':delosdb-storage-mvcc').tasks.named('runDelosMvccPageCodecBenchmark'),
+            project(':delosdb-storage-mvcc').tasks.named('runMvccFailureInjectionReplayTest'),
+            project(':delosdb-storage-mvcc').tasks.named('runMvccLowLevelFailureReplayTest')
+
+    outputs.upToDateWhen { false }
+    outputs.dir(delosV1BaselineCaptureDirectory)
+
+    doLast {
+        File captureRoot = delosV1BaselineCaptureDirectory.get().asFile
+        delete captureRoot
+        File rawRoot = new File(captureRoot, 'raw')
+        rawRoot.mkdirs()
+
+        def lanes = [
+                [id: 'operational', source: delosV1BaselineOperationalReportDirectory.get().asFile],
+                [id: 'jdbc-lifecycle', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks').get().asFile,
+                 include: ['benchmark-results.json', 'benchmark-results.csv', 'benchmark-summary.txt']],
+                [id: 'jdbc-batch-scaling', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/batch-scaling').get().asFile],
+                [id: 'jdbc-transactions', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/transactions').get().asFile],
+                [id: 'jdbc-row-scaling', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/row-scaling').get().asFile],
+                [id: 'mvcc-buffer-cache', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/buffer-cache').get().asFile],
+                [id: 'mvcc-page-codec', source: rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/page-codec').get().asFile],
+                [id: 'drda-stress', source: layout.buildDirectory
+                        .dir('test-results/runDelosDrdaConcurrentClientStressTest').get().asFile],
+                [id: 'recovery-differential', source: layout.buildDirectory
+                        .dir('test-results/runDelosHeapMvccRecoveryDifferentialTest').get().asFile],
+                [id: 'failure-replay', source: project(':delosdb-storage-mvcc').layout.buildDirectory
+                        .dir('test-results/runMvccFailureInjectionReplayTest').get().asFile],
+                [id: 'low-level-failure-replay', source: project(':delosdb-storage-mvcc').layout.buildDirectory
+                        .dir('test-results/runMvccLowLevelFailureReplayTest').get().asFile]
+        ]
+
+        def missing = []
+        lanes.each { lane ->
+            if (!lane.source.isDirectory()) {
+                missing << "${lane.id}: ${lane.source}"
+                return
+            }
+            File target = new File(rawRoot, lane.id)
+            copy {
+                from lane.source
+                into target
+                if (lane.include != null) {
+                    lane.include.each { pattern -> include pattern }
+                }
+            }
+            if (!target.isDirectory() || target.listFiles() == null || target.listFiles().length == 0) {
+                missing << "${lane.id}: no copied evidence from ${lane.source}"
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException('Incomplete v1 baseline capture lanes:\n- ' + missing.join('\n- '))
+        }
+
+        File thresholdSource = rootProject.file('benchmarks/v1-baseline/provisional-thresholds.json')
+        if (!thresholdSource.isFile()) {
+            throw new GradleException('Missing tracked v1 baseline threshold policy: ' + thresholdSource)
+        }
+        copy {
+            from thresholdSource
+            into captureRoot
+        }
+
+        String revision = delosV1GitOutput(['git', 'rev-parse', 'HEAD'])
+        if (!(revision ==~ /[0-9a-f]{40,64}/)) {
+            throw new GradleException('The v1 baseline capture requires a Git source revision')
+        }
+        String status = delosV1GitOutput(['git', 'status', '--porcelain'])
+        boolean dirty = !status.isBlank()
+
+        def rawFiles = []
+        captureRoot.eachFileRecurse(groovy.io.FileType.FILES) { file ->
+            if (file.name != 'manifest.json' && file.name != 'checksums.sha256') {
+                String relative = captureRoot.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+                rawFiles << [
+                        path: relative,
+                        bytes: file.length(),
+                        sha256: delosV1Sha256(file)
+                ]
+            }
+        }
+        rawFiles.sort { left, right -> left.path <=> right.path }
+
+        def semanticTokens = []
+        rawFiles.findAll { it.path.endsWith('.json') }.each { entry ->
+            String text = new File(captureRoot, entry.path).getText('UTF-8')
+            (text =~ /"semanticFingerprint"\s*:\s*(-?\d+)/).each { match ->
+                semanticTokens << "${entry.path}:fingerprint:${match[1]}"
+            }
+            (text =~ /"semanticDigest"\s*:\s*"([0-9a-f]{64})"/).each { match ->
+                semanticTokens << "${entry.path}:digest:${match[1]}"
+            }
+        }
+        semanticTokens.sort()
+        if (semanticTokens.isEmpty()) {
+            throw new GradleException('No semantic fingerprints or digests were captured')
+        }
+        def semanticDigest = java.security.MessageDigest.getInstance('SHA-256')
+        semanticTokens.each { token ->
+            semanticDigest.update(token.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            semanticDigest.update((byte) '\n')
+        }
+        String semanticChecksum = java.util.HexFormat.of().formatHex(semanticDigest.digest())
+
+        def runtimeArtifacts = rootProject.ext.delosdbRuntimeJarFiles.call()
+                .files
+                .findAll { it.isFile() }
+                .sort { left, right -> left.name <=> right.name }
+                .collect { jar -> [name: jar.name, bytes: jar.length(), sha256: delosV1Sha256(jar)] }
+
+        def manifest = [
+                schemaVersion: 1,
+                baselineId: project.providers.gradleProperty('delosdb.v1Baseline.captureId')
+                        .getOrElse('phase8-v1-post-correction'),
+                status: 'CAPTURED_NOT_ACCEPTED',
+                source: [revision: revision, dirty: dirty],
+                environment: [
+                        capturedAtUtc: java.time.Instant.now().toString(),
+                        javaVersion: System.getProperty('java.version'),
+                        javaVendor: System.getProperty('java.vendor'),
+                        vmName: System.getProperty('java.vm.name'),
+                        osName: System.getProperty('os.name'),
+                        osVersion: System.getProperty('os.version'),
+                        osArch: System.getProperty('os.arch'),
+                        processors: Runtime.getRuntime().availableProcessors(),
+                        maxHeapBytes: Runtime.getRuntime().maxMemory(),
+                        gradleVersion: gradle.gradleVersion
+                ],
+                matrix: [
+                        writers: [1, 2, 4, 8, 16],
+                        providers: ['heap', 'delos_mvcc'],
+                        topologies: ['same-table', 'different-tables', 'different-databases'],
+                        workloads: ['single-row-insert', 'multi-row-insert', 'mixed-insert-update']
+                ],
+                lanes: lanes.collect { it.id },
+                profilingAndFaultDefaults: [
+                        runtimeStatisticsDefault: 'disabled',
+                        failureControls: 'test-only-unreachable'
+                ],
+                semanticChecksum: semanticChecksum,
+                semanticTokenCount: semanticTokens.size(),
+                runtimeArtifacts: runtimeArtifacts,
+                files: rawFiles
+        ]
+
+        File manifestFile = new File(captureRoot, 'manifest.json')
+        manifestFile.setText(
+                groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifest)) + '\n',
+                'UTF-8')
+
+        def checksums = new ArrayList(rawFiles)
+        checksums << [path: 'manifest.json', sha256: delosV1Sha256(manifestFile)]
+        checksums.sort { left, right -> left.path <=> right.path }
+        new File(captureRoot, 'checksums.sha256').withWriter('UTF-8') { writer ->
+            checksums.each { entry -> writer.println("${entry.sha256}  ${entry.path}") }
+        }
+
+        logger.lifecycle('DelosDB v1 baseline capture written to {}', captureRoot)
+        logger.lifecycle('Semantic checksum: {}', semanticChecksum)
+        if (dirty) {
+            logger.warn('The capture is marked dirty and cannot be frozen as the accepted v1 baseline.')
+        }
+    }
+}

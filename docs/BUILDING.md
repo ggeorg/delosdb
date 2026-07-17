@@ -123,3 +123,15 @@ Run the focused runtime and static security gates with:
 These gates protect TLS keystore null/stream handling, truthful TLS mode documentation, secure
 PlanExporter XML processing, bounded-by-default deserialization, and group-commit fatal-error
 release semantics.
+
+## Post-correction v1 baseline capture
+
+After all normal Phase 8 correctness gates are green, capture the machine-specific v1 evidence from
+a clean JDK 25 checkout:
+
+```bash
+./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
+```
+
+The task is opt-in, is not part of `check` or S0, and writes its self-contained bundle under
+`build/reports/delosdb/v1-baseline/capture/`. See [`V1-BASELINE.md`](V1-BASELINE.md).

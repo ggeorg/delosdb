@@ -112,10 +112,12 @@ See [`docs/SECURITY.md`](docs/SECURITY.md).
 ## Current program
 
 Phases 1-7 established the storage foundation and concurrent commit pipeline. Phase 8 is the active
-v1.0 phase and focuses on transaction correctness, product truth, secure defaults, removal of
-obsolete surfaces, and a stable performance and resource baseline.
+v1.0 phase. Ownership, transaction authority, deterministic failure replay, isolation/type truth,
+and focused security corrections are complete; the current work is capturing the post-correction
+performance and resource baseline.
 
-See [`docs/CLEANUP-CONSOLIDATION.md`](docs/CLEANUP-CONSOLIDATION.md).
+See [`docs/CLEANUP-CONSOLIDATION.md`](docs/CLEANUP-CONSOLIDATION.md) and
+[`docs/V1-BASELINE.md`](docs/V1-BASELINE.md).
 
 ## Build requirements
 
@@ -154,6 +156,12 @@ Stable static and repository gates:
 
 ```bash
 ./gradlew s0CloseoutVerification
+```
+
+Opt-in post-correction v1 baseline capture:
+
+```bash
+./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
 ```
 
 Full storage-module verification:

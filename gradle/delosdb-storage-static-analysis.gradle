@@ -3444,6 +3444,99 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosV1BaselineCaptureStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the Phase 8.6 v1 baseline capture contract while keeping wall-clock work outside S0.'
+
+    def contractFile = new File(delosRepositoryRoot,
+            'gradle/static-analysis/delosdb-v1-baseline-capture.txt')
+    inputs.file(contractFile)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/v1-baseline-capture-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        if (!contractFile.isFile()) {
+            failures << 'Missing v1 baseline capture contract: ' + contractFile
+        } else {
+            contractFile.readLines('UTF-8').eachWithIndex { line, index ->
+                if (line.isBlank() || line.startsWith('#')) {
+                    return
+                }
+                def fields = line.split('\\|', -1)
+                if (fields.length != 4) {
+                    failures << 'Malformed v1 baseline contract row at line ' + (index + 1)
+                    return
+                }
+                def source = new File(delosRepositoryRoot, fields[1])
+                if (!source.isFile()) {
+                    failures << fields[0] + ': missing source ' + fields[1]
+                } else if (!source.getText('UTF-8').contains(fields[2])) {
+                    failures << fields[0] + ': missing marker ' + fields[2]
+                }
+            }
+        }
+
+        def testBuild = new File(delosRepositoryRoot, 'delosdb-tests/build.gradle')
+        def staticBuild = new File(delosRepositoryRoot,
+                'gradle/delosdb-storage-static-analysis.gradle')
+        def testText = testBuild.isFile() ? testBuild.getText('UTF-8') : ''
+        def staticText = staticBuild.isFile() ? staticBuild.getText('UTF-8') : ''
+        def captureIndex = testText.indexOf("tasks.register('captureDelosV1Baseline')")
+        if (captureIndex < 0) {
+            failures << 'Missing captureDelosV1Baseline task'
+        }
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index < 0) {
+            failures << 'Missing s0CloseoutVerification task'
+        } else {
+            def s0Text = staticText.substring(s0Index)
+            if (s0Text.contains("'captureDelosV1Baseline'")
+                    || s0Text.contains("'runDelosV1BaselineOperationalCapture'")) {
+                failures << 'Machine-specific v1 baseline execution must remain outside S0'
+            }
+            if (!s0Text.contains("'delosV1BaselineCaptureStaticAnalysis'")) {
+                failures << 'S0 must retain the cheap v1 baseline contract static analysis'
+            }
+        }
+        if (!testText.contains("status: 'CAPTURED_NOT_ACCEPTED'")) {
+            failures << 'The capture manifest must not claim acceptance automatically'
+        }
+        if (!testText.contains("dirty: dirty")) {
+            failures << 'The capture manifest must record Git dirty state'
+        }
+        if (!testText.contains("runtimeArtifacts: runtimeArtifacts")) {
+            failures << 'The capture manifest must fingerprint runtime artifacts'
+        }
+        if (!testText.contains("writers: [1, 2, 4, 8, 16]")) {
+            failures << 'The manifest must record the fixed writer matrix'
+        }
+
+        def reportFile = new File(delosBuildRoot,
+                'reports/delosdb/v1-baseline-capture-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB v1 baseline capture static analysis')
+            writer.println('===========================================')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+                writer.println('Execution boundary: capture tasks remain opt-in and outside S0.')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB v1 baseline capture static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle('DelosDB v1 baseline capture static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3452,6 +3545,7 @@ tasks.register('s0CloseoutVerification') {
             'delosHeapCompatibilityStaticAnalysis',
             'delosHeapObjectDeserializationFilterStaticAnalysis',
             'delosSecurityTruthStaticAnalysis',
+            'delosV1BaselineCaptureStaticAnalysis',
             'delosStaleGradleScriptCheck',
             'delosOverlayCleanupScriptStaticAnalysis',
             'delosRuntimeArtifactModelStaticAnalysis',

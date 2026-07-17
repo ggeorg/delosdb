@@ -96,6 +96,23 @@ proof. A CI or release job may additionally supply a caller-owned command throug
 directly with `./gradlew -p benchmarks/jmh jmh`; it is intentionally not wired
 into the root build.
 
+## Phase 8.6 accepted-baseline capture
+
+The complete post-correction capture is owned by one opt-in task:
+
+```bash
+./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
+```
+
+It runs the fixed 1/2/4/8/16 writer matrix, existing JDBC and low-level benchmark lanes,
+DRDA stress, recovery differential, and deterministic failure-replay evidence. It then copies
+all raw output into one bundle and writes a versioned manifest, runtime-jar fingerprints, per-file
+SHA-256 values, and an aggregate semantic checksum.
+
+The task is deliberately not an S0 dependency. A capture with a dirty Git tree is marked as such
+and cannot be promoted as the accepted baseline. See [`V1-BASELINE.md`](V1-BASELINE.md) and
+`benchmarks/v1-baseline/README.md`.
+
 ## Interpretation rules
 
 - Benchmark values are evidence, not correctness assertions.
