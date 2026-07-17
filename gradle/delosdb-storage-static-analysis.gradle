@@ -792,7 +792,7 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
 
         ['testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
          'testGeneralLeafObjectInputFilterDefaultAndStrictMode',
-         'testMvccStillRejectsJavaObjectRows'].each { testName ->
+         'testMvccStillRejectsJavaObjectTableDefinitions'].each { testName ->
             DelosDbStaticAnalysisSupport.require(failures, testText.contains(testName),
                     'HeapObjectDeserializationFilterTest must keep coverage method: ' + testName)
         }

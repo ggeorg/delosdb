@@ -105,7 +105,7 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
-    public void testMvccStillRejectsJavaObjectRows() throws Exception {
+    public void testMvccStillRejectsJavaObjectTableDefinitions() throws Exception {
         String databaseName = databaseName("heap-object-filter-mvcc-boundary-db");
         String oldFilter = System.getProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
         System.setProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY,
@@ -113,19 +113,17 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            createSerializableMvccTable(connection, "mvcc_object_filter_boundary_t");
             try {
-                insertPayload(connection, "mvcc_object_filter_boundary_t", 1, new AllowedPayload(7));
-                connection.commit();
+                createSerializableMvccTable(connection, "mvcc_object_filter_boundary_t");
+                fail("Expected delos_mvcc to reject JAVA_OBJECT/UserType table definitions");
             } catch (SQLException expected) {
+                assertEquals("expected unsupported-feature SQLState", "0A000", expected.getSQLState());
                 assertTrue("expected clean JAVA_OBJECT/UserType boundary failure, got: " + expected,
                         containsMessage(expected, "JAVA_OBJECT")
                                 || containsMessage(expected, "UserType")
                                 || containsMessage(expected, "unsupported"));
-                rollbackAfterExpectedCommitFailure(connection);
-                return;
+                connection.rollback();
             }
-            fail("Expected delos_mvcc to keep rejecting JAVA_OBJECT durable row values");
         } finally {
             restoreFilterProperty(oldFilter);
         }
@@ -183,18 +181,6 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
             System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
         } else {
             System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY, oldFilter);
-        }
-    }
-
-    private static void rollbackAfterExpectedCommitFailure(Connection connection) {
-        try {
-            if (!connection.isClosed()) {
-                connection.rollback();
-            }
-        } catch (SQLException ignored) {
-            // Derby may close/invalidate the embedded connection after a failed
-            // commit. The expected boundary failure has already been asserted;
-            // cleanup must not mask it with "No current connection".
         }
     }
 
