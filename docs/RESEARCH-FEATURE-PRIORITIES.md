@@ -60,4 +60,3 @@ distributed or disaggregated DelosDB
 PostgreSQL wire compatibility without a concrete adoption requirement
 ```
 
-The detailed local plan is maintained under `.delosdb-v1/05-research/`.

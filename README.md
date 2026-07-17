@@ -91,11 +91,10 @@ The current MVCC implementation includes:
 
 Current pre-1.0 limitations include:
 
-- BLOB and CLOB values are rejected by `delos_mvcc` pending a complete streaming and lifecycle
-  design;
-- JAVA_OBJECT and Derby UDT values are rejected by `delos_mvcc` durable rows;
-- `delos_mvcc` currently maps JDBC `SERIALIZABLE` to a transaction snapshot and therefore does not
-  prevent write skew. The v1.0 contract requires early rejection until true serializability exists.
+- JAVA_OBJECT and Derby UDT columns reject with SQLState `0A000` before an MVCC table is created;
+- access to `delos_mvcc` at JDBC `SERIALIZABLE` rejects with SQLState `0A000` before a scan or
+  write opens;
+- MVCC XA writes remain unsupported.
 
 See [`docs/sql-extensions.md`](docs/sql-extensions.md),
 [`docs/MVCC-DURABILITY-PROTOCOL.md`](docs/MVCC-DURABILITY-PROTOCOL.md), and
@@ -104,11 +103,8 @@ See [`docs/sql-extensions.md`](docs/sql-extensions.md),
 ## Current program
 
 Phases 1-7 established the storage foundation and concurrent commit pipeline. Phase 8 is the active
-v1.0 phase and focuses on product truth, security defaults, stale-surface removal, the Derby debt
-ledger, and a frozen performance and resource baseline.
-
-The local `.delosdb-v1/` planning workspace is intentionally ignored by Git. Stable conclusions are
-promoted into tracked source, tests, this README, and `docs/` as each slice closes.
+v1.0 phase and focuses on transaction correctness, product truth, secure defaults, removal of
+obsolete surfaces, and a stable performance and resource baseline.
 
 See [`docs/CLEANUP-CONSOLIDATION.md`](docs/CLEANUP-CONSOLIDATION.md).
 

@@ -112,7 +112,7 @@ See [`MVCC-BACKUP-COORDINATION.md`](MVCC-BACKUP-COORDINATION.md).
 
 ## Isolation
 
-Current pre-1.0 behavior is:
+Current behavior is:
 
 ```text
 READ COMMITTED and weaker
@@ -122,12 +122,11 @@ REPEATABLE READ
     transaction snapshot
 
 SERIALIZABLE
-    transaction snapshot compatibility mapping
-    no predicate locking, SSI, or write-skew prevention
+    rejected with SQLState 0A000 before an MVCC scan or write opens
 ```
 
-The current behavior is covered by an executable write-skew proof. The v1.0 product contract
-requires early rejection of MVCC `SERIALIZABLE` until true serializability is available.
+Heap SERIALIZABLE remains Derby-compatible. MVCC SERIALIZABLE stays unavailable until a real
+predicate-locking or SSI architecture can satisfy the JDBC contract.
 
 ## Consistency and diagnostics
 

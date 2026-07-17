@@ -30,11 +30,10 @@ Unsupported in `delos_mvcc` durable rows:
 
 ```text
 JAVA_OBJECT / Derby UDT object values
-BLOB
-CLOB
 ```
 
-These rejections are deliberate compatibility and safety boundaries, not parser limitations.
+The table definition rejects with SQLState `0A000` before the MVCC base conglomerate is created.
+BLOB and CLOB values use the tested materialized/overflow lifecycle.
 
 ## Vacuum/compress
 
@@ -56,20 +55,14 @@ REPEATABLE READ
   transaction-scoped stable read view
 
 SERIALIZABLE
-  Derby/JDBC compatibility mapping to the same transaction-scoped snapshot
-  not a full-serializability guarantee for delos_mvcc
+  rejected with SQLState 0A000 before an MVCC scan or write opens
 ```
 
 The current `delos_mvcc` implementation has no predicate locks, range locks,
-SSI conflict tracking, or serialization-failure protocol. Two transactions can
-therefore read the same invariant, update disjoint rows, and both commit a
-write-skew outcome. `MvccSqlSerializableSemanticsTest` is the executable truth
-gate for this limitation.
-
-Applications continue to use Derby/JDBC transaction isolation controls, but
-must not rely on `Connection.TRANSACTION_SERIALIZABLE` to prevent write skew or
-phantoms on `delos_mvcc` tables. True serializability is a separate architecture
-phase.
+SSI conflict tracking, or serialization-failure protocol. Presenting a
+transaction snapshot as SERIALIZABLE would therefore be misleading.
+`MvccSqlSerializableSemanticsTest` proves early rejection while preserving heap
+SERIALIZABLE and MVCC REPEATABLE READ.
 
 ## Consistency diagnostics
 

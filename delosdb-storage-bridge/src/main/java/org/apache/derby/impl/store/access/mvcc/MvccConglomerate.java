@@ -197,7 +197,7 @@ public final class MvccConglomerate
             StoreDataValue[] stopKeyValue,
             int stopSearchOperator,
             StaticCompiledOpenConglomInfo staticInfo,
-            DynamicCompiledOpenConglomInfo dynamicInfo) {
+            DynamicCompiledOpenConglomInfo dynamicInfo) throws StandardException {
         return new MvccScanController(this, xactManager, hold, openMode, isolationLevel, scanColumnList, qualifier);
     }
 

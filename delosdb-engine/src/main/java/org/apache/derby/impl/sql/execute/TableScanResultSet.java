@@ -27,6 +27,7 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.i18n.MessageService;
 import org.apache.derby.iapi.services.loader.GeneratedMethod;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.execute.CursorResultSet;
@@ -40,6 +41,7 @@ import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
@@ -255,6 +257,15 @@ class TableScanResultSet extends ScanResultSet
         TransactionController tc = activation.getTransactionController();
 
 		initIsolationLevel();
+
+        if (getLanguageConnectionContext().getCurrentIsolationLevel()
+                == TransactionControl.SERIALIZABLE_ISOLATION_LEVEL
+                && tc.getStaticCompiledConglomInfo(conglomId).getTypeFormatId()
+                == StoredFormatIds.ACCESS_MVCC_V1_ID) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "SERIALIZABLE isolation for delos_mvcc");
+        }
 
 		if (dcoci == null)
 			dcoci = tc.getDynamicCompiledConglomInfo(conglomId);

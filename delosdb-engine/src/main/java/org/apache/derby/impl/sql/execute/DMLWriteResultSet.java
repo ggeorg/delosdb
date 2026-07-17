@@ -97,6 +97,12 @@ abstract public class DMLWriteResultSet extends NoRowsResultSetImpl
 		{
             boolean mvcc = tc.getStaticCompiledConglomInfo(this.constantAction.conglomId)
                     .getTypeFormatId() == StoredFormatIds.ACCESS_MVCC_V1_ID;
+            if (mvcc && activation.getLanguageConnectionContext().getCurrentIsolationLevel()
+                    == TransactionControl.SERIALIZABLE_ISOLATION_LEVEL) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        "SERIALIZABLE isolation for delos_mvcc");
+            }
             DelosStorageTransactionRegistry.WriteParticipationResult participation =
                     DelosStorageTransactionRegistry.registerWriteIntent(
                             tc,

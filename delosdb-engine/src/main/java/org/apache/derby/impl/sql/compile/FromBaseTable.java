@@ -41,6 +41,7 @@ import org.apache.derby.shared.common.reference.ClassName;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 import org.apache.derby.iapi.services.compiler.MethodBuilder;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.io.FormatableArrayHolder;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -2906,6 +2907,16 @@ class FromBaseTable extends FromTable
 			if (tableDescriptor == null)
 				throw StandardException.newException(SQLState.LANG_TABLE_NOT_FOUND, tableName);
 		}
+
+        if (getLanguageConnectionContext().getCurrentIsolationLevel()
+                == TransactionControl.SERIALIZABLE_ISOLATION_LEVEL
+                && getLanguageConnectionContext().getTransactionCompile()
+                        .getStaticCompiledConglomInfo(tableDescriptor.getHeapConglomerateId())
+                        .getTypeFormatId() == StoredFormatIds.ACCESS_MVCC_V1_ID) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "SERIALIZABLE isolation for delos_mvcc");
+        }
 
 		return	tableDescriptor;
 	}

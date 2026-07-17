@@ -40,12 +40,7 @@ structured evidence and executable proof
 research boundary and exercises
 ```
 
-## Authoritative local sources
+## Source authority
 
-```text
-.delosdb-v1/04-book/00-BOOK-VISION.md
-.delosdb-v1/04-book/01-TABLE-OF-CONTENTS.md
-.delosdb-v1/04-book/02-CHAPTER-CONTRACT.md
-.delosdb-v1/04-book/03-LABS-AND-EXERCISES.md
-.delosdb-v1/04-book/04-BOOK-PRODUCTION-MAP.md
-```
+The book is derived from tracked production source, current protocol documentation, and executable
+verification.

@@ -1,8 +1,8 @@
 # DelosDB documentation
 
-This directory contains tracked product, architecture, compatibility, operational, and engineering
-evidence for DelosDB. Local planning material under `.delosdb-v1/` is intentionally ignored and is
-not a substitute for these documents.
+This directory contains the tracked product, architecture, compatibility, operational, and
+engineering evidence for DelosDB. These documents and their executable gates define current
+repository behavior.
 
 ## Authoritative product documents
 

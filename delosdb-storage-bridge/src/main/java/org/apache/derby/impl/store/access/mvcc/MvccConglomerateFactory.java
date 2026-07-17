@@ -24,12 +24,14 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.nio.file.Path;
 import java.util.Properties;
 
+import org.apache.derby.iapi.services.io.Storable;
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.ModuleSupportable;
 import org.apache.derby.iapi.services.monitor.Monitor;
-import org.apache.derby.iapi.services.uuid.UUIDFactory;
 import org.apache.derby.iapi.services.monitor.PersistentService;
+import org.apache.derby.iapi.services.uuid.UUIDFactory;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
@@ -40,6 +42,7 @@ import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.shared.common.reference.SQLState;
 
 /**
  * Access-method factory for {@code delos_mvcc} conglomerates.
@@ -99,7 +102,27 @@ public final class MvccConglomerateFactory
             int[] collationIds,
             Properties properties,
             int temporaryFlag) throws StandardException {
+        rejectUnsupportedDurableTypes(template);
         return new MvccConglomerate(runtime(), segment, input_containerid, template, collationIds, temporaryFlag);
+    }
+
+    private static void rejectUnsupportedDurableTypes(StoreDataValue[] template)
+            throws StandardException {
+        if (template == null) {
+            return;
+        }
+        for (StoreDataValue value : template) {
+            if (!(value instanceof Storable storable)) {
+                continue;
+            }
+            int formatId = storable.getTypeFormatId();
+            if (formatId == StoredFormatIds.SERIALIZABLE_FORMAT_ID
+                    || formatId == StoredFormatIds.SQL_USERTYPE_ID_V3) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        "JAVA_OBJECT/UserType columns for delos_mvcc");
+            }
+        }
     }
 
     @Override

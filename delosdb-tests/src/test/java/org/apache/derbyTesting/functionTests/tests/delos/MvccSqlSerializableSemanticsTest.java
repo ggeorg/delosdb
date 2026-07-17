@@ -22,53 +22,123 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.sql.SQLException;
 
-/** Truth gate for the current delos_mvcc SERIALIZABLE compatibility mapping. */
+/** Truth gate for heap SERIALIZABLE and early delos_mvcc SERIALIZABLE rejection. */
 public final class MvccSqlSerializableSemanticsTest extends MvccSqlTestSupport {
-    public void testSerializableUsesTransactionSnapshotButDoesNotPreventWriteSkew() throws Exception {
-        String databaseName = databaseName("mvcc-serializable-semantics-db");
+    private static final String UNSUPPORTED_SQL_STATE = "0A000";
+
+    public void testHeapSerializableRemainsSupported() throws Exception {
+        String databaseName = databaseName("heap-serializable-semantics-db");
 
         try (Connection setup = openDatabase(databaseName, true)) {
             setup.setAutoCommit(false);
-            executeUpdate(setup, "create table serializable_on_call_t "
-                    + "(doctor_id int primary key, on_call int not null) using delos_mvcc");
-            executeUpdate(setup, "insert into serializable_on_call_t values (1, 1)");
-            executeUpdate(setup, "insert into serializable_on_call_t values (2, 1)");
+            executeUpdate(setup, "create table heap_serializable_t "
+                    + "(id int primary key, value int not null)");
+            executeUpdate(setup, "insert into heap_serializable_t values (1, 10)");
             setup.commit();
         }
 
-        try (Connection first = openDatabase(databaseName, false);
-             Connection second = openDatabase(databaseName, false)) {
-            first.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-            second.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
-            first.setAutoCommit(false);
-            second.setAutoCommit(false);
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            connection.setAutoCommit(false);
+            assertRows(connection, "select id, value from heap_serializable_t", "1|10");
+            assertEquals(1, executeUpdate(connection,
+                    "update heap_serializable_t set value = 11 where id = 1"));
+            connection.commit();
+        }
 
-            assertRows(first, "select sum(on_call) from serializable_on_call_t", "2");
-            assertRows(second, "select sum(on_call) from serializable_on_call_t", "2");
+        try (Connection observer = openDatabase(databaseName, false)) {
+            assertRows(observer, "select id, value from heap_serializable_t", "1|11");
+        }
 
-            executeUpdate(first,
-                    "update serializable_on_call_t set on_call = 0 where doctor_id = 1");
-            executeUpdate(second,
-                    "update serializable_on_call_t set on_call = 0 where doctor_id = 2");
+        shutdownDatabase(databaseName);
+    }
 
-            first.commit();
+    public void testMvccSerializableReadRejectsBeforeOpeningUnsafeSnapshot() throws Exception {
+        String databaseName = databaseName("mvcc-serializable-read-rejection-db");
+        createMvccFixture(databaseName);
 
-            assertRows(second,
-                    "select doctor_id, on_call from serializable_on_call_t order by doctor_id",
-                    "1|1",
-                    "2|0");
-            second.commit();
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            connection.setAutoCommit(false);
+            assertUnsupported(() -> assertRows(connection,
+                    "select id, value from mvcc_serializable_t", "1|10"));
+            connection.rollback();
+        }
+
+        try (Connection observer = openDatabase(databaseName, false)) {
+            assertRows(observer, "select id, value from mvcc_serializable_t", "1|10");
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    public void testMvccSerializableWriteRejectsBeforeMutation() throws Exception {
+        String databaseName = databaseName("mvcc-serializable-write-rejection-db");
+        createMvccFixture(databaseName);
+
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            connection.setAutoCommit(false);
+            assertUnsupported(() -> executeUpdate(connection,
+                    "insert into mvcc_serializable_t values (2, 20)"));
+            connection.rollback();
         }
 
         try (Connection observer = openDatabase(databaseName, false)) {
             assertRows(observer,
-                    "select doctor_id, on_call from serializable_on_call_t order by doctor_id",
-                    "1|0",
-                    "2|0");
-            assertRows(observer, "select sum(on_call) from serializable_on_call_t", "0");
+                    "select id, value from mvcc_serializable_t order by id",
+                    "1|10");
         }
 
         shutdownDatabase(databaseName);
+    }
+
+    public void testMvccRepeatableReadRetainsTransactionSnapshot() throws Exception {
+        String databaseName = databaseName("mvcc-repeatable-read-semantics-db");
+        createMvccFixture(databaseName);
+
+        try (Connection first = openDatabase(databaseName, false);
+             Connection second = openDatabase(databaseName, false)) {
+            first.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+
+            assertRows(first, "select id, value from mvcc_serializable_t", "1|10");
+            executeUpdate(second, "update mvcc_serializable_t set value = 11 where id = 1");
+            second.commit();
+            assertRows(first, "select id, value from mvcc_serializable_t", "1|10");
+            first.commit();
+        }
+
+        try (Connection observer = openDatabase(databaseName, false)) {
+            assertRows(observer, "select id, value from mvcc_serializable_t", "1|11");
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    private static void createMvccFixture(String databaseName) throws SQLException {
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table mvcc_serializable_t "
+                    + "(id int primary key, value int not null) using delos_mvcc");
+            executeUpdate(setup, "insert into mvcc_serializable_t values (1, 10)");
+            setup.commit();
+        }
+    }
+
+    private static void assertUnsupported(SqlAction action) throws SQLException {
+        try {
+            action.run();
+            fail("Expected delos_mvcc SERIALIZABLE to reject before execution");
+        } catch (SQLException expected) {
+            assertEquals("stable MVCC SERIALIZABLE SQLState", UNSUPPORTED_SQL_STATE,
+                    expected.getSQLState());
+            assertTrue("expected truthful SERIALIZABLE rejection, got: " + expected,
+                    containsMessage(expected, "SERIALIZABLE")
+                            && containsMessage(expected, "delos_mvcc"));
+        }
     }
 }

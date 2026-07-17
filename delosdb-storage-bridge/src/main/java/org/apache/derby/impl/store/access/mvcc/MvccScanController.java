@@ -86,7 +86,8 @@ public final class MvccScanController implements ScanManager {
             int openMode,
             int isolationLevel,
             FormatableBitSet scanColumnList,
-            Qualifier[][] qualifiers) {
+            Qualifier[][] qualifiers) throws StandardException {
+        this.isolationPolicy = MvccBridgeIsolationPolicy.fromDerbyIsolationLevel(isolationLevel);
         MvccBridgeDiagnosticsSupport.incrementOpenCount();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
@@ -94,7 +95,6 @@ public final class MvccScanController implements ScanManager {
         this.hold = hold;
         this.completeWithDerbyTransaction = (openMode & TransactionController.OPENMODE_FORUPDATE)
                 == TransactionController.OPENMODE_FORUPDATE;
-        this.isolationPolicy = MvccBridgeIsolationPolicy.fromDerbyIsolationLevel(isolationLevel);
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
         DelosStorageTransaction activeWriter = DelosStorageTransactionRegistry.activeWriterTransaction(

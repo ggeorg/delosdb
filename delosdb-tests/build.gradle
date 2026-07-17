@@ -701,8 +701,13 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccSerializableSemanticsTest',
-        'Runs the delos_mvcc SERIALIZABLE transaction-snapshot truth gate.',
+        'Runs heap SERIALIZABLE preservation and early delos_mvcc SERIALIZABLE rejection.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
+
+registerDelosFocusedTest(
+        'runDelosMvccUnsupportedTypeTruthTest',
+        'Runs early delos_mvcc JAVA_OBJECT/UserType table-definition rejection.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',

@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** SQL boundary tests for delos_mvcc durable value policies. */
 public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestSupport {
-    public void testJavaObjectColumnFailsCleanlyAndDoesNotPoisonMvccRuntime() throws Exception {
+    public void testJavaObjectColumnRejectsBeforeCatalogOrDurableMutation() throws Exception {
         String databaseName = databaseName("mvcc-sql-java-object-boundary-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
@@ -40,42 +40,37 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create type mvcc_java_util_list external name 'java.util.List' language java");
-            executeUpdate(connection, "create table mvcc_java_object_t ("
-                    + "id int primary key, payload mvcc_java_util_list) using delos_mvcc");
             connection.commit();
-        }
 
-        assertJavaObjectInsertFailsCleanly(databaseName);
-
-        long normalContainerId;
-        try (Connection connection = openDatabase(databaseName, false)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_after_object_failure_t ("
-                    + "id int primary key, name varchar(32)) using delos_mvcc");
-            connection.commit();
-            normalContainerId = mvccContainerId(connection, "MVCC_AFTER_OBJECT_FAILURE_T");
+            assertJavaObjectTableRejected(() -> executeUpdate(connection,
+                    "create table mvcc_java_object_t ("
+                            + "id int primary key, payload mvcc_java_util_list) using delos_mvcc"));
             connection.rollback();
-        }
-
-        try (Connection connection = openDatabase(databaseName, false)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "insert into mvcc_after_object_failure_t values (1, 'ok')");
-            connection.commit();
 
             assertRows(connection,
-                    "select id, name from mvcc_after_object_failure_t order by id",
+                    "select count(*) from sys.systables where tablename = 'MVCC_JAVA_OBJECT_T'",
+                    "0");
+
+            executeUpdate(connection, "create table mvcc_java_object_t ("
+                    + "id int primary key, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "insert into mvcc_java_object_t values (1, 'ok')");
+            connection.commit();
+
+            long containerId = mvccContainerId(connection, "MVCC_JAVA_OBJECT_T");
+            assertMvccConsistent(diagnostics, containerId);
+            assertRows(connection,
+                    "select id, name from mvcc_java_object_t order by id",
                     "1|ok");
-            assertMvccConsistent(diagnostics, normalContainerId);
             connection.rollback();
         }
 
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
-            long reopenedContainerId = mvccContainerId(reopened, "MVCC_AFTER_OBJECT_FAILURE_T");
+            long reopenedContainerId = mvccContainerId(reopened, "MVCC_JAVA_OBJECT_T");
             assertMvccConsistent(diagnostics, reopenedContainerId);
             assertRows(reopened,
-                    "select id, name from mvcc_after_object_failure_t order by id",
+                    "select id, name from mvcc_java_object_t order by id",
                     "1|ok");
         }
     }
@@ -242,30 +237,16 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
         }
     }
 
-    private static void assertJavaObjectInsertFailsCleanly(String databaseName) throws SQLException {
-        Connection connection = openDatabase(databaseName, false);
-        try {
-            connection.setAutoCommit(false);
-            assertJavaObjectRejected(() -> {
-                executeUpdate(connection, "insert into mvcc_java_object_t values (1, null)");
-                connection.commit();
-            });
-        } finally {
-            rollbackAfterExpectedConflict(connection);
-            closeQuietly(connection);
-        }
-    }
-
-    private static void assertJavaObjectRejected(SqlAction action) throws SQLException {
+    private static void assertJavaObjectTableRejected(SqlAction action) throws SQLException {
         try {
             action.run();
-            fail("Expected delos_mvcc to reject JAVA_OBJECT/UserType durable row values");
+            fail("Expected delos_mvcc to reject JAVA_OBJECT/UserType at table creation");
         } catch (SQLException expected) {
+            assertEquals("stable JAVA_OBJECT/UserType SQLState", "0A000", expected.getSQLState());
             assertTrue("expected clean JAVA_OBJECT/UserType boundary failure, got: " + expected,
                     containsMessage(expected, "JAVA_OBJECT")
-                            || containsMessage(expected, "UserType")
-                            || containsMessage(expected, "serialization")
-                            || containsMessage(expected, "not supported"));
+                            && containsMessage(expected, "UserType")
+                            && containsMessage(expected, "delos_mvcc"));
         }
     }
 

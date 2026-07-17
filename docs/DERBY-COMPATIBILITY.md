@@ -56,11 +56,10 @@ The current `delos_mvcc` implementation rejects unsupported durable values expli
 
 ```text
 JAVA_OBJECT / SQL_USERTYPE / SERIALIZABLE_FORMAT_ID
-    not stored in MVCC durable rows
+    rejected with SQLState 0A000 before an MVCC base conglomerate is created
 
 BLOB / CLOB
-    not stored until a complete streaming, overflow, recovery, backup,
-    and vacuum lifecycle is implemented
+    supported through the materialized and overflow lifecycle covered by the MVCC gates
 ```
 
 The v1.0 contract requires stable SQLStates and rejection before partial catalog or durable mutation.
@@ -70,10 +69,9 @@ Supported heap behavior remains unchanged.
 
 Heap isolation preserves verified Derby behavior.
 
-The current pre-1.0 MVCC implementation provides statement snapshots for `READ COMMITTED` and
-transaction snapshots for `REPEATABLE READ`. It presently maps JDBC `SERIALIZABLE` to a transaction
-snapshot and therefore does not prevent write skew. DelosDB v1.0 will reject `SERIALIZABLE` for
-transactions in which `delos_mvcc` can participate until true serializability is implemented.
+The MVCC implementation provides statement snapshots for `READ COMMITTED` and transaction
+snapshots for `REPEATABLE READ`. Access to a `delos_mvcc` table at JDBC `SERIALIZABLE` rejects with
+SQLState `0A000` before a scan or write opens. Heap `SERIALIZABLE` behavior remains unchanged.
 
 ## Compatibility changes
 
