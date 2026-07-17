@@ -162,6 +162,10 @@ public final class MvccDrdaConcurrentClientStressTest extends BaseJDBCTestCase {
 
         try (Connection reopened = openDefaultConnection()) {
             reopened.setAutoCommit(false);
+            try (Statement statement = reopened.createStatement()) {
+                statement.executeUpdate(
+                        "lock table " + MVCC_TABLE + " in share mode");
+            }
             long reopenedContainerId = MvccSqlTestSupport.mvccContainerId(
                     reopened, MVCC_TABLE_UPPER);
             diagnostics.assertConsistentForTesting(0, reopenedContainerId);
