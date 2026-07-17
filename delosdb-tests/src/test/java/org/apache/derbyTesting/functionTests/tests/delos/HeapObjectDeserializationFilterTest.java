@@ -21,12 +21,6 @@
 
 package org.apache.derbyTesting.functionTests.tests.delos;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InvalidClassException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -36,7 +30,7 @@ import java.sql.SQLException;
 import org.apache.derby.iapi.services.io.DelosHeapObjectDeserializationFilter;
 import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
-/** SQL gate for bounded-by-default heap and general object deserialization. */
+/** SQL gate for bounded-by-default heap object deserialization. */
 public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSupport {
     public void testDefaultModePreservesDerbyHeapJavaObjectBehavior() throws Exception {
         String databaseName = databaseName("heap-object-filter-default-db");
@@ -64,9 +58,9 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         String databaseName = databaseName("heap-object-filter-default-limit-db");
         String oldFilter = System.getProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
         String oldCompatibility = System.getProperty(
-                DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+                DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY);
         System.clearProperty(DelosHeapObjectDeserializationFilter.FILTER_PROPERTY);
-        System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+        System.clearProperty(DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -78,14 +72,14 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
             connection.rollback();
 
             System.setProperty(
-                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY, "true");
+                    DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY, "true");
             Object payload = readPayload(connection, "heap_object_default_limit_t", 1);
             assertTrue("compatibility mode should restore the inherited deep object graph",
                     payload instanceof NestedPayload);
             connection.commit();
         } finally {
             restoreFilterProperty(oldFilter);
-            restoreCompatibilityProperty(oldCompatibility);
+            restoreHeapCompatibilityProperty(oldCompatibility);
         }
     }
 
@@ -112,38 +106,6 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
-
-    public void testGeneralLeafObjectInputFilterDefaultStrictAndCompatibilityModes() throws Exception {
-        String oldFilter = System.getProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
-        String oldCompatibility = System.getProperty(
-                DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
-        System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
-        System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
-
-        try {
-            assertGeneralPayload(readWithGeneralFilter(new AllowedPayload(30)),
-                    AllowedPayload.class, 30);
-            assertGeneralPayload(readWithGeneralFilter(new BlockedPayload(40)),
-                    BlockedPayload.class, 40);
-            assertGeneralBlockedByFilter(NestedPayload.chain(40));
-
-            System.setProperty(
-                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY, "true");
-            assertTrue("compatibility mode should permit the inherited deep graph",
-                    readWithGeneralFilter(NestedPayload.chain(40)) instanceof NestedPayload);
-
-            System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
-            System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY,
-                    AllowedPayload.class.getName() + ";java.base/*;!*");
-
-            assertGeneralPayload(readWithGeneralFilter(new AllowedPayload(50)),
-                    AllowedPayload.class, 50);
-            assertGeneralBlockedByFilter(new BlockedPayload(60));
-        } finally {
-            restoreGeneralFilterProperty(oldFilter);
-            restoreCompatibilityProperty(oldCompatibility);
-        }
-    }
 
     public void testMvccStillRejectsJavaObjectTableDefinitions() throws Exception {
         String databaseName = databaseName("heap-object-filter-mvcc-boundary-db");
@@ -184,45 +146,6 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
                         + "using delos_mvcc");
     }
 
-
-    private static Object readWithGeneralFilter(Serializable payload) throws IOException, ClassNotFoundException {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
-            output.writeObject(payload);
-        }
-
-        try (ObjectInputStream input = new ObjectInputStream(
-                new ByteArrayInputStream(bytes.toByteArray()))) {
-            DelosObjectInputFilters.applyGeneralFilterIfConfigured(input);
-            return input.readObject();
-        }
-    }
-
-    private static void assertGeneralPayload(Object payload, Class<?> expectedClass, int expectedValue) {
-        assertTrue("unexpected general payload class: " + payload,
-                expectedClass.isInstance(payload));
-        assertEquals("general payload value", expectedValue, ((PayloadValue) payload).value());
-    }
-
-    private static void assertGeneralBlockedByFilter(Serializable payload) throws Exception {
-        try {
-            readWithGeneralFilter(payload);
-            fail("Expected general object deserialization filter to reject blocked payload");
-        } catch (InvalidClassException expected) {
-            assertTrue("expected object input filter rejection, got: " + expected,
-                    expected.getMessage() != null
-                            && (expected.getMessage().contains("filter")
-                            || expected.getMessage().contains("REJECTED")));
-        }
-    }
-
-    private static void restoreGeneralFilterProperty(String oldFilter) {
-        if (oldFilter == null) {
-            System.clearProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY);
-        } else {
-            System.setProperty(DelosObjectInputFilters.GENERAL_FILTER_PROPERTY, oldFilter);
-        }
-    }
 
     private static void insertPayload(Connection connection, String tableName, int id, Serializable payload)
             throws SQLException {
@@ -295,12 +218,12 @@ public final class HeapObjectDeserializationFilterTest extends MvccSqlTestSuppor
         }
     }
 
-    private static void restoreCompatibilityProperty(String oldCompatibility) {
+    private static void restoreHeapCompatibilityProperty(String oldCompatibility) {
         if (oldCompatibility == null) {
-            System.clearProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY);
+            System.clearProperty(DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY);
         } else {
             System.setProperty(
-                    DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY,
+                    DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY,
                     oldCompatibility);
         }
     }

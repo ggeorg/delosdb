@@ -704,19 +704,24 @@ def delosHeapObjectDeserializationFilterStaticFiles = [
         'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java',
         'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java',
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/net/SocketConnection.java',
-        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java'
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java'
 ]
 
-def delosHeapObjectFilterLeafSites = [
-        'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java': 'client UDT materialization',
-        'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java': 'DRDA UDT parameter materialization',
-        'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java': 'import UDT materialization',
-        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/net/SocketConnection.java': 'replication control-message stream'
+def delosObjectFilterLeafSites = [
+        'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java':
+                ['client DRDA UDT materialization', 'DelosObjectInputFilters.applyDrdaFilterIfConfigured'],
+        'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java':
+                ['server DRDA UDT parameter materialization', 'DelosObjectInputFilters.applyDrdaFilterIfConfigured'],
+        'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java':
+                ['import UDT materialization', 'DelosObjectInputFilters.applyImportFilterIfConfigured'],
+        'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/net/SocketConnection.java':
+                ['replication control-message stream', 'DelosObjectInputFilters.applyReplicationFilterIfConfigured']
 ]
 
 tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
     group = 'verification'
-    description = 'Protects bounded-by-default ObjectInputFilter hardening and the explicit legacy compatibility mode.'
+    description = 'Protects fail-closed external deserialization boundaries and the separate bounded heap policy.'
 
     inputs.files(delosHeapObjectDeserializationFilterStaticFiles.collect { new File(delosRepositoryRoot, it) }.findAll { it.exists() }).optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt'))
@@ -727,7 +732,8 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def filterFile = new File(delosRepositoryRoot, 'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DelosHeapObjectDeserializationFilter.java')
         def formatIdInputStreamFile = new File(delosRepositoryRoot, 'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java')
         def applicationObjectInputStreamFile = new File(delosRepositoryRoot, 'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/ApplicationObjectInputStream.java')
-        def testFile = new File(delosRepositoryRoot, 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java')
+        def heapTestFile = new File(delosRepositoryRoot, 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java')
+        def boundaryTestFile = new File(delosRepositoryRoot, 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java')
 
         delosHeapObjectDeserializationFilterStaticFiles.each { relativePath ->
             DelosDbStaticAnalysisSupport.require(failures, new File(delosRepositoryRoot, relativePath).exists(), 'Missing object deserialization filter file: ' + relativePath)
@@ -737,33 +743,57 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def filterText = filterFile.exists() ? filterFile.getText('UTF-8') : ''
         def formatIdText = formatIdInputStreamFile.exists() ? formatIdInputStreamFile.getText('UTF-8') : ''
         def applicationStreamText = applicationObjectInputStreamFile.exists() ? applicationObjectInputStreamFile.getText('UTF-8') : ''
-        def testText = testFile.exists() ? testFile.getText('UTF-8') : ''
+        def heapTestText = heapTestFile.exists() ? heapTestFile.getText('UTF-8') : ''
+        def boundaryTestText = boundaryTestFile.exists() ? boundaryTestFile.getText('UTF-8') : ''
 
-        DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('delosdb.objectDeserializationFilter'),
-                'General object deserialization override must remain available through delosdb.objectDeserializationFilter')
-        DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('delosdb.heap.objectDeserializationFilter'),
-                'Heap object deserialization override must remain available through delosdb.heap.objectDeserializationFilter')
-        DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('ObjectInputFilter.Config.createFilter'),
-                'Object deserialization filters must use ObjectInputFilter.Config.createFilter')
-        DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains('stream.setObjectInputFilter'),
-                'DelosObjectInputFilters must own the only production setObjectInputFilter call')
-        ['delosdb.objectDeserializationCompatibilityMode',
-         'DEFAULT_FILTER_PATTERN',
+        ['delosdb.objectDeserializationFilter',
+         'delosdb.drda.objectDeserializationFilter',
+         'delosdb.import.objectDeserializationFilter',
+         'delosdb.replication.objectDeserializationFilter',
+         'delosdb.heap.objectDeserializationFilter',
+         'delosdb.objectDeserializationCompatibilityMode',
+         'delosdb.heap.objectDeserializationCompatibilityMode',
+         'DEFAULT_EXTERNAL_FILTER_PATTERN',
+         'DEFAULT_REPLICATION_FILTER_PATTERN',
+         'DEFAULT_HEAP_FILTER_PATTERN',
          'maxdepth=32',
          'maxrefs=100000',
          'maxbytes=16777216',
          'maxarray=100000',
-         'Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)'].each { token ->
+         'org.apache.derby.impl.store.replication.net.ReplicationMessage',
+         'java.lang.Long',
+         '[B',
+         '[Ljava.lang.String;!*',
+         'ObjectInputFilter.Config.createFilter',
+         'stream.setObjectInputFilter'].each { token ->
             DelosDbStaticAnalysisSupport.require(failures, objectFilterText.contains(token),
-                    'Bounded deserialization default is missing token: ' + token)
+                    'Object deserialization policy is missing token: ' + token)
         }
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.contains('DEFAULT_EXTERNAL_FILTER_PATTERN =\n            RESOURCE_LIMIT_PATTERN + ";!*"'),
+                'DRDA and import defaults must reject every application class')
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.contains('Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)')
+                        && objectFilterText.contains('Boolean.getBoolean(HEAP_COMPATIBILITY_MODE_PROPERTY)'),
+                'External and heap compatibility modes must remain separate')
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.contains('REPLICATION_FILTER_PROPERTY,\n                null,'),
+                'The common UDT allow-list fallback must not widen the replication protocol boundary')
         DelosDbStaticAnalysisSupport.require(failures,
                 objectFilterText.indexOf('configuredPattern != null')
                         < objectFilterText.indexOf('Boolean.getBoolean(COMPATIBILITY_MODE_PROPERTY)'),
-                'Explicit general/heap filters must take precedence over compatibility mode')
+                'Explicit external filters must take precedence over external compatibility mode')
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.indexOf('configuredPattern != null')
+                        < objectFilterText.indexOf('Boolean.getBoolean(HEAP_COMPATIBILITY_MODE_PROPERTY)'),
+                'Explicit heap filters must take precedence over heap compatibility mode')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !objectFilterText.contains('applyGeneralFilterIfConfigured'),
+                'The ambiguous general filter installer must not remain in production')
+
         DelosDbStaticAnalysisSupport.require(failures, filterText.contains('DelosObjectInputFilters.HEAP_FILTER_PROPERTY')
                         && filterText.contains('DelosObjectInputFilters.applyHeapFilterIfConfigured'),
-                'DelosHeapObjectDeserializationFilter must delegate to the common heap ObjectInputFilter helper')
+                'DelosHeapObjectDeserializationFilter must delegate to the separate heap policy')
 
         def formatApplyCount = (formatIdText =~ /DelosHeapObjectDeserializationFilter\.applyIfConfigured\s*\(/).count
         DelosDbStaticAnalysisSupport.require(failures, formatApplyCount == 1,
@@ -771,14 +801,19 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures, formatIdText.contains('new ApplicationObjectInputStream'),
                 'FormatIdInputStream must keep ApplicationObjectInputStream as the heap JAVA_OBJECT stream constructor')
         DelosDbStaticAnalysisSupport.require(failures, !applicationStreamText.contains('DelosHeapObjectDeserializationFilter.applyIfConfigured'),
-                'ApplicationObjectInputStream must not install DelosHeapObjectDeserializationFilter; FormatIdInputStream owns the single installation point')
+                'ApplicationObjectInputStream must not install the heap filter; FormatIdInputStream owns the single installation point')
         DelosDbStaticAnalysisSupport.require(failures, !applicationStreamText.contains('setObjectInputFilter'),
                 'ApplicationObjectInputStream must not call setObjectInputFilter directly')
 
-        delosHeapObjectFilterLeafSites.each { relativePath, description ->
-            def leafText = new File(delosRepositoryRoot, relativePath).exists() ? new File(delosRepositoryRoot, relativePath).getText('UTF-8') : ''
-            DelosDbStaticAnalysisSupport.require(failures, leafText.contains('DelosObjectInputFilters.applyGeneralFilterIfConfigured'),
-                    'Leaf ObjectInputStream site must install the general bounded/default filter: ' + relativePath + ' (' + description + ')')
+        delosObjectFilterLeafSites.each { relativePath, specification ->
+            def leafFile = new File(delosRepositoryRoot, relativePath)
+            def leafText = leafFile.exists() ? leafFile.getText('UTF-8') : ''
+            def description = specification[0]
+            def requiredCall = specification[1]
+            DelosDbStaticAnalysisSupport.require(failures, leafText.contains(requiredCall),
+                    'Leaf ObjectInputStream site must install its boundary-specific policy: ' + relativePath + ' (' + description + ')')
+            DelosDbStaticAnalysisSupport.require(failures, !leafText.contains('applyGeneralFilterIfConfigured'),
+                    'Leaf ObjectInputStream site must not use the ambiguous general policy: ' + relativePath)
         }
 
         def productionSetFilterSites = []
@@ -802,42 +837,51 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
             failures << 'Only DelosObjectInputFilters may call setObjectInputFilter in production sources. Extra sites: ' + productionSetFilterSites.join('; ')
         }
 
-        ['testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
+        ['testDefaultModePreservesDerbyHeapJavaObjectBehavior',
          'testDefaultHeapLimitsRequireExplicitCompatibilityModeForDeepGraphs',
-         'testGeneralLeafObjectInputFilterDefaultStrictAndCompatibilityModes',
+         'testStrictModeAllowsConfiguredTypeAndBlocksUnlistedType',
          'testMvccStillRejectsJavaObjectTableDefinitions'].each { testName ->
-            DelosDbStaticAnalysisSupport.require(failures, testText.contains(testName),
+            DelosDbStaticAnalysisSupport.require(failures, heapTestText.contains(testName),
                     'HeapObjectDeserializationFilterTest must keep coverage method: ' + testName)
         }
+        DelosDbStaticAnalysisSupport.require(failures,
+                heapTestText.contains('DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY')
+                        && !heapTestText.contains('DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY'),
+                'Heap tests must use only the heap compatibility switch')
 
-        DelosDbStaticAnalysisSupport.require(failures,
-                testText.contains('DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY')
-                        && testText.contains('NestedPayload.chain(40)'),
-                'HeapObjectDeserializationFilterTest must prove bounded defaults and explicit compatibility mode')
-        DelosDbStaticAnalysisSupport.require(failures,
-                testText.contains('DelosObjectInputFilters.GENERAL_FILTER_PROPERTY')
-                        && testText.contains('DelosObjectInputFilters.applyGeneralFilterIfConfigured'),
-                'HeapObjectDeserializationFilterTest must exercise the general leaf ObjectInputFilter helper directly')
+        ['testDrdaAndImportRejectUnexpectedClassesByDefault',
+         'testExplicitBoundaryAllowListsOverrideFailClosedDefaults',
+         'testReplicationDefaultAllowsOnlyProtocolShapes',
+         'testExternalAndHeapCompatibilityModesAreSeparate'].each { testName ->
+            DelosDbStaticAnalysisSupport.require(failures, boundaryTestText.contains(testName),
+                    'ObjectDeserializationBoundaryTest must keep coverage method: ' + testName)
+        }
+        ['applyDrdaFilterIfConfigured',
+         'applyImportFilterIfConfigured',
+         'applyReplicationFilterIfConfigured',
+         'applyHeapFilterIfConfigured',
+         'UnexpectedPayload',
+         'DeepPayload.chain(40)'].each { token ->
+            DelosDbStaticAnalysisSupport.require(failures, boundaryTestText.contains(token),
+                    'ObjectDeserializationBoundaryTest is missing proof token: ' + token)
+        }
 
         def reportFile = new File(delosBuildRoot, 'reports/delosdb/heap-object-deserialization-filter-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
             writer.println('DelosDB object deserialization filter static analysis')
-            writer.println('===================================================')
+            writer.println('=========================================================')
             writer.println()
-            writer.println('Checked files:')
-            delosHeapObjectDeserializationFilterStaticFiles.each { writer.println('  - ' + it) }
-            writer.println()
-            writer.println('Leaf ObjectInputStream sites:')
-            delosHeapObjectFilterLeafSites.each { relativePath, description ->
-                writer.println('  - ' + relativePath + ' (' + description + ')')
-            }
+            writer.println('External default: fail closed for DRDA/import; protocol allow-list for replication.')
+            writer.println('Heap default: resource-bounded compatibility policy with a separate compatibility switch.')
             writer.println()
             if (failures.isEmpty()) {
-                writer.println('Object deserialization filter checks passed.')
+                writer.println('Status: PASS')
+                writer.println('Object deserialization boundary checks passed.')
             } else {
-                writer.println('Object deserialization filter failures:')
-                failures.each { failure -> writer.println('  - ' + failure) }
+                writer.println('Status: FAIL')
+                writer.println('Object deserialization boundary failures:')
+                failures.each { failure -> writer.println('- ' + failure) }
             }
         }
 
@@ -848,7 +892,6 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         logger.lifecycle('DelosDB object deserialization filter static analysis passed. Report: {}', reportFile)
     }
 }
-
 
 def delosStaleGradleScripts = [
         'gradle/delosdb-runtime-distribution.gradle',
@@ -3330,7 +3373,7 @@ tasks.register('delosMvccTableRebuildProviderTruthStaticAnalysis') {
 
 tasks.register('delosSecurityTruthStaticAnalysis') {
     group = 'verification'
-    description = 'Protects TLS, secure XML, deserialization-default, and fatal group-commit truth.'
+    description = 'Protects TLS, secure XML, fail-closed deserialization boundaries, and fatal group-commit truth.'
 
     def requiredFiles = [
             'delosdb-commons/src/main/java/org/apache/derby/shared/common/drda/NaiveTrustManager.java',
@@ -3417,7 +3460,10 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
         }
         ['`basic` | TLS encryption only',
          '`peerAuthentication` | Certificate-authenticated TLS',
+         'reject every application class',
+         'fixed inherited protocol shapes',
          'delosdb.objectDeserializationCompatibilityMode=true',
+         'delosdb.heap.objectDeserializationCompatibilityMode=true',
          'external DTD and stylesheet access is disabled'].each { token ->
             DelosDbStaticAnalysisSupport.require(failures, securityDocText.contains(token),
                     'Security documentation is missing truthful token: ' + token)

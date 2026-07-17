@@ -291,7 +291,7 @@ abstract class ImportAbstract extends VTITemplate {
     {
         ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
         ObjectInputStream ois = new ObjectInputStream( bais );
-        DelosObjectInputFilters.applyGeneralFilterIfConfigured(ois);
+        DelosObjectInputFilters.applyImportFilterIfConfigured(ois);
 
         return ois.readObject();
     }

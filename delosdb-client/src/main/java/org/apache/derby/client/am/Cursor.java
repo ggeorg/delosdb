@@ -595,7 +595,7 @@ public abstract class Cursor {
         try {
             ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
             ObjectInputStream ois = new ObjectInputStream( bais );
-            DelosObjectInputFilters.applyGeneralFilterIfConfigured(ois);
+            DelosObjectInputFilters.applyDrdaFilterIfConfigured(ois);
 
             return ois.readObject();
         }

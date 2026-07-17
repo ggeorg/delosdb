@@ -67,7 +67,7 @@ public class SocketConnection {
         objOutputStream = new ObjectOutputStream(socket.getOutputStream());
         //Get the InputStream from the socket
         objInputStream = new ObjectInputStream(socket.getInputStream());
-        DelosObjectInputFilters.applyGeneralFilterIfConfigured(objInputStream);
+        DelosObjectInputFilters.applyReplicationFilterIfConfigured(objInputStream);
     }
     
     /**

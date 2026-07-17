@@ -104,8 +104,10 @@ See [`docs/sql-extensions.md`](docs/sql-extensions.md),
 
 DRDA retains Derby-compatible mode names, but their meaning is explicit: `basic` is TLS encryption
 without peer identity verification, while `peerAuthentication` uses certificate-authenticated TLS.
-Object deserialization is resource-bounded by default, with an explicit compatibility switch for
-trusted legacy data. XML transformation paths use centralized secure factories.
+DRDA and import Java-object deserialization fail closed by default, replication accepts only its
+fixed protocol shapes, and heap `JAVA_OBJECT` reads use a separate resource-bounded compatibility
+policy. Explicit allow-lists and narrowly scoped compatibility switches are available for trusted
+legacy data. XML transformation paths use centralized secure factories.
 
 See [`docs/SECURITY.md`](docs/SECURITY.md).
 

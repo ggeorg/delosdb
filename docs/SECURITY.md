@@ -22,33 +22,84 @@ Passwords and key material are not written to DelosDB diagnostics.
 
 ## Object deserialization
 
-Inherited Derby paths still deserialize Java objects for heap `JAVA_OBJECT` values and a small
-number of protocol/import/replication leaf sites. DelosDB installs this compatibility-preserving
-resource-limit filter by default:
+DelosDB separates untrusted external object boundaries from trusted heap persistence.
+
+### DRDA and import boundaries
+
+Serialized UDT values received over DRDA or read from an import file reject every application class
+by default. The default policy is resource-bounded and ends in a reject-all rule:
+
+```text
+maxdepth=32;maxrefs=100000;maxbytes=16777216;maxarray=100000;!*
+```
+
+Applications which intentionally exchange a UDT must configure an explicit JDK
+`ObjectInputFilter` allow-list. Boundary-specific properties take precedence over the common
+external fallback:
+
+```text
+delosdb.drda.objectDeserializationFilter
+delosdb.import.objectDeserializationFilter
+delosdb.objectDeserializationFilter
+```
+
+For example:
+
+```text
+delosdb.drda.objectDeserializationFilter=com.example.SafeValue;java.base/*;!*
+```
+
+### Replication boundary
+
+Replication remains enabled by default but accepts only the fixed inherited protocol shapes:
+
+```text
+ReplicationMessage
+Long
+byte[]
+String
+String[]
+```
+
+The replication override is:
+
+```text
+delosdb.replication.objectDeserializationFilter
+```
+
+### Heap JAVA_OBJECT persistence
+
+Heap `JAVA_OBJECT` values are a database persistence compatibility contract rather than an external
+transport boundary. They retain the separate resource-bounded default:
 
 ```text
 maxdepth=32;maxrefs=100000;maxbytes=16777216;maxarray=100000;*
 ```
 
-The class wildcard preserves existing serializable classes, while the limits bound graph depth,
-reference count, input bytes, and array size.
-
-Deployments can replace the defaults with standard JDK `ObjectInputFilter` patterns:
+Deployments can replace it with an application allow-list:
 
 ```text
-delosdb.objectDeserializationFilter
 delosdb.heap.objectDeserializationFilter
 ```
 
-The inherited unbounded behavior is available only through the explicit compatibility switch:
+### Explicit compatibility modes
+
+Inherited unfiltered external deserialization is available only through:
 
 ```text
 delosdb.objectDeserializationCompatibilityMode=true
 ```
 
-A configured general or heap filter takes precedence over compatibility mode. Compatibility mode
-should be temporary and limited to trusted legacy data while an explicit allow-list or bounded
-filter is prepared.
+Inherited unfiltered heap `JAVA_OBJECT` reads use a separate switch:
+
+```text
+delosdb.heap.objectDeserializationCompatibilityMode=true
+```
+
+An explicit boundary or heap filter always takes precedence over its compatibility switch. The
+external switch does not weaken heap policy, and the heap switch does not enable DRDA, import, or
+replication deserialization. Compatibility modes should be temporary and limited to trusted legacy
+data while explicit allow-lists are prepared.
 
 MVCC tables reject `JAVA_OBJECT` and Derby UDT columns before table creation with SQLState `0A000`.
 

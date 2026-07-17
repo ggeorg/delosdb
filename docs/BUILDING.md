@@ -78,7 +78,7 @@ Runtime artifact model gate:
 ./gradlew delosRuntimeArtifactModelStaticAnalysis
 ```
 
-Heap object deserialization filter gate:
+Object deserialization boundary gate:
 
 ```sh
 ./gradlew delosHeapObjectDeserializationFilterStaticAnalysis
@@ -121,8 +121,8 @@ Run the focused runtime and static security gates with:
 ```
 
 These gates protect TLS keystore null/stream handling, truthful TLS mode documentation, secure
-PlanExporter XML processing, bounded-by-default deserialization, and group-commit fatal-error
-release semantics.
+PlanExporter XML processing, fail-closed external deserialization, the separate bounded heap
+policy, and group-commit fatal-error release semantics.
 
 ## Post-correction v1 baseline capture
 

@@ -719,8 +719,11 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosSecurityTruthTest',
-        'Runs TLS keystore lifecycle, secure PlanExporter XML, and deserialization-default proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class'])
+        'Runs TLS, secure XML, and fail-closed deserialization-boundary proofs.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.class'
+        ])
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',
@@ -906,6 +909,7 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageInspectorTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapSanityCheckerTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.class',
