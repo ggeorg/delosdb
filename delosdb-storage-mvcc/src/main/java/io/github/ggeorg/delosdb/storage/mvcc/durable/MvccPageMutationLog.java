@@ -5,10 +5,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
@@ -178,6 +180,36 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
             }
         }
         return false;
+    }
+
+    /**
+     * Returns database transaction ids still required to resolve complete
+     * prepared mutation batches which do not yet have a local outcome.
+     */
+    public synchronized Set<MvccTransactionId> pendingDatabaseTransactionIds(
+            MvccTransactionOutcomeLog outcomeLog) {
+        Objects.requireNonNull(outcomeLog, "outcomeLog");
+        if (!journal.exists()) {
+            return Set.of();
+        }
+
+        Map<Long, StrictTransaction> transactions = new LinkedHashMap<>();
+        for (MvccDurableLineRecords.LineRecord lineRecord : journal.completeRecords()) {
+            parseStrictLine(lineRecord.line(), lineRecord.lineIndex(), transactions);
+        }
+        Map<MvccTransactionId, MvccTransactionOutcomeLog.Outcome> outcomes =
+                outcomeLog.recoverOutcomes();
+        Set<MvccTransactionId> pending = new LinkedHashSet<>();
+        for (StrictTransaction transaction : transactions.values()) {
+            if (!transaction.batched()
+                    || !transaction.prepared()
+                    || transaction.statusTransactionId() <= 0L
+                    || outcomes.containsKey(new MvccTransactionId(transaction.transactionId()))) {
+                continue;
+            }
+            pending.add(new MvccTransactionId(transaction.statusTransactionId()));
+        }
+        return Set.copyOf(pending);
     }
 
     public synchronized List<MvccVersionRecord> recoverCommittedRecords() {

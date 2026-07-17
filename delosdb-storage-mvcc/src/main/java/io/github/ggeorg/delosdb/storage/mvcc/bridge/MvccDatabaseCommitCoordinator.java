@@ -28,8 +28,9 @@ import org.apache.derby.iapi.store.types.DelosStorageRawDecisionCommitCoordinato
  * <p>MVCC-only transactions force the existing database status record as the
  * authoritative decision. Mixed heap/MVCC transactions durably stage every
  * MVCC payload, then let Derby raw store commit a transactional decision marker.
- * After raw-store recovery, marker presence is authoritative and incomplete
- * MVCC publication is repeatable.</p>
+ * After raw-store recovery, the marker is mirrored into the database MVCC
+ * status journal and retired. Incomplete participant publication remains
+ * repeatable from that bounded recovery authority.</p>
  */
 final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionCommitCoordinator {
     private static final long FIRST_DATABASE_TRANSACTION_ID = 1L << 62;
@@ -37,11 +38,14 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
     private final Path databaseDirectory;
     private final MvccFailurePointRegistry failurePoints;
     private final MvccTransactionStatusStore decisionStore;
+    private final MvccDatabaseDecisionRetention decisionRetention;
     private final ReentrantReadWriteLock coordinationLock = new ReentrantReadWriteLock();
     private final Lock singleTableLock = coordinationLock.readLock();
     private final Lock multiTableLock = coordinationLock.writeLock();
     private long nextTransactionId = FIRST_DATABASE_TRANSACTION_ID;
     private long newestCommitSequence;
+    private volatile long decisionRetentionFailureCount;
+    private volatile String lastDecisionRetentionFailure = "";
     private volatile Runnable afterDecisionHook = () -> { };
 
     MvccDatabaseCommitCoordinator(Path databaseDirectory) {
@@ -51,6 +55,16 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
     MvccDatabaseCommitCoordinator(
             Path databaseDirectory,
             MvccFailurePointRegistry failurePoints) {
+        this(
+                databaseDirectory,
+                failurePoints,
+                MvccDatabaseDecisionRetention.DEFAULT_COMPACTION_THRESHOLD_BYTES);
+    }
+
+    MvccDatabaseCommitCoordinator(
+            Path databaseDirectory,
+            MvccFailurePointRegistry failurePoints,
+            long decisionCompactionThresholdBytes) {
         this.databaseDirectory = databaseDirectory == null
                 ? null
                 : databaseDirectory.toAbsolutePath().normalize();
@@ -59,6 +73,10 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         decisionStore = statusFile == null
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(statusFile);
+        decisionRetention = new MvccDatabaseDecisionRetention(
+                this.databaseDirectory,
+                decisionCompactionThresholdBytes);
+        decisionRetention.reconcileOnOpen(decisionStore);
         recoverCoordinatorState();
     }
 
@@ -136,6 +154,18 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         afterDecisionHook = Objects.requireNonNull(hook, "hook");
     }
 
+    long decisionRetentionFailureCountForTesting() {
+        return decisionRetentionFailureCount;
+    }
+
+    String lastDecisionRetentionFailureForTesting() {
+        return lastDecisionRetentionFailure;
+    }
+
+    int retainedDecisionMarkerCountForTesting() {
+        return decisionRetention.markerCountForTesting();
+    }
+
     private void commitMultiple(List<DatabaseParticipant> participants) {
         DelosStorageBackupCoordinator backupCoordinator = requireSharedBackupCoordinator(participants);
         try (DelosStorageBackupCoordinator.Guard ignored =
@@ -181,6 +211,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                 }
 
                 Throwable publicationFailure = publishPrepared(prepared, failure);
+                maintainDecisionHistory();
                 if (publicationFailure != null) {
                     throw recoveryRequired(prepared, publicationFailure);
                 }
@@ -303,6 +334,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         } catch (RuntimeException | Error statusFailure) {
             failure = appendFailure(failure, statusFailure);
         }
+        maintainDecisionHistory();
         return failure;
     }
 
@@ -371,6 +403,27 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                         newestCommitSequence, record.commitSequence().value());
             }
         }
+    }
+
+    private void maintainMirroredDecision(DelosDatabaseCommitDecision decision) {
+        try {
+            decisionRetention.decisionMirrored(decisionStore, decision);
+        } catch (RuntimeException retentionFailure) {
+            recordDecisionRetentionFailure(retentionFailure);
+        }
+    }
+
+    private void maintainDecisionHistory() {
+        try {
+            decisionRetention.compactIfNeeded(decisionStore, false);
+        } catch (RuntimeException retentionFailure) {
+            recordDecisionRetentionFailure(retentionFailure);
+        }
+    }
+
+    private void recordDecisionRetentionFailure(RuntimeException failure) {
+        decisionRetentionFailureCount++;
+        lastDecisionRetentionFailure = failure.getClass().getName() + ": " + failure.getMessage();
     }
 
     private static void lockTables(List<DatabaseParticipant> participants) {
@@ -503,9 +556,12 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
             Throwable failure = null;
             try {
                 try {
-                    // Secondary mirror. The committed raw-store decision is authoritative.
+                    // Forced MVCC mirror. Once this succeeds the raw-store side
+                    // marker is no longer needed, even if participant publication
+                    // must finish during reopen recovery.
                     decisionStore.recordCommitted(
                             prepared.databaseTransactionId(), prepared.commitSequence());
+                    maintainMirroredDecision(decision());
                 } catch (RuntimeException | Error statusFailure) {
                     failure = statusFailure;
                 }
@@ -518,6 +574,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                 }
                 failure = publishPrepared(prepared, failure);
             } finally {
+                maintainDecisionHistory();
                 terminal = true;
                 failure = releaseOwnership(failure);
             }

@@ -186,3 +186,29 @@ ALTER TABLE ... DROP COLUMN
 Provider-preserving in-place maintenance remains available where supported. In particular,
 `SYSCS_UTIL.SYSCS_INPLACE_COMPRESS_TABLE` with the MVCC-supported purge path invokes MVCC vacuum
 without rebuilding the base conglomerate or changing storage identity.
+
+## Bounded database-decision retention
+
+Mixed heap/MVCC commits use the Derby raw-store log as the transaction authority. After raw-store
+commit, DelosDB forces the same committed outcome into the database MVCC transaction-status journal
+before retiring the temporary raw-store decision marker.
+
+```text
+raw-store decision marker
+    -> force database MVCC status mirror
+    -> retire marker
+    -> publish or recover participant-local outcomes
+```
+
+The marker directory therefore contains only decisions which have not yet been mirrored. On reopen,
+committed markers are mirrored first and then removed. The database status journal is compacted
+atomically after scanning all table mutation and local-outcome logs. Compaction retains:
+
+- every database transaction still referenced by a complete prepared mutation without a local
+  outcome;
+- the exact highest transaction-id status;
+- the exact highest committed sequence status.
+
+The last two records preserve allocation watermarks without retaining lifetime transaction history.
+A failed atomic compaction leaves the previous complete journal in place and does not change the
+transaction outcome.

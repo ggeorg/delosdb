@@ -28,7 +28,8 @@ final class MvccInheritedStore implements DelosStorageStore {
                 databaseDirectory,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
                 DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
-                MvccFailurePointRegistry.configured(databaseDirectory));
+                MvccFailurePointRegistry.configured(databaseDirectory),
+                MvccDatabaseDecisionRetention.DEFAULT_COMPACTION_THRESHOLD_BYTES);
     }
 
     MvccInheritedStore(
@@ -38,7 +39,8 @@ final class MvccInheritedStore implements DelosStorageStore {
                 databaseDirectory,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
                 DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
-                failurePoints);
+                failurePoints,
+                MvccDatabaseDecisionRetention.DEFAULT_COMPACTION_THRESHOLD_BYTES);
     }
 
     MvccInheritedStore(
@@ -48,14 +50,39 @@ final class MvccInheritedStore implements DelosStorageStore {
                 databaseDirectory,
                 maintenanceService,
                 DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
-                MvccFailurePointRegistry.disabled(databaseDirectory));
+                MvccFailurePointRegistry.disabled(databaseDirectory),
+                MvccDatabaseDecisionRetention.DEFAULT_COMPACTION_THRESHOLD_BYTES);
+    }
+
+    MvccInheritedStore(
+            Path databaseDirectory,
+            long decisionCompactionThresholdBytes) {
+        this(
+                databaseDirectory,
+                new MvccDatabaseMaintenanceService(databaseDirectory),
+                DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
+                MvccFailurePointRegistry.disabled(databaseDirectory),
+                decisionCompactionThresholdBytes);
+    }
+
+    MvccInheritedStore(
+            Path databaseDirectory,
+            MvccFailurePointRegistry failurePoints,
+            long decisionCompactionThresholdBytes) {
+        this(
+                databaseDirectory,
+                new MvccDatabaseMaintenanceService(databaseDirectory),
+                DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
+                failurePoints,
+                decisionCompactionThresholdBytes);
     }
 
     private MvccInheritedStore(
             Path databaseDirectory,
             MvccDatabaseMaintenanceService maintenanceService,
             DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease,
-            MvccFailurePointRegistry failurePoints) {
+            MvccFailurePointRegistry failurePoints,
+            long decisionCompactionThresholdBytes) {
         this.databaseDirectory = databaseDirectory == null
                 ? null
                 : databaseDirectory.toAbsolutePath().normalize();
@@ -64,7 +91,9 @@ final class MvccInheritedStore implements DelosStorageStore {
         this.backupCoordinator = backupCoordinatorLease.coordinator();
         this.failurePoints = Objects.requireNonNull(failurePoints, "failurePoints");
         this.transactionCoordinator = new MvccDatabaseCommitCoordinator(
-                this.databaseDirectory, this.failurePoints);
+                this.databaseDirectory,
+                this.failurePoints,
+                decisionCompactionThresholdBytes);
     }
 
     @Override
@@ -137,5 +166,9 @@ final class MvccInheritedStore implements DelosStorageStore {
 
     MvccFailurePointRegistry failurePointsForTesting() {
         return failurePoints;
+    }
+
+    MvccDatabaseCommitCoordinator transactionCoordinatorForTesting() {
+        return transactionCoordinator;
     }
 }

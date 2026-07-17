@@ -3827,6 +3827,68 @@ tasks.register('delosV1AcceptedBaselineStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosDatabaseDecisionRetentionStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies bounded mixed-decision marker retention and database status-journal compaction.'
+    inputs.files(
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseDecisionRetention.java'),
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseCommitCoordinator.java'),
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionStatusStore.java'),
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageMutationLog.java'),
+            file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseDecisionRetentionTest.java'),
+            file('delosdb-storage-mvcc/build.gradle'))
+    doLast {
+        def failures = []
+        def requiredMarkers = [
+                'DEFAULT_COMPACTION_THRESHOLD_BYTES',
+                'reconcileOnOpen',
+                'decisionMirrored',
+                'pendingDatabaseTransactionIds',
+                'compactRetaining',
+                'greatest transaction id',
+                'greatest commit sequence',
+                'runMvccDatabaseDecisionRetentionTest'
+        ]
+        def sourceText = inputs.files.files
+                .findAll { it.isFile() }
+                .collect { it.getText('UTF-8') }
+                .join('\n')
+        requiredMarkers.each { marker ->
+            if (!sourceText.contains(marker)) {
+                failures << 'Missing database decision retention marker: ' + marker
+            }
+        }
+        if (sourceText.contains('deleteIfExists(marker)')
+                && !sourceText.contains('forceParentDirectoryIfSupported(marker)')) {
+            failures << 'Decision marker deletion is not followed by a durable directory boundary'
+        }
+
+        def reportFile = new File(delosBuildRoot,
+                'reports/delosdb/database-decision-retention-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB database decision retention static analysis')
+            writer.println('=================================================')
+            writer.println()
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB database decision retention static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'DelosDB database decision retention static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3847,6 +3909,7 @@ tasks.register('s0CloseoutVerification') {
             'delosDerbyForkDiffClassificationStaticAnalysis',
             'delosNoTransitionalStorageRoutingStaticAnalysis',
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
-            'delosMvccTableRebuildProviderTruthStaticAnalysis'
+            'delosMvccTableRebuildProviderTruthStaticAnalysis',
+            'delosDatabaseDecisionRetentionStaticAnalysis'
 }
 

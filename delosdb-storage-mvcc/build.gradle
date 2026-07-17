@@ -1207,6 +1207,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs MVCC inherited transaction lifecycle tests.'],
         ['runMvccFailureInjectionReplayTest', '**/MvccFailureInjectionReplayTest.class',
          'Runs Phase 8.4 deterministic transaction failure-point and replay-manifest tests.'],
+        ['runMvccDatabaseDecisionRetentionTest', '**/MvccDatabaseDecisionRetentionTest.class',
+         'Runs bounded database-decision marker retention and status-journal compaction tests.'],
         ['runMvccLowLevelFailureReplayTest', '**/MvccLowLevelFailureReplayTest.class',
          'Runs Phase 8.4 low-level storage fault-point and process-halt replay tests.'],
         ['runMvccCommitDurabilityInstrumentationTest', '**/MvccCommitDurabilityInstrumentationTest.class',

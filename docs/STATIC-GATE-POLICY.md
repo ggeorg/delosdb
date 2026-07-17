@@ -128,3 +128,10 @@ Run it directly with:
 ```bash
 ./gradlew delosSecurityTruthStaticAnalysis
 ```
+
+### Database decision retention
+
+`delosDatabaseDecisionRetentionStaticAnalysis` protects the bounded mixed-decision lifecycle. It
+requires marker-to-status mirroring, durable marker-directory retirement, pending prepared-mutation
+scanning, status-journal compaction, watermark retention, and the focused retention test task. The
+gate is part of `s0CloseoutVerification`.

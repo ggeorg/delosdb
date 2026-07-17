@@ -1,11 +1,17 @@
 package io.github.ggeorg.delosdb.storage.mvcc;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
@@ -64,6 +70,17 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
         public Map<MvccTransactionId, MvccTransactionStatusRecord> recoverStatuses() {
             return Map.of();
         }
+
+        @Override
+        public long sizeBytes() {
+            return 0L;
+        }
+
+        @Override
+        public CompactionResult compactRetaining(Set<MvccTransactionId> requiredTransactionIds) {
+            Objects.requireNonNull(requiredTransactionIds, "requiredTransactionIds");
+            return new CompactionResult(0, 0, 0L, 0L);
+        }
     };
 
 
@@ -120,13 +137,9 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
     }
 
     public synchronized Map<MvccTransactionId, MvccTransactionStatusRecord> recoverStatuses() {
-        if (!journal.exists()) {
+        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses = recoverDurableStatuses();
+        if (statuses.isEmpty()) {
             return Map.of();
-        }
-
-        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses = new LinkedHashMap<>();
-        for (MvccDurableLineRecords.LineRecord record : journal.completeRecords()) {
-            parseLine(record.line(), record.lineIndex(), statuses);
         }
 
         Map<MvccTransactionId, MvccTransactionStatusRecord> recovered = new LinkedHashMap<>();
@@ -139,6 +152,113 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
             }
         }
         return Map.copyOf(recovered);
+    }
+
+    public long sizeBytes() {
+        if (!isEnabled() || !journal.exists()) {
+            return 0L;
+        }
+        try {
+            return Files.size(journal.path());
+        } catch (IOException failure) {
+            throw new UncheckedIOException(
+                    "Could not inspect MVCC transaction status store: " + journal.path(),
+                    failure);
+        }
+    }
+
+    /**
+     * Rewrites the database transaction-status journal to the minimum recovery
+     * authority still required by unresolved prepared mutations.
+     *
+     * <p>The exact status with the greatest transaction id and the committed
+     * status with the greatest commit sequence are retained as allocation
+     * watermarks even when no pending mutation references them.</p>
+     */
+    public synchronized CompactionResult compactRetaining(
+            Set<MvccTransactionId> requiredTransactionIds) {
+        requiredTransactionIds = Set.copyOf(
+                Objects.requireNonNull(requiredTransactionIds, "requiredTransactionIds"));
+        if (!isEnabled()) {
+            return new CompactionResult(0, 0, 0L, 0L);
+        }
+
+        List<MvccDurableLineRecords.LineRecord> records = journal.completeRecords();
+        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses =
+                recoverDurableStatuses(records);
+        long beforeBytes = sizeBytes();
+        if (statuses.isEmpty()) {
+            rewriteUtf8AtomicallyForced("", "MVCC transaction status compaction");
+            return new CompactionResult(records.size(), 0, beforeBytes, 0L);
+        }
+
+        Map<MvccTransactionId, MvccTransactionStatusRecord> retained =
+                new LinkedHashMap<>();
+        for (MvccTransactionId transactionId : requiredTransactionIds) {
+            MvccTransactionStatusRecord status = statuses.get(transactionId);
+            if (status != null) {
+                retained.put(transactionId, status);
+            }
+        }
+
+        statuses.values().stream()
+                .max(Comparator.comparingLong(status -> status.transactionId().value()))
+                .ifPresent(status -> retained.put(status.transactionId(), status));
+        statuses.values().stream()
+                .filter(status -> status.status() == MvccTransactionStatus.COMMITTED)
+                .max(Comparator.comparingLong(status -> status.commitSequence().value()))
+                .ifPresent(status -> retained.put(status.transactionId(), status));
+
+        StringBuilder compacted = new StringBuilder();
+        retained.values().stream()
+                .sorted(Comparator.comparingLong(status -> status.transactionId().value()))
+                .forEach(status -> appendStatusLine(compacted, status));
+        String compactedContent = compacted.toString();
+        rewriteUtf8AtomicallyForced(
+                compactedContent,
+                "MVCC transaction status compaction");
+        long afterBytes = compactedContent.getBytes(StandardCharsets.UTF_8).length;
+        return new CompactionResult(
+                records.size(), retained.size(), beforeBytes, afterBytes);
+    }
+
+    private Map<MvccTransactionId, MvccTransactionStatusRecord> recoverDurableStatuses() {
+        return recoverDurableStatuses(journal.completeRecords());
+    }
+
+    private Map<MvccTransactionId, MvccTransactionStatusRecord> recoverDurableStatuses(
+            List<MvccDurableLineRecords.LineRecord> records) {
+        if (records.isEmpty()) {
+            return Map.of();
+        }
+        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses =
+                new LinkedHashMap<>();
+        for (MvccDurableLineRecords.LineRecord record : records) {
+            parseLine(record.line(), record.lineIndex(), statuses);
+        }
+        return Map.copyOf(statuses);
+    }
+
+    private static void appendStatusLine(
+            StringBuilder target,
+            MvccTransactionStatusRecord status) {
+        switch (status.status()) {
+        case ACTIVE -> appendLineTo(
+                target,
+                RECORD_ACTIVE,
+                Long.toString(status.transactionId().value()));
+        case COMMITTED -> appendLineTo(
+                target,
+                RECORD_COMMIT,
+                Long.toString(status.transactionId().value()),
+                Long.toString(status.commitSequence().value()));
+        case ABORTED -> appendLineTo(
+                target,
+                RECORD_ABORT,
+                Long.toString(status.transactionId().value()));
+        case RECOVERY_PENDING -> throw new IllegalArgumentException(
+                "RECOVERY_PENDING is a derived reopen state and cannot be compacted directly");
+        }
     }
 
     private void parseLine(
@@ -237,6 +357,20 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
             MvccCommitSequence commitSequence) {
         public CommittedStatus {
             validateCommitted(transactionId, commitSequence);
+        }
+    }
+
+    public record CompactionResult(
+            int recordsBefore,
+            int recordsAfter,
+            long bytesBefore,
+            long bytesAfter) {
+        public CompactionResult {
+            if (recordsBefore < 0 || recordsAfter < 0
+                    || bytesBefore < 0L || bytesAfter < 0L) {
+                throw new IllegalArgumentException(
+                        "transaction status compaction counts must not be negative");
+            }
         }
     }
 
