@@ -739,7 +739,6 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccDatabaseRuntimeIsolationTest',
-        'runDelosMvccRawStoreDecisionWalCrashTest',
         'Runs the simultaneous multi-database MVCC runtime ownership proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
 
