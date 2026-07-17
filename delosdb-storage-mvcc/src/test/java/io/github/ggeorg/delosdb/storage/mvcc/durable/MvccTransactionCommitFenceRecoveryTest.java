@@ -8,12 +8,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import io.github.ggeorg.delosdb.storage.mvcc.MvccCommitSequence;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionId;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatus;
+import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccRowId;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccTupleHeader;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccVersionId;
@@ -96,6 +99,35 @@ final class MvccTransactionCommitFenceRecoveryTest {
             assertEquals(3, table.logicalRowCount());
             table.validateConsistency().assertValid();
         }
+    }
+
+
+    @Test
+    void databaseStatusFallbackIsMirroredForRepeatableStrictRecovery() throws Exception {
+        Paths paths = paths("database-status-fallback");
+        List<MvccVersionRecord> records = records(5L, 5L, 3);
+        MvccPageMutationLog.open(paths.mutationLog())
+                .appendPreparedTransaction(5L, 5L, 99L, records);
+        MvccTransactionOutcomeLog outcomeLog = MvccTransactionOutcomeLog.open(paths.outcomeLog());
+        Map<MvccTransactionId, MvccTransactionStatusRecord> fallback = Map.of(
+                new MvccTransactionId(99L),
+                MvccTransactionStatusRecord.committed(
+                        new MvccTransactionId(99L), new MvccCommitSequence(5L)));
+
+        try (PageBackedMvccTableStore store = PageBackedMvccTableStore.open(paths.table())) {
+            MvccPageRecoveryRunner.RecoveryResult first = new MvccPageRecoveryRunner(
+                    MvccPageMutationLog.open(paths.mutationLog()), store)
+                    .recoverStrict(outcomeLog, fallback);
+            assertEquals(3, first.appliedRecords());
+        }
+        assertEquals(
+                MvccTransactionStatus.COMMITTED,
+                outcomeLog.requireOutcome(new MvccTransactionId(5L)).status());
+
+        MvccPageRecoveryRunner.RecoveryResult repeated = MvccPageRecoveryRunner.recoverStrict(
+                paths.mutationLog(), paths.outcomeLog(), paths.table());
+        assertEquals(0, repeated.appliedRecords());
+        assertEquals(3, repeated.skippedExistingRecords());
     }
 
     private Paths paths(String name) {

@@ -240,7 +240,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
         List<MvccVersionRecord> recovered = new ArrayList<>();
         for (StrictTransaction transaction : transactions.values()) {
             if (transaction.batched()) {
-                recoverPreparedTransaction(transaction, outcomes, statusFallback, recovered);
+                recoverPreparedTransaction(transaction, outcomeLog, outcomes, statusFallback, recovered);
             } else {
                 recoverLegacyTransaction(transaction, outcomeLog, outcomes, recovered);
             }
@@ -250,6 +250,7 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
 
     private static void recoverPreparedTransaction(
             StrictTransaction transaction,
+            MvccTransactionOutcomeLog outcomeLog,
             Map<MvccTransactionId, MvccTransactionOutcomeLog.Outcome> outcomes,
             Map<MvccTransactionId, MvccTransactionStatusRecord> statusFallback,
             List<MvccVersionRecord> recovered) {
@@ -259,8 +260,14 @@ public final class MvccPageMutationLog extends AbstractSidecarStore {
             MvccTransactionStatusRecord status = statusFallback.get(
                     new MvccTransactionId(transaction.statusTransactionId()));
             if (status != null && status.status() == MvccTransactionStatus.COMMITTED) {
+                require(status.commitSequence().value() == transaction.commitSequence(),
+                        transaction.lastLineIndex(),
+                        "database transaction commit sequence does not match prepared mutation for transaction "
+                                + transaction.transactionId());
+                outcomeLog.appendCommit(transaction.transactionId(), status.commitSequence().value());
                 outcome = Optional.of(MvccTransactionOutcomeLog.Outcome.committed(status.commitSequence()));
             } else if (status != null && status.status() == MvccTransactionStatus.ABORTED) {
+                outcomeLog.appendAbort(transaction.transactionId());
                 outcome = Optional.of(MvccTransactionOutcomeLog.Outcome.aborted());
             }
         }

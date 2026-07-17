@@ -43,4 +43,19 @@ final class MvccSubsystemRecoveryRecordStoreTest {
         assertEquals(7L, reopened.diagnostics().lastSequence());
         assertEquals(2L, reopened.diagnostics().count(MvccSubsystemRecoveryRecordStore.Subsystem.CHECKPOINT));
     }
+
+    @Test
+    void maintenanceOnlyRecordsDoNotPretendToBePartialTransactionReplay() {
+        MvccSubsystemRecoveryRecordStore store = MvccSubsystemRecoveryRecordStore.open(
+                tempDir, "conglomerate-0-8");
+        store.appendIndexPageRedo(1L, 2L);
+        store.appendCheckpoint(4L, 2L);
+
+        store.replayPlan().requireCrossSubsystemCompleteness(java.util.Set.of(
+                MvccSubsystemRecoveryRecordStore.Subsystem.ROW_PAGE,
+                MvccSubsystemRecoveryRecordStore.Subsystem.INDEX_PAGE,
+                MvccSubsystemRecoveryRecordStore.Subsystem.OVERFLOW_PAGE,
+                MvccSubsystemRecoveryRecordStore.Subsystem.FREE_SPACE_MAP,
+                MvccSubsystemRecoveryRecordStore.Subsystem.TRANSACTION_OUTCOME));
+    }
 }

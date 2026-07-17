@@ -264,7 +264,7 @@ public final class MvccSubsystemRecoveryRecordStore {
 
         public void requireCrossSubsystemCompleteness(Set<Subsystem> requiredSubsystems) {
             Objects.requireNonNull(requiredSubsystems, "requiredSubsystems");
-            if (records.isEmpty()) {
+            if (records.isEmpty() || !hasTransactionalRedo()) {
                 return;
             }
             for (Subsystem subsystem : requiredSubsystems) {
@@ -289,6 +289,21 @@ public final class MvccSubsystemRecoveryRecordStore {
                             + " at commit " + rowRecord.commitSequence());
                 }
             }
+        }
+
+        private boolean hasTransactionalRedo() {
+            for (RecoveryRecord record : records) {
+                switch (record.subsystem()) {
+                    case ROW_PAGE, OVERFLOW_PAGE, FREE_SPACE_MAP, TRANSACTION_OUTCOME -> {
+                        return true;
+                    }
+                    case INDEX_PAGE, CHECKPOINT -> {
+                        // Ordered-index rebuilds and checkpoints may be durable
+                        // maintenance records without a transaction replay batch.
+                    }
+                }
+            }
+            return false;
         }
     }
 
