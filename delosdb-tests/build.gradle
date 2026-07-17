@@ -178,6 +178,14 @@ def inheritedStoreImplementationExports = [
     ['--add-exports', "org.apache.derby.engine/${packageName}=org.apache.derby.tests"]
 }
 
+// SecurityTruthTest verifies the inherited basic-TLS keystore lifecycle through
+// the internal DRDA trust-manager implementation. Keep that access test-only;
+// do not export the package from org.apache.derby.commons at runtime.
+def securityTruthTestExports = [
+        '--add-exports',
+        'org.apache.derby.commons/org.apache.derby.shared.common.drda=org.apache.derby.tests'
+]
+
 java {
     sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
@@ -251,7 +259,7 @@ tasks.named('compileTestJava', JavaCompile) {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
                 '-proc:none'
-        ] + inheritedStoreImplementationExports
+        ] + inheritedStoreImplementationExports + securityTruthTestExports
     }
 }
 
