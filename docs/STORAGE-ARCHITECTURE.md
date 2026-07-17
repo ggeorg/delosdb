@@ -212,3 +212,6 @@ atomically after scanning all table mutation and local-outcome logs. Compaction 
 The last two records preserve allocation watermarks without retaining lifetime transaction history.
 A failed atomic compaction leaves the previous complete journal in place and does not change the
 transaction outcome.
+
+The database-level MVCC decision journal is removed when the final MVCC table drops and no retained
+recovery artifact remains. Opening an empty MVCC runtime does not create an empty journal.

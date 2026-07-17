@@ -15,6 +15,7 @@ import java.util.Set;
 
 import io.github.ggeorg.delosdb.storage.mvcc.durable.AbstractSidecarStore;
 import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccAppendOnlyTextLog;
+import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccDurableFiles;
 import io.github.ggeorg.delosdb.storage.mvcc.format.MvccDurableLineRecords;
 
 /**
@@ -167,6 +168,20 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
         }
     }
 
+    /** Deletes this journal and any interrupted atomic-rewrite sibling. */
+    public synchronized void deleteIfExists() {
+        if (!isEnabled()) {
+            return;
+        }
+        try {
+            MvccDurableFiles.deleteWithTemporarySibling(journal.path(), ".tmp");
+        } catch (IOException failure) {
+            throw new UncheckedIOException(
+                    "Could not delete MVCC transaction status store: " + journal.path(),
+                    failure);
+        }
+    }
+
     /**
      * Rewrites the database transaction-status journal to the minimum recovery
      * authority still required by unresolved prepared mutations.
@@ -188,7 +203,7 @@ public class MvccTransactionStatusStore extends AbstractSidecarStore {
                 recoverDurableStatuses(records);
         long beforeBytes = sizeBytes();
         if (statuses.isEmpty()) {
-            rewriteUtf8AtomicallyForced("", "MVCC transaction status compaction");
+            deleteIfExists();
             return new CompactionResult(records.size(), 0, beforeBytes, 0L);
         }
 

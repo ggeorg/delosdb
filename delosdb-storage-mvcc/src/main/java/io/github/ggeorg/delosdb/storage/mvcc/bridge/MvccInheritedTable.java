@@ -1222,6 +1222,7 @@ final class MvccInheritedTable implements DelosStorageTable,
                         + segmentId + ":" + containerId, e);
             }
         });
+        databaseCommitCoordinator.tableDurableStateDropped();
     }
 
     @Override

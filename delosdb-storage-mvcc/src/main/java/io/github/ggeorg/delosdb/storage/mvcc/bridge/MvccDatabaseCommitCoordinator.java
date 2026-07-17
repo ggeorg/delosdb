@@ -166,6 +166,19 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         return decisionRetention.markerCountForTesting();
     }
 
+    void tableDurableStateDropped() {
+        multiTableLock.lock();
+        try {
+            try {
+                decisionRetention.dropDatabaseStateIfUnused(decisionStore);
+            } catch (RuntimeException retentionFailure) {
+                recordDecisionRetentionFailure(retentionFailure);
+            }
+        } finally {
+            multiTableLock.unlock();
+        }
+    }
+
     private void commitMultiple(List<DatabaseParticipant> participants) {
         DelosStorageBackupCoordinator backupCoordinator = requireSharedBackupCoordinator(participants);
         try (DelosStorageBackupCoordinator.Guard ignored =

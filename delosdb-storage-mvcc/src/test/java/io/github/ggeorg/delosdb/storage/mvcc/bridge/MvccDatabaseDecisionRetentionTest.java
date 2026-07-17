@@ -113,6 +113,33 @@ final class MvccDatabaseDecisionRetentionTest {
     }
 
     @Test
+    void finalTableDropRemovesDatabaseDecisionJournalAndEmptyDirectories() {
+        Path database = root.resolve("last-table-drop");
+        Path statusFile = PageVolumeMvccPaths.databaseTransactionStatusFile(database);
+        MvccInheritedStore store = new MvccInheritedStore(database, 1L);
+        MvccInheritedTable first = openTable(store, 351L);
+        MvccInheritedTable second = openTable(store, 352L);
+        commitTwoTables(first, second, 1L);
+        assertTrue(Files.exists(statusFile));
+
+        first.dropDurableState();
+        assertTrue(Files.exists(statusFile),
+                "database decision state must remain while another table exists");
+
+        second.dropDurableState();
+        assertTrue(!Files.exists(statusFile),
+                "dropping the final MVCC table must remove obsolete database decision state");
+        assertEquals(0L, store.transactionCoordinatorForTesting()
+                .decisionRetentionFailureCountForTesting());
+        store.close();
+
+        MvccInheritedStore reopened = new MvccInheritedStore(database, 1L);
+        reopened.close();
+        assertTrue(!Files.exists(statusFile),
+                "opening an empty MVCC runtime must not recreate an empty status journal");
+    }
+
+    @Test
     void unresolvedPreparedCorrelationSurvivesCompactionAndReopen() {
         Path database = root.resolve("unresolved-publication");
         MvccFailurePointRegistry registry = MvccFailurePointRegistry.scheduled(

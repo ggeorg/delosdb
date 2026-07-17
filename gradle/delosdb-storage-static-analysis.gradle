@@ -3846,6 +3846,8 @@ tasks.register('delosDatabaseDecisionRetentionStaticAnalysis') {
                 'decisionMirrored',
                 'pendingDatabaseTransactionIds',
                 'compactRetaining',
+                'dropDatabaseStateIfUnused',
+                'finalTableDropRemovesDatabaseDecisionJournalAndEmptyDirectories',
                 'greatest transaction id',
                 'greatest commit sequence',
                 'runMvccDatabaseDecisionRetentionTest'

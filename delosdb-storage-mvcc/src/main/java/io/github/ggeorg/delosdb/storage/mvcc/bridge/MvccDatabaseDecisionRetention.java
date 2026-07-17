@@ -130,6 +130,34 @@ final class MvccDatabaseDecisionRetention {
         decisionStore.compactRetaining(pendingDatabaseTransactionIds());
     }
 
+    /**
+     * Removes database-level decision state after the final participant table
+     * has removed all of its durable files.
+     *
+     * <p>Any remaining regular file below the inherited-store directory is
+     * treated conservatively as retained recovery state. Only the database
+     * transaction-status journal and its interrupted rewrite sibling are
+     * ignored while deciding whether the store is otherwise empty.</p>
+     */
+    void dropDatabaseStateIfUnused(MvccTransactionStatusStore decisionStore) {
+        Objects.requireNonNull(decisionStore, "decisionStore");
+        if (databaseDirectory == null || !decisionStore.isEnabled()) {
+            return;
+        }
+
+        Path inheritedStore = PageVolumeMvccPaths.inheritedStoreDirectory(databaseDirectory);
+        Path statusFile = decisionStore.path().orElse(null);
+        if (inheritedStore == null
+                || hasRetainedStateOtherThanStatus(inheritedStore, statusFile)) {
+            return;
+        }
+
+        decisionStore.deleteIfExists();
+        deleteDirectoryIfEmpty(DelosDatabaseCommitDecision.directory(databaseDirectory));
+        deleteDirectoryIfEmpty(inheritedStore);
+        deleteDirectoryIfEmpty(inheritedStore.getParent());
+    }
+
     int markerCountForTesting() {
         if (databaseDirectory == null) {
             return 0;
@@ -146,6 +174,43 @@ final class MvccDatabaseDecisionRetention {
             return count;
         } catch (IOException failure) {
             throw new UncheckedIOException("Could not count database decision markers", failure);
+        }
+    }
+
+    private boolean hasRetainedStateOtherThanStatus(
+            Path inheritedStore,
+            Path statusFile) {
+        if (!Files.exists(inheritedStore)) {
+            return false;
+        }
+        Path rewriteSibling = statusFile == null
+                ? null
+                : statusFile.resolveSibling(statusFile.getFileName() + ".tmp");
+        try (var paths = Files.walk(inheritedStore)) {
+            return paths.filter(Files::isRegularFile)
+                    .anyMatch(path -> !path.equals(statusFile)
+                            && !path.equals(rewriteSibling));
+        } catch (IOException failure) {
+            throw new UncheckedIOException(
+                    "Could not inspect inherited MVCC state in " + inheritedStore,
+                    failure);
+        }
+    }
+
+    private static void deleteDirectoryIfEmpty(Path directory) {
+        if (directory == null) {
+            return;
+        }
+        try {
+            if (Files.deleteIfExists(directory)) {
+                MvccDurableFiles.forceParentDirectoryIfSupported(directory);
+            }
+        } catch (java.nio.file.DirectoryNotEmptyException ignored) {
+            // Another retained artifact still owns the directory.
+        } catch (IOException failure) {
+            throw new UncheckedIOException(
+                    "Could not remove empty MVCC state directory " + directory,
+                    failure);
         }
     }
 
