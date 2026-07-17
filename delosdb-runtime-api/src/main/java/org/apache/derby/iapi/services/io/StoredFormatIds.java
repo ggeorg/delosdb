@@ -1591,6 +1591,15 @@ public interface StoredFormatIds {
     public static final int LOGOP_ENCRYPT_CONTAINER_UNDO =
             (MIN_ID_2 + 460);
 
+
+    /* org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation */
+    public static final int LOGOP_DELOS_DATABASE_COMMIT_DECISION =
+            (MIN_ID_2 + 480);
+
+    /* org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionUndoOperation */
+    public static final int LOGOP_DELOS_DATABASE_COMMIT_DECISION_UNDO =
+            (MIN_ID_2 + 481);
+
     /*******************************************************************
     **
     ** container types
@@ -1691,7 +1700,7 @@ public interface StoredFormatIds {
      * Make sure this is updated when a new module is added
      */
     public static final int MAX_ID_2 =
-            (MIN_ID_2 + 479);
+            (MIN_ID_2 + 481);
 
     // DO NOT USE 4 BYTE IDS ANYMORE
     static public final int MAX_ID_4 =

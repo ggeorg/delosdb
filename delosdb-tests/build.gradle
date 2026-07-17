@@ -706,12 +706,12 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',
-        'Runs the Phase 8.2 fail-closed transaction participation proof.',
+        'Runs the transaction participation and retained XA restriction proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMvccDatabaseCommitDecisionTest',
-        'Runs the Phase 8.3 database-scoped MVCC commit-decision proof.',
+        'Runs the Phase 8.3 database-scoped heap/MVCC commit-decision proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
 
 registerDelosFocusedTest(

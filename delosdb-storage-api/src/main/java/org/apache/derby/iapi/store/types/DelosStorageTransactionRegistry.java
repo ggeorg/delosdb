@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.apache.derby.shared.common.error.StandardException;
+
 /**
  * Storage-api transaction-scoped writer registry.
  *
@@ -59,19 +61,17 @@ public final class DelosStorageTransactionRegistry {
         if (mvcc && globalTransaction) {
             return WriteParticipationResult.MVCC_XA_UNSUPPORTED;
         }
-        if (mvcc) {
-            if (current != null && current.heapWrite()) {
-                return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
-            }
-            WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(false, true));
-            return WriteParticipationResult.ALLOWED;
-        }
 
-        if (current != null && current.mvccWrite()) {
-            return WriteParticipationResult.MIXED_HEAP_MVCC_UNSUPPORTED;
-        }
-        WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(true, false));
+        boolean heapWrite = !mvcc || (current != null && current.heapWrite());
+        boolean mvccWrite = mvcc || (current != null && current.mvccWrite());
+        WRITE_PARTICIPATION.put(requiredOwner, new WriteParticipation(heapWrite, mvccWrite));
         return WriteParticipationResult.ALLOWED;
+    }
+
+    /** Whether the active local transaction requires one raw-store-backed decision. */
+    public static synchronized boolean requiresRawStoreDecision(Object ownerTransaction) {
+        WriteParticipation participation = WRITE_PARTICIPATION.get(ownerTransaction);
+        return participation != null && participation.heapWrite() && participation.mvccWrite();
     }
 
     public static synchronized Writer register(
@@ -155,6 +155,113 @@ public final class DelosStorageTransactionRegistry {
             }
         }
         return null;
+    }
+
+    /**
+     * Prepare provider work which must be coupled to the upcoming Derby raw-store commit.
+     *
+     * <p>Heap-only and MVCC-only transactions retain their existing paths. A mixed
+     * heap/MVCC transaction durably stages every MVCC participant, then logs one
+     * raw-store decision marker in the Derby transaction. The caller must invoke
+     * {@link #completeCommit(CommitPreparation)} only after the raw store commits,
+     * or {@link #abortPreparedCommit(CommitPreparation)} after a successful raw-store
+     * abort.</p>
+     */
+    public static CommitPreparation prepareCommit(
+            Object ownerTransaction,
+            DelosRawStoreCommitParticipant rawStoreParticipant)
+            throws StandardException {
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        clearSavepoints(requiredOwner);
+        List<Writer> writers = writersFor(requiredOwner);
+        WriteParticipation participation = writeParticipationFor(requiredOwner);
+
+        if (participation == null || !participation.heapWrite() || !participation.mvccWrite()) {
+            Throwable failure = commitWriters(writers);
+            rethrowFailure(failure);
+            return new CommitPreparation(requiredOwner, List.of(), null);
+        }
+
+        if (rawStoreParticipant == null) {
+            throw new IllegalStateException(
+                    "mixed heap/MVCC commit requires a Derby raw-store decision participant");
+        }
+        DelosStorageCommitCoordinator coordinator = sharedCoordinator(writers);
+        if (!(coordinator instanceof DelosStorageRawDecisionCommitCoordinator rawCoordinator)) {
+            throw new IllegalStateException(
+                    "mixed heap/MVCC commit requires one raw-decision-capable database coordinator");
+        }
+
+        DelosStorageRawDecisionCommitCoordinator.PreparedCommit prepared;
+        try {
+            prepared = rawCoordinator.prepareForRawStoreDecision(writers.stream()
+                    .map(Writer::participant)
+                    .toList());
+        } catch (RuntimeException | Error preparationFailure) {
+            completeWriters(writers);
+            clearWriteParticipation(requiredOwner);
+            throw preparationFailure;
+        }
+        try {
+            rawStoreParticipant.stageDatabaseCommitDecision(prepared.decision());
+        } catch (StandardException | RuntimeException | Error stageFailure) {
+            try {
+                prepared.abortBeforeRawStoreCommit();
+            } catch (RuntimeException | Error abortFailure) {
+                stageFailure.addSuppressed(abortFailure);
+            } finally {
+                completeWriters(writers);
+                clearWriteParticipation(requiredOwner);
+            }
+            throw stageFailure;
+        }
+        return new CommitPreparation(requiredOwner, writers, prepared);
+    }
+
+    /** Complete external publication after the Derby raw-store decision commits. */
+    public static void completeCommit(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        Throwable failure = null;
+        if (required.preparedCommit != null) {
+            try {
+                required.preparedCommit.publishAfterRawStoreCommit();
+            } catch (RuntimeException | Error publicationFailure) {
+                failure = publicationFailure;
+            } finally {
+                completeWriters(required.writers);
+            }
+        }
+        for (Reader reader : readersFor(required.ownerTransaction)) {
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(required.ownerTransaction, reader));
+        }
+        clearWriteParticipation(required.ownerTransaction);
+        rethrowFailure(failure);
+    }
+
+    /** Abort prepared external participants after Derby raw-store rollback succeeds. */
+    public static void abortPreparedCommit(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        Throwable failure = null;
+        if (required.preparedCommit != null) {
+            try {
+                required.preparedCommit.abortBeforeRawStoreCommit();
+            } catch (RuntimeException | Error abortFailure) {
+                failure = abortFailure;
+            } finally {
+                completeWriters(required.writers);
+            }
+        }
+        for (Reader reader : readersFor(required.ownerTransaction)) {
+            failure = completeParticipant(
+                    failure,
+                    reader::close,
+                    () -> completeReader(required.ownerTransaction, reader));
+        }
+        clearWriteParticipation(required.ownerTransaction);
+        rethrowFailure(failure);
     }
 
     public static void commit(Object ownerTransaction) {
@@ -265,6 +372,13 @@ public final class DelosStorageTransactionRegistry {
                     () -> completeReader(ownedReader.ownerTransaction(), reader));
         }
         rethrowFailure(failure);
+    }
+
+    private static void completeWriters(List<Writer> writers) {
+        for (Writer writer : writers) {
+            writer.markCompleted();
+            complete(writer);
+        }
     }
 
     private static Throwable completeParticipant(
@@ -418,6 +532,10 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
+    private static synchronized WriteParticipation writeParticipationFor(Object ownerTransaction) {
+        return WRITE_PARTICIPATION.get(ownerTransaction);
+    }
+
     private static synchronized void clearWriteParticipation(Object ownerTransaction) {
         WRITE_PARTICIPATION.remove(ownerTransaction);
     }
@@ -457,6 +575,25 @@ public final class DelosStorageTransactionRegistry {
             }
         }
         return -1;
+    }
+
+    public static final class CommitPreparation {
+        private final Object ownerTransaction;
+        private final List<Writer> writers;
+        private final DelosStorageRawDecisionCommitCoordinator.PreparedCommit preparedCommit;
+
+        private CommitPreparation(
+                Object ownerTransaction,
+                List<Writer> writers,
+                DelosStorageRawDecisionCommitCoordinator.PreparedCommit preparedCommit) {
+            this.ownerTransaction = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+            this.writers = List.copyOf(Objects.requireNonNull(writers, "writers"));
+            this.preparedCommit = preparedCommit;
+        }
+
+        public boolean requiresRawStoreDecision() {
+            return preparedCommit != null;
+        }
     }
 
     public static final class Reader {
@@ -555,8 +692,6 @@ public final class DelosStorageTransactionRegistry {
 
     public enum WriteParticipationResult {
         ALLOWED(""),
-        MIXED_HEAP_MVCC_UNSUPPORTED(
-                "mixed heap and delos_mvcc writes in one transaction are not supported"),
         MVCC_XA_UNSUPPORTED(
                 "delos_mvcc writes in XA transactions are not supported");
 

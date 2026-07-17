@@ -147,31 +147,62 @@ public final class MvccSqlTransactionTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testMixedHeapAndMvccWritesRejectInBothOrdersBeforeSecondMutation() throws Exception {
-        String databaseName = databaseName("mvcc-sql-mixed-write-reject-db");
+    public void testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision() throws Exception {
+        String databaseName = databaseName("mvcc-sql-mixed-database-decision-db");
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table heap_reject_t (id int, name varchar(32))");
-            executeUpdate(connection, "create table mvcc_reject_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table heap_decision_t (id int, name varchar(32))");
+            executeUpdate(connection, "create table mvcc_decision_a (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection, "create table mvcc_decision_b (id int, name varchar(32)) using delos_mvcc");
             connection.commit();
 
-            executeUpdate(connection, "insert into heap_reject_t values (1, 'heap-first')");
-            assertUnsupported(() -> executeUpdate(connection,
-                    "insert into mvcc_reject_t values (1, 'must-not-appear')"));
-            assertRows(connection, "select id, name from mvcc_reject_t order by id");
-            connection.rollback();
+            executeUpdate(connection, "insert into heap_decision_t values (1, 'heap-committed')");
+            executeUpdate(connection, "insert into mvcc_decision_a values (1, 'mvcc-a-committed')");
+            executeUpdate(connection, "insert into mvcc_decision_b values (1, 'mvcc-b-committed')");
+            connection.commit();
 
-            executeUpdate(connection, "insert into mvcc_reject_t values (2, 'mvcc-first')");
-            assertUnsupported(() -> executeUpdate(connection,
-                    "insert into heap_reject_t values (2, 'must-not-appear')"));
             assertRows(connection,
-                    "select id, name from heap_reject_t order by id");
+                    "select id, name from heap_decision_t order by id",
+                    "1|heap-committed");
+            assertRows(connection,
+                    "select id, name from mvcc_decision_a order by id",
+                    "1|mvcc-a-committed");
+            assertRows(connection,
+                    "select id, name from mvcc_decision_b order by id",
+                    "1|mvcc-b-committed");
             connection.rollback();
 
-            assertRows(connection, "select id, name from heap_reject_t order by id");
-            assertRows(connection, "select id, name from mvcc_reject_t order by id");
+            executeUpdate(connection,
+                    "update heap_decision_t set name = 'heap-rolled-back' where id = 1");
+            executeUpdate(connection,
+                    "update mvcc_decision_a set name = 'mvcc-a-rolled-back' where id = 1");
+            executeUpdate(connection,
+                    "delete from mvcc_decision_b where id = 1");
             connection.rollback();
+
+            assertRows(connection,
+                    "select id, name from heap_decision_t order by id",
+                    "1|heap-committed");
+            assertRows(connection,
+                    "select id, name from mvcc_decision_a order by id",
+                    "1|mvcc-a-committed");
+            assertRows(connection,
+                    "select id, name from mvcc_decision_b order by id",
+                    "1|mvcc-b-committed");
+            connection.rollback();
+        }
+
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened,
+                    "select id, name from heap_decision_t order by id",
+                    "1|heap-committed");
+            assertRows(reopened,
+                    "select id, name from mvcc_decision_a order by id",
+                    "1|mvcc-a-committed");
+            assertRows(reopened,
+                    "select id, name from mvcc_decision_b order by id",
+                    "1|mvcc-b-committed");
         }
     }
 

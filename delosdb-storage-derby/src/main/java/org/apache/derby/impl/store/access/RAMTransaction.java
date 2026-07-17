@@ -70,9 +70,12 @@ import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Loggable;
 import org.apache.derby.iapi.store.raw.Transaction;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
+import org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation;
 
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 
@@ -84,7 +87,7 @@ import java.io.Serializable;
 // debugging
 
 public class RAMTransaction 
-    implements XATransactionController, TransactionManager
+    implements XATransactionController, TransactionManager, DelosRawStoreCommitParticipant
 {
 
 	/**
@@ -1250,6 +1253,13 @@ public class RAMTransaction
 	{
 		rawtran.logAndDo(operation);
 	}
+
+    @Override
+    public void stageDatabaseCommitDecision(DelosDatabaseCommitDecision decision)
+            throws StandardException
+    {
+        rawtran.logAndDo(new DelosDatabaseCommitDecisionOperation(decision));
+    }
 
     public ConglomerateController openCompiledConglomerate(
     boolean                         hold,

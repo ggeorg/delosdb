@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageCommitCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageCoordinatedCommitTable;
 import org.apache.derby.iapi.store.types.DelosStorageSavepointParticipant;
@@ -61,6 +63,125 @@ final class MvccInheritedTransactionLifecycleTest {
         MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 1, 101);
         MvccInheritedTable reopenedLedger = openTable(reopenedStore, 1, 102);
 
+        assertTrue(read(reopenedAccounts, 1L).isPresent());
+        assertTrue(read(reopenedLedger, 1L).isPresent());
+        reopenedStore.close();
+    }
+
+    @Test
+    void mixedRawStoreDecisionCommitsMultipleMvccParticipants() throws Exception {
+        Object derbyTransaction = new Object();
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 11, 1101);
+        MvccInheritedTable ledger = openTable(store, 11, 1102);
+
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1L, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1101L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1102L, true, false);
+
+        DelosStorageTransaction accountsTx = accounts.beginTransaction();
+        DelosStorageTransaction ledgerTx = ledger.beginTransaction();
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
+        accounts.insert(1L, durableEmptyRow(), accountsTx);
+        ledger.insert(1L, durableEmptyRow(), ledgerTx);
+
+        CapturingRawStoreParticipant rawStore = new CapturingRawStoreParticipant();
+        DelosStorageTransactionRegistry.CommitPreparation prepared =
+                DelosStorageTransactionRegistry.prepareCommit(derbyTransaction, rawStore);
+        assertTrue(prepared.requiresRawStoreDecision());
+        writeRawStoreDecision(rawStore.decision);
+        DelosStorageTransactionRegistry.completeCommit(prepared);
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
+        store.close();
+
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 11, 1101);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 11, 1102);
+        assertTrue(read(reopenedAccounts, 1L).isPresent());
+        assertTrue(read(reopenedLedger, 1L).isPresent());
+        reopenedStore.close();
+    }
+
+    @Test
+    void mixedRawStoreRollbackAbortsEveryPreparedMvccParticipant() throws Exception {
+        Object derbyTransaction = new Object();
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 12, 1201);
+        MvccInheritedTable ledger = openTable(store, 12, 1202);
+
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1L, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1201L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1202L, true, false);
+
+        DelosStorageTransaction accountsTx = accounts.beginTransaction();
+        DelosStorageTransaction ledgerTx = ledger.beginTransaction();
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
+        accounts.insert(1L, durableEmptyRow(), accountsTx);
+        ledger.insert(1L, durableEmptyRow(), ledgerTx);
+
+        CapturingRawStoreParticipant rawStore = new CapturingRawStoreParticipant();
+        DelosStorageTransactionRegistry.CommitPreparation prepared =
+                DelosStorageTransactionRegistry.prepareCommit(derbyTransaction, rawStore);
+        DelosStorageTransactionRegistry.abortPreparedCommit(prepared);
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
+        store.close();
+
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 12, 1201);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 12, 1202);
+        assertTrue(read(reopenedAccounts, 1L).isEmpty());
+        assertTrue(read(reopenedLedger, 1L).isEmpty());
+        reopenedStore.close();
+    }
+
+    @Test
+    void rawStoreDecisionRecoversMixedPublicationFailure() throws Exception {
+        Object derbyTransaction = new Object();
+        MvccInheritedStore store = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable accounts = openTable(store, 13, 1301);
+        MvccInheritedTable ledger = openTable(store, 13, 1302);
+        accounts.setPagePublicationHookForTesting((stage, changes) -> {
+            if (stage == io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccStateStore
+                    .PublicationStage.OUTCOME_FENCE) {
+                throw new IllegalStateException("injected mixed publication failure");
+            }
+        });
+
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1L, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1301L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, 1302L, true, false);
+
+        DelosStorageTransaction accountsTx = accounts.beginTransaction();
+        DelosStorageTransaction ledgerTx = ledger.beginTransaction();
+        DelosStorageTransactionRegistry.register(derbyTransaction, accounts, accountsTx);
+        DelosStorageTransactionRegistry.register(derbyTransaction, ledger, ledgerTx);
+        accounts.insert(1L, durableEmptyRow(), accountsTx);
+        ledger.insert(1L, durableEmptyRow(), ledgerTx);
+
+        CapturingRawStoreParticipant rawStore = new CapturingRawStoreParticipant();
+        DelosStorageTransactionRegistry.CommitPreparation prepared =
+                DelosStorageTransactionRegistry.prepareCommit(derbyTransaction, rawStore);
+        writeRawStoreDecision(rawStore.decision);
+        assertThrows(
+                MvccDatabaseCommitCoordinator.DatabaseCommitRecoveryRequiredException.class,
+                () -> DelosStorageTransactionRegistry.completeCommit(prepared));
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
+        store.close();
+
+        MvccInheritedStore reopenedStore = new MvccInheritedStore(databaseDirectory);
+        MvccInheritedTable reopenedAccounts = openTable(reopenedStore, 13, 1301);
+        MvccInheritedTable reopenedLedger = openTable(reopenedStore, 13, 1302);
         assertTrue(read(reopenedAccounts, 1L).isPresent());
         assertTrue(read(reopenedLedger, 1L).isPresent());
         reopenedStore.close();
@@ -381,6 +502,24 @@ final class MvccInheritedTransactionLifecycleTest {
         assertEquals(1, table.abortCount,
                 "a writer that cannot join existing savepoints must not leak outside the registry");
         assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(owner));
+    }
+
+    private void writeRawStoreDecision(DelosDatabaseCommitDecision decision) throws Exception {
+        Path marker = DelosDatabaseCommitDecision.markerFile(
+                databaseDirectory, decision.transactionId(), decision.commitSequence());
+        Files.createDirectories(marker.getParent());
+        Files.write(marker, decision.encoded());
+    }
+
+    private static final class CapturingRawStoreParticipant
+            implements DelosRawStoreCommitParticipant {
+        private DelosDatabaseCommitDecision decision;
+
+        @Override
+        public void stageDatabaseCommitDecision(DelosDatabaseCommitDecision stagedDecision)
+                throws StandardException {
+            decision = stagedDecision;
+        }
     }
 
     private static MvccInheritedTable openTable(

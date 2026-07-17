@@ -17,19 +17,24 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusRecord;
 import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
 import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageCommitCoordinator;
+import org.apache.derby.iapi.store.types.DelosStorageRawDecisionCommitCoordinator;
 
 /**
  * Database-scoped commit authority for transactions spanning MVCC tables.
  *
- * <p>All participant payloads are durably staged before one database decision
- * is forced. Publication may then be repeated during table recovery because
- * each staged payload names the same database transaction id.</p>
+ * <p>MVCC-only transactions force the existing database status record as the
+ * authoritative decision. Mixed heap/MVCC transactions durably stage every
+ * MVCC payload, then let Derby raw store commit a transactional decision marker.
+ * After raw-store recovery, marker presence is authoritative and incomplete
+ * MVCC publication is repeatable.</p>
  */
-final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinator {
+final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionCommitCoordinator {
     private static final long FIRST_DATABASE_TRANSACTION_ID = 1L << 62;
 
+    private final Path databaseDirectory;
     private final MvccTransactionStatusStore decisionStore;
     private final ReentrantReadWriteLock coordinationLock = new ReentrantReadWriteLock();
     private final Lock singleTableLock = coordinationLock.readLock();
@@ -39,7 +44,10 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
     private volatile Runnable afterDecisionHook = () -> { };
 
     MvccDatabaseCommitCoordinator(Path databaseDirectory) {
-        Path statusFile = PageVolumeMvccPaths.databaseTransactionStatusFile(databaseDirectory);
+        this.databaseDirectory = databaseDirectory == null
+                ? null
+                : databaseDirectory.toAbsolutePath().normalize();
+        Path statusFile = PageVolumeMvccPaths.databaseTransactionStatusFile(this.databaseDirectory);
         decisionStore = statusFile == null
                 ? MvccTransactionStatusStore.disabled()
                 : MvccTransactionStatusStore.open(statusFile);
@@ -68,8 +76,48 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
         }
     }
 
+    @Override
+    public PreparedCommit prepareForRawStoreDecision(List<Participant> participants) {
+        List<DatabaseParticipant> required = requireParticipants(participants);
+        multiTableLock.lock();
+        DelosStorageBackupCoordinator.Guard backupGuard = null;
+        boolean tablesLocked = false;
+        try {
+            DelosStorageBackupCoordinator backupCoordinator = requireSharedBackupCoordinator(required);
+            backupGuard = backupCoordinator.enterDurableMutation(
+                    DelosStorageBackupCoordinator.Mutation.COMMIT_PUBLICATION);
+            lockTables(required);
+            tablesLocked = true;
+            PreparedState prepared = prepareParticipantsLocked(required);
+            return new RawStorePreparedCommit(required, prepared, backupGuard);
+        } catch (RuntimeException | Error failure) {
+            Throwable releaseFailure = failure;
+            if (tablesLocked) {
+                try {
+                    unlockTables(required);
+                } catch (RuntimeException | Error tableUnlockFailure) {
+                    releaseFailure = appendFailure(releaseFailure, tableUnlockFailure);
+                }
+            }
+            if (backupGuard != null) {
+                try {
+                    backupGuard.close();
+                } catch (RuntimeException | Error guardFailure) {
+                    releaseFailure = appendFailure(releaseFailure, guardFailure);
+                }
+            }
+            try {
+                multiTableLock.unlock();
+            } catch (RuntimeException | Error lockFailure) {
+                releaseFailure = appendFailure(releaseFailure, lockFailure);
+            }
+            rethrow(releaseFailure);
+            throw new AssertionError("unreachable");
+        }
+    }
+
     Map<MvccTransactionId, MvccTransactionStatusRecord> recoveredStatuses() {
-        return decisionStore.recoverStatuses();
+        return recoveredDecisionStatuses();
     }
 
     MvccCommitSequence newestRecoveredCommitSequence() {
@@ -81,6 +129,74 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
     }
 
     private void commitMultiple(List<DatabaseParticipant> participants) {
+        DelosStorageBackupCoordinator backupCoordinator = requireSharedBackupCoordinator(participants);
+        try (DelosStorageBackupCoordinator.Guard ignored =
+                     backupCoordinator.enterDurableMutation(
+                             DelosStorageBackupCoordinator.Mutation.COMMIT_PUBLICATION)) {
+            lockTables(participants);
+            try {
+                PreparedState prepared = prepareParticipantsLocked(participants);
+                boolean committedDecision = false;
+                Throwable failure = null;
+                try {
+                    forceCommittedDecision(prepared.databaseTransactionId(), prepared.commitSequence());
+                    committedDecision = true;
+                    newestCommitSequence = Math.max(
+                            newestCommitSequence, prepared.commitSequence().value());
+                    afterDecisionHook.run();
+                } catch (RuntimeException | Error commitFailure) {
+                    failure = commitFailure;
+                    MvccTransactionStatusRecord recovered = recoveredDecisionStatuses()
+                            .get(prepared.databaseTransactionId());
+                    committedDecision = recovered != null
+                            && recovered.status() == MvccTransactionStatus.COMMITTED;
+                    if (committedDecision) {
+                        newestCommitSequence = Math.max(
+                                newestCommitSequence, recovered.commitSequence().value());
+                    }
+                }
+
+                if (!committedDecision) {
+                    Throwable aborted = abortBeforeDecision(prepared, failure);
+                    rethrow(Objects.requireNonNullElseGet(
+                            aborted,
+                            () -> new IllegalStateException("MVCC database commit was aborted")));
+                    return;
+                }
+
+                Throwable publicationFailure = publishPrepared(prepared, failure);
+                if (publicationFailure != null) {
+                    throw recoveryRequired(prepared, publicationFailure);
+                }
+            } finally {
+                unlockTables(participants);
+            }
+        }
+    }
+
+    private PreparedState prepareParticipantsLocked(List<DatabaseParticipant> participants) {
+        MvccTransactionId databaseTransactionId = new MvccTransactionId(nextTransactionId++);
+        MvccCommitSequence commitSequence = nextCommitSequence(participants);
+        List<MvccInheritedTable.DatabasePreparedCommit> prepared = new ArrayList<>();
+        try {
+            decisionStore.recordActive(databaseTransactionId);
+            for (DatabaseParticipant participant : participants) {
+                prepared.add(participant.table().prepareDatabaseCommit(
+                        participant.transaction(), databaseTransactionId, commitSequence));
+            }
+            return new PreparedState(
+                    participants, databaseTransactionId, commitSequence, List.copyOf(prepared));
+        } catch (RuntimeException | Error preparationFailure) {
+            PreparedState partial = new PreparedState(
+                    participants, databaseTransactionId, commitSequence, List.copyOf(prepared));
+            Throwable aborted = abortBeforeDecision(partial, preparationFailure);
+            rethrow(Objects.requireNonNullElse(aborted, preparationFailure));
+            throw new AssertionError("unreachable");
+        }
+    }
+
+    private DelosStorageBackupCoordinator requireSharedBackupCoordinator(
+            List<DatabaseParticipant> participants) {
         DelosStorageBackupCoordinator backupCoordinator = participants.getFirst()
                 .table().databaseBackupCoordinator();
         for (DatabaseParticipant participant : participants) {
@@ -89,70 +205,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
                         "coordinated MVCC participants must share one database backup coordinator");
             }
         }
-
-        try (DelosStorageBackupCoordinator.Guard ignored =
-                     backupCoordinator.enterDurableMutation(
-                             DelosStorageBackupCoordinator.Mutation.COMMIT_PUBLICATION)) {
-            lockTables(participants);
-            try {
-                commitMultipleLocked(participants);
-            } finally {
-                unlockTables(participants);
-            }
-        }
-    }
-
-    private void commitMultipleLocked(List<DatabaseParticipant> participants) {
-        MvccTransactionId databaseTransactionId = new MvccTransactionId(nextTransactionId++);
-        MvccCommitSequence commitSequence = nextCommitSequence(participants);
-        List<MvccInheritedTable.DatabasePreparedCommit> prepared = new ArrayList<>();
-        boolean committedDecision = false;
-        Throwable failure = null;
-
-        try {
-            decisionStore.recordActive(databaseTransactionId);
-            for (DatabaseParticipant participant : participants) {
-                prepared.add(participant.table().prepareDatabaseCommit(
-                        participant.transaction(), databaseTransactionId, commitSequence));
-            }
-            forceCommittedDecision(databaseTransactionId, commitSequence);
-            committedDecision = true;
-            newestCommitSequence = Math.max(newestCommitSequence, commitSequence.value());
-            afterDecisionHook.run();
-        } catch (RuntimeException | Error commitFailure) {
-            failure = commitFailure;
-            if (!committedDecision) {
-                MvccTransactionStatusRecord recovered =
-                        decisionStore.recoverStatuses().get(databaseTransactionId);
-                committedDecision = recovered != null
-                        && recovered.status() == MvccTransactionStatus.COMMITTED;
-                if (committedDecision) {
-                    newestCommitSequence = Math.max(
-                            newestCommitSequence, recovered.commitSequence().value());
-                }
-            }
-        }
-
-        if (!committedDecision) {
-            Throwable abortedFailure = abortBeforeDecision(
-                    participants, prepared, databaseTransactionId, failure);
-            rethrow(Objects.requireNonNullElseGet(
-                    abortedFailure, () -> new IllegalStateException("MVCC database commit was aborted")));
-            return;
-        }
-
-        Throwable publicationFailure = failure;
-        for (MvccInheritedTable.DatabasePreparedCommit participant : prepared) {
-            try {
-                participant.table().publishDatabaseCommit(participant);
-            } catch (RuntimeException | Error memberFailure) {
-                publicationFailure = appendFailure(publicationFailure, memberFailure);
-            }
-        }
-        if (publicationFailure != null) {
-            throw new DatabaseCommitRecoveryRequiredException(
-                    databaseTransactionId.value(), commitSequence.value(), publicationFailure);
-        }
+        return backupCoordinator;
     }
 
     private void forceCommittedDecision(
@@ -161,8 +214,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
         try {
             decisionStore.recordCommitted(databaseTransactionId, commitSequence);
         } catch (RuntimeException | Error forceFailure) {
-            MvccTransactionStatusRecord recovered =
-                    decisionStore.recoverStatuses().get(databaseTransactionId);
+            MvccTransactionStatusRecord recovered = recoveredDecisionStatuses().get(databaseTransactionId);
             if (recovered != null && recovered.status() == MvccTransactionStatus.COMMITTED) {
                 return;
             }
@@ -170,21 +222,29 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
         }
     }
 
-    private Throwable abortBeforeDecision(
-            List<DatabaseParticipant> participants,
-            List<MvccInheritedTable.DatabasePreparedCommit> prepared,
-            MvccTransactionId databaseTransactionId,
-            Throwable originalFailure) {
+    private Throwable publishPrepared(PreparedState prepared, Throwable originalFailure) {
         Throwable failure = originalFailure;
-        for (int index = prepared.size() - 1; index >= 0; index--) {
+        for (MvccInheritedTable.DatabasePreparedCommit participant : prepared.prepared()) {
             try {
-                prepared.get(index).table().abortDatabaseCommit(prepared.get(index));
+                participant.table().publishDatabaseCommit(participant);
+            } catch (RuntimeException | Error memberFailure) {
+                failure = appendFailure(failure, memberFailure);
+            }
+        }
+        return failure;
+    }
+
+    private Throwable abortBeforeDecision(PreparedState state, Throwable originalFailure) {
+        Throwable failure = originalFailure;
+        for (int index = state.prepared().size() - 1; index >= 0; index--) {
+            try {
+                state.prepared().get(index).table().abortDatabaseCommit(state.prepared().get(index));
             } catch (RuntimeException | Error abortFailure) {
                 failure = appendFailure(failure, abortFailure);
             }
         }
-        for (int index = prepared.size(); index < participants.size(); index++) {
-            DatabaseParticipant participant = participants.get(index);
+        for (int index = state.prepared().size(); index < state.participants().size(); index++) {
+            DatabaseParticipant participant = state.participants().get(index);
             try {
                 participant.table().abortDatabaseTransaction(participant.transaction());
             } catch (RuntimeException | Error abortFailure) {
@@ -192,7 +252,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
             }
         }
         try {
-            decisionStore.recordAborted(databaseTransactionId);
+            decisionStore.recordAborted(state.databaseTransactionId());
         } catch (RuntimeException | Error statusFailure) {
             failure = appendFailure(failure, statusFailure);
         }
@@ -234,6 +294,38 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
                 .toList();
     }
 
+    private Map<MvccTransactionId, MvccTransactionStatusRecord> recoveredDecisionStatuses() {
+        Map<MvccTransactionId, MvccTransactionStatusRecord> statuses =
+                new LinkedHashMap<>(decisionStore.recoverStatuses());
+        for (DelosDatabaseCommitDecision decision
+                : DelosDatabaseCommitDecision.recoverCommitted(databaseDirectory).values()) {
+            MvccTransactionId transactionId = new MvccTransactionId(decision.transactionId());
+            MvccCommitSequence commitSequence = new MvccCommitSequence(decision.commitSequence());
+            MvccTransactionStatusRecord committed =
+                    MvccTransactionStatusRecord.committed(transactionId, commitSequence);
+            MvccTransactionStatusRecord existing = statuses.get(transactionId);
+            if (existing != null
+                    && existing.status() == MvccTransactionStatus.COMMITTED
+                    && !existing.commitSequence().equals(commitSequence)) {
+                throw new IllegalStateException(
+                        "Conflicting commit sequence for database transaction " + transactionId);
+            }
+            // Raw-store recovery is authoritative for mixed transactions.
+            statuses.put(transactionId, committed);
+        }
+        return Map.copyOf(statuses);
+    }
+
+    private void recoverCoordinatorState() {
+        for (MvccTransactionStatusRecord record : recoveredDecisionStatuses().values()) {
+            nextTransactionId = Math.max(nextTransactionId, record.transactionId().value() + 1L);
+            if (record.status() == MvccTransactionStatus.COMMITTED) {
+                newestCommitSequence = Math.max(
+                        newestCommitSequence, record.commitSequence().value());
+            }
+        }
+    }
+
     private static void lockTables(List<DatabaseParticipant> participants) {
         int locked = 0;
         try {
@@ -254,14 +346,13 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
         }
     }
 
-    private void recoverCoordinatorState() {
-        for (MvccTransactionStatusRecord record : decisionStore.recoverStatuses().values()) {
-            nextTransactionId = Math.max(nextTransactionId, record.transactionId().value() + 1L);
-            if (record.status() == MvccTransactionStatus.COMMITTED) {
-                newestCommitSequence = Math.max(
-                        newestCommitSequence, record.commitSequence().value());
-            }
-        }
+    private DatabaseCommitRecoveryRequiredException recoveryRequired(
+            PreparedState prepared,
+            Throwable cause) {
+        return new DatabaseCommitRecoveryRequiredException(
+                prepared.databaseTransactionId().value(),
+                prepared.commitSequence().value(),
+                cause);
     }
 
     private static Throwable appendFailure(Throwable existing, Throwable additional) {
@@ -287,6 +378,109 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageCommitCoordinat
     private record DatabaseParticipant(
             MvccInheritedTable table,
             org.apache.derby.iapi.store.types.DelosStorageTransaction transaction) {
+    }
+
+    private record PreparedState(
+            List<DatabaseParticipant> participants,
+            MvccTransactionId databaseTransactionId,
+            MvccCommitSequence commitSequence,
+            List<MvccInheritedTable.DatabasePreparedCommit> prepared) {
+        private PreparedState {
+            participants = List.copyOf(participants);
+            prepared = List.copyOf(prepared);
+        }
+    }
+
+    private final class RawStorePreparedCommit implements PreparedCommit {
+        private final List<DatabaseParticipant> participants;
+        private final PreparedState prepared;
+        private final DelosStorageBackupCoordinator.Guard backupGuard;
+        private boolean terminal;
+
+        private RawStorePreparedCommit(
+                List<DatabaseParticipant> participants,
+                PreparedState prepared,
+                DelosStorageBackupCoordinator.Guard backupGuard) {
+            this.participants = List.copyOf(participants);
+            this.prepared = prepared;
+            this.backupGuard = backupGuard;
+        }
+
+        @Override
+        public DelosDatabaseCommitDecision decision() {
+            return new DelosDatabaseCommitDecision(
+                    prepared.databaseTransactionId().value(),
+                    prepared.commitSequence().value());
+        }
+
+        @Override
+        public synchronized void publishAfterRawStoreCommit() {
+            requireOpen();
+            Throwable failure = null;
+            try {
+                try {
+                    // Secondary mirror. The raw-store marker is already authoritative.
+                    decisionStore.recordCommitted(
+                            prepared.databaseTransactionId(), prepared.commitSequence());
+                } catch (RuntimeException | Error statusFailure) {
+                    failure = statusFailure;
+                }
+                newestCommitSequence = Math.max(
+                        newestCommitSequence, prepared.commitSequence().value());
+                try {
+                    afterDecisionHook.run();
+                } catch (RuntimeException | Error hookFailure) {
+                    failure = appendFailure(failure, hookFailure);
+                }
+                failure = publishPrepared(prepared, failure);
+            } finally {
+                terminal = true;
+                failure = releaseOwnership(failure);
+            }
+            if (failure != null) {
+                throw recoveryRequired(prepared, failure);
+            }
+        }
+
+        @Override
+        public synchronized void abortBeforeRawStoreCommit() {
+            requireOpen();
+            Throwable failure = null;
+            try {
+                failure = abortBeforeDecision(prepared, null);
+            } finally {
+                terminal = true;
+                failure = releaseOwnership(failure);
+            }
+            if (failure != null) {
+                rethrow(failure);
+            }
+        }
+
+        private void requireOpen() {
+            if (terminal) {
+                throw new IllegalStateException("database commit preparation is already terminal");
+            }
+        }
+
+        private Throwable releaseOwnership(Throwable failure) {
+            try {
+                unlockTables(participants);
+            } catch (RuntimeException | Error tableUnlockFailure) {
+                failure = appendFailure(failure, tableUnlockFailure);
+            }
+            try {
+                backupGuard.close();
+            } catch (RuntimeException | Error guardFailure) {
+                failure = appendFailure(failure, guardFailure);
+            }
+            try {
+                multiTableLock.unlock();
+            } catch (RuntimeException | Error lockFailure) {
+                failure = appendFailure(failure, lockFailure);
+            }
+            return failure;
+        }
     }
 
     static final class DatabaseCommitRecoveryRequiredException extends IllegalStateException {
