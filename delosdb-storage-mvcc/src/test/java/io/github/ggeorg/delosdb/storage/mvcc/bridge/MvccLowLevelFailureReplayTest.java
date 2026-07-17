@@ -223,7 +223,17 @@ final class MvccLowLevelFailureReplayTest {
         store.close();
         assertEquals(committedDigest(), reopenedDigest(database));
         assertEquals(committedDigest(), reopenedDigest(database));
-        assertEquals(point, registry.hits().getFirst().point());
+        MvccFailurePointRegistry.Step scheduledStep = registry.schedule().steps().stream()
+                .filter(step -> step.point() == point)
+                .findFirst()
+                .orElseThrow();
+        assertTrue(
+                registry.hits().stream().anyMatch(hit ->
+                        hit.point() == point
+                                && hit.occurrence() == scheduledStep.occurrence()),
+                "scheduled failure point was not reached: " + point
+                        + " occurrence " + scheduledStep.occurrence()
+                        + "; hits=" + registry.hits());
     }
 
     private ProcessResult runCrashWorker(
