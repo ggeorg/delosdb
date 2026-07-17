@@ -218,6 +218,43 @@ public final class DelosStorageTransactionRegistry {
         return new CommitPreparation(requiredOwner, writers, prepared);
     }
 
+    /** Enter the internal failure boundary immediately before raw-store commit. */
+    public static void beforeRawStoreCommit(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        if (required.preparedCommit != null) {
+            required.preparedCommit.beforeRawStoreCommit();
+        }
+    }
+
+    /**
+     * Enter the internal failure boundary immediately after raw-store commit.
+     *
+     * <p>If this boundary fails, the raw-store decision is already committed.
+     * The prepared coordinator releases its database/table ownership, and this
+     * registry detaches all participants so close/reopen recovery is the sole
+     * remaining authority.</p>
+     */
+    public static void afterRawStoreCommit(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        if (required.preparedCommit == null) {
+            return;
+        }
+        try {
+            required.preparedCommit.afterRawStoreCommit();
+        } catch (RuntimeException | Error failure) {
+            completeWriters(required.writers);
+            Throwable terminalFailure = failure;
+            for (Reader reader : readersFor(required.ownerTransaction)) {
+                terminalFailure = completeParticipant(
+                        terminalFailure,
+                        reader::close,
+                        () -> completeReader(required.ownerTransaction, reader));
+            }
+            clearWriteParticipation(required.ownerTransaction);
+            rethrowFailure(terminalFailure);
+        }
+    }
+
     /** Complete external publication after the Derby raw-store decision commits. */
     public static void completeCommit(CommitPreparation preparation) {
         CommitPreparation required = Objects.requireNonNull(preparation, "preparation");

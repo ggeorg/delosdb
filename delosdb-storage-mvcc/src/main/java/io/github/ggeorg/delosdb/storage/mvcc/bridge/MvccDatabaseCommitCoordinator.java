@@ -35,6 +35,7 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
     private static final long FIRST_DATABASE_TRANSACTION_ID = 1L << 62;
 
     private final Path databaseDirectory;
+    private final MvccFailurePointRegistry failurePoints;
     private final MvccTransactionStatusStore decisionStore;
     private final ReentrantReadWriteLock coordinationLock = new ReentrantReadWriteLock();
     private final Lock singleTableLock = coordinationLock.readLock();
@@ -44,9 +45,16 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
     private volatile Runnable afterDecisionHook = () -> { };
 
     MvccDatabaseCommitCoordinator(Path databaseDirectory) {
+        this(databaseDirectory, MvccFailurePointRegistry.disabled(databaseDirectory));
+    }
+
+    MvccDatabaseCommitCoordinator(
+            Path databaseDirectory,
+            MvccFailurePointRegistry failurePoints) {
         this.databaseDirectory = databaseDirectory == null
                 ? null
                 : databaseDirectory.toAbsolutePath().normalize();
+        this.failurePoints = Objects.requireNonNull(failurePoints, "failurePoints");
         Path statusFile = PageVolumeMvccPaths.databaseTransactionStatusFile(this.databaseDirectory);
         decisionStore = statusFile == null
                 ? MvccTransactionStatusStore.disabled()
@@ -139,10 +147,18 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                 boolean committedDecision = false;
                 Throwable failure = null;
                 try {
+                    hit(
+                            MvccFailurePointRegistry.Point.BEFORE_TRANSACTION_DECISION_FORCE,
+                            prepared,
+                            0);
                     forceCommittedDecision(prepared.databaseTransactionId(), prepared.commitSequence());
                     committedDecision = true;
                     newestCommitSequence = Math.max(
                             newestCommitSequence, prepared.commitSequence().value());
+                    hit(
+                            MvccFailurePointRegistry.Point.AFTER_TRANSACTION_DECISION_FORCE,
+                            prepared,
+                            0);
                     afterDecisionHook.run();
                 } catch (RuntimeException | Error commitFailure) {
                     failure = commitFailure;
@@ -180,9 +196,17 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         List<MvccInheritedTable.DatabasePreparedCommit> prepared = new ArrayList<>();
         try {
             decisionStore.recordActive(databaseTransactionId);
-            for (DatabaseParticipant participant : participants) {
+            for (int index = 0; index < participants.size(); index++) {
+                DatabaseParticipant participant = participants.get(index);
                 prepared.add(participant.table().prepareDatabaseCommit(
                         participant.transaction(), databaseTransactionId, commitSequence));
+                failurePoints.hit(
+                        MvccFailurePointRegistry.Point.AFTER_PARTICIPANT_PREPARE,
+                        MvccFailurePointRegistry.Context.transaction(
+                                databaseTransactionId.value(),
+                                commitSequence.value(),
+                                index + 1,
+                                participants.size()));
             }
             return new PreparedState(
                     participants, databaseTransactionId, commitSequence, List.copyOf(prepared));
@@ -224,11 +248,30 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
 
     private Throwable publishPrepared(PreparedState prepared, Throwable originalFailure) {
         Throwable failure = originalFailure;
-        for (MvccInheritedTable.DatabasePreparedCommit participant : prepared.prepared()) {
+        try {
+            hit(
+                    MvccFailurePointRegistry.Point.BEFORE_FIRST_PARTICIPANT_PUBLICATION,
+                    prepared,
+                    0);
+        } catch (RuntimeException | Error injectedFailure) {
+            return appendFailure(failure, injectedFailure);
+        }
+        for (int index = 0; index < prepared.prepared().size(); index++) {
+            MvccInheritedTable.DatabasePreparedCommit participant = prepared.prepared().get(index);
             try {
                 participant.table().publishDatabaseCommit(participant);
             } catch (RuntimeException | Error memberFailure) {
                 failure = appendFailure(failure, memberFailure);
+            }
+            if (index + 1 < prepared.prepared().size()) {
+                try {
+                    hit(
+                            MvccFailurePointRegistry.Point.BETWEEN_PARTICIPANT_PUBLICATIONS,
+                            prepared,
+                            index + 1);
+                } catch (RuntimeException | Error injectedFailure) {
+                    return appendFailure(failure, injectedFailure);
+                }
             }
         }
         return failure;
@@ -355,6 +398,19 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                 cause);
     }
 
+    private void hit(
+            MvccFailurePointRegistry.Point point,
+            PreparedState prepared,
+            int participantIndex) {
+        failurePoints.hit(
+                point,
+                MvccFailurePointRegistry.Context.transaction(
+                        prepared.databaseTransactionId().value(),
+                        prepared.commitSequence().value(),
+                        participantIndex,
+                        prepared.participants().size()));
+    }
+
     private static Throwable appendFailure(Throwable existing, Throwable additional) {
         if (existing == null) {
             return additional;
@@ -411,6 +467,30 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
             return new DelosDatabaseCommitDecision(
                     prepared.databaseTransactionId().value(),
                     prepared.commitSequence().value());
+        }
+
+        @Override
+        public synchronized void beforeRawStoreCommit() {
+            requireOpen();
+            hit(
+                    MvccFailurePointRegistry.Point.BEFORE_DERBY_RAW_STORE_COMMIT,
+                    prepared,
+                    0);
+        }
+
+        @Override
+        public synchronized void afterRawStoreCommit() {
+            requireOpen();
+            try {
+                hit(
+                        MvccFailurePointRegistry.Point.AFTER_DERBY_RAW_STORE_COMMIT,
+                        prepared,
+                        0);
+            } catch (RuntimeException | Error injectedFailure) {
+                terminal = true;
+                Throwable failure = releaseOwnership(injectedFailure);
+                throw recoveryRequired(prepared, failure);
+            }
         }
 
         @Override

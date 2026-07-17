@@ -29,6 +29,14 @@ public interface DelosStorageRawDecisionCommitCoordinator extends DelosStorageCo
     interface PreparedCommit {
         DelosDatabaseCommitDecision decision();
 
+        /** Test/research-only protocol boundary immediately before Derby raw-store commit. */
+        default void beforeRawStoreCommit() {
+        }
+
+        /** Test/research-only protocol boundary immediately after Derby raw-store commit. */
+        default void afterRawStoreCommit() {
+        }
+
         /** Called only after Derby raw store has committed the decision marker. */
         void publishAfterRawStoreCommit();
 

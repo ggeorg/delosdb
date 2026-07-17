@@ -17,6 +17,7 @@ final class MvccInheritedStore implements DelosStorageStore {
     private final MvccDatabaseMaintenanceService maintenanceService;
     private final DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease;
     private final DelosStorageBackupCoordinator backupCoordinator;
+    private final MvccFailurePointRegistry failurePoints;
     private final MvccDatabaseCommitCoordinator transactionCoordinator;
     private final Set<MvccInheritedTable> openTables = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closeStarted = new AtomicBoolean();
@@ -26,7 +27,18 @@ final class MvccInheritedStore implements DelosStorageStore {
         this(
                 databaseDirectory,
                 new MvccDatabaseMaintenanceService(databaseDirectory),
-                DelosStorageBackupCoordinator.openDatabase(databaseDirectory));
+                DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
+                MvccFailurePointRegistry.disabled(databaseDirectory));
+    }
+
+    MvccInheritedStore(
+            Path databaseDirectory,
+            MvccFailurePointRegistry failurePoints) {
+        this(
+                databaseDirectory,
+                new MvccDatabaseMaintenanceService(databaseDirectory),
+                DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
+                failurePoints);
     }
 
     MvccInheritedStore(
@@ -35,20 +47,24 @@ final class MvccInheritedStore implements DelosStorageStore {
         this(
                 databaseDirectory,
                 maintenanceService,
-                DelosStorageBackupCoordinator.openDatabase(databaseDirectory));
+                DelosStorageBackupCoordinator.openDatabase(databaseDirectory),
+                MvccFailurePointRegistry.disabled(databaseDirectory));
     }
 
     private MvccInheritedStore(
             Path databaseDirectory,
             MvccDatabaseMaintenanceService maintenanceService,
-            DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease) {
+            DelosStorageBackupCoordinator.DatabaseLease backupCoordinatorLease,
+            MvccFailurePointRegistry failurePoints) {
         this.databaseDirectory = databaseDirectory == null
                 ? null
                 : databaseDirectory.toAbsolutePath().normalize();
         this.maintenanceService = Objects.requireNonNull(maintenanceService, "maintenanceService");
         this.backupCoordinatorLease = Objects.requireNonNull(backupCoordinatorLease, "backupCoordinatorLease");
         this.backupCoordinator = backupCoordinatorLease.coordinator();
-        this.transactionCoordinator = new MvccDatabaseCommitCoordinator(this.databaseDirectory);
+        this.failurePoints = Objects.requireNonNull(failurePoints, "failurePoints");
+        this.transactionCoordinator = new MvccDatabaseCommitCoordinator(
+                this.databaseDirectory, this.failurePoints);
     }
 
     @Override
@@ -116,5 +132,9 @@ final class MvccInheritedStore implements DelosStorageStore {
 
     DelosStorageBackupCoordinator backupCoordinatorForTesting() {
         return backupCoordinator;
+    }
+
+    MvccFailurePointRegistry failurePointsForTesting() {
+        return failurePoints;
     }
 }

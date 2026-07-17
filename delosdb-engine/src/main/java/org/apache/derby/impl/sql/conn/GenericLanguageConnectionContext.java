@@ -1571,7 +1571,10 @@ public class GenericLanguageConnectionContext
                 {
                     // The logged raw-store marker is the authoritative decision.
                     // A no-sync commit cannot provide the required durability.
+                    DelosStorageTransactionRegistry.beforeRawStoreCommit(storagePreparation);
                     tc.commit();
+                    rawStoreCommitted = true;
+                    DelosStorageTransactionRegistry.afterRawStoreCommit(storagePreparation);
                 }
                 else if (sync)
                 {
@@ -1598,7 +1601,9 @@ public class GenericLanguageConnectionContext
                 {
                     tc.commitNoSync(commitflag);
                 }
-                rawStoreCommitted = true;
+                if (!storagePreparation.requiresRawStoreDecision()) {
+                    rawStoreCommitted = true;
+                }
 
                 // Publish external outcomes immediately after the authoritative
                 // raw-store decision and release all preparation ownership before
