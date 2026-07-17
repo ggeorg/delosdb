@@ -1126,6 +1126,13 @@ def delosV1Sha256 = { File input ->
     java.util.HexFormat.of().formatHex(digest.digest())
 }
 
+def delosV1FailureReplayResultsDirectory = project(':delosdb-storage-mvcc')
+        .tasks.named('runMvccFailureInjectionReplayTest', Test)
+        .flatMap { task -> task.reports.junitXml.outputLocation }
+def delosV1LowLevelFailureReplayResultsDirectory = project(':delosdb-storage-mvcc')
+        .tasks.named('runMvccLowLevelFailureReplayTest', Test)
+        .flatMap { task -> task.reports.junitXml.outputLocation }
+
 def delosV1GitOutput = { List<String> command ->
     try {
         def process = new ProcessBuilder(command)
@@ -1184,10 +1191,8 @@ tasks.register('captureDelosV1Baseline') {
                         .dir('test-results/runDelosDrdaConcurrentClientStressTest').get().asFile],
                 [id: 'recovery-differential', source: layout.buildDirectory
                         .dir('test-results/runDelosHeapMvccRecoveryDifferentialTest').get().asFile],
-                [id: 'failure-replay', source: project(':delosdb-storage-mvcc').layout.buildDirectory
-                        .dir('test-results/runMvccFailureInjectionReplayTest').get().asFile],
-                [id: 'low-level-failure-replay', source: project(':delosdb-storage-mvcc').layout.buildDirectory
-                        .dir('test-results/runMvccLowLevelFailureReplayTest').get().asFile]
+                [id: 'failure-replay', source: delosV1FailureReplayResultsDirectory.get().asFile],
+                [id: 'low-level-failure-replay', source: delosV1LowLevelFailureReplayResultsDirectory.get().asFile]
         ]
 
         def missing = []
