@@ -190,6 +190,7 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
             executeUpdate(connection, "insert into heap_control values 1");
             connection.commit();
             assertRows(connection, "select id from heap_control", "1");
+            connection.rollback();
         } finally {
             try {
                 DriverManager.getConnection(jdbcUrl + ";shutdown=true");
