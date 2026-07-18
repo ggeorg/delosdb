@@ -1630,6 +1630,7 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
     inputs.files(delosModuleDependencyReportFiles.collect { name ->
         delosModuleDependencyReportDir.map { it.file(name) }
     })
+    inputs.file('delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java')
     outputs.file(layout.buildDirectory.file('reports/delosdb/module-dependency-boundary-static-analysis.txt'))
 
     doLast {
@@ -1670,6 +1671,24 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
             failures << "delosdb-storage-mvcc must declare its direct runtime-api dependency; do not rely on transitive storage-api wiring."
         }
 
+        def baseMonitor = new File(delosRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java')
+        def baseMonitorText = baseMonitor.isFile() ? baseMonitor.getText('UTF-8') : ''
+        if (baseMonitorText.contains('new ClassInfo(clazz)')
+                || baseMonitorText.contains('import org.apache.derby.iapi.services.loader.ClassInfo;')) {
+            failures << 'Registered-format construction must not be delegated to runtime-api ClassInfo across the JPMS boundary.'
+        }
+        [
+                'private static final class RegisteredFormatInstanceGetter',
+                'constructor = registeredClass.getConstructor();',
+                'return constructor.newInstance();',
+                'new RegisteredFormatInstanceGetter(clazz)'
+        ].each { token ->
+            if (!baseMonitorText.contains(token)) {
+                failures << 'BaseMonitor must keep registered-format constructor lookup and invocation inside the engine module: missing ' + token
+            }
+        }
+
         def reportFile = new File(delosBuildRoot, 'reports/delosdb/module-dependency-boundary-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
@@ -1684,6 +1703,7 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
             writer.println('  - no cross-module output-dir backdoor lines')
             writer.println('  - no unresolved project imports')
             writer.println('  - delosdb-storage-mvcc declares delosdb-runtime-api directly')
+            writer.println('  - registered-format construction remains inside the engine module')
             writer.println()
             if (failures.isEmpty()) {
                 writer.println('Module dependency boundary checks passed.')

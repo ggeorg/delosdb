@@ -65,7 +65,6 @@ import org.apache.derby.iapi.services.io.FormatIdUtil;
 import org.apache.derby.iapi.services.io.FormatableInstanceGetter;
 import org.apache.derby.iapi.services.io.RegisteredFormatIds;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
-import org.apache.derby.iapi.services.loader.ClassInfo;
 import org.apache.derby.iapi.services.loader.InstanceGetter;
 import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
@@ -129,6 +128,32 @@ abstract class BaseMonitor
 */
 	private InstanceGetter[]	rc2;
 //	private InstanceGetter[]	rc4;
+
+    /**
+     * Instantiates registered format classes from inside the engine module.
+     *
+     * <p>The registered classes include public implementations in non-exported
+     * engine packages. Constructor lookup and invocation must therefore remain
+     * in {@code org.apache.derby.engine}; delegating either operation to the
+     * split runtime-api module would violate JPMS package encapsulation.</p>
+     */
+    private static final class RegisteredFormatInstanceGetter
+            implements InstanceGetter {
+        private final Constructor<?> constructor;
+
+        private RegisteredFormatInstanceGetter(Class<?> registeredClass)
+                throws NoSuchMethodException {
+            constructor = registeredClass.getConstructor();
+        }
+
+        @Override
+        public Object getNewInstance()
+                throws InstantiationException,
+                       IllegalAccessException,
+                       InvocationTargetException {
+            return constructor.newInstance();
+        }
+    }
 
 	/* Constructor  */
 	BaseMonitor() {
@@ -619,7 +644,7 @@ abstract class BaseMonitor
 					return iga[off] = tfig;
 				}
 
-				return iga[off] = new ClassInfo(clazz);
+				return iga[off] = new RegisteredFormatInstanceGetter(clazz);
 
 			} catch (ClassNotFoundException cnfe) {
 				t = cnfe;
