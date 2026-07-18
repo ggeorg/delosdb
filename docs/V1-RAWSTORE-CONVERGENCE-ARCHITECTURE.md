@@ -163,6 +163,34 @@ docs/design/V1-MVCC-COMMIT-ORDERING-AND-SNAPSHOT-MATHEMATICS.md
 docs/design/V1-DERBY-TRANSACTION-LIFECYCLE-MATRIX.md
 ```
 
+
+## Accepted first RawStore physical slice
+
+The first MVCC physical proof uses existing RawStore slotted pages rather than a new Delos page
+format.
+
+```text
+MVCC table
+    +-- metadata and stable-row directory container
+    +-- version container
+```
+
+Both containers are created and mutated by the caller's RawStore transaction. Normal RawStore page
+inserts and field updates provide logging, savepoint/abort undo, checkpoint participation, crash
+recovery, and inherited file/memory operation.
+
+The directory maps logical `MvccRowId` to logical `MvccVersionId`. A `RecordHandle` may be retained as
+an ephemeral transaction-local locator for commit stamping, but it is not the durable identity.
+
+The isolated proof deliberately permits linear logical-ID scans and conservative locking. It adds no
+custom `Loggable`, external page file, page volume, or second recovery path.
+
+See:
+
+```text
+docs/design/V1-RAWSTORE-MVCC-VERTICAL-SLICE.md
+```
+
 ## Memory databases
 
 After MVCC table state resides in RawStore containers, this must work:
