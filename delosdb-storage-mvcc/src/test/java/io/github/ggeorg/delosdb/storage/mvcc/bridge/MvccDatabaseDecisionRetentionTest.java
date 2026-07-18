@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageTableKey;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
@@ -290,6 +291,10 @@ final class MvccDatabaseDecisionRetentionTest {
         public void stageDatabaseCommitDecision(DelosDatabaseCommitDecision stagedDecision)
                 throws StandardException {
             decision = stagedDecision;
+        }
+
+        @Override
+        public void stageMvccConglomerateLifecycle(DelosMvccConglomerateLifecycle lifecycle) {
         }
     }
 }

@@ -39,6 +39,33 @@ If live materialized state may differ from durable committed authority:
     the table becomes recovery-required and serves no further operations.
 ```
 
+## Database-wide raw-store authority
+
+Provider payload durability and the provider transaction-status journal remain the MVCC recovery
+authority described below. The enclosing Derby raw-store transaction is nevertheless the
+**database transaction authority** whenever a local transaction contains an MVCC write or an MVCC
+conglomerate lifecycle action.
+
+```text
+heap/catalog/DDL work only
+    Derby raw store follows its inherited commit path
+
+any local MVCC DML
+    prepare every MVCC participant
+    log one database commit decision in the Derby raw transaction
+    commit the raw store synchronously
+    publish the prepared MVCC participants after that decision
+
+MVCC CREATE or DROP
+    log the surviving lifecycle action in the same Derby raw transaction
+    publish CREATE or physically retire DROP only after raw-store commit
+```
+
+This rule intentionally does not depend on detecting a heap DML writer. Catalog descriptors,
+conglomerate metadata, index DDL, and other raw-store mutations can therefore never commit
+independently of MVCC data in the same local transaction. No-sync and XA paths reject before
+mutation when this authority cannot be provided; MVCC DDL in XA is unsupported.
+
 ## Transaction identities
 
 The inherited path has two independent transaction-id domains:
@@ -322,6 +349,69 @@ post-commit maintenance attempt
 A failure after database COMMITTED returns an exception whose contract states
 that the transaction is committed or its status is indeterminate and must not
 be retried blindly. The table simultaneously enters recovery-required state.
+
+## Transactional MVCC conglomerate lifecycle
+
+### CREATE
+
+The provider must create files before the statement can use the new conglomerate, but those files
+are not committed authority. Statement execution first writes and forces:
+
+```text
+delos_mvcc/ddl-lifecycle/create-<segment>-<container>.pending
+```
+
+The lifecycle action is owned by `DelosStorageTransactionRegistry`, including savepoint depth. Only
+action instances which survive to final commit preparation are written into the Derby raw log.
+
+```text
+rollback or rollback-to-savepoint
+    close and remove the live provider state
+    delete all staged conglomerate files
+    remove pending/committed lifecycle markers
+
+raw-store commit
+    live completion publishes CREATE after raw commit; raw recovery does so after interruption
+    normal live completion clears the marker
+
+process halt before a durable raw decision
+    reopen sees a lone pending marker and retires the orphan files
+
+process halt after a durable raw decision
+    raw-log recovery publishes CREATE before provider state is opened
+```
+
+A transient committed marker is written before the pending marker is removed. It therefore protects
+the provider files across every marker-transition crash window; startup preserves files when that
+marker exists and then clears both markers.
+
+### DROP
+
+`MvccConglomerate.drop()` no longer deletes durable state during statement execution. It registers a
+transaction-owned DROP action and leaves the live table and files intact while the raw transaction
+is abortable.
+
+```text
+rollback or rollback-to-savepoint
+    discard the DROP action; provider state remains unchanged
+
+raw-store commit
+    live completion deletes the conglomerate files after participant publication; raw recovery does so after interruption
+    live completion removes and closes the runtime table state
+
+process halt before a durable raw decision
+    no provider files were deleted; normal raw recovery preserves the table
+
+process halt after a durable raw decision
+    raw-log recovery completes physical retirement
+```
+
+Dropping the final MVCC conglomerate also retires the now-empty database transaction-status journal,
+preserving the bounded-retention contract.
+
+The raw lifecycle operations are undoable and have stable registered format IDs. Their logging is
+deferred until final commit preparation so Derby rollback-to-savepoint cannot leave post-commit work
+for an action which no longer belongs to the transaction.
 
 ## Live fail-stop state
 

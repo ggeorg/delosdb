@@ -1552,7 +1552,7 @@ public class GenericLanguageConnectionContext
         if (requiresRawStoreDecision && (!commitStore || commitflag != NON_XA)) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    "mixed heap/delos_mvcc commit outside a local raw-store transaction");
+                    "delos_mvcc commit outside a local raw-store transaction");
         }
 
         DelosStorageTransactionRegistry.CommitPreparation storagePreparation = null;

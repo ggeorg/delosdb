@@ -72,11 +72,13 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 import org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation;
+import org.apache.derby.impl.store.raw.data.DelosMvccConglomerateLifecycleOperation;
 
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 
@@ -1260,6 +1262,13 @@ public class RAMTransaction
             throws StandardException
     {
         rawtran.logAndDo(new DelosDatabaseCommitDecisionOperation(decision));
+    }
+
+    @Override
+    public void stageMvccConglomerateLifecycle(DelosMvccConglomerateLifecycle lifecycle)
+            throws StandardException
+    {
+        rawtran.logAndDo(new DelosMvccConglomerateLifecycleOperation(lifecycle));
     }
 
     @Override

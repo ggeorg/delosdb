@@ -1600,6 +1600,14 @@ public interface StoredFormatIds {
     public static final int LOGOP_DELOS_DATABASE_COMMIT_DECISION_UNDO =
             (MIN_ID_2 + 481);
 
+    /** Transactional delos_mvcc conglomerate create/drop lifecycle. */
+    public static final int LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE =
+            (MIN_ID_2 + 482);
+
+    /** Compensation for an uncommitted delos_mvcc conglomerate lifecycle. */
+    public static final int LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE_UNDO =
+            (MIN_ID_2 + 483);
+
     /*******************************************************************
     **
     ** container types
@@ -1700,7 +1708,7 @@ public interface StoredFormatIds {
      * Make sure this is updated when a new module is added
      */
     public static final int MAX_ID_2 =
-            (MIN_ID_2 + 481);
+            (MIN_ID_2 + 483);
 
     // DO NOT USE 4 BYTE IDS ANYMORE
     static public final int MAX_ID_4 =

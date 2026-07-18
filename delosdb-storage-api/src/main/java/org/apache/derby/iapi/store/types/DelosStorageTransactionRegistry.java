@@ -41,6 +41,8 @@ public final class DelosStorageTransactionRegistry {
     private static final Map<Object, List<Writer>> WRITERS = new IdentityHashMap<>();
     private static final Map<Object, Map<DelosStorageTable, Reader>> READERS = new IdentityHashMap<>();
     private static final Map<Object, List<SavepointMarker>> SAVEPOINTS = new IdentityHashMap<>();
+    private static final Map<Object, List<DelosStorageTransactionLifecycleAction>> LIFECYCLE_ACTIONS =
+            new IdentityHashMap<>();
     private static final Map<Object, WriteParticipation> WRITE_PARTICIPATION = new IdentityHashMap<>();
 
     private DelosStorageTransactionRegistry() {
@@ -67,10 +69,29 @@ public final class DelosStorageTransactionRegistry {
         return WriteParticipationResult.ALLOWED;
     }
 
-    /** Whether the active local transaction requires one raw-store-backed decision. */
+    /**
+     * Whether the active local transaction has external MVCC outcomes which must
+     * remain subordinate to the Derby raw-store transaction.
+     *
+     * <p>Every local MVCC write uses the raw-store-backed decision. This is
+     * intentionally broader than mixed DML classification so catalog/DDL work
+     * in the same transaction cannot commit independently of MVCC data.</p>
+     */
     public static synchronized boolean requiresRawStoreDecision(Object ownerTransaction) {
         WriteParticipation participation = WRITE_PARTICIPATION.get(ownerTransaction);
-        return participation != null && participation.heapWrite() && participation.mvccWrite();
+        return (participation != null && participation.mvccWrite())
+                || !lifecycleActionsFor(ownerTransaction).isEmpty();
+    }
+
+    /** Register provider lifecycle work owned by the enclosing Derby transaction. */
+    public static synchronized void registerLifecycleAction(
+            Object ownerTransaction,
+            DelosStorageTransactionLifecycleAction action) {
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        DelosStorageTransactionLifecycleAction requiredAction =
+                Objects.requireNonNull(action, "action");
+        LIFECYCLE_ACTIONS.computeIfAbsent(requiredOwner, ignored -> new ArrayList<>())
+                .add(requiredAction);
     }
 
     public static synchronized Writer register(
@@ -159,9 +180,10 @@ public final class DelosStorageTransactionRegistry {
     /**
      * Prepare provider work which must be coupled to the upcoming Derby raw-store commit.
      *
-     * <p>Heap-only and MVCC-only transactions retain their existing paths. A mixed
-     * heap/MVCC transaction durably stages every MVCC participant, then logs one
-     * raw-store decision identity in the Derby transaction. Its filesystem marker
+     * <p>Heap-only transactions retain their inherited path. Every local MVCC
+     * write durably stages its participants and logs one raw-store decision identity
+     * in the Derby transaction. This includes MVCC-only DML so transactional DDL
+     * and catalog mutations cannot escape the database decision. Its filesystem marker
      * is materialized only after commit or by recovery redo. The caller must invoke
      * {@link #completeCommit(CommitPreparation)} only after the raw store commits,
      * or {@link #abortPreparedCommit(CommitPreparation)} after a successful raw-store
@@ -174,48 +196,60 @@ public final class DelosStorageTransactionRegistry {
         Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
         clearSavepoints(requiredOwner);
         List<Writer> writers = writersFor(requiredOwner);
+        List<DelosStorageTransactionLifecycleAction> lifecycleActions =
+                lifecycleActionsFor(requiredOwner);
         WriteParticipation participation = writeParticipationFor(requiredOwner);
+        boolean mvccWrite = participation != null && participation.mvccWrite();
+        boolean requiresRawStoreDecision = mvccWrite || !lifecycleActions.isEmpty();
 
-        if (participation == null || !participation.heapWrite() || !participation.mvccWrite()) {
+        if (!requiresRawStoreDecision) {
             Throwable failure = commitWriters(writers);
             rethrowFailure(failure);
-            return new CommitPreparation(requiredOwner, List.of(), null);
+            return new CommitPreparation(requiredOwner, List.of(), null, List.of());
         }
-
         if (rawStoreParticipant == null) {
             throw new IllegalStateException(
-                    "mixed heap/MVCC commit requires a Derby raw-store decision participant");
-        }
-        DelosStorageCommitCoordinator coordinator = sharedCoordinator(writers);
-        if (!(coordinator instanceof DelosStorageRawDecisionCommitCoordinator rawCoordinator)) {
-            throw new IllegalStateException(
-                    "mixed heap/MVCC commit requires one raw-decision-capable database coordinator");
+                    "delos_mvcc commit requires a Derby raw-store decision participant");
         }
 
-        DelosStorageRawDecisionCommitCoordinator.PreparedCommit prepared;
-        try {
-            prepared = rawCoordinator.prepareForRawStoreDecision(writers.stream()
-                    .map(Writer::participant)
-                    .toList());
-        } catch (RuntimeException | Error preparationFailure) {
-            completeWriters(writers);
-            clearWriteParticipation(requiredOwner);
-            throw preparationFailure;
-        }
-        try {
-            rawStoreParticipant.stageDatabaseCommitDecision(prepared.decision());
-        } catch (StandardException | RuntimeException | Error stageFailure) {
+        DelosStorageRawDecisionCommitCoordinator.PreparedCommit prepared = null;
+        if (mvccWrite) {
+            DelosStorageCommitCoordinator coordinator = sharedCoordinator(writers);
+            if (!(coordinator instanceof DelosStorageRawDecisionCommitCoordinator rawCoordinator)) {
+                throw new IllegalStateException(
+                        "delos_mvcc commit requires one raw-decision-capable database coordinator");
+            }
             try {
-                prepared.abortBeforeRawStoreCommit();
-            } catch (RuntimeException | Error abortFailure) {
-                stageFailure.addSuppressed(abortFailure);
-            } finally {
+                prepared = rawCoordinator.prepareForRawStoreDecision(writers.stream()
+                        .map(Writer::participant)
+                        .toList());
+            } catch (RuntimeException | Error preparationFailure) {
                 completeWriters(writers);
                 clearWriteParticipation(requiredOwner);
+                throw preparationFailure;
             }
+        }
+
+        try {
+            for (DelosStorageTransactionLifecycleAction action : lifecycleActions) {
+                rawStoreParticipant.stageMvccConglomerateLifecycle(action.lifecycle());
+            }
+            if (prepared != null) {
+                rawStoreParticipant.stageDatabaseCommitDecision(prepared.decision());
+            }
+        } catch (StandardException | RuntimeException | Error stageFailure) {
+            if (prepared != null) {
+                try {
+                    prepared.abortBeforeRawStoreCommit();
+                } catch (RuntimeException | Error abortFailure) {
+                    stageFailure.addSuppressed(abortFailure);
+                }
+            }
+            completeWriters(writers);
+            clearWriteParticipation(requiredOwner);
             throw stageFailure;
         }
-        return new CommitPreparation(requiredOwner, writers, prepared);
+        return new CommitPreparation(requiredOwner, writers, prepared, lifecycleActions);
     }
 
     /** Enter the internal failure boundary immediately before raw-store commit. */
@@ -292,6 +326,8 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(required.ownerTransaction, reader));
         }
+        failure = commitLifecycleActions(
+                required.ownerTransaction, required.lifecycleActions, failure);
         clearWriteParticipation(required.ownerTransaction);
         rethrowFailure(failure);
     }
@@ -319,6 +355,7 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(required.ownerTransaction, reader));
         }
+        detachLifecycleActions(required.ownerTransaction, required.lifecycleActions);
         clearWriteParticipation(required.ownerTransaction);
         rethrowFailure(failure);
     }
@@ -342,6 +379,8 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(required.ownerTransaction, reader));
         }
+        failure = abortLifecycleActions(
+                required.ownerTransaction, required.lifecycleActions, failure);
         clearWriteParticipation(required.ownerTransaction);
         rethrowFailure(failure);
     }
@@ -355,9 +394,9 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(ownerTransaction, reader));
         }
-        if (failure == null) {
-            clearWriteParticipation(ownerTransaction);
-        }
+        failure = commitLifecycleActions(
+                ownerTransaction, lifecycleActionsFor(ownerTransaction), failure);
+        clearWriteParticipation(ownerTransaction);
         rethrowFailure(failure);
     }
 
@@ -419,9 +458,9 @@ public final class DelosStorageTransactionRegistry {
                     reader::close,
                     () -> completeReader(ownerTransaction, reader));
         }
-        if (failure == null) {
-            clearWriteParticipation(ownerTransaction);
-        }
+        failure = abortLifecycleActions(
+                ownerTransaction, lifecycleActionsFor(ownerTransaction), failure);
+        clearWriteParticipation(ownerTransaction);
         rethrowFailure(failure);
     }
 
@@ -463,6 +502,83 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
+    private static Throwable commitLifecycleActions(
+            Object ownerTransaction,
+            List<DelosStorageTransactionLifecycleAction> actions,
+            Throwable failure) {
+        for (DelosStorageTransactionLifecycleAction action : actions) {
+            failure = completeLifecycleAction(
+                    ownerTransaction, action, action::commitAfterRawStoreCommit, failure);
+        }
+        return failure;
+    }
+
+    private static Throwable abortLifecycleActions(
+            Object ownerTransaction,
+            List<DelosStorageTransactionLifecycleAction> actions,
+            Throwable failure) {
+        for (int index = actions.size() - 1; index >= 0; index--) {
+            DelosStorageTransactionLifecycleAction action = actions.get(index);
+            failure = completeLifecycleAction(
+                    ownerTransaction, action, action::abortBeforeRawStoreCommit, failure);
+        }
+        return failure;
+    }
+
+    private static Throwable abortLifecycleActionsAfter(
+            Object ownerTransaction,
+            int retainedCount,
+            Throwable failure) {
+        List<DelosStorageTransactionLifecycleAction> actions = lifecycleActionsFor(ownerTransaction);
+        for (int index = actions.size() - 1; index >= retainedCount; index--) {
+            DelosStorageTransactionLifecycleAction action = actions.get(index);
+            failure = completeLifecycleAction(
+                    ownerTransaction, action, action::abortBeforeRawStoreCommit, failure);
+        }
+        return failure;
+    }
+
+    private static Throwable completeLifecycleAction(
+            Object ownerTransaction,
+            DelosStorageTransactionLifecycleAction action,
+            Runnable operation,
+            Throwable failure) {
+        try {
+            operation.run();
+        } catch (RuntimeException | Error lifecycleFailure) {
+            if (failure == null) {
+                failure = lifecycleFailure;
+            } else if (failure != lifecycleFailure) {
+                failure.addSuppressed(lifecycleFailure);
+            }
+        } finally {
+            completeLifecycleAction(ownerTransaction, action);
+        }
+        return failure;
+    }
+
+    private static synchronized void completeLifecycleAction(
+            Object ownerTransaction,
+            DelosStorageTransactionLifecycleAction action) {
+        List<DelosStorageTransactionLifecycleAction> actions =
+                LIFECYCLE_ACTIONS.get(ownerTransaction);
+        if (actions == null) {
+            return;
+        }
+        actions.removeIf(candidate -> candidate == action);
+        if (actions.isEmpty()) {
+            LIFECYCLE_ACTIONS.remove(ownerTransaction);
+        }
+    }
+
+    private static void detachLifecycleActions(
+            Object ownerTransaction,
+            List<DelosStorageTransactionLifecycleAction> actions) {
+        for (DelosStorageTransactionLifecycleAction action : actions) {
+            completeLifecycleAction(ownerTransaction, action);
+        }
+    }
+
     private static Throwable completeParticipant(
             Throwable failure,
             Runnable operation,
@@ -494,7 +610,8 @@ public final class DelosStorageTransactionRegistry {
         List<SavepointMarker> savepoints = SAVEPOINTS.computeIfAbsent(
                 ownerTransaction, ignored -> new ArrayList<>());
         removeSavepointAndFollowing(savepoints, normalizedName);
-        SavepointMarker marker = new SavepointMarker(normalizedName);
+        SavepointMarker marker = new SavepointMarker(
+                normalizedName, lifecycleActionsFor(ownerTransaction).size());
         savepoints.add(marker);
         for (Writer writer : writersFor(ownerTransaction)) {
             writer.setSavepoint(normalizedName);
@@ -504,12 +621,20 @@ public final class DelosStorageTransactionRegistry {
     public static synchronized void rollbackToSavepoint(Object ownerTransaction, String savepointName) {
         String normalizedName = requireSavepointName(savepointName);
         List<SavepointMarker> savepoints = SAVEPOINTS.get(ownerTransaction);
+        int retainedLifecycleCount = lifecycleActionsFor(ownerTransaction).size();
         if (savepoints != null) {
-            truncateAfterSavepoint(savepoints, normalizedName);
+            int savepointIndex = indexOfSavepoint(savepoints, normalizedName);
+            if (savepointIndex >= 0) {
+                retainedLifecycleCount = savepoints.get(savepointIndex).lifecycleCount();
+                truncateAfterSavepoint(savepoints, normalizedName);
+            }
         }
         for (Writer writer : writersFor(ownerTransaction)) {
             writer.rollbackToSavepoint(normalizedName);
         }
+        Throwable failure = abortLifecycleActionsAfter(
+                ownerTransaction, retainedLifecycleCount, null);
+        rethrowFailure(failure);
     }
 
     public static synchronized void releaseSavepoint(Object ownerTransaction, String savepointName) {
@@ -529,9 +654,12 @@ public final class DelosStorageTransactionRegistry {
     public static synchronized int pendingCountForTesting(Object ownerTransaction) {
         List<Writer> writers = WRITERS.get(ownerTransaction);
         Map<DelosStorageTable, Reader> readers = READERS.get(ownerTransaction);
+        List<DelosStorageTransactionLifecycleAction> lifecycleActions =
+                LIFECYCLE_ACTIONS.get(ownerTransaction);
         int writerCount = writers == null ? 0 : writers.size();
         int readerCount = readers == null ? 0 : readers.size();
-        return writerCount + readerCount;
+        int lifecycleCount = lifecycleActions == null ? 0 : lifecycleActions.size();
+        return writerCount + readerCount + lifecycleCount;
     }
 
     public static synchronized int totalPendingCountForTesting() {
@@ -542,6 +670,10 @@ public final class DelosStorageTransactionRegistry {
         for (Map<DelosStorageTable, Reader> readers : READERS.values()) {
             count += readers.size();
         }
+        for (List<DelosStorageTransactionLifecycleAction> lifecycleActions
+                : LIFECYCLE_ACTIONS.values()) {
+            count += lifecycleActions.size();
+        }
         return count;
     }
 
@@ -549,6 +681,7 @@ public final class DelosStorageTransactionRegistry {
         WRITERS.clear();
         READERS.clear();
         SAVEPOINTS.clear();
+        LIFECYCLE_ACTIONS.clear();
         WRITE_PARTICIPATION.clear();
     }
 
@@ -566,6 +699,16 @@ public final class DelosStorageTransactionRegistry {
             return List.of();
         }
         return List.copyOf(savepoints);
+    }
+
+    private static synchronized List<DelosStorageTransactionLifecycleAction> lifecycleActionsFor(
+            Object ownerTransaction) {
+        List<DelosStorageTransactionLifecycleAction> actions =
+                LIFECYCLE_ACTIONS.get(ownerTransaction);
+        if (actions == null || actions.isEmpty()) {
+            return List.of();
+        }
+        return List.copyOf(actions);
     }
 
     private static synchronized void clearSavepoints(Object ownerTransaction) {
@@ -663,18 +806,22 @@ public final class DelosStorageTransactionRegistry {
         private final Object ownerTransaction;
         private final List<Writer> writers;
         private final DelosStorageRawDecisionCommitCoordinator.PreparedCommit preparedCommit;
+        private final List<DelosStorageTransactionLifecycleAction> lifecycleActions;
 
         private CommitPreparation(
                 Object ownerTransaction,
                 List<Writer> writers,
-                DelosStorageRawDecisionCommitCoordinator.PreparedCommit preparedCommit) {
+                DelosStorageRawDecisionCommitCoordinator.PreparedCommit preparedCommit,
+                List<DelosStorageTransactionLifecycleAction> lifecycleActions) {
             this.ownerTransaction = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
             this.writers = List.copyOf(Objects.requireNonNull(writers, "writers"));
             this.preparedCommit = preparedCommit;
+            this.lifecycleActions = List.copyOf(
+                    Objects.requireNonNull(lifecycleActions, "lifecycleActions"));
         }
 
         public boolean requiresRawStoreDecision() {
-            return preparedCommit != null;
+            return preparedCommit != null || !lifecycleActions.isEmpty();
         }
     }
 
@@ -791,9 +938,12 @@ public final class DelosStorageTransactionRegistry {
     private record WriteParticipation(boolean heapWrite, boolean mvccWrite) {
     }
 
-    private record SavepointMarker(String name) {
+    private record SavepointMarker(String name, int lifecycleCount) {
         private SavepointMarker {
             name = requireSavepointName(name);
+            if (lifecycleCount < 0) {
+                throw new IllegalArgumentException("lifecycleCount must be non-negative");
+            }
         }
     }
 }

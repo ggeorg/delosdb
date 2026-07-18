@@ -4124,6 +4124,157 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects raw-store-owned transactional MVCC CREATE/DROP and DDL-plus-DML decisions.'
+
+    def requiredFiles = [
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionLifecycleAction.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateLifecycleFiles.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosMvccConglomerateLifecycleOperation.java',
+            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosMvccConglomerateLifecycleUndoOperation.java',
+            'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/StoredFormatIds.java',
+            'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/RegisteredFormatIds.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.java',
+            'delosdb-tests/build.gradle',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailurePointRegistry.java'
+    ]
+    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-transactional-ddl-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def read = { int index ->
+            def source = new File(delosRepositoryRoot, requiredFiles[index])
+            DelosDbStaticAnalysisSupport.require(
+                    failures, source.isFile(),
+                    'Missing transactional MVCC DDL source: ' + requiredFiles[index])
+            source.isFile() ? source.getText('UTF-8') : ''
+        }
+
+        def registryText = read(0)
+        def actionText = read(1)
+        def factoryText = read(2)
+        def conglomerateText = read(3)
+        def runtimeText = read(4)
+        def filesText = read(5)
+        def operationText = read(6)
+        def undoText = read(7)
+        def storedIdsText = read(8)
+        def registeredIdsText = read(9)
+        def sqlTestText = read(10)
+        def crashTestText = read(11)
+        def testBuildText = read(12)
+        def failureRegistryText = read(13)
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                registryText.contains('boolean requiresRawStoreDecision = mvccWrite || !lifecycleActions.isEmpty();')
+                        && registryText.contains(
+                                'rawStoreParticipant.stageMvccConglomerateLifecycle(action.lifecycle());')
+                        && registryText.contains(
+                                'return (participation != null && participation.mvccWrite())'),
+                'Every local MVCC write and surviving DDL lifecycle must use the raw-store decision')
+        DelosDbStaticAnalysisSupport.require(failures,
+                actionText.contains('DelosMvccConglomerateLifecycle lifecycle();'),
+                'Lifecycle actions must expose the exact raw-log lifecycle identity')
+        DelosDbStaticAnalysisSupport.require(failures,
+                factoryText.contains('currentRuntime.stageCreate(lifecycle);')
+                        && factoryText.contains('registerLifecycleAction(')
+                        && factoryText.contains('MvccConglomerateLifecycleAction.create('),
+                'MVCC CREATE must stage pending state and register transaction-owned completion')
+        DelosDbStaticAnalysisSupport.require(failures,
+                conglomerateText.contains('MvccConglomerateLifecycleAction.drop(')
+                        && !conglomerateText.contains('requireRuntime().drop(')
+                        && !conglomerateText.contains('dropDurableState();'),
+                'MVCC DROP must not physically retire provider state before raw-store commit')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('recoverInterruptedCreates(this.databaseDirectory);')
+                        && runtimeText.contains('void abortCreate(')
+                        && runtimeText.contains('void completeDrop('),
+                'Database runtime must recover pending CREATE state and own live completion')
+        DelosDbStaticAnalysisSupport.require(failures,
+                filesText.contains('A lone pending marker has no durable raw-store commit')
+                        && filesText.contains('deleteStateFiles(databaseDirectory, lifecycle);')
+                        && filesText.contains('database-transactions.txstatus'),
+                'External lifecycle cleanup must distinguish pending/committed CREATE and compact final status')
+        DelosDbStaticAnalysisSupport.require(failures,
+                operationText.contains('implements Undoable')
+                        && operationText.contains('rawTransaction.handlesPostTerminationWork()')
+                        && !operationText.contains('addPostCommitWork(')
+                        && operationText.contains('case DROP -> deleteStateFiles')
+                        && undoText.contains('applyUndo(transaction, lifecycle);'),
+                'Raw lifecycle must defer live publication until after raw commit and recover through redo')
+        DelosDbStaticAnalysisSupport.require(failures,
+                storedIdsText.contains('LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE')
+                        && storedIdsText.contains('(MIN_ID_2 + 483)')
+                        && registeredIdsText.contains('DelosMvccConglomerateLifecycleOperation')
+                        && registeredIdsText.contains('DelosMvccConglomerateLifecycleUndoOperation'),
+                'Transactional MVCC DDL log records must remain registered formatables')
+
+        [
+                'testCreateMvccRollbackRemovesProviderStateAcrossReopen',
+                'testDropMvccRollbackPreservesRowsAcrossReopen',
+                'testDropMvccCommitRetiresProviderStateAcrossReopen',
+                'testMvccIndexCreateAndDropRollbackAcrossReopen',
+                'testMvccDmlAndTransactionalDdlShareOneRawDecision',
+                'testCreateAndDropOrderWithSameTableDml',
+                'testDdlPlusMvccRawStoreFailureRollsBackBoth',
+                'testCreateAndDropLifecycleRollBackToSavepoint'
+        ].each { methodName ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    sqlTestText.contains(methodName),
+                    'Transactional MVCC DDL SQL proof is missing: ' + methodName)
+        }
+        [
+                'testCreateBeforeRawCommitIsUndoneOnReopen',
+                'testCreateAfterRawCommitIsRecoveredOnReopen',
+                'testDropBeforeRawCommitPreservesTableOnReopen',
+                'testDropAfterRawCommitRetiresTableOnReopen'
+        ].each { methodName ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    crashTestText.contains(methodName),
+                    'Transactional MVCC DDL process-halt proof is missing: ' + methodName)
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                failureRegistryText.contains('installFailureForTesting(')
+                        && sqlTestText.contains('BEFORE_DERBY_RAW_STORE_COMMIT'),
+                'Transactional DDL must retain a checked pre-raw-store-commit failure proof')
+        DelosDbStaticAnalysisSupport.require(failures,
+                testBuildText.contains("'runDelosMvccTransactionalDdlTest'")
+                        && testBuildText.contains('MvccSqlTransactionalDdlTest.class')
+                        && testBuildText.contains('MvccTransactionalDdlCrashTest.class'),
+                'Transactional MVCC DDL tests must have a permanent focused Gradle lane')
+
+        def reportFile = new File(
+                delosBuildRoot,
+                'reports/delosdb/mvcc-transactional-ddl-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB transactional MVCC DDL static analysis')
+            writer.println('================================================')
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+                writer.println('MVCC CREATE/DROP and DDL-plus-DML remain subordinate to one raw-store transaction decision.')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Transactional MVCC DDL static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle(
+                'Transactional MVCC DDL static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -4146,6 +4297,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
-            'delosPhase8EntropyStaticAnalysis'
+            'delosPhase8EntropyStaticAnalysis',
+            'delosMvccTransactionalDdlStaticAnalysis'
 }
 

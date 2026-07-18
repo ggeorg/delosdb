@@ -53,6 +53,22 @@ final class MvccFailurePointRegistry {
                 databaseDirectory, Schedule.disabled(), Runtime.getRuntime()::halt);
     }
 
+    static void installFailureForTesting(
+            Path databaseDirectory,
+            String pointName,
+            long occurrence) {
+        Path normalized = Objects.requireNonNull(
+                normalize(databaseDirectory), "databaseDirectory");
+        Schedule schedule = Schedule.of(
+                "raw-store-transactional-ddl-failure",
+                Step.fail(Point.valueOf(pointName), occurrence));
+        Schedule previous = TEST_SCHEDULES.putIfAbsent(normalized, schedule);
+        if (previous != null) {
+            throw new IllegalStateException(
+                    "failure schedule already installed for database " + normalized);
+        }
+    }
+
     static void installHaltForTesting(
             Path databaseDirectory,
             String pointName,

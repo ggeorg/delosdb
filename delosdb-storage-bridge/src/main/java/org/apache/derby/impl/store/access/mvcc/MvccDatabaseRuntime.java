@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 
 /**
@@ -53,6 +54,7 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     private MvccDatabaseRuntime(Path databaseDirectory) {
         this.databaseDirectory = normalize(databaseDirectory);
+        MvccConglomerateLifecycleFiles.recoverInterruptedCreates(this.databaseDirectory);
         this.store = MvccConglomerateState.openStore(this.databaseDirectory);
     }
 
@@ -161,13 +163,82 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         return stateFor(new ContainerKey(segment, containerId));
     }
 
-    void drop(ContainerKey key, MvccConglomerateState expectedState) {
-        Objects.requireNonNull(expectedState, "expectedState");
+    void stageCreate(DelosMvccConglomerateLifecycle lifecycle) {
+        ensureOpen();
+        MvccConglomerateLifecycleFiles.stageCreate(databaseDirectory, lifecycle);
+    }
+
+    void completeCreate(DelosMvccConglomerateLifecycle lifecycle) {
+        ensureOpen();
+        MvccConglomerateLifecycleFiles.completeCreate(databaseDirectory, lifecycle);
+    }
+
+    void abortCreate(
+            ContainerKey key,
+            DelosMvccConglomerateLifecycle lifecycle) {
+        ensureOpen();
         TableIdentity identity = new TableIdentity(key);
-        expectedState.dropDurableState();
-        if (states.remove(identity, expectedState)) {
-            expectedState.close();
+        MvccConglomerateState currentState = states.remove(identity);
+        Throwable failure = null;
+        if (currentState != null) {
+            try {
+                currentState.dropDurableState();
+            } catch (RuntimeException | Error dropFailure) {
+                failure = dropFailure;
+            }
+            try {
+                currentState.close();
+            } catch (RuntimeException | Error closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else if (failure != closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
         }
+        try {
+            MvccConglomerateLifecycleFiles.abortCreate(databaseDirectory, lifecycle);
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (failure == null) {
+                failure = cleanupFailure;
+            } else if (failure != cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
+        rethrow(failure);
+    }
+
+    void completeDrop(
+            ContainerKey key,
+            DelosMvccConglomerateLifecycle lifecycle) {
+        ensureOpen();
+        TableIdentity identity = new TableIdentity(key);
+        MvccConglomerateState currentState = states.get(identity);
+        Throwable failure = null;
+        if (currentState != null) {
+            try {
+                currentState.dropDurableState();
+            } catch (RuntimeException | Error dropFailure) {
+                failure = dropFailure;
+            }
+            if (failure == null && states.remove(identity, currentState)) {
+                try {
+                    currentState.close();
+                } catch (RuntimeException | Error closeFailure) {
+                    failure = closeFailure;
+                }
+            }
+        }
+        try {
+            MvccConglomerateLifecycleFiles.completeDrop(databaseDirectory, lifecycle);
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (failure == null) {
+                failure = cleanupFailure;
+            } else if (failure != cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
+        rethrow(failure);
     }
 
     int stateCount() {

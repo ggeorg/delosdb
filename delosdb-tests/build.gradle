@@ -759,6 +759,14 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccTransactionalDdlTest',
+        'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.class'
+        ])
+
+registerDelosFocusedTest(
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'Runs the simultaneous multi-database MVCC runtime ownership proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
@@ -907,6 +915,8 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIsolationLevelCheckpointTest.class',
@@ -1018,6 +1028,7 @@ registerDelosFocusedTest(
 
 [
         'runDelosMvccAnalyzeStatisticsLifecycleTest',
+        'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'runDelosMvccTableRebuildProviderTruthTest',
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',

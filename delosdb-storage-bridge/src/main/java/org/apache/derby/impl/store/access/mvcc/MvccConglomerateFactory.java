@@ -40,6 +40,8 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -103,7 +105,44 @@ public final class MvccConglomerateFactory
             Properties properties,
             int temporaryFlag) throws StandardException {
         rejectUnsupportedDurableTypes(template);
-        return new MvccConglomerate(runtime(), segment, input_containerid, template, collationIds, temporaryFlag);
+        rejectGlobalLifecycle(xact_mgr);
+        MvccDatabaseRuntime currentRuntime = runtime();
+        ContainerKey key = new ContainerKey(segment, input_containerid);
+        DelosMvccConglomerateLifecycle lifecycle = new DelosMvccConglomerateLifecycle(
+                DelosMvccConglomerateLifecycle.Operation.CREATE,
+                segment,
+                input_containerid);
+        try {
+            currentRuntime.stageCreate(lifecycle);
+            MvccConglomerate conglomerate = new MvccConglomerate(
+                    currentRuntime,
+                    segment,
+                    input_containerid,
+                    template,
+                    collationIds,
+                    temporaryFlag);
+            DelosStorageTransactionRegistry.registerLifecycleAction(
+                    xact_mgr,
+                    MvccConglomerateLifecycleAction.create(
+                            currentRuntime, key, lifecycle));
+            return conglomerate;
+        } catch (RuntimeException | Error failure) {
+            try {
+                currentRuntime.abortCreate(key, lifecycle);
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw StandardException.plainWrapException(failure);
+        }
+    }
+
+    private static void rejectGlobalLifecycle(TransactionManager transaction)
+            throws StandardException {
+        if (transaction.isGlobal()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "delos_mvcc DDL in XA transactions");
+        }
     }
 
     private static void rejectUnsupportedDurableTypes(StoreDataValue[] template)

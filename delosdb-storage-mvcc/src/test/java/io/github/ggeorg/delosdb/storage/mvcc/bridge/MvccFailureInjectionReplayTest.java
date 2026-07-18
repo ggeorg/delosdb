@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.shared.common.error.StandardException;
@@ -256,6 +257,10 @@ final class MvccFailureInjectionReplayTest {
         public void stageDatabaseCommitDecision(DelosDatabaseCommitDecision stagedDecision)
                 throws StandardException {
             decision = stagedDecision;
+        }
+
+        @Override
+        public void stageMvccConglomerateLifecycle(DelosMvccConglomerateLifecycle lifecycle) {
         }
     }
 

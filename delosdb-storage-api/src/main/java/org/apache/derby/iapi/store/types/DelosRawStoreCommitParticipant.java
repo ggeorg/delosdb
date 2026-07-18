@@ -27,6 +27,10 @@ public interface DelosRawStoreCommitParticipant {
     void stageDatabaseCommitDecision(DelosDatabaseCommitDecision decision)
             throws StandardException;
 
+    /** Log one transactional {@code delos_mvcc} conglomerate create/drop lifecycle. */
+    void stageMvccConglomerateLifecycle(DelosMvccConglomerateLifecycle lifecycle)
+            throws StandardException;
+
     /**
      * Return whether the raw store forced the staged transaction decision even
      * if completion processing subsequently failed.

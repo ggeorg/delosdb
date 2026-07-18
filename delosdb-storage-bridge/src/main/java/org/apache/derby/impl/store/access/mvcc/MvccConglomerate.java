@@ -44,6 +44,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageOrderedIndexFallbackReason;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
@@ -116,11 +117,21 @@ public final class MvccConglomerate
     }
 
     @Override
-    public void drop(TransactionManager xactManager) {
-        MvccConglomerateState currentState = requireState();
-        DelosStorageTransactionRegistry.abortTableParticipants(currentState.table());
-        requireRuntime().drop(id, currentState);
-        state = null;
+    public void drop(TransactionManager xactManager) throws StandardException {
+        if (xactManager.isGlobal()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "delos_mvcc DDL in XA transactions");
+        }
+        requireState();
+        MvccDatabaseRuntime currentRuntime = requireRuntime();
+        DelosMvccConglomerateLifecycle lifecycle = new DelosMvccConglomerateLifecycle(
+                DelosMvccConglomerateLifecycle.Operation.DROP,
+                id.getSegmentId(),
+                id.getContainerId());
+        DelosStorageTransactionRegistry.registerLifecycleAction(
+                xactManager,
+                MvccConglomerateLifecycleAction.drop(currentRuntime, id, lifecycle));
     }
 
     @Override
