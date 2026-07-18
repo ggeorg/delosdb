@@ -712,7 +712,8 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
         deleteRecursively(database.getParent());
         Files.createDirectories(database.getParent());
 
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(database);
+        DelosStorageDiagnostics diagnostics = mvccDiagnostics(
+                database.toAbsolutePath().toString());
         String digest;
         DelosDatabaseCommitTimingSnapshot timing;
         try (Connection connection = DriverManager.getConnection(

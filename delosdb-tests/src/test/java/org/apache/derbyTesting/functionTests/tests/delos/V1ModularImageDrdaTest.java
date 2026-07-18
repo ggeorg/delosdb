@@ -27,6 +27,13 @@ import junit.framework.TestCase;
 /** Runs DRDA and the network client from the captured jlink runtime image. */
 public final class V1ModularImageDrdaTest extends TestCase {
     private static final String PREFIX = "delosdb.v1Baseline.modularImage.";
+    private static final String SERVER_ROOT_MODULES = String.join(",",
+            "org.apache.derby.server",
+            "io.github.ggeorg.delosdb.storage.mvcc",
+            "io.github.ggeorg.delosdb.storage.io");
+    private static final String CLIENT_ROOT_MODULES = String.join(",",
+            "org.apache.derby.tools",
+            "org.apache.derby.client");
 
     public void testJlinkRuntimeImageRunsModularDrdaAndClient() throws Exception {
         Path imageRoot = requiredPath("root");
@@ -67,7 +74,7 @@ public final class V1ModularImageDrdaTest extends TestCase {
         String ijOutput = "";
         long clientRoundTripNanos = 0L;
         try {
-            waitForServer(javaExecutable, modulePath, databaseRoot, port, server);
+            waitForServer(javaExecutable, modulePath, databaseRoot, port, server, serverLog);
             serverStartNanos = System.nanoTime() - serverStarted;
 
             Path script = reportDirectory.resolve("modular-image.sql");
@@ -139,7 +146,7 @@ public final class V1ModularImageDrdaTest extends TestCase {
         return List.of(
                 javaExecutable.toString(),
                 "--module-path", modulePath,
-                "--add-modules", "ALL-MODULE-PATH",
+                "--add-modules", SERVER_ROOT_MODULES,
                 "-Dderby.system.home=" + databaseRoot.toAbsolutePath(),
                 "-m", "org.apache.derby.server/org.apache.derby.drda.NetworkServerControl",
                 action,
@@ -155,7 +162,7 @@ public final class V1ModularImageDrdaTest extends TestCase {
         return List.of(
                 javaExecutable.toString(),
                 "--module-path", modulePath,
-                "--add-modules", "ALL-MODULE-PATH",
+                "--add-modules", CLIENT_ROOT_MODULES,
                 "-Dderby.system.home=" + databaseRoot.toAbsolutePath(),
                 "-m", "org.apache.derby.tools/org.apache.derby.tools.ij",
                 script.toAbsolutePath().toString());
@@ -166,12 +173,19 @@ public final class V1ModularImageDrdaTest extends TestCase {
             String modulePath,
             Path databaseRoot,
             int port,
-            Process server) throws Exception {
+            Process server,
+            Path serverLog) throws Exception {
+        List<String> startCommand = serverCommand(
+                javaExecutable, modulePath, databaseRoot, port, "start");
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45L);
         String lastOutput = "";
         while (System.nanoTime() < deadline) {
             if (!server.isAlive()) {
-                throw new AssertionError("modular DRDA server exited before ping succeeded");
+                int exitCode = server.exitValue();
+                throw new AssertionError("modular DRDA server exited before ping succeeded"
+                        + "\ncommand: " + startCommand
+                        + "\nexit code: " + exitCode
+                        + "\nserver.log:\n" + readLog(serverLog));
             }
             CommandResult ping = runCommand(serverCommand(
                     javaExecutable, modulePath, databaseRoot, port, "ping"), 10L);
@@ -181,7 +195,20 @@ public final class V1ModularImageDrdaTest extends TestCase {
             }
             Thread.sleep(100L);
         }
-        throw new AssertionError("modular DRDA server did not accept ping: " + lastOutput);
+        throw new AssertionError("modular DRDA server did not accept ping"
+                + "\ncommand: " + startCommand
+                + "\nlast ping output:\n" + lastOutput
+                + "\nserver.log:\n" + readLog(serverLog));
+    }
+
+    private static String readLog(Path log) {
+        try {
+            return Files.isRegularFile(log)
+                    ? Files.readString(log, StandardCharsets.UTF_8)
+                    : "<missing: " + log + ">";
+        } catch (IOException failure) {
+            return "<unable to read " + log + ": " + failure + ">";
+        }
     }
 
     private static String sqlScript(int port) {

@@ -235,12 +235,6 @@ module org.apache.derby.engine
         org.apache.derby.optionaltools,
         org.apache.derby.tests;
 
-    exports org.apache.derby.iapi.services.io to
-        io.github.ggeorg.delosdb.storage.mvcc;
-
-    exports org.apache.derby.iapi.services.monitor to
-        io.github.ggeorg.delosdb.storage.mvcc;
-
     exports org.apache.derby.iapi.store.access.conglomerate to
         org.apache.derby.tests;
 
