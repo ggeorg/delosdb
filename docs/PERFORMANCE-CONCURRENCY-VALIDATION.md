@@ -96,22 +96,23 @@ proof. A CI or release job may additionally supply a caller-owned command throug
 directly with `./gradlew -p benchmarks/jmh jmh`; it is intentionally not wired
 into the root build.
 
-## Phase 8.6 accepted-baseline capture
+## Phase 8 production-closeout baseline capture
 
-The complete post-correction capture is owned by one opt-in task:
+One opt-in task owns the complete production-closeout evidence bundle:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
 ```
 
-It runs the fixed 1/2/4/8/16 writer matrix, existing JDBC and low-level benchmark lanes,
-DRDA stress, recovery differential, and deterministic failure-replay evidence. It then copies
-all raw output into one bundle and writes a versioned manifest, runtime-jar fingerprints, per-file
-SHA-256 values, and an aggregate semantic checksum.
+It runs the fixed writer matrix, JDBC and low-level lanes, DRDA stress, recovery differential,
+deterministic failure replay, a real jlink/JPMS DRDA server-and-client lane, and separate raw
+commit-decision-force versus MVCC participant-publication measurements. It then writes a versioned
+manifest, runtime-artifact fingerprints, per-file SHA-256 values, and an aggregate semantic
+checksum.
 
-The task is deliberately not an S0 dependency. A capture with a dirty Git tree is marked as such
-and cannot be promoted as the accepted baseline. See [`V1-BASELINE.md`](V1-BASELINE.md) and
-`benchmarks/v1-baseline/README.md`.
+The task remains outside S0. Its `phase8-v1-production-closeout` result starts as
+`CAPTURED_NOT_ACCEPTED`; the historical accepted baseline remains immutable. See
+[`V1-BASELINE.md`](V1-BASELINE.md) and `benchmarks/v1-baseline/README.md`.
 
 ## Interpretation rules
 

@@ -27,7 +27,7 @@ repository behavior.
 | [`CLEANUP-CONSOLIDATION.md`](CLEANUP-CONSOLIDATION.md) | active product-truth and consolidation policy |
 | [`STATIC-GATE-POLICY.md`](STATIC-GATE-POLICY.md) | stable S0 gate policy |
 | [`PERFORMANCE-CONCURRENCY-VALIDATION.md`](PERFORMANCE-CONCURRENCY-VALIDATION.md) | benchmark and concurrency evidence policy |
-| [`V1-BASELINE.md`](V1-BASELINE.md) | post-correction v1 capture, manifest, checksum, and acceptance contract |
+| [`V1-BASELINE.md`](V1-BASELINE.md) | accepted v1 evidence and production-closeout capture, modular-image, split-timing, checksum, and acceptance contracts |
 | [`EXTERNAL-VALIDATION.md`](EXTERNAL-VALIDATION.md) | opt-in SQLancer and external validation lanes |
 
 ## Current storage protocols

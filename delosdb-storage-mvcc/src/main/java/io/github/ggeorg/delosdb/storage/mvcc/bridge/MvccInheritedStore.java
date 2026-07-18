@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
@@ -116,6 +117,16 @@ final class MvccInheritedStore implements DelosStorageStore {
             throw new IllegalStateException("delos_mvcc store is closed");
         }
         return table;
+    }
+
+    @Override
+    public DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
+        return transactionCoordinator.timingSnapshotForTesting();
+    }
+
+    @Override
+    public void resetDatabaseCommitTimingForTesting() {
+        transactionCoordinator.resetTimingForTesting();
     }
 
     @Override

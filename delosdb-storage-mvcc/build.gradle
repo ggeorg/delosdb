@@ -1209,6 +1209,8 @@ def delosMvccLifecycleProofTasks = [
          'Runs Phase 8.4 deterministic transaction failure-point and replay-manifest tests.'],
         ['runMvccDatabaseDecisionRetentionTest', '**/MvccDatabaseDecisionRetentionTest.class',
          'Runs bounded database-decision marker retention and status-journal compaction tests.'],
+        ['runMvccDatabaseCommitTimingMetricsTest', '**/MvccDatabaseCommitTimingMetricsTest.class',
+         'Runs database-scoped split raw-decision-force and participant-publication timing tests.'],
         ['runMvccLowLevelFailureReplayTest', '**/MvccLowLevelFailureReplayTest.class',
          'Runs Phase 8.4 low-level storage fault-point and process-halt replay tests.'],
         ['runMvccCommitDurabilityInstrumentationTest', '**/MvccCommitDurabilityInstrumentationTest.class',
@@ -1306,6 +1308,7 @@ tasks.named('jar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Experimental MVCC Storage')
+        attributes 'Automatic-Module-Name': 'io.github.ggeorg.delosdb.storage.mvcc'
     }
 }
 

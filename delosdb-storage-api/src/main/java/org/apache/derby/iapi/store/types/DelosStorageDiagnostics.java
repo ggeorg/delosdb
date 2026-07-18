@@ -66,6 +66,13 @@ public interface DelosStorageDiagnostics {
         return false;
     }
 
+    default DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
+        return DelosDatabaseCommitTimingSnapshot.EMPTY;
+    }
+
+    default void resetDatabaseCommitTimingForTesting() {
+    }
+
     Path pageVolumeStateFileForTesting(int segment, long containerId);
 
     Path rowDirectoryStateFileForTesting(int segment, long containerId);

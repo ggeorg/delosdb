@@ -1,9 +1,20 @@
 # id|path|marker|reason
-V1B-TASK|delosdb-tests/build.gradle|tasks.register('captureDelosV1Baseline')|One opt-in task must own the complete post-correction capture bundle.
+V1B-TASK|delosdb-tests/build.gradle|tasks.register('captureDelosV1Baseline')|One opt-in task must own the complete production-closeout capture bundle.
+V1B-CLOSEOUT-ID|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|phase8-v1-production-closeout|The new capture must use a distinct identity and must not overwrite the historical accepted v1 bundle.
 V1B-OPERATIONAL|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|List.of(1, 2, 4, 8, 16)|The writer matrix must remain fixed at 1/2/4/8/16.
 V1B-TOPOLOGY|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|DIFFERENT_DATABASES("different-databases")|Same-table, different-table, and different-database evidence must remain explicit.
+V1B-DECISION-PUBLICATION|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|rawDecisionForceAverageNanos|The operational evidence must report raw decision-force and participant-publication intervals separately.
+V1B-RAW-FORCE|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java|synchronousCommitDecisionForceNanos|Derby must measure only the synchronous raw-log force that makes the commit decision durable.
+V1B-PUBLICATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseCommitCoordinator.java|recordParticipantPublication|MVCC must measure post-decision participant publication independently.
+V1B-TIMING-TEST|delosdb-storage-mvcc/build.gradle|runMvccDatabaseCommitTimingMetricsTest|The split database timing counters must have a focused permanent proof.
+V1B-MODULAR-ASSEMBLY|delosdb-tests/build.gradle|assembleDelosV1ModularRuntimeImage|The capture must construct a real jlink runtime image.
+V1B-MODULAR-EXECUTION|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.java|--module-path|DRDA server and client execution must use the JPMS module path from the captured image.
+V1B-MODULAR-LANE|delosdb-tests/build.gradle|id: 'modular-image-drda'|The complete capture manifest must retain the modular-image DRDA evidence lane.
+V1B-MVCC-MODULE|delosdb-storage-mvcc/build.gradle|Automatic-Module-Name|The MVCC provider must have a stable automatic module identity.
+V1B-ENGINE-SERVICES|delosdb-engine/src/main/java/module-info.java|uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory|Named-module execution must preserve storage-provider ServiceLoader discovery.
+V1B-ENGINE-PATCH|delosdb-engine/build.gradle|derbyRuntimePatchArtifactFiles|The engine module descriptor must compile against the declared provider artifacts merged into derby.jar.
 V1B-MANIFEST|delosdb-tests/build.gradle|status: 'CAPTURED_NOT_ACCEPTED'|Capture and acceptance must remain separate decisions.
 V1B-SEMANTIC|delosdb-tests/build.gradle|semanticChecksum|The bundle must preserve an aggregate semantic checksum.
 V1B-HASHES|delosdb-tests/build.gradle|checksums.sha256|Every captured raw file must be covered by SHA-256 evidence.
 V1B-THRESHOLDS|benchmarks/v1-baseline/provisional-thresholds.json|"semanticChecksumMustMatch": true|Semantic mismatches always block baseline acceptance.
-V1B-DOC|docs/V1-BASELINE.md|CAPTURED_NOT_ACCEPTED|Tracked documentation must explain the capture-versus-freeze boundary.
+V1B-DOC|docs/V1-BASELINE.md|CAPTURED_NOT_ACCEPTED|Tracked documentation must explain the capture-versus-acceptance boundary.

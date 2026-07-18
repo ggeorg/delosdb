@@ -1268,6 +1268,18 @@ public class RAMTransaction
         return ((RawTransaction) rawtran).isSynchronousCommitDecisionDurable();
     }
 
+    @Override
+    public void setDatabaseCommitDecisionTimingEnabled(boolean enabled)
+    {
+        ((RawTransaction) rawtran).setSynchronousCommitDecisionTimingEnabled(enabled);
+    }
+
+    @Override
+    public long databaseCommitDecisionForceNanos()
+    {
+        return ((RawTransaction) rawtran).getSynchronousCommitDecisionForceNanos();
+    }
+
     public ConglomerateController openCompiledConglomerate(
     boolean                         hold,
     int                             open_mode,

@@ -131,6 +131,7 @@ def generatedOdbcResourceDir = layout.buildDirectory.dir('generated/resources/od
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateSqlParser')
     inputs.files(enginePatchFiles).withPropertyName('enginePatch')
+    inputs.files(derbyRuntimePatchArtifactFiles).withPropertyName('derbyRuntimePatchArtifacts')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -138,7 +139,10 @@ tasks.named('compileJava', JavaCompile) {
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
-        options.compilerArgs.addAll(['--patch-module', "${moduleName}=${enginePatchFiles.asPath}"])
+        def compilePatchFiles = objects.fileCollection().from(
+                enginePatchFiles, derbyRuntimePatchArtifactFiles)
+        options.compilerArgs.addAll(['--patch-module',
+                "${moduleName}=${compilePatchFiles.asPath}"])
     }
 }
 

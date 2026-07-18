@@ -160,14 +160,15 @@ Stable static and repository gates:
 ./gradlew s0CloseoutVerification
 ```
 
-Opt-in post-correction v1 baseline capture and one-way reviewed promotion:
+Opt-in production-closeout evidence capture:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
-./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
 ```
 
-S0 verifies the tracked accepted bundle without rerunning machine-specific measurements.
+The capture includes a real jlink/JPMS DRDA lane and separate raw decision-force and MVCC
+participant-publication timing. It is emitted as `CAPTURED_NOT_ACCEPTED`; the historical accepted
+v1 bundle remains immutable and is verified by S0 without rerunning machine-specific measurements.
 
 Full storage-module verification:
 

@@ -1,29 +1,57 @@
-# DelosDB v1 frozen baseline
+# DelosDB v1 baseline evidence
 
 ## Purpose
 
-The v1 baseline is the post-correction reference point for later storage, concurrency, optimizer,
-resource, and research work. It is captured only after the Phase 8 ownership, transaction,
-failure-replay, isolation, type, and security gates are green.
+DelosDB keeps accepted machine-specific evidence separate from deterministic correctness gates.
+The tracked accepted bundle remains the reviewed Phase 8.6 reference. The production-closeout
+capture extends that evidence after the WAL, deserialization, and decision-retention corrections.
 
-The baseline is evidence, not a benchmark contest. Later phases must preserve semantic checksums
-and explain material changes against the same environment and matrix.
+Benchmark evidence does not replace correctness tests. Semantic checksums must remain stable, and
+material timing or resource changes require explanation against a comparable environment.
 
-## Authoritative command
+## Historical accepted bundle
 
-From a clean checkout on JDK 25:
+The immutable accepted baseline is:
+
+```text
+baseline ID        phase8-v1-post-correction
+status             ACCEPTED_V1
+semantic checksum  e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17
+location           benchmarks/v1-baseline/accepted/
+```
+
+`delosV1AcceptedBaselineStaticAnalysis` verifies its manifest, policy, lane inventory, runtime
+fingerprints, and every tracked evidence-file checksum during S0. It is never overwritten.
+
+## Production-closeout capture
+
+From a clean checkout on JDK 25, run:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
 ```
 
-The command is opt-in and intentionally outside `check` and `s0CloseoutVerification`. Wall-clock
-and resource measurements are machine-specific; deterministic correctness remains owned by normal
-verification gates.
+The new capture uses the distinct identity:
 
-## Fixed matrix
+```text
+phase8-v1-production-closeout
+```
 
-The operational capture uses both heap and `delos_mvcc` across:
+It writes:
+
+```text
+build/reports/delosdb/v1-baseline/capture/manifest.json
+build/reports/delosdb/v1-baseline/capture/checksums.sha256
+build/reports/delosdb/v1-baseline/capture/raw/
+```
+
+Its initial status is `CAPTURED_NOT_ACCEPTED`. The capture task does not replace or promote the
+historical accepted bundle. A reviewed production-closeout result requires a separate acceptance
+candidate and a new immutable destination.
+
+## Fixed operational matrix
+
+Both heap and `delos_mvcc` are measured across:
 
 ```text
 writers       1, 2, 4, 8, 16
@@ -31,7 +59,7 @@ topologies    same table, different tables, different databases
 workloads     single-row insert, multi-row insert, mixed insert/update
 ```
 
-Each cell records:
+Each matrix cell records:
 
 ```text
 elapsed time
@@ -44,89 +72,105 @@ thread-count high-water mark
 semantic digest
 ```
 
-## Additional lanes
+## Split commit-decision evidence
 
-The same capture bundle includes:
+The production-closeout operational lane also runs a fixed mixed heap/MVCC transaction set and
+records two independent intervals:
 
 ```text
-prepared-statement lifecycle measurements
-execution-batch scaling
-complete transaction-cycle measurements
-row-count scaling
-MVCC buffer/cache measurements and durability-force counts
-MVCC page-codec measurements
-clean startup, query, and unclean-recovery latency
-mixed backup duration and writer commit stall
-DRDA concurrent-client evidence
-heap/MVCC recovery differential evidence
-transaction and low-level deterministic failure replay
-runtime artifact SHA-256 fingerprints
-profiling-disabled versus runtime-statistics-enabled query timing
-proof that destructive failure controls are unreachable to normal applications
+raw decision force
+    only the synchronous Derby log force that makes the transaction decision durable
+
+participant publication
+    only MVCC participant publication after the durable raw-store decision
 ```
 
-The DRDA and runtime-provider lanes use the assembled modular runtime jars. A later distribution
-image may package those same modules, but Phase 8.6 does not introduce a second runtime or a
-benchmark-only product image.
+For each interval the capture records sample count, average nanoseconds, and maximum nanoseconds.
+The semantic checksum includes the resulting rows, but not machine-specific timing values.
+
+## Modular-image DRDA lane
+
+The capture builds a custom JDK runtime with `jlink`, copies the assembled DelosDB runtime modules
+into its `app-modules` directory, and launches both of these from that image through the JPMS module
+path:
+
+```text
+org.apache.derby.server/org.apache.derby.drda.NetworkServerControl
+org.apache.derby.tools/org.apache.derby.tools.ij
+```
+
+The lane starts a real DRDA server, creates heap and MVCC tables through the network client, checks
+the joined result and semantic marker, and records:
+
+```text
+runtime-image kind and size
+application-jar count
+resolved-module count
+server-start latency
+network-client round-trip latency
+semantic digest
+server and client raw output
+```
+
+This is a real `jlink` JDK runtime plus modular DelosDB application launch. DelosDB application
+modules remain external to the JDK image because the optional MVCC provider is an automatic module;
+the lane does not falsely claim that automatic modules were linked into the JDK image itself.
+
+## Complete evidence lanes
+
+The production-closeout bundle includes:
+
+```text
+operational writer/lifecycle/backup/default-overhead evidence
+split raw decision-force and participant-publication evidence
+JDBC lifecycle, batch, transaction, and row scaling
+MVCC buffer/cache and page-codec measurements
+DRDA concurrent-client stress
+jlink modular-image DRDA execution
+heap/MVCC recovery differential
+transaction failure replay
+low-level storage and process-halt replay
+runtime artifact SHA-256 fingerprints
+```
 
 ## Manifest and checksums
 
-The capture writes:
+The capture manifest records:
 
 ```text
-build/reports/delosdb/v1-baseline/capture/manifest.json
-build/reports/delosdb/v1-baseline/capture/checksums.sha256
-```
-
-The manifest schema records:
-
-```text
-baseline identifier and status
-Git source revision and dirty state
+baseline identifier and CAPTURED_NOT_ACCEPTED status
+Git revision and dirty state
 JDK, VM, OS, architecture, processor count, heap limit, and Gradle version
-fixed workload matrix
-captured lane inventory
-runtime-jar hashes
-raw evidence file sizes and hashes
-semantic token count and aggregate semantic checksum
+fixed matrix and lane inventory
+runtime-jar names, sizes, and SHA-256 fingerprints
+raw evidence file sizes and SHA-256 fingerprints
+semantic token inventory and aggregate semantic checksum
 normal profiling and fault-control defaults
 ```
 
-The first capture status is `CAPTURED_NOT_ACCEPTED`. The reviewed Phase 8.6 capture has semantic
-checksum:
+`checksums.sha256` covers every raw evidence file and policy copy in the capture bundle.
 
-```text
-e4103b829c3a4b9952507fa837b9187bc9deff872fe19d8daf0a76e99e2f6b17
-```
+## Acceptance rules
 
-Promotion is explicit and one-way:
+The existing task:
 
 ```bash
 ./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
 ```
 
-The promotion task requires:
+belongs only to the already reviewed `phase8-v1-post-correction` candidate and refuses to overwrite
+its accepted directory. Do not use it to promote `phase8-v1-production-closeout`.
+
+A future production-closeout promotion must:
 
 ```text
-the capture manifest reports a clean source tree
-the capture source revision is an ancestor of the promotion checkout
-the complete checksum inventory is valid
-the capture used JDK 25
-the fixed matrix and lane inventory are complete
-the semantic checksum matches benchmarks/v1-baseline/acceptance-candidate.json
-no accepted bundle already exists
+pin the reviewed new semantic checksum
+require a clean JDK 25 capture
+validate source ancestry and the complete checksum inventory
+require the modular-image and split-timing lanes
+write a new immutable accepted directory
+leave benchmarks/v1-baseline/accepted/ unchanged
 ```
-
-It writes the tracked immutable bundle under:
-
-```text
-benchmarks/v1-baseline/accepted/
-```
-
-The accepted manifest status is `ACCEPTED_V1`. `delosV1AcceptedBaselineStaticAnalysis` verifies the
-review policy, fixed matrix, lane inventory, source cleanliness, semantic checksum, runtime
-fingerprints, and every evidence-file checksum. That verification is an S0 dependency; the
-machine-specific capture and promotion tasks remain opt-in.
 
 ## Provisional thresholds
 
@@ -136,20 +180,12 @@ The comparison policy is tracked at:
 benchmarks/v1-baseline/provisional-thresholds.json
 ```
 
-Thresholds are provisional until at least three comparable captures exist. They classify warning
-and material changes; they do not silently convert noisy wall-clock evidence into an S0 correctness
-failure. A semantic mismatch always blocks acceptance.
+Thresholds classify warning and material changes; noisy wall-clock values do not become automatic
+S0 failures. Semantic mismatches always block acceptance.
 
 ## Interpretation
 
-Comparisons are valid only when source, JDK major, OS architecture, runtime-jar hashes, and matrix
-are compatible. A smoke run proves operability, not confidence. Published analysis must retain raw
-results and state any nondeterministic envelope rather than selecting favorable values.
-
-
-## Immutability
-
-The promotion task refuses to overwrite `benchmarks/v1-baseline/accepted/`. A future baseline must
-use a new baseline identifier and an explicit review policy rather than replacing v1 evidence in
-place. Later comparisons may add derived reports, but they must not modify accepted raw files,
-manifest metadata, or checksums.
+Comparisons are valid only when source, JDK major, OS architecture, runtime artifacts, and matrix
+are compatible. Raw results must be retained. A successful modular-image lane proves executable
+JPMS deployment for that image; it does not by itself establish all operating-system distribution
+or packaging claims.

@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -84,6 +85,16 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
         return databaseDirectory == null
                 ? MvccDatabaseRuntime.runtimeCountForDiagnostics() > 0
                 : MvccDatabaseRuntime.isActive(databaseDirectory);
+    }
+
+    @Override
+    public DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
+        return runtime().databaseCommitTimingSnapshotForDiagnostics();
+    }
+
+    @Override
+    public void resetDatabaseCommitTimingForTesting() {
+        runtime().resetDatabaseCommitTimingForDiagnostics();
     }
 
     @Override

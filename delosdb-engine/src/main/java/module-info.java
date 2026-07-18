@@ -76,6 +76,7 @@ module org.apache.derby.engine
     requires java.sql;
     requires java.sql.rowset;
     requires java.xml;
+    requires jdk.jfr;
     
     requires org.apache.derby.commons;
     requires io.github.ggeorg.delosdb.runtime.api;
@@ -131,6 +132,13 @@ module org.apache.derby.engine
     // SQL types resolve engine row-location adapters through a narrow service.
     uses org.apache.derby.iapi.types.RowLocationServices;
 
+    // Patched storage-api and bridge classes also use ServiceLoader.
+    uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
+    uses org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+    uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
+    uses org.apache.derby.iapi.store.types.StoreRowLocationFactory;
+    uses org.apache.derby.iapi.store.types.StoreTypeSupport;
+
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
         with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
 
@@ -142,6 +150,16 @@ module org.apache.derby.engine
 
     provides org.apache.derby.iapi.store.types.StoreTypeSupport
         with org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport;
+
+    provides org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider
+        with org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider;
+
+    provides org.apache.derby.iapi.store.types.DelosStorageDiagnostics
+        with org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics,
+             org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics;
+
+    provides org.apache.derby.iapi.store.types.StoreRowLocationFactory
+        with org.apache.derby.impl.store.access.provider.DerbyStoreRowLocationFactory;
 
     provides org.apache.derby.iapi.types.RowLocationServices
         with org.apache.derby.impl.services.storetypes.EngineRowLocationServices;
@@ -217,6 +235,12 @@ module org.apache.derby.engine
         org.apache.derby.optionaltools,
         org.apache.derby.tests;
 
+    exports org.apache.derby.iapi.services.io to
+        io.github.ggeorg.delosdb.storage.mvcc;
+
+    exports org.apache.derby.iapi.services.monitor to
+        io.github.ggeorg.delosdb.storage.mvcc;
+
     exports org.apache.derby.iapi.store.access.conglomerate to
         org.apache.derby.tests;
 
@@ -227,6 +251,7 @@ module org.apache.derby.engine
     // MODULE3 keeps storage-api classes patched into org.apache.derby.engine
     // at runtime. Export the engine-facing store type contracts to Derby tests.
     exports org.apache.derby.iapi.store.types to
+        io.github.ggeorg.delosdb.storage.mvcc,
         org.apache.derby.tests;
 
     exports org.apache.derby.iapi.store.raw to

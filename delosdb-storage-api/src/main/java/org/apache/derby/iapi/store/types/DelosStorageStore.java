@@ -24,6 +24,13 @@ package org.apache.derby.iapi.store.types;
 public interface DelosStorageStore extends AutoCloseable {
     DelosStorageTable openTable(DelosStorageTableKey key);
 
+    default DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
+        return DelosDatabaseCommitTimingSnapshot.EMPTY;
+    }
+
+    default void resetDatabaseCommitTimingForTesting() {
+    }
+
     @Override
     default void close() {
     }

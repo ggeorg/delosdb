@@ -267,6 +267,8 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
     // This survives completion-processing failures so callers can distinguish
     // an abortable transaction from an already durable commit decision.
     private boolean         synchronousCommitDecisionDurable;
+    private boolean         synchronousCommitDecisionTimingEnabled;
+    private long            synchronousCommitDecisionForceNanos;
 
 	// true, if the transaction executed some operations(like unlogged
 	// operations) that block the  online backup to prevent inconsistent
@@ -769,6 +771,8 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
         throws StandardException 
     {
 		LogInstant flushTo = null;
+        boolean captureDecisionForceTiming = synchronousCommitDecisionTimingEnabled;
+        synchronousCommitDecisionTimingEnabled = false;
 
 		if (state == CLOSED)
         {
@@ -822,7 +826,17 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
                     }
 					else
 					{
-						logger.flush(flushTo);
+                        if (captureDecisionForceTiming) {
+                            long forceStarted = System.nanoTime();
+                            try {
+                                logger.flush(flushTo);
+                            } finally {
+                                synchronousCommitDecisionForceNanos = Math.max(
+                                        0L, System.nanoTime() - forceStarted);
+                            }
+                        } else {
+                            logger.flush(flushTo);
+                        }
 						needSync = false;
                         synchronousCommitDecisionDurable = true;
 					}
@@ -833,7 +847,17 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 				// this transaction object was used to lazily commit some
 				// previous transaction without syncing.  Now that we commit
 				// for real, make sure any outstanding log is flushed.
-				logger.flushAll();
+                if (captureDecisionForceTiming) {
+                    long forceStarted = System.nanoTime();
+                    try {
+                        logger.flushAll();
+                    } finally {
+                        synchronousCommitDecisionForceNanos = Math.max(
+                                0L, System.nanoTime() - forceStarted);
+                    }
+                } else {
+                    logger.flushAll();
+                }
 				needSync = false;
                 synchronousCommitDecisionDurable = true;
 			}
@@ -907,6 +931,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
         throws StandardException 
     {
         synchronousCommitDecisionDurable = false;
+        synchronousCommitDecisionForceNanos = 0L;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -928,6 +953,7 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	public void abort() throws StandardException {
 
         synchronousCommitDecisionDurable = false;
+        synchronousCommitDecisionForceNanos = 0L;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -2066,6 +2092,18 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
     public boolean isSynchronousCommitDecisionDurable()
     {
         return synchronousCommitDecisionDurable;
+    }
+
+    @Override
+    public void setSynchronousCommitDecisionTimingEnabled(boolean enabled)
+    {
+        synchronousCommitDecisionTimingEnabled = enabled;
+    }
+
+    @Override
+    public long getSynchronousCommitDecisionForceNanos()
+    {
+        return synchronousCommitDecisionForceNanos;
     }
 
 	public void recoveryTransaction()

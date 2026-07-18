@@ -18,6 +18,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.MvccTransactionStatusStore;
 import io.github.ggeorg.delosdb.storage.mvcc.store.PageVolumeMvccPaths;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageCommitCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageRawDecisionCommitCoordinator;
@@ -39,6 +40,8 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
     private final MvccFailurePointRegistry failurePoints;
     private final MvccTransactionStatusStore decisionStore;
     private final MvccDatabaseDecisionRetention decisionRetention;
+    private final MvccDatabaseCommitTimingMetrics timingMetrics =
+            new MvccDatabaseCommitTimingMetrics();
     private final ReentrantReadWriteLock coordinationLock = new ReentrantReadWriteLock();
     private final Lock singleTableLock = coordinationLock.readLock();
     private final Lock multiTableLock = coordinationLock.writeLock();
@@ -418,6 +421,14 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         }
     }
 
+    DelosDatabaseCommitTimingSnapshot timingSnapshotForTesting() {
+        return timingMetrics.snapshot();
+    }
+
+    void resetTimingForTesting() {
+        timingMetrics.reset();
+    }
+
     private void maintainMirroredDecision(DelosDatabaseCommitDecision decision) {
         try {
             decisionRetention.decisionMirrored(decisionStore, decision);
@@ -564,6 +575,18 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
         }
 
         @Override
+        public synchronized boolean databaseCommitTimingEnabled() {
+            requireOpen();
+            return timingMetrics.enabled();
+        }
+
+        @Override
+        public synchronized void recordRawStoreDecisionForceNanos(long elapsedNanos) {
+            requireOpen();
+            timingMetrics.recordRawDecisionForce(elapsedNanos);
+        }
+
+        @Override
         public synchronized void publishAfterRawStoreCommit() {
             requireOpen();
             Throwable failure = null;
@@ -585,7 +608,17 @@ final class MvccDatabaseCommitCoordinator implements DelosStorageRawDecisionComm
                 } catch (RuntimeException | Error hookFailure) {
                     failure = appendFailure(failure, hookFailure);
                 }
-                failure = publishPrepared(prepared, failure);
+                if (timingMetrics.enabled()) {
+                    long publicationStarted = System.nanoTime();
+                    try {
+                        failure = publishPrepared(prepared, failure);
+                    } finally {
+                        timingMetrics.recordParticipantPublication(
+                                System.nanoTime() - publicationStarted);
+                    }
+                } else {
+                    failure = publishPrepared(prepared, failure);
+                }
             } finally {
                 maintainDecisionHistory();
                 terminal = true;

@@ -1573,8 +1573,18 @@ public class GenericLanguageConnectionContext
                     // Its marker is materialized only after commit or by recovery.
                     // A no-sync commit cannot provide the required durability.
                     DelosStorageTransactionRegistry.beforeRawStoreCommit(storagePreparation);
+                    boolean captureDatabaseCommitTiming =
+                            DelosStorageTransactionRegistry.databaseCommitTimingEnabled(
+                                    storagePreparation);
+                    rawStoreParticipant.setDatabaseCommitDecisionTimingEnabled(
+                            captureDatabaseCommitTiming);
                     tc.commit();
                     rawStoreCommitted = true;
+                    if (captureDatabaseCommitTiming) {
+                        DelosStorageTransactionRegistry.recordRawStoreDecisionForceNanos(
+                                storagePreparation,
+                                rawStoreParticipant.databaseCommitDecisionForceNanos());
+                    }
                     DelosStorageTransactionRegistry.afterRawStoreCommit(storagePreparation);
                 }
                 else if (sync)
@@ -1654,9 +1664,16 @@ public class GenericLanguageConnectionContext
             return;
         }
 
+        DelosRawStoreCommitParticipant rawStoreParticipant =
+                tc instanceof DelosRawStoreCommitParticipant participant
+                        ? participant
+                        : null;
+        if (rawStoreParticipant != null) {
+            rawStoreParticipant.setDatabaseCommitDecisionTimingEnabled(false);
+        }
         boolean durableRawStoreDecision = rawStoreCommitted
-                || (tc instanceof DelosRawStoreCommitParticipant participant
-                        && participant.isDatabaseCommitDecisionDurable());
+                || (rawStoreParticipant != null
+                        && rawStoreParticipant.isDatabaseCommitDecisionDurable());
         if (durableRawStoreDecision) {
             try {
                 if (preparation != null) {

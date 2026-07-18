@@ -124,24 +124,20 @@ These gates protect TLS keystore null/stream handling, truthful TLS mode documen
 PlanExporter XML processing, fail-closed external deserialization, the separate bounded heap
 policy, and group-commit fatal-error release semantics.
 
-## Post-correction v1 baseline capture
+## Production-closeout v1 evidence capture
 
-After all normal Phase 8 correctness gates are green, capture the machine-specific v1 evidence from
-a clean JDK 25 checkout:
+After normal correctness gates are green, run the complete machine-specific capture from a clean
+JDK 25 checkout:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
 ```
 
-The task is opt-in, is not part of `check` or S0, and writes its self-contained bundle under
-`build/reports/delosdb/v1-baseline/capture/`.
+The opt-in task builds and runs the jlink/JPMS DRDA lane, captures split raw decision-force and
+participant-publication timing, and writes the self-contained bundle under
+`build/reports/delosdb/v1-baseline/capture/` with status `CAPTURED_NOT_ACCEPTED`.
 
-After review, promote the pinned clean capture once:
-
-```bash
-./gradlew :delosdb-tests:promoteDelosV1Baseline --console=plain
-```
-
-Promotion writes `benchmarks/v1-baseline/accepted/` and refuses to replace an existing accepted
-bundle. S0 verifies that tracked bundle through `delosV1AcceptedBaselineStaticAnalysis`; it does not
-rerun the machine-specific measurements. See [`V1-BASELINE.md`](V1-BASELINE.md).
+The existing `promoteDelosV1Baseline` task is pinned to the historical accepted checksum and must
+not be used for the new `phase8-v1-production-closeout` capture. Review its manifest and semantic
+checksum first; promotion requires a new acceptance candidate and immutable destination. See
+[`V1-BASELINE.md`](V1-BASELINE.md).

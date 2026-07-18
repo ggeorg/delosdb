@@ -297,6 +297,12 @@ public abstract class RawTransaction extends DerbyObservable implements Transact
      */
     public abstract boolean isSynchronousCommitDecisionDurable();
 
+    /** Enable or disable synchronous decision-force timing for the next commit. */
+    public abstract void setSynchronousCommitDecisionTimingEnabled(boolean enabled);
+
+    /** Return the synchronous log-force duration for the most recent commit. */
+    public abstract long getSynchronousCommitDecisionForceNanos();
+
 	/**
 		Make this transaction aware that it is being used by recovery
 	 */

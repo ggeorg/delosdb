@@ -37,6 +37,15 @@ public interface DelosStorageRawDecisionCommitCoordinator extends DelosStorageCo
         default void afterRawStoreCommit() {
         }
 
+        /** Return whether this commit is part of an explicit timing capture. */
+        default boolean databaseCommitTimingEnabled() {
+            return false;
+        }
+
+        /** Record the Derby log-force interval for this committed decision. */
+        default void recordRawStoreDecisionForceNanos(long elapsedNanos) {
+        }
+
         /** Called only after Derby raw store has committed the decision marker. */
         void publishAfterRawStoreCommit();
 

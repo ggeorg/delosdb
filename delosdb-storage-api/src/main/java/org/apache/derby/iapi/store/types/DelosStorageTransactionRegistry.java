@@ -227,6 +227,24 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
+    /** Return whether this prepared commit requested split timing evidence. */
+    public static boolean databaseCommitTimingEnabled(CommitPreparation preparation) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        return required.preparedCommit != null
+                && required.preparedCommit.databaseCommitTimingEnabled();
+    }
+
+    /** Record the synchronous Derby decision-force interval for this commit. */
+    public static void recordRawStoreDecisionForceNanos(
+            CommitPreparation preparation,
+            long elapsedNanos) {
+        CommitPreparation required = Objects.requireNonNull(preparation, "preparation");
+        if (required.preparedCommit != null) {
+            required.preparedCommit.recordRawStoreDecisionForceNanos(
+                    Math.max(0L, elapsedNanos));
+        }
+    }
+
     /**
      * Enter the internal failure boundary immediately after raw-store commit.
      *

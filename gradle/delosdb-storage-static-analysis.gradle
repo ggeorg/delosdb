@@ -3539,7 +3539,9 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
         } else {
             def s0Text = staticText.substring(s0Index)
             if (s0Text.contains("'captureDelosV1Baseline'")
-                    || s0Text.contains("'runDelosV1BaselineOperationalCapture'")) {
+                    || s0Text.contains("'runDelosV1BaselineOperationalCapture'")
+                    || s0Text.contains("'runDelosV1ModularImageDrdaTest'")
+                    || s0Text.contains("'assembleDelosV1ModularRuntimeImage'")) {
                 failures << 'Machine-specific v1 baseline execution must remain outside S0'
             }
             if (!s0Text.contains("'delosV1BaselineCaptureStaticAnalysis'")) {

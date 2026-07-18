@@ -34,4 +34,13 @@ public interface DelosRawStoreCommitParticipant {
     default boolean isDatabaseCommitDecisionDurable() {
         return false;
     }
+
+    /** Enable or disable raw-store decision-force timing for the next commit. */
+    default void setDatabaseCommitDecisionTimingEnabled(boolean enabled) {
+    }
+
+    /** Return the raw-store log-force interval for the most recent commit. */
+    default long databaseCommitDecisionForceNanos() {
+        return 0L;
+    }
 }

@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 
 /**
@@ -171,6 +172,16 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     int stateCount() {
         return states.size();
+    }
+
+    DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForDiagnostics() {
+        ensureOpen();
+        return store.databaseCommitTimingSnapshotForTesting();
+    }
+
+    void resetDatabaseCommitTimingForDiagnostics() {
+        ensureOpen();
+        store.resetDatabaseCommitTimingForTesting();
     }
 
     @Override

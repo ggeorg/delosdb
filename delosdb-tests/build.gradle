@@ -1088,6 +1088,91 @@ def delosV1BaselineDatabaseRoot = rootProject.layout.buildDirectory.dir(
 def delosV1BaselineCaptureDirectory = rootProject.layout.buildDirectory.dir(
         'reports/delosdb/v1-baseline/capture')
 
+def delosV1ModularImageRoot = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/v1-baseline/modular-runtime-image')
+def delosV1ModularImageReportDirectory = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/benchmarks/modular-image-drda')
+def delosV1ModularImageDatabaseRoot = rootProject.layout.buildDirectory.dir(
+        'tmp/delos-v1-modular-image-drda')
+def delosV1ModularRuntimeJars = rootProject.ext.delosdbRuntimeJars()
+
+tasks.register('assembleDelosV1ModularRuntimeImage') {
+    group = 'benchmark'
+    description = 'Builds the jlink runtime image used by the modular DRDA baseline lane.'
+    dependsOn rootProject.tasks.named('jars')
+
+    inputs.files(delosV1ModularRuntimeJars)
+    outputs.dir(delosV1ModularImageRoot)
+
+    doLast {
+        File imageRoot = delosV1ModularImageRoot.get().asFile
+        delete imageRoot
+        imageRoot.parentFile.mkdirs()
+
+        String executableName = System.getProperty('os.name', '').toLowerCase(java.util.Locale.ROOT).contains('win')
+                ? 'jlink.exe'
+                : 'jlink'
+        File jlink = new File(System.getProperty('java.home'), 'bin/' + executableName)
+        if (!jlink.isFile()) {
+            throw new GradleException('JDK jlink executable is unavailable: ' + jlink)
+        }
+        def command = [
+                jlink.absolutePath,
+                '--add-modules',
+                'java.base,java.logging,java.management,java.naming,java.security.jgss,java.sql,java.sql.rowset,java.xml,jdk.charsets,jdk.crypto.ec,jdk.jfr,jdk.localedata,jdk.management,jdk.unsupported',
+                '--bind-services',
+                '--no-header-files',
+                '--no-man-pages',
+                '--output', imageRoot.absolutePath
+        ]
+        def process = new ProcessBuilder(command)
+                .directory(rootProject.projectDir)
+                .redirectErrorStream(true)
+                .start()
+        String output = process.inputStream.getText('UTF-8')
+        int exitCode = process.waitFor()
+        if (exitCode != 0) {
+            throw new GradleException('jlink runtime-image assembly failed (' + exitCode
+                    + '):\n' + output)
+        }
+
+        File appModules = new File(imageRoot, 'app-modules')
+        copy {
+            from delosV1ModularRuntimeJars
+            into appModules
+        }
+        def copied = appModules.listFiles()?.findAll { it.isFile() && it.name.endsWith('.jar') } ?: []
+        if (copied.isEmpty()) {
+            throw new GradleException('The modular runtime image contains no DelosDB runtime jars')
+        }
+        new File(imageRoot, 'delosdb-image.properties').withWriter('UTF-8') { writer ->
+            writer.println('image.kind=jlink-runtime-image')
+            writer.println('application.launch=JPMS-module-path')
+            writer.println('application.jar.count=' + copied.size())
+            copied.sort { left, right -> left.name <=> right.name }.each { jar ->
+                writer.println('application.jar=' + jar.name)
+            }
+        }
+    }
+}
+
+registerDelosFocusedTest(
+        'runDelosV1ModularImageDrdaTest',
+        'Runs a real DRDA server and modular network client from a jlink runtime image.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.class'],
+        [
+                'delosdb.v1Baseline.modularImage.root': delosV1ModularImageRoot.get().asFile.absolutePath,
+                'delosdb.v1Baseline.modularImage.reportDirectory': delosV1ModularImageReportDirectory.get().asFile.absolutePath,
+                'delosdb.v1Baseline.modularImage.databaseRoot': delosV1ModularImageDatabaseRoot.get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosV1ModularImageDrdaTest') {
+    group = 'benchmark'
+    dependsOn tasks.named('assembleDelosV1ModularRuntimeImage')
+    outputs.dir(delosV1ModularImageReportDirectory)
+    outputs.upToDateWhen { false }
+}
+
 registerDelosFocusedTest(
         'runDelosV1BaselineOperationalCapture',
         'Captures the fixed v1 writer matrix, lifecycle, backup-stall, resource, and default-overhead evidence.',
@@ -1096,7 +1181,7 @@ registerDelosFocusedTest(
                 'delosdb.v1Baseline.databaseRoot': delosV1BaselineDatabaseRoot.get().asFile.absolutePath,
                 'delosdb.v1Baseline.reportDirectory': delosV1BaselineOperationalReportDirectory.get().asFile.absolutePath,
                 'delosdb.v1Baseline.captureId': providers.gradleProperty('delosdb.v1Baseline.captureId')
-                        .getOrElse('phase8-v1-post-correction'),
+                        .getOrElse('phase8-v1-production-closeout'),
                 'delosdb.v1Baseline.writers': '1,2,4,8,16',
                 'delosdb.v1Baseline.transactionsPerWriter': providers.gradleProperty(
                         'delosdb.v1Baseline.transactionsPerWriter').getOrElse('8'),
@@ -1112,6 +1197,8 @@ registerDelosFocusedTest(
                         'delosdb.v1Baseline.overheadRows').getOrElse('1000'),
                 'delosdb.v1Baseline.overheadQueries': providers.gradleProperty(
                         'delosdb.v1Baseline.overheadQueries').getOrElse('500'),
+                'delosdb.v1Baseline.decisionTransactions': providers.gradleProperty(
+                        'delosdb.v1Baseline.decisionTransactions').getOrElse('32'),
                 'delosdb.v1Baseline.caseTimeoutSeconds': providers.gradleProperty(
                         'delosdb.v1Baseline.caseTimeoutSeconds').getOrElse('180')
         ])
@@ -1229,7 +1316,7 @@ def delosV1GitCommandSucceeded = { List<String> command ->
 }
 tasks.register('captureDelosV1Baseline') {
     group = 'benchmark'
-    description = 'Runs and packages the complete post-correction v1 baseline evidence into one versioned capture manifest.'
+    description = 'Runs and packages the production-closeout v1 baseline, including modular DRDA and split decision/publication timing evidence.'
 
     dependsOn tasks.named('runDelosV1BaselineOperationalCapture'),
             tasks.named('runDelosJdbcBenchmarkBaseline'),
@@ -1237,6 +1324,7 @@ tasks.register('captureDelosV1Baseline') {
             tasks.named('runDelosJdbcBenchmarkTransactions'),
             tasks.named('runDelosJdbcBenchmarkRowScaling'),
             tasks.named('runDelosDrdaConcurrentClientStressTest'),
+            tasks.named('runDelosV1ModularImageDrdaTest'),
             tasks.named('runDelosHeapMvccRecoveryDifferentialTest'),
             rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
             project(':delosdb-storage-mvcc').tasks.named('runDelosMvccBufferCacheBenchmark'),
@@ -1270,6 +1358,7 @@ tasks.register('captureDelosV1Baseline') {
                         .dir('reports/delosdb/benchmarks/page-codec').get().asFile],
                 [id: 'drda-stress', source: layout.buildDirectory
                         .dir('test-results/runDelosDrdaConcurrentClientStressTest').get().asFile],
+                [id: 'modular-image-drda', source: delosV1ModularImageReportDirectory.get().asFile],
                 [id: 'recovery-differential', source: layout.buildDirectory
                         .dir('test-results/runDelosHeapMvccRecoveryDifferentialTest').get().asFile],
                 [id: 'failure-replay', source: delosV1FailureReplayResultsDirectory.get().asFile],
@@ -1357,7 +1446,7 @@ tasks.register('captureDelosV1Baseline') {
         def manifest = [
                 schemaVersion: 1,
                 baselineId: project.providers.gradleProperty('delosdb.v1Baseline.captureId')
-                        .getOrElse('phase8-v1-post-correction'),
+                        .getOrElse('phase8-v1-production-closeout'),
                 status: 'CAPTURED_NOT_ACCEPTED',
                 source: [revision: revision, dirty: dirty],
                 environment: [

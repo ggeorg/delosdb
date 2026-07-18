@@ -135,3 +135,18 @@ Run it directly with:
 requires marker-to-status mirroring, durable marker-directory retirement, pending prepared-mutation
 scanning, status-journal compaction, watermark retention, and the focused retention test task. The
 gate is part of `s0CloseoutVerification`.
+
+## V1 baseline capture contract
+
+`delosV1BaselineCaptureStaticAnalysis` is the cheap S0 authority for the opt-in baseline workflow.
+It does not run machine-specific measurements. It requires the fixed writer matrix, separate
+`CAPTURED_NOT_ACCEPTED` status, semantic and file checksums, split raw decision-force and MVCC
+participant-publication evidence, the jlink/JPMS DRDA lane, stable MVCC module identity, and named-
+module ServiceLoader declarations. It also rejects wiring the operational or modular-image tasks
+into S0.
+
+Run the contract gate directly with:
+
+```bash
+./gradlew delosV1BaselineCaptureStaticAnalysis
+```
