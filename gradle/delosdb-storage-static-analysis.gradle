@@ -3932,7 +3932,7 @@ tasks.register('delosDatabaseDecisionRetentionStaticAnalysis') {
 
 tasks.register('delosPhase8EntropyStaticAnalysis') {
     group = 'verification'
-    description = 'Protects the Phase 8 dead-code, replay-helper, focused-task, and Error-propagation cleanup.'
+    description = 'Protects the Phase 8 entropy cleanup and inherited-table lifecycle responsibility split.'
 
     def requiredFiles = [
             'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
@@ -3943,7 +3943,12 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
             'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccLowLevelFailureReplayTest.java',
             'delosdb-tests/build.gradle',
             'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccCommitCoordinator.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java'
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedCommitLifecycle.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedMaintenanceLifecycle.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTableAccess.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedWriteConflictPolicy.java'
     ]
     inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
     outputs.file(layout.buildDirectory.file('reports/delosdb/phase8-entropy-static-analysis.txt'))
@@ -3966,6 +3971,11 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
         def testBuildText = read(requiredFiles[6])
         def coordinatorText = read(requiredFiles[7])
         def groupTestText = read(requiredFiles[8])
+        def inheritedTableText = read(requiredFiles[9])
+        def commitLifecycleText = read(requiredFiles[10])
+        def maintenanceLifecycleText = read(requiredFiles[11])
+        def tableAccessText = read(requiredFiles[12])
+        def writeConflictPolicyText = read(requiredFiles[13])
 
         DelosDbStaticAnalysisSupport.require(failures,
                 !registryText.contains('logicalTableId')
@@ -4036,6 +4046,62 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
                         && groupTestText.contains('assertSame(leaderFailure, follower.failure())'),
                 'Group-commit proof must verify original Error identity for leader and follower')
 
+        def inheritedTableLineCount = inheritedTableText.readLines().size()
+        DelosDbStaticAnalysisSupport.require(failures,
+                inheritedTableLineCount <= 1800,
+                'MvccInheritedTable must remain within the 1,800-line responsibility budget; found '
+                        + inheritedTableLineCount)
+        DelosDbStaticAnalysisSupport.require(failures,
+                inheritedTableText.contains('private final MvccInheritedCommitLifecycle commitLifecycle;')
+                        && inheritedTableText.contains(
+                                'private final MvccInheritedMaintenanceLifecycle maintenanceLifecycle;')
+                        && inheritedTableText.contains('commitLifecycle.commit(transaction);')
+                        && inheritedTableText.contains('maintenanceLifecycle.vacuumSafely();'),
+                'MvccInheritedTable must delegate commit and maintenance lifecycle ownership')
+        ['publishPreparedGroupLocked(',
+         'new MvccCommitCoordinator<>(',
+         'new MvccPurgeDaemon()',
+         'runScheduledMaintenance('].each { leakedResponsibility ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    !inheritedTableText.contains(leakedResponsibility),
+                    'MvccInheritedTable regained extracted responsibility: ' + leakedResponsibility)
+        }
+        ['final class MvccInheritedCommitLifecycle',
+         'prepareDatabaseCommit(',
+         'publishPreparedGroupLocked(',
+         'commitSingleParticipant(',
+         'MvccCommitCoordinator<MvccPreparedCommit, CommitPublication>'].each { requiredToken ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    commitLifecycleText.contains(requiredToken),
+                    'Commit lifecycle extraction is missing: ' + requiredToken)
+        }
+        ['final class MvccInheritedMaintenanceLifecycle',
+         'runPurgeDaemonAfterCommit(',
+         'periodicMaintenancePriority(',
+         'runScheduledMaintenance(',
+         'DelosVacuumOutcome vacuumSafely()'].each { requiredToken ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    maintenanceLifecycleText.contains(requiredToken),
+                    'Maintenance lifecycle extraction is missing: ' + requiredToken)
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                tableAccessText.contains('final class MvccInheritedTableAccess')
+                        && tableAccessText.contains('backupCoordinator.enterDurableMutation(mutation)')
+                        && tableAccessText.contains('requireOperational.run();'),
+                'Table access must remain the single lock and backup-boundary implementation')
+        DelosDbStaticAnalysisSupport.require(failures,
+                commitLifecycleText.contains('tableAccess.durable(')
+                        && maintenanceLifecycleText.contains('tableAccess.durable(')
+                        && inheritedTableText.contains('return tableAccess.read(operation);'),
+                'Extracted lifecycles and table facade must share MvccInheritedTableAccess')
+        DelosDbStaticAnalysisSupport.require(failures,
+                writeConflictPolicyText.contains('final class MvccInheritedWriteConflictPolicy')
+                        && commitLifecycleText.contains(
+                                'MvccInheritedWriteConflictPolicy.requireNoOtherActiveProviderWriter(')
+                        && inheritedTableText.contains(
+                                'MvccInheritedWriteConflictPolicy.requireNoOtherActiveProviderWriter('),
+                'Active-writer conflict policy must remain shared rather than duplicated')
+
         def reportFile = new File(delosBuildRoot, 'reports/delosdb/phase8-entropy-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
@@ -4043,7 +4109,7 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
             writer.println('========================================')
             if (failures.isEmpty()) {
                 writer.println('Status: PASS')
-                writer.println('Dead parameters/helpers removed, replay helpers shared, focused tasks split, and Error propagation preserved.')
+                writer.println('Dead code removed, replay helpers shared, focused tasks split, Error propagation preserved, and inherited-table lifecycle responsibilities extracted.')
             } else {
                 writer.println('Status: FAIL')
                 failures.each { failure -> writer.println('- ' + failure) }

@@ -193,9 +193,10 @@ mark the coordinator closed
 reject later submissions
 ```
 
-`MvccInheritedTable.close()` drains the coordinator before closing page,
-sidecar, index, and maintenance resources. A close cannot race an enrolled
-commit into an already-closed store.
+`MvccInheritedTable.close()` first closes `MvccInheritedCommitLifecycle`,
+which drains the coordinator, and then closes
+`MvccInheritedMaintenanceLifecycle` before page, sidecar, and index resources.
+A close cannot race an enrolled commit into an already-closed store.
 
 ## Backup interaction
 

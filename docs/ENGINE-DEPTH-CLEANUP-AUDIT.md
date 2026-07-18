@@ -83,33 +83,34 @@ Suggested first cleanup overlay:
 
 `delosdb-mvcc-sidecar-open-context-cleanup-overlay.zip`
 
-### 2. `MvccInheritedTable` mixes table state with purge scheduling
+### 2. `MvccInheritedTable` lifecycle responsibility split
 
-`MvccInheritedTable` now owns transaction/write paths, diagnostics counters,
-active-handle state, and purge scheduling/executor ownership. The raw thread issue
-is fixed, but the executor lifecycle still makes the table class broader than it
-needs to be.
+Execution state: completed before Phase 9.
 
-The purge scheduling policy should move behind a small internal coordinator that
-owns:
+`MvccInheritedTable` remains the storage-provider facade and owns table-local
+transaction handles, row access, savepoints, locking, and diagnostics exposure.
+The independent lifecycle stages now live behind two package-private
+collaborators:
 
-- synchronous vs asynchronous scheduling mode
-- threshold decisions
-- executor submission
-- retained-reader recheck
-- run/skip diagnostics
-- shutdown
+- `MvccInheritedCommitLifecycle` owns commit preparation, bounded group
+  coordination, database-scoped decision publication, participant
+  materialization, recovery-required transitions, and commit observability.
+- `MvccInheritedMaintenanceLifecycle` owns synchronous/asynchronous purge
+  policy, maintenance registration, retained-reader rechecks, vacuum execution,
+  run/skip diagnostics, and maintenance shutdown.
 
-Required constraints:
+The extraction preserves:
 
-- keep asynchronous purge opt-in
-- keep commit-boundary deterministic purge as default
-- keep write-lock reentry before vacuum
-- do not introduce raw threads
+- asynchronous purge as opt-in;
+- deterministic commit-boundary purge as the default;
+- write-lock reentry before vacuum;
+- database backup mutation boundaries;
+- the existing WAL, transaction-status, and publication protocol;
+- the public and test-facing `MvccInheritedTable` contracts.
 
-Suggested cleanup overlay:
-
-`delosdb-mvcc-purge-scheduler-consolidation-overlay.zip`
+`delosPhase8EntropyStaticAnalysis` prevents the table facade from reclaiming
+group-publication or purge-scheduling implementations and enforces a 1,800-line
+responsibility budget.
 
 ### 3. `RawStore` DelosDB sidecar backup helper
 

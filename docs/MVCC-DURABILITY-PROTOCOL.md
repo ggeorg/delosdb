@@ -77,8 +77,9 @@ Read-only transactions do not create durable status records.
 
 ### 2. Immutable logical preparation
 
-`MvccInheritedTable.commit()` captures the transaction's write intents and
-revision under the table read lock. It then:
+`MvccInheritedTable` delegates commit execution to
+`MvccInheritedCommitLifecycle`. The lifecycle captures the transaction's write
+intents and revision under the table read lock. It then:
 
 ```text
 deep-copies logical row values
@@ -354,6 +355,11 @@ rebuildable authorities.
 | Cross-subsystem replay metadata | `.recovery` |
 | Durable image summary | `.checkpoint` |
 | Ordered lookup authority | ordered-index pages after successful rebuild |
+
+Runtime ownership is separated from durable authority: `MvccInheritedTable` is
+the provider facade, `MvccInheritedCommitLifecycle` owns commit/recovery
+orchestration, and `MvccInheritedMaintenanceLifecycle` owns purge and vacuum
+scheduling.
 
 ## Force shape
 
