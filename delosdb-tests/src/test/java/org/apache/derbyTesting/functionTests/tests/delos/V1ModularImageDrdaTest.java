@@ -64,6 +64,8 @@ public final class V1ModularImageDrdaTest extends TestCase {
 
         int port = freePort();
         Path serverLog = reportDirectory.resolve("server.log");
+        Path derbyLog = databaseRoot.resolve("derby.log");
+        Path capturedDerbyLog = reportDirectory.resolve("derby.log");
         long serverStarted = System.nanoTime();
         Process server = new ProcessBuilder(serverCommand(
                 javaExecutable, modulePath, databaseRoot, port, "start"))
@@ -72,26 +74,24 @@ public final class V1ModularImageDrdaTest extends TestCase {
                 .start();
         long serverStartNanos;
         String ijOutput = "";
+        CommandResult client = null;
+        List<String> executedClientCommand = List.of();
         long clientRoundTripNanos = 0L;
         try {
-            waitForServer(javaExecutable, modulePath, databaseRoot, port, server, serverLog);
+            waitForServer(
+                    javaExecutable, modulePath, databaseRoot, port, server, serverLog, derbyLog);
             serverStartNanos = System.nanoTime() - serverStarted;
 
             Path script = reportDirectory.resolve("modular-image.sql");
             Files.writeString(script, sqlScript(port), StandardCharsets.UTF_8);
             long clientStarted = System.nanoTime();
-            CommandResult client = runCommand(
-                    clientCommand(javaExecutable, modulePath, databaseRoot, script),
-                    90L);
+            executedClientCommand = clientCommand(
+                    javaExecutable, modulePath, databaseRoot, script);
+            client = runCommand(executedClientCommand, 90L);
             clientRoundTripNanos = System.nanoTime() - clientStarted;
             ijOutput = client.output();
             Files.writeString(reportDirectory.resolve("ij-output.txt"), ijOutput,
                     StandardCharsets.UTF_8);
-            assertEquals("modular ij client failed:\n" + ijOutput, 0, client.exitCode());
-            assertFalse("modular ij client reported an SQL error:\n" + ijOutput,
-                    ijOutput.contains("ERROR "));
-            assertTrue("modular ij semantic marker missing:\n" + ijOutput,
-                    ijOutput.contains("DELOSDB_MODULAR_OK"));
         } finally {
             try {
                 runCommand(serverCommand(
@@ -106,7 +106,18 @@ public final class V1ModularImageDrdaTest extends TestCase {
                     server.waitFor(10L, TimeUnit.SECONDS);
                 }
             }
+            copyLog(derbyLog, capturedDerbyLog);
         }
+
+        assertNotNull("modular ij client did not complete", client);
+        Path diagnosticDerbyLog = Files.isRegularFile(capturedDerbyLog)
+                ? capturedDerbyLog
+                : derbyLog;
+        String clientDiagnostics = clientDiagnostics(
+                executedClientCommand, client, serverLog, diagnosticDerbyLog);
+        assertEquals(clientDiagnostics, 0, client.exitCode());
+        assertFalse(clientDiagnostics, ijOutput.contains("ERROR "));
+        assertTrue(clientDiagnostics, ijOutput.contains("DELOSDB_MODULAR_OK"));
 
         CommandResult version = runCommand(List.of(
                 javaExecutable.toString(), "--version"), 30L);
@@ -174,7 +185,8 @@ public final class V1ModularImageDrdaTest extends TestCase {
             Path databaseRoot,
             int port,
             Process server,
-            Path serverLog) throws Exception {
+            Path serverLog,
+            Path derbyLog) throws Exception {
         List<String> startCommand = serverCommand(
                 javaExecutable, modulePath, databaseRoot, port, "start");
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(45L);
@@ -185,7 +197,8 @@ public final class V1ModularImageDrdaTest extends TestCase {
                 throw new AssertionError("modular DRDA server exited before ping succeeded"
                         + "\ncommand: " + startCommand
                         + "\nexit code: " + exitCode
-                        + "\nserver.log:\n" + readLog(serverLog));
+                        + "\nserver.log:\n" + readLog(serverLog)
+                        + "\nderby.log:\n" + readLog(derbyLog));
             }
             CommandResult ping = runCommand(serverCommand(
                     javaExecutable, modulePath, databaseRoot, port, "ping"), 10L);
@@ -198,7 +211,32 @@ public final class V1ModularImageDrdaTest extends TestCase {
         throw new AssertionError("modular DRDA server did not accept ping"
                 + "\ncommand: " + startCommand
                 + "\nlast ping output:\n" + lastOutput
-                + "\nserver.log:\n" + readLog(serverLog));
+                + "\nserver.log:\n" + readLog(serverLog)
+                + "\nderby.log:\n" + readLog(derbyLog));
+    }
+
+    private static String clientDiagnostics(
+            List<String> command,
+            CommandResult client,
+            Path serverLog,
+            Path derbyLog) {
+        return "modular ij client validation failed"
+                + "\ncommand: " + command
+                + "\nexit code: " + client.exitCode()
+                + "\nij output:\n" + client.output()
+                + "\nserver.log:\n" + readLog(serverLog)
+                + "\nderby.log:\n" + readLog(derbyLog);
+    }
+
+    private static void copyLog(Path source, Path target) {
+        if (!Files.isRegularFile(source)) {
+            return;
+        }
+        try {
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ignored) {
+            // The original log remains available under the database root.
+        }
     }
 
     private static String readLog(Path log) {
