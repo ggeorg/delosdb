@@ -1,5 +1,8 @@
 # id|path|marker|reason
 V1B-TASK|delosdb-tests/build.gradle|tasks.register('captureDelosV1Baseline')|One opt-in task must own the complete production-closeout capture bundle.
+V1B-REVIEW-TASK|gradle/delosdb-v1-production-closeout-review.gradle|tasks.register('reviewDelosV1ProductionCloseoutCapture')|The generated candidate must have one authoritative integrity and evidence review that does not promote it.
+V1B-ONE-GO-CLOSEOUT|gradle/delosdb-v1-production-closeout-review.gradle|tasks.register('verifyDelosV1ProductionCloseout')|One command must run normal gates, S0, the authoritative capture, and final evidence review.
+V1B-REVIEW-STATUS|gradle/delosdb-v1-production-closeout-review.gradle|REVIEWED_NOT_ACCEPTED|Review must remain distinct from acceptance and promotion.
 V1B-CLOSEOUT-ID|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|phase8-v1-production-closeout|The new capture must use a distinct identity and must not overwrite the historical accepted v1 bundle.
 V1B-OPERATIONAL|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|List.of(1, 2, 4, 8, 16)|The writer matrix must remain fixed at 1/2/4/8/16.
 V1B-TOPOLOGY|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|DIFFERENT_DATABASES("different-databases")|Same-table, different-table, and different-database evidence must remain explicit.

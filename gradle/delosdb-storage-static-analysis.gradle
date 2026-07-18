@@ -3521,7 +3521,10 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
 
     def contractFile = new File(delosRepositoryRoot,
             'gradle/static-analysis/delosdb-v1-baseline-capture.txt')
-    inputs.file(contractFile)
+    def testBuildFile = new File(delosRepositoryRoot, 'delosdb-tests/build.gradle')
+    def reviewBuildFile = new File(delosRepositoryRoot,
+            'gradle/delosdb-v1-production-closeout-review.gradle')
+    inputs.files(contractFile, testBuildFile, reviewBuildFile)
     outputs.file(layout.buildDirectory.file(
             'reports/delosdb/v1-baseline-capture-static-analysis.txt'))
 
@@ -3548,10 +3551,12 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
             }
         }
 
-        def testBuild = new File(delosRepositoryRoot, 'delosdb-tests/build.gradle')
+        def testBuild = testBuildFile
+        def reviewBuild = reviewBuildFile
         def staticBuild = new File(delosRepositoryRoot,
                 'gradle/delosdb-storage-static-analysis.gradle')
         def testText = testBuild.isFile() ? testBuild.getText('UTF-8') : ''
+        def reviewText = reviewBuild.isFile() ? reviewBuild.getText('UTF-8') : ''
         def staticText = staticBuild.isFile() ? staticBuild.getText('UTF-8') : ''
         def captureIndex = testText.indexOf("tasks.register('captureDelosV1Baseline')")
         if (captureIndex < 0) {
@@ -3565,7 +3570,9 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
             if (s0Text.contains("'captureDelosV1Baseline'")
                     || s0Text.contains("'runDelosV1BaselineOperationalCapture'")
                     || s0Text.contains("'runDelosV1ModularImageDrdaTest'")
-                    || s0Text.contains("'assembleDelosV1ModularRuntimeImage'")) {
+                    || s0Text.contains("'assembleDelosV1ModularRuntimeImage'")
+                    || s0Text.contains("'reviewDelosV1ProductionCloseoutCapture'")
+                    || s0Text.contains("'verifyDelosV1ProductionCloseout'")) {
                 failures << 'Machine-specific v1 baseline execution must remain outside S0'
             }
             if (!s0Text.contains("'delosV1BaselineCaptureStaticAnalysis'")) {
@@ -3577,6 +3584,12 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
         }
         if (!testText.contains("status: 'CAPTURED_NOT_ACCEPTED'")) {
             failures << 'The capture manifest must not claim acceptance automatically'
+        }
+        if (!testText.contains("apply from: rootProject.file('gradle/delosdb-v1-production-closeout-review.gradle')")) {
+            failures << 'The dedicated production-closeout review script must be applied'
+        }
+        if (!reviewText.contains("'REVIEWED_NOT_ACCEPTED'")) {
+            failures << 'Production-closeout review must remain distinct from acceptance'
         }
         if (!testText.contains("tasks.register('promoteDelosV1Baseline')")) {
             failures << 'Missing explicit promoteDelosV1Baseline task'

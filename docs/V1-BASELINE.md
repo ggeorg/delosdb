@@ -49,6 +49,39 @@ Its initial status is `CAPTURED_NOT_ACCEPTED`. The capture task does not replace
 historical accepted bundle. A reviewed production-closeout result requires a separate acceptance
 candidate and a new immutable destination.
 
+## One-command Phase 8 closeout
+
+After committing the intended source changes, run from a clean JDK 25 checkout:
+
+```bash
+./gradlew :delosdb-tests:verifyDelosV1ProductionCloseout --console=plain
+```
+
+This task runs the normal module gates, S0, the authoritative production-closeout capture, and an
+objective review of the generated evidence. The review verifies:
+
+```text
+clean source revision and JDK 25 environment
+complete checksums and exact manifest file inventory
+current runtime-artifact fingerprints
+fixed writer matrix and complete lane inventory
+32 raw decision-force and 32 participant-publication samples
+real jlink/JPMS DRDA server and client execution
+successful stress, recovery, failure-replay, and process-halt XML evidence
+immutability and checksums of the historical accepted baseline
+```
+
+Review output is written to:
+
+```text
+build/reports/delosdb/v1-baseline/production-closeout-review/review.json
+build/reports/delosdb/v1-baseline/production-closeout-review/review.txt
+```
+
+A successful review reports `REVIEWED_NOT_ACCEPTED`. It does not mutate the capture manifest,
+promote the candidate, or overwrite the historical accepted baseline. Promotion still requires
+three comparable captures and a separately pinned candidate under the tracked policy.
+
 ## Fixed operational matrix
 
 Both heap and `delos_mvcc` are measured across:

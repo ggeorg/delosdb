@@ -1516,6 +1516,13 @@ tasks.register('captureDelosV1Baseline') {
     }
 }
 
+ext.delosV1BaselineCaptureDirectoryForReview = delosV1BaselineCaptureDirectory
+ext.delosV1Sha256ForReview = delosV1Sha256
+ext.delosV1VerifyBundleChecksumsForReview = delosV1VerifyBundleChecksums
+ext.delosV1GitOutputForReview = delosV1GitOutput
+apply from: rootProject.file('gradle/delosdb-v1-production-closeout-review.gradle')
+
+
 def delosV1AcceptanceCandidateFile = rootProject.layout.projectDirectory.file(
         'benchmarks/v1-baseline/acceptance-candidate.json')
 def delosV1AcceptedBaselineDirectory = rootProject.layout.projectDirectory.dir(

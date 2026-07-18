@@ -58,6 +58,22 @@ The manifest records source state, environment, runtime-artifact hashes, fixed m
 inventory, per-file hashes, and an aggregate semantic checksum. Its status remains
 `CAPTURED_NOT_ACCEPTED` until a separate review.
 
+For the complete Phase 8 closeout, commit the intended changes and run from a clean JDK 25 checkout:
+
+```bash
+./gradlew :delosdb-tests:verifyDelosV1ProductionCloseout --console=plain
+```
+
+The command runs normal gates, S0, regenerates the authoritative capture, and validates the complete
+bundle. Its review reports are written under:
+
+```text
+build/reports/delosdb/v1-baseline/production-closeout-review/
+```
+
+A green review has status `REVIEWED_NOT_ACCEPTED`; review never promotes or replaces an accepted
+bundle.
+
 The existing `acceptance-candidate.json`, `promoteDelosV1Baseline` task, and `accepted/` directory
 belong to the historical baseline. They must not be reused or overwritten for the production-
 closeout capture. A new reviewed checksum requires a new candidate and immutable destination.
