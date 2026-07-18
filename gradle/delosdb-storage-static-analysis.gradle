@@ -4631,6 +4631,154 @@ tasks.register('delosPhase9TableTransactionSnapshotStaticAnalysis') {
     }
 }
 
+tasks.register('delosAccessMethodTransactionLifecycleStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies the neutral access-method lifecycle seam brackets inherited RawStore transaction operations.'
+
+    def lifecycleFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodTransactionLifecycle.java')
+    def transactionManagerFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/TransactionManager.java')
+    def ramTransactionFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java')
+    def lifecycleTestFile = file('delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/access/AccessMethodTransactionLifecycleTest.java')
+    def storageDerbyBuildFile = file('delosdb-storage-derby/build.gradle')
+    inputs.files(lifecycleFile, transactionManagerFile, ramTransactionFile,
+            lifecycleTestFile, storageDerbyBuildFile)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/access-method-transaction-lifecycle-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        [lifecycleFile, transactionManagerFile, ramTransactionFile,
+                lifecycleTestFile, storageDerbyBuildFile].each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def lifecycleText = lifecycleFile.getText('UTF-8')
+            def transactionManagerText = transactionManagerFile.getText('UTF-8')
+            def ramText = ramTransactionFile.getText('UTF-8')
+            def testText = lifecycleTestFile.getText('UTF-8')
+            def buildText = storageDerbyBuildFile.getText('UTF-8')
+
+            [
+                    'enum CommitMode',
+                    'NO_SYNC_RELEASE_LOCKS',
+                    'NO_SYNC_KEEP_LOCKS',
+                    'record SavepointIdentity(String name, Object kind)',
+                    'enum XaOperation',
+                    'beforeNestedUserTransaction(boolean readOnly)',
+                    'beforeXaOperation(XaOperation operation)',
+                    'beforeDestroy()',
+                    'afterDestroy()'
+            ].each { token ->
+                if (!lifecycleText.contains(token)) {
+                    failures << 'Lifecycle contract is missing: ' + token
+                }
+            }
+
+            [
+                    'registerAccessMethodTransactionLifecycle(',
+                    'accessMethodTransactionLifecycle(Object key)',
+                    'removeAccessMethodTransactionLifecycle(Object key)'
+            ].each { token ->
+                if (!transactionManagerText.contains(token)) {
+                    failures << 'TransactionManager is missing lifecycle ownership method: ' + token
+                }
+            }
+
+            def requireOrdered = { String description, String section, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = section.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String start, String end ->
+                int startIndex = ramText.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : ramText.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate RAMTransaction section: ' + start
+                    return ''
+                }
+                ramText.substring(startIndex, endIndex)
+            }
+
+            requireOrdered('synchronized commit lifecycle',
+                    section('public void commit()', 'public DatabaseInstant commitNoSync'),
+                    ['closeControllers(false', 'notifyBeforeCommit(', 'rawtran.commit()', 'notifyAfterCommit('])
+            requireOrdered('no-sync commit lifecycle',
+                    section('public DatabaseInstant commitNoSync', 'public void abort()'),
+                    ['closeControllers(false', 'notifyBeforeCommit(', 'rawtran.commitNoSync(', 'notifyAfterCommit('])
+            requireOrdered('abort lifecycle',
+                    section('public void abort()', 'public ContextManager getContextManager'),
+                    ['notifyBeforeAbort(', 'rawtran.abort()', 'notifyAfterAbort('])
+            requireOrdered('set-savepoint lifecycle',
+                    section('public int setSavePoint', 'public int releaseSavePoint'),
+                    ['rawtran.setSavePoint(', 'afterSetSavepoint('])
+            requireOrdered('rollback-savepoint lifecycle',
+                    section('public int rollbackToSavePoint', 'public void destroy()'),
+                    ['rawtran.rollbackToSavePoint(', 'afterRollbackToSavepoint('])
+            requireOrdered('nested transaction fail-closed boundary',
+                    section('public TransactionController startNestedUserTransaction', 'public Transaction getRawStoreXact'),
+                    ['beforeNestedUserTransaction(readOnly)', 'getContextManager()', 'startNestedReadOnlyUserTransaction'])
+
+            [
+                    'notifyBeforeXaOperation(AccessMethodTransactionLifecycle.XaOperation.PREPARE)',
+                    'AccessMethodTransactionLifecycle.XaOperation.COMMIT_ONE_PHASE',
+                    'AccessMethodTransactionLifecycle.XaOperation.COMMIT_TWO_PHASE',
+                    'notifyBeforeXaOperation(AccessMethodTransactionLifecycle.XaOperation.ROLLBACK)',
+                    'AccessMethodTransactionLifecycle.XaOperation.MORPH_LOCAL_TO_XA',
+                    'notifyAfterDestroy(lifecycles, callbackFailure)'
+            ].each { token ->
+                if (!ramText.contains(token.replace('\\n', '\n'))) {
+                    failures << 'RAMTransaction lifecycle seam is missing: ' + token
+                }
+            }
+
+            if (!ramText.contains('(commitflag & Transaction.KEEP_LOCKS) != 0')) {
+                failures << 'commitNoSync lifecycle mode must honor KEEP_LOCKS as a bit flag'
+            }
+            if (!testText.contains('ACCESS_METHOD_TRANSACTION_LIFECYCLE_OK')
+                    || !testText.contains('testAbortCallbackFailureCannotPreventRawStoreUndo')
+                    || !testText.contains('testSavepointIdentityAndRawStoreFirstOrdering')
+                    || !testText.contains('READONLY_TRANSACTION_INITIALIZATION')
+                    || !testText.contains('testNestedUpdateAndXaFailClosedBeforeRawStore')) {
+                failures << 'Focused lifecycle test must cover commit flags, abort safety, savepoints, nested and XA boundaries'
+            }
+            if (!buildText.contains("tasks.register('runAccessMethodTransactionLifecycleTest'")) {
+                failures << 'storage-derby must expose runAccessMethodTransactionLifecycleTest'
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/access-method-transaction-lifecycle-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB access-method transaction lifecycle static analysis')
+            writer.println('===========================================================')
+            writer.println()
+            writer.println('Rule: access-method semantic state is owned by RAMTransaction and brackets real RawStore lifecycle operations.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Access-method transaction lifecycle static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Access-method transaction lifecycle static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -4651,6 +4799,7 @@ tasks.register('s0CloseoutVerification') {
             'delosDerbyForkDiffClassificationStaticAnalysis',
             'delosNoTransitionalStorageRoutingStaticAnalysis',
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
+            'delosAccessMethodTransactionLifecycleStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

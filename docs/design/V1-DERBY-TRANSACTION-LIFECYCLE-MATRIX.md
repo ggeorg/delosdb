@@ -11,11 +11,12 @@ nested read transaction:     accepted read-only rule
 nested update transaction:   fail-closed for MVCC
 XA participation:            fail-closed for MVCC
 database/session teardown:   accepted cleanup rule
-exact Java callback API:     provisional
+exact Java callback API:     implemented in Stage 2.2
 ```
 
-This proof defines the lifecycle semantics that a future neutral access-method transaction seam must
-preserve. It does not add or freeze that Java interface.
+This proof defines the lifecycle semantics preserved by the neutral access-method transaction seam.
+Stage 2.2 now implements that seam in `RAMTransaction`; the current Phase 8 MVCC persistence path
+remains unchanged until the RawStore-backed vertical slice consumes it.
 
 ## Source seams inspected
 
@@ -202,7 +203,7 @@ path owned by the access transaction context.
 
 ## Interface constraints derived from the matrix
 
-The exact interface remains provisional, but any accepted API must distinguish at least:
+Stage 2.2 implements `AccessMethodTransactionLifecycle`. The interface distinguishes:
 
 ```text
 local synchronized commit
@@ -260,7 +261,21 @@ held cursor lifecycle:           separate cursor-owned snapshot lease required
 nested read-only transaction:    supported
 nested update MVCC:              fail closed
 XA MVCC:                         fail closed
-exact Java interface:            deferred to Stage 2.2
+exact Java lifecycle seam:       implemented in Stage 2.2
 ```
 
 The next proof is DP-3: the RawStore MVCC page/container vertical-slice design.
+
+
+## Stage 2.2 implementation record
+
+The implemented seam is documented in:
+
+```text
+docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
+```
+
+`RAMTransaction` owns identity-keyed participants and brackets the inherited RawStore commit,
+commitNoSync, abort, savepoint, nested-user-transaction, XA, and destroy paths. The existing Phase 8
+`DelosStorageTransactionRegistry` is intentionally not migrated onto the seam; Stage 3 is its first
+RawStore-backed MVCC consumer.

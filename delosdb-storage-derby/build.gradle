@@ -88,3 +88,15 @@ artifacts {
 tasks.named('check') {
     dependsOn tasks.named('classes')
 }
+
+tasks.register('runAccessMethodTransactionLifecycleTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the neutral access-method transaction lifecycle contract test.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.apache.derby.impl.store.access.AccessMethodTransactionLifecycleTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runAccessMethodTransactionLifecycleTest')
+}

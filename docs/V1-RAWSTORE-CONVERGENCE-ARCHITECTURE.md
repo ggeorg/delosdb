@@ -42,14 +42,27 @@ Lucene never becomes a second transaction authority.
 
 ## Implemented convergence status
 
-Stage 2.1 is implemented. `RAMAccessManager` creates a database-owned `AccessMethodBootContext` and
-passes the actual RawStore, DataFactory, StorageFactory, and opaque database-service identity to
-external access methods. The MVCC factory now directly owns one runtime; the former static
-`acquire(Path)`/lease registry and `PersistentService.ROOT` reconstruction are removed.
+Stages 2.1 and 2.2 are implemented.
 
-The existing Phase 8 MVCC files remain transitional and authoritative until the RawStore-backed table
-slice is proven. Memory/non-directory MVCC creation continues to fail closed before those files can
-be opened. See `docs/design/V1-DATABASE-OWNED-ACCESS-METHOD-BOOT.md`.
+`RAMAccessManager` creates a database-owned `AccessMethodBootContext` and passes the actual RawStore,
+DataFactory, StorageFactory, and opaque database-service identity to external access methods. The
+MVCC factory directly owns one runtime; the former static `acquire(Path)`/lease registry and
+`PersistentService.ROOT` reconstruction are removed.
+
+`RAMTransaction` now owns identity-keyed `AccessMethodTransactionLifecycle` participants and brackets
+the inherited RawStore commit, commitNoSync, abort, savepoint, nested-user-transaction, XA, and
+destroy paths. This is a semantic extension seam, not another commit coordinator.
+
+The existing Phase 8 MVCC files and `DelosStorageTransactionRegistry` remain transitional and
+authoritative until the RawStore-backed table slice is proven. Memory/non-directory MVCC creation
+continues to fail closed before those files can be opened.
+
+Implementation records:
+
+```text
+docs/design/V1-DATABASE-OWNED-ACCESS-METHOD-BOOT.md
+docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
+```
 
 ## Frozen v1 invariants
 
@@ -273,7 +286,6 @@ The following are intentionally not frozen:
 
 ```text
 AccessMethodBootContext fields
-transaction lifecycle interface shape
 commit-sequence allocator implementation
 XA prepared-transaction visibility
 version-record binary header

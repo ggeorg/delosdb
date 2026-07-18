@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Properties;
 
 import org.apache.derby.shared.common.reference.SQLState;
@@ -36,6 +37,7 @@ import org.apache.derby.iapi.services.daemon.Serviceable;
 import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
@@ -120,6 +122,14 @@ public class RAMTransaction
 	private ArrayList<Sort> sorts;
 	private ArrayList<SortController> sortControllers;
 
+    /** Database-access-method semantic state attached to this transaction unit. */
+    private ArrayList<LifecycleRegistration> accessMethodTransactionLifecycles;
+
+    private record LifecycleRegistration(
+            Object key,
+            AccessMethodTransactionLifecycle lifecycle) {
+    }
+
     /** List of sort identifiers (represented as <code>Integer</code> objects)
      * which can be reused. Since sort identifiers are used as array indexes,
      * we need to reuse them to avoid leaking memory (DERBY-912). */
@@ -170,6 +180,7 @@ public class RAMTransaction
 		sorts                   = null; // allocated on demand.
 		freeSortIds             = null; // allocated on demand.
 		sortControllers         = null; // allocated on demand
+        accessMethodTransactionLifecycles = null; // allocated on demand
 
         if (parent_tran != null)
         {
@@ -203,6 +214,8 @@ public class RAMTransaction
     byte[]           branch_id)
 		throws StandardException
 	{
+        tc.notifyBeforeXaOperation(
+                AccessMethodTransactionLifecycle.XaOperation.MORPH_LOCAL_TO_XA);
         init(myaccessmanager, tc.getRawStoreXact(), null);
 
         if (SanityManager.DEBUG)
@@ -1184,6 +1197,8 @@ public class RAMTransaction
 		throws StandardException
     {
 
+        notifyBeforeXaOperation(
+                AccessMethodTransactionLifecycle.XaOperation.MORPH_LOCAL_TO_XA);
         getRawStoreXact().createXATransactionFromLocalTransaction(
             format_id, global_id, branch_id);
 
@@ -1973,31 +1988,78 @@ public class RAMTransaction
 	public void commit()
 		throws StandardException
 	{
-		this.closeControllers(false /* don't close held controllers */ );
-
-        rawtran.commit();
-
-        alterTableCallMade = false;
-
-        return;
+        AccessMethodTransactionLifecycle.CommitMode mode =
+                AccessMethodTransactionLifecycle.CommitMode.SYNCHRONIZED;
+        List<AccessMethodTransactionLifecycle> lifecycles = lifecycleSnapshot();
+        try {
+            this.closeControllers(false /* don't close held controllers */);
+            notifyBeforeCommit(lifecycles, mode);
+            rawtran.commit();
+            alterTableCallMade = false;
+        } catch (StandardException | RuntimeException | Error failure) {
+            notifyCommitFailed(lifecycles, mode, failure);
+            throw failure;
+        }
+        try {
+            notifyAfterCommit(lifecycles, mode, null);
+        } finally {
+            clearAccessMethodTransactionLifecycles();
+        }
 	}
 
 	public DatabaseInstant commitNoSync(int commitflag)
 		throws StandardException
 	{
-		this.closeControllers(false /* don't close held controllers */ );
-		return rawtran.commitNoSync(commitflag);
+        AccessMethodTransactionLifecycle.CommitMode mode =
+                (commitflag & Transaction.KEEP_LOCKS) != 0
+                        ? AccessMethodTransactionLifecycle.CommitMode.NO_SYNC_KEEP_LOCKS
+                        : AccessMethodTransactionLifecycle.CommitMode.NO_SYNC_RELEASE_LOCKS;
+        List<AccessMethodTransactionLifecycle> lifecycles = lifecycleSnapshot();
+        DatabaseInstant instant;
+        try {
+            this.closeControllers(false /* don't close held controllers */);
+            notifyBeforeCommit(lifecycles, mode);
+            instant = rawtran.commitNoSync(commitflag);
+            alterTableCallMade = false;
+        } catch (StandardException | RuntimeException | Error failure) {
+            notifyCommitFailed(lifecycles, mode, failure);
+            throw failure;
+        }
+        try {
+            notifyAfterCommit(lifecycles, mode, instant);
+        } finally {
+            clearAccessMethodTransactionLifecycles();
+        }
+        return instant;
 	}
 
 	public void abort()
 		throws StandardException
 	{
-        invalidateConglomerateCache();
-		this.closeControllers(true /* close all controllers */ );
-		rawtran.abort();
+        List<AccessMethodTransactionLifecycle> lifecycles = lifecycleSnapshot();
+        Throwable callbackFailure = notifyBeforeAbort(lifecycles, null);
+        try {
+            invalidateConglomerateCache();
+            this.closeControllers(true /* close all controllers */);
+            rawtran.abort();
 
-        if (parent_tran != null)
-            parent_tran.abort();
+            if (parent_tran != null)
+                parent_tran.abort();
+        } catch (StandardException | RuntimeException | Error failure) {
+            if (callbackFailure != null) {
+                failure.addSuppressed(callbackFailure);
+            }
+            notifyAbortFailed(lifecycles, failure);
+            throw failure;
+        }
+        try {
+            callbackFailure = notifyAfterAbort(lifecycles, callbackFailure);
+        } finally {
+            clearAccessMethodTransactionLifecycles();
+        }
+        if (callbackFailure != null) {
+            rethrowUnchecked(callbackFailure);
+        }
 	}
 
     /**
@@ -2014,35 +2076,55 @@ public class RAMTransaction
 	public int setSavePoint(String name, Object kindOfSavepoint)
 		throws StandardException
 	{
-		return rawtran.setSavePoint(name, kindOfSavepoint);
+        int level = rawtran.setSavePoint(name, kindOfSavepoint);
+        AccessMethodTransactionLifecycle.SavepointIdentity savepoint =
+                new AccessMethodTransactionLifecycle.SavepointIdentity(name, kindOfSavepoint);
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycleSnapshot()) {
+            lifecycle.afterSetSavepoint(savepoint);
+        }
+        return level;
 	}
 
 	public int releaseSavePoint(String name, Object kindOfSavepoint)
 		throws StandardException
 	{
-		return rawtran.releaseSavePoint(name, kindOfSavepoint);
+        int level = rawtran.releaseSavePoint(name, kindOfSavepoint);
+        AccessMethodTransactionLifecycle.SavepointIdentity savepoint =
+                new AccessMethodTransactionLifecycle.SavepointIdentity(name, kindOfSavepoint);
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycleSnapshot()) {
+            lifecycle.afterReleaseSavepoint(savepoint);
+        }
+        return level;
 	}
 
 	public int rollbackToSavePoint(String name, boolean close_controllers, Object kindOfSavepoint)
 		throws StandardException
 	{
         if (close_controllers)
-            this.closeControllers(true /* close all controllers */ );
-		return rawtran.rollbackToSavePoint(name, kindOfSavepoint);
+            this.closeControllers(true /* close all controllers */);
+        int level = rawtran.rollbackToSavePoint(name, kindOfSavepoint);
+        AccessMethodTransactionLifecycle.SavepointIdentity savepoint =
+                new AccessMethodTransactionLifecycle.SavepointIdentity(name, kindOfSavepoint);
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycleSnapshot()) {
+            lifecycle.afterRollbackToSavepoint(savepoint);
+        }
+        return level;
 	}
 
 	public void destroy()
 	{
+        List<AccessMethodTransactionLifecycle> lifecycles = lifecycleSnapshot();
+        Throwable callbackFailure = notifyBeforeDestroy(lifecycles, null);
+        Throwable rawFailure = null;
 		try
 		{
 			this.closeControllers(true /* close all controllers */);
-			
+
 			// If there's a transaction, abort it.
 			if (rawtran != null) {
 				rawtran.destroy();
 				rawtran = null;
 			}
-			
 
 			// If there's a context, pop it.
 			if (context != null)
@@ -2061,6 +2143,23 @@ public class RAMTransaction
 			accessmanager = null;
 			tempCongloms = null;
 		}
+        catch (RuntimeException | Error failure)
+        {
+            rawFailure = failure;
+            throw failure;
+        }
+        finally
+        {
+            callbackFailure = notifyAfterDestroy(lifecycles, callbackFailure);
+            clearAccessMethodTransactionLifecycles();
+            if (callbackFailure != null) {
+                if (rawFailure != null) {
+                    rawFailure.addSuppressed(callbackFailure);
+                } else {
+                    rethrowUnchecked(callbackFailure);
+                }
+            }
+        }
 	}
 
 	public boolean anyoneBlocked()
@@ -2089,7 +2188,11 @@ public class RAMTransaction
     boolean onePhase)
 		throws StandardException
     {
+        notifyBeforeXaOperation(onePhase
+                ? AccessMethodTransactionLifecycle.XaOperation.COMMIT_ONE_PHASE
+                : AccessMethodTransactionLifecycle.XaOperation.COMMIT_TWO_PHASE);
         rawtran.xa_commit(onePhase);
+        clearAccessMethodTransactionLifecycles();
     }
 
     /**
@@ -2109,6 +2212,7 @@ public class RAMTransaction
     public int xa_prepare()
 		throws StandardException
     {
+        notifyBeforeXaOperation(AccessMethodTransactionLifecycle.XaOperation.PREPARE);
         return(rawtran.xa_prepare());
     }
 
@@ -2124,7 +2228,204 @@ public class RAMTransaction
     public void xa_rollback()
         throws StandardException
     {
+        notifyBeforeXaOperation(AccessMethodTransactionLifecycle.XaOperation.ROLLBACK);
         rawtran.xa_rollback();
+        clearAccessMethodTransactionLifecycles();
+    }
+
+    public void registerAccessMethodTransactionLifecycle(
+            Object key,
+            AccessMethodTransactionLifecycle lifecycle) {
+        if (key == null) {
+            throw new NullPointerException("key");
+        }
+        if (lifecycle == null) {
+            throw new NullPointerException("lifecycle");
+        }
+        if (accessMethodTransactionLifecycles == null) {
+            accessMethodTransactionLifecycles = new ArrayList<>();
+        }
+        for (LifecycleRegistration registration : accessMethodTransactionLifecycles) {
+            if (registration.key() == key) {
+                if (registration.lifecycle() != lifecycle) {
+                    throw new IllegalStateException(
+                            "access-method lifecycle key is already registered");
+                }
+                return;
+            }
+        }
+        accessMethodTransactionLifecycles.add(new LifecycleRegistration(key, lifecycle));
+    }
+
+    public AccessMethodTransactionLifecycle accessMethodTransactionLifecycle(Object key) {
+        if (accessMethodTransactionLifecycles == null) {
+            return null;
+        }
+        for (LifecycleRegistration registration : accessMethodTransactionLifecycles) {
+            if (registration.key() == key) {
+                return registration.lifecycle();
+            }
+        }
+        return null;
+    }
+
+    public AccessMethodTransactionLifecycle removeAccessMethodTransactionLifecycle(Object key) {
+        if (accessMethodTransactionLifecycles == null) {
+            return null;
+        }
+        for (int index = 0; index < accessMethodTransactionLifecycles.size(); index++) {
+            LifecycleRegistration registration = accessMethodTransactionLifecycles.get(index);
+            if (registration.key() == key) {
+                accessMethodTransactionLifecycles.remove(index);
+                if (accessMethodTransactionLifecycles.isEmpty()) {
+                    accessMethodTransactionLifecycles = null;
+                }
+                return registration.lifecycle();
+            }
+        }
+        return null;
+    }
+
+    private List<AccessMethodTransactionLifecycle> lifecycleSnapshot() {
+        if (accessMethodTransactionLifecycles == null
+                || accessMethodTransactionLifecycles.isEmpty()) {
+            return List.of();
+        }
+        ArrayList<AccessMethodTransactionLifecycle> snapshot =
+                new ArrayList<>(accessMethodTransactionLifecycles.size());
+        for (LifecycleRegistration registration : accessMethodTransactionLifecycles) {
+            snapshot.add(registration.lifecycle());
+        }
+        return snapshot;
+    }
+
+    private void clearAccessMethodTransactionLifecycles() {
+        if (accessMethodTransactionLifecycles != null) {
+            accessMethodTransactionLifecycles.clear();
+            accessMethodTransactionLifecycles = null;
+        }
+    }
+
+    private static void notifyBeforeCommit(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            AccessMethodTransactionLifecycle.CommitMode mode)
+            throws StandardException {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            lifecycle.beforeCommit(mode);
+        }
+    }
+
+    private static void notifyAfterCommit(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            AccessMethodTransactionLifecycle.CommitMode mode,
+            DatabaseInstant instant) {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            lifecycle.afterCommit(mode, instant);
+        }
+    }
+
+    private static void notifyCommitFailed(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            AccessMethodTransactionLifecycle.CommitMode mode,
+            Throwable failure) {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.commitFailed(mode, failure);
+            } catch (RuntimeException | Error callbackFailure) {
+                failure.addSuppressed(callbackFailure);
+            }
+        }
+    }
+
+    private static Throwable notifyBeforeAbort(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            Throwable failure) {
+        Throwable accumulated = failure;
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.beforeAbort();
+            } catch (RuntimeException | Error callbackFailure) {
+                accumulated = accumulateFailure(accumulated, callbackFailure);
+            }
+        }
+        return accumulated;
+    }
+
+    private static Throwable notifyAfterAbort(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            Throwable failure) {
+        Throwable accumulated = failure;
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.afterAbort();
+            } catch (RuntimeException | Error callbackFailure) {
+                accumulated = accumulateFailure(accumulated, callbackFailure);
+            }
+        }
+        return accumulated;
+    }
+
+    private static void notifyAbortFailed(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            Throwable failure) {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.abortFailed(failure);
+            } catch (RuntimeException | Error callbackFailure) {
+                failure.addSuppressed(callbackFailure);
+            }
+        }
+    }
+
+    private void notifyBeforeXaOperation(
+            AccessMethodTransactionLifecycle.XaOperation operation)
+            throws StandardException {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycleSnapshot()) {
+            lifecycle.beforeXaOperation(operation);
+        }
+    }
+
+    private static Throwable notifyBeforeDestroy(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            Throwable failure) {
+        Throwable accumulated = failure;
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.beforeDestroy();
+            } catch (RuntimeException | Error callbackFailure) {
+                accumulated = accumulateFailure(accumulated, callbackFailure);
+            }
+        }
+        return accumulated;
+    }
+
+    private static Throwable notifyAfterDestroy(
+            List<AccessMethodTransactionLifecycle> lifecycles,
+            Throwable failure) {
+        Throwable accumulated = failure;
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycles) {
+            try {
+                lifecycle.afterDestroy();
+            } catch (RuntimeException | Error callbackFailure) {
+                accumulated = accumulateFailure(accumulated, callbackFailure);
+            }
+        }
+        return accumulated;
+    }
+
+    private static Throwable accumulateFailure(Throwable current, Throwable next) {
+        if (current == null) {
+            return next;
+        }
+        current.addSuppressed(next);
+        return current;
+    }
+
+    private static void rethrowUnchecked(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        throw (Error) failure;
     }
 
     /**************************************************************************
@@ -2358,6 +2659,10 @@ public class RAMTransaction
     boolean flush_log_on_xact_end)
         throws StandardException
     {
+        for (AccessMethodTransactionLifecycle lifecycle : lifecycleSnapshot()) {
+            lifecycle.beforeNestedUserTransaction(readOnly);
+        }
+
         // Get the context manager.
         ContextManager cm = getContextManager();
 

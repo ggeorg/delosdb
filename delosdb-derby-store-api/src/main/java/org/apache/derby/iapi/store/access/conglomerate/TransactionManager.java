@@ -65,6 +65,24 @@ public interface TransactionManager extends TransactionController, PropertyPostC
      **/
     public static final int LOCK_MANUAL_DURATION    = 3;
 
+
+    /**
+     * Attach one access-method lifecycle participant to this transaction.
+     * Keys use object identity so one database-owned access-method runtime can
+     * obtain exactly one transaction-local semantic context.
+     *
+     * @throws IllegalStateException if the key is already bound to another participant
+     */
+    void registerAccessMethodTransactionLifecycle(
+            Object key,
+            AccessMethodTransactionLifecycle lifecycle);
+
+    /** Return the participant registered under {@code key}, or {@code null}. */
+    AccessMethodTransactionLifecycle accessMethodTransactionLifecycle(Object key);
+
+    /** Remove and return the participant registered under {@code key}, or {@code null}. */
+    AccessMethodTransactionLifecycle removeAccessMethodTransactionLifecycle(Object key);
+
     /**
      * Add to the list of post commit work.
      * <p>
