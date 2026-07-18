@@ -1,58 +1,70 @@
-# MVCC Database Storage Snapshot
+# MVCC database storage snapshots
 
-Phase 9 introduces `DelosDatabaseStorageSnapshot` as the first versioned,
-immutable observability model.
+Phase 9 introduces immutable, versioned observations for one database runtime,
+its provider-owned tables, and active provider transaction participants.
 
-The snapshot is owned by one `MvccDatabaseRuntime` and contains:
+The root model is:
 
-* explicit provider and normalized database identity;
-* schema version and collection-semantics identifier;
-* monotonically increasing capture sequence;
-* runtime and table-state counts;
-* database-local mutation and scan counters;
-* database-local ordered-index and committed-read counters;
-* bounded storage-path decision history and dropped-entry count;
-* database commit decision-force and participant-publication timing.
+```text
+DelosDatabaseStorageSnapshot schema version 2
+```
+
+It carries explicit provider and normalized database identity, a runtime-local
+capture sequence, one shared root/nested capture timestamp, database counters,
+commit timing, and bounded nested observations:
+
+```text
+storage path diagnostics: 256 entries
+table snapshots:          256 entries
+transaction snapshots:    512 entries
+```
+
+When a bounded collection exceeds its capacity, the oldest path entries are
+evicted and counted, while table and transaction observations are sorted by
+stable table identity and truncated with explicit dropped-entry counts.
 
 ## Collection semantics
 
-The v1 snapshot declares:
+Database counters use:
 
 ```text
-weakly-consistent-atomic-counters-with-bounded-path-history
+weakly-consistent-database-counters-with-bounded-table-transaction-and-path-observations
 ```
 
-Each counter is read atomically. Storage activity may continue between field
-reads, so the snapshot is not a stop-the-world transaction. The path history is
-copied under its own lock and is capped at 256 entries. Old entries are evicted
-and counted rather than allowing diagnostics to grow without bound.
+Each counter is read atomically, but concurrent work may occur between reads.
+The storage-path history is copied under its own lock.
 
-Counters and capture sequence describe the current database-runtime lifetime. A
-clean shutdown and reopen starts a new observation epoch for the same database
-identity; durable database state is not inferred from these counters.
+Each `DelosTableStorageSnapshot` uses:
 
-The snapshot exposes only immutable values. It contains no table, transaction,
-store, lock, or maintenance-service object and cannot change engine state.
-
-## Compatibility surface
-
-Existing `DelosStorageDiagnostics` counter methods remain temporarily available.
-The MVCC implementation now derives their reads from the database snapshot and
-routes resets to the owning database runtime. They no longer observe JVM-wide
-bridge counters.
-
-A diagnostics instance bound through:
-
-```java
-DelosStorageDiagnosticsRegistry.mvcc(databaseDirectory)
+```text
+weakly-consistent-table-diagnostics-with-registry-participants
 ```
 
-also clears only that database runtime during test cleanup. It does not close
-other active databases.
+Provider diagnostics are individually protected by the table's existing read
+lock, but concurrent work may occur between fields. Transaction membership is
+copied atomically from the provider-neutral registry before the table values
+are read. The table observation includes transaction-registry participant
+counts, registered write intents, logical and physical row/version counts, page
+topology, ordered-index size, purge backlog, checkpoint status, and
+consistency status.
 
-## Next snapshots
+Each `DelosTransactionSnapshot` is a value-only observation of one active
+provider transaction participant. It identifies the owning database and table,
+provider transaction ID, read-only/read-write mode, write intents, savepoints,
+and write-intent revision. Participant membership comes from the
+provider-neutral transaction registry, while the opaque provider handle supplies
+one atomic, value-only counter bundle. The model does not expose the Derby
+transaction object, provider handle, or a mutable snapshot.
 
-This milestone establishes the database identity, versioning, immutability,
-bounded-history, and collection-semantics conventions. Table, transaction,
-version-chain, recovery, checkpoint, maintenance, and buffer-pool snapshots will
-build on the same contract rather than adding more forwarding methods.
+## Ownership and authority
+
+All observations are owned by one `MvccDatabaseRuntime`. Controllers and scans
+record into that runtime; table state assembles immutable values through the
+existing diagnostic and transaction-registry boundaries.
+A database-bound diagnostics handle can clear only its own runtime in testing.
+It cannot close or reset another active database.
+
+The models are diagnostic evidence only. They expose no operation that can
+change storage, transaction, checkpoint, maintenance, or recovery state.
+Runtime counters and provider transaction IDs describe one database-runtime
+epoch and are not persisted across reopen.

@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
+import org.apache.derby.iapi.store.types.DelosTableStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosTransactionSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr;
 import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 
@@ -244,6 +246,13 @@ final class MvccBridgeDiagnosticsSupport {
             Path databaseDirectory,
             boolean runtimeActive,
             int tableStateCount,
+            long capturedAtEpochMillis,
+            int tableSnapshotCapacity,
+            long tableSnapshotDroppedCount,
+            List<DelosTableStorageSnapshot> tableSnapshots,
+            int transactionSnapshotCapacity,
+            long transactionSnapshotDroppedCount,
+            List<DelosTransactionSnapshot> transactionSnapshots,
             DelosDatabaseCommitTimingSnapshot commitTiming) {
         List<DelosStoragePathDiagnostic> pathDiagnostics = storagePathDiagnosticsForDiagnostics();
         return new DelosDatabaseStorageSnapshot(
@@ -252,7 +261,7 @@ final class MvccBridgeDiagnosticsSupport {
                 databaseDirectory.toAbsolutePath().normalize().toString(),
                 DelosDatabaseStorageSnapshot.WEAKLY_CONSISTENT_COLLECTION,
                 snapshotSequence.incrementAndGet(),
-                System.currentTimeMillis(),
+                capturedAtEpochMillis,
                 runtimeActive,
                 tableStateCount,
                 insertCount.get(),
@@ -272,6 +281,12 @@ final class MvccBridgeDiagnosticsSupport {
                 STORAGE_PATH_DIAGNOSTIC_CAPACITY,
                 droppedStoragePathDiagnosticCount.get(),
                 pathDiagnostics,
+                tableSnapshotCapacity,
+                tableSnapshotDroppedCount,
+                tableSnapshots,
+                transactionSnapshotCapacity,
+                transactionSnapshotDroppedCount,
+                transactionSnapshots,
                 commitTiming);
     }
 }

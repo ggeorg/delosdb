@@ -71,6 +71,14 @@ public interface DelosStorageDiagnostics {
         return DelosDatabaseStorageSnapshot.unavailable(providerId());
     }
 
+    default List<DelosTableStorageSnapshot> tableStorageSnapshots() {
+        return databaseStorageSnapshot().tableSnapshots();
+    }
+
+    default List<DelosTransactionSnapshot> transactionSnapshots() {
+        return databaseStorageSnapshot().transactionSnapshots();
+    }
+
     default DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
         return DelosDatabaseCommitTimingSnapshot.EMPTY;
     }

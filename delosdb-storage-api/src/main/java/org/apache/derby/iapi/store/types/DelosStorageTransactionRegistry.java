@@ -651,6 +651,83 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
+    /**
+     * Capture immutable observations for active provider transactions attached to one table.
+     *
+     * <p>The registry owns participant membership while the provider handle owns
+     * transaction-local counters. No Derby transaction object or mutable provider
+     * handle is exposed in the returned values.</p>
+     */
+    public static synchronized List<DelosTransactionSnapshot> transactionSnapshotsForTable(
+            DelosStorageTable table,
+            String providerId,
+            String databaseIdentity,
+            long segmentId,
+            long containerId,
+            long capturedAtEpochMillis) {
+        DelosStorageTable requiredTable = Objects.requireNonNull(table, "table");
+        List<DelosTransactionSnapshot> snapshots = new ArrayList<>();
+        for (List<Writer> writers : WRITERS.values()) {
+            for (Writer writer : writers) {
+                if (!writer.completed && writer.table == requiredTable) {
+                    snapshots.add(transactionSnapshot(
+                            writer.transaction,
+                            providerId,
+                            databaseIdentity,
+                            segmentId,
+                            containerId,
+                            capturedAtEpochMillis));
+                }
+            }
+        }
+        for (Map<DelosStorageTable, Reader> readers : READERS.values()) {
+            Reader reader = readers.get(requiredTable);
+            if (reader != null && !reader.completed) {
+                snapshots.add(transactionSnapshot(
+                        reader.transaction,
+                        providerId,
+                        databaseIdentity,
+                        segmentId,
+                        containerId,
+                        capturedAtEpochMillis));
+            }
+        }
+        snapshots.sort(java.util.Comparator.comparingLong(
+                DelosTransactionSnapshot::providerTransactionId));
+        return List.copyOf(snapshots);
+    }
+
+    private static DelosTransactionSnapshot transactionSnapshot(
+            DelosStorageTransaction transaction,
+            String providerId,
+            String databaseIdentity,
+            long segmentId,
+            long containerId,
+            long capturedAtEpochMillis) {
+        if (!(transaction instanceof DelosStorageTransactionDiagnostics diagnostics)) {
+            throw new IllegalStateException(
+                    "Storage transaction does not expose immutable diagnostics: "
+                            + transaction.getClass().getName());
+        }
+        DelosStorageTransactionDiagnostics.Values values = diagnostics.diagnosticValues();
+        return new DelosTransactionSnapshot(
+                DelosTransactionSnapshot.CURRENT_SCHEMA_VERSION,
+                providerId,
+                databaseIdentity,
+                segmentId,
+                containerId,
+                values.providerTransactionId(),
+                values.readOnly()
+                        ? DelosTransactionSnapshot.READ_ONLY
+                        : DelosTransactionSnapshot.READ_WRITE,
+                DelosTransactionSnapshot.ACTIVE,
+                capturedAtEpochMillis,
+                values.writeIntentCount(),
+                values.appendedWriteIntentCount(),
+                values.savepointCount(),
+                values.writeIntentRevision());
+    }
+
     public static synchronized int pendingCountForTesting(Object ownerTransaction) {
         List<Writer> writers = WRITERS.get(ownerTransaction);
         Map<DelosStorageTable, Reader> readers = READERS.get(ownerTransaction);

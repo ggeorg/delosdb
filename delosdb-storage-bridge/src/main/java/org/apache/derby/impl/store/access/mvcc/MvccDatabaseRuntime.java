@@ -23,6 +23,8 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosTableStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosTransactionSnapshot;
 import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
@@ -46,6 +50,8 @@ import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
  * database through mutable ambient state.</p>
  */
 final class MvccDatabaseRuntime implements AutoCloseable {
+    static final int TABLE_SNAPSHOT_CAPACITY = 256;
+    static final int TRANSACTION_SNAPSHOT_CAPACITY = 512;
     private static final Object REGISTRY_MONITOR = new Object();
     private static final Map<DatabaseIdentity, RegistryEntry> RUNTIMES = new HashMap<>();
 
@@ -259,10 +265,59 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     DelosDatabaseStorageSnapshot databaseStorageSnapshotForDiagnostics() {
         ensureOpen();
+        long capturedAtEpochMillis = System.currentTimeMillis();
+        String databaseIdentity = databaseDirectory.toString();
+        List<Map.Entry<TableIdentity, MvccConglomerateState>> orderedStates = states.entrySet()
+                .stream()
+                .sorted(Map.Entry.comparingByKey(Comparator
+                        .comparingLong(TableIdentity::segmentId)
+                        .thenComparingLong(TableIdentity::containerId)))
+                .toList();
+
+        List<DelosTableStorageSnapshot> tableSnapshots = new ArrayList<>();
+        List<DelosTransactionSnapshot> transactionSnapshots = new ArrayList<>();
+        long droppedTables = Math.max(0L, orderedStates.size() - TABLE_SNAPSHOT_CAPACITY);
+        long droppedTransactions = 0L;
+
+        for (int i = 0; i < orderedStates.size(); i++) {
+            MvccConglomerateState state = orderedStates.get(i).getValue();
+            List<DelosTransactionSnapshot> tableTransactions;
+            try {
+                if (i < TABLE_SNAPSHOT_CAPACITY) {
+                    MvccConglomerateState.StructuredObservation observation =
+                            state.structuredObservation(databaseIdentity, capturedAtEpochMillis);
+                    tableSnapshots.add(observation.tableSnapshot());
+                    tableTransactions = observation.transactionSnapshots();
+                } else {
+                    tableTransactions = state.transactionSnapshots(
+                            databaseIdentity, capturedAtEpochMillis);
+                }
+            } catch (IllegalStateException retiredDuringCapture) {
+                if (i < TABLE_SNAPSHOT_CAPACITY) {
+                    droppedTables++;
+                }
+                continue;
+            }
+            for (DelosTransactionSnapshot transactionSnapshot : tableTransactions) {
+                if (transactionSnapshots.size() < TRANSACTION_SNAPSHOT_CAPACITY) {
+                    transactionSnapshots.add(transactionSnapshot);
+                } else {
+                    droppedTransactions++;
+                }
+            }
+        }
+
         return diagnostics.snapshot(
                 databaseDirectory,
                 true,
                 stateCount(),
+                capturedAtEpochMillis,
+                TABLE_SNAPSHOT_CAPACITY,
+                droppedTables,
+                tableSnapshots,
+                TRANSACTION_SNAPSHOT_CAPACITY,
+                droppedTransactions,
+                transactionSnapshots,
                 store.databaseCommitTimingSnapshotForTesting());
     }
 

@@ -4333,7 +4333,7 @@ tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
 
         DelosDbStaticAnalysisSupport.require(failures,
                 snapshotText.contains('public record DelosDatabaseStorageSnapshot')
-                        && snapshotText.contains('CURRENT_SCHEMA_VERSION = 1')
+                        && snapshotText.contains('CURRENT_SCHEMA_VERSION = 2')
                         && snapshotText.contains('WEAKLY_CONSISTENT_COLLECTION')
                         && snapshotText.contains('storagePathDiagnostics = List.copyOf')
                         && !snapshotText.contains('org.apache.derby.impl.'),
@@ -4382,8 +4382,8 @@ tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
                         && testBuildText.contains('MvccDatabaseStorageSnapshotTest.class'),
                 'Immutable database snapshot proof must have a permanent focused Gradle lane')
         DelosDbStaticAnalysisSupport.require(failures,
-                documentationText.contains('weakly-consistent-atomic-counters-with-bounded-path-history')
-                        && documentationText.contains('capped at 256 entries'),
+                documentationText.contains('weakly-consistent-database-counters-with-bounded-table-transaction-and-path-observations')
+                        && documentationText.contains('storage path diagnostics: 256 entries'),
                 'Public documentation must state collection semantics and bounded cost')
 
         def reportFile = new File(
@@ -4412,6 +4412,176 @@ tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosPhase9TableTransactionSnapshotStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects Phase 9 immutable bounded table and provider-transaction snapshots.'
+
+    def requiredFiles = [
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosTransactionSnapshot.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedHandles.java',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTableTransactionSnapshotTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md'
+    ]
+    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/phase9-table-transaction-snapshot-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def texts = requiredFiles.collect { path ->
+            def source = new File(delosRepositoryRoot, path)
+            DelosDbStaticAnalysisSupport.require(
+                    failures, source.isFile(),
+                    'Missing Phase 9 table/transaction snapshot source: ' + path)
+            source.isFile() ? source.getText('UTF-8') : ''
+        }
+        def databaseSnapshotText = texts[0]
+        def tableSnapshotText = texts[1]
+        def transactionSnapshotText = texts[2]
+        def transactionDiagnosticsText = texts[3]
+        def diagnosticsApiText = texts[4]
+        def diagnosticsRegistryText = texts[5]
+        def transactionRegistryText = texts[6]
+        def runtimeText = texts[7]
+        def stateText = texts[8]
+        def handlesText = texts[9]
+        def inheritedTableText = texts[10]
+        def testText = texts[11]
+        def testBuildText = texts[12]
+        def documentationText = texts[13]
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                databaseSnapshotText.contains('CURRENT_SCHEMA_VERSION = 2')
+                        && databaseSnapshotText.contains('List<DelosTableStorageSnapshot> tableSnapshots')
+                        && databaseSnapshotText.contains('List<DelosTransactionSnapshot> transactionSnapshots')
+                        && databaseSnapshotText.contains('tableSnapshots = List.copyOf')
+                        && databaseSnapshotText.contains('transactionSnapshots = List.copyOf'),
+                'Database snapshot schema 2 must own immutable nested table and transaction values')
+        DelosDbStaticAnalysisSupport.require(failures,
+                tableSnapshotText.contains('public record DelosTableStorageSnapshot')
+                        && tableSnapshotText.contains('CURRENT_SCHEMA_VERSION = 1')
+                        && tableSnapshotText.contains('weakly-consistent-table-diagnostics-with-registry-participants')
+                        && tableSnapshotText.contains('int registeredTransactionCount')
+                        && tableSnapshotText.contains('int registeredWriteIntentCount')
+                        && !tableSnapshotText.contains('org.apache.derby.impl.'),
+                'Table snapshot must remain versioned, value-only, and implementation-neutral')
+        DelosDbStaticAnalysisSupport.require(failures,
+                transactionSnapshotText.contains('public record DelosTransactionSnapshot')
+                        && transactionSnapshotText.contains('READ_ONLY')
+                        && transactionSnapshotText.contains('READ_WRITE')
+                        && transactionSnapshotText.contains('providerTransactionId')
+                        && !transactionSnapshotText.contains('nativeTransaction')
+                        && !transactionSnapshotText.contains('Object '),
+                'Transaction snapshot must expose values without provider or Derby handles')
+        DelosDbStaticAnalysisSupport.require(failures,
+                transactionDiagnosticsText.contains('public interface DelosStorageTransactionDiagnostics')
+                        && transactionDiagnosticsText.contains('Values diagnosticValues()')
+                        && transactionDiagnosticsText.contains('record Values(')
+                        && transactionDiagnosticsText.contains('long providerTransactionId')
+                        && transactionDiagnosticsText.contains('int writeIntentCount')
+                        && transactionDiagnosticsText.contains('int savepointCount'),
+                'Opaque provider transactions must expose one atomic value-only diagnostic bundle')
+        DelosDbStaticAnalysisSupport.require(failures,
+                transactionRegistryText.contains(
+                        'List<DelosTransactionSnapshot> transactionSnapshotsForTable(')
+                        && transactionRegistryText.contains(
+                                'transaction instanceof DelosStorageTransactionDiagnostics diagnostics')
+                        && transactionRegistryText.contains(
+                                'DelosStorageTransactionDiagnostics.Values values = diagnostics.diagnosticValues()')
+                        && transactionRegistryText.contains(
+                                'snapshots.sort(java.util.Comparator.comparingLong(')
+                        && transactionRegistryText.contains('return List.copyOf(snapshots);'),
+                'Transaction registry must own immutable participant membership and ordering')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('TABLE_SNAPSHOT_CAPACITY = 256')
+                        && runtimeText.contains('TRANSACTION_SNAPSHOT_CAPACITY = 512')
+                        && runtimeText.contains('state.structuredObservation(')
+                        && runtimeText.contains('capturedAtEpochMillis,')
+                        && runtimeText.contains('droppedTables++')
+                        && runtimeText.contains('droppedTransactions++'),
+                'Database runtime must collect bounded nested snapshots from owned table states')
+        DelosDbStaticAnalysisSupport.require(failures,
+                stateText.contains('synchronized StructuredObservation structuredObservation(')
+                        && stateText.contains(
+                                'DelosStorageTransactionRegistry.transactionSnapshotsForTable(')
+                        && stateText.contains('new DelosTableStorageSnapshot(')
+                        && stateText.contains('record StructuredObservation('),
+                'Bridge table state must assemble physical and transaction observations')
+        DelosDbStaticAnalysisSupport.require(failures,
+                handlesText.contains(
+                        'implements DelosStorageTransaction, DelosStorageTransactionDiagnostics')
+                        && handlesText.contains(
+                                'public synchronized DelosStorageTransactionDiagnostics.Values diagnosticValues()')
+                        && handlesText.contains('synchronized void recordUpsertWriteIntent(')
+                        && handlesText.contains('public synchronized int savepointCount()'),
+                'MVCC transaction handles must atomically snapshot synchronized transaction-local state')
+        DelosDbStaticAnalysisSupport.require(failures,
+                inheritedTableText.readLines().size() <= 1800
+                        && !inheritedTableText.contains('DelosTableStorageSnapshot')
+                        && !inheritedTableText.contains('DelosTransactionSnapshot'),
+                'Structured observation must not regrow the inherited-table facade')
+        DelosDbStaticAnalysisSupport.require(failures,
+                diagnosticsApiText.contains('List<DelosTableStorageSnapshot> tableStorageSnapshots()')
+                        && diagnosticsApiText.contains('List<DelosTransactionSnapshot> transactionSnapshots()')
+                        && diagnosticsRegistryText.contains('mvccTableStorageSnapshots(')
+                        && diagnosticsRegistryText.contains('mvccTransactionSnapshots('),
+                'Diagnostics API and registry must expose nested immutable snapshots')
+        DelosDbStaticAnalysisSupport.require(failures,
+                testText.contains('testTableAndTransactionSnapshotsRemainBoundedImmutableAndScoped')
+                        && testText.contains('testConcurrentTransactionSnapshotCaptureRemainsCoherent')
+                        && testText.contains('snapshotA.tableSnapshots().clear()')
+                        && testText.contains('snapshotA.transactionSnapshots().clear()')
+                        && testText.contains('snapshotA.capturedAtEpochMillis()')
+                        && testText.contains('rollback must retire database A provider transactions')
+                        && testBuildText.contains("'runDelosMvccTableTransactionSnapshotTest'"),
+                'Permanent SQL proof must cover isolation, immutability, active state, and retirement')
+        DelosDbStaticAnalysisSupport.require(failures,
+                documentationText.contains('one shared root/nested capture timestamp')
+                        && documentationText.contains('table snapshots:          256 entries')
+                        && documentationText.contains('transaction snapshots:    512 entries')
+                        && documentationText.contains('weakly-consistent-table-diagnostics-with-registry-participants')
+                        && documentationText.contains('provider-neutral transaction registry')
+                        && documentationText.contains('one atomic,')
+                        && documentationText.contains('value-only counter bundle'),
+                'Documentation must state ownership, consistency, atomic transaction values, and bounded costs')
+
+        def reportFile = new File(
+                delosBuildRoot,
+                'reports/delosdb/phase9-table-transaction-snapshot-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Phase 9 table and transaction snapshot static analysis')
+            writer.println('==============================================================')
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+                writer.println('Table and provider-transaction observations are immutable, scoped, and bounded.')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Phase 9 table/transaction snapshot static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Phase 9 table/transaction snapshot static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -4436,6 +4606,7 @@ tasks.register('s0CloseoutVerification') {
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis',
-            'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis'
+            'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis',
+            'delosPhase9TableTransactionSnapshotStaticAnalysis'
 }
 

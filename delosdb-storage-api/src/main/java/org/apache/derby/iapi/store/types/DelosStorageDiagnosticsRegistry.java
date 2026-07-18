@@ -50,6 +50,17 @@ public final class DelosStorageDiagnosticsRegistry {
         return mvcc(databaseDirectory).databaseStorageSnapshot();
     }
 
+    public static List<DelosTableStorageSnapshot> mvccTableStorageSnapshots(
+            Path databaseDirectory) {
+        return mvcc(databaseDirectory).tableStorageSnapshots();
+    }
+
+    public static List<DelosTransactionSnapshot> mvccTransactionSnapshots(
+            Path databaseDirectory) {
+        return mvcc(databaseDirectory).transactionSnapshots();
+    }
+
+
     public static DelosStorageDiagnostics heap() {
         return forProvider(HEAP_PROVIDER_ID);
     }

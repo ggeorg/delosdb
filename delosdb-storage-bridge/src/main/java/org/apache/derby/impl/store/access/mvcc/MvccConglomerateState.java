@@ -41,12 +41,15 @@ import org.apache.derby.iapi.store.types.DelosStorageRowHead;
 import org.apache.derby.iapi.store.types.DelosStorageRowLocator;
 import org.apache.derby.iapi.store.types.DelosStorageScan;
 import org.apache.derby.iapi.store.types.DelosStorageStatistics;
+import org.apache.derby.iapi.store.types.DelosTableStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosTransactionSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageTable;
 import org.apache.derby.iapi.store.types.DelosStorageTableDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageTableKey;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.DelosVacuumOutcome;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreOrderable;
@@ -221,6 +224,58 @@ final class MvccConglomerateState {
 
     synchronized int logicalRowCountForTesting() {
         return diagnostics.logicalRowCountForTesting();
+    }
+
+    synchronized List<DelosTransactionSnapshot> transactionSnapshots(
+            String databaseIdentity,
+            long capturedAtEpochMillis) {
+        return DelosStorageTransactionRegistry.transactionSnapshotsForTable(
+                table,
+                MVCC_PROVIDER_NAME,
+                databaseIdentity,
+                key.getSegmentId(),
+                key.getContainerId(),
+                capturedAtEpochMillis);
+    }
+
+    synchronized StructuredObservation structuredObservation(
+            String databaseIdentity,
+            long capturedAtEpochMillis) {
+        List<DelosTransactionSnapshot> transactions =
+                transactionSnapshots(databaseIdentity, capturedAtEpochMillis);
+        int readOnlyTransactions = (int) transactions.stream()
+                .filter(transaction -> DelosTransactionSnapshot.READ_ONLY.equals(
+                        transaction.accessMode()))
+                .count();
+        int writeTransactions = transactions.size() - readOnlyTransactions;
+        int activeWriteIntents = transactions.stream()
+                .mapToInt(DelosTransactionSnapshot::writeIntentCount)
+                .sum();
+        DelosTableStorageSnapshot tableSnapshot = new DelosTableStorageSnapshot(
+                DelosTableStorageSnapshot.CURRENT_SCHEMA_VERSION,
+                MVCC_PROVIDER_NAME,
+                databaseIdentity,
+                key.getSegmentId(),
+                key.getContainerId(),
+                DelosTableStorageSnapshot.WEAKLY_CONSISTENT_COLLECTION,
+                capturedAtEpochMillis,
+                true,
+                transactions.size(),
+                readOnlyTransactions,
+                writeTransactions,
+                activeWriteIntents,
+                diagnostics.logicalRowCountForTesting(),
+                diagnostics.physicalVersionCountForTesting(),
+                diagnostics.pageCountForTesting(),
+                diagnostics.overflowPageCountForTesting(),
+                diagnostics.reusablePageCountForTesting(),
+                diagnostics.orderedIndexEntryCountForTesting(),
+                diagnostics.orderedIndexDistinctKeyCountForTesting(),
+                diagnostics.purgeQueuePendingCountForTesting(),
+                diagnostics.checkpointStatusForTesting(),
+                diagnostics.consistencyErrorCountForTesting(),
+                diagnostics.consistencySummaryForTesting());
+        return new StructuredObservation(tableSnapshot, transactions);
     }
 
     synchronized DelosStorageStatistics storageStatisticsSnapshot() {
@@ -1003,6 +1058,16 @@ final class MvccConglomerateState {
             }
         }
         throw new IllegalStateException("No storage-api provider registered for " + MVCC_PROVIDER_NAME);
+    }
+
+    record StructuredObservation(
+            DelosTableStorageSnapshot tableSnapshot,
+            List<DelosTransactionSnapshot> transactionSnapshots) {
+        StructuredObservation {
+            tableSnapshot = Objects.requireNonNull(tableSnapshot, "tableSnapshot");
+            transactionSnapshots = List.copyOf(
+                    Objects.requireNonNull(transactionSnapshots, "transactionSnapshots"));
+        }
     }
 
     private record ColumnValueKey(int column, String value) {

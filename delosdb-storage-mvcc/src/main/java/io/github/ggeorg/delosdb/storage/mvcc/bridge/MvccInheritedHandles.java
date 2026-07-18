@@ -14,6 +14,7 @@ import io.github.ggeorg.delosdb.storage.mvcc.durable.MvccCommitDurabilityMetrics
 
 import org.apache.derby.iapi.store.types.DelosStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionDiagnostics;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 final class MvccInheritedHandles {
@@ -34,7 +35,7 @@ final class MvccInheritedHandles {
         return mvccSnapshot;
     }
 
-    static final class Transaction implements DelosStorageTransaction {
+    static final class Transaction implements DelosStorageTransaction, DelosStorageTransactionDiagnostics {
         private final MvccTransaction nativeTransaction;
         private final boolean readOnly;
         private final MvccCommitDurabilityMetrics.Snapshot beginDurability;
@@ -66,12 +67,29 @@ final class MvccInheritedHandles {
             return nativeTransaction;
         }
 
-        MvccCommandSequence nextCommandSequence() {
+        @Override
+        public long providerTransactionId() {
+            return nativeTransaction.id().value();
+        }
+
+        @Override
+        public synchronized DelosStorageTransactionDiagnostics.Values diagnosticValues() {
+            return new DelosStorageTransactionDiagnostics.Values(
+                    providerTransactionId(),
+                    readOnly,
+                    writeIntents.size(),
+                    appendedWriteIntents.size(),
+                    savepoints.size(),
+                    writeIntentRevision);
+        }
+
+        synchronized MvccCommandSequence nextCommandSequence() {
             requireWritable();
             return MvccCommandSequence.of(nextCommandSequence++);
         }
 
-        boolean readOnly() {
+        @Override
+        public boolean readOnly() {
             return readOnly;
         }
 
@@ -79,22 +97,22 @@ final class MvccInheritedHandles {
             return beginDurability;
         }
 
-        void setSavepoint(String savepointName) {
+        synchronized void setSavepoint(String savepointName) {
             savepoints.put(requireSavepointName(savepointName), lastCompletedCommandSequence());
         }
 
-        void recordUpsertWriteIntent(
+        synchronized void recordUpsertWriteIntent(
                 long rowId,
                 StoreDataValue[] row,
                 MvccCommandSequence commandSequence) {
             recordWriteIntent(WriteIntent.upsert(rowId, row, commandSequence));
         }
 
-        void recordDeleteWriteIntent(long rowId, MvccCommandSequence commandSequence) {
+        synchronized void recordDeleteWriteIntent(long rowId, MvccCommandSequence commandSequence) {
             recordWriteIntent(WriteIntent.delete(rowId, commandSequence));
         }
 
-        List<WriteIntent> writeIntents() {
+        synchronized List<WriteIntent> writeIntents() {
             List<WriteIntent> latest = new ArrayList<>(writeIntents.size());
             for (List<WriteIntent> history : writeIntents.values()) {
                 if (!history.isEmpty()) {
@@ -104,20 +122,20 @@ final class MvccInheritedHandles {
             return List.copyOf(latest);
         }
 
-        List<WriteIntent> appendedWriteIntents() {
+        synchronized List<WriteIntent> appendedWriteIntents() {
             return List.copyOf(appendedWriteIntents);
         }
 
-        boolean hasWriteIntents() {
+        synchronized boolean hasWriteIntents() {
             return !writeIntents.isEmpty();
         }
 
-        boolean hasWriteIntentForRow(long rowId) {
+        synchronized boolean hasWriteIntentForRow(long rowId) {
             List<WriteIntent> history = writeIntents.get(rowId);
             return history != null && !history.isEmpty();
         }
 
-        java.util.Optional<WriteIntent> latestVisibleWriteIntent(
+        synchronized java.util.Optional<WriteIntent> latestVisibleWriteIntent(
                 long rowId,
                 MvccCommandSequence visibleThroughCommand) {
             List<WriteIntent> history = writeIntents.get(rowId);
@@ -133,19 +151,28 @@ final class MvccInheritedHandles {
             return java.util.Optional.empty();
         }
 
-        int writeIntentCount() {
+        @Override
+        public synchronized int writeIntentCount() {
             return writeIntents().size();
         }
 
-        int appendedWriteIntentCount() {
+        @Override
+        public synchronized int appendedWriteIntentCount() {
             return appendedWriteIntents.size();
         }
 
-        long writeIntentRevision() {
+        @Override
+        public synchronized long writeIntentRevision() {
             return writeIntentRevision;
         }
 
-        boolean hasAppendedWriteIntent(
+        @Override
+        public synchronized int savepointCount() {
+            return savepoints.size();
+        }
+
+
+        synchronized boolean hasAppendedWriteIntent(
                 long rowId,
                 MvccCommandSequence commandSequence,
                 boolean delete) {
@@ -159,13 +186,13 @@ final class MvccInheritedHandles {
             return false;
         }
 
-        void clearWriteIntents() {
+        synchronized void clearWriteIntents() {
             writeIntents.clear();
             appendedWriteIntents.clear();
             writeIntentRevision++;
         }
 
-        MvccCommandSequence rollbackCurrentCommand(MvccCommandSequence commandSequence) {
+        synchronized MvccCommandSequence rollbackCurrentCommand(MvccCommandSequence commandSequence) {
             MvccCommandSequence boundary = MvccCommandSequence.of(
                     Objects.requireNonNull(commandSequence, "commandSequence").value() - 1L);
             removeWriteIntentsAfter(boundary);
@@ -174,7 +201,7 @@ final class MvccInheritedHandles {
             return boundary;
         }
 
-        MvccCommandSequence rollbackToSavepoint(String savepointName) {
+        synchronized MvccCommandSequence rollbackToSavepoint(String savepointName) {
             String normalizedName = requireSavepointName(savepointName);
             MvccCommandSequence boundary = savepoints.get(normalizedName);
             if (boundary == null) {
@@ -187,7 +214,7 @@ final class MvccInheritedHandles {
             return boundary;
         }
 
-        void releaseSavepoint(String savepointName) {
+        synchronized void releaseSavepoint(String savepointName) {
             String normalizedName = requireSavepointName(savepointName);
             boolean remove = false;
             var iterator = savepoints.keySet().iterator();
