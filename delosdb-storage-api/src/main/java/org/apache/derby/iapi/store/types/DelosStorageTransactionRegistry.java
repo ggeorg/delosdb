@@ -47,12 +47,11 @@ public final class DelosStorageTransactionRegistry {
     }
 
     /**
-     * Declare one logical SQL write target before the statement can mutate it.
+     * Declare the storage-provider kind of a SQL write before the statement can mutate.
      * Read-only access never registers and remains unrestricted.
      */
     public static synchronized WriteParticipationResult registerWriteIntent(
             Object ownerTransaction,
-            long logicalTableId,
             boolean mvcc,
             boolean globalTransaction) {
         Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");

@@ -336,7 +336,8 @@ tasks.register('generateNativeAuthenticationTestJar', Jar) {
 def registerDelosFocusedTest = { String taskName,
                                 String descriptionText,
                                 List<String> includePatterns,
-                                Map<String, String> jvmSystemProperties = [:] ->
+                                Map<String, String> jvmSystemProperties = [:],
+                                List<String> testPatterns = [] ->
     tasks.register(taskName, Test) {
         group = 'verification'
         description = descriptionText
@@ -347,6 +348,11 @@ def registerDelosFocusedTest = { String taskName,
         classpath = testRuntimeClasspath()
         useJUnit()
         includePatterns.each { pattern -> include pattern }
+        if (!testPatterns.isEmpty()) {
+            filter {
+                testPatterns.each { pattern -> includeTestsMatching pattern }
+            }
+        }
 
         workingDir = layout.buildDirectory.dir("test-work/${taskName}").get().asFile
         maxHeapSize = '1536m'
@@ -727,13 +733,25 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',
-        'Runs the transaction participation and retained XA restriction proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
+        'Runs supported single-provider/read-only participation and the retained MVCC XA restriction proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
+        [:],
+        [
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testSingleMvccTableAndHeapOnlyWritesRemainSupported',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testReadOnlyCrossTableAndMixedAccessRemainsSupported',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported'
+        ])
 
 registerDelosFocusedTest(
         'runDelosMvccDatabaseCommitDecisionTest',
-        'Runs the Phase 8.3 database-scoped heap/MVCC commit-decision proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'])
+        'Runs the Phase 8.3 database-scoped multi-table and mixed heap/MVCC decision proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
+        [:],
+        [
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTablesCommitThroughOneDatabaseDecision',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTableRollbackRemainsAtomic',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision'
+        ])
 
 registerDelosFocusedTest(
         'runDelosMvccRawStoreDecisionWalCrashTest',

@@ -75,12 +75,9 @@ final class MvccInheritedTransactionLifecycleTest {
         MvccInheritedTable accounts = openTable(store, 11, 1101);
         MvccInheritedTable ledger = openTable(store, 11, 1102);
 
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1L, false, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1101L, true, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1102L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();
@@ -113,12 +110,9 @@ final class MvccInheritedTransactionLifecycleTest {
         MvccInheritedTable accounts = openTable(store, 12, 1201);
         MvccInheritedTable ledger = openTable(store, 12, 1202);
 
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1L, false, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1201L, true, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1202L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();
@@ -155,12 +149,9 @@ final class MvccInheritedTransactionLifecycleTest {
             }
         });
 
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1L, false, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1301L, true, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(
-                derbyTransaction, 1302L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(derbyTransaction, true, false);
 
         DelosStorageTransaction accountsTx = accounts.beginTransaction();
         DelosStorageTransaction ledgerTx = ledger.beginTransaction();

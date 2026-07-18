@@ -106,7 +106,6 @@ abstract public class DMLWriteResultSet extends NoRowsResultSetImpl
             DelosStorageTransactionRegistry.WriteParticipationResult participation =
                     DelosStorageTransactionRegistry.registerWriteIntent(
                             tc,
-                            this.constantAction.conglomId,
                             mvcc,
                             tc.isGlobal());
             if (participation != DelosStorageTransactionRegistry.WriteParticipationResult.ALLOWED) {

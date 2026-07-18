@@ -1,5 +1,8 @@
 package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.committedDigest;
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.reopenedDigest;
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.writeTwoTables;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -9,13 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
-import org.apache.derby.iapi.store.types.DelosStorageTableKey;
-import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -261,61 +260,6 @@ final class MvccLowLevelFailureReplayTest {
         }
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         return new ProcessResult(process.exitValue(), output);
-    }
-
-    private static Object writeTwoTables(MvccInheritedStore store) {
-        Object owner = new Object();
-        MvccInheritedTable first = openTable(store, 1L, 101L);
-        MvccInheritedTable second = openTable(store, 1L, 102L);
-        DelosStorageTransaction firstTx = first.beginTransaction();
-        DelosStorageTransaction secondTx = second.beginTransaction();
-        DelosStorageTransactionRegistry.register(owner, first, firstTx);
-        DelosStorageTransactionRegistry.register(owner, second, secondTx);
-        first.insert(1L, emptyRow(), firstTx);
-        second.insert(1L, emptyRow(), secondTx);
-        return owner;
-    }
-
-    private static String reopenedDigest(Path database) {
-        MvccInheritedStore store = new MvccInheritedStore(database);
-        try {
-            MvccInheritedTable first = openTable(store, 1L, 101L);
-            MvccInheritedTable second = openTable(store, 1L, 102L);
-            return MvccFailureExperimentManifest.digest(List.of(
-                    "first:1=" + read(first, 1L).isPresent(),
-                    "second:1=" + read(second, 1L).isPresent()));
-        } finally {
-            store.close();
-        }
-    }
-
-    private static String committedDigest() {
-        return MvccFailureExperimentManifest.digest(List.of(
-                "first:1=true",
-                "second:1=true"));
-    }
-
-    private static MvccInheritedTable openTable(
-            MvccInheritedStore store,
-            long segmentId,
-            long containerId) {
-        return (MvccInheritedTable) store.openTable(
-                new DelosStorageTableKey(segmentId, containerId));
-    }
-
-    private static StoreDataValue[] emptyRow() {
-        return new StoreDataValue[0];
-    }
-
-    private static Optional<StoreDataValue[]> read(
-            MvccInheritedTable table,
-            long rowId) {
-        DelosStorageTransaction transaction = table.beginReadOnlyTransaction();
-        try {
-            return table.read(rowId, table.snapshot(transaction));
-        } finally {
-            table.abort(transaction);
-        }
     }
 
     private static DurablePaths durablePaths(Path database, String name)

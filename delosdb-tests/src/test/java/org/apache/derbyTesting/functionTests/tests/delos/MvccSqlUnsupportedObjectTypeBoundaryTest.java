@@ -362,16 +362,6 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
         return builder.toString();
     }
 
-    private static void closeQuietly(Connection connection) throws SQLException {
-        try {
-            connection.close();
-        } catch (SQLException e) {
-            if (!"08003".equals(e.getSQLState()) && !"25001".equals(e.getSQLState())) {
-                throw e;
-            }
-        }
-    }
-
     private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
         diagnostics.assertConsistentForTesting(0, containerId);
         assertEquals("expected no MVCC consistency errors", 0,

@@ -1,5 +1,9 @@
 package io.github.ggeorg.delosdb.storage.mvcc.bridge;
 
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.committedDigest;
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.emptyDigest;
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.reopenedDigest;
+import static io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailureReplayTestSupport.writeTwoTables;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -7,15 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
 import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
-import org.apache.derby.iapi.store.types.DelosStorageTableKey;
-import org.apache.derby.iapi.store.types.DelosStorageTransaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
-import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -222,74 +222,15 @@ final class MvccFailureInjectionReplayTest {
         store.close();
     }
 
-    private Object writeTwoTables(MvccInheritedStore store) {
-        Object owner = new Object();
-        MvccInheritedTable first = openTable(store, 1L, 101L);
-        MvccInheritedTable second = openTable(store, 1L, 102L);
-        DelosStorageTransaction firstTx = first.beginTransaction();
-        DelosStorageTransaction secondTx = second.beginTransaction();
-        DelosStorageTransactionRegistry.register(owner, first, firstTx);
-        DelosStorageTransactionRegistry.register(owner, second, secondTx);
-        first.insert(1L, emptyRow(), firstTx);
-        second.insert(1L, emptyRow(), secondTx);
-        return owner;
-    }
-
     private RawScenario prepareMixed(MvccInheritedStore store) throws StandardException {
         Object owner = writeTwoTables(store);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, 1L, false, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, 101L, true, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, 102L, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, true, false);
         CapturingRawStoreParticipant rawStore = new CapturingRawStoreParticipant();
         DelosStorageTransactionRegistry.CommitPreparation preparation =
                 DelosStorageTransactionRegistry.prepareCommit(owner, rawStore);
         return new RawScenario(owner, rawStore, preparation);
-    }
-
-    private String reopenedDigest(Path database) {
-        MvccInheritedStore store = new MvccInheritedStore(database);
-        try {
-            MvccInheritedTable first = openTable(store, 1L, 101L);
-            MvccInheritedTable second = openTable(store, 1L, 102L);
-            return MvccFailureExperimentManifest.digest(List.of(
-                    "first:1=" + read(first, 1L).isPresent(),
-                    "second:1=" + read(second, 1L).isPresent()));
-        } finally {
-            store.close();
-        }
-    }
-
-    private static String committedDigest() {
-        return MvccFailureExperimentManifest.digest(List.of(
-                "first:1=true",
-                "second:1=true"));
-    }
-
-    private static String emptyDigest() {
-        return MvccFailureExperimentManifest.digest(List.of(
-                "first:1=false",
-                "second:1=false"));
-    }
-
-    private static MvccInheritedTable openTable(
-            MvccInheritedStore store,
-            long segmentId,
-            long containerId) {
-        return (MvccInheritedTable) store.openTable(
-                new DelosStorageTableKey(segmentId, containerId));
-    }
-
-    private static StoreDataValue[] emptyRow() {
-        return new StoreDataValue[0];
-    }
-
-    private static Optional<StoreDataValue[]> read(MvccInheritedTable table, long rowId) {
-        DelosStorageTransaction transaction = table.beginReadOnlyTransaction();
-        try {
-            return table.read(rowId, table.snapshot(transaction));
-        } finally {
-            table.abort(transaction);
-        }
     }
 
     private static void writeRawStoreDecision(

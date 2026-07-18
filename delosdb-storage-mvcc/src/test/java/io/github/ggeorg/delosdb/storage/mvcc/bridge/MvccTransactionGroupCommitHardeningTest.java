@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.derby.iapi.store.types.DelosStorageBackupCoordinator;
 import org.apache.derby.iapi.store.types.DelosStorageTransaction;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -118,7 +120,7 @@ final class MvccTransactionGroupCommitHardeningTest {
     }
 
     @Test
-    void fatalJvmErrorReleasesFollowerAndIsRethrownByLeader() throws Exception {
+    void errorReleasesFollowerAndIsRethrownByLeader() throws Exception {
         MvccCommitCoordinator<Integer, Integer> coordinator =
                 new MvccCommitCoordinator<>(
                         MvccCommitCoordinator.Mode.GROUP,
@@ -128,22 +130,23 @@ final class MvccTransactionGroupCommitHardeningTest {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
+        AtomicReference<TestFatalError> injectedFailure = new AtomicReference<>();
+        MvccCommitCoordinator.GroupProcessor<Integer, Integer> processor = items -> {
+            assertEquals(2, items.size());
+            TestFatalError failure = new TestFatalError("injected fatal group failure");
+            assertTrue(injectedFailure.compareAndSet(null, failure));
+            throw failure;
+        };
         try {
             Future<MvccCommitCoordinator.Submission<Integer>> first = executor.submit(() -> {
                 ready.countDown();
                 assertTrue(start.await(30L, TimeUnit.SECONDS));
-                return coordinator.submit(1, false, items -> {
-                    assertEquals(2, items.size());
-                    throw new TestVirtualMachineError("injected fatal group failure");
-                });
+                return coordinator.submit(1, false, processor);
             });
             Future<MvccCommitCoordinator.Submission<Integer>> second = executor.submit(() -> {
                 ready.countDown();
                 assertTrue(start.await(30L, TimeUnit.SECONDS));
-                return coordinator.submit(2, false, items -> {
-                    assertEquals(2, items.size());
-                    throw new TestVirtualMachineError("injected fatal group failure");
-                });
+                return coordinator.submit(2, false, processor);
             });
 
             assertTrue(ready.await(30L, TimeUnit.SECONDS));
@@ -153,18 +156,24 @@ final class MvccTransactionGroupCommitHardeningTest {
             Object secondResult = fatalGroupResult(second);
             List<Object> results = List.of(firstResult, secondResult);
             assertEquals(1L, results.stream()
-                    .filter(TestVirtualMachineError.class::isInstance)
+                    .filter(TestFatalError.class::isInstance)
                     .count());
             assertEquals(1L, results.stream()
                     .filter(MvccCommitCoordinator.Submission.class::isInstance)
                     .count());
 
+            TestFatalError leaderFailure = results.stream()
+                    .filter(TestFatalError.class::isInstance)
+                    .map(TestFatalError.class::cast)
+                    .findFirst()
+                    .orElseThrow();
             MvccCommitCoordinator.Submission<?> follower = results.stream()
                     .filter(MvccCommitCoordinator.Submission.class::isInstance)
                     .map(MvccCommitCoordinator.Submission.class::cast)
                     .findFirst()
                     .orElseThrow();
-            assertInstanceOf(TestVirtualMachineError.class, follower.failure());
+            assertSame(injectedFailure.get(), leaderFailure);
+            assertSame(leaderFailure, follower.failure());
             assertFalse(follower.succeeded());
         } finally {
             coordinator.close();
@@ -509,10 +518,10 @@ final class MvccTransactionGroupCommitHardeningTest {
         return new StoreDataValue[0];
     }
 
-    private static final class TestVirtualMachineError extends VirtualMachineError {
+    private static final class TestFatalError extends Error {
         private static final long serialVersionUID = 1L;
 
-        private TestVirtualMachineError(String message) {
+        private TestFatalError(String message) {
             super(message);
         }
     }

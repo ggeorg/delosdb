@@ -3458,20 +3458,24 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
                         && planText.contains('try (FileOutputStream output'),
                 'PlanExporter stylesheet and output streams must close deterministically')
 
-        ['VirtualMachineError', 'ThreadDeath', 'LinkageError',
-         'queueChanged.signalAll();', 'rethrowFatal(fatalFailure);'].each { token ->
+        ['failure instanceof Error error',
+         'queueChanged.signalAll();', 'rethrowError(errorFailure);'].each { token ->
             DelosDbStaticAnalysisSupport.require(failures, coordinatorText.contains(token),
-                    'Group-commit fatal handling is missing token: ' + token)
+                    'Group-commit Error handling is missing token: ' + token)
         }
+        DelosDbStaticAnalysisSupport.require(failures,
+                !coordinatorText.contains('ThreadDeath'),
+                'Group-commit Error propagation must not depend on removed ThreadDeath handling')
         def signalIndex = coordinatorText.indexOf('queueChanged.signalAll();',
                 coordinatorText.indexOf('private void executeGroup'))
-        def rethrowIndex = coordinatorText.indexOf('rethrowFatal(fatalFailure);')
+        def rethrowIndex = coordinatorText.indexOf('rethrowError(errorFailure);')
         DelosDbStaticAnalysisSupport.require(failures,
                 signalIndex >= 0 && rethrowIndex > signalIndex,
-                'Group waiters must be completed and signaled before the leader rethrows a fatal JVM error')
+                'Group waiters must be completed and signaled before the leader rethrows the original Error')
         DelosDbStaticAnalysisSupport.require(failures,
-                groupTestText.contains('fatalJvmErrorReleasesFollowerAndIsRethrownByLeader'),
-                'Group-commit hardening must prove follower release and leader fatal-error rethrow')
+                groupTestText.contains('errorReleasesFollowerAndIsRethrownByLeader')
+                        && groupTestText.contains('assertSame(leaderFailure, follower.failure())'),
+                'Group-commit hardening must prove follower release and original Error rethrow')
 
         ['testPasswordlessTlsKeyStoreConfigurationIsNullSafeAndClosesInput',
          'testPlanExporterTransformsNormalXmlAndRejectsExternalDtd'].each { token ->
@@ -3913,6 +3917,134 @@ tasks.register('delosDatabaseDecisionRetentionStaticAnalysis') {
     }
 }
 
+tasks.register('delosPhase8EntropyStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the Phase 8 dead-code, replay-helper, focused-task, and Error-propagation cleanup.'
+
+    def requiredFiles = [
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
+            'delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailureReplayTestSupport.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailureInjectionReplayTest.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccLowLevelFailureReplayTest.java',
+            'delosdb-tests/build.gradle',
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccCommitCoordinator.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java'
+    ]
+    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/phase8-entropy-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def read = { String relativePath ->
+            def source = new File(delosRepositoryRoot, relativePath)
+            DelosDbStaticAnalysisSupport.require(
+                    failures, source.isFile(), 'Missing Phase 8 entropy source: ' + relativePath)
+            source.isFile() ? source.getText('UTF-8') : ''
+        }
+
+        def registryText = read(requiredFiles[0])
+        def dmlText = read(requiredFiles[1])
+        def unsupportedTypeTestText = read(requiredFiles[2])
+        def replaySupportText = read(requiredFiles[3])
+        def transactionReplayText = read(requiredFiles[4])
+        def lowLevelReplayText = read(requiredFiles[5])
+        def testBuildText = read(requiredFiles[6])
+        def coordinatorText = read(requiredFiles[7])
+        def groupTestText = read(requiredFiles[8])
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                !registryText.contains('logicalTableId')
+                        && registryText.contains('Object ownerTransaction,\n            boolean mvcc,'),
+                'registerWriteIntent must not retain the unused logical table identifier')
+        DelosDbStaticAnalysisSupport.require(failures,
+                dmlText.contains('DelosStorageTransactionRegistry.registerWriteIntent(\n                            tc,\n                            mvcc,\n                            tc.isGlobal())'),
+                'The SQL write boundary must use the reduced registerWriteIntent contract')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !unsupportedTypeTestText.contains('closeQuietly(Connection connection)'),
+                'MvccSqlUnsupportedObjectTypeBoundaryTest must not retain its dead close helper')
+
+        ['writeTwoTables', 'reopenedDigest', 'committedDigest'].each { helper ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    replaySupportText.contains(helper + '('),
+                    'Shared replay support is missing helper: ' + helper)
+        }
+        [transactionReplayText, lowLevelReplayText].eachWithIndex { replayText, index ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    replayText.contains('MvccFailureReplayTestSupport.'),
+                    'Replay test ' + index + ' must use shared replay support')
+            ['private Object writeTwoTables(',
+             'private static Object writeTwoTables(',
+             'private String reopenedDigest(',
+             'private static String reopenedDigest(',
+             'private static String committedDigest('].each { duplicate ->
+                DelosDbStaticAnalysisSupport.require(failures,
+                        !replayText.contains(duplicate),
+                        'Replay test ' + index + ' retains duplicate helper: ' + duplicate)
+            }
+        }
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                testBuildText.contains('List<String> testPatterns = []')
+                        && testBuildText.contains('includeTestsMatching pattern'),
+                'Focused test registration must support method-level proof splits')
+        def participationStart = testBuildText.indexOf("'runDelosMvccTransactionParticipationTest'")
+        def decisionStart = testBuildText.indexOf("'runDelosMvccDatabaseCommitDecisionTest'")
+        def crashStart = testBuildText.indexOf("'runDelosMvccRawStoreDecisionWalCrashTest'")
+        def participationText = participationStart >= 0 && decisionStart > participationStart
+                ? testBuildText.substring(participationStart, decisionStart) : ''
+        def decisionText = decisionStart >= 0 && crashStart > decisionStart
+                ? testBuildText.substring(decisionStart, crashStart) : ''
+        ['testSingleMvccTableAndHeapOnlyWritesRemainSupported',
+         'testReadOnlyCrossTableAndMixedAccessRemainsSupported',
+         'testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported'].each { methodName ->
+            DelosDbStaticAnalysisSupport.require(failures, participationText.contains(methodName),
+                    'Transaction-participation task is missing method: ' + methodName)
+            DelosDbStaticAnalysisSupport.require(failures, !decisionText.contains(methodName),
+                    'Database-decision task must not rerun participation method: ' + methodName)
+        }
+        ['testTwoMvccTablesCommitThroughOneDatabaseDecision',
+         'testTwoMvccTableRollbackRemainsAtomic',
+         'testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision'].each { methodName ->
+            DelosDbStaticAnalysisSupport.require(failures, decisionText.contains(methodName),
+                    'Database-decision task is missing method: ' + methodName)
+            DelosDbStaticAnalysisSupport.require(failures, !participationText.contains(methodName),
+                    'Transaction-participation task must not rerun decision method: ' + methodName)
+        }
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                !coordinatorText.contains('ThreadDeath')
+                        && coordinatorText.contains('failure instanceof Error error')
+                        && coordinatorText.contains('rethrowError(errorFailure);'),
+                'MvccCommitCoordinator must signal waiters and rethrow every original Error')
+        DelosDbStaticAnalysisSupport.require(failures,
+                groupTestText.contains('errorReleasesFollowerAndIsRethrownByLeader')
+                        && groupTestText.contains('assertSame(leaderFailure, follower.failure())'),
+                'Group-commit proof must verify original Error identity for leader and follower')
+
+        def reportFile = new File(delosBuildRoot, 'reports/delosdb/phase8-entropy-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Phase 8 entropy static analysis')
+            writer.println('========================================')
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+                writer.println('Dead parameters/helpers removed, replay helpers shared, focused tasks split, and Error propagation preserved.')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB Phase 8 entropy static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle(
+                'DelosDB Phase 8 entropy static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -3934,6 +4066,7 @@ tasks.register('s0CloseoutVerification') {
             'delosNoTransitionalStorageRoutingStaticAnalysis',
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
-            'delosDatabaseDecisionRetentionStaticAnalysis'
+            'delosDatabaseDecisionRetentionStaticAnalysis',
+            'delosPhase8EntropyStaticAnalysis'
 }
 

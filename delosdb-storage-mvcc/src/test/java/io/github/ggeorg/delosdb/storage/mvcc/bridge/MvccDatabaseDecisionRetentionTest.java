@@ -176,9 +176,9 @@ final class MvccDatabaseDecisionRetentionTest {
             long secondContainer,
             long rowId) throws StandardException {
         Object owner = writeTwoTables(store, firstContainer, secondContainer, rowId);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, 1L, false, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, firstContainer, true, false);
-        DelosStorageTransactionRegistry.registerWriteIntent(owner, secondContainer, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, false, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, true, false);
+        DelosStorageTransactionRegistry.registerWriteIntent(owner, true, false);
         CapturingRawStoreParticipant rawStore = new CapturingRawStoreParticipant();
         DelosStorageTransactionRegistry.CommitPreparation preparation =
                 DelosStorageTransactionRegistry.prepareCommit(owner, rawStore);
