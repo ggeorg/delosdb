@@ -34,6 +34,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
+import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 
 /**
  * Database-scoped runtime ownership for the {@code delos_mvcc} access method.
@@ -178,31 +179,20 @@ final class MvccDatabaseRuntime implements AutoCloseable {
             DelosMvccConglomerateLifecycle lifecycle) {
         ensureOpen();
         TableIdentity identity = new TableIdentity(key);
-        MvccConglomerateState currentState = states.remove(identity);
+        MvccConglomerateState currentState = states.get(identity);
         Throwable failure = null;
         if (currentState != null) {
             try {
-                currentState.dropDurableState();
-            } catch (RuntimeException | Error dropFailure) {
-                failure = dropFailure;
-            }
-            try {
-                currentState.close();
-            } catch (RuntimeException | Error closeFailure) {
-                if (failure == null) {
-                    failure = closeFailure;
-                } else if (failure != closeFailure) {
-                    failure.addSuppressed(closeFailure);
-                }
+                retireState(identity, currentState);
+            } catch (RuntimeException | Error retirementFailure) {
+                failure = retirementFailure;
             }
         }
-        try {
-            MvccConglomerateLifecycleFiles.abortCreate(databaseDirectory, lifecycle);
-        } catch (RuntimeException | Error cleanupFailure) {
-            if (failure == null) {
+        if (failure == null) {
+            try {
+                MvccConglomerateLifecycleFiles.abortCreate(databaseDirectory, lifecycle);
+            } catch (RuntimeException | Error cleanupFailure) {
                 failure = cleanupFailure;
-            } else if (failure != cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
             }
         }
         rethrow(failure);
@@ -217,28 +207,34 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         Throwable failure = null;
         if (currentState != null) {
             try {
-                currentState.dropDurableState();
-            } catch (RuntimeException | Error dropFailure) {
-                failure = dropFailure;
-            }
-            if (failure == null && states.remove(identity, currentState)) {
-                try {
-                    currentState.close();
-                } catch (RuntimeException | Error closeFailure) {
-                    failure = closeFailure;
-                }
+                retireState(identity, currentState);
+            } catch (RuntimeException | Error retirementFailure) {
+                failure = retirementFailure;
             }
         }
-        try {
-            MvccConglomerateLifecycleFiles.completeDrop(databaseDirectory, lifecycle);
-        } catch (RuntimeException | Error cleanupFailure) {
-            if (failure == null) {
+        if (failure == null) {
+            try {
+                MvccConglomerateLifecycleFiles.completeDrop(databaseDirectory, lifecycle);
+            } catch (RuntimeException | Error cleanupFailure) {
                 failure = cleanupFailure;
-            } else if (failure != cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
             }
         }
         rethrow(failure);
+    }
+
+    private void retireState(
+            TableIdentity identity,
+            MvccConglomerateState currentState) {
+        // Provider transactions and snapshots must be detached before the table
+        // is removed from runtime ownership or its durable state is deleted.
+        DelosStorageTransactionRegistry.abortTableParticipants(currentState.table());
+        currentState.dropDurableState();
+        if (!states.remove(identity, currentState)) {
+            throw new IllegalStateException(
+                    "delos_mvcc runtime ownership changed while retiring "
+                            + identity.containerKey());
+        }
+        currentState.close();
     }
 
     int stateCount() {

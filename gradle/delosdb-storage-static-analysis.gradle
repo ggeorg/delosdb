@@ -4196,8 +4196,12 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures,
                 runtimeText.contains('recoverInterruptedCreates(this.databaseDirectory);')
                         && runtimeText.contains('void abortCreate(')
-                        && runtimeText.contains('void completeDrop('),
-                'Database runtime must recover pending CREATE state and own live completion')
+                        && runtimeText.contains('void completeDrop(')
+                        && runtimeText.contains('private void retireState(')
+                        && runtimeText.contains(
+                                'DelosStorageTransactionRegistry.abortTableParticipants(currentState.table());')
+                        && runtimeText.count('retireState(identity, currentState);') == 2,
+                'Database runtime must release table participants before CREATE abort or committed DROP closes provider state')
         DelosDbStaticAnalysisSupport.require(failures,
                 filesText.contains('A lone pending marker has no durable raw-store commit')
                         && filesText.contains('deleteStateFiles(databaseDirectory, lifecycle);')
@@ -4243,8 +4247,14 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
         }
         DelosDbStaticAnalysisSupport.require(failures,
                 failureRegistryText.contains('installFailureForTesting(')
-                        && sqlTestText.contains('BEFORE_DERBY_RAW_STORE_COMMIT'),
-                'Transactional DDL must retain a checked pre-raw-store-commit failure proof')
+                        && sqlTestText.contains('BEFORE_DERBY_RAW_STORE_COMMIT')
+                        && sqlTestText.contains('if (!connection.isClosed())'),
+                'Transactional DDL must retain a checked pre-raw-store-commit failure proof that tolerates Derby connection invalidation')
+        DelosDbStaticAnalysisSupport.require(failures,
+                crashTestText.contains('shutdownDatabase(database.toString());')
+                        && crashTestText.indexOf('shutdownDatabase(database.toString());')
+                                < crashTestText.indexOf('installHalt(database, failurePoint);'),
+                'Transactional DDL crash schedules must be installed after setup-runtime shutdown and before reopen')
         DelosDbStaticAnalysisSupport.require(failures,
                 testBuildText.contains("'runDelosMvccTransactionalDdlTest'")
                         && testBuildText.contains('MvccSqlTransactionalDdlTest.class')

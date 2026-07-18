@@ -251,9 +251,10 @@ public final class MvccTransactionalDdlCrashTest extends MvccSqlTestSupport {
             String operation = args[3];
             String failurePoint = args[4];
 
-            try (Connection connection = DriverManager.getConnection(
+            long lifecycleContainerId;
+            try (Connection setup = DriverManager.getConnection(
                     "jdbc:derby:" + database + ";create=true")) {
-                try (Statement statement = connection.createStatement()) {
+                try (Statement statement = setup.createStatement()) {
                     statement.executeUpdate(
                             "create table crash_witness_t (id int primary key, value int) using delos_mvcc");
                     if ("DROP".equals(operation)) {
@@ -262,15 +263,19 @@ public final class MvccTransactionalDdlCrashTest extends MvccSqlTestSupport {
                         statement.executeUpdate("insert into crash_drop_t values (1, 10), (2, 20)");
                     }
                 }
-                long lifecycleContainerId;
-                if ("DROP".equals(operation)) {
-                    lifecycleContainerId = mvccContainerId(connection, "CRASH_DROP_T");
-                } else {
-                    lifecycleContainerId = -1L;
-                }
-                copyDirectory(database.resolve("log"), logSnapshot);
-                installHalt(database, failurePoint);
+                lifecycleContainerId = "DROP".equals(operation)
+                        ? mvccContainerId(setup, "CRASH_DROP_T")
+                        : -1L;
+            }
+            shutdownDatabase(database.toString());
+            copyDirectory(database.resolve("log"), logSnapshot);
 
+            // Failure schedules are consumed when the database-scoped MVCC runtime
+            // is created. Install only after the setup runtime has been shut down,
+            // and before reopening the database for the transaction under test.
+            installHalt(database, failurePoint);
+            try (Connection connection = DriverManager.getConnection(
+                    "jdbc:derby:" + database)) {
                 connection.setAutoCommit(false);
                 try (Statement statement = connection.createStatement()) {
                     if ("CREATE".equals(operation)) {
