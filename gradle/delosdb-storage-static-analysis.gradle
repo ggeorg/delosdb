@@ -133,7 +133,8 @@ class DelosDbStaticAnalysisSupport {
             def lines = sourceFile.readLines('UTF-8')
             lines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
-                if (line.contains('UnsupportedOperationException')) {
+                // Catching an optional platform capability is not an unsupported storage path.
+                if (line =~ /\bthrow\s+new\s+(?:[A-Za-z_$][\w$]*\.)*UnsupportedOperationException\s*\(/) {
                     findings << finding(repositoryRoot, 'STORAGE_UNSUPPORTED_OPERATION', sourceFile, lineNumber, line)
                 }
                 if (line.contains('TODO') || line.contains('FIXME') || line.contains('HACK')) {
