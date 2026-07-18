@@ -152,7 +152,16 @@ opened snapshot merely because it reserved a lower sequence number.
 The exact integration API is not frozen. XA prepared-transaction behavior remains unresolved and
 must fail closed until a complete proof exists.
 
-See `docs/design/V1-MVCC-COMMIT-ORDERING-AND-SNAPSHOT-MATHEMATICS.md`.
+The accepted transaction-lifecycle proof additionally requires RawStore-first savepoint rollback,
+idempotent error cleanup, fail-closed MVCC behavior for XA and nested update transactions, and a
+separate snapshot lease for a held MVCC cursor that survives commit.
+
+See:
+
+```text
+docs/design/V1-MVCC-COMMIT-ORDERING-AND-SNAPSHOT-MATHEMATICS.md
+docs/design/V1-DERBY-TRANSACTION-LIFECYCLE-MATRIX.md
+```
 
 ## Memory databases
 
@@ -195,8 +204,7 @@ The following are intentionally not frozen:
 
 ```text
 AccessMethodBootContext fields
-transaction participant interface
-complete transaction lifecycle callbacks
+transaction lifecycle interface shape
 commit-sequence allocator implementation
 XA prepared-transaction visibility
 version-record binary header
