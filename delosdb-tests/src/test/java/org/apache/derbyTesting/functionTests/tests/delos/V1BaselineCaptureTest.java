@@ -750,6 +750,10 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
             assertTrue("participant publication must record elapsed time",
                     timing.participantPublicationTotalNanos() > 0L);
 
+            // Keep the validation read outside the measured explicit transaction sequence and
+            // ensure its read transaction completes before try-with-resources closes the connection.
+            connection.setAutoCommit(true);
+
             List<String> canonical = new ArrayList<>();
             try (Statement statement = connection.createStatement();
                  ResultSet rows = statement.executeQuery(
