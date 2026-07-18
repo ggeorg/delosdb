@@ -133,7 +133,8 @@ flags
 row payload
 ```
 
-The exact stored-column layout and sentinel values remain provisional until DP-4. The accepted
+The exact stored-column layout and visibility sentinel values remain provisional. DP-4 freezes the
+logical identity and chain-link semantics, not the final encoded field layout. The accepted
 requirements are:
 
 - row and version identity are logical and format-versioned;
@@ -152,7 +153,8 @@ stamp its begin commit sequence efficiently.
 It must not persist that handle as the authoritative row or version identity.
 
 If an ephemeral handle is unavailable or invalid, lookup falls back to the logical `MvccVersionId`.
-DP-4 will decide whether a repairable persistent hint is worthwhile.
+DP-4 accepts optional persistent hints only when they use a RawStore page/record identifier, are
+validated against the stored logical IDs, and are never required for correctness.
 
 ## CREATE
 
@@ -364,5 +366,5 @@ DP-3 is accepted because the existing RawStore slotted-page and container operat
 required physical logging, undo, recovery, overflow, file storage, and memory storage without adding
 another persistence abstraction.
 
-The next proof is DP-4: stable row/version identity and version-link behavior under movement, purge,
-compression, recovery, and slot reuse.
+DP-4 is accepted in `V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md`. The next proof is DP-5: the
+Lucene/RawStore watermark crash-state matrix.

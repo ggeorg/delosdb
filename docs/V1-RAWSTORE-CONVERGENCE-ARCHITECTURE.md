@@ -191,6 +191,35 @@ See:
 docs/design/V1-RAWSTORE-MVCC-VERTICAL-SLICE.md
 ```
 
+## Stable row and version identity
+
+The accepted identity model is logical and table-scoped:
+
+```text
+complete row identity     = MVCC table incarnation + MvccRowId
+complete version identity = MVCC table incarnation + MvccVersionId
+version-chain edge        = previousVersionId
+```
+
+A committed row/version identity is never reused in the same table incarnation. Updates and deletes
+preserve the row ID and allocate a new version ID. Truncate or provider-preserving rebuild cannot
+reset allocator high-water unless the operation creates a new table incarnation.
+
+RawStore locations may be cached or persisted only as validated hints. A hint may include the
+expected container, page number, and page-local record identifier. A slot number is never identity.
+The stored row/version header must match before a hint is trusted; otherwise the access method falls
+back to logical lookup and may repair the hint.
+
+Vacuum rewrites the successor's logical predecessor link in the same RawStore transaction before it
+purges an interior or prefix version. A row directory is transactionally maintained but rebuildable
+from the authoritative version records.
+
+See:
+
+```text
+docs/design/V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md
+```
+
 ## Memory databases
 
 After MVCC table state resides in RawStore containers, this must work:
