@@ -21,8 +21,6 @@
 
 package org.apache.derby.iapi.store.access.conglomerate;
 
-import java.util.Properties;
-
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
@@ -40,12 +38,10 @@ public interface ExternalAccessMethodProvider {
     boolean supportsFactoryId(int factoryId);
 
     MethodFactory bootForImplementation(
-            boolean create,
-            Properties serviceProperties,
+            AccessMethodBootContext context,
             String implementationId) throws StandardException;
 
     ConglomerateFactory bootForFactoryId(
-            boolean create,
-            Properties serviceProperties,
+            AccessMethodBootContext context,
             int factoryId) throws StandardException;
 }

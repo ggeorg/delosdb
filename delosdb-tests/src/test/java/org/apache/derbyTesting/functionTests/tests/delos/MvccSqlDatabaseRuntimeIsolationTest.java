@@ -24,6 +24,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.io.File;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.DriverManager;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
@@ -164,6 +165,39 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
         assertFalse(diagnosticsB.runtimeActiveForTesting());
         assertEquals(0, diagnosticsA.runtimeStateCountForTesting());
         assertEquals(0, diagnosticsB.runtimeStateCountForTesting());
+    }
+
+
+    public void testMemoryDatabaseFailsClosedBeforeLegacyMvccStorageBoot() throws Exception {
+        String database = "mvcc-memory-boot-" + System.nanoTime();
+        String jdbcUrl = "jdbc:derby:memory:" + database;
+        try (Connection connection = DriverManager.getConnection(jdbcUrl + ";create=true")) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_control (id int primary key)");
+            connection.commit();
+
+            try {
+                executeUpdate(connection,
+                        "create table memory_mvcc (id int primary key) using delos_mvcc");
+                fail("legacy external MVCC storage must not boot for a memory database");
+            } catch (java.sql.SQLException expected) {
+                assertEquals("0A000", expected.getSQLState());
+            }
+
+            assertRows(connection,
+                    "select count(*) from sys.systables where tablename = 'MEMORY_MVCC'",
+                    "0");
+            executeUpdate(connection, "insert into heap_control values 1");
+            connection.commit();
+            assertRows(connection, "select id from heap_control", "1");
+        } finally {
+            try {
+                DriverManager.getConnection(jdbcUrl + ";shutdown=true");
+                fail("Memory database shutdown should throw the normal Derby shutdown exception");
+            } catch (java.sql.SQLException expected) {
+                assertEquals("08006", expected.getSQLState());
+            }
+        }
     }
 
     private static void assertStateFileOwnedBy(Path databaseRoot, Path stateFile) {

@@ -3160,7 +3160,10 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
     group = 'verification'
     description = 'Verifies explicit database-scoped MVCC runtime ownership and rejects ambient database identity.'
 
+    def bootContextFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java')
+    def providerContractFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java')
     def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
+    def runtimeDiagnosticsDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRuntimeDiagnosticsDirectory.java')
     def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
     def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
     def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
@@ -3170,23 +3173,30 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
     def fromBaseTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
     def sqlTestSupportFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTestSupport.java')
     def sqlTestDirectory = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos')
-    inputs.files(runtimeFile, conglomerateFile, factoryFile, diagnosticsFile, accessManagerFile,
-            analyzeDiagnosticsFile, indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile)
+    inputs.files(bootContextFile, providerContractFile, runtimeFile,
+            runtimeDiagnosticsDirectoryFile, conglomerateFile, factoryFile,
+            diagnosticsFile, accessManagerFile, analyzeDiagnosticsFile,
+            indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile)
     inputs.dir(sqlTestDirectory)
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt'))
 
     doLast {
         def failures = []
-        [runtimeFile, conglomerateFile, factoryFile, diagnosticsFile, accessManagerFile,
-                analyzeDiagnosticsFile, indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile].each { sourceFile ->
+        [bootContextFile, providerContractFile, runtimeFile,
+                runtimeDiagnosticsDirectoryFile, conglomerateFile, factoryFile,
+                diagnosticsFile, accessManagerFile, analyzeDiagnosticsFile,
+                indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile].each { sourceFile ->
             if (!sourceFile.isFile()) {
                 failures << 'Missing required source: ' + sourceFile
             }
         }
 
         if (failures.isEmpty()) {
+            def bootContextText = bootContextFile.getText('UTF-8')
+            def providerContractText = providerContractFile.getText('UTF-8')
             def conglomerateText = conglomerateFile.getText('UTF-8')
             def runtimeText = runtimeFile.getText('UTF-8')
+            def runtimeDiagnosticsDirectoryText = runtimeDiagnosticsDirectoryFile.getText('UTF-8')
             def factoryText = factoryFile.getText('UTF-8')
             def diagnosticsText = diagnosticsFile.getText('UTF-8')
             def accessManagerText = accessManagerFile.getText('UTF-8')
@@ -3207,6 +3217,18 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
                 }
             }
 
+            if (!bootContextText.contains('public final class AccessMethodBootContext')
+                    || !bootContextText.contains('RawStoreFactory rawStoreFactory')
+                    || !bootContextText.contains('DataFactory dataFactory')
+                    || !bootContextText.contains('StorageFactory storageFactory')
+                    || !bootContextText.contains('Object databaseIdentity')) {
+                failures << 'External access methods must receive the owning RawStore/DataFactory/StorageFactory context'
+            }
+            if (!providerContractText.contains('AccessMethodBootContext context')
+                    || providerContractText.contains('boolean create')
+                    || providerContractText.contains('Properties serviceProperties')) {
+                failures << 'External access-method providers must boot from the database-owned context'
+            }
             if (!runtimeText.contains('final class MvccDatabaseRuntime')) {
                 failures << 'MvccDatabaseRuntime must own database-scoped MVCC bridge state'
             }
@@ -3216,8 +3238,27 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             if (!runtimeText.contains('private final Map<TableIdentity, MvccConglomerateState> states')) {
                 failures << 'MvccDatabaseRuntime must own the table-state registry'
             }
-            if (!factoryText.contains('MvccDatabaseRuntime.acquire(databaseDirectory)')) {
-                failures << 'MvccConglomerateFactory must acquire its database runtime explicitly'
+            ['static Lease acquire(', 'REGISTRY_MONITOR', 'RUNTIMES =', 'RegistryEntry',
+             'record DatabaseIdentity', 'MvccDatabaseRuntime.acquire('].each { token ->
+                if (runtimeText.contains(token)) {
+                    failures << 'MvccDatabaseRuntime retains static/path-keyed ownership token: ' + token
+                }
+            }
+            if (!factoryText.contains('new MvccDatabaseRuntime(')
+                    || !factoryText.contains('context.databaseIdentity()')
+                    || factoryText.contains('PersistentService.ROOT')
+                    || factoryText.contains('runtimeLease')) {
+                failures << 'MvccConglomerateFactory must directly own one context-bound runtime without path lookup or leases'
+            }
+            if (!runtimeDiagnosticsDirectoryText.contains('WeakReference<MvccDatabaseRuntime>')
+                    || !runtimeDiagnosticsDirectoryText.contains('It never acquires,')
+                    || runtimeDiagnosticsDirectoryText.contains('.close()')) {
+                failures << 'Legacy path diagnostics may observe runtimes weakly but must not own or close them'
+            }
+            if (!accessManagerText.contains('new AccessMethodBootContext(')
+                    || !accessManagerText.contains('externalAccessMethodContext(conglomProperties)')
+                    || !accessManagerText.contains('externalAccessMethodDatabaseIdentity')) {
+                failures << 'RAMAccessManager must create and pass one database-owned external access-method context'
             }
             if (!diagnosticsText.contains('DelosStorageDiagnostics withContext')) {
                 failures << 'MVCC diagnostics must support explicit database context'
@@ -3254,6 +3295,14 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             if (sqlTestSupportText.contains('select * from ')
                     || sqlTestSupportText.contains('fetch first row')) {
                 failures << 'Embedded SQL reopen helper must not activate MVCC by scanning user rows'
+            }
+
+            def runtimeIsolationTest = new File(sqlTestDirectory, 'MvccSqlDatabaseRuntimeIsolationTest.java')
+            def runtimeIsolationText = runtimeIsolationTest.isFile()
+                    ? runtimeIsolationTest.getText('UTF-8') : ''
+            if (!runtimeIsolationText.contains('testMemoryDatabaseFailsClosedBeforeLegacyMvccStorageBoot')
+                    || !runtimeIsolationText.contains('assertEquals("0A000", expected.getSQLState())')) {
+                failures << 'Runtime ownership proof must keep legacy MVCC storage fail-closed for memory databases'
             }
 
             if (!sqlTestDirectory.isDirectory()) {
@@ -4348,9 +4397,9 @@ tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures,
                 runtimeText.contains('private final MvccBridgeDiagnosticsSupport diagnostics')
                         && runtimeText.contains('databaseStorageSnapshotForDiagnostics()')
-                        && runtimeText.contains('static void clearForTesting(Path databaseDirectory)')
+                        && runtimeText.contains('MvccRuntimeDiagnosticsDirectory.unregister(databaseDirectory, this)')
                         && runtimeText.contains('new MvccConglomerateState(identity.containerKey(), store, diagnostics)'),
-                'MvccDatabaseRuntime must own snapshot observations and database-scoped cleanup')
+                'MvccDatabaseRuntime must own snapshot observations and retire them with its database-owned lifecycle')
         DelosDbStaticAnalysisSupport.require(failures,
                 stateText.contains('private final MvccBridgeDiagnosticsSupport databaseDiagnostics')
                         && stateText.contains('MvccBridgeDiagnosticsSupport databaseDiagnostics()'),
@@ -4367,9 +4416,9 @@ tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
                 'Storage diagnostics and registry must expose the immutable database snapshot')
         DelosDbStaticAnalysisSupport.require(failures,
                 diagnosticsText.contains('return runtime().databaseStorageSnapshotForDiagnostics();')
-                        && diagnosticsText.contains('MvccDatabaseRuntime.clearForTesting(databaseDirectory);')
+                        && diagnosticsText.contains('MvccRuntimeDiagnosticsDirectory.clearForTesting(databaseDirectory);')
                         && diagnosticsText.contains('return databaseStorageSnapshot().storagePathDiagnostics();'),
-                'MVCC compatibility diagnostics must delegate to one database snapshot and scoped cleanup')
+                'MVCC compatibility diagnostics must delegate to one database snapshot and non-owning scoped lookup cleanup')
         DelosDbStaticAnalysisSupport.require(failures,
                 testText.contains('testSnapshotsAndCleanupRemainDatabaseScoped')
                         && testText.contains('snapshotA.insertCount()')

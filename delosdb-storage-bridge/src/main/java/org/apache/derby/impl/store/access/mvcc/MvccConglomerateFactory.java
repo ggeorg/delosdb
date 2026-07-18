@@ -30,10 +30,10 @@ import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.ModuleSupportable;
 import org.apache.derby.iapi.services.monitor.Monitor;
-import org.apache.derby.iapi.services.monitor.PersistentService;
 import org.apache.derby.iapi.services.uuid.UUIDFactory;
 import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.ColumnOrdering;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBootContext;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -60,8 +60,6 @@ public final class MvccConglomerateFactory
     private static final String FORMAT_UUID_STRING = "3FD22170-28F5-4EF4-8C32-EC5FB6E6115B";
 
     private Object formatUUID;
-    private Path databaseDirectory;
-    private MvccDatabaseRuntime.Lease runtimeLease;
     private MvccDatabaseRuntime runtime;
 
     @Override
@@ -186,28 +184,42 @@ public final class MvccConglomerateFactory
         return supportsImplementation(implementation);
     }
 
-    @Override
-    public void boot(boolean create, Properties startParams) throws StandardException {
+    void boot(AccessMethodBootContext context) throws StandardException {
+        java.util.Objects.requireNonNull(context, "context");
         ModuleFactory monitor = Monitor.getMonitor();
         UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
-        String serviceDirectory = startParams.getProperty(PersistentService.ROOT);
-        if (serviceDirectory == null || serviceDirectory.isBlank()) {
-            throw new IllegalStateException("Missing Derby database directory for delos_mvcc runtime");
+
+        String storageRoot = context.dataFactory().getRootDirectory();
+        if (storageRoot == null || storageRoot.isBlank()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "delos_mvcc requires a RawStore-owned directory database during convergence");
         }
-        databaseDirectory = Path.of(serviceDirectory).toAbsolutePath().normalize();
-        runtimeLease = MvccDatabaseRuntime.acquire(databaseDirectory);
-        runtime = runtimeLease.runtime();
+        Path legacyStorageDirectory = Path.of(storageRoot);
+        if (!legacyStorageDirectory.isAbsolute()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "delos_mvcc memory and non-directory databases require the RawStore-backed table format");
+        }
+        runtime = new MvccDatabaseRuntime(
+                context.databaseIdentity(),
+                legacyStorageDirectory);
+    }
+
+    @Override
+    public void boot(boolean create, Properties startParams) throws StandardException {
+        throw StandardException.newException(
+                SQLState.NOT_IMPLEMENTED,
+                "delos_mvcc must be booted with a database-owned access-method context");
     }
 
     @Override
     public void stop() {
-        MvccDatabaseRuntime.Lease lease = runtimeLease;
-        runtimeLease = null;
+        MvccDatabaseRuntime currentRuntime = runtime;
         runtime = null;
-        databaseDirectory = null;
-        if (lease != null) {
-            lease.close();
+        if (currentRuntime != null) {
+            currentRuntime.close();
         }
     }
 

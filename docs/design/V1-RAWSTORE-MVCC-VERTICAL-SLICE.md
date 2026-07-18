@@ -366,5 +366,5 @@ DP-3 is accepted because the existing RawStore slotted-page and container operat
 required physical logging, undo, recovery, overflow, file storage, and memory storage without adding
 another persistence abstraction.
 
-DP-4 is accepted in `V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md`. The next proof is DP-5: the
-Lucene/RawStore watermark crash-state matrix.
+DP-4 is accepted in `V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md`. DP-1 through DP-4 authorize
+RawStore/MVCC implementation. Lucene-specific DP-5 through DP-8 remain mandatory before Lucene work.

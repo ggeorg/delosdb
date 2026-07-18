@@ -44,6 +44,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
 
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBootContext;
 import org.apache.derby.iapi.store.access.conglomerate.Conglomerate;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
@@ -116,6 +117,12 @@ public abstract class RAMAccessManager
     /** Lifecycle owners for access methods booted through ServiceLoader. */
     private final Set<ModuleControl> externalAccessMethodLifecycles =
             Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
+
+    /** Stable identity of this booted database access service. */
+    private final Object externalAccessMethodDatabaseIdentity = new Object();
+
+    /** Database-owned services passed to external access-method providers. */
+    private AccessMethodBootContext externalAccessMethodBootContext;
 
 	/**
 	Service properties.  These are supplied from ModuleControl.boot(),
@@ -730,7 +737,7 @@ public abstract class RAMAccessManager
             }
 
             MethodFactory factory = provider.bootForImplementation(
-                    false, conglomProperties, impltype);
+                    externalAccessMethodContext(conglomProperties), impltype);
             if (factory != null)
             {
                 registerExternalAccessMethodLifecycle(factory);
@@ -752,7 +759,7 @@ public abstract class RAMAccessManager
             }
 
             MethodFactory factory = provider.bootForFactoryId(
-                    false, serviceProperties, factoryId);
+                    externalAccessMethodContext(serviceProperties), factoryId);
             if (factory instanceof ConglomerateFactory conglomerateFactory)
             {
                 registerExternalAccessMethodLifecycle(factory);
@@ -761,6 +768,20 @@ public abstract class RAMAccessManager
             }
         }
         return null;
+    }
+
+
+    private AccessMethodBootContext externalAccessMethodContext(Properties properties)
+            throws StandardException
+    {
+        AccessMethodBootContext context = externalAccessMethodBootContext;
+        if (context == null)
+        {
+            throw StandardException.newException(
+                    SQLState.SERVICE_MISSING_IMPLEMENTATION,
+                    ExternalAccessMethodProvider.class.getName());
+        }
+        return context.withServiceProperties(properties);
     }
 
 	public LockFactory getLockFactory() {
@@ -1152,8 +1173,26 @@ public abstract class RAMAccessManager
 
         // Access depends on a Raw Store implementations.  Load it.
         //
+
         rawstore = (RawStoreFactory) bootServiceModule(
             create, this, RawStoreFactory.MODULE, serviceProperties);
+
+        DataFactory dataFactory = (DataFactory) findServiceModule(
+                this, rawstore.getDataFactoryModule());
+        if (dataFactory == null)
+        {
+            throw StandardException.newException(
+                    SQLState.SERVICE_MISSING_IMPLEMENTATION,
+                    rawstore.getDataFactoryModule());
+        }
+        externalAccessMethodBootContext = new AccessMethodBootContext(
+                rawstore,
+                dataFactory,
+                dataFactory.getStorageFactory(),
+                serviceProperties,
+                create,
+                rawstore.isReadOnly(),
+                externalAccessMethodDatabaseIdentity);
 
         // initialize handler with raw store to be called in the event of
         // aborted inserts.  Store will use the call back to reclaim space
@@ -1376,6 +1415,9 @@ public abstract class RAMAccessManager
                 }
             }
         }
+
+        externalAccessMethodBootContext = null;
+
         if (failure instanceof RuntimeException runtimeFailure)
         {
             throw runtimeFailure;

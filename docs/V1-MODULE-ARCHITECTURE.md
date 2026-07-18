@@ -5,6 +5,14 @@
 This document records the final target module graph. It does not authorize immediate module deletion.
 The current modules remain until their responsibilities have moved and replacement gates are green.
 
+
+## Current migration state
+
+The neutral external access-method boot seam now lives in `delosdb-derby-store-api` as
+`AccessMethodBootContext`. `delosdb-storage-derby` creates the context from its owned RawStore and
+data services, while `delosdb-storage-bridge` consumes it temporarily. This is a migration seam, not
+a reason to retain the bridge module in the final graph.
+
 ## Architectural rules
 
 ```text

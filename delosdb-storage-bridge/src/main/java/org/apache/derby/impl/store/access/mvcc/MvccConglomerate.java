@@ -333,11 +333,11 @@ public final class MvccConglomerate
     }
 
     static int stateCountForDiagnostics() {
-        return MvccDatabaseRuntime.totalStateCountForDiagnostics();
+        return MvccRuntimeDiagnosticsDirectory.totalStateCount();
     }
 
     static int storeCountForDiagnostics() {
-        return MvccDatabaseRuntime.runtimeCountForDiagnostics();
+        return MvccRuntimeDiagnosticsDirectory.runtimeCount();
     }
 
     static Path pageVolumeStateFileForDiagnostics(MvccDatabaseRuntime runtime, int segment, long containerId) {

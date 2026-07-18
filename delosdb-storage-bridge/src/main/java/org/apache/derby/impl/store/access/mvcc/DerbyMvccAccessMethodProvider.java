@@ -24,6 +24,7 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.Properties;
 
 import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBootContext;
 import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
 import org.apache.derby.iapi.store.access.conglomerate.MethodFactory;
@@ -50,35 +51,32 @@ public final class DerbyMvccAccessMethodProvider implements ExternalAccessMethod
 
     @Override
     public MethodFactory bootForImplementation(
-            boolean create,
-            Properties serviceProperties,
+            AccessMethodBootContext context,
             String implementationId) throws StandardException {
         if (!supportsImplementation(implementationId)) {
             return null;
         }
 
-        Properties conglomProperties = new Properties(serviceProperties);
+        Properties conglomProperties = context.serviceProperties();
         conglomProperties.put(AccessFactoryGlobals.CONGLOM_PROP, implementationId);
         MvccConglomerateFactory factory = new MvccConglomerateFactory();
         if (!factory.canSupport(conglomProperties)) {
             return null;
         }
-        factory.boot(create, conglomProperties);
+        factory.boot(context.withServiceProperties(conglomProperties));
         return factory;
     }
 
     @Override
     public ConglomerateFactory bootForFactoryId(
-            boolean create,
-            Properties serviceProperties,
+            AccessMethodBootContext context,
             int factoryId) throws StandardException {
         if (!supportsFactoryId(factoryId)) {
             return null;
         }
 
         MethodFactory factory = bootForImplementation(
-                create,
-                serviceProperties,
+                context,
                 MvccConglomerateFactory.IMPLEMENTATION_ID);
         return factory instanceof ConglomerateFactory conglomerateFactory
                 ? conglomerateFactory

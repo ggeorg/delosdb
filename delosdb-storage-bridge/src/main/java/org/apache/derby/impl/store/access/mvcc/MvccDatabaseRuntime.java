@@ -25,7 +25,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,130 +43,31 @@ import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 /**
  * Database-scoped runtime ownership for the {@code delos_mvcc} access method.
  *
- * <p>One runtime owns the provider store and all bridge table states for one
- * canonicalized Derby database directory. Conglomerates are attached explicitly
- * through their owning {@link MvccConglomerateFactory}; no operation selects a
- * database through mutable ambient state.</p>
+ * <p>One runtime is created and owned by one booted
+ * {@link MvccConglomerateFactory}.  The runtime owns the provider store and all
+ * bridge table states for that database.  No static registry participates in
+ * runtime ownership or database selection.</p>
  */
 final class MvccDatabaseRuntime implements AutoCloseable {
     static final int TABLE_SNAPSHOT_CAPACITY = 256;
     static final int TRANSACTION_SNAPSHOT_CAPACITY = 512;
-    private static final Object REGISTRY_MONITOR = new Object();
-    private static final Map<DatabaseIdentity, RegistryEntry> RUNTIMES = new HashMap<>();
-
+    private final Object databaseIdentity;
     private final Path databaseDirectory;
     private final DelosStorageStore store;
     private final MvccBridgeDiagnosticsSupport diagnostics = new MvccBridgeDiagnosticsSupport();
     private final Map<TableIdentity, MvccConglomerateState> states = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    private MvccDatabaseRuntime(Path databaseDirectory) {
+    MvccDatabaseRuntime(Object databaseIdentity, Path databaseDirectory) {
+        this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         this.databaseDirectory = normalize(databaseDirectory);
         MvccConglomerateLifecycleFiles.recoverInterruptedCreates(this.databaseDirectory);
         this.store = MvccConglomerateState.openStore(this.databaseDirectory);
+        MvccRuntimeDiagnosticsDirectory.register(this.databaseDirectory, this);
     }
 
-    static Lease acquire(Path databaseDirectory) {
-        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
-        synchronized (REGISTRY_MONITOR) {
-            RegistryEntry entry = RUNTIMES.get(identity);
-            if (entry == null) {
-                entry = new RegistryEntry(new MvccDatabaseRuntime(identity.databaseDirectory()));
-                RUNTIMES.put(identity, entry);
-            }
-            entry.references++;
-            return new Lease(identity, entry.runtime);
-        }
-    }
-
-    static MvccDatabaseRuntime require(Path databaseDirectory) {
-        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
-        synchronized (REGISTRY_MONITOR) {
-            RegistryEntry entry = RUNTIMES.get(identity);
-            if (entry == null) {
-                throw new IllegalStateException(
-                        "No active delos_mvcc runtime for database " + identity.databaseDirectory());
-            }
-            return entry.runtime;
-        }
-    }
-
-    static boolean isActive(Path databaseDirectory) {
-        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
-        synchronized (REGISTRY_MONITOR) {
-            return RUNTIMES.containsKey(identity);
-        }
-    }
-
-    static int stateCountForDiagnostics(Path databaseDirectory) {
-        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
-        synchronized (REGISTRY_MONITOR) {
-            RegistryEntry entry = RUNTIMES.get(identity);
-            return entry == null ? 0 : entry.runtime.stateCount();
-        }
-    }
-
-    static MvccDatabaseRuntime requireSingleForDiagnostics() {
-        synchronized (REGISTRY_MONITOR) {
-            if (RUNTIMES.size() != 1) {
-                throw new IllegalStateException(
-                        "MVCC diagnostics require an explicit database directory when "
-                                + RUNTIMES.size() + " database runtimes are active");
-            }
-            return RUNTIMES.values().iterator().next().runtime;
-        }
-    }
-
-    static int totalStateCountForDiagnostics() {
-        synchronized (REGISTRY_MONITOR) {
-            return RUNTIMES.values().stream()
-                    .mapToInt(entry -> entry.runtime.stateCount())
-                    .sum();
-        }
-    }
-
-    static int runtimeCountForDiagnostics() {
-        synchronized (REGISTRY_MONITOR) {
-            return RUNTIMES.size();
-        }
-    }
-
-    static void clearForTesting(Path databaseDirectory) {
-        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
-        MvccDatabaseRuntime runtime = null;
-        synchronized (REGISTRY_MONITOR) {
-            RegistryEntry entry = RUNTIMES.remove(identity);
-            if (entry != null) {
-                runtime = entry.runtime;
-            }
-        }
-        if (runtime != null) {
-            runtime.close();
-        }
-    }
-
-    static void clearAllForTesting() {
-        List<MvccDatabaseRuntime> runtimes;
-        synchronized (REGISTRY_MONITOR) {
-            runtimes = RUNTIMES.values().stream()
-                    .map(entry -> entry.runtime)
-                    .distinct()
-                    .toList();
-            RUNTIMES.clear();
-        }
-        Throwable failure = null;
-        for (MvccDatabaseRuntime runtime : runtimes) {
-            try {
-                runtime.close();
-            } catch (RuntimeException | Error closeFailure) {
-                if (failure == null) {
-                    failure = closeFailure;
-                } else {
-                    failure.addSuppressed(closeFailure);
-                }
-            }
-        }
-        rethrow(failure);
+    Object databaseIdentity() {
+        return databaseIdentity;
     }
 
     Path databaseDirectory() {
@@ -341,6 +241,7 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
+        MvccRuntimeDiagnosticsDirectory.unregister(databaseDirectory, this);
         states.clear();
         store.close();
     }
@@ -349,24 +250,6 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException(
                     "delos_mvcc database runtime is closed: " + databaseDirectory);
-        }
-    }
-
-    private static void release(DatabaseIdentity identity, MvccDatabaseRuntime runtime) {
-        boolean close = false;
-        synchronized (REGISTRY_MONITOR) {
-            RegistryEntry entry = RUNTIMES.get(identity);
-            if (entry == null || entry.runtime != runtime) {
-                return;
-            }
-            entry.references--;
-            if (entry.references == 0) {
-                RUNTIMES.remove(identity);
-                close = true;
-            }
-        }
-        if (close) {
-            runtime.close();
         }
     }
 
@@ -390,46 +273,6 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         }
         if (failure instanceof Error error) {
             throw error;
-        }
-    }
-
-    static final class Lease implements AutoCloseable {
-        private final DatabaseIdentity identity;
-        private final MvccDatabaseRuntime runtime;
-        private final AtomicBoolean closed = new AtomicBoolean();
-
-        private Lease(DatabaseIdentity identity, MvccDatabaseRuntime runtime) {
-            this.identity = identity;
-            this.runtime = runtime;
-        }
-
-        MvccDatabaseRuntime runtime() {
-            if (closed.get()) {
-                throw new IllegalStateException("delos_mvcc database runtime lease is closed");
-            }
-            return runtime;
-        }
-
-        @Override
-        public void close() {
-            if (closed.compareAndSet(false, true)) {
-                release(identity, runtime);
-            }
-        }
-    }
-
-    private static final class RegistryEntry {
-        private final MvccDatabaseRuntime runtime;
-        private int references;
-
-        private RegistryEntry(MvccDatabaseRuntime runtime) {
-            this.runtime = runtime;
-        }
-    }
-
-    private record DatabaseIdentity(Path databaseDirectory) {
-        private DatabaseIdentity {
-            databaseDirectory = normalize(databaseDirectory);
         }
     }
 

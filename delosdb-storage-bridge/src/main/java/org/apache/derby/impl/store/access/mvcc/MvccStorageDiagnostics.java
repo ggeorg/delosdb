@@ -71,10 +71,10 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public void clearRuntimeStateForTesting() {
         if (databaseDirectory == null) {
-            MvccDatabaseRuntime.clearAllForTesting();
+            MvccRuntimeDiagnosticsDirectory.clearAllForTesting();
             clearTransactionsForTesting();
         } else {
-            MvccDatabaseRuntime.clearForTesting(databaseDirectory);
+            MvccRuntimeDiagnosticsDirectory.clearForTesting(databaseDirectory);
         }
     }
 
@@ -82,14 +82,14 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     public int runtimeStateCountForTesting() {
         return databaseDirectory == null
                 ? MvccConglomerate.stateCountForDiagnostics()
-                : MvccDatabaseRuntime.stateCountForDiagnostics(databaseDirectory);
+                : MvccRuntimeDiagnosticsDirectory.stateCount(databaseDirectory);
     }
 
     @Override
     public boolean runtimeActiveForTesting() {
         return databaseDirectory == null
-                ? MvccDatabaseRuntime.runtimeCountForDiagnostics() > 0
-                : MvccDatabaseRuntime.isActive(databaseDirectory);
+                ? MvccRuntimeDiagnosticsDirectory.runtimeCount() > 0
+                : MvccRuntimeDiagnosticsDirectory.isActive(databaseDirectory);
     }
 
     @Override
@@ -970,8 +970,8 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     private MvccDatabaseRuntime runtime() {
         return databaseDirectory == null
-                ? MvccDatabaseRuntime.requireSingleForDiagnostics()
-                : MvccDatabaseRuntime.require(databaseDirectory);
+                ? MvccRuntimeDiagnosticsDirectory.requireSingle()
+                : MvccRuntimeDiagnosticsDirectory.require(databaseDirectory);
     }
 
 }

@@ -39,6 +39,18 @@ Lucene segment files:                derived and rebuildable
 
 Lucene never becomes a second transaction authority.
 
+
+## Implemented convergence status
+
+Stage 2.1 is implemented. `RAMAccessManager` creates a database-owned `AccessMethodBootContext` and
+passes the actual RawStore, DataFactory, StorageFactory, and opaque database-service identity to
+external access methods. The MVCC factory now directly owns one runtime; the former static
+`acquire(Path)`/lease registry and `PersistentService.ROOT` reconstruction are removed.
+
+The existing Phase 8 MVCC files remain transitional and authoritative until the RawStore-backed table
+slice is proven. Memory/non-directory MVCC creation continues to fail closed before those files can
+be opened. See `docs/design/V1-DATABASE-OWNED-ACCESS-METHOD-BOOT.md`.
+
 ## Frozen v1 invariants
 
 1. One RawStore transaction outcome governs heap, MVCC, catalog, indexes, transactional DDL, and
