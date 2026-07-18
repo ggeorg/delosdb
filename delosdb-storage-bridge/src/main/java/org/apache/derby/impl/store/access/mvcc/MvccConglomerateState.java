@@ -68,12 +68,12 @@ final class MvccConglomerateState {
     private final DelosStorageCandidateIndex candidateIndex;
     private final DelosStorageCommittedRead committedRead;
     private final DelosStorageTableDiagnostics diagnostics;
+    private final MvccBridgeDiagnosticsSupport databaseDiagnostics;
 
-    MvccConglomerateState(ContainerKey key, Path databaseDirectory) {
-        this(key, openStore(databaseDirectory));
-    }
-
-    MvccConglomerateState(ContainerKey key, DelosStorageStore store) {
+    MvccConglomerateState(
+            ContainerKey key,
+            DelosStorageStore store,
+            MvccBridgeDiagnosticsSupport databaseDiagnostics) {
         this.key = key;
         this.table = Objects.requireNonNull(store, "store")
                 .openTable(new DelosStorageTableKey(key.getSegmentId(), key.getContainerId()));
@@ -82,6 +82,11 @@ final class MvccConglomerateState {
         this.candidateIndex = requireCapability(table, DelosStorageCandidateIndex.class);
         this.committedRead = requireCapability(table, DelosStorageCommittedRead.class);
         this.diagnostics = requireCapability(table, DelosStorageTableDiagnostics.class);
+        this.databaseDiagnostics = Objects.requireNonNull(databaseDiagnostics, "databaseDiagnostics");
+    }
+
+    MvccBridgeDiagnosticsSupport databaseDiagnostics() {
+        return databaseDiagnostics;
     }
 
     ContainerKey key() {

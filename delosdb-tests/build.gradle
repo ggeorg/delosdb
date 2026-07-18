@@ -772,6 +772,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccDatabaseStorageSnapshotTest',
+        'Runs the Phase 9 immutable database-scoped MVCC storage snapshot proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDatabaseStorageSnapshotTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccSqlLongRowBoundaryTest',
         'Runs the MVCC long-row overflow, in-place vacuum, and reopen lifecycle proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'])
@@ -1030,6 +1035,7 @@ registerDelosFocusedTest(
         'runDelosMvccAnalyzeStatisticsLifecycleTest',
         'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
+        'runDelosMvccDatabaseStorageSnapshotTest',
         'runDelosMvccTableRebuildProviderTruthTest',
         'runDelosMvccStoragePathDiagnosticsRuntimeTest',
         'runDelosMvccOrderedIndexCompositeRangeProofTest',

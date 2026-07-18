@@ -104,7 +104,7 @@ public final class MvccConglomerateController implements ConglomerateController 
         DelosStorageTransaction transaction = writer();
         DelosStorageSnapshot snapshot = state.snapshot(transaction);
         state.delete(location.rowId(), transaction, snapshot);
-        MvccBridgeDiagnosticsSupport.incrementDeleteCount();
+        state.databaseDiagnostics().incrementDeleteCount();
         return true;
     }
 
@@ -142,12 +142,12 @@ public final class MvccConglomerateController implements ConglomerateController 
             DelosStorageSnapshot snapshot,
             boolean statementScopedReader) {
         if (statementScopedReader && state.canReadCommittedImage(snapshot)) {
-            MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
-            MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
+            state.databaseDiagnostics().incrementRowIdFastPathReadCount();
+            state.databaseDiagnostics().incrementPageBackedCommittedReadCount();
             Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
             recordRowIdStoragePath(rowId, visible.isPresent());
             if (visible.isPresent()) {
-                MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
+                state.databaseDiagnostics().incrementRowIdFastPathHitCount();
                 return visible;
             }
             recordRowIdStoragePathFallback(rowId);
@@ -156,7 +156,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     }
 
     private void recordRowIdStoragePath(long rowId, boolean hit) {
-        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+        state.databaseDiagnostics().recordStoragePathDiagnostic(
                 DelosStoragePathDiagnostic.chosen(
                         DelosStorageAccessDecisionKind.MVCC_ROW_ID_LOOKUP,
                         "delos_mvcc",
@@ -172,7 +172,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     }
 
     private void recordRowIdStoragePathFallback(long rowId) {
-        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+        state.databaseDiagnostics().recordStoragePathDiagnostic(
                 DelosStoragePathDiagnostic.fallback(
                         "delos_mvcc",
                         Math.toIntExact(state.key().getSegmentId()),
@@ -259,7 +259,7 @@ public final class MvccConglomerateController implements ConglomerateController 
                 replacementRow(visible.get(), row, validColumns),
                 transaction,
                 snapshot);
-        MvccBridgeDiagnosticsSupport.incrementUpdateCount();
+        state.databaseDiagnostics().incrementUpdateCount();
         return true;
     }
 
@@ -285,7 +285,7 @@ public final class MvccConglomerateController implements ConglomerateController 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {
         long rowId = state.nextRowId();
         state.insert(rowId, cloneRow(row), writer());
-        MvccBridgeDiagnosticsSupport.incrementInsertCount();
+        state.databaseDiagnostics().incrementInsertCount();
         if (destination != null) {
             destination.set(rowId, 0L, -1);
         }

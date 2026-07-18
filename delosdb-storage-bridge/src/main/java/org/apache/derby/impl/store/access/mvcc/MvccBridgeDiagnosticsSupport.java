@@ -18,229 +18,260 @@
    limitations under the License.
 
  */
-
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
+import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr;
 import org.apache.derby.iapi.store.types.DelosStoragePathDiagnostic;
 
-/**
- * Package-local owner for MVCC bridge diagnostics counters.
- *
- * <p>Production bridge classes update these counters, while storage-api
- * diagnostics expose them to smoke fixtures. The older public bridge
- * {@code *ForTesting()} methods remain only as compatibility shims for
- * historical dev smokes.</p>
- */
+/** Database-owned MVCC bridge observations and bounded path history. */
 final class MvccBridgeDiagnosticsSupport {
-    private static final AtomicInteger INSERT_COUNT = new AtomicInteger();
-    private static final AtomicInteger DELETE_COUNT = new AtomicInteger();
-    private static final AtomicInteger UPDATE_COUNT = new AtomicInteger();
-    private static final AtomicInteger OPEN_COUNT = new AtomicInteger();
-    private static final AtomicInteger QUALIFIER_REJECT_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_LOOKUP_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_ROWID_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT = new AtomicInteger();
-    private static final AtomicInteger CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT = new AtomicInteger();
-    private static final AtomicInteger PAGE_BACKED_COMMITTED_SCAN_COUNT = new AtomicInteger();
-    private static final AtomicInteger PAGE_BACKED_COMMITTED_READ_COUNT = new AtomicInteger();
-    private static final AtomicInteger ROW_ID_FAST_PATH_READ_COUNT = new AtomicInteger();
-    private static final AtomicInteger ROW_ID_FAST_PATH_HIT_COUNT = new AtomicInteger();
-    private static final List<DelosStoragePathDiagnostic> STORAGE_PATH_DIAGNOSTICS = new CopyOnWriteArrayList<>();
+    static final int STORAGE_PATH_DIAGNOSTIC_CAPACITY = 256;
 
-    private MvccBridgeDiagnosticsSupport() {
+    private final AtomicInteger insertCount = new AtomicInteger();
+    private final AtomicInteger deleteCount = new AtomicInteger();
+    private final AtomicInteger updateCount = new AtomicInteger();
+    private final AtomicInteger openCount = new AtomicInteger();
+    private final AtomicInteger qualifierRejectCount = new AtomicInteger();
+    private final AtomicInteger candidateIndexLookupCount = new AtomicInteger();
+    private final AtomicInteger candidateIndexFallbackLookupCount = new AtomicInteger();
+    private final AtomicInteger candidateIndexRowIdCount = new AtomicInteger();
+    private final AtomicInteger candidateIndexVisibilityRejectCount = new AtomicInteger();
+    private final AtomicInteger candidateIndexQualifierRejectCount = new AtomicInteger();
+    private final AtomicInteger pageBackedCommittedScanCount = new AtomicInteger();
+    private final AtomicInteger pageBackedCommittedReadCount = new AtomicInteger();
+    private final AtomicInteger rowIdFastPathReadCount = new AtomicInteger();
+    private final AtomicInteger rowIdFastPathHitCount = new AtomicInteger();
+    private final AtomicLong snapshotSequence = new AtomicLong();
+    private final AtomicLong droppedStoragePathDiagnosticCount = new AtomicLong();
+    private final Object storagePathMonitor = new Object();
+    private final Deque<DelosStoragePathDiagnostic> storagePathDiagnostics = new ArrayDeque<>();
+
+    void resetMutationCountersForDiagnostics() {
+        insertCount.set(0);
+        deleteCount.set(0);
+        updateCount.set(0);
     }
 
-    static void resetMutationCountersForDiagnostics() {
-        resetInsertCountForDiagnostics();
-        resetDeleteCountForDiagnostics();
-        resetUpdateCountForDiagnostics();
+    void incrementInsertCount() {
+        insertCount.incrementAndGet();
     }
 
-    static void resetInsertCountForDiagnostics() {
-        INSERT_COUNT.set(0);
+    int insertCountForDiagnostics() {
+        return insertCount.get();
     }
 
-    static void incrementInsertCount() {
-        INSERT_COUNT.incrementAndGet();
+    void incrementDeleteCount() {
+        deleteCount.incrementAndGet();
     }
 
-    static int insertCountForDiagnostics() {
-        return INSERT_COUNT.get();
+    int deleteCountForDiagnostics() {
+        return deleteCount.get();
     }
 
-    static void resetDeleteCountForDiagnostics() {
-        DELETE_COUNT.set(0);
+    void incrementUpdateCount() {
+        updateCount.incrementAndGet();
     }
 
-    static void incrementDeleteCount() {
-        DELETE_COUNT.incrementAndGet();
+    int updateCountForDiagnostics() {
+        return updateCount.get();
     }
 
-    static int deleteCountForDiagnostics() {
-        return DELETE_COUNT.get();
-    }
-
-    static void resetUpdateCountForDiagnostics() {
-        UPDATE_COUNT.set(0);
-    }
-
-    static void incrementUpdateCount() {
-        UPDATE_COUNT.incrementAndGet();
-    }
-
-    static int updateCountForDiagnostics() {
-        return UPDATE_COUNT.get();
-    }
-
-    static void resetScanCountersForDiagnostics() {
-        OPEN_COUNT.set(0);
-        resetQualifierRejectCountForDiagnostics();
-        resetCandidateIndexCountersForDiagnostics();
-        resetPageBackedCommittedReadCountersForDiagnostics();
+    void resetScanCountersForDiagnostics() {
+        openCount.set(0);
+        qualifierRejectCount.set(0);
+        candidateIndexLookupCount.set(0);
+        candidateIndexFallbackLookupCount.set(0);
+        candidateIndexRowIdCount.set(0);
+        candidateIndexVisibilityRejectCount.set(0);
+        candidateIndexQualifierRejectCount.set(0);
+        pageBackedCommittedScanCount.set(0);
+        pageBackedCommittedReadCount.set(0);
+        rowIdFastPathReadCount.set(0);
+        rowIdFastPathHitCount.set(0);
         resetStoragePathDiagnosticsForDiagnostics();
     }
 
-    static void resetOpenCountForDiagnostics() {
-        OPEN_COUNT.set(0);
+    void incrementOpenCount() {
+        openCount.incrementAndGet();
     }
 
-    static void incrementOpenCount() {
-        OPEN_COUNT.incrementAndGet();
+    int openCountForDiagnostics() {
+        return openCount.get();
     }
 
-    static int openCountForDiagnostics() {
-        return OPEN_COUNT.get();
+    void resetQualifierRejectCountForDiagnostics() {
+        qualifierRejectCount.set(0);
     }
 
-    static void resetQualifierRejectCountForDiagnostics() {
-        QUALIFIER_REJECT_COUNT.set(0);
+    void incrementQualifierRejectCount() {
+        qualifierRejectCount.incrementAndGet();
     }
 
-    static void incrementQualifierRejectCount() {
-        QUALIFIER_REJECT_COUNT.incrementAndGet();
+    int qualifierRejectCountForDiagnostics() {
+        return qualifierRejectCount.get();
     }
 
-    static int qualifierRejectCountForDiagnostics() {
-        return QUALIFIER_REJECT_COUNT.get();
+    void resetCandidateIndexCountersForDiagnostics() {
+        candidateIndexLookupCount.set(0);
+        candidateIndexFallbackLookupCount.set(0);
+        candidateIndexRowIdCount.set(0);
+        candidateIndexVisibilityRejectCount.set(0);
+        candidateIndexQualifierRejectCount.set(0);
     }
 
-    static void resetCandidateIndexCountersForDiagnostics() {
-        CANDIDATE_INDEX_LOOKUP_COUNT.set(0);
-        CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.set(0);
-        CANDIDATE_INDEX_ROWID_COUNT.set(0);
-        CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.set(0);
-        CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.set(0);
+    void incrementCandidateIndexLookupCount() {
+        candidateIndexLookupCount.incrementAndGet();
     }
 
-    static void incrementCandidateIndexLookupCount() {
-        CANDIDATE_INDEX_LOOKUP_COUNT.incrementAndGet();
+    int candidateIndexLookupCountForDiagnostics() {
+        return candidateIndexLookupCount.get();
     }
 
-    static int candidateIndexLookupCountForDiagnostics() {
-        return CANDIDATE_INDEX_LOOKUP_COUNT.get();
+    void incrementCandidateIndexFallbackLookupCount() {
+        candidateIndexFallbackLookupCount.incrementAndGet();
     }
 
-    static void incrementCandidateIndexFallbackLookupCount() {
-        CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.incrementAndGet();
+    int candidateIndexFallbackLookupCountForDiagnostics() {
+        return candidateIndexFallbackLookupCount.get();
     }
 
-    static int candidateIndexFallbackLookupCountForDiagnostics() {
-        return CANDIDATE_INDEX_FALLBACK_LOOKUP_COUNT.get();
+    void addCandidateIndexRowIdCount(int rowIds) {
+        candidateIndexRowIdCount.addAndGet(rowIds);
     }
 
-    static void addCandidateIndexRowIdCount(int rowIds) {
-        CANDIDATE_INDEX_ROWID_COUNT.addAndGet(rowIds);
+    int candidateIndexRowIdCountForDiagnostics() {
+        return candidateIndexRowIdCount.get();
     }
 
-    static int candidateIndexRowIdCountForDiagnostics() {
-        return CANDIDATE_INDEX_ROWID_COUNT.get();
+    void incrementCandidateIndexVisibilityRejectCount() {
+        candidateIndexVisibilityRejectCount.incrementAndGet();
     }
 
-    static void incrementCandidateIndexVisibilityRejectCount() {
-        CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.incrementAndGet();
+    int candidateIndexVisibilityRejectCountForDiagnostics() {
+        return candidateIndexVisibilityRejectCount.get();
     }
 
-    static int candidateIndexVisibilityRejectCountForDiagnostics() {
-        return CANDIDATE_INDEX_VISIBILITY_REJECT_COUNT.get();
+    void incrementCandidateIndexQualifierRejectCount() {
+        candidateIndexQualifierRejectCount.incrementAndGet();
     }
 
-    static void incrementCandidateIndexQualifierRejectCount() {
-        CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.incrementAndGet();
+    int candidateIndexQualifierRejectCountForDiagnostics() {
+        return candidateIndexQualifierRejectCount.get();
     }
 
-    static int candidateIndexQualifierRejectCountForDiagnostics() {
-        return CANDIDATE_INDEX_QUALIFIER_REJECT_COUNT.get();
+    void incrementPageBackedCommittedScanCount() {
+        pageBackedCommittedScanCount.incrementAndGet();
     }
 
-    static void resetPageBackedCommittedReadCountersForDiagnostics() {
-        PAGE_BACKED_COMMITTED_SCAN_COUNT.set(0);
-        PAGE_BACKED_COMMITTED_READ_COUNT.set(0);
-        resetRowIdFastPathCountersForDiagnostics();
+    int pageBackedCommittedScanCountForDiagnostics() {
+        return pageBackedCommittedScanCount.get();
     }
 
-    static void incrementPageBackedCommittedScanCount() {
-        PAGE_BACKED_COMMITTED_SCAN_COUNT.incrementAndGet();
+    void incrementPageBackedCommittedReadCount() {
+        pageBackedCommittedReadCount.incrementAndGet();
     }
 
-    static int pageBackedCommittedScanCountForDiagnostics() {
-        return PAGE_BACKED_COMMITTED_SCAN_COUNT.get();
+    int pageBackedCommittedReadCountForDiagnostics() {
+        return pageBackedCommittedReadCount.get();
     }
 
-    static void incrementPageBackedCommittedReadCount() {
-        PAGE_BACKED_COMMITTED_READ_COUNT.incrementAndGet();
+    void resetRowIdFastPathCountersForDiagnostics() {
+        rowIdFastPathReadCount.set(0);
+        rowIdFastPathHitCount.set(0);
     }
 
-    static int pageBackedCommittedReadCountForDiagnostics() {
-        return PAGE_BACKED_COMMITTED_READ_COUNT.get();
+    void incrementRowIdFastPathReadCount() {
+        rowIdFastPathReadCount.incrementAndGet();
     }
 
-    static void resetRowIdFastPathCountersForDiagnostics() {
-        ROW_ID_FAST_PATH_READ_COUNT.set(0);
-        ROW_ID_FAST_PATH_HIT_COUNT.set(0);
+    int rowIdFastPathReadCountForDiagnostics() {
+        return rowIdFastPathReadCount.get();
     }
 
-    static void incrementRowIdFastPathReadCount() {
-        ROW_ID_FAST_PATH_READ_COUNT.incrementAndGet();
+    void incrementRowIdFastPathHitCount() {
+        rowIdFastPathHitCount.incrementAndGet();
     }
 
-    static int rowIdFastPathReadCountForDiagnostics() {
-        return ROW_ID_FAST_PATH_READ_COUNT.get();
+    int rowIdFastPathHitCountForDiagnostics() {
+        return rowIdFastPathHitCount.get();
     }
 
-    static void incrementRowIdFastPathHitCount() {
-        ROW_ID_FAST_PATH_HIT_COUNT.incrementAndGet();
+    void resetStoragePathDiagnosticsForDiagnostics() {
+        synchronized (storagePathMonitor) {
+            storagePathDiagnostics.clear();
+            droppedStoragePathDiagnosticCount.set(0L);
+        }
     }
 
-    static int rowIdFastPathHitCountForDiagnostics() {
-        return ROW_ID_FAST_PATH_HIT_COUNT.get();
-    }
-
-    static void resetStoragePathDiagnosticsForDiagnostics() {
-        STORAGE_PATH_DIAGNOSTICS.clear();
-    }
-
-    static void recordStoragePathDiagnostic(DelosStoragePathDiagnostic diagnostic) {
-        STORAGE_PATH_DIAGNOSTICS.add(diagnostic);
+    void recordStoragePathDiagnostic(DelosStoragePathDiagnostic diagnostic) {
+        synchronized (storagePathMonitor) {
+            if (storagePathDiagnostics.size() == STORAGE_PATH_DIAGNOSTIC_CAPACITY) {
+                storagePathDiagnostics.removeFirst();
+                droppedStoragePathDiagnosticCount.incrementAndGet();
+            }
+            storagePathDiagnostics.addLast(diagnostic);
+        }
         DelosStorageLifecycleJfr.recordStoragePathDecision(diagnostic);
     }
 
-    static List<DelosStoragePathDiagnostic> storagePathDiagnosticsForDiagnostics() {
-        return List.copyOf(STORAGE_PATH_DIAGNOSTICS);
+    List<DelosStoragePathDiagnostic> storagePathDiagnosticsForDiagnostics() {
+        synchronized (storagePathMonitor) {
+            return List.copyOf(storagePathDiagnostics);
+        }
     }
 
-    static List<String> storagePathDiagnosticLinesForDiagnostics() {
-        List<String> lines = new ArrayList<>(STORAGE_PATH_DIAGNOSTICS.size());
-        for (DelosStoragePathDiagnostic diagnostic : STORAGE_PATH_DIAGNOSTICS) {
+    List<String> storagePathDiagnosticLinesForDiagnostics() {
+        List<DelosStoragePathDiagnostic> diagnostics = storagePathDiagnosticsForDiagnostics();
+        List<String> lines = new ArrayList<>(diagnostics.size());
+        for (DelosStoragePathDiagnostic diagnostic : diagnostics) {
             lines.add(diagnostic.diagnosticLine());
         }
         return List.copyOf(lines);
     }
 
+    DelosDatabaseStorageSnapshot snapshot(
+            Path databaseDirectory,
+            boolean runtimeActive,
+            int tableStateCount,
+            DelosDatabaseCommitTimingSnapshot commitTiming) {
+        List<DelosStoragePathDiagnostic> pathDiagnostics = storagePathDiagnosticsForDiagnostics();
+        return new DelosDatabaseStorageSnapshot(
+                DelosDatabaseStorageSnapshot.CURRENT_SCHEMA_VERSION,
+                DelosStorageProviderIds.MVCC_PROVIDER_ID,
+                databaseDirectory.toAbsolutePath().normalize().toString(),
+                DelosDatabaseStorageSnapshot.WEAKLY_CONSISTENT_COLLECTION,
+                snapshotSequence.incrementAndGet(),
+                System.currentTimeMillis(),
+                runtimeActive,
+                tableStateCount,
+                insertCount.get(),
+                updateCount.get(),
+                deleteCount.get(),
+                openCount.get(),
+                qualifierRejectCount.get(),
+                candidateIndexLookupCount.get(),
+                candidateIndexFallbackLookupCount.get(),
+                candidateIndexRowIdCount.get(),
+                candidateIndexVisibilityRejectCount.get(),
+                candidateIndexQualifierRejectCount.get(),
+                pageBackedCommittedScanCount.get(),
+                pageBackedCommittedReadCount.get(),
+                rowIdFastPathReadCount.get(),
+                rowIdFastPathHitCount.get(),
+                STORAGE_PATH_DIAGNOSTIC_CAPACITY,
+                droppedStoragePathDiagnosticCount.get(),
+                pathDiagnostics,
+                commitTiming);
+    }
 }

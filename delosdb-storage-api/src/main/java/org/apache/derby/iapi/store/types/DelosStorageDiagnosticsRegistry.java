@@ -46,6 +46,10 @@ public final class DelosStorageDiagnosticsRegistry {
                 DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
     }
 
+    public static DelosDatabaseStorageSnapshot mvccDatabaseStorageSnapshot(Path databaseDirectory) {
+        return mvcc(databaseDirectory).databaseStorageSnapshot();
+    }
+
     public static DelosStorageDiagnostics heap() {
         return forProvider(HEAP_PROVIDER_ID);
     }

@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
+import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -69,8 +70,12 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public void clearRuntimeStateForTesting() {
-        MvccDatabaseRuntime.clearAllForTesting();
-        clearTransactionsForTesting();
+        if (databaseDirectory == null) {
+            MvccDatabaseRuntime.clearAllForTesting();
+            clearTransactionsForTesting();
+        } else {
+            MvccDatabaseRuntime.clearForTesting(databaseDirectory);
+        }
     }
 
     @Override
@@ -88,8 +93,13 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
+    public DelosDatabaseStorageSnapshot databaseStorageSnapshot() {
+        return runtime().databaseStorageSnapshotForDiagnostics();
+    }
+
+    @Override
     public DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
-        return runtime().databaseCommitTimingSnapshotForDiagnostics();
+        return databaseStorageSnapshot().commitTiming();
     }
 
     @Override
@@ -830,57 +840,57 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public void resetMutationCountersForTesting() {
-        MvccBridgeDiagnosticsSupport.resetMutationCountersForDiagnostics();
+        runtime().diagnosticsForBridge().resetMutationCountersForDiagnostics();
     }
 
     @Override
     public int insertCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.insertCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().insertCount());
     }
 
     @Override
     public int updateCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.updateCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().updateCount());
     }
 
     @Override
     public int deleteCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.deleteCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().deleteCount());
     }
 
     @Override
     public void resetScanCountersForTesting() {
-        MvccBridgeDiagnosticsSupport.resetScanCountersForDiagnostics();
+        runtime().diagnosticsForBridge().resetScanCountersForDiagnostics();
     }
 
     @Override
     public int scanOpenCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.openCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().scanOpenCount());
     }
 
     @Override
     public void resetQualifierRejectCountForTesting() {
-        MvccBridgeDiagnosticsSupport.resetQualifierRejectCountForDiagnostics();
+        runtime().diagnosticsForBridge().resetQualifierRejectCountForDiagnostics();
     }
 
     @Override
     public int qualifierRejectCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.qualifierRejectCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().qualifierRejectCount());
     }
 
     @Override
     public void resetCandidateIndexCountersForTesting() {
-        MvccBridgeDiagnosticsSupport.resetCandidateIndexCountersForDiagnostics();
+        runtime().diagnosticsForBridge().resetCandidateIndexCountersForDiagnostics();
     }
 
     @Override
     public int candidateIndexLookupCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.candidateIndexLookupCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().candidateIndexLookupCount());
     }
 
     @Override
     public int candidateIndexFallbackLookupCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.candidateIndexFallbackLookupCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().candidateIndexFallbackLookupCount());
     }
 
     @Override
@@ -890,7 +900,7 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public int candidateIndexRowIdCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.candidateIndexRowIdCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().candidateIndexRowIdCount());
     }
 
     @Override
@@ -900,47 +910,47 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public int candidateIndexVisibilityRejectCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.candidateIndexVisibilityRejectCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().candidateIndexVisibilityRejectCount());
     }
 
     @Override
     public int candidateIndexQualifierRejectCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.candidateIndexQualifierRejectCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().candidateIndexQualifierRejectCount());
     }
 
     @Override
     public int pageBackedCommittedScanCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.pageBackedCommittedScanCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().pageBackedCommittedScanCount());
     }
 
     @Override
     public int pageBackedCommittedReadCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.pageBackedCommittedReadCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().pageBackedCommittedReadCount());
     }
 
     @Override
     public int rowIdFastPathReadCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.rowIdFastPathReadCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().rowIdFastPathReadCount());
     }
 
     @Override
     public int rowIdFastPathHitCountForTesting() {
-        return MvccBridgeDiagnosticsSupport.rowIdFastPathHitCountForDiagnostics();
+        return Math.toIntExact(databaseStorageSnapshot().rowIdFastPathHitCount());
     }
 
     @Override
     public void resetStoragePathDiagnosticsForTesting() {
-        MvccBridgeDiagnosticsSupport.resetStoragePathDiagnosticsForDiagnostics();
+        runtime().diagnosticsForBridge().resetStoragePathDiagnosticsForDiagnostics();
     }
 
     @Override
     public List<DelosStoragePathDiagnostic> storagePathDiagnosticsForTesting() {
-        return MvccBridgeDiagnosticsSupport.storagePathDiagnosticsForDiagnostics();
+        return databaseStorageSnapshot().storagePathDiagnostics();
     }
 
     @Override
     public List<String> storagePathDiagnosticLinesForTesting() {
-        return MvccBridgeDiagnosticsSupport.storagePathDiagnosticLinesForDiagnostics();
+        return databaseStorageSnapshot().storagePathDiagnosticLines();
     }
 
     @Override

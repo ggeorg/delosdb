@@ -88,9 +88,9 @@ public final class MvccScanController implements ScanManager {
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) throws StandardException {
         this.isolationPolicy = MvccBridgeIsolationPolicy.fromDerbyIsolationLevel(isolationLevel);
-        MvccBridgeDiagnosticsSupport.incrementOpenCount();
         this.conglomerate = conglomerate;
         this.state = conglomerate.state();
+        state.databaseDiagnostics().incrementOpenCount();
         this.transactionManager = transactionManager;
         this.hold = hold;
         this.completeWithDerbyTransaction = (openMode & TransactionController.OPENMODE_FORUPDATE)
@@ -278,7 +278,7 @@ public final class MvccScanController implements ScanManager {
             try {
                 scan = state.openCommittedImageScan(snapshot);
                 pageBackedCommittedRead = true;
-                MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedScanCount();
+                state.databaseDiagnostics().incrementPageBackedCommittedScanCount();
                 recordChosenStoragePath(
                         DelosStorageAccessDecisionKind.MVCC_FULL_SCAN,
                         "current-committed page-backed image scan selected",
@@ -327,7 +327,7 @@ public final class MvccScanController implements ScanManager {
             return false;
         }
         state.delete(current.rowId(), transaction, writeSnapshot);
-        MvccBridgeDiagnosticsSupport.incrementDeleteCount();
+        state.databaseDiagnostics().incrementDeleteCount();
         current = null;
         return true;
     }
@@ -461,7 +461,7 @@ public final class MvccScanController implements ScanManager {
                 current = candidate;
                 return true;
             }
-            MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
+            state.databaseDiagnostics().incrementQualifierRejectCount();
         }
         current = null;
         return false;
@@ -473,7 +473,7 @@ public final class MvccScanController implements ScanManager {
             rowsVisited++;
             Optional<StoreDataValue[]> visible = readCurrentCommittedOrSnapshot(rowId);
             if (visible.isEmpty()) {
-                MvccBridgeDiagnosticsSupport.incrementCandidateIndexVisibilityRejectCount();
+                state.databaseDiagnostics().incrementCandidateIndexVisibilityRejectCount();
                 continue;
             }
             StoreDataValue[] row = visible.get();
@@ -482,8 +482,8 @@ public final class MvccScanController implements ScanManager {
                 current = new DelosStorageRow(rowId, row);
                 return true;
             }
-            MvccBridgeDiagnosticsSupport.incrementCandidateIndexQualifierRejectCount();
-            MvccBridgeDiagnosticsSupport.incrementQualifierRejectCount();
+            state.databaseDiagnostics().incrementCandidateIndexQualifierRejectCount();
+            state.databaseDiagnostics().incrementQualifierRejectCount();
         }
         current = null;
         return false;
@@ -491,8 +491,8 @@ public final class MvccScanController implements ScanManager {
 
     private Optional<StoreDataValue[]> readCurrentCommittedOrSnapshot(long rowId) {
         if (pageBackedCommittedRead) {
-            MvccBridgeDiagnosticsSupport.incrementRowIdFastPathReadCount();
-            MvccBridgeDiagnosticsSupport.incrementPageBackedCommittedReadCount();
+            state.databaseDiagnostics().incrementRowIdFastPathReadCount();
+            state.databaseDiagnostics().incrementPageBackedCommittedReadCount();
             Optional<StoreDataValue[]> visible = state.readCommittedImage(rowId, snapshot);
             recordChosenStoragePath(
                     DelosStorageAccessDecisionKind.MVCC_ROW_ID_LOOKUP,
@@ -503,7 +503,7 @@ public final class MvccScanController implements ScanManager {
                     1L,
                     List.of("rowId=" + rowId, "hit=" + visible.isPresent()));
             if (visible.isPresent()) {
-                MvccBridgeDiagnosticsSupport.incrementRowIdFastPathHitCount();
+                state.databaseDiagnostics().incrementRowIdFastPathHitCount();
                 return visible;
             }
             recordStoragePathFallback(
@@ -555,8 +555,8 @@ public final class MvccScanController implements ScanManager {
                 List.of("orderedIndexRowIdScan=true", "rowIds=" + rowIds.size()));
         // Keep the historical diagnostic counter names for existing gates, but
         // the normal row-id source here is the ordered MVCC index page store.
-        MvccBridgeDiagnosticsSupport.incrementCandidateIndexLookupCount();
-        MvccBridgeDiagnosticsSupport.addCandidateIndexRowIdCount(rowIds.size());
+        state.databaseDiagnostics().incrementCandidateIndexLookupCount();
+        state.databaseDiagnostics().addCandidateIndexRowIdCount(rowIds.size());
         DelosOptimizerPredicatePushdownDiagnostics.recordExecutionIfEnabledForTesting(
                 "delos_mvcc",
                 Math.toIntExact(state.key().getSegmentId()),
@@ -604,7 +604,7 @@ public final class MvccScanController implements ScanManager {
             boolean shortcutSafe,
             long rowIdCount,
             List<String> details) {
-        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+        state.databaseDiagnostics().recordStoragePathDiagnostic(
                 DelosStoragePathDiagnostic.chosen(
                         decisionKind,
                         "delos_mvcc",
@@ -621,7 +621,7 @@ public final class MvccScanController implements ScanManager {
             DelosStorageAccessDecisionKind decisionKind,
             String reason,
             List<String> details) {
-        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+        state.databaseDiagnostics().recordStoragePathDiagnostic(
                 DelosStoragePathDiagnostic.rejected(
                         decisionKind,
                         "delos_mvcc",
@@ -633,7 +633,7 @@ public final class MvccScanController implements ScanManager {
     }
 
     private void recordStoragePathFallback(String reason, List<String> details) {
-        MvccBridgeDiagnosticsSupport.recordStoragePathDiagnostic(
+        state.databaseDiagnostics().recordStoragePathDiagnostic(
                 DelosStoragePathDiagnostic.fallback(
                         "delos_mvcc",
                         Math.toIntExact(state.key().getSegmentId()),
@@ -727,7 +727,7 @@ public final class MvccScanController implements ScanManager {
                 row,
                 validColumns);
         state.update(current.rowId(), replacement, transaction, writeSnapshot);
-        MvccBridgeDiagnosticsSupport.incrementUpdateCount();
+        state.databaseDiagnostics().incrementUpdateCount();
         current = new DelosStorageRow(current.rowId(), replacement);
         return true;
     }

@@ -4286,6 +4286,132 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
     }
 }
 
+tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the Phase 9 versioned immutable database-scoped MVCC snapshot boundary.'
+
+    def requiredFiles = [
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
+            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccBridgeDiagnosticsSupport.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java',
+            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java',
+            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccDatabaseStorageSnapshotTest.java',
+            'delosdb-tests/build.gradle',
+            'docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md'
+    ]
+    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/phase9-immutable-database-snapshot-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def read = { int index ->
+            def source = new File(delosRepositoryRoot, requiredFiles[index])
+            DelosDbStaticAnalysisSupport.require(
+                    failures, source.isFile(),
+                    'Missing Phase 9 database snapshot source: ' + requiredFiles[index])
+            source.isFile() ? source.getText('UTF-8') : ''
+        }
+
+        def snapshotText = read(0)
+        def diagnosticsApiText = read(1)
+        def registryText = read(2)
+        def supportText = read(3)
+        def runtimeText = read(4)
+        def stateText = read(5)
+        def controllerText = read(6)
+        def scanText = read(7)
+        def diagnosticsText = read(8)
+        def testText = read(9)
+        def testBuildText = read(10)
+        def documentationText = read(11)
+
+        DelosDbStaticAnalysisSupport.require(failures,
+                snapshotText.contains('public record DelosDatabaseStorageSnapshot')
+                        && snapshotText.contains('CURRENT_SCHEMA_VERSION = 1')
+                        && snapshotText.contains('WEAKLY_CONSISTENT_COLLECTION')
+                        && snapshotText.contains('storagePathDiagnostics = List.copyOf')
+                        && !snapshotText.contains('org.apache.derby.impl.'),
+                'Database snapshot must remain versioned, immutable, value-only, and implementation-neutral')
+        DelosDbStaticAnalysisSupport.require(failures,
+                supportText.contains('STORAGE_PATH_DIAGNOSTIC_CAPACITY = 256')
+                        && supportText.contains('private final Deque<DelosStoragePathDiagnostic>')
+                        && supportText.contains('droppedStoragePathDiagnosticCount.incrementAndGet()')
+                        && supportText.contains('DelosDatabaseStorageSnapshot snapshot(')
+                        && !supportText.contains('private static final AtomicInteger'),
+                'MVCC bridge counters and path history must be database-owned and bounded')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('private final MvccBridgeDiagnosticsSupport diagnostics')
+                        && runtimeText.contains('databaseStorageSnapshotForDiagnostics()')
+                        && runtimeText.contains('static void clearForTesting(Path databaseDirectory)')
+                        && runtimeText.contains('new MvccConglomerateState(identity.containerKey(), store, diagnostics)'),
+                'MvccDatabaseRuntime must own snapshot observations and database-scoped cleanup')
+        DelosDbStaticAnalysisSupport.require(failures,
+                stateText.contains('private final MvccBridgeDiagnosticsSupport databaseDiagnostics')
+                        && stateText.contains('MvccBridgeDiagnosticsSupport databaseDiagnostics()'),
+                'Each MVCC table bridge state must retain its owning database diagnostics')
+        [controllerText, scanText].eachWithIndex { sourceText, index ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    sourceText.contains('state.databaseDiagnostics().')
+                            && !sourceText.contains('MvccBridgeDiagnosticsSupport.'),
+                    'MVCC bridge source ' + index + ' must record through database ownership')
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                diagnosticsApiText.contains('DelosDatabaseStorageSnapshot databaseStorageSnapshot()')
+                        && registryText.contains('mvccDatabaseStorageSnapshot(Path databaseDirectory)'),
+                'Storage diagnostics and registry must expose the immutable database snapshot')
+        DelosDbStaticAnalysisSupport.require(failures,
+                diagnosticsText.contains('return runtime().databaseStorageSnapshotForDiagnostics();')
+                        && diagnosticsText.contains('MvccDatabaseRuntime.clearForTesting(databaseDirectory);')
+                        && diagnosticsText.contains('return databaseStorageSnapshot().storagePathDiagnostics();'),
+                'MVCC compatibility diagnostics must delegate to one database snapshot and scoped cleanup')
+        DelosDbStaticAnalysisSupport.require(failures,
+                testText.contains('testSnapshotsAndCleanupRemainDatabaseScoped')
+                        && testText.contains('snapshotA.insertCount()')
+                        && testText.contains('snapshotB.insertCount()')
+                        && testText.contains('database-scoped cleanup must not close database B')
+                        && testText.contains('snapshotA.storagePathDiagnostics().clear()'),
+                'Phase 9 proof must cover database isolation, immutability, and scoped cleanup')
+        DelosDbStaticAnalysisSupport.require(failures,
+                testBuildText.contains("'runDelosMvccDatabaseStorageSnapshotTest'")
+                        && testBuildText.contains('MvccDatabaseStorageSnapshotTest.class'),
+                'Immutable database snapshot proof must have a permanent focused Gradle lane')
+        DelosDbStaticAnalysisSupport.require(failures,
+                documentationText.contains('weakly-consistent-atomic-counters-with-bounded-path-history')
+                        && documentationText.contains('capped at 256 entries'),
+                'Public documentation must state collection semantics and bounded cost')
+
+        def reportFile = new File(
+                delosBuildRoot,
+                'reports/delosdb/phase9-immutable-database-snapshot-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB Phase 9 immutable database snapshot static analysis')
+            writer.println('===========================================================')
+            if (failures.isEmpty()) {
+                writer.println('Status: PASS')
+                writer.println('MVCC bridge observations are database-scoped, immutable, versioned, and bounded.')
+            } else {
+                writer.println('Status: FAIL')
+                failures.each { failure -> writer.println('- ' + failure) }
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Phase 9 immutable database snapshot static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Phase 9 immutable database snapshot static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -4309,6 +4435,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',
-            'delosMvccTransactionalDdlStaticAnalysis'
+            'delosMvccTransactionalDdlStaticAnalysis',
+            'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis'
 }
 

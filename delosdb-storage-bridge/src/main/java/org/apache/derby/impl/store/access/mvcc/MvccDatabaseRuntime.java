@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
+import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.iapi.store.types.DelosStorageStore;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
@@ -50,6 +51,7 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     private final Path databaseDirectory;
     private final DelosStorageStore store;
+    private final MvccBridgeDiagnosticsSupport diagnostics = new MvccBridgeDiagnosticsSupport();
     private final Map<TableIdentity, MvccConglomerateState> states = new ConcurrentHashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -124,6 +126,20 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         }
     }
 
+    static void clearForTesting(Path databaseDirectory) {
+        DatabaseIdentity identity = new DatabaseIdentity(databaseDirectory);
+        MvccDatabaseRuntime runtime = null;
+        synchronized (REGISTRY_MONITOR) {
+            RegistryEntry entry = RUNTIMES.remove(identity);
+            if (entry != null) {
+                runtime = entry.runtime;
+            }
+        }
+        if (runtime != null) {
+            runtime.close();
+        }
+    }
+
     static void clearAllForTesting() {
         List<MvccDatabaseRuntime> runtimes;
         synchronized (REGISTRY_MONITOR) {
@@ -157,7 +173,7 @@ final class MvccDatabaseRuntime implements AutoCloseable {
         TableIdentity identity = new TableIdentity(key);
         return states.computeIfAbsent(
                 identity,
-                ignored -> new MvccConglomerateState(identity.containerKey(), store));
+                ignored -> new MvccConglomerateState(identity.containerKey(), store, diagnostics));
     }
 
     MvccConglomerateState stateForDiagnostics(int segment, long containerId) {
@@ -239,6 +255,20 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     int stateCount() {
         return states.size();
+    }
+
+    DelosDatabaseStorageSnapshot databaseStorageSnapshotForDiagnostics() {
+        ensureOpen();
+        return diagnostics.snapshot(
+                databaseDirectory,
+                true,
+                stateCount(),
+                store.databaseCommitTimingSnapshotForTesting());
+    }
+
+    MvccBridgeDiagnosticsSupport diagnosticsForBridge() {
+        ensureOpen();
+        return diagnostics;
     }
 
     DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForDiagnostics() {

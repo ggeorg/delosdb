@@ -66,6 +66,11 @@ public interface DelosStorageDiagnostics {
         return false;
     }
 
+    /** Return a versioned immutable observation for one database runtime. */
+    default DelosDatabaseStorageSnapshot databaseStorageSnapshot() {
+        return DelosDatabaseStorageSnapshot.unavailable(providerId());
+    }
+
     default DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
         return DelosDatabaseCommitTimingSnapshot.EMPTY;
     }
