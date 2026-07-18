@@ -128,10 +128,13 @@ tasks.named('processResources') {
         include '**/*.xml'
         exclude '**/messages.xml'
         exclude '**/*.tmpl'
+        exclude 'org/apache/derby/loc/*.properties'
     }
     from('src/main/java/org/apache/derby/loc') {
-        include 'sysinfoMessages.properties'
-        include 'toolsmessages.properties'
+        include 'sysinfoMessages*.properties'
+        include 'sysinfomessages_pl.properties'
+        include 'toolsmessages*.properties'
+        rename 'sysinfomessages_pl.properties', 'sysinfoMessages_pl.properties'
         into 'org/apache/derby/loc/tools'
     }
     from project.ext.delosdbProductInfoResourceDir
@@ -144,6 +147,22 @@ tasks.register('compileDerbyTools') {
 
 def toolsArchiveName = 'derbytools.jar'
 
+class DelosDbToolsJarVerifier {
+    static void assertModularPackageOwnership(File jarFile) {
+        def moduleReference = java.lang.module.ModuleFinder.of(jarFile.toPath())
+                .find('org.apache.derby.tools')
+                .orElse(null)
+        if (moduleReference == null) {
+            throw new org.gradle.api.GradleException(
+                    "${jarFile.name} does not contain org.apache.derby.tools")
+        }
+        if (moduleReference.descriptor().packages().contains('org.apache.derby.loc')) {
+            throw new org.gradle.api.GradleException(
+                    "${jarFile.name} must not claim engine-owned package org.apache.derby.loc")
+        }
+    }
+}
+
 tasks.named('jar', Jar) {
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     archiveFileName = toolsArchiveName
@@ -153,5 +172,8 @@ tasks.named('jar', Jar) {
     }
     manifest {
         attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Tools')
+    }
+    doLast {
+        DelosDbToolsJarVerifier.assertModularPackageOwnership(archiveFile.get().asFile)
     }
 }
