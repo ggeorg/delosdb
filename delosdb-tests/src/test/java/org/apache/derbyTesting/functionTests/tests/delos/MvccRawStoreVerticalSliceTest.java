@@ -94,16 +94,11 @@ public final class MvccRawStoreVerticalSliceTest extends MvccSqlTestSupport {
                         "create table raw_mvcc_u (id int, name varchar(64)) using delos_mvcc");
                 writer.commit();
                 executeUpdate(writer, "insert into raw_mvcc_t values (5, 'first-table')");
-                try {
-                    executeUpdate(writer, "insert into raw_mvcc_u values (6, 'second-table')");
-                    fail("The isolated format must reject a second RawStore-backed table before mutation");
-                } catch (java.sql.SQLException expected) {
-                    assertTrue(expected.toString(),
-                            expected.toString().contains("multi-table"));
-                }
+                executeUpdate(writer, "insert into raw_mvcc_u values (6, 'second-table')");
+                assertRows(writer, "select id from raw_mvcc_t where id = 5", "5");
+                assertRows(writer, "select id from raw_mvcc_u where id = 6", "6");
                 writer.rollback();
                 assertRows(writer, "select id from raw_mvcc_t where id = 5");
-                writer.commit();
                 assertRows(writer, "select id from raw_mvcc_u where id = 6");
                 writer.commit();
 

@@ -5290,7 +5290,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             requireOrdered('RawStore MVCC INSERT ownership',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite(table)', 'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()',
+                    ['context.beforeWrite()', 'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()',
                             'insertRow(rawTransaction, table.metadataContainer()', 'context.addPending('])
             requireOrdered('RawStore MVCC DROP lock order',
                     section(tableText, 'static void drop(', 'private static void initializeMetadataContainer(',
@@ -5346,7 +5346,8 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'implements AccessMethodTransactionLifecycle',
                     'transactionManager.isGlobal()',
                     'registerRawStoreOwnedMvcc(transactionManager)',
-                    'multi-table transactions are not supported',
+                    'UNCAPTURED_SNAPSHOT',
+                    'snapshotSequence = runtime.captureSnapshot()',
                     'beforeCommit(CommitMode mode)',
                     'stampPendingVersions(',
                     'afterCommit(CommitMode mode, DatabaseInstant instant)',
@@ -5457,8 +5458,10 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'RAW_MVCC_ROLLED_BACK',
                     "insert into raw_mvcc_t values (2, 'rolled-back')",
                     "insert into raw_mvcc_t values (3, 'after-rollback')",
-                    'The isolated format must reject a second RawStore-backed table before mutation',
-                    'expected.toString().contains("multi-table")',
+                    "insert into raw_mvcc_t values (5, 'first-table')",
+                    "insert into raw_mvcc_u values (6, 'second-table')",
+                    'select id from raw_mvcc_t where id = 5',
+                    'select id from raw_mvcc_u where id = 6',
                     'inheritedMvccStateFileCount(database)',
                     'RawStore-backed table access must require the explicit opt-in',
                     'expected.toString().contains(ENABLED_PROPERTY)',
@@ -5626,8 +5629,7 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
             requireOrdered('Write-time durable transaction-ID allocation',
                     section(contextText, 'void beforeWrite(', 'void addPending(',
                             'RawStore MVCC beforeWrite section'),
-                    ['bind(candidate)',
-                            'DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transactionManager)',
+                    ['DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transactionManager)',
                             'ensureTransactionId()'])
             requireOrdered('Precommit database-wide commit publication',
                     section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
@@ -5640,7 +5642,7 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
             requireOrdered('Persisted creator transaction identity',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite(table)', 'long creatorTransactionId = context.transactionId()',
+                    ['context.beforeWrite()', 'long creatorTransactionId = context.transactionId()',
                             'insertRow(rawTransaction, table.versionContainer()'])
             if (tableText.contains('updateAllocatorCommittedHighWater(')
                     || tableText.contains('static long committedHighWater(')) {
@@ -5718,6 +5720,192 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies multiple RawStore-backed MVCC tables share one transaction identity, snapshot, commit sequence, and RawStore outcome.'
+
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-MULTI-TABLE-TRANSACTIONS.md')
+    def requiredFiles = [contextFile, tableFile, sqlTestFile, testsBuildFile, designFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-multi-table-transaction-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def contextText = contextFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Transaction-wide MVCC state', contextText, [
+                    'private static final long UNCAPTURED_SNAPSHOT = Long.MIN_VALUE',
+                    'private final List<MvccRawStoreTable.PendingVersion> pending',
+                    'private long transactionId',
+                    'private long snapshotSequence = UNCAPTURED_SNAPSHOT',
+                    'snapshotSequence = runtime.captureSnapshot()',
+                    'return snapshotSequence',
+                    'MvccRawStoreTable.stampPendingVersions(',
+                    'List.copyOf(pending)',
+                    'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
+                    'snapshotSequence = UNCAPTURED_SNAPSHOT'
+            ])
+            if (contextText.contains('private MvccRawStoreTable.Descriptor table;')
+                    || contextText.contains('multi-table transactions are not supported')) {
+                failures << 'The RawStore MVCC transaction context must not retain the Stage 3 single-table restriction'
+            }
+            requireOrdered('One precommit sequence across all pending tables',
+                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
+                            'RawStore multi-table beforeCommit section'),
+                    ['runtime.reserveCommitSequence(rawTransaction)',
+                            'MvccRawStoreTable.stampPendingVersions(',
+                            'List.copyOf(pending)',
+                            'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
+                            'AFTER_STAMP_BEFORE_RAW_COMMIT'])
+            requireOrdered('One cached transaction snapshot',
+                    section(contextText, 'long snapshotSequence(', 'public void beforeCommit(',
+                            'RawStore multi-table snapshot section'),
+                    ['if (snapshotSequence == UNCAPTURED_SNAPSHOT)',
+                            'snapshotSequence = runtime.captureSnapshot()',
+                            'return snapshotSequence'])
+            requireTokens('Cross-table savepoint reconciliation', contextText, [
+                    'MvccRawStoreTable.pendingVersionExists(',
+                    'pending.get(index)',
+                    'pending.remove(index)'
+            ])
+
+            requireTokens('Deterministic cross-table stamping', tableText, [
+                    'List<PendingVersion> ordered = new ArrayList<>(pending)',
+                    'ordered.sort(Comparator',
+                    'version.table().metadataContainer().getSegmentId()',
+                    'version.table().metadataContainer().getContainerId()',
+                    'thenComparingLong(PendingVersion::versionId)',
+                    'version.table()',
+                    'pending.table()'
+            ])
+            if (tableText.contains('RawStore MVCC transaction crossed table boundaries')) {
+                failures << 'Version stamping must not retain the Stage 3 cross-table rejection'
+            }
+
+            [
+                    'testTwoTableCommitRollbackAndSavepointUseOneRawStoreOutcome',
+                    'testTransactionSnapshotIsStableAcrossRawStoreTables',
+                    'testTwoTableCommitSurvivesBothRawStoreCrashBoundaries',
+                    'testMemoryDatabaseSupportsTwoTableTransactions'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Multi-table RawStore MVCC proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Multi-table identity and outcome proof', sqlTestText, [
+                    "insert into multi_a values (1, 'a-commit')",
+                    "insert into multi_b values (2, 'b-commit')",
+                    'assertCounters(connection, 2L, 2L, 1L)',
+                    'new long[][] {{1L, 1L}}',
+                    'connection.rollback(savepoint)',
+                    'assertCounters(connection, 4L, 3L, 2L)'
+            ])
+            requireTokens('Cross-table snapshot proof', sqlTestText, [
+                    'select id from snapshot_a',
+                    "insert into snapshot_b values (2, 'after-snapshot')",
+                    'select id from snapshot_b where id = 2'
+            ])
+            requireTokens('Multi-table RawStore crash proof', sqlTestText, [
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'insert into crash_a values',
+                    'insert into crash_b values',
+                    'expectCommitted'
+            ])
+            requireTokens('Multi-table memory proof', sqlTestText, [
+                    'jdbc:derby:memory:',
+                    'insert into memory_a values',
+                    'insert into memory_b values',
+                    'assertCounters(connection, 3L, 2L, 1L)'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreMultiTableTransactionTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreMultiTableTransactionTest'
+            }
+
+            requireTokens('Multi-table design record', designText, [
+                    'one RawStore transaction outcome',
+                    'one `MvccTransactionId`',
+                    'one `MvccCommitSequence`',
+                    'transaction-wide snapshot',
+                    'savepoint',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest',
+                    'delosMvccRawStoreMultiTableTransactionStaticAnalysis'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-multi-table-transaction-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore multi-table MVCC transaction static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Rule: all RawStore-backed MVCC tables in one SQL transaction share one snapshot, one identity, one commit sequence, and one RawStore outcome.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore multi-table MVCC transaction static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore multi-table MVCC transaction static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -5742,6 +5930,7 @@ tasks.register('s0CloseoutVerification') {
             'delosAccessMethodTransactionLifecycleStaticAnalysis',
             'delosMvccRawStoreVerticalSliceStaticAnalysis',
             'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
+            'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

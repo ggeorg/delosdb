@@ -23,14 +23,16 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 /** Transaction-local MVCC semantics attached to one inherited access transaction. */
 final class MvccRawStoreTransactionContext implements AccessMethodTransactionLifecycle {
+    private static final long UNCAPTURED_SNAPSHOT = Long.MIN_VALUE;
+
     private final MvccRawStoreRuntime runtime;
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final List<MvccRawStoreTable.PendingVersion> pending = new ArrayList<>();
     private final List<SavepointMarker> savepoints = new ArrayList<>();
 
-    private MvccRawStoreTable.Descriptor table;
     private long transactionId;
+    private long snapshotSequence = UNCAPTURED_SNAPSHOT;
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
 
@@ -47,25 +49,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return transactionId;
     }
 
-    void bind(MvccRawStoreTable.Descriptor candidate) throws StandardException {
+    void beforeWrite() throws StandardException {
         if (transactionManager.isGlobal()) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "RawStore-backed delos_mvcc XA participation");
         }
-        if (table == null) {
-            table = candidate;
-            return;
-        }
-        if (!table.metadataContainer().equals(candidate.metadataContainer())) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "RawStore-backed delos_mvcc multi-table transactions are not supported by the isolated format");
-        }
-    }
-
-    void beforeWrite(MvccRawStoreTable.Descriptor candidate) throws StandardException {
-        bind(candidate);
         try {
             DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transactionManager);
         } catch (IllegalStateException mixedAuthorities) {
@@ -81,9 +70,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         pending.add(version);
     }
 
-    long snapshotSequence(MvccRawStoreTable.Descriptor candidate) throws StandardException {
-        bind(candidate);
-        return runtime.captureSnapshot();
+    long snapshotSequence() {
+        if (snapshotSequence == UNCAPTURED_SNAPSHOT) {
+            snapshotSequence = runtime.captureSnapshot();
+        }
+        return snapshotSequence;
     }
 
     @Override
@@ -96,7 +87,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         try {
             MvccRawStoreTable.stampPendingVersions(
                     rawTransaction,
-                    table,
                     List.copyOf(pending),
                     reservedCommitSequence);
             runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
@@ -159,7 +149,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         for (int index = pending.size() - 1; index >= 0; index--) {
             if (!MvccRawStoreTable.pendingVersionExists(
                     rawTransaction,
-                    table,
                     pending.get(index),
                     transactionId)) {
                 pending.remove(index);
@@ -233,8 +222,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private void clearLocalState() {
         pending.clear();
         savepoints.clear();
-        table = null;
         transactionId = 0L;
+        snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;
         publicationLockHeld = false;
     }

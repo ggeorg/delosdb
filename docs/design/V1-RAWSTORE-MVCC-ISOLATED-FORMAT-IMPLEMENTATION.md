@@ -100,6 +100,12 @@ The table allocator row remains format-compatible for logical row and version al
 committed-high-water field is reserved and is no longer the visibility or publication authority. See
 `V1-RAWSTORE-MVCC-DATABASE-WIDE-IDENTITIES.md`.
 
+One access transaction may now mutate multiple RawStore-backed MVCC tables. The transaction-local
+participant retains one database-wide `MvccTransactionId`, one pending-version list whose entries own
+their table descriptor, and one transaction-wide snapshot. Precommit stamps all surviving table
+versions with one `MvccCommitSequence` before the single inherited RawStore commit. See
+`V1-RAWSTORE-MVCC-MULTI-TABLE-TRANSACTIONS.md`.
+
 ## CREATE and INSERT
 
 CREATE uses `Transaction.addContainer()` twice and writes the control, allocator, and version-marker
@@ -157,7 +163,7 @@ For a transaction with inserted versions:
 ```text
 1. acquire the publication lock
 2. reserve the next database-wide MvccCommitSequence through a forced nested-top RawStore commit
-3. stamp pending version begin sequences through logged RawStore field updates
+3. stamp all pending version begin sequences across participating tables through logged RawStore field updates
 4. update the database-wide RawStore-owned committed high-water in the user transaction
 5. let RAMTransaction commit the inherited RawStore transaction
 6. publish the in-memory high-water only after RawStore reports success
@@ -165,7 +171,8 @@ For a transaction with inserted versions:
 ```
 
 Snapshot capture reads only the already published in-memory high-water while holding the publication
-lock. It does not open a RawStore container while acquiring that lock. On conglomerate reopen, the
+lock and is cached for the duration of the access transaction. It does not open a RawStore container
+while acquiring that lock. On conglomerate reopen, the
 factory reconstructs the in-memory high-water from the committed database metadata row before the table is
 returned. This preserves the required ordering without introducing a publication-lock/container-lock
 inversion.
@@ -207,11 +214,13 @@ DROP
 clean reopen
 process-halt recovery
 file and memory databases
+multiple RawStore-backed MVCC tables in one transaction
+one transaction-wide snapshot across those tables
 ```
 
 The following capabilities are outside this isolated implementation contract. Operations with an
-implemented boundary, such as UPDATE, DELETE, a second RawStore-backed MVCC table, XA participation,
-and nested updates, fail closed. The remaining items are not yet claimed as supported:
+implemented boundary, such as UPDATE, DELETE, XA participation, and nested updates, fail closed. The
+remaining items are not yet claimed as supported:
 
 ```text
 UPDATE and DELETE
@@ -219,7 +228,6 @@ historical version-chain mutation
 secondary and ordered indexes
 unique constraints
 vacuum, purge, compression, and relocation
-multi-table RawStore-backed MVCC transactions
 mixed heap/MVCC transactions
 XA participation
 nested update transactions
@@ -227,9 +235,8 @@ final lock granularity and final completed table binary format
 default routing or migration of existing tables
 ```
 
-A transaction that attempts to bind a second RawStore-backed MVCC table is rejected before the second
-table mutation. A transaction also cannot combine RawStore-owned MVCC mutation or DDL with mutation or
-DDL from the retained external format; the second storage authority is rejected before it can mutate.
+A transaction cannot combine RawStore-owned MVCC mutation or DDL with mutation or DDL from the retained
+external format; the second storage authority is rejected before it can mutate.
 XA and nested update callbacks are rejected before MVCC mutation. Read-only nested transactions remain
 available to inherited query preparation.
 
@@ -239,6 +246,7 @@ Focused runtime task:
 
 ```text
 :delosdb-tests:runDelosMvccRawStoreVerticalSliceTest
+:delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest
 ```
 
 It covers:
@@ -268,6 +276,7 @@ Permanent architecture task:
 
 ```text
 delosMvccRawStoreVerticalSliceStaticAnalysis
+delosMvccRawStoreMultiTableTransactionStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,

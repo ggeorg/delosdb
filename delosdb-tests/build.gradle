@@ -772,6 +772,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreMultiTableTransactionTest',
+        'Runs one-outcome, savepoint, stable-snapshot, crash, and memory proofs across RawStore-backed MVCC tables.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

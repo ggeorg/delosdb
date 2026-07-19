@@ -11,6 +11,7 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
 
@@ -177,7 +178,7 @@ final class MvccRawStoreTable {
             throw new IllegalArgumentException(
                     "RawStore MVCC row width mismatch: expected " + table.columnCount());
         }
-        context.beforeWrite(table);
+        context.beforeWrite();
         long creatorTransactionId = context.transactionId();
         Allocation allocation = allocateIdentifiers(rawTransaction, table);
         Object[] versionRow = versionRow(
@@ -211,8 +212,7 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        context.bind(table);
-        long snapshot = context.snapshotSequence(table);
+        long snapshot = context.snapshotSequence();
         long headVersionId = findHeadVersionId(rawTransaction, table, rowId);
         if (headVersionId == 0L) {
             return null;
@@ -228,8 +228,7 @@ final class MvccRawStoreTable {
             Transaction rawTransaction,
             Descriptor table,
             MvccRawStoreTransactionContext context) throws StandardException {
-        context.bind(table);
-        long snapshot = context.snapshotSequence(table);
+        long snapshot = context.snapshotSequence();
         List<VisibleRow> rows = new ArrayList<>();
         ContainerHandle container = rawTransaction.openContainer(
                 table.metadataContainer(),
@@ -279,13 +278,12 @@ final class MvccRawStoreTable {
 
     static boolean pendingVersionExists(
             Transaction rawTransaction,
-            Descriptor table,
             PendingVersion pending,
             long creatorTransactionId) throws StandardException {
-        if (!pending.table().metadataContainer().equals(table.metadataContainer())) {
-            return false;
-        }
-        VersionRecord version = findVersion(rawTransaction, table, pending.versionId());
+        VersionRecord version = findVersion(
+                rawTransaction,
+                pending.table(),
+                pending.versionId());
         return version != null
                 && version.creatorTransactionId() == creatorTransactionId
                 && version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE;
@@ -293,14 +291,21 @@ final class MvccRawStoreTable {
 
     static void stampPendingVersions(
             Transaction rawTransaction,
-            Descriptor table,
             List<PendingVersion> pending,
             long commitSequence) throws StandardException {
-        for (PendingVersion version : pending) {
-            if (!version.table().metadataContainer().equals(table.metadataContainer())) {
-                throw new IllegalStateException("RawStore MVCC transaction crossed table boundaries");
-            }
-            updateVersionBegin(rawTransaction, table, version, commitSequence);
+        List<PendingVersion> ordered = new ArrayList<>(pending);
+        ordered.sort(Comparator
+                .comparingLong((PendingVersion version) ->
+                        version.table().metadataContainer().getSegmentId())
+                .thenComparingLong(version ->
+                        version.table().metadataContainer().getContainerId())
+                .thenComparingLong(PendingVersion::versionId));
+        for (PendingVersion version : ordered) {
+            updateVersionBegin(
+                    rawTransaction,
+                    version.table(),
+                    version,
+                    commitSequence);
         }
     }
 
