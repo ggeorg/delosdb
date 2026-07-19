@@ -69,6 +69,8 @@ public final class MvccConglomerate
     private transient MvccDatabaseRuntime runtime;
     private transient ContainerKey id;
     private transient MvccConglomerateState state;
+    private transient MvccRawStoreRuntime rawStoreRuntime;
+    private transient MvccRawStoreTable.Descriptor rawStoreTable;
     private int columnCount;
     private int[] collationIds = new int[0];
     private boolean temporary;
@@ -79,6 +81,11 @@ public final class MvccConglomerate
 
     private MvccConglomerate(MvccDatabaseRuntime runtime) {
         this.runtime = java.util.Objects.requireNonNull(runtime, "runtime");
+        this.id = new ContainerKey(0L, 0L);
+    }
+
+    private MvccConglomerate(MvccRawStoreRuntime rawStoreRuntime) {
+        this.rawStoreRuntime = java.util.Objects.requireNonNull(rawStoreRuntime, "rawStoreRuntime");
         this.id = new ContainerKey(0L, 0L);
     }
 
@@ -103,6 +110,21 @@ public final class MvccConglomerate
         this.state = runtime.stateFor(key);
     }
 
+    MvccConglomerate(
+            MvccRawStoreRuntime rawStoreRuntime,
+            MvccRawStoreTable.Descriptor rawStoreTable) {
+        this.rawStoreRuntime = java.util.Objects.requireNonNull(rawStoreRuntime, "rawStoreRuntime");
+        this.rawStoreTable = java.util.Objects.requireNonNull(rawStoreTable, "rawStoreTable");
+        this.id = rawStoreTable.metadataContainer();
+        this.columnCount = rawStoreTable.columnCount();
+        this.collationIds = rawStoreTable.collationIds().clone();
+        this.temporary = rawStoreTable.temporary();
+    }
+
+    boolean rawStoreBacked() {
+        return rawStoreTable != null;
+    }
+
     MvccConglomerateState state() {
         return requireState();
     }
@@ -122,6 +144,18 @@ public final class MvccConglomerate
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "delos_mvcc DDL in XA transactions");
+        }
+        if (rawStoreBacked()) {
+            try {
+                DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(xactManager);
+            } catch (IllegalStateException mixedAuthorities) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        mixedAuthorities,
+                        mixedAuthorities.getMessage());
+            }
+            MvccRawStoreTable.drop(xactManager.getRawStoreXact(), rawStoreTable);
+            return;
         }
         requireState();
         MvccDatabaseRuntime currentRuntime = requireRuntime();
@@ -189,6 +223,13 @@ public final class MvccConglomerate
             LockingPolicy lockingPolicy,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) {
+        if (rawStoreBacked()) {
+            return new MvccRawStoreConglomerateController(
+                    rawStoreRuntime,
+                    rawStoreTable,
+                    xactManager,
+                    rawtran);
+        }
         return new MvccConglomerateController(this, xactManager, openMode);
     }
 
@@ -209,6 +250,16 @@ public final class MvccConglomerate
             int stopSearchOperator,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) throws StandardException {
+        if (rawStoreBacked()) {
+            return new MvccRawStoreScanController(
+                    rawStoreRuntime,
+                    rawStoreTable,
+                    xactManager,
+                    rawtran,
+                    hold,
+                    scanColumnList,
+                    qualifier);
+        }
         return new MvccScanController(this, xactManager, hold, openMode, isolationLevel, scanColumnList, qualifier);
     }
 
@@ -226,6 +277,9 @@ public final class MvccConglomerate
 
     @Override
     public void purgeConglomerate(TransactionManager xactManager, Transaction rawtran) throws StandardException {
+        if (rawStoreBacked()) {
+            throw unsupported();
+        }
         try {
             requireState().vacuumSafely();
         } catch (RuntimeException e) {
@@ -246,7 +300,9 @@ public final class MvccConglomerate
     @Override
     public StoreDataValue cloneValue(boolean forceMaterialization) {
         MvccConglomerate clone;
-        if (runtime == null) {
+        if (rawStoreBacked()) {
+            clone = new MvccConglomerate(rawStoreRuntime, rawStoreTable);
+        } else if (runtime == null) {
             clone = new MvccConglomerate();
         } else if (id.getContainerId() == 0L) {
             clone = new MvccConglomerate(runtime);
@@ -261,6 +317,9 @@ public final class MvccConglomerate
 
     @Override
     public StoreDataValue getNewNull() {
+        if (rawStoreRuntime != null) {
+            return new MvccConglomerate(rawStoreRuntime);
+        }
         return runtime == null ? new MvccConglomerate() : new MvccConglomerate(runtime);
     }
 
@@ -314,6 +373,7 @@ public final class MvccConglomerate
     public void restoreToNull() {
         id = new ContainerKey(0L, 0L);
         state = null;
+        rawStoreTable = null;
         columnCount = 0;
         collationIds = new int[0];
         temporary = false;

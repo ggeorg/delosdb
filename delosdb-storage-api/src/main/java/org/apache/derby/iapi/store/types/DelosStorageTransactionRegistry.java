@@ -44,6 +44,7 @@ public final class DelosStorageTransactionRegistry {
     private static final Map<Object, List<DelosStorageTransactionLifecycleAction>> LIFECYCLE_ACTIONS =
             new IdentityHashMap<>();
     private static final Map<Object, WriteParticipation> WRITE_PARTICIPATION = new IdentityHashMap<>();
+    private static final Map<Object, Boolean> RAW_STORE_OWNED_MVCC = new IdentityHashMap<>();
 
     private DelosStorageTransactionRegistry() {
     }
@@ -73,14 +74,29 @@ public final class DelosStorageTransactionRegistry {
      * Whether the active local transaction has external MVCC outcomes which must
      * remain subordinate to the Derby raw-store transaction.
      *
-     * <p>Every local MVCC write uses the raw-store-backed decision. This is
-     * intentionally broader than mixed DML classification so catalog/DDL work
-     * in the same transaction cannot commit independently of MVCC data.</p>
+     * <p>The isolated RawStore-backed MVCC format participates directly in the
+     * inherited transaction and therefore does not require the Phase 8 external
+     * decision coordinator. During convergence, only registered external writers
+     * and external lifecycle actions use that compatibility path.</p>
      */
     public static synchronized boolean requiresRawStoreDecision(Object ownerTransaction) {
-        WriteParticipation participation = WRITE_PARTICIPATION.get(ownerTransaction);
-        return (participation != null && participation.mvccWrite())
+        return !writersFor(ownerTransaction).isEmpty()
                 || !lifecycleActionsFor(ownerTransaction).isEmpty();
+    }
+
+    /**
+     * Mark one transaction as using the RawStore-owned MVCC format.
+     *
+     * <p>The isolated format and the retained external format may coexist in one
+     * database during migration, but they may not both mutate in one transaction.</p>
+     */
+    public static synchronized void registerRawStoreOwnedMvcc(Object ownerTransaction) {
+        Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        if (!writersFor(requiredOwner).isEmpty()
+                || !lifecycleActionsFor(requiredOwner).isEmpty()) {
+            throw mixedMvccStorageAuthorities();
+        }
+        RAW_STORE_OWNED_MVCC.put(requiredOwner, Boolean.TRUE);
     }
 
     /** Register provider lifecycle work owned by the enclosing Derby transaction. */
@@ -88,6 +104,9 @@ public final class DelosStorageTransactionRegistry {
             Object ownerTransaction,
             DelosStorageTransactionLifecycleAction action) {
         Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
+        if (RAW_STORE_OWNED_MVCC.containsKey(requiredOwner)) {
+            throw mixedMvccStorageAuthorities();
+        }
         DelosStorageTransactionLifecycleAction requiredAction =
                 Objects.requireNonNull(action, "action");
         LIFECYCLE_ACTIONS.computeIfAbsent(requiredOwner, ignored -> new ArrayList<>())
@@ -101,6 +120,15 @@ public final class DelosStorageTransactionRegistry {
         Object requiredOwner = Objects.requireNonNull(ownerTransaction, "ownerTransaction");
         DelosStorageTable requiredTable = Objects.requireNonNull(table, "table");
         DelosStorageTransaction requiredTransaction = Objects.requireNonNull(transaction, "transaction");
+        if (RAW_STORE_OWNED_MVCC.containsKey(requiredOwner)) {
+            IllegalStateException mixedAuthorities = mixedMvccStorageAuthorities();
+            try {
+                requiredTable.abort(requiredTransaction);
+            } catch (RuntimeException | Error abortFailure) {
+                mixedAuthorities.addSuppressed(abortFailure);
+            }
+            throw mixedAuthorities;
+        }
         Writer writer = new Writer(requiredOwner, requiredTable, requiredTransaction);
         try {
             for (SavepointMarker marker : savepointsFor(requiredOwner)) {
@@ -198,9 +226,8 @@ public final class DelosStorageTransactionRegistry {
         List<Writer> writers = writersFor(requiredOwner);
         List<DelosStorageTransactionLifecycleAction> lifecycleActions =
                 lifecycleActionsFor(requiredOwner);
-        WriteParticipation participation = writeParticipationFor(requiredOwner);
-        boolean mvccWrite = participation != null && participation.mvccWrite();
-        boolean requiresRawStoreDecision = mvccWrite || !lifecycleActions.isEmpty();
+        boolean externalMvccWrite = !writers.isEmpty();
+        boolean requiresRawStoreDecision = externalMvccWrite || !lifecycleActions.isEmpty();
 
         if (!requiresRawStoreDecision) {
             Throwable failure = commitWriters(writers);
@@ -213,7 +240,7 @@ public final class DelosStorageTransactionRegistry {
         }
 
         DelosStorageRawDecisionCommitCoordinator.PreparedCommit prepared = null;
-        if (mvccWrite) {
+        if (externalMvccWrite) {
             DelosStorageCommitCoordinator coordinator = sharedCoordinator(writers);
             if (!(coordinator instanceof DelosStorageRawDecisionCommitCoordinator rawCoordinator)) {
                 throw new IllegalStateException(
@@ -760,6 +787,7 @@ public final class DelosStorageTransactionRegistry {
         SAVEPOINTS.clear();
         LIFECYCLE_ACTIONS.clear();
         WRITE_PARTICIPATION.clear();
+        RAW_STORE_OWNED_MVCC.clear();
     }
 
     private static synchronized List<Writer> writersFor(Object ownerTransaction) {
@@ -840,6 +868,13 @@ public final class DelosStorageTransactionRegistry {
 
     private static synchronized void clearWriteParticipation(Object ownerTransaction) {
         WRITE_PARTICIPATION.remove(ownerTransaction);
+        RAW_STORE_OWNED_MVCC.remove(ownerTransaction);
+    }
+
+    private static IllegalStateException mixedMvccStorageAuthorities() {
+        return new IllegalStateException(
+                "A transaction cannot mix RawStore-owned delos_mvcc mutations "
+                        + "with retained external-format delos_mvcc mutations");
     }
 
     private static String requireSavepointName(String savepointName) {

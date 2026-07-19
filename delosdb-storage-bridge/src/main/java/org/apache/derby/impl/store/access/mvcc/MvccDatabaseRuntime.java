@@ -22,6 +22,8 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
@@ -49,6 +53,8 @@ import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
  * runtime ownership or database selection.</p>
  */
 final class MvccDatabaseRuntime implements AutoCloseable {
+    private static final Pattern PERSISTED_TABLE_FILE = Pattern.compile(
+            "conglomerate-(\\d+)-(\\d+)\\..+");
     static final int TABLE_SNAPSHOT_CAPACITY = 256;
     static final int TRANSACTION_SNAPSHOT_CAPACITY = 512;
     private final Object databaseIdentity;
@@ -72,6 +78,32 @@ final class MvccDatabaseRuntime implements AutoCloseable {
 
     Path databaseDirectory() {
         return databaseDirectory;
+    }
+
+    long maximumPersistedContainerId(long segmentId) {
+        ensureOpen();
+        Path inheritedStore = databaseDirectory
+                .resolve(DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY)
+                .resolve(DelosMvccConglomerateLifecycle.INHERITED_STORE_DIRECTORY);
+        if (!Files.isDirectory(inheritedStore)) {
+            return 0L;
+        }
+
+        long maximum = 0L;
+        String glob = "conglomerate-" + segmentId + "-*";
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(inheritedStore, glob)) {
+            for (Path file : stream) {
+                Matcher matcher = PERSISTED_TABLE_FILE.matcher(file.getFileName().toString());
+                if (!matcher.matches() || Long.parseLong(matcher.group(1)) != segmentId) {
+                    continue;
+                }
+                maximum = Math.max(maximum, Long.parseLong(matcher.group(2)));
+            }
+        } catch (IOException failure) {
+            throw new java.io.UncheckedIOException(
+                    "Unable to inspect retained delos_mvcc conglomerate identities", failure);
+        }
+        return maximum;
     }
 
     MvccConglomerateState stateFor(ContainerKey key) {

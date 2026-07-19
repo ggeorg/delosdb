@@ -98,6 +98,54 @@ final class MvccInheritedTransactionLifecycleTest {
     }
 
     @Test
+    void rawStoreOwnedMvccUsesInheritedCommitWithoutExternalDecision() throws Exception {
+        Object derbyTransaction = new Object();
+        DelosStorageTransactionRegistry.registerWriteIntent(
+                derbyTransaction, true, false);
+        DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(derbyTransaction);
+
+        assertFalse(DelosStorageTransactionRegistry.requiresRawStoreDecision(derbyTransaction));
+        DelosStorageTransactionRegistry.CommitPreparation prepared =
+                DelosStorageTransactionRegistry.prepareCommit(
+                        derbyTransaction, new CapturingRawStoreParticipant());
+        assertFalse(prepared.requiresRawStoreDecision());
+        DelosStorageTransactionRegistry.completeCommit(prepared);
+        assertEquals(0, DelosStorageTransactionRegistry.pendingCountForTesting(derbyTransaction));
+    }
+
+    @Test
+    void rawStoreOwnedAndRetainedMvccWritersCannotMix() {
+        Object rawFirstOwner = new Object();
+        FailingLifecycleTable retainedAfterRaw = new FailingLifecycleTable(false, false);
+        DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(rawFirstOwner);
+
+        IllegalStateException rawFirstFailure = assertThrows(
+                IllegalStateException.class,
+                () -> DelosStorageTransactionRegistry.register(
+                        rawFirstOwner,
+                        retainedAfterRaw,
+                        retainedAfterRaw.beginTransaction()));
+        assertTrue(rawFirstFailure.getMessage().contains(
+                "cannot mix RawStore-owned delos_mvcc mutations"));
+        assertEquals(1, retainedAfterRaw.abortCount);
+
+        Object retainedFirstOwner = new Object();
+        FailingLifecycleTable retainedBeforeRaw = new FailingLifecycleTable(false, false);
+        DelosStorageTransactionRegistry.register(
+                retainedFirstOwner,
+                retainedBeforeRaw,
+                retainedBeforeRaw.beginTransaction());
+
+        IllegalStateException retainedFirstFailure = assertThrows(
+                IllegalStateException.class,
+                () -> DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(
+                        retainedFirstOwner));
+        assertTrue(retainedFirstFailure.getMessage().contains(
+                "cannot mix RawStore-owned delos_mvcc mutations"));
+        DelosStorageTransactionRegistry.abort(retainedFirstOwner);
+    }
+
+    @Test
     void lifecycleActionsAreSavepointAwareAndRawStoreOwned() throws Exception {
         Object derbyTransaction = new Object();
         CapturingLifecycleAction retained = new CapturingLifecycleAction(20, 2001);

@@ -85,7 +85,7 @@ final class MvccStoreCostController implements StoreCostController {
             int accessType,
             StoreCostResult costResult) {
         ensureOpen();
-        if (DelosMvccOptimizerCostDiagnostics.enabled()) {
+        if (DelosMvccOptimizerCostDiagnostics.enabled() && !conglomerate.rawStoreBacked()) {
             DelosStorageStatistics statistics = conglomerate.state().storageStatisticsSnapshot();
             DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatisticsForOptimizerCosting(statistics);
             long rows = statistics.logicalRowCount() > 0L
@@ -139,7 +139,7 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public long getEstimatedRowCount() {
         ensureOpen();
-        if (DelosMvccOptimizerCostDiagnostics.enabled()) {
+        if (DelosMvccOptimizerCostDiagnostics.enabled() && !conglomerate.rawStoreBacked()) {
             long rows = conglomerate.state().storageStatisticsSnapshot().logicalRowCount();
             return rows > 0L ? rows : estimatedRowCount;
         }

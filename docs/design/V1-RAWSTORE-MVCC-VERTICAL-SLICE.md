@@ -6,8 +6,9 @@
 ACCEPTED DESIGN PROOF
 ```
 
-This proof authorizes the first isolated RawStore-backed MVCC format slice. It does not authorize
-production SQL routing, removal of the Phase 8 persistence system, or a final v1 binary format.
+This proof authorizes the first isolated RawStore-backed MVCC format slice behind an explicit
+opt-in. It does not authorize default routing, migration of existing tables, removal of the earlier
+persistence system, or a final v1 binary format.
 
 ## Purpose
 
@@ -241,7 +242,10 @@ publish the in-memory high-water
 The stamp is a normal logged RawStore field update. If any stamp fails, the transaction aborts and
 RawStore undo removes the inserted version and directory rows and restores allocator state.
 
-No MVCC commit marker, outcome file, publication WAL, or second commit decision is written.
+No MVCC commit marker, outcome file, publication WAL, or second commit decision is written. During
+the transition, the retained external-format registry must classify this path as RawStore-owned rather
+than attempting to prepare the Phase 8 external commit coordinator. A transaction may not mutate both
+formats.
 
 ## ROLLBACK and savepoints
 
@@ -345,20 +349,22 @@ optimized row-directory lookup
 XA
 nested update transactions
 final binary format
-production SQL routing
-removal of Phase 8 persistence
+default SQL routing
+migration of existing tables
+removal of the earlier persistence path
 ```
 
 ## Implementation gate
 
-Stage 3 production code may implement only this complete slice after Stage 2 supplies the accepted
-neutral boot and transaction lifecycle seams.
+Implementation code may provide only this complete slice after the accepted neutral boot and
+transaction-lifecycle seams are available.
 
 The implementation must be isolated behind a new format/test path and prove the complete capability
 before any existing production table is migrated.
 
-It may not dual-write in production. Differential comparison with the Phase 8 implementation belongs
-only in tests.
+It may not dual-write in production. The focused test must run the supported
+CREATE/INSERT/ROLLBACK/COMMIT/reopen workload through both the retained earlier implementation and
+the isolated RawStore format, then compare their observable evidence.
 
 ## Exit decision
 

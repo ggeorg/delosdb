@@ -5153,6 +5153,354 @@ tasks.register('delosAccessMethodTransactionLifecycleStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies the isolated MVCC format uses RawStore as its only physical and transactional authority.'
+
+    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def legacyRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
+    def transactionRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
+    def transactionLifecycleTestFile = file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTransactionLifecycleTest.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java')
+    def recoveryTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreRecoveryTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def proofFile = file('docs/design/V1-RAWSTORE-MVCC-VERTICAL-SLICE.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def rawStoreAuthorityFiles = [formatFile, tableFile, runtimeFile, contextFile,
+            controllerFile, scanFile]
+    def productionFiles = rawStoreAuthorityFiles + [conglomerateFile, factoryFile]
+    inputs.files(productionFiles + [legacyRuntimeFile, transactionRegistryFile, transactionLifecycleTestFile,
+            sqlTestFile, recoveryTestFile, testsBuildFile, proofFile, implementationFile])
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def requiredFiles = productionFiles + [legacyRuntimeFile, transactionRegistryFile,
+                transactionLifecycleTestFile, sqlTestFile, recoveryTestFile,
+                testsBuildFile, proofFile, implementationFile]
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def formatText = formatFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def controllerText = controllerFile.getText('UTF-8')
+            def scanText = scanFile.getText('UTF-8')
+            def conglomerateText = conglomerateFile.getText('UTF-8')
+            def factoryText = factoryFile.getText('UTF-8')
+            def legacyRuntimeText = legacyRuntimeFile.getText('UTF-8')
+            def transactionRegistryText = transactionRegistryFile.getText('UTF-8')
+            def transactionLifecycleTestText = transactionLifecycleTestFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def recoveryTestText = recoveryTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def proofText = proofFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('RawStore physical format', formatText, [
+                    'delosdb.mvcc.rawStoreVerticalSlice.enabled',
+                    'CONTROL_METADATA_CONTAINER',
+                    'CONTROL_VERSION_CONTAINER',
+                    'ALLOCATOR_NEXT_ROW_ID',
+                    'ALLOCATOR_NEXT_VERSION_ID',
+                    'ALLOCATOR_COMMITTED_HIGH_WATER',
+                    'VERSION_CREATOR_TRANSACTION_ID',
+                    'VERSION_BEGIN_SEQUENCE',
+                    'VERSION_PREVIOUS_VERSION_ID'
+            ])
+            requireTokens('RawStore table implementation', tableText, [
+                    'rawTransaction.addContainer(',
+                    'rawTransaction.dropContainer(',
+                    'Page.INSERT_UNDO_WITH_PURGE',
+                    'Page.INSERT_OVERFLOW',
+                    'page.updateFieldAtSlot(',
+                    'page.insertAtSlot(',
+                    'transaction.newLockingPolicy(',
+                    'LockingPolicy.MODE_CONTAINER',
+                    'TransactionController.ISOLATION_SERIALIZABLE',
+                    'findHeadVersionId(',
+                    'findVersion(',
+                    'pendingVersionExists(',
+                    'MvccRawStoreFormat.VERSION_ID,',
+                    'updateVersionBeginByLogicalId('
+            ])
+            if (tableText.count('rawTransaction.addContainer(') != 2) {
+                failures << 'RawStore MVCC CREATE must allocate exactly two table containers'
+            }
+            requireOrdered('RawStore MVCC INSERT ownership',
+                    section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
+                            'RawStore MVCC INSERT section'),
+                    ['context.beforeWrite(table)', 'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()',
+                            'insertRow(rawTransaction, table.metadataContainer()', 'context.addPending('])
+            requireOrdered('RawStore MVCC DROP lock order',
+                    section(tableText, 'static void drop(', 'private static void initializeMetadataContainer(',
+                            'RawStore MVCC DROP section'),
+                    ['dropContainer(table.metadataContainer())', 'dropContainer(table.versionContainer())'])
+
+            def forbiddenProductionTokens = [
+                    'java.nio.file',
+                    'java.io.File',
+                    'Path.of(',
+                    'Files.',
+                    'DelosStorageStore',
+                    'MvccPageMutationLog',
+                    'MvccTransactionOutcomeLog',
+                    'implements Loggable',
+                    'new Loggable',
+                    'PersistentService.ROOT'
+            ]
+            rawStoreAuthorityFiles.each { sourceFile ->
+                def source = sourceFile.getText('UTF-8')
+                forbiddenProductionTokens.each { token ->
+                    if (source.contains(token)) {
+                        failures << sourceFile.name + ' contains forbidden independent-storage token: ' + token
+                    }
+                }
+            }
+
+            requireTokens('Commit-publication runtime', runtimeText, [
+                    'ReentrantLock commitPublicationLock',
+                    'long captureSnapshot()',
+                    'return publishedHighWater.get()',
+                    'long reserveCommitSequence()',
+                    'publishAndUnlock(',
+                    'observeCommittedHighWater('
+            ])
+            def snapshotSection = section(runtimeText, 'long captureSnapshot()', 'long reserveCommitSequence()',
+                    'snapshot capture section')
+            if (snapshotSection.contains('MvccRawStoreTable.')
+                    || snapshotSection.contains('openContainer(')) {
+                failures << 'Snapshot capture must not acquire RawStore locks while holding the publication lock'
+            }
+            def reserveSection = section(runtimeText, 'long reserveCommitSequence()', 'void publishAndUnlock(',
+                    'commit-sequence reservation section')
+            if (reserveSection.contains('MvccRawStoreTable.')
+                    || reserveSection.contains('openContainer(')) {
+                failures << 'Commit-sequence reservation must not invert publication and RawStore lock order'
+            }
+
+            requireTokens('RawStore transaction lifecycle participant', contextText, [
+                    'implements AccessMethodTransactionLifecycle',
+                    'transactionManager.isGlobal()',
+                    'registerRawStoreOwnedMvcc(transactionManager)',
+                    'multi-table transactions are not supported',
+                    'beforeCommit(CommitMode mode)',
+                    'stampPendingVersions(',
+                    'afterCommit(CommitMode mode, DatabaseInstant instant)',
+                    'publishAndUnlock(',
+                    'commitFailed(',
+                    'afterRollbackToSavepoint(',
+                    'MvccRawStoreTable.pendingVersionExists(',
+                    'beforeNestedUserTransaction(boolean readOnly)',
+                    'beforeXaOperation(XaOperation operation)'
+            ])
+            requireOrdered('RawStore MVCC precommit protocol',
+                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
+                            'RawStore MVCC precommit section'),
+                    ['reserveCommitSequence()', 'stampPendingVersions(', 'AFTER_STAMP_BEFORE_RAW_COMMIT'])
+            requireOrdered('RawStore MVCC postcommit publication',
+                    section(contextText, 'public void afterCommit(', 'public void commitFailed(',
+                            'RawStore MVCC postcommit section'),
+                    ['AFTER_RAW_COMMIT_BEFORE_PUBLICATION', 'publishAndUnlock(', 'clearLocalState()'])
+
+            requireTokens('RawStore controller point fetch', controllerText, [
+                    'MvccRawStoreTable.readVisible(',
+                    'MvccRowLocation.from(loc).rowId()',
+                    'MvccRawStoreTable.insert('
+            ])
+            requireTokens('RawStore scan logical positioning', scanText, [
+                    'MvccRawStoreTable.scanVisible(',
+                    'MvccRawStoreTable.readVisible(',
+                    'positionAtRowLocation(',
+                    'public boolean isTableLocked() {',
+                    'return true;'
+            ])
+            requireTokens('Conglomerate RawStore dispatch', conglomerateText, [
+                    'rawStoreBacked()',
+                    'new MvccRawStoreConglomerateController(',
+                    'new MvccRawStoreScanController(',
+                    'registerRawStoreOwnedMvcc(xactManager)',
+                    'MvccRawStoreTable.drop('
+            ])
+
+            requireTokens('Transitional transaction-authority isolation', transactionRegistryText, [
+                    'RAW_STORE_OWNED_MVCC',
+                    'registerRawStoreOwnedMvcc(Object ownerTransaction)',
+                    'boolean externalMvccWrite = !writers.isEmpty()',
+                    'if (externalMvccWrite)',
+                    'cannot mix RawStore-owned delos_mvcc mutations',
+                    'RAW_STORE_OWNED_MVCC.remove(ownerTransaction)'
+            ])
+            requireOrdered('RawStore-owned commit bypasses the retained coordinator',
+                    section(transactionRegistryText, 'public static CommitPreparation prepareCommit(',
+                            'public static void beforeRawStoreCommit(',
+                            'transaction registry prepare section'),
+                    ['List<Writer> writers = writersFor(requiredOwner)',
+                            'boolean externalMvccWrite = !writers.isEmpty()',
+                            'if (!requiresRawStoreDecision)',
+                            'if (externalMvccWrite)'])
+            requireTokens('Transaction-authority isolation proof', transactionLifecycleTestText, [
+                    'rawStoreOwnedMvccUsesInheritedCommitWithoutExternalDecision',
+                    'assertFalse(DelosStorageTransactionRegistry.requiresRawStoreDecision',
+                    'assertFalse(prepared.requiresRawStoreDecision())',
+                    'rawStoreOwnedAndRetainedMvccWritersCannotMix',
+                    'cannot mix RawStore-owned delos_mvcc mutations'
+            ])
+
+            requireTokens('Retained-format identity discovery', legacyRuntimeText, [
+                    'long maximumPersistedContainerId(long segmentId)',
+                    'DelosMvccConglomerateLifecycle.INHERITED_STORE_DIRECTORY',
+                    'Files.newDirectoryStream(inheritedStore, glob)',
+                    'PERSISTED_TABLE_FILE.matcher('
+            ])
+            requireTokens('Factory opt-in and compatibility route', factoryText, [
+                    'System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false")',
+                    'if (rawStoreVerticalSliceEnabled)',
+                    'reserveRawStoreConglomerateId(',
+                    'maximumPersistedContainerId(segment)',
+                    'nextFactoryOwnedIdAfter(retainedMaximum)',
+                    'MvccRawStoreTable.create(',
+                    'MvccRawStoreTable.read(',
+                    'if (!rawStoreVerticalSliceEnabled)',
+                    'MvccRawStoreFormat.ENABLED_PROPERTY + "=true"',
+                    'observeCommittedHighWater(',
+                    'return new MvccConglomerate(runtime(), container_key)',
+                    'memory and non-directory databases require the RawStore-backed table format'
+            ])
+            requireOrdered('Factory CREATE route',
+                    section(factoryText, 'public Conglomerate createConglomerate(',
+                            'private static void rejectUnsupportedDurableTypes(', 'factory CREATE section'),
+                    ['if (rawStoreVerticalSliceEnabled)', 'registerRawStoreOwnedMvcc(xact_mgr)',
+                            'reserveRawStoreConglomerateId(', 'MvccRawStoreTable.create(',
+                            'MvccDatabaseRuntime currentRuntime = runtime()'])
+            requireOrdered('Factory READ compatibility route',
+                    section(factoryText, 'public Conglomerate readConglomerate(',
+                            'public void boot(', 'factory READ section'),
+                    ['MvccRawStoreTable.read(', 'if (descriptor != null)',
+                            'if (!rawStoreVerticalSliceEnabled)',
+                            'return new MvccConglomerate(runtime(), container_key)'])
+
+            requireTokens('Focused SQL proof', sqlTestText, [
+                    'testSupportedWorkloadMatchesEarlierFormatOracle',
+                    'legacyEvidence',
+                    'rawStoreEvidence',
+                    'testFileDatabaseCreateInsertVisibilityRollbackCommitAndReopen',
+                    'testOptedInBootKeepsEarlierFormatAsFallback',
+                    'raw_after_legacy_t',
+                    'RAW_MVCC_ROLLED_BACK',
+                    "insert into raw_mvcc_t values (2, 'rolled-back')",
+                    "insert into raw_mvcc_t values (3, 'after-rollback')",
+                    'The isolated format must reject a second RawStore-backed table before mutation',
+                    'expected.toString().contains("multi-table")',
+                    'inheritedMvccStateFileCount(database)',
+                    'RawStore-backed table access must require the explicit opt-in',
+                    'expected.toString().contains(ENABLED_PROPERTY)',
+                    'testMemoryDatabaseUsesRawStoreAndLeavesNoFilesystemVolume',
+                    'DriverManager.getConnection(jdbcUrl)',
+                    'Files.exists(accidentalFilesystemDatabase)'
+            ])
+            requireOrdered('Retained-format identity collision proof',
+                    section(sqlTestText, 'public void testOptedInBootKeepsEarlierFormatAsFallback()',
+                            'private static List<String> runComparableWorkload(',
+                            'retained-format fallback section'),
+                    ['create table raw_after_legacy_t',
+                            'select id, name from legacy_mvcc_t order by id',
+                            "insert into legacy_mvcc_t values (2, 'legacy-write')"])
+            requireTokens('Focused crash-recovery proof', recoveryTestText, [
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'expectedStatus',
+                    'expectCommitted ? new String[] {"1|survivor"} : new String[0]'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreVerticalSliceTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreVerticalSliceTest'
+            }
+
+            requireTokens('Accepted design proof', proofText, [
+                    'The first slice uses two containers:',
+                    'Page.insertAtSlot()',
+                    'Page.updateFieldAtSlot()',
+                    'RawStore commit record is the only durable decision',
+                    'memory database'
+            ])
+            requireTokens('Public implementation record', implementationText, [
+                    'IMPLEMENTED BEHIND AN EXPLICIT OPT-IN',
+                    'stores its authoritative state only through the caller',
+                    'Page.INSERT_UNDO_WITH_PURGE',
+                    'serializable container locking',
+                    'without introducing a publication-lock/container-lock',
+                    'does not open a filesystem path',
+                    ':delosdb-tests:runDelosMvccRawStoreVerticalSliceTest',
+                    'delosMvccRawStoreVerticalSliceStaticAnalysis'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore-backed MVCC vertical-slice static analysis')
+            writer.println('=============================================================')
+            writer.println()
+            writer.println('Rule: the isolated MVCC format stores and commits authoritative data only through Derby RawStore.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore-backed MVCC vertical-slice static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore-backed MVCC vertical-slice static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -5175,6 +5523,7 @@ tasks.register('s0CloseoutVerification') {
             'delosNoTransitionalStorageRoutingStaticAnalysis',
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
             'delosAccessMethodTransactionLifecycleStaticAnalysis',
+            'delosMvccRawStoreVerticalSliceStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',
