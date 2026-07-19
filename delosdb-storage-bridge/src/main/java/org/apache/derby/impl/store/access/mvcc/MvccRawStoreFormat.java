@@ -36,6 +36,7 @@ final class MvccRawStoreFormat {
     static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
     static final long NO_PREVIOUS_VERSION = 0L;
     static final int LIVE_FLAGS = 0;
+    static final int TOMBSTONE_FLAGS = 1;
 
     static final int CONTROL_MAGIC = 0;
     static final int CONTROL_KIND_FIELD = 1;

@@ -48,6 +48,9 @@ final class MvccRawStoreMetadataInspection {
     private static final int VERSION_ID_FIELD = 3;
     private static final int VERSION_CREATOR_TRANSACTION_ID_FIELD = 4;
     private static final int VERSION_BEGIN_SEQUENCE_FIELD = 5;
+    private static final int VERSION_END_SEQUENCE_FIELD = 6;
+    private static final int VERSION_PREVIOUS_VERSION_ID_FIELD = 7;
+    private static final int VERSION_FLAGS_FIELD = 8;
 
     private MvccRawStoreMetadataInspection() {
     }
@@ -113,7 +116,10 @@ final class MvccRawStoreMetadataInspection {
                             longField(raw, page, slot, VERSION_ROW_ID_FIELD),
                             longField(raw, page, slot, VERSION_ID_FIELD),
                             longField(raw, page, slot, VERSION_CREATOR_TRANSACTION_ID_FIELD),
-                            longField(raw, page, slot, VERSION_BEGIN_SEQUENCE_FIELD)));
+                            longField(raw, page, slot, VERSION_BEGIN_SEQUENCE_FIELD),
+                            longField(raw, page, slot, VERSION_END_SEQUENCE_FIELD),
+                            longField(raw, page, slot, VERSION_PREVIOUS_VERSION_ID_FIELD),
+                            intField(raw, page, slot, VERSION_FLAGS_FIELD)));
                 }
                 long pageNumber = page.getPageNumber();
                 page.unlatch();
@@ -209,6 +215,12 @@ final class MvccRawStoreMetadataInspection {
             long rowId,
             long versionId,
             long creatorTransactionId,
-            long beginCommitSequence) {
+            long beginCommitSequence,
+            long endCommitSequence,
+            long previousVersionId,
+            int flags) {
+        boolean tombstone() {
+            return (flags & 1) != 0;
+        }
     }
 }

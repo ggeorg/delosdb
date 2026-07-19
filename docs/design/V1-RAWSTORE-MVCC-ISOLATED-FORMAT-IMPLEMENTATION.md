@@ -216,15 +216,16 @@ process-halt recovery
 file and memory databases
 multiple RawStore-backed MVCC tables in one transaction
 one transaction-wide snapshot across those tables
+UPDATE by replacement-version append
+DELETE by tombstone append
+historical version-chain traversal
 ```
 
-The following capabilities are outside this isolated implementation contract. Operations with an
-implemented boundary, such as UPDATE, DELETE, XA participation, and nested updates, fail closed. The
-remaining items are not yet claimed as supported:
+The following capabilities remain outside this transitional implementation contract. XA participation
+and nested updates fail closed. UPDATE and DELETE are now implemented through RawStore version-chain
+mutation, but the remaining items are not yet claimed as supported:
 
 ```text
-UPDATE and DELETE
-historical version-chain mutation
 secondary and ordered indexes
 unique constraints
 vacuum, purge, compression, and relocation
@@ -247,6 +248,7 @@ Focused runtime task:
 ```text
 :delosdb-tests:runDelosMvccRawStoreVerticalSliceTest
 :delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest
+:delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest
 ```
 
 It covers:
@@ -270,6 +272,10 @@ crash before the RawStore commit record
 crash after the RawStore commit record before in-memory publication
 rollback/reboot/crash non-reuse of database-wide MvccTransactionId and MvccCommitSequence
 database-scoped and memory-backed identity metadata
+replacement-version and tombstone chains
+historical snapshot traversal across committed UPDATE and DELETE
+stale-snapshot writer rejection
+UPDATE/DELETE rollback, savepoint, crash, reopen, multi-table, and memory behavior
 ```
 
 Permanent architecture task:
@@ -277,6 +283,7 @@ Permanent architecture task:
 ```text
 delosMvccRawStoreVerticalSliceStaticAnalysis
 delosMvccRawStoreMultiTableTransactionStaticAnalysis
+delosMvccRawStoreUpdateDeleteStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,

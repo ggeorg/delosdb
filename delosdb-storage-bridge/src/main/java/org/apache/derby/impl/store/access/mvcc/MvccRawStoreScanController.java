@@ -23,7 +23,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.reference.SQLState;
 
 /** Materialized scan over RawStore directory and version rows. */
 final class MvccRawStoreScanController implements ScanManager {
@@ -37,6 +36,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private List<MvccRawStoreTable.VisibleRow> rows;
     private int nextIndex;
     private MvccRawStoreTable.VisibleRow current;
+    private boolean currentDeleted;
     private boolean closed;
     private long rowsVisited;
     private long rowsQualified;
@@ -149,7 +149,17 @@ final class MvccRawStoreScanController implements ScanManager {
 
     @Override
     public boolean delete() throws StandardException {
-        throw unsupported("DELETE");
+        ensurePositioned();
+        if (currentDeleted) {
+            return false;
+        }
+        boolean deleted = MvccRawStoreTable.delete(
+                rawTransaction,
+                table,
+                current.rowId(),
+                runtime.context(transactionManager, rawTransaction));
+        currentDeleted = deleted;
+        return deleted;
     }
 
     @Override
@@ -160,7 +170,7 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public boolean doesCurrentPositionQualify() throws StandardException {
         ensureOpen();
-        return current != null && qualifies(current.values());
+        return current != null && !currentDeleted && qualifies(current.values());
     }
 
     @Override
@@ -233,7 +243,7 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public boolean isCurrentPositionDeleted() {
         ensureOpen();
-        return false;
+        return currentDeleted;
     }
 
     @Override
@@ -245,10 +255,12 @@ final class MvccRawStoreScanController implements ScanManager {
             if (qualifies(candidate.values())) {
                 rowsQualified++;
                 current = candidate;
+                currentDeleted = false;
                 return true;
             }
         }
         current = null;
+        currentDeleted = false;
         return false;
     }
 
@@ -263,15 +275,39 @@ final class MvccRawStoreScanController implements ScanManager {
                 runtime.context(transactionManager, rawTransaction));
         if (visible == null || !qualifies(visible.values())) {
             current = null;
+            currentDeleted = false;
             return false;
         }
         current = visible;
+        currentDeleted = false;
         return true;
     }
 
     @Override
     public boolean replace(StoreDataValue[] row, FormatableBitSet validColumns) throws StandardException {
-        throw unsupported("UPDATE");
+        ensurePositioned();
+        if (currentDeleted) {
+            return false;
+        }
+        StoreDataValue[] replacement = MvccConglomerateController.replacementRow(
+                current.values(),
+                row,
+                validColumns);
+        boolean replaced = MvccRawStoreTable.replace(
+                rawTransaction,
+                table,
+                current.rowId(),
+                row,
+                validColumns,
+                runtime.context(transactionManager, rawTransaction));
+        if (replaced) {
+            current = new MvccRawStoreTable.VisibleRow(
+                    current.rowId(),
+                    current.versionId(),
+                    replacement,
+                    current.versionHandle());
+        }
+        return replaced;
     }
 
     private void reload() throws StandardException {
@@ -281,6 +317,7 @@ final class MvccRawStoreScanController implements ScanManager {
                 runtime.context(transactionManager, rawTransaction));
         nextIndex = 0;
         current = null;
+        currentDeleted = false;
         rowsVisited = 0L;
         rowsQualified = 0L;
         estimatedRowCount = rows.size();
@@ -303,9 +340,4 @@ final class MvccRawStoreScanController implements ScanManager {
         }
     }
 
-    private static StandardException unsupported(String operation) {
-        return StandardException.newException(
-                SQLState.NOT_IMPLEMENTED,
-                operation + " for the isolated RawStore-backed delos_mvcc format");
-    }
 }

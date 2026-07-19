@@ -5906,6 +5906,238 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies RawStore-backed MVCC UPDATE and DELETE use transactional version chains, tombstones, one commit sequence, and inherited recovery.'
+
+    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def metadataInspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-UPDATE-DELETE.md')
+    def requiredFiles = [formatFile, tableFile, controllerFile, scanFile,
+            metadataInspectionFile, sqlTestFile, testsBuildFile, designFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-update-delete-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def formatText = formatFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def controllerText = controllerFile.getText('UTF-8')
+            def scanText = scanFile.getText('UTF-8')
+            def metadataInspectionText = metadataInspectionFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('RawStore MVCC tombstone format', formatText, [
+                    'VERSION_END_SEQUENCE',
+                    'VERSION_PREVIOUS_VERSION_ID',
+                    'VERSION_FLAGS',
+                    'TOMBSTONE_FLAGS = 1'
+            ])
+            requireTokens('RawStore MVCC mutation model', tableText, [
+                    'static boolean replace(',
+                    'static boolean delete(',
+                    'private static PendingVersion appendVersion(',
+                    'previousVersionId',
+                    'updateDirectoryHead(',
+                    'findVisibleVersion(',
+                    'version.tombstone()',
+                    'updateVersionEnd(',
+                    'predecessor already has an end sequence',
+                    'SQLState.DEADLOCK',
+                    'RawStore MVCC write conflict'
+            ])
+            requireOrdered('UPDATE database-metadata/table lock ordering',
+                    section(tableText, 'static boolean replace(',
+                            'static boolean delete(',
+                            'RawStore MVCC UPDATE section'),
+                    ['context.beforeWrite()',
+                            'mutationTarget(rawTransaction, table, rowId, context)',
+                            'appendVersion('])
+            requireOrdered('DELETE database-metadata/table lock ordering',
+                    section(tableText, 'static boolean delete(',
+                            'static List<VisibleRow> scanVisible(',
+                            'RawStore MVCC DELETE section'),
+                    ['context.beforeWrite()',
+                            'mutationTarget(rawTransaction, table, rowId, context)',
+                            'appendVersion('])
+            requireOrdered('Write-time version append and directory publication',
+                    section(tableText, 'private static PendingVersion appendVersion(',
+                            'private static long allocateVersionIdentifier(',
+                            'RawStore MVCC append-version section'),
+                    ['allocateVersionIdentifier(transaction, table)',
+                            'insertRow(transaction, table.versionContainer(), versionRow)',
+                            'updateDirectoryHead(transaction, table, rowId, previousVersionId, versionId)',
+                            'context.addPending(pending)'])
+            requireOrdered('Precommit begin/end stamping',
+                    section(tableText, 'static void stampPendingVersions(',
+                            'static void drop(',
+                            'RawStore MVCC update/delete precommit section'),
+                    ['updateVersionBegin(',
+                            'version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION',
+                            'updateVersionEnd('])
+            requireTokens('Logical version-chain traversal', tableText, [
+                    'Set<Long> visited = new HashSet<>()',
+                    'version.previousVersionId()',
+                    'version.rowId() != rowId',
+                    'version-chain cycle',
+                    'version-chain entry is missing'
+            ])
+            if (tableText.contains('endingTransactionId')
+                    || tableText.contains('separate update log')
+                    || tableText.contains('separate delete log')) {
+                failures << 'The first RawStore UPDATE/DELETE slice must not introduce a second transaction or durability authority'
+            }
+
+            requireTokens('Direct controller UPDATE/DELETE routing', controllerText, [
+                    'MvccRawStoreTable.delete(',
+                    'MvccRawStoreTable.replace('
+            ])
+            if (controllerText.contains('throw unsupported("DELETE")')
+                    || controllerText.contains('throw unsupported("UPDATE")')) {
+                failures << 'RawStore conglomerate controller still rejects UPDATE or DELETE'
+            }
+            requireTokens('Scan UPDATE/DELETE routing', scanText, [
+                    'public boolean delete() throws StandardException',
+                    'MvccRawStoreTable.delete(',
+                    'public boolean replace(StoreDataValue[] row, FormatableBitSet validColumns)',
+                    'MvccRawStoreTable.replace(',
+                    'currentDeleted'
+            ])
+            if (scanText.contains('throw unsupported("DELETE")')
+                    || scanText.contains('throw unsupported("UPDATE")')) {
+                failures << 'RawStore scan controller still rejects UPDATE or DELETE'
+            }
+
+            requireTokens('Executable version-chain inspection', metadataInspectionText, [
+                    'VERSION_END_SEQUENCE_FIELD',
+                    'VERSION_PREVIOUS_VERSION_ID_FIELD',
+                    'VERSION_FLAGS_FIELD',
+                    'long endCommitSequence',
+                    'long previousVersionId',
+                    'boolean tombstone()'
+            ])
+            [
+                    'testUpdateDeleteCommitRollbackSavepointAndReopen',
+                    'testHistoricalSnapshotTraversesReplacementAndTombstoneChains',
+                    'testUpdateDeleteSurviveBothRawStoreCrashBoundaries',
+                    'testMemoryAndMultiTableUpdateDeleteShareOneOutcome'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'RawStore UPDATE/DELETE proof is missing: ' + methodName
+                }
+            }
+            requireTokens('UPDATE/DELETE SQL and chain proof', sqlTestText, [
+                    "update mutation_t set name = 'first'",
+                    "delete from mutation_t where id = 2",
+                    'connection.rollback(savepoint)',
+                    'endCommitSequence()',
+                    'previousVersionId()',
+                    'actual.tombstone()'
+            ])
+            requireTokens('Historical snapshot and conflict proof', sqlTestText, [
+                    'select id from snapshot_anchor',
+                    "update snapshot_data set name = 'new'",
+                    'delete from snapshot_data where id = 2',
+                    'A stale snapshot must not overwrite',
+                    'assertEquals("40001", expected.getSQLState())'
+            ])
+            requireTokens('UPDATE/DELETE crash and memory proof', sqlTestText, [
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'update crash_mutation_t',
+                    'delete from crash_mutation_t',
+                    'jdbc:derby:memory:',
+                    'update memory_a',
+                    'delete from memory_b'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreUpdateDeleteTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreUpdateDeleteTest'
+            }
+
+            requireTokens('RawStore UPDATE/DELETE design record', designText, [
+                    'replacement version',
+                    'tombstone',
+                    'previousVersionId',
+                    'end commit sequence',
+                    'RawStore undo',
+                    'savepoint',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest',
+                    'delosMvccRawStoreUpdateDeleteStaticAnalysis'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-update-delete-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC UPDATE/DELETE static analysis')
+            writer.println('=======================================================')
+            writer.println()
+            writer.println('Rule: UPDATE and DELETE append transactional RawStore versions, preserve stable row identity, and commit through one inherited RawStore outcome.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC UPDATE/DELETE static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC UPDATE/DELETE static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -5931,6 +6163,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreVerticalSliceStaticAnalysis',
             'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
             'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
+            'delosMvccRawStoreUpdateDeleteStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

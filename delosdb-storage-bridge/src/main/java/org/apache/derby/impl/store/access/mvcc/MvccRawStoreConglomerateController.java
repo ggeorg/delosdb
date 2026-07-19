@@ -20,7 +20,6 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.reference.SQLState;
 
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController implements ConglomerateController {
@@ -61,7 +60,13 @@ final class MvccRawStoreConglomerateController implements ConglomerateController
 
     @Override
     public boolean delete(StoreRowLocation loc) throws StandardException {
-        throw unsupported("DELETE");
+        ensureOpen();
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        return MvccRawStoreTable.delete(
+                rawTransaction,
+                table,
+                MvccRowLocation.from(loc).rowId(),
+                context);
     }
 
     @Override
@@ -139,7 +144,15 @@ final class MvccRawStoreConglomerateController implements ConglomerateController
     @Override
     public boolean replace(StoreRowLocation loc, StoreDataValue[] row, FormatableBitSet validColumns)
             throws StandardException {
-        throw unsupported("UPDATE");
+        ensureOpen();
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        return MvccRawStoreTable.replace(
+                rawTransaction,
+                table,
+                MvccRowLocation.from(loc).rowId(),
+                row,
+                validColumns,
+                context);
     }
 
     @Override
@@ -172,11 +185,6 @@ final class MvccRawStoreConglomerateController implements ConglomerateController
                 destination);
     }
 
-    private static StandardException unsupported(String operation) {
-        return StandardException.newException(
-                SQLState.NOT_IMPLEMENTED,
-                operation + " for the isolated RawStore-backed delos_mvcc format");
-    }
 
     private void ensureOpen() {
         if (closed) {
