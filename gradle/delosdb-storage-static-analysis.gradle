@@ -6977,7 +6977,7 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
                     'duplicateNullsAllowed()',
                     'insertBaseRowDirect(',
                     'assertEquals("23505"',
-                    'second writer should wait for the table\'s RawStore lock',
+                    'second writer should wait for the transaction-duration unique-key lock',
                     'after-stamp-before-raw-commit',
                     'after-raw-commit-before-publication',
                     'jdbc:derby:memory:'
