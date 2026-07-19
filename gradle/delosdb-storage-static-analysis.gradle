@@ -4566,7 +4566,8 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
             'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.java',
             'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.java',
             'delosdb-tests/build.gradle',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailurePointRegistry.java'
+            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailurePointRegistry.java',
+            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTransactionLifecycleTest.java'
     ]
     inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
     outputs.file(layout.buildDirectory.file(
@@ -4596,14 +4597,31 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
         def crashTestText = read(11)
         def testBuildText = read(12)
         def failureRegistryText = read(13)
+        def transactionLifecycleTestText = read(14)
 
         DelosDbStaticAnalysisSupport.require(failures,
-                registryText.contains('boolean requiresRawStoreDecision = mvccWrite || !lifecycleActions.isEmpty();')
+                registryText.contains('return !writersFor(ownerTransaction).isEmpty()')
                         && registryText.contains(
-                                'rawStoreParticipant.stageMvccConglomerateLifecycle(action.lifecycle());')
+                                '|| !lifecycleActionsFor(ownerTransaction).isEmpty();')
                         && registryText.contains(
-                                'return (participation != null && participation.mvccWrite())'),
-                'Every local MVCC write and surviving DDL lifecycle must use the raw-store decision')
+                                'boolean externalMvccWrite = !writers.isEmpty();')
+                        && registryText.contains(
+                                'boolean requiresRawStoreDecision = externalMvccWrite || !lifecycleActions.isEmpty();')
+                        && registryText.contains('if (externalMvccWrite)')
+                        && registryText.contains(
+                                'rawStoreParticipant.stageMvccConglomerateLifecycle(action.lifecycle());'),
+                'Every retained external MVCC write and surviving DDL lifecycle must use the raw-store decision')
+        DelosDbStaticAnalysisSupport.require(failures,
+                registryText.contains('registerRawStoreOwnedMvcc(Object ownerTransaction)')
+                        && registryText.contains('RAW_STORE_OWNED_MVCC.containsKey(requiredOwner)')
+                        && registryText.count('throw mixedMvccStorageAuthorities();') >= 2
+                        && transactionLifecycleTestText.contains(
+                                'rawStoreOwnedMvccUsesInheritedCommitWithoutExternalDecision')
+                        && transactionLifecycleTestText.contains(
+                                'assertFalse(DelosStorageTransactionRegistry.requiresRawStoreDecision')
+                        && transactionLifecycleTestText.contains(
+                                'rawStoreOwnedAndRetainedMvccWritersCannotMix'),
+                'RawStore-owned MVCC must bypass the retained external coordinator and fail before mixed-authority mutation')
         DelosDbStaticAnalysisSupport.require(failures,
                 actionText.contains('DelosMvccConglomerateLifecycle lifecycle();'),
                 'Lifecycle actions must expose the exact raw-log lifecycle identity')
