@@ -787,6 +787,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreLookupHintTest',
+        'Runs validated RawStore page/record hint, logical fallback, legacy-row, crash, reopen, and memory proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

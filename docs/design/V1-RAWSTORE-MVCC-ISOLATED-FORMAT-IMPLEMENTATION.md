@@ -84,10 +84,12 @@ flags
 payload columns
 ```
 
-`MvccRowId` and `MvccVersionId` are durable identities. The inserted `RecordHandle` is retained only
-inside the current transaction as an efficient precommit locator. Before using that hint, commit
-stamping verifies the stored `MvccVersionId`; a missing or mismatched handle falls back to a logical
-`MvccVersionId` scan.
+`MvccRowId` and `MvccVersionId` are durable identities. Directory rows may carry the current head's
+RawStore page/record locator and version rows may carry the predecessor's locator as optional trailing
+fields. These locators are validated hints only: row shape, row kind, `MvccRowId`, and `MvccVersionId`
+must match before decoding or commit stamping uses them. A missing, stale, reused, or mismatched hint
+falls back to authoritative logical-ID lookup. Older shorter rows remain valid without migration. See
+`V1-RAWSTORE-MVCC-LOOKUP-HINTS.md`.
 
 The opt-in format now uses one database-wide RawStore metadata container for durable
 `MvccTransactionId`, durable `MvccCommitSequence`, and the committed publication high-water. The first
@@ -145,13 +147,17 @@ The direct conglomerate fetch path resolves a stable `MvccRowLocation` by:
 
 ```text
 scan directory records for MvccRowId
-scan version records for the authoritative MvccVersionId
+read the authoritative head MvccVersionId
+try the optional validated RawStore page/record hint
+fall back to logical MvccVersionId lookup on any mismatch
+follow previousVersionId with the same hint/fallback rule
 apply current-transaction or committed-snapshot visibility
 return the decoded payload
 ```
 
-The scan controller materializes visible directory heads using the same logical lookup. Linear scans
-are intentional for this isolated format and are not the final cost model.
+The scan controller materializes visible directory heads using the same chain lookup. The directory
+scan remains intentionally linear for this transitional format; version-chain navigation now avoids a
+full version-container scan when a validated hint is current. This is still not the final cost model.
 
 ## Commit ordering
 
@@ -219,6 +225,8 @@ one transaction-wide snapshot across those tables
 UPDATE by replacement-version append
 DELETE by tombstone append
 historical version-chain traversal
+validated optional physical lookup hints with logical fallback
+pre-hint shorter-row compatibility
 mixed inherited heap and RawStore-backed MVCC transactions
 ```
 
@@ -250,6 +258,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest
 :delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest
 :delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest
+:delosdb-tests:runDelosMvccRawStoreLookupHintTest
 ```
 
 It covers:
@@ -279,6 +288,10 @@ stale-snapshot writer rejection
 UPDATE/DELETE rollback, savepoint, crash, reopen, multi-table, and memory behavior
 mixed heap/MVCC commit, rollback, savepoint, crash, reopen, and memory behavior
 heap-only commits do not consume MVCC identities
+persisted directory-head and predecessor hints match physical RawStore records
+stale or reused physical hints fall back for current and historical snapshots
+pre-hint shorter rows remain readable and upgrade on later mutation
+lookup hints survive reopen, both RawStore crash boundaries, and memory operation
 ```
 
 Permanent architecture task:
@@ -288,9 +301,10 @@ delosMvccRawStoreVerticalSliceStaticAnalysis
 delosMvccRawStoreMultiTableTransactionStaticAnalysis
 delosMvccRawStoreUpdateDeleteStaticAnalysis
 delosMvccRawStoreMixedHeapTransactionStaticAnalysis
+delosMvccRawStoreLookupHintStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
 transaction-lifecycle ordering, opt-in compatibility route, retained/new-format identity separation,
 recovery tests, memory proof, differential oracle proof, and absence of filesystem/external-durability
-dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`.
+dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`.

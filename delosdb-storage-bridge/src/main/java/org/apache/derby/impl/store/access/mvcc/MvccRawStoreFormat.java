@@ -58,7 +58,10 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_FORMAT_VERSION = 1;
     static final int DIRECTORY_ROW_ID = 2;
     static final int DIRECTORY_HEAD_VERSION_ID = 3;
-    static final int DIRECTORY_FIELD_COUNT = 4;
+    static final int DIRECTORY_HEAD_HINT_PAGE = 4;
+    static final int DIRECTORY_HEAD_HINT_RECORD = 5;
+    static final int DIRECTORY_BASE_FIELD_COUNT = 4;
+    static final int DIRECTORY_HINT_FIELD_COUNT = 6;
 
     static final int VERSION_KIND_FIELD = 0;
     static final int VERSION_FORMAT_VERSION = 1;
@@ -70,8 +73,25 @@ final class MvccRawStoreFormat {
     static final int VERSION_PREVIOUS_VERSION_ID = 7;
     static final int VERSION_FLAGS = 8;
     static final int VERSION_PAYLOAD_START = 9;
+    static final int VERSION_LOOKUP_HINT_FIELD_COUNT = 2;
 
     private MvccRawStoreFormat() {
+    }
+
+    static int versionBaseFieldCount(int columnCount) {
+        return VERSION_PAYLOAD_START + columnCount;
+    }
+
+    static int versionHintPageField(int columnCount) {
+        return versionBaseFieldCount(columnCount);
+    }
+
+    static int versionHintRecordField(int columnCount) {
+        return versionBaseFieldCount(columnCount) + 1;
+    }
+
+    static int versionHintFieldCount(int columnCount) {
+        return versionBaseFieldCount(columnCount) + VERSION_LOOKUP_HINT_FIELD_COUNT;
     }
 
     static StoreDataValue longValue(Transaction transaction, long value) throws StandardException {

@@ -15,6 +15,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
@@ -24,6 +25,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
+import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
@@ -42,6 +44,17 @@ final class MvccRawStoreMetadataInspection {
     private static final int COMMITTED_HIGH_WATER_FIELD = 5;
 
     private static final int CONTROL_VERSION_CONTAINER_FIELD = 4;
+    private static final int CONTROL_COLUMN_COUNT_FIELD = 5;
+    private static final int CONTROL_FIXED_FIELDS = 7;
+
+    private static final int DIRECTORY_KIND_FIELD = 0;
+    private static final int DIRECTORY_KIND = 3;
+    private static final int DIRECTORY_ROW_ID_FIELD = 2;
+    private static final int DIRECTORY_HEAD_VERSION_ID_FIELD = 3;
+    private static final int DIRECTORY_HEAD_HINT_PAGE_FIELD = 4;
+    private static final int DIRECTORY_HEAD_HINT_RECORD_FIELD = 5;
+    private static final int DIRECTORY_BASE_FIELD_COUNT = 4;
+    private static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     private static final int VERSION_KIND_FIELD = 0;
     private static final int VERSION_KIND = 5;
     private static final int VERSION_ROW_ID_FIELD = 2;
@@ -51,6 +64,8 @@ final class MvccRawStoreMetadataInspection {
     private static final int VERSION_END_SEQUENCE_FIELD = 6;
     private static final int VERSION_PREVIOUS_VERSION_ID_FIELD = 7;
     private static final int VERSION_FLAGS_FIELD = 8;
+    private static final int VERSION_PAYLOAD_START = 9;
+    private static final int VERSION_LOOKUP_HINT_FIELD_COUNT = 2;
 
     private MvccRawStoreMetadataInspection() {
     }
@@ -88,9 +103,9 @@ final class MvccRawStoreMetadataInspection {
     static List<VersionIdentity> versions(Connection connection, String tableName) throws Exception {
         long metadataContainerId = baseConglomerateId(connection, tableName);
         Transaction raw = transactionManager(connection).getRawStoreXact();
-        long versionContainerId = versionContainerId(raw, metadataContainerId);
+        TableLayout layout = tableLayout(raw, metadataContainerId);
         ContainerHandle container = raw.openContainer(
-                new ContainerKey(0L, versionContainerId),
+                new ContainerKey(0L, layout.versionContainerId()),
                 lockingPolicy(raw),
                 ContainerHandle.MODE_READONLY);
         if (container == null) {
@@ -112,6 +127,15 @@ final class MvccRawStoreMetadataInspection {
                     if (intField(raw, page, slot, VERSION_KIND_FIELD) != VERSION_KIND) {
                         continue;
                     }
+                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
+                    int baseFieldCount = VERSION_PAYLOAD_START + layout.columnCount();
+                    if (fieldCount != baseFieldCount
+                            && fieldCount != baseFieldCount + VERSION_LOOKUP_HINT_FIELD_COUNT) {
+                        throw new AssertionError(
+                                "Unexpected RawStore MVCC version field count: " + fieldCount);
+                    }
+                    RecordHandle handle = page.getRecordHandleAtSlot(slot);
+                    boolean hasHint = fieldCount > baseFieldCount;
                     result.add(new VersionIdentity(
                             longField(raw, page, slot, VERSION_ROW_ID_FIELD),
                             longField(raw, page, slot, VERSION_ID_FIELD),
@@ -119,7 +143,12 @@ final class MvccRawStoreMetadataInspection {
                             longField(raw, page, slot, VERSION_BEGIN_SEQUENCE_FIELD),
                             longField(raw, page, slot, VERSION_END_SEQUENCE_FIELD),
                             longField(raw, page, slot, VERSION_PREVIOUS_VERSION_ID_FIELD),
-                            intField(raw, page, slot, VERSION_FLAGS_FIELD)));
+                            intField(raw, page, slot, VERSION_FLAGS_FIELD),
+                            handle.getPageNumber(),
+                            handle.getId(),
+                            hasHint ? longField(raw, page, slot, baseFieldCount) : 0L,
+                            hasHint ? intField(raw, page, slot, baseFieldCount + 1) : 0,
+                            hasHint));
                 }
                 long pageNumber = page.getPageNumber();
                 page.unlatch();
@@ -135,7 +164,311 @@ final class MvccRawStoreMetadataInspection {
         return result;
     }
 
-    private static long versionContainerId(Transaction raw, long metadataContainerId)
+    static List<DirectoryIdentity> directories(Connection connection, String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC metadata container is absent");
+        }
+        List<DirectoryIdentity> result = new ArrayList<>();
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, DIRECTORY_KIND_FIELD) != DIRECTORY_KIND) {
+                        continue;
+                    }
+                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
+                    if (fieldCount != DIRECTORY_BASE_FIELD_COUNT
+                            && fieldCount != DIRECTORY_HINT_FIELD_COUNT) {
+                        throw new AssertionError(
+                                "Unexpected RawStore MVCC directory field count: " + fieldCount);
+                    }
+                    boolean hasHint = fieldCount == DIRECTORY_HINT_FIELD_COUNT;
+                    result.add(new DirectoryIdentity(
+                            longField(raw, page, slot, DIRECTORY_ROW_ID_FIELD),
+                            longField(raw, page, slot, DIRECTORY_HEAD_VERSION_ID_FIELD),
+                            hasHint
+                                    ? longField(raw, page, slot, DIRECTORY_HEAD_HINT_PAGE_FIELD)
+                                    : 0L,
+                            hasHint
+                                    ? intField(raw, page, slot, DIRECTORY_HEAD_HINT_RECORD_FIELD)
+                                    : 0,
+                            hasHint));
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        result.sort(Comparator.comparingLong(DirectoryIdentity::rowId));
+        return result;
+    }
+
+    static void invalidateLookupHints(Connection connection, String tableName, long rowId)
+            throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        long invalidPage = Long.MAX_VALUE - rowId;
+        int invalidRecord = Integer.MAX_VALUE;
+        long headVersionId = invalidateDirectoryHint(
+                raw,
+                metadataContainerId,
+                rowId,
+                invalidPage,
+                invalidRecord);
+        invalidatePreviousHint(
+                raw,
+                layout,
+                rowId,
+                headVersionId,
+                invalidPage,
+                invalidRecord);
+    }
+
+    static void stripLookupHints(Connection connection, String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        stripDirectoryHints(raw, metadataContainerId);
+        stripVersionHints(raw, layout);
+    }
+
+    private static long invalidateDirectoryHint(
+            Transaction raw,
+            long metadataContainerId,
+            long rowId,
+            long invalidPage,
+            int invalidRecord) throws Exception {
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, DIRECTORY_KIND_FIELD) != DIRECTORY_KIND
+                            || longField(raw, page, slot, DIRECTORY_ROW_ID_FIELD) != rowId) {
+                        continue;
+                    }
+                    if (page.fetchNumFieldsAtSlot(slot) != DIRECTORY_HINT_FIELD_COUNT) {
+                        throw new AssertionError("Directory lookup hint is absent");
+                    }
+                    long headVersionId = longField(
+                            raw,
+                            page,
+                            slot,
+                            DIRECTORY_HEAD_VERSION_ID_FIELD);
+                    page.updateFieldAtSlot(
+                            slot,
+                            DIRECTORY_HEAD_HINT_PAGE_FIELD,
+                            new SQLLongint(invalidPage),
+                            null);
+                    page.updateFieldAtSlot(
+                            slot,
+                            DIRECTORY_HEAD_HINT_RECORD_FIELD,
+                            new SQLInteger(invalidRecord),
+                            null);
+                    return headVersionId;
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        throw new AssertionError("No directory row for logical row " + rowId);
+    }
+
+    private static void invalidatePreviousHint(
+            Transaction raw,
+            TableLayout layout,
+            long rowId,
+            long versionId,
+            long invalidPage,
+            int invalidRecord) throws Exception {
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, layout.versionContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, VERSION_KIND_FIELD) != VERSION_KIND
+                            || longField(raw, page, slot, VERSION_ROW_ID_FIELD) != rowId
+                            || longField(raw, page, slot, VERSION_ID_FIELD) != versionId) {
+                        continue;
+                    }
+                    int baseFieldCount = VERSION_PAYLOAD_START + layout.columnCount();
+                    if (page.fetchNumFieldsAtSlot(slot)
+                            != baseFieldCount + VERSION_LOOKUP_HINT_FIELD_COUNT) {
+                        throw new AssertionError("Version predecessor lookup hint is absent");
+                    }
+                    page.updateFieldAtSlot(
+                            slot,
+                            baseFieldCount,
+                            new SQLLongint(invalidPage),
+                            null);
+                    page.updateFieldAtSlot(
+                            slot,
+                            baseFieldCount + 1,
+                            new SQLInteger(invalidRecord),
+                            null);
+                    return;
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        throw new AssertionError("No head version " + versionId + " for logical row " + rowId);
+    }
+
+    private static void stripDirectoryHints(Transaction raw, long metadataContainerId)
+            throws Exception {
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, DIRECTORY_KIND_FIELD) != DIRECTORY_KIND
+                            || page.fetchNumFieldsAtSlot(slot) == DIRECTORY_BASE_FIELD_COUNT) {
+                        continue;
+                    }
+                    Object[] row = new Object[] {
+                            new SQLInteger(0),
+                            new SQLInteger(0),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLInteger(0)
+                    };
+                    page.fetchFromSlot(null, slot, row, null, false);
+                    page.updateAtSlot(
+                            slot,
+                            Arrays.copyOf(row, DIRECTORY_BASE_FIELD_COUNT),
+                            null);
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static void stripVersionHints(Transaction raw, TableLayout layout) throws Exception {
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, layout.versionContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, VERSION_KIND_FIELD) != VERSION_KIND) {
+                        continue;
+                    }
+                    int baseFieldCount = VERSION_PAYLOAD_START + layout.columnCount();
+                    if (page.fetchNumFieldsAtSlot(slot) == baseFieldCount) {
+                        continue;
+                    }
+                    Object[] row = versionTemplate(raw, layout, true);
+                    page.fetchFromSlot(null, slot, row, null, false);
+                    page.updateAtSlot(slot, Arrays.copyOf(row, baseFieldCount), null);
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static Object[] versionTemplate(
+            Transaction raw,
+            TableLayout layout,
+            boolean includeHint) throws Exception {
+        int baseFieldCount = VERSION_PAYLOAD_START + layout.columnCount();
+        Object[] row = new Object[includeHint
+                ? baseFieldCount + VERSION_LOOKUP_HINT_FIELD_COUNT
+                : baseFieldCount];
+        row[VERSION_KIND_FIELD] = new SQLInteger(0);
+        row[1] = new SQLInteger(0);
+        for (int field = VERSION_ROW_ID_FIELD; field <= VERSION_PREVIOUS_VERSION_ID_FIELD; field++) {
+            row[field] = new SQLLongint(0L);
+        }
+        row[VERSION_FLAGS_FIELD] = new SQLInteger(0);
+        for (int index = 0; index < layout.columnCount(); index++) {
+            row[VERSION_PAYLOAD_START + index] = raw.getDataValueFactory().getNull(
+                    layout.formatIds()[index],
+                    layout.collationIds()[index]);
+        }
+        if (includeHint) {
+            row[baseFieldCount] = new SQLLongint(0L);
+            row[baseFieldCount + 1] = new SQLInteger(0);
+        }
+        return row;
+    }
+
+    private static TableLayout tableLayout(Transaction raw, long metadataContainerId)
             throws Exception {
         ContainerHandle container = raw.openContainer(
                 new ContainerKey(0L, metadataContainerId),
@@ -147,11 +480,33 @@ final class MvccRawStoreMetadataInspection {
         Page page = null;
         try {
             page = container.getFirstPage();
-            return longField(
+            int slot = Page.FIRST_SLOT_NUMBER;
+            long versionContainerId = longField(
                     raw,
                     page,
-                    Page.FIRST_SLOT_NUMBER,
+                    slot,
                     CONTROL_VERSION_CONTAINER_FIELD);
+            int columnCount = intField(raw, page, slot, CONTROL_COLUMN_COUNT_FIELD);
+            int[] formatIds = new int[columnCount];
+            int[] collationIds = new int[columnCount];
+            for (int index = 0; index < columnCount; index++) {
+                formatIds[index] = intField(
+                        raw,
+                        page,
+                        slot,
+                        CONTROL_FIXED_FIELDS + index);
+                collationIds[index] = intField(
+                        raw,
+                        page,
+                        slot,
+                        CONTROL_FIXED_FIELDS + columnCount + index);
+            }
+            return new TableLayout(
+                    metadataContainerId,
+                    versionContainerId,
+                    columnCount,
+                    formatIds,
+                    collationIds);
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -211,6 +566,14 @@ final class MvccRawStoreMetadataInspection {
     record Counters(long nextTransactionId, long nextCommitSequence, long committedHighWater) {
     }
 
+    record DirectoryIdentity(
+            long rowId,
+            long headVersionId,
+            long headHintPage,
+            int headHintRecord,
+            boolean hasHint) {
+    }
+
     record VersionIdentity(
             long rowId,
             long versionId,
@@ -218,9 +581,26 @@ final class MvccRawStoreMetadataInspection {
             long beginCommitSequence,
             long endCommitSequence,
             long previousVersionId,
-            int flags) {
+            int flags,
+            long physicalPage,
+            int physicalRecord,
+            long previousHintPage,
+            int previousHintRecord,
+            boolean hasPreviousHintFields) {
         boolean tombstone() {
             return (flags & 1) != 0;
+        }
+    }
+
+    private record TableLayout(
+            long metadataContainerId,
+            long versionContainerId,
+            int columnCount,
+            int[] formatIds,
+            int[] collationIds) {
+        private TableLayout {
+            formatIds = formatIds.clone();
+            collationIds = collationIds.clone();
         }
     }
 }

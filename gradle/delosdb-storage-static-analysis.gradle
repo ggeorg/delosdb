@@ -6329,6 +6329,201 @@ tasks.register('delosMvccRawStoreMixedHeapTransactionStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreLookupHintStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies RawStore MVCC physical locators remain optional validated hints with logical fallback.'
+
+    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-LOOKUP-HINTS.md')
+    def requiredFiles = [formatFile, tableFile, inspectionFile, sqlTestFile, testsBuildFile, designFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-lookup-hint-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def formatText = formatFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def inspectionText = inspectionFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Optional physical hint row tails', formatText, [
+                    'DIRECTORY_HEAD_HINT_PAGE',
+                    'DIRECTORY_HEAD_HINT_RECORD',
+                    'DIRECTORY_BASE_FIELD_COUNT',
+                    'DIRECTORY_HINT_FIELD_COUNT',
+                    'VERSION_LOOKUP_HINT_FIELD_COUNT',
+                    'versionHintPageField',
+                    'versionHintRecordField'
+            ])
+
+            def findVersionSection = section(tableText,
+                    'private static VersionRecord findVersion(',
+                    'private static VersionRecord findVersionByHint(',
+                    'logical version lookup dispatch')
+            requireOrdered('Validated hint before logical fallback', findVersionSection, [
+                    'findVersionByHint(',
+                    'if (hinted != null)',
+                    'findVersionByLogicalId('
+            ])
+
+            def hintedLookupSection = section(tableText,
+                    'private static VersionRecord findVersionByHint(',
+                    'private static VersionRecord findVersionByLogicalId(',
+                    'validated physical hint lookup')
+            requireTokens('Physical hint validation', hintedLookupSection, [
+                    'if (!hint.valid())',
+                    'container.getPage(hint.pageNumber())',
+                    'page.getRecordHandle(hint.recordId())',
+                    'VERSION_KIND_FIELD',
+                    'VERSION_ROW_ID',
+                    'VERSION_ID',
+                    'return null',
+                    'decodeVersionAtSlot('
+            ])
+
+            requireTokens('Durable directory and predecessor hints', tableText, [
+                    'directoryRow(',
+                    'RecordHint.of(versionHandle)',
+                    'RecordHint.of(previousVersion.handle())',
+                    'hint = version.previousHint()',
+                    'DIRECTORY_BASE_FIELD_COUNT',
+                    'versionBaseFieldCount(table.columnCount())'
+            ])
+            def visibleChainSection = section(tableText,
+                    'private static VersionRecord findVisibleVersion(',
+                    'private static DirectoryHead findHead(',
+                    'logical version-chain traversal')
+            requireOrdered('Logical identity remains chain authority', visibleChainSection, [
+                    'long versionId = head.versionId()',
+                    'findVersion(',
+                    'versionId = version.previousVersionId()',
+                    'hint = version.previousHint()'
+            ])
+
+            requireTokens('Executable hint inspection and corruption proof', inspectionText, [
+                    'physicalPage',
+                    'physicalRecord',
+                    'previousHintPage',
+                    'previousHintRecord',
+                    'invalidateLookupHints(',
+                    'stripLookupHints(',
+                    'DIRECTORY_BASE_FIELD_COUNT',
+                    'VERSION_LOOKUP_HINT_FIELD_COUNT'
+            ])
+
+            [
+                    'testPersistedHintsMatchPhysicalRecordsAndSurviveReopen',
+                    'testStaleHintsFallBackForCurrentAndHistoricalSnapshots',
+                    'testRowsWithoutOptionalHintsRemainReadableAndUpgradeOnMutation',
+                    'testCrashRecoveryAndMemoryUseTheSameHintRules'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Lookup-hint proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Lookup-hint SQL proof', sqlTestText, [
+                    'invalidateLookupHints(',
+                    'stripLookupHints(',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'jdbc:derby:memory:',
+                    'assertHintTopology(',
+                    'assertNoHintFields('
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreLookupHintTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreLookupHintTest'
+            }
+
+            requireTokens('Lookup-hint design record', designText, [
+                    'logical row and version identities remain authoritative',
+                    'validated hint',
+                    'logical fallback',
+                    'optional trailing fields',
+                    'stale',
+                    'reopen',
+                    'crash',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreLookupHintTest',
+                    'delosMvccRawStoreLookupHintStaticAnalysis'
+            ])
+
+            if (tableText.contains('java.nio.file.Path')
+                    || tableText.contains('java.nio.file.Files')
+                    || tableText.contains('FileChannel')
+                    || tableText.contains('RandomAccessFile')) {
+                failures << 'RawStore MVCC lookup hints must not introduce direct filesystem access'
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-lookup-hint-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC lookup-hint static analysis')
+            writer.println('==================================================')
+            writer.println()
+            writer.println('Rule: page/record locators are optional validated hints; logical row/version IDs and previousVersionId remain authoritative.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC lookup-hint static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC lookup-hint static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -6356,6 +6551,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
             'delosMvccRawStoreUpdateDeleteStaticAnalysis',
             'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
+            'delosMvccRawStoreLookupHintStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',
