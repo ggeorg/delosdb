@@ -11,13 +11,18 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -30,6 +35,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Transaction rawTransaction;
     private final List<MvccRawStoreTable.PendingVersion> pending = new ArrayList<>();
     private final List<SavepointMarker> savepoints = new ArrayList<>();
+    private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
+    private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
 
     private long transactionId;
     private long snapshotSequence = UNCAPTURED_SNAPSHOT;
@@ -64,6 +71,49 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     mixedAuthorities.getMessage());
         }
         ensureTransactionId();
+    }
+
+    void beforeTableWrite(MvccRawStoreTable.Descriptor table) throws StandardException {
+        beforeWrite();
+        acquireShared(MvccRawStoreLogicalLock.table(table));
+    }
+
+    void beforeRowWrite(MvccRawStoreTable.Descriptor table, long rowId)
+            throws StandardException {
+        beforeTableWrite(table);
+        acquireExclusive(MvccRawStoreLogicalLock.row(table, rowId));
+    }
+
+    void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
+        beforeWrite();
+        acquireExclusive(MvccRawStoreLogicalLock.table(table));
+    }
+
+    void lockUniqueKeys(
+            MvccRawStoreTable.Descriptor table,
+            List<MvccRawStoreTable.UniqueConstraint> constraints,
+            StoreDataValue[]... rows) throws StandardException {
+        TreeSet<MvccRawStoreLogicalLock> ordered = new TreeSet<>();
+        try {
+            for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
+                for (StoreDataValue[] row : rows) {
+                    if (row == null
+                            || (constraint.duplicateNullsAllowed()
+                                && containsNull(row, constraint.columns()))) {
+                        continue;
+                    }
+                    ordered.add(MvccRawStoreLogicalLock.uniqueKey(table, constraint, row));
+                }
+            }
+        } catch (RuntimeException comparisonFailure) {
+            if (comparisonFailure.getCause() instanceof StandardException standard) {
+                throw standard;
+            }
+            throw comparisonFailure;
+        }
+        for (MvccRawStoreLogicalLock lock : ordered) {
+            acquireExclusive(lock);
+        }
     }
 
     void addPending(MvccRawStoreTable.PendingVersion version) {
@@ -208,6 +258,41 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         clearLocalState();
     }
 
+
+    private void acquireShared(MvccRawStoreLogicalLock lock) throws StandardException {
+        if (exclusiveLocks.contains(lock) || !sharedLocks.add(lock)) {
+            return;
+        }
+        try {
+            runtime.lockShared(rawTransaction, lock);
+        } catch (StandardException | RuntimeException | Error failure) {
+            sharedLocks.remove(lock);
+            throw failure;
+        }
+    }
+
+    private void acquireExclusive(MvccRawStoreLogicalLock lock) throws StandardException {
+        if (!exclusiveLocks.add(lock)) {
+            return;
+        }
+        try {
+            runtime.lockExclusive(rawTransaction, lock);
+        } catch (StandardException | RuntimeException | Error failure) {
+            exclusiveLocks.remove(lock);
+            throw failure;
+        }
+    }
+
+    private static boolean containsNull(StoreDataValue[] row, int[] columns)
+            throws StandardException {
+        for (int column : columns) {
+            if (StoreTypeUtil.isNull(row[column])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int findSavepoint(SavepointIdentity identity) {
         for (int index = savepoints.size() - 1; index >= 0; index--) {
             if (savepoints.get(index).identity().equals(identity)) {
@@ -226,6 +311,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private void clearLocalState() {
         pending.clear();
         savepoints.clear();
+        sharedLocks.clear();
+        exclusiveLocks.clear();
         transactionId = 0L;
         snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;

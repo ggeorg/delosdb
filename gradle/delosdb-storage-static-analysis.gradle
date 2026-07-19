@@ -5306,7 +5306,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             requireOrdered('RawStore MVCC INSERT ownership',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite()', 'ensureOrderedIndex(', 'allocateIdentifiers(',
+                    ['context.beforeTableWrite(table)', 'ensureOrderedIndex(', 'allocateIdentifiers(',
                             'insertRow(rawTransaction, table.versionContainer()',
                             'insertRow(rawTransaction, table.metadataContainer()',
                             'MvccRawStoreOrderedIndex.insertVersion(', 'context.addPending('])
@@ -5661,7 +5661,7 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
             requireOrdered('Persisted creator transaction identity',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite()', 'long creatorTransactionId = context.transactionId()',
+                    ['context.beforeTableWrite(table)', 'long creatorTransactionId = context.transactionId()',
                             'insertRow(rawTransaction, table.versionContainer()'])
             if (tableText.contains('updateAllocatorCommittedHighWater(')
                     || tableText.contains('static long committedHighWater(')) {
@@ -6014,14 +6014,14 @@ tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
                     section(tableText, 'static boolean replace(',
                             'static boolean delete(',
                             'RawStore MVCC UPDATE section'),
-                    ['context.beforeWrite()',
+                    ['context.beforeRowWrite(table, rowId)',
                             'mutationTarget(rawTransaction, table, rowId, context)',
                             'appendVersion('])
             requireOrdered('DELETE database-metadata/table lock ordering',
                     section(tableText, 'static boolean delete(',
                             'static List<VisibleRow> scanVisible(',
                             'RawStore MVCC DELETE section'),
-                    ['context.beforeWrite()',
+                    ['context.beforeRowWrite(table, rowId)',
                             'mutationTarget(rawTransaction, table, rowId, context)',
                             'appendVersion('])
             def appendVersionSection = section(
@@ -6909,13 +6909,13 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
             requireOrdered('INSERT uniqueness precedes physical mutation',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite()', 'ensureOrderedIndex(',
+                    ['context.beforeTableWrite(table)', 'ensureOrderedIndex(',
                      'MvccRawStoreOrderedIndex.assertUnique(',
                      'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()'])
             requireOrdered('UPDATE uniqueness precedes replacement append',
                     section(tableText, 'static boolean replace(', 'static boolean delete(',
                             'RawStore MVCC UPDATE section'),
-                    ['context.beforeWrite()', 'ensureOrderedIndex(', 'mutationTarget(',
+                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(', 'mutationTarget(',
                      'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
 
             requireTokens('RawStore-native unique enforcement', indexText, [
@@ -6959,7 +6959,7 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
             [
                     'testDeclaredUniqueMetadataAndAccessMethodEnforcement',
                     'testUpdateDeleteSavepointAndReopenPreserveUniqueness',
-                    'testConcurrentUniqueWritersSerializeAtTheRawStoreTable',
+                    'testConcurrentUniqueWritersSerializeAtTheRawStoreUniqueKey',
                     'testUniqueStateSurvivesBothCrashBoundariesAndMemory'
             ].each { methodName ->
                 if (!sqlTestText.contains(methodName)) {
@@ -7295,6 +7295,222 @@ tasks.register('delosMvccRawStoreUniqueLifecycleStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreLogicalLockingStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies RawStore MVCC semantic row, unique-key, and schema locks use the inherited Derby lock manager and transaction lifetime.'
+
+    def logicalLockFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreLogicalLock.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def requiredFiles = [logicalLockFile, runtimeFile, contextFile, tableFile, indexFile,
+            controllerFile, factoryFile, sqlTestFile, testsBuildFile, designFile,
+            implementationFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-logical-locking-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def logicalLockText = logicalLockFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def controllerText = controllerFile.getText('UTF-8')
+            def factoryText = factoryFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Stable logical lock identities', logicalLockText, [
+                    'extends ShExLockable',
+                    'TABLE_SCHEMA',
+                    'ROW',
+                    'UNIQUE_KEY',
+                    'table.metadataContainer().getContainerId()',
+                    'StoreValueCopySupport.cloneValue',
+                    'StoreTypeUtil.compare(',
+                    'VirtualLockTable.TABLE_AND_ROWLOCK',
+                    'DELOS_MVCC_SCHEMA[',
+                    'DELOS_MVCC_ROW[',
+                    'DELOS_MVCC_KEY['
+            ])
+            requireTokens('Inherited lock-manager ownership', factoryText, [
+                    'context.rawStoreFactory().getLockFactory()'
+            ])
+            requireTokens('RawStore transaction lock group', runtimeText, [
+                    'private final LockFactory lockFactory',
+                    'transaction.getCompatibilitySpace()',
+                    'transaction,',
+                    'ShExQual.SH',
+                    'ShExQual.EX',
+                    'C_LockFactory.TIMED_WAIT'
+            ])
+
+            requireTokens('Transaction-duration semantic lock context', contextText, [
+                    'beforeTableWrite(',
+                    'beforeRowWrite(',
+                    'beforeSchemaChange(',
+                    'lockUniqueKeys(',
+                    'TreeSet<MvccRawStoreLogicalLock>',
+                    'acquireShared(MvccRawStoreLogicalLock.table(table))',
+                    'acquireExclusive(MvccRawStoreLogicalLock.row(table, rowId))',
+                    'runtime.lockShared(rawTransaction, lock)',
+                    'runtime.lockExclusive(rawTransaction, lock)',
+                    'sharedLocks.clear()',
+                    'exclusiveLocks.clear()'
+            ])
+            requireOrdered('Stable-row lock precedes physical UPDATE work',
+                    section(tableText, 'static boolean replace(', 'static boolean delete(',
+                            'RawStore MVCC UPDATE section'),
+                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(',
+                     'mutationTarget(', 'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
+            requireOrdered('Stable-row and old-key locks precede DELETE tombstone append',
+                    section(tableText, 'static boolean delete(', 'static List<VisibleRow> scanVisible(',
+                            'RawStore MVCC DELETE section'),
+                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(',
+                     'mutationTarget(', 'lockUniqueKeysForDelete(', 'appendVersion('])
+            requireOrdered('Unique locks precede latest-horizon validation',
+                    section(indexText, 'static void assertUnique(', 'static void lockUniqueKeysForDelete(',
+                            'RawStore MVCC unique check section'),
+                    ['refreshUniqueConstraints(', 'context.lockUniqueKeys(',
+                     'acquireUpdateLock(transaction, table.versionContainer())',
+                     'context.currentCommittedSequence()'])
+            requireTokens('Schema and stable-row controller integration', controllerText, [
+                    'context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId())',
+                    'physical page/record pair is not a',
+                    'return true;',
+                    'beforeSchemaChange(table)',
+                    'validateUniqueConstraintDefinition(',
+                    'addUniqueConstraint(',
+                    'dropUniqueConstraint('
+            ])
+
+            [
+                    'testStableRowLocksHoldThroughCommitAndRollback',
+                    'testUniqueKeyLocksSurviveSavepointRollbackAndCommit',
+                    'testSchemaLocksSerializeUniqueDdlAndDml',
+                    'testAbortCrashReopenAndMemoryReleaseLogicalLocks'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Logical-locking proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Logical-locking executable evidence', sqlTestText, [
+                    'syscs_diag.lock_table',
+                    'DELOS_MVCC_SCHEMA[',
+                    'DELOS_MVCC_ROW[',
+                    'DELOS_MVCC_KEY[',
+                    'assertEquals("40001"',
+                    'assertEquals("23505"',
+                    'savepoint rollback must not release transaction-duration key locks',
+                    'unique DDL must wait for active shared table-schema locks',
+                    'transaction abort must be the logical-lock release boundary',
+                    'Runtime.getRuntime().halt(93)',
+                    'jdbc:derby:memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreLogicalLockingTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreLogicalLockingTest'
+            }
+            requireTokens('Logical-locking design record', designText, [
+                    'inherited database `LockFactory`',
+                    'stable MvccRowId',
+                    'deterministic constraint/key order',
+                    'Savepoint rollback',
+                    'SYSCS_DIAG.LOCK_TABLE',
+                    'lock-granularity completion',
+                    ':delosdb-tests:runDelosMvccRawStoreLogicalLockingTest',
+                    'delosMvccRawStoreLogicalLockingStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'Transaction-duration logical locks',
+                    'exclusive stable MvccRowId lock',
+                    'SYSCS_DIAG.LOCK_TABLE',
+                    ':delosdb-tests:runDelosMvccRawStoreLogicalLockingTest',
+                    'delosMvccRawStoreLogicalLockingStaticAnalysis'
+            ])
+
+            [logicalLockText, runtimeText, contextText, tableText, indexText, controllerText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC logical-locking production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-logical-locking-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC logical-locking static analysis')
+            writer.println('==================================================')
+            writer.println()
+            writer.println('Rule: stable schema, row, and typed unique-key conflicts use the inherited transaction-duration Derby lock manager; physical locators are not semantic identities.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC logical-locking static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC logical-locking static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -7326,6 +7542,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreOrderedIndexStaticAnalysis',
             'delosMvccRawStoreUniqueConstraintStaticAnalysis',
             'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
+            'delosMvccRawStoreLogicalLockingStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

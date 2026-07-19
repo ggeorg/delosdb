@@ -610,12 +610,13 @@ final class MvccRawStoreTable {
             throw new IllegalArgumentException(
                     "RawStore MVCC row width mismatch: expected " + table.columnCount());
         }
-        context.beforeWrite();
+        context.beforeTableWrite(table);
         ensureOrderedIndex(rawTransaction, table);
         long creatorTransactionId = context.transactionId();
         MvccRawStoreOrderedIndex.assertUnique(
                 rawTransaction,
                 table,
+                null,
                 values,
                 0L,
                 context);
@@ -713,7 +714,7 @@ final class MvccRawStoreTable {
         // Reserve the database-wide transaction identity before acquiring table
         // container locks. INSERT follows the same database-metadata -> table
         // ordering, which prevents an UPDATE/DELETE lock-order inversion.
-        context.beforeWrite();
+        context.beforeRowWrite(table, rowId);
         ensureOrderedIndex(rawTransaction, table);
         MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
         if (target == null) {
@@ -726,6 +727,7 @@ final class MvccRawStoreTable {
         MvccRawStoreOrderedIndex.assertUnique(
                 rawTransaction,
                 table,
+                target.visible().values(),
                 values,
                 rowId,
                 context);
@@ -746,12 +748,17 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        context.beforeWrite();
+        context.beforeRowWrite(table, rowId);
         ensureOrderedIndex(rawTransaction, table);
         MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
         if (target == null) {
             return false;
         }
+        MvccRawStoreOrderedIndex.lockUniqueKeysForDelete(
+                rawTransaction,
+                table,
+                target.visible().values(),
+                context);
         appendVersion(
                 rawTransaction,
                 table,

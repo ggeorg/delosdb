@@ -115,15 +115,24 @@ final class MvccRawStoreConglomerateController
     }
 
     @Override
-    public boolean lockRow(StoreRowLocation loc, int lockOper, boolean wait, int lockDuration) {
+    public boolean lockRow(StoreRowLocation loc, int lockOper, boolean wait, int lockDuration)
+            throws StandardException {
         ensureOpen();
-        MvccRowLocation.from(loc);
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId());
         return true;
     }
 
     @Override
-    public boolean lockRow(long pageNum, int recordId, int lockOper, boolean wait, int lockDuration) {
+    public boolean lockRow(long pageNum, int recordId, int lockOper, boolean wait, int lockDuration)
+            throws StandardException {
         ensureOpen();
+        // Derby's inherited backing B-tree invokes this callback while it
+        // maintains a constraint index. A physical page/record pair is not a
+        // stable MVCC row identity, so semantic row locking is performed only
+        // by the StoreRowLocation overload and the statement-time mutation
+        // path. Returning true preserves the inherited callback contract
+        // without creating a second, physically addressed lock namespace.
         return true;
     }
 
@@ -163,6 +172,7 @@ final class MvccRawStoreConglomerateController
             boolean duplicateNullsAllowed,
             boolean deferrable) throws StandardException {
         ensureOpen();
+        runtime.context(transactionManager, rawTransaction).beforeSchemaChange(table);
         MvccRawStoreTable.validateUniqueConstraintDefinition(
                 table,
                 baseColumnPositions,
@@ -176,6 +186,7 @@ final class MvccRawStoreConglomerateController
             boolean deferrable) throws StandardException {
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        context.beforeSchemaChange(table);
         MvccRawStoreTable.addUniqueConstraint(
                 rawTransaction,
                 table,
@@ -191,6 +202,7 @@ final class MvccRawStoreConglomerateController
             boolean duplicateNullsAllowed) throws StandardException {
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        context.beforeSchemaChange(table);
         MvccRawStoreTable.dropUniqueConstraint(
                 rawTransaction,
                 table,

@@ -181,6 +181,7 @@ final class MvccRawStoreOrderedIndex {
     static void assertUnique(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] previousValues,
             StoreDataValue[] values,
             long currentRowId,
             MvccRawStoreTransactionContext context) throws StandardException {
@@ -196,6 +197,7 @@ final class MvccRawStoreOrderedIndex {
         if (constraints.isEmpty()) {
             return;
         }
+        context.lockUniqueKeys(table, constraints, previousValues, values);
         acquireUpdateLock(transaction, table.versionContainer());
         List<IndexEntry> entries = readEntriesForUpdate(transaction, table);
         long committedSequence = context.currentCommittedSequence();
@@ -233,6 +235,19 @@ final class MvccRawStoreOrderedIndex {
                             "RAWSTORE_MVCC_" + table.metadataContainer().getContainerId());
                 }
             }
+        }
+    }
+
+    static void lockUniqueKeysForDelete(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] previousValues,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        acquireUpdateLock(transaction, table.metadataContainer());
+        List<MvccRawStoreTable.UniqueConstraint> constraints =
+                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true);
+        if (!constraints.isEmpty()) {
+            context.lockUniqueKeys(table, constraints, previousValues);
         }
     }
 

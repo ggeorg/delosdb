@@ -171,3 +171,14 @@ rows, and RawStore decides the transaction outcome.
 ## Later DDL lifecycle
 
 The follow-on lifecycle milestone extends this same metadata and enforcement model to `ALTER TABLE ADD/DROP CONSTRAINT` and `CREATE/DROP UNIQUE INDEX`. It uses the neutral `AccessMethodUniqueConstraintLifecycle` controller hook, validates before DDL publication, rewrites the RawStore control row in the caller transaction, and treats duplicate logical definitions as reference counts. See `V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md`.
+
+## Transaction-duration key locking
+
+The follow-on logical-locking milestone now protects each strict or non-null unique key with an
+exclusive Derby lock-manager identity before authoritative conflict validation. Old and new UPDATE
+keys are acquired in deterministic typed order; DELETE retains the old key lock until transaction
+completion. Savepoint rollback does not release key locks. See
+`V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`.
+
+This does not yet remove the physically conservative table-container locks used by the sorted
+RawStore index implementation.

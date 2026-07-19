@@ -144,19 +144,33 @@ RawStore overflow support. There is no custom `Loggable` and no deferred externa
 
 ## Locking and access order
 
-The isolated format uses inherited serializable container locking as a conservative correctness
-boundary. It is deliberately stronger than the final intended MVCC lock granularity.
+The format now uses two inherited locking layers with distinct responsibilities.
 
-Operations that need all table structures acquire the metadata container before the version container
-and the ordered-index container last.
-Update locks remain owned by the RawStore transaction until transaction completion. This prevents
-allocator races, prevents an abort from overwriting another transaction's allocator progress, and
-gives create/drop/read/write a single conservative container order. A scan truthfully reports that it
-is table-locked while this proof policy is active.
+Transaction-duration logical locks use the database `LockFactory` and stable semantic identities:
+
+```text
+shared table-schema lock for DML
+exclusive table-schema lock for native unique DDL
+exclusive stable MvccRowId lock for UPDATE and DELETE
+exclusive typed unique-key locks acquired in deterministic order
+```
+
+They belong to the same RawStore transaction compatibility space and group as the page mutations, so
+normal commit, abort, or transaction destruction releases them. Savepoint rollback intentionally
+retains them. Logical locks are visible through `SYSCS_DIAG.LOCK_TABLE`; no independent MVCC lock
+manager or persistent lock state exists. Physical page/record callback identities are never promoted
+to stable row locks. See `V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`.
+
+The physical table and ordered-index implementation still uses inherited serializable container
+locking as a conservative correctness boundary. Operations that need all table structures acquire
+the metadata container before the version container and the ordered-index container last. Update
+locks remain owned by the RawStore transaction until completion. This prevents allocator races and
+keeps sorted index rewrites atomic, but it is stronger than the final intended physical granularity.
+A scan truthfully reports that it is table-locked while this policy remains.
 
 Page latches protect individual physical operations. Visibility remains an MVCC decision based on
-logical transaction and commit-sequence fields; container locks are not treated as version identity or
-visibility metadata.
+logical transaction and commit-sequence fields; neither logical locks nor container locks are version
+identity or visibility metadata.
 
 ## Point read and scan
 
@@ -358,3 +372,17 @@ duplicate-null semantics, and direct-access/concurrency/recovery proofs are prot
 
 
 Native unique metadata now follows later SQL DDL as well as inline CREATE TABLE. ADD validates existing authoritative MVCC rows before publishing one logical definition; DROP removes one matching definition in the same RawStore transaction as Derby catalog and backing-index changes. Shared logical definitions act as reference counts, and tables with no native metadata remain compatible with inherited DROP lifecycle. Permanent evidence is `:delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest` and `delosMvccRawStoreUniqueLifecycleStaticAnalysis`.
+
+## Transaction-duration logical locking
+
+The current RawStore path now acquires stable schema, row, and unique-key identities through the
+inherited Derby lock manager. The focused proof covers commit, abort, savepoint retention, unique DDL
+serialization, diagnostics, abrupt exit, reopen, and memory databases.
+
+```text
+:delosdb-tests:runDelosMvccRawStoreLogicalLockingTest
+delosMvccRawStoreLogicalLockingStaticAnalysis
+```
+
+The physically sorted ordered index still requires conservative RawStore container locking; removing
+that remaining table-level physical serialization is not claimed by this milestone.

@@ -165,7 +165,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
         shutdownDatabase(database);
     }
 
-    public void testConcurrentUniqueWritersSerializeAtTheRawStoreTable() throws Exception {
+    public void testConcurrentUniqueWritersSerializeAtTheRawStoreUniqueKey() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-concurrent");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
@@ -197,7 +197,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
                     });
                     assertTrue(started.await(5, TimeUnit.SECONDS));
                     Thread.sleep(250L);
-                    assertFalse("second writer should wait for the table's RawStore lock", duplicate.isDone());
+                    assertFalse("second writer should wait for the transaction-duration unique-key lock", duplicate.isDone());
                     first.commit();
                     assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
                     second.rollback();

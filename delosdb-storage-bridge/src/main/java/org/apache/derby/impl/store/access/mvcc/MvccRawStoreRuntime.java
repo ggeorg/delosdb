@@ -14,6 +14,10 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.apache.derby.iapi.services.locks.C_LockFactory;
+import org.apache.derby.iapi.services.locks.LockFactory;
+import org.apache.derby.iapi.services.locks.ShExQual;
+
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -29,12 +33,14 @@ final class MvccRawStoreRuntime {
             "after-raw-commit-before-publication";
 
     private final Object databaseIdentity;
+    private final LockFactory lockFactory;
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
 
-    MvccRawStoreRuntime(Object databaseIdentity) {
+    MvccRawStoreRuntime(Object databaseIdentity, LockFactory lockFactory) {
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
+        this.lockFactory = Objects.requireNonNull(lockFactory, "lockFactory");
     }
 
     Object databaseIdentity() {
@@ -63,6 +69,26 @@ final class MvccRawStoreRuntime {
         if (committedHighWater >= 0L) {
             observeCommittedHighWater(committedHighWater);
         }
+    }
+
+    void lockShared(Transaction transaction, MvccRawStoreLogicalLock lock)
+            throws StandardException {
+        lock(transaction, lock, ShExQual.SH);
+    }
+
+    void lockExclusive(Transaction transaction, MvccRawStoreLogicalLock lock)
+            throws StandardException {
+        lock(transaction, lock, ShExQual.EX);
+    }
+
+    private void lock(Transaction transaction, MvccRawStoreLogicalLock lock, Object qualifier)
+            throws StandardException {
+        lockFactory.lockObject(
+                transaction.getCompatibilitySpace(),
+                transaction,
+                lock,
+                qualifier,
+                C_LockFactory.TIMED_WAIT);
     }
 
     long reserveTransactionId(Transaction rawTransaction) throws StandardException {

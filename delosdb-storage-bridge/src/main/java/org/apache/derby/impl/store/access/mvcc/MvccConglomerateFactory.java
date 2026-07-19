@@ -269,7 +269,9 @@ public final class MvccConglomerateFactory
                 System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false"));
         rawStoreVerticalSliceEnabled = Boolean.parseBoolean(configuredRawStoreMode);
         if (rawStoreVerticalSliceEnabled) {
-            rawStoreRuntime = new MvccRawStoreRuntime(context.databaseIdentity());
+            rawStoreRuntime = new MvccRawStoreRuntime(
+                    context.databaseIdentity(),
+                    context.rawStoreFactory().getLockFactory());
         }
 
         String storageRoot = context.dataFactory().getRootDirectory();

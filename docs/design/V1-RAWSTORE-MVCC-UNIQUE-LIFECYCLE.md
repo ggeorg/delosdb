@@ -168,3 +168,11 @@ vacuum or obsolete-entry removal
 
 The access-method hook is deliberately narrow. Catalog identity, authorization, dependency management,
 and inherited backing-index ownership remain Derby engine responsibilities.
+
+## Schema-lock integration
+
+The follow-on logical-locking milestone now gives ordinary DML a shared table-schema lock and native
+unique validation/ADD/DROP an exclusive table-schema lock through Derby's inherited lock manager.
+This prevents control-row uniqueness metadata from changing concurrently with table mutation while
+keeping catalog, backing-index, native metadata, and data changes under one RawStore outcome. See
+`V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`.
