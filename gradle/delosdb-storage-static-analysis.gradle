@@ -1860,13 +1860,21 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         def retainedLegacyModules = expectedRetiredModules.findAll { String moduleName ->
             settingsModules.contains(moduleName)
         }
-        int expectedMigrationCount = expectedTargetModules.size()
-                - (luceneModulePresent ? 0 : 1)
-                + retainedLegacyModules.size()
-        if (settingsModules.size() != expectedMigrationCount) {
+        def expectedMigrationModules = new LinkedHashSet<String>(expectedTargetModules)
+        if (!luceneModulePresent) {
+            expectedMigrationModules.remove('delosdb-search-lucene')
+        }
+        expectedMigrationModules.addAll(retainedLegacyModules)
+        def missingMigrationModules = expectedMigrationModules.findAll { String moduleName ->
+            !settingsModules.contains(moduleName)
+        }
+        def unexpectedMigrationModules = settingsModules.findAll { String moduleName ->
+            !expectedMigrationModules.contains(moduleName)
+        }
+        if (!missingMigrationModules.isEmpty() || !unexpectedMigrationModules.isEmpty()) {
             failures << (
-                    "Current module count ${settingsModules.size()} is inconsistent with the frozen migration set; " +
-                            "expected ${expectedMigrationCount}.")
+                    "Current settings.gradle does not match the valid v1 migration module set. " +
+                            "Missing ${missingMigrationModules}; unexpected ${unexpectedMigrationModules}.")
         }
         observations << "Current Gradle subprojects: ${settingsModules.size()}"
         observations << 'Final Gradle subprojects: 21'
@@ -2077,7 +2085,9 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
 
         if (!failures.isEmpty()) {
             throw new GradleException(
-                    'DelosDB v1 module architecture static analysis failed. Report: '
+                    'DelosDB v1 module architecture static analysis failed: '
+                            + failures.join(' | ')
+                            + '. Report: '
                             + reportFile)
         }
 
