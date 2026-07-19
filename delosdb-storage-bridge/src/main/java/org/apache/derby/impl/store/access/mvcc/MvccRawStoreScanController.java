@@ -41,6 +41,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private long rowsVisited;
     private long rowsQualified;
     private long estimatedRowCount;
+    private boolean orderedIndexScan;
 
     MvccRawStoreScanController(
             MvccRawStoreRuntime runtime,
@@ -97,7 +98,11 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public ScanInfo getScanInfo() {
         ensureOpen();
-        return new MvccScanInfo(rowsVisited, rowsQualified, scanColumnList);
+        return new MvccScanInfo(
+                orderedIndexScan ? "delos_mvcc_rawstore_ordered_index" : "delos_mvcc",
+                rowsVisited,
+                rowsQualified,
+                scanColumnList);
     }
 
     @Override
@@ -311,10 +316,30 @@ final class MvccRawStoreScanController implements ScanManager {
     }
 
     private void reload() throws StandardException {
-        rows = MvccRawStoreTable.scanVisible(
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        java.util.Optional<List<Long>> candidateRowIds = MvccRawStoreTable.orderedIndexRowIdsFor(
                 rawTransaction,
                 table,
-                runtime.context(transactionManager, rawTransaction));
+                qualifiers,
+                context);
+        if (candidateRowIds.isPresent()) {
+            List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
+            for (long rowId : candidateRowIds.get()) {
+                MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
+                        rawTransaction,
+                        table,
+                        rowId,
+                        context);
+                if (visible != null) {
+                    indexedRows.add(visible);
+                }
+            }
+            rows = List.copyOf(indexedRows);
+            orderedIndexScan = true;
+        } else {
+            rows = MvccRawStoreTable.scanVisible(rawTransaction, table, context);
+            orderedIndexScan = false;
+        }
         nextIndex = 0;
         current = null;
         currentDeleted = false;

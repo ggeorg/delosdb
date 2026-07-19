@@ -791,6 +791,12 @@ registerDelosFocusedTest(
         'Runs validated RawStore page/record hint, logical fallback, legacy-row, crash, reopen, and memory proofs.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.class'])
 
+
+registerDelosFocusedTest(
+        'runDelosMvccRawStoreOrderedIndexTest',
+        'Runs RawStore-owned MVCC ordered-index equality, range, version visibility, compatibility, crash, reopen, and memory proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.class'])
+
 registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',

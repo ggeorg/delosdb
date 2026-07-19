@@ -36,15 +36,57 @@ final class MvccRawStoreTable {
     private static final int INSERT_FLAGS = Page.INSERT_UNDO_WITH_PURGE | Page.INSERT_OVERFLOW;
     private static final int OVERFLOW_THRESHOLD = 100;
 
-    record Descriptor(
-            ContainerKey metadataContainer,
-            ContainerKey versionContainer,
-            int[] formatIds,
-            int[] collationIds,
-            boolean temporary) {
-        Descriptor {
-            formatIds = formatIds.clone();
-            collationIds = collationIds.clone();
+    static final class Descriptor {
+        private final ContainerKey metadataContainer;
+        private final ContainerKey versionContainer;
+        private final int[] formatIds;
+        private final int[] collationIds;
+        private final boolean temporary;
+        private volatile ContainerKey orderedIndexContainer;
+
+        Descriptor(
+                ContainerKey metadataContainer,
+                ContainerKey versionContainer,
+                ContainerKey orderedIndexContainer,
+                int[] formatIds,
+                int[] collationIds,
+                boolean temporary) {
+            this.metadataContainer = java.util.Objects.requireNonNull(
+                    metadataContainer, "metadataContainer");
+            this.versionContainer = java.util.Objects.requireNonNull(
+                    versionContainer, "versionContainer");
+            this.orderedIndexContainer = orderedIndexContainer;
+            this.formatIds = formatIds.clone();
+            this.collationIds = collationIds.clone();
+            this.temporary = temporary;
+        }
+
+        ContainerKey metadataContainer() {
+            return metadataContainer;
+        }
+
+        ContainerKey versionContainer() {
+            return versionContainer;
+        }
+
+        ContainerKey orderedIndexContainer() {
+            return orderedIndexContainer;
+        }
+
+        void observeOrderedIndexContainer(ContainerKey container) {
+            orderedIndexContainer = container;
+        }
+
+        int[] formatIds() {
+            return formatIds;
+        }
+
+        int[] collationIds() {
+            return collationIds;
+        }
+
+        boolean temporary() {
+            return temporary;
         }
 
         int columnCount() {
@@ -61,7 +103,11 @@ final class MvccRawStoreTable {
             long versionId,
             long previousVersionId,
             RecordHint previousHint,
+            int flags,
             RecordHandle handle) {
+        boolean tombstone() {
+            return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
+        }
     }
 
     private MvccRawStoreTable() {
@@ -109,15 +155,26 @@ final class MvccRawStoreTable {
         if (versionId < 0L) {
             throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
         }
+        long orderedIndexId = rawTransaction.addContainer(
+                segment,
+                0L,
+                ContainerHandle.MODE_DEFAULT,
+                properties,
+                temporaryFlag);
+        if (orderedIndexId < 0L) {
+            throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
+        }
 
         Descriptor descriptor = new Descriptor(
                 new ContainerKey(segment, metadataId),
                 new ContainerKey(segment, versionId),
+                new ContainerKey(segment, orderedIndexId),
                 formatIds,
                 collationIds,
                 (temporaryFlag & TransactionController.IS_TEMPORARY) == TransactionController.IS_TEMPORARY);
         initializeMetadataContainer(rawTransaction, descriptor);
         initializeVersionContainer(rawTransaction, descriptor);
+        MvccRawStoreOrderedIndex.initialize(rawTransaction, descriptor);
         return descriptor;
     }
 
@@ -146,7 +203,10 @@ final class MvccRawStoreTable {
                 return null;
             }
             int columnCount = MvccRawStoreFormat.intAt(prefix, MvccRawStoreFormat.CONTROL_COLUMN_COUNT);
-            Object[] row = controlTemplate(rawTransaction, columnCount);
+            int controlFieldCount = page.fetchNumFieldsAtSlot(Page.FIRST_SLOT_NUMBER);
+            int orderedIndexField = MvccRawStoreFormat.controlOrderedIndexContainerField(columnCount);
+            boolean hasOrderedIndexField = controlFieldCount > orderedIndexField;
+            Object[] row = controlTemplate(rawTransaction, columnCount, hasOrderedIndexField);
             page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, row, null, false);
             int[] formatIds = new int[columnCount];
             int[] collationIds = new int[columnCount];
@@ -158,6 +218,13 @@ final class MvccRawStoreTable {
                         row,
                         MvccRawStoreFormat.CONTROL_FIXED_FIELDS + columnCount + index);
             }
+            ContainerKey orderedIndexContainer = null;
+            if (hasOrderedIndexField) {
+                long orderedIndexId = MvccRawStoreFormat.longAt(row, orderedIndexField);
+                if (orderedIndexId > 0L) {
+                    orderedIndexContainer = new ContainerKey(metadataKey.getSegmentId(), orderedIndexId);
+                }
+            }
             return new Descriptor(
                     new ContainerKey(
                             metadataKey.getSegmentId(),
@@ -165,6 +232,7 @@ final class MvccRawStoreTable {
                     new ContainerKey(
                             metadataKey.getSegmentId(),
                             MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.CONTROL_VERSION_CONTAINER)),
+                    orderedIndexContainer,
                     formatIds,
                     collationIds,
                     MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.CONTROL_TEMPORARY) != 0);
@@ -174,6 +242,173 @@ final class MvccRawStoreTable {
             }
             container.close();
         }
+    }
+
+    static java.util.Optional<List<Long>> orderedIndexRowIdsFor(
+            Transaction transaction,
+            Descriptor table,
+            org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        ContainerKey orderedIndex = discoverOrderedIndexContainer(transaction, table, false);
+        if (orderedIndex == null) {
+            return java.util.Optional.empty();
+        }
+        return MvccRawStoreOrderedIndex.rowIdsFor(
+                transaction,
+                table,
+                qualifiers,
+                context.transactionId(),
+                context.snapshotSequence());
+    }
+
+    private static void ensureOrderedIndex(Transaction transaction, Descriptor table)
+            throws StandardException {
+        ContainerKey existing = discoverOrderedIndexContainer(transaction, table, false);
+        if (existing != null) {
+            return;
+        }
+        // Upgrade only for the compatibility rebuild. Existing indexed tables
+        // must not take a metadata update lock before UPDATE/DELETE has checked
+        // the visible head and can fail a stale writer without waiting behind a
+        // long-running historical reader.
+        existing = discoverOrderedIndexContainer(transaction, table, true);
+        if (existing != null) {
+            return;
+        }
+
+        int temporaryFlag = table.temporary()
+                ? TransactionController.IS_TEMPORARY
+                : TransactionController.IS_DEFAULT;
+        long containerId = transaction.addContainer(
+                table.metadataContainer().getSegmentId(),
+                0L,
+                ContainerHandle.MODE_DEFAULT,
+                null,
+                temporaryFlag);
+        if (containerId < 0L) {
+            throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
+        }
+
+        ContainerKey orderedIndex = new ContainerKey(
+                table.metadataContainer().getSegmentId(),
+                containerId);
+        table.observeOrderedIndexContainer(orderedIndex);
+        try {
+            MvccRawStoreOrderedIndex.initialize(transaction, table);
+            rebuildOrderedIndex(transaction, table);
+            rewriteControlRow(transaction, table);
+        } catch (StandardException | RuntimeException | Error failure) {
+            table.observeOrderedIndexContainer(null);
+            throw failure;
+        }
+    }
+
+    private static ContainerKey discoverOrderedIndexContainer(
+            Transaction transaction,
+            Descriptor table,
+            boolean forUpdate) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                lockingPolicy(transaction),
+                forUpdate ? ContainerHandle.MODE_FORUPDATE : ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            int field = MvccRawStoreFormat.controlOrderedIndexContainerField(table.columnCount());
+            if (page == null || page.fetchNumFieldsAtSlot(Page.FIRST_SLOT_NUMBER) <= field) {
+                table.observeOrderedIndexContainer(null);
+                return null;
+            }
+            StoreDataValue value = MvccRawStoreFormat.longValue(transaction, 0L);
+            page.fetchFieldFromSlot(Page.FIRST_SLOT_NUMBER, field, value);
+            long containerId = StoreTypeUtil.getLong(value);
+            ContainerKey key = containerId <= 0L
+                    ? null
+                    : new ContainerKey(table.metadataContainer().getSegmentId(), containerId);
+            table.observeOrderedIndexContainer(key);
+            return key;
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static void rewriteControlRow(Transaction transaction, Descriptor table)
+            throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                lockingPolicy(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            page.updateAtSlot(
+                    Page.FIRST_SLOT_NUMBER,
+                    controlRow(transaction, table),
+                    null);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static void rebuildOrderedIndex(Transaction transaction, Descriptor table)
+            throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.versionContainer(),
+                lockingPolicy(transaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC version container is absent: " + table.versionContainer());
+        }
+        List<MvccRawStoreOrderedIndex.VersionInput> versions = new ArrayList<>();
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    VersionRecord version = decodeVersionAtSlot(transaction, table, page, slot);
+                    if (version == null || version.tombstone()) {
+                        continue;
+                    }
+                    versions.add(new MvccRawStoreOrderedIndex.VersionInput(
+                            version.rowId(),
+                            version.versionId(),
+                            version.creatorTransactionId(),
+                            version.beginSequence(),
+                            version.endSequence(),
+                            version.values()));
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        MvccRawStoreOrderedIndex.rebuild(transaction, table, versions);
     }
 
     static PendingVersion insert(
@@ -187,6 +422,7 @@ final class MvccRawStoreTable {
                     "RawStore MVCC row width mismatch: expected " + table.columnCount());
         }
         context.beforeWrite();
+        ensureOrderedIndex(rawTransaction, table);
         long creatorTransactionId = context.transactionId();
         Allocation allocation = allocateIdentifiers(rawTransaction, table);
         Object[] versionRow = versionRow(
@@ -206,12 +442,22 @@ final class MvccRawStoreTable {
                 allocation.versionId(),
                 RecordHint.of(versionHandle));
         insertRow(rawTransaction, table.metadataContainer(), directoryRow);
+        MvccRawStoreOrderedIndex.insertVersion(
+                rawTransaction,
+                table,
+                allocation.rowId(),
+                allocation.versionId(),
+                creatorTransactionId,
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                MvccRawStoreFormat.CURRENT_END_SEQUENCE,
+                values);
         PendingVersion pending = new PendingVersion(
                 table,
                 allocation.rowId(),
                 allocation.versionId(),
                 MvccRawStoreFormat.NO_PREVIOUS_VERSION,
                 RecordHint.NONE,
+                MvccRawStoreFormat.LIVE_FLAGS,
                 versionHandle);
         context.addPending(pending);
         if (destination != null) {
@@ -253,6 +499,7 @@ final class MvccRawStoreTable {
         // container locks. INSERT follows the same database-metadata -> table
         // ordering, which prevents an UPDATE/DELETE lock-order inversion.
         context.beforeWrite();
+        ensureOrderedIndex(rawTransaction, table);
         MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
         if (target == null) {
             return false;
@@ -279,6 +526,7 @@ final class MvccRawStoreTable {
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
         context.beforeWrite();
+        ensureOrderedIndex(rawTransaction, table);
         MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
         if (target == null) {
             return false;
@@ -387,6 +635,13 @@ final class MvccRawStoreTable {
                     version.table(),
                     version,
                     commitSequence);
+            MvccRawStoreOrderedIndex.stampVersionBegin(
+                    rawTransaction,
+                    version.table(),
+                    version.rowId(),
+                    version.versionId(),
+                    commitSequence,
+                    version.tombstone() ? 0 : version.table().columnCount());
             if (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
                 updateVersionEnd(
                         rawTransaction,
@@ -395,15 +650,26 @@ final class MvccRawStoreTable {
                         version.previousVersionId(),
                         version.previousHint(),
                         commitSequence);
+                MvccRawStoreOrderedIndex.stampVersionEnd(
+                        rawTransaction,
+                        version.table(),
+                        version.rowId(),
+                        version.previousVersionId(),
+                        commitSequence);
             }
         }
     }
 
     static void drop(Transaction rawTransaction, Descriptor table) throws StandardException {
-        // Readers acquire metadata before versions. Drop follows the same order
-        // so a concurrent reader cannot hold metadata while waiting on versions.
+        ContainerKey orderedIndex = discoverOrderedIndexContainer(rawTransaction, table, true);
+        // Readers acquire metadata, versions, then the ordered index. Drop
+        // follows the same order so no participant waits while holding a later
+        // container in the table lock order.
         rawTransaction.dropContainer(table.metadataContainer());
         rawTransaction.dropContainer(table.versionContainer());
+        if (orderedIndex != null) {
+            rawTransaction.dropContainer(orderedIndex);
+        }
     }
 
     private static void initializeMetadataContainer(Transaction rawTransaction, Descriptor descriptor)
@@ -473,7 +739,7 @@ final class MvccRawStoreTable {
     }
 
     private static Object[] controlRow(Transaction transaction, Descriptor descriptor) throws StandardException {
-        Object[] row = controlTemplate(transaction, descriptor.columnCount());
+        Object[] row = controlTemplate(transaction, descriptor.columnCount(), true);
         row[MvccRawStoreFormat.CONTROL_MAGIC] = MvccRawStoreFormat.longValue(transaction, MvccRawStoreFormat.MAGIC);
         row[MvccRawStoreFormat.CONTROL_KIND_FIELD] = MvccRawStoreFormat.intValue(
                 transaction,
@@ -500,6 +766,11 @@ final class MvccRawStoreTable {
             row[MvccRawStoreFormat.CONTROL_FIXED_FIELDS + descriptor.columnCount() + index] =
                     MvccRawStoreFormat.intValue(transaction, descriptor.collationIds()[index]);
         }
+        ContainerKey orderedIndexContainer = descriptor.orderedIndexContainer();
+        row[MvccRawStoreFormat.controlOrderedIndexContainerField(descriptor.columnCount())] =
+                MvccRawStoreFormat.longValue(
+                        transaction,
+                        orderedIndexContainer == null ? 0L : orderedIndexContainer.getContainerId());
         return row;
     }
 
@@ -610,12 +881,22 @@ final class MvccRawStoreTable {
                 expectedHead,
                 versionId,
                 RecordHint.of(versionHandle));
+        MvccRawStoreOrderedIndex.insertVersion(
+                transaction,
+                table,
+                rowId,
+                versionId,
+                context.transactionId(),
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                MvccRawStoreFormat.CURRENT_END_SEQUENCE,
+                values);
         PendingVersion pending = new PendingVersion(
                 table,
                 rowId,
                 versionId,
                 previousVersion.versionId(),
                 RecordHint.of(previousVersion.handle()),
+                flags,
                 versionHandle);
         context.addPending(pending);
         return pending;
@@ -1357,11 +1638,16 @@ final class MvccRawStoreTable {
     }
 
     private static Object[] controlPrefixTemplate(Transaction transaction) throws StandardException {
-        return controlTemplate(transaction, 0);
+        return controlTemplate(transaction, 0, false);
     }
 
-    private static Object[] controlTemplate(Transaction transaction, int columnCount) throws StandardException {
-        Object[] row = new Object[MvccRawStoreFormat.CONTROL_FIXED_FIELDS + (columnCount * 2)];
+    private static Object[] controlTemplate(
+            Transaction transaction,
+            int columnCount,
+            boolean includeOrderedIndex) throws StandardException {
+        Object[] row = new Object[includeOrderedIndex
+                ? MvccRawStoreFormat.controlFieldCount(columnCount)
+                : MvccRawStoreFormat.controlOrderedIndexContainerField(columnCount)];
         row[MvccRawStoreFormat.CONTROL_MAGIC] = MvccRawStoreFormat.longValue(transaction, 0L);
         row[MvccRawStoreFormat.CONTROL_KIND_FIELD] = MvccRawStoreFormat.intValue(transaction, 0);
         row[MvccRawStoreFormat.CONTROL_FORMAT_VERSION] = MvccRawStoreFormat.intValue(transaction, 0);
@@ -1369,8 +1655,14 @@ final class MvccRawStoreTable {
         row[MvccRawStoreFormat.CONTROL_VERSION_CONTAINER] = MvccRawStoreFormat.longValue(transaction, 0L);
         row[MvccRawStoreFormat.CONTROL_COLUMN_COUNT] = MvccRawStoreFormat.intValue(transaction, 0);
         row[MvccRawStoreFormat.CONTROL_TEMPORARY] = MvccRawStoreFormat.intValue(transaction, 0);
-        for (int index = MvccRawStoreFormat.CONTROL_FIXED_FIELDS; index < row.length; index++) {
+        int orderedIndexField = MvccRawStoreFormat.controlOrderedIndexContainerField(columnCount);
+        for (int index = MvccRawStoreFormat.CONTROL_FIXED_FIELDS;
+                index < Math.min(row.length, orderedIndexField);
+                index++) {
             row[index] = MvccRawStoreFormat.intValue(transaction, 0);
+        }
+        if (includeOrderedIndex) {
+            row[orderedIndexField] = MvccRawStoreFormat.longValue(transaction, 0L);
         }
         return row;
     }

@@ -27,6 +27,7 @@ Derby RawStore transaction:
 ```text
 metadata/directory container
 version container
+ordered-index container
 RawStore slotted pages
 RawStore logged insert and field-update operations
 RawStore undo
@@ -53,7 +54,7 @@ transactions and container identities.
 
 ## Physical format
 
-Each opted-in table owns two ordinary RawStore containers.
+Each newly created opted-in table owns three ordinary RawStore containers.
 
 The primary metadata/directory container uses:
 
@@ -69,6 +70,19 @@ The version container uses:
 first page slot 0: format marker
 remaining records: version rows and row payload
 ```
+
+The ordered-index container uses:
+
+```text
+first page slot 0: ordered-index control row
+remaining records: physically sorted, version-aware typed key entries
+```
+
+Each non-tombstone version contributes one entry per table column. Entries are ordered by column,
+SQL typed key, stable row identity, and version identity. They retain creator, begin, and end sequence
+fields so transaction-local and historical snapshot visibility match the base version. Index results
+are candidate `MvccRowId` values only; the authoritative base version chain is always reread and the
+complete SQL qualifiers are reapplied. See `V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
 
 A version row contains format-versioned logical identity and visibility fields followed by the normal
 RawStore-encoded payload:
@@ -110,17 +124,19 @@ versions with one `MvccCommitSequence` before the single inherited RawStore comm
 
 ## CREATE and INSERT
 
-CREATE uses `Transaction.addContainer()` twice and writes the control, allocator, and version-marker
-rows through the same RawStore transaction as the catalog operation. Rollback therefore removes the
-containers through normal RawStore undo.
+CREATE uses `Transaction.addContainer()` three times and writes the metadata control, allocator,
+version marker, and ordered-index control rows through the same RawStore transaction as the catalog
+operation. Rollback therefore removes all three containers through normal RawStore undo.
 
 INSERT performs its physical work during statement execution:
 
 ```text
-1. update the allocator row for a new MvccRowId and MvccVersionId
-2. insert an uncommitted version row
-3. insert the stable-row directory entry
-4. retain only the version RecordHandle in transaction-local semantic state
+1. ensure the table has a transactional ordered-index container
+2. update the allocator row for a new MvccRowId and MvccVersionId
+3. insert an uncommitted version row
+4. insert the stable-row directory entry
+5. rewrite the version-aware index entries in physical SQL typed order
+6. retain only logical pending-version state and validated RecordHandle hints
 ```
 
 Inserted directory and version records request `Page.INSERT_UNDO_WITH_PURGE`; row payloads may use
@@ -131,7 +147,8 @@ RawStore overflow support. There is no custom `Loggable` and no deferred externa
 The isolated format uses inherited serializable container locking as a conservative correctness
 boundary. It is deliberately stronger than the final intended MVCC lock granularity.
 
-Operations that need both containers acquire the metadata container before the version container.
+Operations that need all table structures acquire the metadata container before the version container
+and the ordered-index container last.
 Update locks remain owned by the RawStore transaction until transaction completion. This prevents
 allocator races, prevents an abort from overwriting another transaction's allocator progress, and
 gives create/drop/read/write a single conservative container order. A scan truthfully reports that it
@@ -155,9 +172,11 @@ apply current-transaction or committed-snapshot visibility
 return the decoded payload
 ```
 
-The scan controller materializes visible directory heads using the same chain lookup. The directory
-scan remains intentionally linear for this transitional format; version-chain navigation now avoids a
-full version-container scan when a validated hint is current. This is still not the final cost model.
+For safe single-column equality and range qualifiers, the scan controller traverses the physically
+sorted ordered-index container, de-duplicates stable row candidates, rereads each candidate through
+the same authoritative version-chain lookup, and reapplies all qualifiers. Unsupported predicate
+shapes use the linear directory scan. Version-chain navigation avoids a full version-container scan
+when a validated hint is current. This is still not the final optimizer cost model.
 
 ## Commit ordering
 
@@ -169,11 +188,12 @@ For a transaction with inserted versions:
 ```text
 1. acquire the publication lock
 2. reserve the next database-wide MvccCommitSequence through a forced nested-top RawStore commit
-3. stamp all pending version begin sequences across participating tables through logged RawStore field updates
-4. update the database-wide RawStore-owned committed high-water in the user transaction
-5. let RAMTransaction commit the inherited RawStore transaction
-6. publish the in-memory high-water only after RawStore reports success
-7. release the publication lock
+3. stamp all pending base-version begin sequences and ordered-index entry begin sequences
+4. stamp predecessor base-version and ordered-index entry end sequences
+5. update the database-wide RawStore-owned committed high-water in the user transaction
+6. let RAMTransaction commit the inherited RawStore transaction
+7. publish the in-memory high-water only after RawStore reports success
+8. release the publication lock
 ```
 
 Snapshot capture reads only the already published in-memory high-water while holding the publication
@@ -227,6 +247,9 @@ DELETE by tombstone append
 historical version-chain traversal
 validated optional physical lookup hints with logical fallback
 pre-hint shorter-row compatibility
+version-aware physically sorted ordered-index entries
+safe equality/range candidate lookup with authoritative base-row recheck
+pre-index shorter-control compatibility and transactional lazy rebuild
 mixed inherited heap and RawStore-backed MVCC transactions
 ```
 
@@ -235,7 +258,7 @@ and nested updates fail closed. UPDATE and DELETE are now implemented through Ra
 mutation, but the remaining items are not yet claimed as supported:
 
 ```text
-secondary and ordered indexes
+SQL secondary-index DDL lifecycle
 unique constraints
 vacuum, purge, compression, and relocation
 XA participation
@@ -259,6 +282,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest
 :delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest
 :delosdb-tests:runDelosMvccRawStoreLookupHintTest
+:delosdb-tests:runDelosMvccRawStoreOrderedIndexTest
 ```
 
 It covers:
@@ -292,6 +316,11 @@ persisted directory-head and predecessor hints match physical RawStore records
 stale or reused physical hints fall back for current and historical snapshots
 pre-hint shorter rows remain readable and upgrade on later mutation
 lookup hints survive reopen, both RawStore crash boundaries, and memory operation
+physically sorted SQL typed ordered-index entries across multiple RawStore pages
+equality/range candidate scans with base-chain and full-qualifier revalidation
+transaction-local and historical ordered-index visibility
+pre-index compatibility and transactional lazy rebuild
+ordered-index reopen, both RawStore crash boundaries, and memory operation
 ```
 
 Permanent architecture task:
@@ -302,9 +331,10 @@ delosMvccRawStoreMultiTableTransactionStaticAnalysis
 delosMvccRawStoreUpdateDeleteStaticAnalysis
 delosMvccRawStoreMixedHeapTransactionStaticAnalysis
 delosMvccRawStoreLookupHintStaticAnalysis
+delosMvccRawStoreOrderedIndexStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
 transaction-lifecycle ordering, opt-in compatibility route, retained/new-format identity separation,
 recovery tests, memory proof, differential oracle proof, and absence of filesystem/external-durability
-dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`.
+dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`. The third RawStore container, physical typed ordering, version-aware visibility, candidate revalidation, compatibility rebuild, and recovery/memory proofs are protected by `delosMvccRawStoreOrderedIndexStaticAnalysis`.

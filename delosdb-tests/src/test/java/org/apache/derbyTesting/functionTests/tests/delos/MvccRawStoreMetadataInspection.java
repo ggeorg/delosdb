@@ -34,7 +34,7 @@ import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
-/** RawStore inspection used only by the database-wide MVCC identity proofs. */
+/** Low-level RawStore inspection used by focused MVCC convergence proofs. */
 final class MvccRawStoreMetadataInspection {
     static final String CONTAINER_PROPERTY =
             "delosdb.mvcc.rawStore.databaseMetadataContainerId";
@@ -46,6 +46,18 @@ final class MvccRawStoreMetadataInspection {
     private static final int CONTROL_VERSION_CONTAINER_FIELD = 4;
     private static final int CONTROL_COLUMN_COUNT_FIELD = 5;
     private static final int CONTROL_FIXED_FIELDS = 7;
+
+    private static final int ORDERED_INDEX_CONTROL_KIND_FIELD = 0;
+    private static final int ORDERED_INDEX_CONTAINER_KIND = 6;
+    private static final int ORDERED_INDEX_ENTRY_KIND_FIELD = 0;
+    private static final int ORDERED_INDEX_ENTRY_KIND = 7;
+    private static final int ORDERED_INDEX_ENTRY_COLUMN_ID_FIELD = 2;
+    private static final int ORDERED_INDEX_ENTRY_KEY_FIELD = 3;
+    private static final int ORDERED_INDEX_ENTRY_ROW_ID_FIELD = 4;
+    private static final int ORDERED_INDEX_ENTRY_VERSION_ID_FIELD = 5;
+    private static final int ORDERED_INDEX_ENTRY_CREATOR_TRANSACTION_ID_FIELD = 6;
+    private static final int ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE_FIELD = 7;
+    private static final int ORDERED_INDEX_ENTRY_END_SEQUENCE_FIELD = 8;
 
     private static final int DIRECTORY_KIND_FIELD = 0;
     private static final int DIRECTORY_KIND = 3;
@@ -98,6 +110,153 @@ final class MvccRawStoreMetadataInspection {
             }
             container.close();
         }
+    }
+
+
+    static long orderedIndexContainerId(Connection connection, String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        TableLayout layout = tableLayout(
+                transactionManager(connection).getRawStoreXact(),
+                metadataContainerId);
+        return layout.orderedIndexContainerId();
+    }
+
+    static long orderedIndexPageCount(Connection connection, String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        if (layout.orderedIndexContainerId() <= 0L) {
+            return 0L;
+        }
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, layout.orderedIndexContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC ordered-index container is absent");
+        }
+        long pageCount = 0L;
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                pageCount++;
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        return pageCount;
+    }
+
+    static List<OrderedIndexIdentity> orderedIndexEntries(
+            Connection connection,
+            String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        if (layout.orderedIndexContainerId() <= 0L) {
+            return List.of();
+        }
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, layout.orderedIndexContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC ordered-index container is absent");
+        }
+        List<OrderedIndexIdentity> result = new ArrayList<>();
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            if (page == null
+                    || intField(raw, page, Page.FIRST_SLOT_NUMBER,
+                            ORDERED_INDEX_CONTROL_KIND_FIELD) != ORDERED_INDEX_CONTAINER_KIND) {
+                throw new AssertionError("RawStore MVCC ordered-index control row is invalid");
+            }
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot,
+                                    ORDERED_INDEX_ENTRY_KIND_FIELD) != ORDERED_INDEX_ENTRY_KIND) {
+                        continue;
+                    }
+                    int columnId = intField(raw, page, slot,
+                            ORDERED_INDEX_ENTRY_COLUMN_ID_FIELD);
+                    StoreDataValue key = raw.getDataValueFactory().getNull(
+                            layout.formatIds()[columnId],
+                            layout.collationIds()[columnId]);
+                    page.fetchFieldFromSlot(slot, ORDERED_INDEX_ENTRY_KEY_FIELD, key);
+                    Object keyObject = StoreTypeUtil.getObject(key);
+                    result.add(new OrderedIndexIdentity(
+                            columnId,
+                            keyObject == null ? null : keyObject.toString(),
+                            longField(raw, page, slot, ORDERED_INDEX_ENTRY_ROW_ID_FIELD),
+                            longField(raw, page, slot, ORDERED_INDEX_ENTRY_VERSION_ID_FIELD),
+                            longField(raw, page, slot,
+                                    ORDERED_INDEX_ENTRY_CREATOR_TRANSACTION_ID_FIELD),
+                            longField(raw, page, slot,
+                                    ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE_FIELD),
+                            longField(raw, page, slot,
+                                    ORDERED_INDEX_ENTRY_END_SEQUENCE_FIELD)));
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        return result;
+    }
+
+    static void removeOrderedIndexForCompatibility(
+            Connection connection,
+            String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        if (layout.orderedIndexContainerId() <= 0L) {
+            throw new AssertionError("RawStore MVCC ordered-index container is absent");
+        }
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            Object[] oldShape = new Object[CONTROL_FIXED_FIELDS + (layout.columnCount() * 2)];
+            oldShape[0] = new SQLLongint(0L);
+            oldShape[1] = new SQLInteger(0);
+            oldShape[2] = new SQLInteger(0);
+            oldShape[3] = new SQLLongint(0L);
+            oldShape[4] = new SQLLongint(0L);
+            oldShape[5] = new SQLInteger(0);
+            oldShape[6] = new SQLInteger(0);
+            for (int field = CONTROL_FIXED_FIELDS; field < oldShape.length; field++) {
+                oldShape[field] = new SQLInteger(0);
+            }
+            page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, oldShape, null, false);
+            page.updateAtSlot(Page.FIRST_SLOT_NUMBER, oldShape, null);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        raw.dropContainer(new ContainerKey(0L, layout.orderedIndexContainerId()));
     }
 
     static List<VersionIdentity> versions(Connection connection, String tableName) throws Exception {
@@ -501,9 +660,14 @@ final class MvccRawStoreMetadataInspection {
                         slot,
                         CONTROL_FIXED_FIELDS + columnCount + index);
             }
+            int orderedIndexField = CONTROL_FIXED_FIELDS + (columnCount * 2);
+            long orderedIndexContainerId = page.fetchNumFieldsAtSlot(slot) > orderedIndexField
+                    ? longField(raw, page, slot, orderedIndexField)
+                    : 0L;
             return new TableLayout(
                     metadataContainerId,
                     versionContainerId,
+                    orderedIndexContainerId,
                     columnCount,
                     formatIds,
                     collationIds);
@@ -592,9 +756,20 @@ final class MvccRawStoreMetadataInspection {
         }
     }
 
+    record OrderedIndexIdentity(
+            int columnId,
+            String key,
+            long rowId,
+            long versionId,
+            long creatorTransactionId,
+            long beginCommitSequence,
+            long endCommitSequence) {
+    }
+
     private record TableLayout(
             long metadataContainerId,
             long versionContainerId,
+            long orderedIndexContainerId,
             int columnCount,
             int[] formatIds,
             int[] collationIds) {

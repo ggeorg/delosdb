@@ -5177,6 +5177,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
 
     def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
     def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def orderedIndexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
     def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
     def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
     def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
@@ -5191,7 +5192,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def proofFile = file('docs/design/V1-RAWSTORE-MVCC-VERTICAL-SLICE.md')
     def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
-    def rawStoreAuthorityFiles = [formatFile, tableFile, runtimeFile, contextFile,
+    def rawStoreAuthorityFiles = [formatFile, tableFile, orderedIndexFile, runtimeFile, contextFile,
             controllerFile, scanFile]
     def productionFiles = rawStoreAuthorityFiles + [conglomerateFile, factoryFile]
     inputs.files(productionFiles + [legacyRuntimeFile, transactionRegistryFile, transactionLifecycleTestFile,
@@ -5213,6 +5214,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
         if (failures.isEmpty()) {
             def formatText = formatFile.getText('UTF-8')
             def tableText = tableFile.getText('UTF-8')
+            def orderedIndexText = orderedIndexFile.getText('UTF-8')
             def runtimeText = runtimeFile.getText('UTF-8')
             def contextText = contextFile.getText('UTF-8')
             def controllerText = controllerFile.getText('UTF-8')
@@ -5266,7 +5268,10 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'ALLOCATOR_COMMITTED_HIGH_WATER',
                     'VERSION_CREATOR_TRANSACTION_ID',
                     'VERSION_BEGIN_SEQUENCE',
-                    'VERSION_PREVIOUS_VERSION_ID'
+                    'VERSION_PREVIOUS_VERSION_ID',
+                    'ORDERED_INDEX_CONTAINER_KIND',
+                    'ORDERED_INDEX_ENTRY_KIND',
+                    'controlOrderedIndexContainerField'
             ])
             requireTokens('RawStore table implementation', tableText, [
                     'rawTransaction.addContainer(',
@@ -5284,18 +5289,32 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'MvccRawStoreFormat.VERSION_ID,',
                     'updateVersionBeginByLogicalId('
             ])
-            if (tableText.count('rawTransaction.addContainer(') != 2) {
-                failures << 'RawStore MVCC CREATE must allocate exactly two table containers'
+            requireTokens('RawStore ordered-index implementation', orderedIndexText, [
+                    'Page.INSERT_UNDO_WITH_PURGE',
+                    'Page.INSERT_OVERFLOW',
+                    'StoreDataValue',
+                    'StoreTypeUtil.compare',
+                    'ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE',
+                    'ORDERED_INDEX_ENTRY_END_SEQUENCE',
+                    'transaction.newLockingPolicy(',
+                    'LockingPolicy.MODE_CONTAINER',
+                    'TransactionController.ISOLATION_SERIALIZABLE'
+            ])
+            if (tableText.count('rawTransaction.addContainer(') != 3) {
+                failures << 'RawStore MVCC CREATE must allocate exactly three table containers'
             }
             requireOrdered('RawStore MVCC INSERT ownership',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeWrite()', 'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()',
-                            'insertRow(rawTransaction, table.metadataContainer()', 'context.addPending('])
+                    ['context.beforeWrite()', 'ensureOrderedIndex(', 'allocateIdentifiers(',
+                            'insertRow(rawTransaction, table.versionContainer()',
+                            'insertRow(rawTransaction, table.metadataContainer()',
+                            'MvccRawStoreOrderedIndex.insertVersion(', 'context.addPending('])
             requireOrdered('RawStore MVCC DROP lock order',
                     section(tableText, 'static void drop(', 'private static void initializeMetadataContainer(',
                             'RawStore MVCC DROP section'),
-                    ['dropContainer(table.metadataContainer())', 'dropContainer(table.versionContainer())'])
+                    ['dropContainer(table.metadataContainer())', 'dropContainer(table.versionContainer())',
+                            'dropContainer(orderedIndex)'])
 
             def forbiddenProductionTokens = [
                     'java.nio.file',
@@ -6536,6 +6555,231 @@ tasks.register('delosMvccRawStoreLookupHintStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies version-aware ordered indexes are physically sorted RawStore state and remain subordinate to the base MVCC chain.'
+
+    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def scanInfoFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java')
+    def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-ORDERED-INDEXES.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def requiredFiles = [formatFile, tableFile, indexFile, scanFile, scanInfoFile,
+            inspectionFile, sqlTestFile, testsBuildFile, designFile, implementationFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-ordered-index-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def formatText = formatFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def scanText = scanFile.getText('UTF-8')
+            def scanInfoText = scanInfoFile.getText('UTF-8')
+            def inspectionText = inspectionFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Ordered-index RawStore format', formatText, [
+                    'ORDERED_INDEX_CONTAINER_KIND',
+                    'ORDERED_INDEX_ENTRY_KIND',
+                    'ORDERED_INDEX_ENTRY_KEY',
+                    'ORDERED_INDEX_ENTRY_ROW_ID',
+                    'ORDERED_INDEX_ENTRY_VERSION_ID',
+                    'ORDERED_INDEX_ENTRY_CREATOR_TRANSACTION_ID',
+                    'ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE',
+                    'ORDERED_INDEX_ENTRY_END_SEQUENCE',
+                    'controlOrderedIndexContainerField'
+            ])
+
+            requireTokens('Ordered-index table lifecycle', tableText, [
+                    'MvccRawStoreOrderedIndex.initialize(',
+                    'ensureOrderedIndex(',
+                    'rebuildOrderedIndex(',
+                    'rewriteControlRow(',
+                    'MvccRawStoreOrderedIndex.insertVersion(',
+                    'MvccRawStoreOrderedIndex.stampVersionBegin(',
+                    'MvccRawStoreOrderedIndex.stampVersionEnd(',
+                    'rawTransaction.dropContainer(orderedIndex)'
+            ])
+            if (tableText.count('rawTransaction.addContainer(') != 3) {
+                failures << 'New RawStore MVCC tables must allocate metadata, version, and ordered-index containers'
+            }
+
+            requireTokens('Physically sorted ordered-index implementation', indexText, [
+                    'readEntriesForUpdate(',
+                    'rewriteSorted(',
+                    'sortEntries(',
+                    'page.purgeAtSlot(',
+                    'page.insertAtSlot(',
+                    'StoreTypeUtil.compare(',
+                    'ScanDecision.SKIP',
+                    'ScanDecision.MATCH',
+                    'ScanDecision.FINISH',
+                    'LinkedHashSet<Long> distinctRowIds',
+                    'visible(entry, transactionId, snapshotSequence)'
+            ])
+            requireOrdered('Statement-time ordered-index rewrite',
+                    section(indexText, 'static void insertVersion(', 'static void rebuild(',
+                            'ordered-index INSERT section'),
+                    ['readEntriesForUpdate(', 'addVersionEntries(', 'rewriteSorted('])
+            requireOrdered('Logged sorted rewrite boundary',
+                    section(indexText, 'private static void rewriteSorted(', 'private static void purgeEntries(',
+                            'ordered-index rewrite section'),
+                    ['sortEntries(entries)', 'transaction.openContainer(', 'purgeEntries(',
+                            'appendEntries(', 'container.setEstimatedRowCount('])
+            requireOrdered('Ordered range traversal stops at the upper boundary',
+                    section(indexText, 'static Optional<List<Long>> rowIdsFor(',
+                            'private static void addVersionEntries(', 'ordered-index lookup section'),
+                    ['IndexPredicate.from(', 'ScanDecision decision', 'ScanDecision.FINISH',
+                            'visible(entry, transactionId, snapshotSequence)', 'distinctRowIds.add('])
+
+            requireOrdered('Index candidate reread remains subordinate to base MVCC',
+                    section(scanText, 'private void reload()', 'private boolean qualifies(',
+                            'RawStore MVCC scan reload section'),
+                    ['orderedIndexRowIdsFor(', 'readVisible(', 'rows = List.copyOf(indexedRows)'])
+            requireTokens('Full SQL qualification remains authoritative', scanText, [
+                    'private boolean qualifies(',
+                    'RowUtil.qualifyRow(row, qualifiers)'
+            ])
+            requireTokens('Ordered-index scan diagnostics', scanInfoText, [
+                    'scanType'
+            ])
+            requireTokens('Ordered-index scan diagnostic identity', scanText, [
+                    'delos_mvcc_rawstore_ordered_index'
+            ])
+
+            requireTokens('Physical ordered-index inspection', inspectionText, [
+                    'orderedIndexContainerId(',
+                    'orderedIndexEntries(',
+                    'orderedIndexPageCount(',
+                    'removeOrderedIndexForCompatibility(',
+                    'ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE_FIELD',
+                    'ORDERED_INDEX_ENTRY_END_SEQUENCE_FIELD'
+            ])
+            [
+                    'testEqualityRangeOrderingAndReopenUseRawStoreIndex',
+                    'testUpdateDeleteSavepointAndHistoricalSnapshotsKeepIndexVisibility',
+                    'testOrderedIndexSurvivesBothRawStoreCrashBoundaries',
+                    'testPreIndexCompatibilityLazyRebuildAndMemoryUseSameRawStorePath'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Ordered-index proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Ordered-index SQL proof', sqlTestText, [
+                    'assertPhysicalTypedOrder(',
+                    'ordered-index proof must cross a RawStore page boundary',
+                    'delos_mvcc_rawstore_ordered_index',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'removeOrderedIndexForCompatibility(',
+                    'jdbc:derby:memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreOrderedIndexTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreOrderedIndexTest'
+            }
+
+            requireTokens('Ordered-index design record', designText, [
+                    'third ordinary RawStore container',
+                    'physically sorted',
+                    'version-aware',
+                    'authoritative MVCC version chain',
+                    'transaction-local',
+                    'historical snapshot',
+                    'lazy rebuild',
+                    'crash',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreOrderedIndexTest',
+                    'delosMvccRawStoreOrderedIndexStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'ordered-index container',
+                    'physically sorted',
+                    'version-aware index entries',
+                    'authoritative base version chain',
+                    ':delosdb-tests:runDelosMvccRawStoreOrderedIndexTest'
+            ])
+
+            [indexText, tableText, scanText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC ordered-index production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-ordered-index-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC ordered-index static analysis')
+            writer.println('==================================================')
+            writer.println()
+            writer.println('Rule: ordered entries are version-aware, physically sorted RawStore state; base MVCC rows remain authoritative.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC ordered-index static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC ordered-index static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -6564,6 +6808,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreUpdateDeleteStaticAnalysis',
             'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
             'delosMvccRawStoreLookupHintStaticAnalysis',
+            'delosMvccRawStoreOrderedIndexStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

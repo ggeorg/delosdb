@@ -31,6 +31,8 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_KIND = 3;
     static final int VERSION_CONTAINER_KIND = 4;
     static final int VERSION_KIND = 5;
+    static final int ORDERED_INDEX_CONTAINER_KIND = 6;
+    static final int ORDERED_INDEX_ENTRY_KIND = 7;
 
     static final long UNCOMMITTED_SEQUENCE = 0L;
     static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
@@ -46,6 +48,14 @@ final class MvccRawStoreFormat {
     static final int CONTROL_COLUMN_COUNT = 5;
     static final int CONTROL_TEMPORARY = 6;
     static final int CONTROL_FIXED_FIELDS = 7;
+
+    static int controlOrderedIndexContainerField(int columnCount) {
+        return CONTROL_FIXED_FIELDS + (columnCount * 2);
+    }
+
+    static int controlFieldCount(int columnCount) {
+        return controlOrderedIndexContainerField(columnCount) + 1;
+    }
 
     static final int ALLOCATOR_KIND_FIELD = 0;
     static final int ALLOCATOR_FORMAT_VERSION = 1;
@@ -74,6 +84,23 @@ final class MvccRawStoreFormat {
     static final int VERSION_FLAGS = 8;
     static final int VERSION_PAYLOAD_START = 9;
     static final int VERSION_LOOKUP_HINT_FIELD_COUNT = 2;
+
+    static final int ORDERED_INDEX_CONTROL_KIND_FIELD = 0;
+    static final int ORDERED_INDEX_CONTROL_FORMAT_VERSION = 1;
+    static final int ORDERED_INDEX_CONTROL_METADATA_CONTAINER = 2;
+    static final int ORDERED_INDEX_CONTROL_COLUMN_COUNT = 3;
+    static final int ORDERED_INDEX_CONTROL_FIELD_COUNT = 4;
+
+    static final int ORDERED_INDEX_ENTRY_KIND_FIELD = 0;
+    static final int ORDERED_INDEX_ENTRY_FORMAT_VERSION = 1;
+    static final int ORDERED_INDEX_ENTRY_COLUMN_ID = 2;
+    static final int ORDERED_INDEX_ENTRY_KEY = 3;
+    static final int ORDERED_INDEX_ENTRY_ROW_ID = 4;
+    static final int ORDERED_INDEX_ENTRY_VERSION_ID = 5;
+    static final int ORDERED_INDEX_ENTRY_CREATOR_TRANSACTION_ID = 6;
+    static final int ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE = 7;
+    static final int ORDERED_INDEX_ENTRY_END_SEQUENCE = 8;
+    static final int ORDERED_INDEX_ENTRY_FIELD_COUNT = 9;
 
     private MvccRawStoreFormat() {
     }

@@ -35,11 +35,21 @@ final class MvccScanInfo implements ScanInfo {
     private static final String COLUMNS_FETCHED = "numColumnsFetched";
     private static final String COLUMNS_FETCHED_BIT_SET = "columnsFetchedBitSet";
 
+    private final String scanType;
     private final long rowsVisited;
     private final long rowsQualified;
     private final FormatableBitSet columnsFetched;
 
     MvccScanInfo(long rowsVisited, long rowsQualified, FormatableBitSet columnsFetched) {
+        this("delos_mvcc", rowsVisited, rowsQualified, columnsFetched);
+    }
+
+    MvccScanInfo(
+            String scanType,
+            long rowsVisited,
+            long rowsQualified,
+            FormatableBitSet columnsFetched) {
+        this.scanType = java.util.Objects.requireNonNull(scanType, "scanType");
         this.rowsVisited = rowsVisited;
         this.rowsQualified = rowsQualified;
         this.columnsFetched = columnsFetched == null
@@ -50,7 +60,7 @@ final class MvccScanInfo implements ScanInfo {
     @Override
     public Properties getAllScanInfo(Properties properties) throws StandardException {
         Properties result = properties == null ? new Properties() : properties;
-        result.setProperty(SCAN_TYPE, "delos_mvcc");
+        result.setProperty(SCAN_TYPE, scanType);
         result.setProperty(ROWS_VISITED, Long.toString(rowsVisited));
         result.setProperty(ROWS_QUALIFIED, Long.toString(rowsQualified));
         if (columnsFetched == null) {
