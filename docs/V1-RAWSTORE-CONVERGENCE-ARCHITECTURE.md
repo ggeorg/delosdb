@@ -319,9 +319,11 @@ exact package and class names
 4. Extend that format to updates, deletes, chains, indexes, overflow, savepoints, and vacuum.
 5. Remove the independent MVCC persistence system only after parity and recovery gates pass.
 6. Absorb the bridge and obsolete storage modules after their responsibilities have moved.
-7. Modernize shared JDK 25 file and memory storage.
-8. Replace legacy Lucene with a neutral optional provider over transactional RawStore journals.
-9. Capture a new v1 baseline only after the converged architecture is complete.
+7. Reach the frozen 21-subproject target: add `delosdb-search-lucene`; retire
+   `delosdb-storage-api`, `delosdb-storage-io`, and `delosdb-storage-bridge`.
+8. Modernize shared JDK 25 file and memory storage.
+9. Replace legacy Lucene with a neutral optional provider over transactional RawStore journals.
+10. Capture a new v1 baseline only after the converged architecture is complete.
 
 ## Required architecture gates
 
@@ -338,4 +340,12 @@ no engine dependency on MVCC or Lucene implementation
 no MVCC or Lucene dependency on engine implementation
 no Lucene 4 runtime or public API
 no static Lucene database registry
+exact 21-subproject final target
+no storage-api, storage-io, or storage-bridge in final settings.gradle
+MVCC and Lucene remain separate provider artifacts
+storage-derby remains a build-only patch artifact
 ```
+
+Stage 2.3 installs `delosV1ModuleArchitectureStaticAnalysis`, backed by the machine-readable
+`gradle/static-analysis/delosdb-v1-final-module-target.txt` contract. It enforces the current neutral
+provider boundary now and remains migration-aware until the final module-removal gates become active.

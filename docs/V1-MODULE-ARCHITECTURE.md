@@ -8,10 +8,15 @@ The current modules remain until their responsibilities have moved and replaceme
 
 ## Current migration state
 
-The neutral external access-method boot seam now lives in `delosdb-derby-store-api` as
-`AccessMethodBootContext`. `delosdb-storage-derby` creates the context from its owned RawStore and
-data services, while `delosdb-storage-bridge` consumes it temporarily. This is a migration seam, not
-a reason to retain the bridge module in the final graph.
+The neutral boot and transaction-lifecycle seams now live in `delosdb-derby-store-api`.
+`delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
+bracketing. `delosdb-storage-bridge` consumes those neutral seams temporarily. This is a migration
+condition, not a reason to retain the bridge module in the final graph.
+
+Stage 2.3 adds a machine-readable final target and the permanent
+`delosV1ModuleArchitectureStaticAnalysis` gate. The gate enforces current provider isolation while
+remaining valid as the bridge is absorbed, the three legacy storage modules are retired, and
+`delosdb-search-lucene` is added.
 
 ## Architectural rules
 
@@ -129,6 +134,56 @@ delosdb-storage-mvcc    -X-> delosdb-search-lucene
 delosdb-search-lucene   -X-> delosdb-engine implementation
 delosdb-storage-derby   -X-> delosdb-storage-mvcc
 delosdb-storage-derby   -X-> delosdb-search-lucene
+```
+
+
+## Permanent architecture gates
+
+The current migration is continuously checked by:
+
+```text
+delosModuleDependencyBoundaryStaticAnalysis
+delosV1ModuleArchitectureStaticAnalysis
+```
+
+The second task reads:
+
+```text
+gradle/static-analysis/delosdb-v1-final-module-target.txt
+```
+
+and freezes:
+
+```text
+21 final subprojects
+add delosdb-search-lucene
+retire delosdb-storage-api, delosdb-storage-io, delosdb-storage-bridge
+provider artifacts delosdb-storage-mvcc.jar and delosdb-search-lucene.jar
+build-only delosdb-storage-derby.jar
+forbidden engine/provider and RawStore/provider production edges
+no Lucene implementation types in neutral APIs
+```
+
+During migration, the bridge is allowed only as the single neutral access-method provider owner. Once
+it is removed, the gate requires `delosdb-storage-mvcc` to publish the provider directly.
+
+The Stage 2.3 task is the current implementation of the proposed `verifyStorageAuthorityModuleGraph`
+and migration-time `verifyProviderIsolation` contracts. Final closeout additionally requires strict
+semantic equivalents of:
+
+```text
+verifyNoIndependentMvccIo
+verifyNoIndependentMvccDurability
+verifyNoLegacyLucene
+verifyRetiredStorageModules
+```
+
+Those checks become removal gates only after their replacement implementations are green.
+
+Public implementation record:
+
+```text
+docs/design/V1-MODULE-BOUNDARY-ENFORCEMENT.md
 ```
 
 ## Module responsibilities

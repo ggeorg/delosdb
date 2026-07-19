@@ -89,6 +89,14 @@ tasks.named('check') {
     dependsOn tasks.named('classes')
 }
 
+// This module's focused lifecycle contract is a main-method executable rather
+// than a JUnit/TestNG test. Gradle 9 fails an otherwise valid empty Test task
+// when test sources are present, so keep the default task non-failing while
+// check continues to execute the explicit JavaExec contract below.
+tasks.named('test', org.gradle.api.tasks.testing.Test) {
+    failOnNoDiscoveredTests = false
+}
+
 tasks.register('runAccessMethodTransactionLifecycleTest', JavaExec) {
     group = 'verification'
     description = 'Runs the neutral access-method transaction lifecycle contract test.'

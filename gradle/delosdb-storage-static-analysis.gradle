@@ -1723,6 +1723,370 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
 }
 
 
+
+def delosV1FinalModuleTargetFile = new File(
+        delosRepositoryRoot,
+        'gradle/static-analysis/delosdb-v1-final-module-target.txt')
+
+tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
+    group = 'verification'
+    description = 'Enforces the current provider-isolation boundary and the final 21-module DelosDB v1 target.'
+
+    inputs.file(delosV1FinalModuleTargetFile)
+    inputs.file('settings.gradle')
+    inputs.files(fileTree('.') {
+        include '*/build.gradle'
+        include '*/src/main/java/**/*.java'
+        include '*/src/main/resources/META-INF/services/**'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+    })
+    outputs.file(layout.buildDirectory.file('reports/delosdb/v1-module-architecture-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def observations = []
+
+        def sections = new LinkedHashMap<String, List<String>>()
+        String currentSection = null
+        delosV1FinalModuleTargetFile.readLines('UTF-8').each { String rawLine ->
+            def line = rawLine.trim()
+            if (!line || line.startsWith('#')) {
+                return
+            }
+            def sectionMatcher = line =~ /^\[([^]]+)]$/
+            if (sectionMatcher.matches()) {
+                currentSection = sectionMatcher.group(1)
+                sections[currentSection] = []
+                return
+            }
+            if (currentSection == null) {
+                failures << 'Final-module target contains a value outside a section: ' + line
+            } else {
+                sections[currentSection] << line
+            }
+        }
+
+        def expectedTargetModules = [
+                'delosdb-osgi-stub',
+                'delosdb-commons',
+                'delosdb-runtime-api',
+                'delosdb-annotations',
+                'delosdb-spi',
+                'delosdb-derby-store-api',
+                'delosdb-storage-derby',
+                'delosdb-storage-mvcc',
+                'delosdb-search-lucene',
+                'delosdb-engine',
+                'delosdb-client',
+                'delosdb-tools',
+                'delosdb-runner',
+                'delosdb-optionaltools',
+                'delosdb-server',
+                'delosdb-tests',
+                'delosdb-pptesting',
+                'delosdb-storeless',
+                'delosdb-demos',
+                'delosdb-locales',
+                'delosdb-buildtools'
+        ]
+        def expectedRetiredModules = [
+                'delosdb-storage-api',
+                'delosdb-storage-io',
+                'delosdb-storage-bridge'
+        ]
+        def expectedProviderArtifacts = [
+                'delosdb-storage-mvcc.jar',
+                'delosdb-search-lucene.jar'
+        ]
+        def expectedBuildOnlyArtifacts = [
+                'delosdb-storage-derby.jar'
+        ]
+        def expectedForbiddenEdges = [
+                'delosdb-engine -> delosdb-storage-mvcc',
+                'delosdb-engine -> delosdb-search-lucene',
+                'delosdb-storage-mvcc -> delosdb-engine',
+                'delosdb-storage-mvcc -> delosdb-search-lucene',
+                'delosdb-search-lucene -> delosdb-engine',
+                'delosdb-storage-derby -> delosdb-storage-mvcc',
+                'delosdb-storage-derby -> delosdb-search-lucene'
+        ]
+        def expectedNeutralApiModules = [
+                'delosdb-runtime-api',
+                'delosdb-spi',
+                'delosdb-derby-store-api'
+        ]
+
+        def requireExactSection = { String sectionName, List<String> expectedValues ->
+            def actualValues = sections[sectionName] ?: []
+            if (actualValues != expectedValues) {
+                failures << (
+                        "Final-module target section [${sectionName}] differs from the frozen v1 target. " +
+                                "Expected ${expectedValues}; found ${actualValues}.")
+            }
+        }
+        requireExactSection('target-modules', expectedTargetModules)
+        requireExactSection('retired-modules', expectedRetiredModules)
+        requireExactSection('required-provider-artifacts', expectedProviderArtifacts)
+        requireExactSection('build-only-artifacts', expectedBuildOnlyArtifacts)
+        requireExactSection('forbidden-production-edges', expectedForbiddenEdges)
+        requireExactSection('neutral-api-modules', expectedNeutralApiModules)
+
+        def settingsModules = new LinkedHashSet<String>()
+        new File(delosRepositoryRoot, 'settings.gradle').readLines('UTF-8').each { String line ->
+            def matcher = line =~ /^\s*include\s+['"]([^'"]+)['"]\s*$/
+            if (matcher.matches()) {
+                settingsModules << matcher.group(1)
+            }
+        }
+
+        def allowedMigrationModules = new LinkedHashSet<String>(expectedTargetModules)
+        allowedMigrationModules.addAll(expectedRetiredModules)
+        def unknownModules = settingsModules.findAll { !allowedMigrationModules.contains(it) }
+        if (!unknownModules.isEmpty()) {
+            failures << 'settings.gradle contains modules outside the frozen v1 migration set: ' + unknownModules
+        }
+
+        def requiredBeforeLuceneSplit = expectedTargetModules.findAll {
+            it != 'delosdb-search-lucene'
+        }
+        def missingRequiredModules = requiredBeforeLuceneSplit.findAll { !settingsModules.contains(it) }
+        if (!missingRequiredModules.isEmpty()) {
+            failures << 'settings.gradle is missing required core/future modules: ' + missingRequiredModules
+        }
+
+        boolean luceneModulePresent = settingsModules.contains('delosdb-search-lucene')
+        def retainedLegacyModules = expectedRetiredModules.findAll { String moduleName ->
+            settingsModules.contains(moduleName)
+        }
+        int expectedMigrationCount = expectedTargetModules.size()
+                - (luceneModulePresent ? 0 : 1)
+                + retainedLegacyModules.size()
+        if (settingsModules.size() != expectedMigrationCount) {
+            failures << (
+                    "Current module count ${settingsModules.size()} is inconsistent with the frozen migration set; " +
+                            "expected ${expectedMigrationCount}.")
+        }
+        observations << "Current Gradle subprojects: ${settingsModules.size()}"
+        observations << 'Final Gradle subprojects: 21'
+        observations << (luceneModulePresent
+                ? 'delosdb-search-lucene is present.'
+                : 'delosdb-search-lucene is not present yet; it is added during the Lucene foundation stage.')
+        observations << 'Transitional modules still present: ' + retainedLegacyModules
+
+        def buildCode = { String moduleName ->
+            def buildFile = new File(delosRepositoryRoot, moduleName + '/build.gradle')
+            if (!buildFile.isFile()) {
+                return ''
+            }
+            DelosDbStaticAnalysisSupport.codeLinesWithoutComments(buildFile.readLines('UTF-8')).join('\n')
+        }
+        def hasProjectReference = { String moduleName, String targetModule ->
+            def code = buildCode(moduleName)
+            def pattern = Pattern.compile(
+                    "project\\s*\\(\\s*(?:path\\s*:\\s*)?['\"]:"
+                            + Pattern.quote(targetModule)
+                            + "['\"]")
+            pattern.matcher(code).find()
+        }
+        def forbidProjectReference = { String sourceModule, String targetModule ->
+            if (new File(delosRepositoryRoot, sourceModule).isDirectory()
+                    && hasProjectReference(sourceModule, targetModule)) {
+                failures << "Forbidden project dependency: ${sourceModule} -> ${targetModule}"
+            }
+        }
+
+        forbidProjectReference('delosdb-engine', 'delosdb-storage-mvcc')
+        forbidProjectReference('delosdb-engine', 'delosdb-search-lucene')
+        forbidProjectReference('delosdb-storage-derby', 'delosdb-storage-mvcc')
+        forbidProjectReference('delosdb-storage-derby', 'delosdb-search-lucene')
+        forbidProjectReference('delosdb-storage-mvcc', 'delosdb-engine')
+        forbidProjectReference('delosdb-storage-mvcc', 'delosdb-search-lucene')
+        if (luceneModulePresent) {
+            forbidProjectReference('delosdb-search-lucene', 'delosdb-engine')
+        }
+        if (settingsModules.contains('delosdb-storage-bridge')) {
+            forbidProjectReference('delosdb-storage-bridge', 'delosdb-engine')
+            forbidProjectReference('delosdb-storage-bridge', 'delosdb-search-lucene')
+        }
+
+        def rejectImports = { String moduleName, List<String> forbiddenPrefixes, String description ->
+            def sourceRoot = new File(delosRepositoryRoot, moduleName + '/src/main/java')
+            if (!sourceRoot.isDirectory()) {
+                return
+            }
+            DelosDbStaticFileSupport.javaFiles([sourceRoot]).each { File sourceFile ->
+                if (sourceFile.name == 'module-info.java') {
+                    return
+                }
+                sourceFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+                    def importedType = DelosDbStaticAnalysisSupport.importTarget(line)
+                    if (importedType != null
+                            && forbiddenPrefixes.any { String prefix -> importedType.startsWith(prefix) }) {
+                        failures << (
+                                description + ': ' +
+                                        DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, sourceFile) +
+                                        ':' + (index + 1) + ': ' + line.trim())
+                    }
+                }
+            }
+        }
+
+        rejectImports(
+                'delosdb-engine',
+                ['io.github.ggeorg.delosdb.storage.mvcc.',
+                 'org.apache.derby.impl.store.access.mvcc.',
+                 'io.github.ggeorg.delosdb.search.lucene.'],
+                'Engine imports a provider implementation')
+        rejectImports(
+                'delosdb-storage-mvcc',
+                ['org.apache.derby.impl.', 'io.github.ggeorg.delosdb.search.lucene.'],
+                'MVCC imports an engine or Lucene implementation')
+        rejectImports(
+                'delosdb-storage-derby',
+                ['io.github.ggeorg.delosdb.storage.mvcc.',
+                 'org.apache.derby.impl.store.access.mvcc.',
+                 'io.github.ggeorg.delosdb.search.lucene.',
+                 'org.apache.lucene.'],
+                'RawStore implementation imports an MVCC or Lucene implementation')
+        if (luceneModulePresent) {
+            rejectImports(
+                    'delosdb-search-lucene',
+                    ['org.apache.derby.impl.', 'io.github.ggeorg.delosdb.storage.mvcc.'],
+                    'Lucene imports an engine or MVCC implementation')
+        }
+        expectedNeutralApiModules.each { String moduleName ->
+            rejectImports(
+                    moduleName,
+                    ['org.apache.lucene.'],
+                    'Neutral API exposes a Lucene implementation type')
+        }
+
+        def providerInterface = new File(
+                delosRepositoryRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java')
+        if (!providerInterface.isFile()) {
+            failures << 'Neutral ExternalAccessMethodProvider must remain in delosdb-derby-store-api.'
+        }
+
+        def ramAccessManager = new File(
+                delosRepositoryRoot,
+                'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java')
+        def ramAccessText = ramAccessManager.isFile() ? ramAccessManager.getText('UTF-8') : ''
+        if (!ramAccessText.contains('ServiceLoader.load(ExternalAccessMethodProvider.class)')) {
+            failures << 'RAMAccessManager must discover access methods through the neutral ExternalAccessMethodProvider service.'
+        }
+
+        def engineModuleInfo = new File(
+                delosRepositoryRoot,
+                'delosdb-engine/src/main/java/module-info.java')
+        def engineModuleText = engineModuleInfo.isFile() ? engineModuleInfo.getText('UTF-8') : ''
+        if (!engineModuleText.contains('uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;')) {
+            failures << 'The engine module must use the neutral ExternalAccessMethodProvider service.'
+        }
+        if (engineModuleText.contains('requires io.github.ggeorg.delosdb.storage.mvcc')
+                || engineModuleText.contains('requires io.github.ggeorg.delosdb.search.lucene')) {
+            failures << 'The engine module descriptor must not require MVCC or Lucene provider modules.'
+        }
+
+        def providerImplementations = []
+        [
+                'delosdb-engine/src/main/java',
+                'delosdb-storage-bridge/src/main/java',
+                'delosdb-storage-mvcc/src/main/java'
+        ].each { String sourcePath ->
+            def root = new File(delosRepositoryRoot, sourcePath)
+            if (root.isDirectory()) {
+                DelosDbStaticFileSupport.javaFiles([root]).each { File sourceFile ->
+                    if (sourceFile.getText('UTF-8').contains('implements ExternalAccessMethodProvider')) {
+                        providerImplementations << DelosDbStaticAnalysisSupport.relativePath(
+                                delosRepositoryRoot,
+                                sourceFile)
+                    }
+                }
+            }
+        }
+
+        if (settingsModules.contains('delosdb-storage-bridge')) {
+            def expectedProvider = 'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'
+            if (providerImplementations != [expectedProvider]) {
+                failures << (
+                        'During bridge migration, the only ExternalAccessMethodProvider implementation must be ' +
+                                expectedProvider + '; found ' + providerImplementations)
+            }
+            def serviceFile = new File(
+                    delosRepositoryRoot,
+                    'delosdb-storage-bridge/src/main/resources/META-INF/services/'
+                            + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
+            def providers = serviceFile.isFile()
+                    ? serviceFile.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
+                    : []
+            if (providers != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
+                failures << 'The transitional bridge must publish exactly one neutral access-method provider.'
+            }
+            observations << 'The bridge provider is still patched into derby.jar during migration; Stage 7 moves it into the named MVCC module.'
+        } else {
+            def mvccServiceFile = new File(
+                    delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/main/resources/META-INF/services/'
+                            + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
+            def mvccModuleInfo = new File(
+                    delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/main/java/module-info.java')
+            boolean serviceDeclared = mvccServiceFile.isFile()
+                    || (mvccModuleInfo.isFile()
+                    && mvccModuleInfo.getText('UTF-8').contains('provides org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'))
+            if (!serviceDeclared) {
+                failures << 'After bridge removal, delosdb-storage-mvcc must publish the neutral access-method provider service.'
+            }
+        }
+
+        def reportFile = new File(
+                delosBuildRoot,
+                'reports/delosdb/v1-module-architecture-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB v1 module architecture static analysis')
+            writer.println('==============================================')
+            writer.println()
+            writer.println('Frozen final target: 21 Gradle subprojects')
+            writer.println('Required new module: delosdb-search-lucene')
+            writer.println('Required retired modules: delosdb-storage-api, delosdb-storage-io, delosdb-storage-bridge')
+            writer.println('Required provider artifacts: delosdb-storage-mvcc.jar, delosdb-search-lucene.jar')
+            writer.println('Build-only physical-store artifact: delosdb-storage-derby.jar')
+            writer.println()
+            writer.println('Checked current migration invariants:')
+            writer.println('  - no engine project dependency on MVCC or Lucene')
+            writer.println('  - no RawStore implementation dependency on MVCC or Lucene')
+            writer.println('  - no MVCC dependency/import on engine or Lucene implementation')
+            writer.println('  - no Lucene types in runtime-api, spi, or derby-store-api')
+            writer.println('  - access-method discovery uses the neutral store API')
+            writer.println('  - current settings.gradle remains within the frozen migration set')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            writer.println()
+            writer.println('Observations:')
+            observations.each { writer.println('  - ' + it) }
+            if (!failures.isEmpty()) {
+                writer.println()
+                writer.println('Failures:')
+                failures.each { writer.println('  - ' + it) }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB v1 module architecture static analysis failed. Report: '
+                            + reportFile)
+        }
+
+        logger.lifecycle(
+                'DelosDB v1 module architecture static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('delosWorkspaceChurnStaticAnalysis') {
     group = 'verification'
     description = 'Fails on accidental workspace churn such as Mac archive metadata and line-ending-only tracked diffs.'
@@ -4793,6 +5157,7 @@ tasks.register('s0CloseoutVerification') {
             'delosOverlayCleanupScriptStaticAnalysis',
             'delosRuntimeArtifactModelStaticAnalysis',
             'delosModuleDependencyBoundaryStaticAnalysis',
+            'delosV1ModuleArchitectureStaticAnalysis',
             'delosWorkspaceChurnStaticAnalysis',
             'delosHeapRawStoreDuplicateClassificationReport',
             'delosDerbyModuleParityStaticAnalysis',
