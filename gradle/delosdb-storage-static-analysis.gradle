@@ -5278,7 +5278,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'transaction.newLockingPolicy(',
                     'LockingPolicy.MODE_CONTAINER',
                     'TransactionController.ISOLATION_SERIALIZABLE',
-                    'findHeadVersionId(',
+                    'DirectoryHead head = findHead(',
                     'findVersion(',
                     'pendingVersionExists(',
                     'MvccRawStoreFormat.VERSION_ID,',
