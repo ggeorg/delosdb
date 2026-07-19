@@ -40,6 +40,7 @@ import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.TransactionController;
 
 /**
@@ -65,6 +66,85 @@ abstract class DDLSingleTableConstantAction extends DDLConstantAction
 		super();
 		this.tableId = tableId;
 	}
+
+    void validateAccessMethodUniqueConstraint(
+            TransactionController tc,
+            long baseConglomerateId,
+            int[] oneBasedColumnPositions,
+            boolean duplicateNullsAllowed,
+            boolean deferrable) throws StandardException {
+        withAccessMethodUniqueConstraintLifecycle(
+                tc,
+                baseConglomerateId,
+                lifecycle -> lifecycle.validateUniqueConstraintDefinition(
+                        zeroBased(oneBasedColumnPositions),
+                        duplicateNullsAllowed,
+                        deferrable));
+    }
+
+    void addAccessMethodUniqueConstraint(
+            TransactionController tc,
+            long baseConglomerateId,
+            int[] oneBasedColumnPositions,
+            boolean duplicateNullsAllowed,
+            boolean deferrable) throws StandardException {
+        withAccessMethodUniqueConstraintLifecycle(
+                tc,
+                baseConglomerateId,
+                lifecycle -> lifecycle.addUniqueConstraint(
+                        zeroBased(oneBasedColumnPositions),
+                        duplicateNullsAllowed,
+                        deferrable));
+    }
+
+    void dropAccessMethodUniqueConstraint(
+            TransactionController tc,
+            long baseConglomerateId,
+            int[] oneBasedColumnPositions,
+            boolean duplicateNullsAllowed) throws StandardException {
+        withAccessMethodUniqueConstraintLifecycle(
+                tc,
+                baseConglomerateId,
+                lifecycle -> lifecycle.dropUniqueConstraint(
+                        zeroBased(oneBasedColumnPositions),
+                        duplicateNullsAllowed));
+    }
+
+    private void withAccessMethodUniqueConstraintLifecycle(
+            TransactionController tc,
+            long baseConglomerateId,
+            UniqueConstraintOperation operation) throws StandardException {
+        ConglomerateController controller = tc.openConglomerate(
+                baseConglomerateId,
+                false,
+                TransactionController.OPENMODE_FORUPDATE,
+                TransactionController.MODE_TABLE,
+                TransactionController.ISOLATION_SERIALIZABLE);
+        try {
+            if (controller instanceof AccessMethodUniqueConstraintLifecycle lifecycle) {
+                operation.execute(lifecycle);
+            }
+        } finally {
+            controller.close();
+        }
+    }
+
+    private static int[] zeroBased(int[] oneBasedColumnPositions) {
+        int[] result = oneBasedColumnPositions.clone();
+        for (int index = 0; index < result.length; index++) {
+            if (result[index] <= 0) {
+                throw new IllegalArgumentException(
+                        "Base-table column positions must be one-based: " + result[index]);
+            }
+            result[index]--;
+        }
+        return result;
+    }
+
+    @FunctionalInterface
+    private interface UniqueConstraintOperation {
+        void execute(AccessMethodUniqueConstraintLifecycle lifecycle) throws StandardException;
+    }
 
 	/**
 	 * Drop the constraint corresponding to the received descriptor.

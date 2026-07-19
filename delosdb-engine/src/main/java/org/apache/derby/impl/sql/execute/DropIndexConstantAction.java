@@ -31,6 +31,7 @@ import org.apache.derby.iapi.sql.depend.Dependent;
 import org.apache.derby.iapi.sql.dictionary.ConglomerateDescriptor;
 import org.apache.derby.iapi.sql.dictionary.DataDescriptorGenerator;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
+import org.apache.derby.iapi.sql.dictionary.IndexRowGenerator;
 import org.apache.derby.iapi.sql.dictionary.SchemaDescriptor;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 
@@ -170,6 +171,17 @@ class DropIndexConstantAction extends IndexConstantAction
 		{
 			throw StandardException.newException(SQLState.LANG_INDEX_NOT_FOUND_DURING_EXECUTION, fullIndexName);
 		}
+
+        IndexRowGenerator indexDescriptor = cd.getIndexDescriptor();
+        if (!cd.isConstraint()
+                && (indexDescriptor.isUnique()
+                        || indexDescriptor.isUniqueWithDuplicateNulls())) {
+            dropAccessMethodUniqueConstraint(
+                    tc,
+                    td.getHeapConglomerateId(),
+                    indexDescriptor.baseColumnPositions(),
+                    indexDescriptor.isUniqueWithDuplicateNulls());
+        }
 
 		/* Since we support the sharing of conglomerates across
 		 * multiple indexes, dropping the physical conglomerate

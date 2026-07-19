@@ -220,6 +220,19 @@ public class DropConstraintConstantAction extends ConstraintConstantAction
 			dm.invalidateFor(conDesc, DependencyManager.DROP_CONSTRAINT, lcc);
 		}
 
+        if (conDesc.getConstraintType() == DataDictionary.PRIMARYKEY_CONSTRAINT
+                || conDesc.getConstraintType() == DataDictionary.UNIQUE_CONSTRAINT) {
+            int[] keyColumns = conDesc.getKeyColumns();
+            boolean duplicateNullsAllowed =
+                    conDesc.getConstraintType() == DataDictionary.UNIQUE_CONSTRAINT
+                            && containsNullableColumn(td, keyColumns);
+            dropAccessMethodUniqueConstraint(
+                    tc,
+                    td.getHeapConglomerateId(),
+                    keyColumns,
+                    duplicateNullsAllowed);
+        }
+
 		/*
 		** If we had a primary/unique key and it is drop cascade,	
 		** drop all the referencing keys now.  We MUST do this AFTER
@@ -255,4 +268,15 @@ public class DropConstraintConstantAction extends ConstraintConstantAction
 			dm.clearDependencies(lcc, conDesc);
 		}
 	}
+
+    private static boolean containsNullableColumn(
+            TableDescriptor table,
+            int[] oneBasedColumnPositions) {
+        for (int position : oneBasedColumnPositions) {
+            if (table.getColumnDescriptor(position).getType().isNullable()) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

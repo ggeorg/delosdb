@@ -184,9 +184,6 @@ final class MvccRawStoreOrderedIndex {
             StoreDataValue[] values,
             long currentRowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        if (table.uniqueConstraints().isEmpty()) {
-            return;
-        }
         if (values == null || values.length != table.columnCount()) {
             throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
         }
@@ -194,11 +191,16 @@ final class MvccRawStoreOrderedIndex {
         // Preserve the database-metadata -> table metadata -> versions ->
         // ordered-index lock order used by every mutation path.
         acquireUpdateLock(transaction, table.metadataContainer());
+        List<MvccRawStoreTable.UniqueConstraint> constraints =
+                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true);
+        if (constraints.isEmpty()) {
+            return;
+        }
         acquireUpdateLock(transaction, table.versionContainer());
         List<IndexEntry> entries = readEntriesForUpdate(transaction, table);
         long committedSequence = context.currentCommittedSequence();
 
-        for (MvccRawStoreTable.UniqueConstraint constraint : table.uniqueConstraints()) {
+        for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
             int[] columns = constraint.columns();
             if (constraint.duplicateNullsAllowed() && containsNull(values, columns)) {
                 continue;
@@ -225,6 +227,42 @@ final class MvccRawStoreOrderedIndex {
                         context.transactionId(),
                         committedSequence);
                 if (candidate != null && sameKey(values, candidate.values(), columns)) {
+                    throw StandardException.newException(
+                            SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
+                            constraint.displayName(),
+                            "RAWSTORE_MVCC_" + table.metadataContainer().getContainerId());
+                }
+            }
+        }
+    }
+
+    static void assertConstraintCanBeAdded(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTable.UniqueConstraint constraint,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        acquireUpdateLock(transaction, table.metadataContainer());
+        acquireUpdateLock(transaction, table.versionContainer());
+        readEntriesForUpdate(transaction, table);
+
+        long committedSequence = context.currentCommittedSequence();
+        List<MvccRawStoreTable.VisibleRow> rows = MvccRawStoreTable.scanVisibleAt(
+                transaction,
+                table,
+                context.transactionId(),
+                committedSequence);
+        int[] columns = constraint.columns();
+        for (int leftIndex = 0; leftIndex < rows.size(); leftIndex++) {
+            StoreDataValue[] left = rows.get(leftIndex).values();
+            if (constraint.duplicateNullsAllowed() && containsNull(left, columns)) {
+                continue;
+            }
+            for (int rightIndex = leftIndex + 1; rightIndex < rows.size(); rightIndex++) {
+                StoreDataValue[] right = rows.get(rightIndex).values();
+                if (constraint.duplicateNullsAllowed() && containsNull(right, columns)) {
+                    continue;
+                }
+                if (sameKey(left, right, columns)) {
                     throw StandardException.newException(
                             SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
                             constraint.displayName(),

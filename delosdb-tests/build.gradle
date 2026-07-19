@@ -803,6 +803,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreUniqueLifecycleTest',
+        'Runs transactional RawStore-native MVCC ALTER constraint and CREATE/DROP unique-index metadata lifecycle proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

@@ -486,6 +486,14 @@ class CreateIndexConstantAction extends IndexConstantAction
 				maxBaseColumnPosition = baseColumnPositions[i];
 		}
 
+        if (!forCreateTable && droppedConglomNum < 0L && hasAccessMethodUniqueDefinition()) {
+            validateAccessMethodUniqueConstraint(
+                    tc,
+                    td.getHeapConglomerateId(),
+                    baseColumnPositions,
+                    uniqueWithDuplicateNulls,
+                    hasDeferrableChecking);
+        }
 
 		/* The code below tries to determine if the index that we're about
 		 * to create can "share" a conglomerate with an existing index.
@@ -844,7 +852,14 @@ class CreateIndexConstantAction extends IndexConstantAction
 			/* now that we got indexTemplateRow, done for sharing index
 			 */
 			if (shareExisting)
+            {
+                addAccessMethodUniqueMetadataIfNeeded(
+                        tc,
+                        td,
+                        baseColumnPositions,
+                        alreadyHaveConglomDescriptor);
 				return;
+            }
 
 			/* For non-unique indexes, we order by all columns + the RID.
 			 * For unique indexes, we just order by the columns.
@@ -1047,7 +1062,40 @@ class CreateIndexConstantAction extends IndexConstantAction
 								 true, tc);
 			}
 		}
+
+        addAccessMethodUniqueMetadataIfNeeded(
+                tc,
+                td,
+                baseColumnPositions,
+                alreadyHaveConglomDescriptor);
 	}
+
+    private boolean hasAccessMethodUniqueDefinition() {
+        return unique
+                || uniqueWithDuplicateNulls
+                || uniqueDeferrable
+                || (isConstraint
+                        && (constraintType == DataDictionary.PRIMARYKEY_CONSTRAINT
+                                || constraintType == DataDictionary.UNIQUE_CONSTRAINT));
+    }
+
+    private void addAccessMethodUniqueMetadataIfNeeded(
+            TransactionController tc,
+            TableDescriptor td,
+            int[] baseColumnPositions,
+            boolean alreadyHaveConglomDescriptor) throws StandardException {
+        if (forCreateTable
+                || alreadyHaveConglomDescriptor
+                || !hasAccessMethodUniqueDefinition()) {
+            return;
+        }
+        addAccessMethodUniqueConstraint(
+                tc,
+                td.getHeapConglomerateId(),
+                baseColumnPositions,
+                uniqueWithDuplicateNulls,
+                hasDeferrableChecking);
+    }
 
     /**
      * Determines if a statistics entry is to be added for the index.

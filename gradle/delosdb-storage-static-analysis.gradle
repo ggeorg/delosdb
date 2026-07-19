@@ -6920,8 +6920,9 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
 
             requireTokens('RawStore-native unique enforcement', indexText, [
                     'static void assertUnique(',
-                    'table.uniqueConstraints().isEmpty()',
                     'acquireUpdateLock(transaction, table.metadataContainer())',
+                    'MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true)',
+                    'if (constraints.isEmpty())',
                     'acquireUpdateLock(transaction, table.versionContainer())',
                     'readEntriesForUpdate(transaction, table)',
                     'context.currentCommittedSequence()',
@@ -6937,6 +6938,8 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
                     section(indexText, 'static void assertUnique(', 'private static boolean containsNull(',
                             'RawStore MVCC unique check section'),
                     ['acquireUpdateLock(transaction, table.metadataContainer())',
+                     'MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true)',
+                     'if (constraints.isEmpty())',
                      'acquireUpdateLock(transaction, table.versionContainer())',
                      'readEntriesForUpdate(transaction, table)',
                      'context.currentCommittedSequence()',
@@ -7036,6 +7039,262 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreUniqueLifecycleStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies ALTER TABLE and CREATE/DROP UNIQUE INDEX maintain RawStore MVCC native unique metadata in the inherited transaction.'
+
+    def lifecycleFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodUniqueConstraintLifecycle.java')
+    def ddlBaseFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DDLSingleTableConstantAction.java')
+    def createIndexFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateIndexConstantAction.java')
+    def dropIndexFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DropIndexConstantAction.java')
+    def dropConstraintFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DropConstraintConstantAction.java')
+    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def requiredFiles = [lifecycleFile, ddlBaseFile, createIndexFile, dropIndexFile,
+            dropConstraintFile, controllerFile, tableFile, indexFile, sqlTestFile,
+            testsBuildFile, designFile, implementationFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-unique-lifecycle-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def lifecycleText = lifecycleFile.getText('UTF-8')
+            def ddlBaseText = ddlBaseFile.getText('UTF-8')
+            def createIndexText = createIndexFile.getText('UTF-8')
+            def dropIndexText = dropIndexFile.getText('UTF-8')
+            def dropConstraintText = dropConstraintFile.getText('UTF-8')
+            def controllerText = controllerFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Neutral unique lifecycle contract', lifecycleText, [
+                    'interface AccessMethodUniqueConstraintLifecycle',
+                    'validateUniqueConstraintDefinition(',
+                    'addUniqueConstraint(',
+                    'dropUniqueConstraint(',
+                    'zero-based positions',
+                    'caller\'s existing store transaction'
+            ])
+            ['delos_mvcc', 'MvccRawStore', 'Lucene'].each { forbidden ->
+                if (lifecycleText.contains(forbidden)) {
+                    failures << 'Neutral unique lifecycle contract leaks implementation token: ' + forbidden
+                }
+            }
+
+            requireTokens('Engine controller bridge', ddlBaseText, [
+                    'validateAccessMethodUniqueConstraint(',
+                    'addAccessMethodUniqueConstraint(',
+                    'dropAccessMethodUniqueConstraint(',
+                    'AccessMethodUniqueConstraintLifecycle lifecycle',
+                    'TransactionController.OPENMODE_FORUPDATE',
+                    'TransactionController.MODE_TABLE',
+                    'TransactionController.ISOLATION_SERIALIZABLE',
+                    'zeroBased(oneBasedColumnPositions)'
+            ])
+
+            requireOrdered('Unique DDL validates before catalog or physical index creation',
+                    section(createIndexText, 'executeConstantAction( Activation activation )',
+                            'private boolean hasAccessMethodUniqueDefinition()',
+                            'CREATE INDEX execution section'),
+                    ['validateAccessMethodUniqueConstraint(',
+                     'boolean shareExisting = false',
+                     'addAccessMethodUniqueMetadataIfNeeded('])
+            requireTokens('Unique DDL metadata publication', createIndexText, [
+                    '!forCreateTable && droppedConglomNum < 0L',
+                    'hasAccessMethodUniqueDefinition()',
+                    'addAccessMethodUniqueMetadataIfNeeded(',
+                    'addAccessMethodUniqueConstraint(',
+                    'uniqueWithDuplicateNulls',
+                    'hasDeferrableChecking'
+            ])
+            if (createIndexText.count('addAccessMethodUniqueMetadataIfNeeded(') < 3) {
+                failures << 'CREATE INDEX must publish native metadata for shared and newly created backing indexes'
+            }
+
+            requireTokens('DROP INDEX native lifecycle', dropIndexText, [
+                    '!cd.isConstraint()',
+                    'indexDescriptor.isUnique()',
+                    'indexDescriptor.isUniqueWithDuplicateNulls()',
+                    'dropAccessMethodUniqueConstraint('
+            ])
+            requireTokens('DROP constraint native lifecycle', dropConstraintText, [
+                    'DataDictionary.PRIMARYKEY_CONSTRAINT',
+                    'DataDictionary.UNIQUE_CONSTRAINT',
+                    'containsNullableColumn(td, keyColumns)',
+                    'dropAccessMethodUniqueConstraint('
+            ])
+
+            requireTokens('RawStore controller lifecycle implementation', controllerText, [
+                    'implements ConglomerateController, AccessMethodUniqueConstraintLifecycle',
+                    'public void validateUniqueConstraintDefinition(',
+                    'public void addUniqueConstraint(',
+                    'public void dropUniqueConstraint(',
+                    'runtime.context(transactionManager, rawTransaction)',
+                    'MvccRawStoreTable.addUniqueConstraint(',
+                    'MvccRawStoreTable.dropUniqueConstraint('
+            ])
+
+            requireOrdered('ADD validates and checks existing rows before metadata publication',
+                    section(tableText, 'static void addUniqueConstraint(',
+                            'static void dropUniqueConstraint(',
+                            'RawStore MVCC unique ADD section'),
+                    ['validateUniqueConstraintDefinition(', 'context.beforeWrite()',
+                     'ensureOrderedIndex(', 'refreshUniqueConstraints(',
+                     'assertConstraintCanBeAdded(', 'rewriteControlRow(',
+                     'observeUniqueConstraints('])
+            requireOrdered('DROP removes one definition through a logged control-row rewrite',
+                    section(tableText, 'static void dropUniqueConstraint(',
+                            'static List<UniqueConstraint> refreshUniqueConstraints(',
+                            'RawStore MVCC unique DROP section'),
+                    ['context.beforeWrite()', 'refreshUniqueConstraints(',
+                     'if (existing.isEmpty())', 'constraint.matches(',
+                     'rewriteControlRow(', 'observeUniqueConstraints('])
+            requireTokens('Logical unique-definition reference counting', tableText, [
+                    'existing.size() + 1',
+                    'updated.add(candidate)',
+                    'boolean removed = false',
+                    'if (!removed && constraint.matches(',
+                    'updated.size() + 1'
+            ])
+            requireTokens('Existing-row authoritative duplicate validation', indexText, [
+                    'static void assertConstraintCanBeAdded(',
+                    'acquireUpdateLock(transaction, table.metadataContainer())',
+                    'acquireUpdateLock(transaction, table.versionContainer())',
+                    'context.currentCommittedSequence()',
+                    'MvccRawStoreTable.scanVisibleAt(',
+                    'constraint.duplicateNullsAllowed()',
+                    'sameKey(left, right, columns)',
+                    'SQLState.LANG_DUPLICATE_KEY_CONSTRAINT'
+            ])
+
+            [
+                    'testAlterTableAddDropCommitRollbackAndDirectEnforcement',
+                    'testCreateDropUniqueIndexAndSharedDefinitionReferenceCounts',
+                    'testRejectedDefinitionsAndStatementRollbackLeaveNoNativeMetadata',
+                    'testLifecycleSurvivesBothCrashBoundariesReopenAndMemory'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Unique lifecycle proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Unique lifecycle executable proof', sqlTestText, [
+                    'alter table lifecycle_t add constraint',
+                    'alter table lifecycle_t drop constraint',
+                    'create unique index uq_lifecycle_index',
+                    'drop index uq_lifecycle_index',
+                    'assertEquals(2, shared.size())',
+                    'insertBaseRowDirect(',
+                    'assertEquals("23505"',
+                    'assertEquals("0A000"',
+                    'assertEquals("42X86"',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'jdbc:derby:memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreUniqueLifecycleTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreUniqueLifecycleTest'
+            }
+
+            requireTokens('Unique lifecycle design record', designText, [
+                    'AccessMethodUniqueConstraintLifecycle',
+                    'ALTER TABLE',
+                    'CREATE UNIQUE INDEX',
+                    'reference counts',
+                    'before native metadata is published',
+                    'one RawStore commit record',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest',
+                    'delosMvccRawStoreUniqueLifecycleStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'Native unique metadata now follows later SQL DDL',
+                    'logical definitions act as reference counts',
+                    ':delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest',
+                    'delosMvccRawStoreUniqueLifecycleStaticAnalysis'
+            ])
+
+            [controllerText, tableText, indexText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC unique lifecycle production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-unique-lifecycle-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC unique-metadata lifecycle static analysis')
+            writer.println('=============================================================')
+            writer.println()
+            writer.println('Rule: later unique DDL validates and updates native metadata in the same inherited RawStore transaction as catalog and backing-index state.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC unique-metadata lifecycle static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC unique-metadata lifecycle static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -7066,6 +7325,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreLookupHintStaticAnalysis',
             'delosMvccRawStoreOrderedIndexStaticAnalysis',
             'delosMvccRawStoreUniqueConstraintStaticAnalysis',
+            'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

@@ -262,8 +262,8 @@ mutation, but the remaining items are not yet claimed as supported:
 
 ```text
 SQL secondary-index DDL lifecycle
-ALTER TABLE / CREATE UNIQUE INDEX native unique-metadata lifecycle
 deferrable unique constraints
+retroactive boot-time discovery of pre-existing catalog uniqueness
 vacuum, purge, compression, and relocation
 XA participation
 nested update transactions
@@ -288,6 +288,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreLookupHintTest
 :delosdb-tests:runDelosMvccRawStoreOrderedIndexTest
 :delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
+:delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest
 ```
 
 It covers:
@@ -330,6 +331,8 @@ persisted primary-key and unique-constraint metadata
 RawStore-native duplicate rejection even through direct base-conglomerate access
 single-column and composite uniqueness with duplicate-null semantics
 UPDATE, DELETE/reuse, savepoint, reopen, concurrent-writer, crash, and memory uniqueness proofs
+ALTER TABLE and CREATE/DROP UNIQUE INDEX native metadata lifecycle
+logical-definition reference counts, DDL rollback, recovery, and memory lifecycle proofs
 ```
 
 Permanent architecture task:
@@ -342,6 +345,7 @@ delosMvccRawStoreMixedHeapTransactionStaticAnalysis
 delosMvccRawStoreLookupHintStaticAnalysis
 delosMvccRawStoreOrderedIndexStaticAnalysis
 delosMvccRawStoreUniqueConstraintStaticAnalysis
+delosMvccRawStoreUniqueLifecycleStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
@@ -351,3 +355,6 @@ dependencies from the new RawStore production path. Database-wide identity alloc
 unique-constraint metadata, latest-committed conflict checks, authoritative base-chain revalidation,
 duplicate-null semantics, and direct-access/concurrency/recovery proofs are protected by
 `delosMvccRawStoreUniqueConstraintStaticAnalysis`.
+
+
+Native unique metadata now follows later SQL DDL as well as inline CREATE TABLE. ADD validates existing authoritative MVCC rows before publishing one logical definition; DROP removes one matching definition in the same RawStore transaction as Derby catalog and backing-index changes. Shared logical definitions act as reference counts, and tables with no native metadata remain compatible with inherited DROP lifecycle. Permanent evidence is `:delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest` and `delosMvccRawStoreUniqueLifecycleStaticAnalysis`.

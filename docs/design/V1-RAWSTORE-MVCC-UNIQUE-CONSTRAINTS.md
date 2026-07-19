@@ -155,9 +155,8 @@ jdbc:derby:memory:
 This milestone does not add:
 
 ```text
-ALTER TABLE ADD CONSTRAINT native metadata migration
-CREATE UNIQUE INDEX native metadata
-retrofit of native metadata into older RawStore control rows
+retrofit of native metadata into already-existing catalog constraints at database boot
+constraint-name persistence in RawStore metadata
 deferrable or initially deferred uniqueness
 foreign-key enforcement changes
 incremental ordered-index page splits or merges
@@ -167,3 +166,8 @@ vacuum or obsolete-entry removal
 
 Those capabilities must preserve the same rule: the authoritative MVCC version chain decides visible
 rows, and RawStore decides the transaction outcome.
+
+
+## Later DDL lifecycle
+
+The follow-on lifecycle milestone extends this same metadata and enforcement model to `ALTER TABLE ADD/DROP CONSTRAINT` and `CREATE/DROP UNIQUE INDEX`. It uses the neutral `AccessMethodUniqueConstraintLifecycle` controller hook, validates before DDL publication, rewrites the RawStore control row in the caller transaction, and treats duplicate logical definitions as reference counts. See `V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md`.

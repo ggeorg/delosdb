@@ -15,6 +15,7 @@ import java.util.Properties;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -22,7 +23,8 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Controller for the isolated RawStore-backed MVCC table format. */
-final class MvccRawStoreConglomerateController implements ConglomerateController {
+final class MvccRawStoreConglomerateController
+        implements ConglomerateController, AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
@@ -152,6 +154,48 @@ final class MvccRawStoreConglomerateController implements ConglomerateController
                 MvccRowLocation.from(loc).rowId(),
                 row,
                 validColumns,
+                context);
+    }
+
+    @Override
+    public void validateUniqueConstraintDefinition(
+            int[] baseColumnPositions,
+            boolean duplicateNullsAllowed,
+            boolean deferrable) throws StandardException {
+        ensureOpen();
+        MvccRawStoreTable.validateUniqueConstraintDefinition(
+                table,
+                baseColumnPositions,
+                deferrable);
+    }
+
+    @Override
+    public void addUniqueConstraint(
+            int[] baseColumnPositions,
+            boolean duplicateNullsAllowed,
+            boolean deferrable) throws StandardException {
+        ensureOpen();
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        MvccRawStoreTable.addUniqueConstraint(
+                rawTransaction,
+                table,
+                baseColumnPositions,
+                duplicateNullsAllowed,
+                deferrable,
+                context);
+    }
+
+    @Override
+    public void dropUniqueConstraint(
+            int[] baseColumnPositions,
+            boolean duplicateNullsAllowed) throws StandardException {
+        ensureOpen();
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        MvccRawStoreTable.dropUniqueConstraint(
+                rawTransaction,
+                table,
+                baseColumnPositions,
+                duplicateNullsAllowed,
                 context);
     }
 

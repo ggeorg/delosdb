@@ -43,7 +43,7 @@ final class MvccRawStoreTable {
         private final int[] formatIds;
         private final int[] collationIds;
         private final boolean temporary;
-        private final List<UniqueConstraint> uniqueConstraints;
+        private volatile List<UniqueConstraint> uniqueConstraints;
         private volatile ContainerKey orderedIndexContainer;
 
         Descriptor(
@@ -100,6 +100,10 @@ final class MvccRawStoreTable {
         List<UniqueConstraint> uniqueConstraints() {
             return uniqueConstraints;
         }
+
+        void observeUniqueConstraints(List<UniqueConstraint> constraints) {
+            uniqueConstraints = List.copyOf(constraints);
+        }
     }
 
     record UniqueConstraint(int ordinal, int[] columns, boolean duplicateNullsAllowed) {
@@ -110,6 +114,11 @@ final class MvccRawStoreTable {
         @Override
         public int[] columns() {
             return columns.clone();
+        }
+
+        boolean matches(int[] candidateColumns, boolean candidateDuplicateNullsAllowed) {
+            return duplicateNullsAllowed == candidateDuplicateNullsAllowed
+                    && java.util.Arrays.equals(columns, candidateColumns);
         }
 
         String displayName() {
@@ -283,6 +292,140 @@ final class MvccRawStoreTable {
         }
     }
 
+    static void validateUniqueConstraintDefinition(
+            Descriptor table,
+            int[] baseColumnPositions,
+            boolean deferrable) throws StandardException {
+        if (deferrable) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "deferrable unique constraints for RawStore-backed delos_mvcc");
+        }
+        validateUniqueColumns(table, baseColumnPositions);
+    }
+
+    static void addUniqueConstraint(
+            Transaction transaction,
+            Descriptor table,
+            int[] baseColumnPositions,
+            boolean duplicateNullsAllowed,
+            boolean deferrable,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        validateUniqueConstraintDefinition(table, baseColumnPositions, deferrable);
+        context.beforeWrite();
+        ensureOrderedIndex(transaction, table);
+
+        List<UniqueConstraint> existing = refreshUniqueConstraints(transaction, table, true);
+        UniqueConstraint candidate = new UniqueConstraint(
+                existing.size() + 1,
+                baseColumnPositions,
+                duplicateNullsAllowed);
+        MvccRawStoreOrderedIndex.assertConstraintCanBeAdded(
+                transaction,
+                table,
+                candidate,
+                context);
+
+        List<UniqueConstraint> updated = new ArrayList<>(existing);
+        updated.add(candidate);
+        rewriteControlRow(transaction, table, updated);
+        table.observeUniqueConstraints(updated);
+    }
+
+    static void dropUniqueConstraint(
+            Transaction transaction,
+            Descriptor table,
+            int[] baseColumnPositions,
+            boolean duplicateNullsAllowed,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        validateUniqueColumns(table, baseColumnPositions);
+        context.beforeWrite();
+
+        List<UniqueConstraint> existing = refreshUniqueConstraints(transaction, table, true);
+        // Compatibility: a table created before native unique metadata existed may
+        // still have an inherited Derby unique index/constraint. Its SQL DROP must
+        // not be blocked merely because there is no access-method definition to remove.
+        if (existing.isEmpty()) {
+            return;
+        }
+        List<UniqueConstraint> updated = new ArrayList<>(existing.size());
+        boolean removed = false;
+        for (UniqueConstraint constraint : existing) {
+            if (!removed && constraint.matches(baseColumnPositions, duplicateNullsAllowed)) {
+                removed = true;
+                continue;
+            }
+            updated.add(new UniqueConstraint(
+                    updated.size() + 1,
+                    constraint.columns(),
+                    constraint.duplicateNullsAllowed()));
+        }
+        if (!removed) {
+            throw new IllegalStateException(
+                    "RawStore MVCC unique metadata is absent for requested key");
+        }
+        rewriteControlRow(transaction, table, updated);
+        table.observeUniqueConstraints(updated);
+    }
+
+    static List<UniqueConstraint> refreshUniqueConstraints(
+            Transaction transaction,
+            Descriptor table,
+            boolean forUpdate) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                lockingPolicy(transaction),
+                forUpdate ? ContainerHandle.MODE_FORUPDATE : ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            int countField = MvccRawStoreFormat.controlUniqueConstraintCountField(
+                    table.columnCount());
+            if (page == null || page.fetchNumFieldsAtSlot(Page.FIRST_SLOT_NUMBER) <= countField) {
+                table.observeUniqueConstraints(List.of());
+                return List.of();
+            }
+            int fieldCount = page.fetchNumFieldsAtSlot(Page.FIRST_SLOT_NUMBER);
+            Object[] row = controlTemplate(
+                    transaction,
+                    table.columnCount(),
+                    true,
+                    fieldCount - countField - 1);
+            page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, row, null, false);
+            List<UniqueConstraint> constraints = decodeUniqueConstraints(row, table.columnCount());
+            table.observeUniqueConstraints(constraints);
+            return constraints;
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static void validateUniqueColumns(
+            Descriptor table,
+            int[] baseColumnPositions) {
+        if (baseColumnPositions == null || baseColumnPositions.length == 0) {
+            throw new IllegalArgumentException("RawStore MVCC unique key must contain a column");
+        }
+        Set<Integer> seen = new HashSet<>();
+        for (int column : baseColumnPositions) {
+            if (column < 0 || column >= table.columnCount()) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC unique column outside table row: " + column);
+            }
+            if (!seen.add(column)) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC unique key repeats column: " + column);
+            }
+        }
+    }
+
     static java.util.Optional<List<Long>> orderedIndexRowIdsFor(
             Transaction transaction,
             Descriptor table,
@@ -380,6 +523,13 @@ final class MvccRawStoreTable {
 
     private static void rewriteControlRow(Transaction transaction, Descriptor table)
             throws StandardException {
+        rewriteControlRow(transaction, table, table.uniqueConstraints());
+    }
+
+    private static void rewriteControlRow(
+            Transaction transaction,
+            Descriptor table,
+            List<UniqueConstraint> uniqueConstraints) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 table.metadataContainer(),
                 lockingPolicy(transaction),
@@ -393,7 +543,7 @@ final class MvccRawStoreTable {
             page = container.getFirstPage();
             page.updateAtSlot(
                     Page.FIRST_SLOT_NUMBER,
-                    controlRow(transaction, table),
+                    controlRow(transaction, table, uniqueConstraints),
                     null);
         } finally {
             if (page != null) {
@@ -674,6 +824,62 @@ final class MvccRawStoreTable {
         return rows;
     }
 
+    static List<VisibleRow> scanVisibleAt(
+            Transaction rawTransaction,
+            Descriptor table,
+            long transactionId,
+            long snapshotSequence) throws StandardException {
+        List<VisibleRow> rows = new ArrayList<>();
+        ContainerHandle container = rawTransaction.openContainer(
+                table.metadataContainer(),
+                lockingPolicy(rawTransaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            return rows;
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    DirectoryRecord directory = decodeDirectory(rawTransaction, page, slot);
+                    if (directory == null) {
+                        continue;
+                    }
+                    VersionRecord version = findVisibleVersion(
+                            rawTransaction,
+                            table,
+                            directory.rowId(),
+                            directory.head(),
+                            transactionId,
+                            snapshotSequence);
+                    if (version != null && !version.tombstone()) {
+                        rows.add(new VisibleRow(
+                                directory.rowId(),
+                                version.versionId(),
+                                version.values(),
+                                version.handle()));
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        return rows;
+    }
+
     static boolean pendingVersionExists(
             Transaction rawTransaction,
             PendingVersion pending,
@@ -810,7 +1016,14 @@ final class MvccRawStoreTable {
     }
 
     private static Object[] controlRow(Transaction transaction, Descriptor descriptor) throws StandardException {
-        int uniqueMetadataFields = uniqueMetadataFieldCount(descriptor.uniqueConstraints());
+        return controlRow(transaction, descriptor, descriptor.uniqueConstraints());
+    }
+
+    private static Object[] controlRow(
+            Transaction transaction,
+            Descriptor descriptor,
+            List<UniqueConstraint> uniqueConstraints) throws StandardException {
+        int uniqueMetadataFields = uniqueMetadataFieldCount(uniqueConstraints);
         Object[] row = controlTemplate(
                 transaction,
                 descriptor.columnCount(),
@@ -850,8 +1063,8 @@ final class MvccRawStoreTable {
         int field = MvccRawStoreFormat.controlUniqueConstraintCountField(descriptor.columnCount());
         row[field++] = MvccRawStoreFormat.intValue(
                 transaction,
-                descriptor.uniqueConstraints().size());
-        for (UniqueConstraint constraint : descriptor.uniqueConstraints()) {
+                uniqueConstraints.size());
+        for (UniqueConstraint constraint : uniqueConstraints) {
             row[field++] = MvccRawStoreFormat.intValue(
                     transaction,
                     constraint.duplicateNullsAllowed() ? 1 : 0);
