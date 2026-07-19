@@ -109,6 +109,7 @@ public final class MvccConglomerateFactory
         rejectUnsupportedDurableTypes(template);
         rejectGlobalLifecycle(xact_mgr);
         if (rawStoreVerticalSliceEnabled) {
+            rawStoreRuntime().ensureMetadata(xact_mgr);
             registerRawStoreOwnedMvcc(xact_mgr);
             long rawStoreContainerId = reserveRawStoreConglomerateId(
                     segment, input_containerid);
@@ -235,10 +236,7 @@ public final class MvccConglomerateFactory
                         "RawStore-backed delos_mvcc table requires "
                                 + MvccRawStoreFormat.ENABLED_PROPERTY + "=true");
             }
-            rawStoreRuntime().observeCommittedHighWater(
-                    MvccRawStoreTable.committedHighWater(
-                            xact_mgr.getRawStoreXact(),
-                            descriptor));
+            rawStoreRuntime().ensureMetadata(xact_mgr);
             return new MvccConglomerate(rawStoreRuntime(), descriptor);
         }
         return new MvccConglomerate(runtime(), container_key);

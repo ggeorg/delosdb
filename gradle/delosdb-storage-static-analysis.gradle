@@ -5322,17 +5322,17 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'ReentrantLock commitPublicationLock',
                     'long captureSnapshot()',
                     'return publishedHighWater.get()',
-                    'long reserveCommitSequence()',
+                    'long reserveCommitSequence(Transaction rawTransaction)',
                     'publishAndUnlock(',
                     'observeCommittedHighWater('
             ])
-            def snapshotSection = section(runtimeText, 'long captureSnapshot()', 'long reserveCommitSequence()',
+            def snapshotSection = section(runtimeText, 'long captureSnapshot()', 'long reserveCommitSequence(Transaction rawTransaction)',
                     'snapshot capture section')
             if (snapshotSection.contains('MvccRawStoreTable.')
                     || snapshotSection.contains('openContainer(')) {
                 failures << 'Snapshot capture must not acquire RawStore locks while holding the publication lock'
             }
-            def reserveSection = section(runtimeText, 'long reserveCommitSequence()', 'void publishAndUnlock(',
+            def reserveSection = section(runtimeText, 'long reserveCommitSequence(Transaction rawTransaction)', 'void stageCommittedHighWater(',
                     'commit-sequence reservation section')
             if (reserveSection.contains('MvccRawStoreTable.')
                     || reserveSection.contains('openContainer(')) {
@@ -5357,7 +5357,9 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             requireOrdered('RawStore MVCC precommit protocol',
                     section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
                             'RawStore MVCC precommit section'),
-                    ['reserveCommitSequence()', 'stampPendingVersions(', 'AFTER_STAMP_BEFORE_RAW_COMMIT'])
+                    ['runtime.reserveCommitSequence(rawTransaction)', 'stampPendingVersions(',
+                            'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
+                            'AFTER_STAMP_BEFORE_RAW_COMMIT'])
             requireOrdered('RawStore MVCC postcommit publication',
                     section(contextText, 'public void afterCommit(', 'public void commitFailed(',
                             'RawStore MVCC postcommit section'),
@@ -5519,6 +5521,198 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
     }
 }
 
+tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies durable database-wide MVCC transaction IDs, commit sequences, and committed high-water are RawStore-owned.'
+
+    def metadataFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def identityTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def identityDesignFile = file('docs/design/V1-RAWSTORE-MVCC-DATABASE-WIDE-IDENTITIES.md')
+    def requiredFiles = [metadataFile, runtimeFile, contextFile, tableFile, factoryFile,
+            inspectionFile, identityTestFile, testsBuildFile, implementationFile, identityDesignFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-database-identity-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def metadataText = metadataFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def factoryText = factoryFile.getText('UTF-8')
+            def inspectionText = inspectionFile.getText('UTF-8')
+            def identityTestText = identityTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def identityDesignText = identityDesignFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Database-wide RawStore metadata', metadataText, [
+                    'delosdb.mvcc.rawStore.databaseMetadataContainerId',
+                    'NEXT_TRANSACTION_ID_FIELD',
+                    'NEXT_COMMIT_SEQUENCE_FIELD',
+                    'COMMITTED_HIGH_WATER_FIELD',
+                    'startNestedTopTransaction()',
+                    'nested.commit()',
+                    'nested.getLogFactory().flush(commitInstant)',
+                    'stageCommittedHighWater('
+            ])
+            ['java.nio.file', 'java.io.File', 'DelosPageVolume', 'MvccDatabaseCommitCoordinator'].each { token ->
+                if (metadataText.contains(token)) {
+                    failures << 'Database-wide MVCC metadata must not use independent storage authority: ' + token
+                }
+            }
+
+            requireTokens('Database-scoped runtime ownership', runtimeText, [
+                    'private final MvccRawStoreDatabaseMetadata metadata',
+                    'metadata.ensureInitialized(transactionManager)',
+                    'metadata.reserveTransactionId(rawTransaction)',
+                    'metadata.reserveCommitSequence(rawTransaction)',
+                    'metadata.stageCommittedHighWater(rawTransaction, sequence)'
+            ])
+            if (runtimeText.contains('AtomicLong nextTransactionId')) {
+                failures << 'Runtime-scoped MVCC transaction-ID allocation must not remain'
+            }
+
+            requireOrdered('Write-time durable transaction-ID allocation',
+                    section(contextText, 'void beforeWrite(', 'void addPending(',
+                            'RawStore MVCC beforeWrite section'),
+                    ['bind(candidate)',
+                            'DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transactionManager)',
+                            'ensureTransactionId()'])
+            requireOrdered('Precommit database-wide commit publication',
+                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
+                            'RawStore MVCC beforeCommit section'),
+                    ['runtime.reserveCommitSequence(rawTransaction)',
+                            'MvccRawStoreTable.stampPendingVersions(',
+                            'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
+                            'AFTER_STAMP_BEFORE_RAW_COMMIT'])
+
+            requireOrdered('Persisted creator transaction identity',
+                    section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
+                            'RawStore MVCC INSERT section'),
+                    ['context.beforeWrite(table)', 'long creatorTransactionId = context.transactionId()',
+                            'insertRow(rawTransaction, table.versionContainer()'])
+            if (tableText.contains('updateAllocatorCommittedHighWater(')
+                    || tableText.contains('static long committedHighWater(')) {
+                failures << 'Table-local committed high-water must no longer drive MVCC visibility'
+            }
+
+            if (factoryText.count('rawStoreRuntime().ensureMetadata(xact_mgr);') < 2) {
+                failures << 'MVCC CREATE and RawStore descriptor reopen must initialize database-wide metadata'
+            }
+
+            requireTokens('RawStore metadata inspection proof', inspectionText, [
+                    'NEXT_TRANSACTION_ID_FIELD',
+                    'NEXT_COMMIT_SEQUENCE_FIELD',
+                    'COMMITTED_HIGH_WATER_FIELD',
+                    'VERSION_CREATOR_TRANSACTION_ID_FIELD',
+                    'VERSION_BEGIN_SEQUENCE_FIELD'
+            ])
+            [
+                    'testRollbackAndRebootDoNotReuseDatabaseWideIdentities',
+                    'testSeparateTablesShareOneDatabaseWideIdentitySequence',
+                    'testCrashBeforeRawCommitPreservesReservedIdentityGaps',
+                    'testCountersAreDatabaseScopedAndUseTheMemoryRawStore'
+            ].each { methodName ->
+                if (!identityTestText.contains(methodName)) {
+                    failures << 'Database-wide MVCC identity proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Database-wide identity crash proof', identityTestText, [
+                    'after-stamp-before-raw-commit',
+                    'assertCounters(recovered, 2L, 2L, 0L)',
+                    'new long[][] {{2L, 2L}}'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreDatabaseIdentityTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreDatabaseIdentityTest'
+            }
+
+            requireTokens('Updated isolated-format implementation record', implementationText, [
+                    'database-wide RawStore metadata container',
+                    'The opt-in format now uses one database-wide RawStore metadata container for durable',
+                    '`MvccTransactionId`',
+                    '`MvccCommitSequence`',
+                    'numeric gaps are allowed but identity reuse is not'
+            ])
+            requireTokens('Database-wide identity design record', identityDesignText, [
+                    'one database-wide RawStore metadata container',
+                    'nested top transaction',
+                    'RawStore commit record',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreDatabaseIdentityTest',
+                    'delosMvccRawStoreDatabaseIdentityStaticAnalysis'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-database-identity-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore database-wide MVCC identity static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Rule: durable MVCC transaction IDs, commit sequences, and committed high-water are allocated and persisted by the database RawStore.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore database-wide MVCC identity static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore database-wide MVCC identity static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -5542,6 +5736,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
             'delosAccessMethodTransactionLifecycleStaticAnalysis',
             'delosMvccRawStoreVerticalSliceStaticAnalysis',
+            'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

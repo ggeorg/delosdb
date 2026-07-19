@@ -167,7 +167,6 @@ final class MvccRawStoreConglomerateController implements ConglomerateController
         MvccRawStoreTable.insert(
                 rawTransaction,
                 table,
-                context.transactionId(),
                 row,
                 context,
                 destination);

@@ -170,7 +170,6 @@ final class MvccRawStoreTable {
     static PendingVersion insert(
             Transaction rawTransaction,
             Descriptor table,
-            long creatorTransactionId,
             StoreDataValue[] values,
             MvccRawStoreTransactionContext context,
             MvccRowLocation destination) throws StandardException {
@@ -179,6 +178,7 @@ final class MvccRawStoreTable {
                     "RawStore MVCC row width mismatch: expected " + table.columnCount());
         }
         context.beforeWrite(table);
+        long creatorTransactionId = context.transactionId();
         Allocation allocation = allocateIdentifiers(rawTransaction, table);
         Object[] versionRow = versionRow(
                 rawTransaction,
@@ -277,13 +277,6 @@ final class MvccRawStoreTable {
         return rows;
     }
 
-    static long committedHighWater(Transaction rawTransaction, Descriptor table) throws StandardException {
-        return allocatorField(
-                rawTransaction,
-                table,
-                MvccRawStoreFormat.ALLOCATOR_COMMITTED_HIGH_WATER);
-    }
-
     static boolean pendingVersionExists(
             Transaction rawTransaction,
             Descriptor table,
@@ -309,11 +302,6 @@ final class MvccRawStoreTable {
             }
             updateVersionBegin(rawTransaction, table, version, commitSequence);
         }
-        updateAllocatorField(
-                rawTransaction,
-                table,
-                MvccRawStoreFormat.ALLOCATOR_COMMITTED_HIGH_WATER,
-                commitSequence);
     }
 
     static void drop(Transaction rawTransaction, Descriptor table) throws StandardException {
@@ -499,56 +487,6 @@ final class MvccRawStoreTable {
                     MvccRawStoreFormat.longValue(transaction, versionId + 1L),
                     null);
             return new Allocation(rowId, versionId);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            if (container != null) {
-                container.close();
-            }
-        }
-    }
-
-    private static long allocatorField(Transaction transaction, Descriptor table, int field)
-            throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                lockingPolicy(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            throw new IllegalStateException("RawStore MVCC metadata container is missing: " + table.metadataContainer());
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            StoreDataValue value = MvccRawStoreFormat.longValue(transaction, 0L);
-            page.fetchFieldFromSlot(Page.FIRST_SLOT_NUMBER + 1, field, value);
-            return StoreTypeUtil.getLong(value);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    private static void updateAllocatorField(
-            Transaction transaction,
-            Descriptor table,
-            int field,
-            long value) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                lockingPolicy(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            page.updateFieldAtSlot(
-                    Page.FIRST_SLOT_NUMBER + 1,
-                    field,
-                    MvccRawStoreFormat.longValue(transaction, value),
-                    null);
         } finally {
             if (page != null) {
                 page.unlatch();

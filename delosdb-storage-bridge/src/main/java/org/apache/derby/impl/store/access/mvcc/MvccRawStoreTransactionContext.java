@@ -26,23 +26,21 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final MvccRawStoreRuntime runtime;
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
-    private final long transactionId;
     private final List<MvccRawStoreTable.PendingVersion> pending = new ArrayList<>();
     private final List<SavepointMarker> savepoints = new ArrayList<>();
 
     private MvccRawStoreTable.Descriptor table;
+    private long transactionId;
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
 
     MvccRawStoreTransactionContext(
             MvccRawStoreRuntime runtime,
             TransactionManager transactionManager,
-            Transaction rawTransaction,
-            long transactionId) {
+            Transaction rawTransaction) {
         this.runtime = runtime;
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
-        this.transactionId = transactionId;
     }
 
     long transactionId() {
@@ -76,6 +74,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     mixedAuthorities,
                     mixedAuthorities.getMessage());
         }
+        ensureTransactionId();
     }
 
     void addPending(MvccRawStoreTable.PendingVersion version) {
@@ -92,7 +91,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         if (pending.isEmpty()) {
             return;
         }
-        reservedCommitSequence = runtime.reserveCommitSequence();
+        reservedCommitSequence = runtime.reserveCommitSequence(rawTransaction);
         publicationLockHeld = true;
         try {
             MvccRawStoreTable.stampPendingVersions(
@@ -100,6 +99,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     table,
                     List.copyOf(pending),
                     reservedCommitSequence);
+            runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
                     91);
@@ -224,10 +224,17 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return -1;
     }
 
+    private void ensureTransactionId() throws StandardException {
+        if (transactionId == 0L) {
+            transactionId = runtime.reserveTransactionId(rawTransaction);
+        }
+    }
+
     private void clearLocalState() {
         pending.clear();
         savepoints.clear();
         table = null;
+        transactionId = 0L;
         reservedCommitSequence = 0L;
         publicationLockHeld = false;
     }

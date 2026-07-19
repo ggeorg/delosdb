@@ -18,7 +18,6 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLi
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.reference.SQLState;
 
 /** Database-scoped semantic coordinator for the isolated RawStore table format. */
 final class MvccRawStoreRuntime {
@@ -31,7 +30,7 @@ final class MvccRawStoreRuntime {
 
     private final Object databaseIdentity;
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
-    private final AtomicLong nextTransactionId = new AtomicLong(1L);
+    private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
 
     MvccRawStoreRuntime(Object databaseIdentity) {
@@ -44,19 +43,30 @@ final class MvccRawStoreRuntime {
 
     MvccRawStoreTransactionContext context(
             TransactionManager transactionManager,
-            Transaction rawTransaction) {
+            Transaction rawTransaction) throws StandardException {
         AccessMethodTransactionLifecycle existing =
                 transactionManager.accessMethodTransactionLifecycle(this);
         if (existing != null) {
             return (MvccRawStoreTransactionContext) existing;
         }
+        ensureMetadata(transactionManager);
         MvccRawStoreTransactionContext context = new MvccRawStoreTransactionContext(
                 this,
                 transactionManager,
-                rawTransaction,
-                nextTransactionId.getAndIncrement());
+                rawTransaction);
         transactionManager.registerAccessMethodTransactionLifecycle(this, context);
         return context;
+    }
+
+    void ensureMetadata(TransactionManager transactionManager) throws StandardException {
+        long committedHighWater = metadata.ensureInitialized(transactionManager);
+        if (committedHighWater >= 0L) {
+            observeCommittedHighWater(committedHighWater);
+        }
+    }
+
+    long reserveTransactionId(Transaction rawTransaction) throws StandardException {
+        return metadata.reserveTransactionId(rawTransaction);
     }
 
     long captureSnapshot() {
@@ -68,16 +78,19 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    long reserveCommitSequence() throws StandardException {
+    long reserveCommitSequence(Transaction rawTransaction) throws StandardException {
         commitPublicationLock.lock();
-        long published = publishedHighWater.get();
-        if (published == Long.MAX_VALUE) {
+        try {
+            return metadata.reserveCommitSequence(rawTransaction);
+        } catch (StandardException | RuntimeException | Error failure) {
             commitPublicationLock.unlock();
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "RawStore-backed MVCC commit sequence is exhausted");
+            throw failure;
         }
-        return published + 1L;
+    }
+
+    void stageCommittedHighWater(Transaction rawTransaction, long sequence)
+            throws StandardException {
+        metadata.stageCommittedHighWater(rawTransaction, sequence);
     }
 
     void publishAndUnlock(long sequence) {

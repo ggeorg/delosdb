@@ -59,7 +59,7 @@ The primary metadata/directory container uses:
 
 ```text
 first page slot 0: immutable control row
-first page slot 1: allocator and committed-high-water row
+first page slot 1: logical row/version allocator row (legacy high-water field reserved)
 remaining records: MvccRowId -> head MvccVersionId directory entries
 ```
 
@@ -89,12 +89,16 @@ inside the current transaction as an efficient precommit locator. Before using t
 stamping verifies the stored `MvccVersionId`; a missing or mismatched handle falls back to a logical
 `MvccVersionId` scan.
 
-The isolated slice intentionally does not freeze the final database-wide allocators for
-`MvccTransactionId` and `MvccCommitSequence`. Its transaction token is runtime-scoped because
-uncommitted RawStore mutations cannot survive rollback or recovery. The committed high-water is
-RawStore-owned but remains table-local in this proof because one transaction may bind only one
-RawStore-backed MVCC table. Stage 4 must replace both provisional sources with durable database-wide
-RawStore metadata before multi-table and broader version-chain semantics are enabled.
+The opt-in format now uses one database-wide RawStore metadata container for durable
+`MvccTransactionId`, durable `MvccCommitSequence`, and the committed publication high-water. The first
+write in a user transaction reserves its transaction identity through a nested top RawStore
+transaction. Precommit reserves the commit sequence the same way, stamps the version rows, and stages
+the committed high-water inside the user RawStore transaction. The nested allocator commit record is
+forced before the identity is returned: numeric gaps are allowed but identity reuse is not.
+
+The table allocator row remains format-compatible for logical row and version allocation. Its earlier
+committed-high-water field is reserved and is no longer the visibility or publication authority. See
+`V1-RAWSTORE-MVCC-DATABASE-WIDE-IDENTITIES.md`.
 
 ## CREATE and INSERT
 
@@ -152,9 +156,9 @@ For a transaction with inserted versions:
 
 ```text
 1. acquire the publication lock
-2. reserve the next MvccCommitSequence
+2. reserve the next database-wide MvccCommitSequence through a forced nested-top RawStore commit
 3. stamp pending version begin sequences through logged RawStore field updates
-4. update the RawStore-owned committed high-water
+4. update the database-wide RawStore-owned committed high-water in the user transaction
 5. let RAMTransaction commit the inherited RawStore transaction
 6. publish the in-memory high-water only after RawStore reports success
 7. release the publication lock
@@ -162,7 +166,7 @@ For a transaction with inserted versions:
 
 Snapshot capture reads only the already published in-memory high-water while holding the publication
 lock. It does not open a RawStore container while acquiring that lock. On conglomerate reopen, the
-factory reconstructs the in-memory high-water from the committed allocator row before the table is
+factory reconstructs the in-memory high-water from the committed database metadata row before the table is
 returned. This preserves the required ordering without introducing a publication-lock/container-lock
 inversion.
 
@@ -219,8 +223,7 @@ multi-table RawStore-backed MVCC transactions
 mixed heap/MVCC transactions
 XA participation
 nested update transactions
-final database-wide durable MvccTransactionId and MvccCommitSequence allocation
-final lock granularity and final binary format
+final lock granularity and final completed table binary format
 default routing or migration of existing tables
 ```
 
@@ -257,6 +260,8 @@ absence of earlier-format sidecar files
 file-backed and memory-backed RawStore operation
 crash before the RawStore commit record
 crash after the RawStore commit record before in-memory publication
+rollback/reboot/crash non-reuse of database-wide MvccTransactionId and MvccCommitSequence
+database-scoped and memory-backed identity metadata
 ```
 
 Permanent architecture task:
@@ -268,4 +273,4 @@ delosMvccRawStoreVerticalSliceStaticAnalysis
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
 transaction-lifecycle ordering, opt-in compatibility route, retained/new-format identity separation,
 recovery tests, memory proof, differential oracle proof, and absence of filesystem/external-durability
-dependencies from the new RawStore production path.
+dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`.
