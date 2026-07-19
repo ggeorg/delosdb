@@ -6005,14 +6005,26 @@ tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
                     ['context.beforeWrite()',
                             'mutationTarget(rawTransaction, table, rowId, context)',
                             'appendVersion('])
+            def appendVersionSection = section(
+                    tableText,
+                    'private static PendingVersion appendVersion(',
+                    'private static long allocateVersionIdentifier(',
+                    'RawStore MVCC append-version section')
             requireOrdered('Write-time version append and directory publication',
-                    section(tableText, 'private static PendingVersion appendVersion(',
-                            'private static long allocateVersionIdentifier(',
-                            'RawStore MVCC append-version section'),
+                    appendVersionSection,
                     ['allocateVersionIdentifier(transaction, table)',
                             'insertRow(transaction, table.versionContainer(), versionRow)',
-                            'updateDirectoryHead(transaction, table, rowId, previousVersionId, versionId)',
+                            'updateDirectoryHead(',
                             'context.addPending(pending)'])
+            requireTokens('Write-time logical head and locator-hint publication',
+                    section(appendVersionSection,
+                            'updateDirectoryHead(',
+                            'PendingVersion pending = new PendingVersion(',
+                            'RawStore MVCC append-version directory publication'),
+                    ['rowId',
+                            'expectedHead',
+                            'versionId',
+                            'RecordHint.of(versionHandle)'])
             requireOrdered('Precommit begin/end stamping',
                     section(tableText, 'static void stampPendingVersions(',
                             'static void drop(',
