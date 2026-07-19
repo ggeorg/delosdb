@@ -77,6 +77,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return snapshotSequence;
     }
 
+    long currentCommittedSequence() {
+        return runtime.captureSnapshot();
+    }
+
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
         if (pending.isEmpty()) {

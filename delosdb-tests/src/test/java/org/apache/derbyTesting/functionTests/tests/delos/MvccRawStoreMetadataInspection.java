@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
+import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
@@ -112,6 +113,69 @@ final class MvccRawStoreMetadataInspection {
         }
     }
 
+
+    static List<UniqueConstraintIdentity> uniqueConstraints(
+            Connection connection,
+            String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC table metadata container is absent");
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            int slot = Page.FIRST_SLOT_NUMBER;
+            int columnCount = intField(raw, page, slot, CONTROL_COLUMN_COUNT_FIELD);
+            int uniqueCountField = CONTROL_FIXED_FIELDS + (columnCount * 2) + 1;
+            if (page.fetchNumFieldsAtSlot(slot) <= uniqueCountField) {
+                return List.of();
+            }
+            int count = intField(raw, page, slot, uniqueCountField);
+            int field = uniqueCountField + 1;
+            List<UniqueConstraintIdentity> result = new ArrayList<>(count);
+            for (int ordinal = 1; ordinal <= count; ordinal++) {
+                boolean duplicateNullsAllowed = intField(raw, page, slot, field++) != 0;
+                int keyWidth = intField(raw, page, slot, field++);
+                int[] columns = new int[keyWidth];
+                for (int index = 0; index < keyWidth; index++) {
+                    columns[index] = intField(raw, page, slot, field++);
+                }
+                result.add(new UniqueConstraintIdentity(
+                        ordinal,
+                        columns,
+                        duplicateNullsAllowed));
+            }
+            return List.copyOf(result);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    static void insertBaseRowDirect(
+            Connection connection,
+            String tableName,
+            StoreDataValue[] row) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        ConglomerateController controller = manager.openConglomerate(
+                baseConglomerateId(connection, tableName),
+                false,
+                TransactionController.OPENMODE_FORUPDATE,
+                TransactionController.MODE_TABLE,
+                TransactionController.ISOLATION_READ_COMMITTED);
+        try {
+            controller.insert(row);
+        } finally {
+            controller.close();
+        }
+    }
 
     static long orderedIndexContainerId(Connection connection, String tableName) throws Exception {
         long metadataContainerId = baseConglomerateId(connection, tableName);
@@ -764,6 +828,20 @@ final class MvccRawStoreMetadataInspection {
             long creatorTransactionId,
             long beginCommitSequence,
             long endCommitSequence) {
+    }
+
+    record UniqueConstraintIdentity(
+            int ordinal,
+            int[] columns,
+            boolean duplicateNullsAllowed) {
+        UniqueConstraintIdentity {
+            columns = columns.clone();
+        }
+
+        @Override
+        public int[] columns() {
+            return columns.clone();
+        }
     }
 
     private record TableLayout(

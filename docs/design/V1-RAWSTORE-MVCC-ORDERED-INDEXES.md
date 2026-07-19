@@ -162,7 +162,7 @@ This milestone does not yet provide:
 
 ```text
 SQL CREATE INDEX / DROP INDEX lifecycle for the RawStore format
-unique constraints
+ALTER TABLE / CREATE UNIQUE INDEX lifecycle and metadata migration
 incremental ordered-page split/merge optimization
 vacuum or physical removal of obsolete historical entries
 final optimizer costing
@@ -171,3 +171,16 @@ final fine-grained locking
 
 Those capabilities must build on this version-aware RawStore format. They must not restore an
 external index file or independent durability authority.
+
+
+## Native uniqueness built on this format
+
+Inline primary-key and unique constraints for newly created RawStore-backed tables are now persisted
+and enforced by the access method. The ordered index narrows candidates, but every candidate is
+reread through the authoritative MVCC version chain before a conflict is raised. See:
+
+```text
+docs/design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md
+:delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
+delosMvccRawStoreUniqueConstraintStaticAnalysis
+```

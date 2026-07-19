@@ -489,6 +489,14 @@ public class CreateConstraintConstantAction extends ConstraintConstantAction
         return characteristics[1];
     }
 
+    String[] constrainedColumnNames() {
+        return columnNames == null ? null : columnNames.clone();
+    }
+
+    boolean isDeferrableConstraint() {
+        return characteristics[0];
+    }
+
 	/**
 	 * Generate an array of column positions for the column list in
 	 * the constraint.

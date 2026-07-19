@@ -6780,6 +6780,262 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies RawStore MVCC primary-key and unique-constraint metadata and enforcement remain transactionally subordinate to the authoritative version chain.'
+
+    def propertyFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java')
+    def createTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java')
+    def createConstraintFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateConstraintConstantAction.java')
+    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def transactionFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def requiredFiles = [propertyFile, createTableFile, createConstraintFile, formatFile,
+            tableFile, indexFile, transactionFile, inspectionFile, sqlTestFile,
+            testsBuildFile, designFile, implementationFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-unique-constraint-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def propertyText = propertyFile.getText('UTF-8')
+            def createTableText = createTableFile.getText('UTF-8')
+            def createConstraintText = createConstraintFile.getText('UTF-8')
+            def formatText = formatFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def transactionText = transactionFile.getText('UTF-8')
+            def inspectionText = inspectionFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Neutral access-method property contract', propertyText, [
+                    'AccessMethodConglomerateProperties',
+                    'UNIQUE_CONSTRAINTS',
+                    'derby.access.uniqueConstraints.v1',
+                    'mode:deferred:column[,column...]',
+                    'zero-based base-table positions'
+            ])
+            if (propertyText.contains('delos_mvcc') || propertyText.contains('Lucene')) {
+                failures << 'Neutral access-method property contract must not name MVCC or Lucene implementations'
+            }
+
+            requireTokens('CREATE TABLE unique metadata extraction', createTableText, [
+                    'conglomerateProperties()',
+                    'encodedUniqueConstraints()',
+                    'DataDictionary.PRIMARYKEY_CONSTRAINT',
+                    'DataDictionary.UNIQUE_CONSTRAINT',
+                    'containsNullableColumn(names)',
+                    'AccessMethodConglomerateProperties.UNIQUE_CONSTRAINTS',
+                    "duplicateNullsAllowed ? 'N' : 'S'",
+                    'constraint.isDeferrableConstraint()',
+                    'columnPosition(names[index])'
+            ])
+            requireTokens('CREATE constraint metadata access', createConstraintText, [
+                    'String[] constrainedColumnNames()',
+                    'boolean isDeferrableConstraint()'
+            ])
+
+            requireTokens('Persisted unique metadata format', formatText, [
+                    'controlUniqueConstraintCountField',
+                    'controlUniqueConstraintMetadataStart',
+                    'uniqueMetadataFields'
+            ])
+            requireTokens('RawStore MVCC unique descriptor lifecycle', tableText, [
+                    'record UniqueConstraint(',
+                    'List<UniqueConstraint> uniqueConstraints',
+                    'parseUniqueConstraints(',
+                    'decodeUniqueConstraints(',
+                    'uniqueMetadataFieldCount(',
+                    'controlUniqueConstraintCountField',
+                    'hasUniqueMetadata',
+                    '? decodeUniqueConstraints(row, columnCount)',
+                    ': List.of()',
+                    'deferrable unique constraints for RawStore-backed delos_mvcc'
+            ])
+
+            requireOrdered('Unsupported deferrable uniqueness fails before container allocation',
+                    section(tableText, 'static Descriptor create(', 'static Descriptor read(',
+                            'RawStore MVCC CREATE section'),
+                    ['parseUniqueConstraints(', 'rawTransaction.addContainer('])
+
+            requireOrdered('INSERT uniqueness precedes physical mutation',
+                    section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
+                            'RawStore MVCC INSERT section'),
+                    ['context.beforeWrite()', 'ensureOrderedIndex(',
+                     'MvccRawStoreOrderedIndex.assertUnique(',
+                     'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()'])
+            requireOrdered('UPDATE uniqueness precedes replacement append',
+                    section(tableText, 'static boolean replace(', 'static boolean delete(',
+                            'RawStore MVCC UPDATE section'),
+                    ['context.beforeWrite()', 'ensureOrderedIndex(', 'mutationTarget(',
+                     'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
+
+            requireTokens('RawStore-native unique enforcement', indexText, [
+                    'static void assertUnique(',
+                    'table.uniqueConstraints().isEmpty()',
+                    'acquireUpdateLock(transaction, table.metadataContainer())',
+                    'acquireUpdateLock(transaction, table.versionContainer())',
+                    'readEntriesForUpdate(transaction, table)',
+                    'context.currentCommittedSequence()',
+                    'constraint.duplicateNullsAllowed()',
+                    'containsNull(values, columns)',
+                    'visible(entry, context.transactionId(), committedSequence)',
+                    'candidateRowId == currentRowId',
+                    'MvccRawStoreTable.readVisibleAt(',
+                    'sameKey(values, candidate.values(), columns)',
+                    'SQLState.LANG_DUPLICATE_KEY_CONSTRAINT'
+            ])
+            requireOrdered('Unique check uses the latest committed horizon after table locks',
+                    section(indexText, 'static void assertUnique(', 'private static boolean containsNull(',
+                            'RawStore MVCC unique check section'),
+                    ['acquireUpdateLock(transaction, table.metadataContainer())',
+                     'acquireUpdateLock(transaction, table.versionContainer())',
+                     'readEntriesForUpdate(transaction, table)',
+                     'context.currentCommittedSequence()',
+                     'MvccRawStoreTable.readVisibleAt(',
+                     'sameKey('])
+            requireTokens('Current committed horizon', transactionText, [
+                    'long currentCommittedSequence()',
+                    'return runtime.captureSnapshot()'
+            ])
+
+            requireTokens('Persisted unique metadata inspection', inspectionText, [
+                    'uniqueConstraints(',
+                    'UniqueConstraintIdentity',
+                    'insertBaseRowDirect(',
+                    'TransactionController.OPENMODE_FORUPDATE'
+            ])
+            [
+                    'testDeclaredUniqueMetadataAndAccessMethodEnforcement',
+                    'testUpdateDeleteSavepointAndReopenPreserveUniqueness',
+                    'testConcurrentUniqueWritersSerializeAtTheRawStoreTable',
+                    'testUniqueStateSurvivesBothCrashBoundariesAndMemory'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Unique-constraint proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Unique-constraint SQL proof', sqlTestText, [
+                    'primary key',
+                    'deferrable initially deferred',
+                    'assertEquals("0A000"',
+                    'assertEquals("42X05"',
+                    'unique (tenant, code)',
+                    'duplicateNullsAllowed()',
+                    'insertBaseRowDirect(',
+                    'assertEquals("23505"',
+                    'second writer should wait for the table\'s RawStore lock',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'jdbc:derby:memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreUniqueConstraintTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreUniqueConstraintTest'
+            }
+
+            requireTokens('Unique-constraint design record', designText, [
+                    'RawStore-backed ordered index',
+                    'primary-key',
+                    'composite',
+                    'duplicate-null',
+                    'authoritative MVCC version chain',
+                    'latest committed',
+                    'savepoint',
+                    'concurrent',
+                    'crash',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest',
+                    'delosMvccRawStoreUniqueConstraintStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'persisted primary-key and unique-constraint metadata',
+                    'RawStore-native uniqueness enforcement',
+                    'duplicate-null semantics',
+                    ':delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest'
+            ])
+
+            [tableText, indexText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC unique-constraint production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-unique-constraint-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC unique-constraint static analysis')
+            writer.println('=====================================================')
+            writer.println()
+            writer.println('Rule: primary-key and unique metadata are persisted in RawStore and checked against the latest authoritative MVCC version chain before mutation.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC unique-constraint static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC unique-constraint static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -6809,6 +7065,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
             'delosMvccRawStoreLookupHintStaticAnalysis',
             'delosMvccRawStoreOrderedIndexStaticAnalysis',
+            'delosMvccRawStoreUniqueConstraintStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

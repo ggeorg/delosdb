@@ -53,8 +53,16 @@ final class MvccRawStoreFormat {
         return CONTROL_FIXED_FIELDS + (columnCount * 2);
     }
 
-    static int controlFieldCount(int columnCount) {
+    static int controlUniqueConstraintCountField(int columnCount) {
         return controlOrderedIndexContainerField(columnCount) + 1;
+    }
+
+    static int controlUniqueConstraintMetadataStart(int columnCount) {
+        return controlUniqueConstraintCountField(columnCount) + 1;
+    }
+
+    static int controlFieldCount(int columnCount, int uniqueMetadataFields) {
+        return controlUniqueConstraintMetadataStart(columnCount) + uniqueMetadataFields;
     }
 
     static final int ALLOCATOR_KIND_FIELD = 0;

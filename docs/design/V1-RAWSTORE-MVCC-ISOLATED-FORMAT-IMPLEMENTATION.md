@@ -250,6 +250,9 @@ pre-hint shorter-row compatibility
 version-aware physically sorted ordered-index entries
 safe equality/range candidate lookup with authoritative base-row recheck
 pre-index shorter-control compatibility and transactional lazy rebuild
+persisted primary-key and unique-constraint metadata
+RawStore-native uniqueness enforcement over the authoritative version chain
+composite keys and SQL duplicate-null semantics
 mixed inherited heap and RawStore-backed MVCC transactions
 ```
 
@@ -259,7 +262,8 @@ mutation, but the remaining items are not yet claimed as supported:
 
 ```text
 SQL secondary-index DDL lifecycle
-unique constraints
+ALTER TABLE / CREATE UNIQUE INDEX native unique-metadata lifecycle
+deferrable unique constraints
 vacuum, purge, compression, and relocation
 XA participation
 nested update transactions
@@ -283,6 +287,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest
 :delosdb-tests:runDelosMvccRawStoreLookupHintTest
 :delosdb-tests:runDelosMvccRawStoreOrderedIndexTest
+:delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
 ```
 
 It covers:
@@ -321,6 +326,10 @@ equality/range candidate scans with base-chain and full-qualifier revalidation
 transaction-local and historical ordered-index visibility
 pre-index compatibility and transactional lazy rebuild
 ordered-index reopen, both RawStore crash boundaries, and memory operation
+persisted primary-key and unique-constraint metadata
+RawStore-native duplicate rejection even through direct base-conglomerate access
+single-column and composite uniqueness with duplicate-null semantics
+UPDATE, DELETE/reuse, savepoint, reopen, concurrent-writer, crash, and memory uniqueness proofs
 ```
 
 Permanent architecture task:
@@ -332,9 +341,13 @@ delosMvccRawStoreUpdateDeleteStaticAnalysis
 delosMvccRawStoreMixedHeapTransactionStaticAnalysis
 delosMvccRawStoreLookupHintStaticAnalysis
 delosMvccRawStoreOrderedIndexStaticAnalysis
+delosMvccRawStoreUniqueConstraintStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
 transaction-lifecycle ordering, opt-in compatibility route, retained/new-format identity separation,
 recovery tests, memory proof, differential oracle proof, and absence of filesystem/external-durability
-dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`. The third RawStore container, physical typed ordering, version-aware visibility, candidate revalidation, compatibility rebuild, and recovery/memory proofs are protected by `delosMvccRawStoreOrderedIndexStaticAnalysis`.
+dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`. The third RawStore container, physical typed ordering, version-aware visibility, candidate revalidation, compatibility rebuild, and recovery/memory proofs are protected by `delosMvccRawStoreOrderedIndexStaticAnalysis`. Persisted primary-key and
+unique-constraint metadata, latest-committed conflict checks, authoritative base-chain revalidation,
+duplicate-null semantics, and direct-access/concurrency/recovery proofs are protected by
+`delosMvccRawStoreUniqueConstraintStaticAnalysis`.

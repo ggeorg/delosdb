@@ -23,6 +23,7 @@ package org.apache.derby.impl.sql.execute;
 
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodConglomerateProperties;
 
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
@@ -212,7 +213,7 @@ class CreateTableConstantAction extends DDLConstantAction
 				template.getRowArray(), // row template
 				null, // column sort order is not required for heap or delos_mvcc tables
                 collation_ids,
-				properties, // properties
+                conglomerateProperties(),
 				tableType == TableDescriptor.GLOBAL_TEMPORARY_TABLE_TYPE ?
                     (TransactionController.IS_TEMPORARY | 
                      TransactionController.IS_KEPT) : 
@@ -416,6 +417,81 @@ class CreateTableConstantAction extends DDLConstantAction
 			activation.getPreparedStatement(), td, lcc.getContextManager());
 
 	}
+
+    private Properties conglomerateProperties() {
+        Properties result = new Properties();
+        if (properties != null) {
+            result.putAll(properties);
+        }
+        if (!isDelosMvccBaseTable()) {
+            return result;
+        }
+
+        String uniqueConstraints = encodedUniqueConstraints();
+        if (!uniqueConstraints.isEmpty()) {
+            result.setProperty(
+                    AccessMethodConglomerateProperties.UNIQUE_CONSTRAINTS,
+                    uniqueConstraints);
+        }
+        return result;
+    }
+
+    private String encodedUniqueConstraints() {
+        if (constraintActions == null || constraintActions.length == 0) {
+            return "";
+        }
+        StringBuilder encoded = new StringBuilder();
+        for (ConstraintConstantAction action : constraintActions) {
+            if (!(action instanceof CreateConstraintConstantAction constraint)) {
+                continue;
+            }
+            int type = constraint.getConstraintType();
+            if (type != DataDictionary.PRIMARYKEY_CONSTRAINT
+                    && type != DataDictionary.UNIQUE_CONSTRAINT) {
+                continue;
+            }
+            String[] names = constraint.constrainedColumnNames();
+            if (names == null || names.length == 0) {
+                continue;
+            }
+            boolean duplicateNullsAllowed = type == DataDictionary.UNIQUE_CONSTRAINT
+                    && containsNullableColumn(names);
+            if (encoded.length() != 0) {
+                encoded.append(';');
+            }
+            encoded.append(duplicateNullsAllowed ? 'N' : 'S')
+                    .append(':')
+                    .append(constraint.isDeferrableConstraint() ? '1' : '0')
+                    .append(':');
+            for (int index = 0; index < names.length; index++) {
+                if (index != 0) {
+                    encoded.append(',');
+                }
+                encoded.append(columnPosition(names[index]));
+            }
+        }
+        return encoded.toString();
+    }
+
+    private boolean containsNullableColumn(String[] names) {
+        for (String name : names) {
+            int position = columnPosition(name);
+            if (columnInfo[position].dataType.isNullable()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int columnPosition(String name) {
+        for (int index = 0; index < columnInfo.length; index++) {
+            if (columnInfo[index].name.equals(name)) {
+                return index;
+            }
+        }
+        throw new IllegalStateException(
+                "Constraint column is absent from CREATE TABLE metadata: " + name);
+    }
 
     private String physicalConglomerateImplementation()
     {

@@ -38,6 +38,7 @@ import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.shared.common.reference.SQLState;
 
 /**
  * Version-aware ordered-index entries stored in an ordinary RawStore container.
@@ -175,6 +176,84 @@ final class MvccRawStoreOrderedIndex {
                             + rowId + ", version " + versionId
                             + ": expected " + table.columnCount() + " entries, found " + updated);
         }
+    }
+
+    static void assertUnique(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] values,
+            long currentRowId,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        if (table.uniqueConstraints().isEmpty()) {
+            return;
+        }
+        if (values == null || values.length != table.columnCount()) {
+            throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
+        }
+
+        // Preserve the database-metadata -> table metadata -> versions ->
+        // ordered-index lock order used by every mutation path.
+        acquireUpdateLock(transaction, table.metadataContainer());
+        acquireUpdateLock(transaction, table.versionContainer());
+        List<IndexEntry> entries = readEntriesForUpdate(transaction, table);
+        long committedSequence = context.currentCommittedSequence();
+
+        for (MvccRawStoreTable.UniqueConstraint constraint : table.uniqueConstraints()) {
+            int[] columns = constraint.columns();
+            if (constraint.duplicateNullsAllowed() && containsNull(values, columns)) {
+                continue;
+            }
+            int firstColumn = columns[0];
+            StoreDataValue firstValue = values[firstColumn];
+            LinkedHashSet<Long> candidates = new LinkedHashSet<>();
+            for (IndexEntry entry : entries) {
+                if (entry.columnId() != firstColumn
+                        || !visible(entry, context.transactionId(), committedSequence)
+                        || StoreTypeUtil.compare(entry.key(), firstValue, true) != 0) {
+                    continue;
+                }
+                candidates.add(entry.rowId());
+            }
+            for (long candidateRowId : candidates) {
+                if (candidateRowId == currentRowId) {
+                    continue;
+                }
+                MvccRawStoreTable.VisibleRow candidate = MvccRawStoreTable.readVisibleAt(
+                        transaction,
+                        table,
+                        candidateRowId,
+                        context.transactionId(),
+                        committedSequence);
+                if (candidate != null && sameKey(values, candidate.values(), columns)) {
+                    throw StandardException.newException(
+                            SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
+                            constraint.displayName(),
+                            "RAWSTORE_MVCC_" + table.metadataContainer().getContainerId());
+                }
+            }
+        }
+    }
+
+    private static boolean containsNull(StoreDataValue[] values, int[] columns)
+            throws StandardException {
+        for (int column : columns) {
+            if (StoreTypeUtil.isNull(values[column])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean sameKey(
+            StoreDataValue[] left,
+            StoreDataValue[] right,
+            int[] columns) throws StandardException {
+        for (int column : columns) {
+            if (StoreTypeUtil.compare(left[column], right[column], true) != 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -701,6 +780,18 @@ final class MvccRawStoreOrderedIndex {
                 != table.columnCount()) {
             throw new IllegalStateException("RawStore MVCC ordered-index control row is inconsistent");
         }
+    }
+
+    private static void acquireUpdateLock(Transaction transaction, ContainerKey key)
+            throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                key,
+                lockingPolicy(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw new IllegalStateException("RawStore MVCC parent container is absent: " + key);
+        }
+        container.close();
     }
 
     private static void acquireReadLock(Transaction transaction, ContainerKey key)
