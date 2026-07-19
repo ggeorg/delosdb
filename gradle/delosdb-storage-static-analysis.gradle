@@ -6138,6 +6138,197 @@ tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreMixedHeapTransactionStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies heap and RawStore-backed MVCC share one inherited RawStore transaction outcome.'
+
+    def dmlFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java')
+    def registryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
+    def ramTransactionFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-MIXED-HEAP-TRANSACTIONS.md')
+    def requiredFiles = [dmlFile, registryFile, ramTransactionFile, contextFile,
+            sqlTestFile, testsBuildFile, designFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-mixed-heap-transaction-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def dmlText = dmlFile.getText('UTF-8')
+            def registryText = registryFile.getText('UTF-8')
+            def ramTransactionText = ramTransactionFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireOrdered('DML write classification before provider mutation', dmlText, [
+                    'registerWriteIntent(',
+                    'heapDCOCI = tc.getDynamicCompiledConglomInfo'
+            ])
+            requireTokens('Provider-neutral heap/MVCC classification', dmlText, [
+                    'boolean mvcc =',
+                    'tc,',
+                    'mvcc,',
+                    'tc.isGlobal()'
+            ])
+
+            def rawOwnedSection = section(registryText,
+                    'public static synchronized void registerRawStoreOwnedMvcc(',
+                    '/** Register provider lifecycle work',
+                    'RawStore-owned registration section')
+            requireTokens('RawStore-owned MVCC transition boundary', rawOwnedSection, [
+                    'writersFor(requiredOwner).isEmpty()',
+                    'lifecycleActionsFor(requiredOwner).isEmpty()',
+                    'RAW_STORE_OWNED_MVCC.put(requiredOwner, Boolean.TRUE)'
+            ])
+            if (rawOwnedSection.contains('heapWrite')) {
+                failures << 'RawStore-owned MVCC registration must not reject inherited heap writes'
+            }
+
+            def decisionSection = section(registryText,
+                    'public static synchronized boolean requiresRawStoreDecision(',
+                    'public static synchronized void registerRawStoreOwnedMvcc(',
+                    'external decision requirement section')
+            requireTokens('Retained external decision boundary', decisionSection, [
+                    'writersFor(ownerTransaction)',
+                    'lifecycleActionsFor(ownerTransaction)'
+            ])
+            if (decisionSection.contains('RAW_STORE_OWNED_MVCC')
+                    || decisionSection.contains('heapWrite')) {
+                failures << 'Heap plus RawStore-owned MVCC must not enter the retained external decision coordinator'
+            }
+
+            def commitSection = section(ramTransactionText,
+                    'public void commit()',
+                    'public DatabaseInstant commitNoSync',
+                    'RAMTransaction synchronized commit section')
+            requireOrdered('One inherited RawStore commit ordering', commitSection, [
+                    'notifyBeforeCommit(lifecycles, mode)',
+                    'rawtran.commit()',
+                    'notifyAfterCommit(lifecycles, mode, null)'
+            ])
+
+            requireOrdered('MVCC precommit stamping before inherited commit', contextText, [
+                    'public void beforeCommit(CommitMode mode)',
+                    'MvccRawStoreTable.stampPendingVersions(',
+                    'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)'
+            ])
+            requireOrdered('MVCC publication only after inherited commit', contextText, [
+                    'public void afterCommit(CommitMode mode, DatabaseInstant instant)',
+                    'AFTER_RAW_COMMIT_BEFORE_PUBLICATION',
+                    'runtime.publishAndUnlock(reservedCommitSequence)'
+            ])
+
+            [
+                    'testMixedHeapMvccCommitRollbackSavepointAndReopen',
+                    'testMixedHeapMvccCommitSurvivesBothRawStoreCrashBoundaries',
+                    'testMemoryDatabaseSupportsMixedHeapMvccTransactions'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Mixed heap/MVCC proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Mixed heap/MVCC SQL proof', sqlTestText, [
+                    'create table " + heapTable + " (id int primary key, name varchar(64))',
+                    'using delos_mvcc',
+                    'connection.rollback(savepoint)',
+                    'delete from mvcc_t where id = 1',
+                    'delete from heap_t where id = 1',
+                    'heap-only',
+                    'jdbc:derby:memory:'
+            ])
+            requireTokens('Mixed heap/MVCC crash proof', sqlTestText, [
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'update crash_heap',
+                    'update crash_mvcc',
+                    'delete from crash_heap',
+                    'delete from crash_mvcc',
+                    'insert into crash_heap',
+                    'insert into crash_mvcc'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreMixedHeapTransactionTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreMixedHeapTransactionTest'
+            }
+
+            requireTokens('Mixed heap/MVCC design record', designText, [
+                    'one RawStore commit record',
+                    'all committed',
+                    'all rolled back',
+                    'RawStore performs physical undo for both providers',
+                    'after the RawStore commit record',
+                    'jdbc:derby:memory:',
+                    ':delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest',
+                    'delosMvccRawStoreMixedHeapTransactionStaticAnalysis'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-mixed-heap-transaction-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC mixed heap transaction static analysis')
+            writer.println('============================================================')
+            writer.println()
+            writer.println('Rule: inherited heap and RawStore-backed MVCC mutations share one RAMTransaction, one RawStore commit record, and one recovery outcome.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC mixed heap transaction static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC mixed heap transaction static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -6164,6 +6355,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
             'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
             'delosMvccRawStoreUpdateDeleteStaticAnalysis',
+            'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

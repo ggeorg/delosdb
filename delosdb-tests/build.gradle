@@ -782,6 +782,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreMixedHeapTransactionTest',
+        'Runs one-outcome commit, rollback, savepoint, crash, reopen, and memory proofs across heap and RawStore-backed MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

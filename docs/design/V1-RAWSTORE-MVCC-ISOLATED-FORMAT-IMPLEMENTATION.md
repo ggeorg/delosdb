@@ -219,6 +219,7 @@ one transaction-wide snapshot across those tables
 UPDATE by replacement-version append
 DELETE by tombstone append
 historical version-chain traversal
+mixed inherited heap and RawStore-backed MVCC transactions
 ```
 
 The following capabilities remain outside this transitional implementation contract. XA participation
@@ -229,7 +230,6 @@ mutation, but the remaining items are not yet claimed as supported:
 secondary and ordered indexes
 unique constraints
 vacuum, purge, compression, and relocation
-mixed heap/MVCC transactions
 XA participation
 nested update transactions
 final lock granularity and final completed table binary format
@@ -249,6 +249,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreVerticalSliceTest
 :delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest
 :delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest
+:delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest
 ```
 
 It covers:
@@ -262,7 +263,7 @@ statement-time own-write visibility
 commit and second-connection visibility
 INSERT rollback followed by a later committed insert
 savepoint rollback created before MVCC participant registration
-second RawStore-backed table rejection before mutation
+multiple RawStore-backed tables sharing one transaction outcome
 RawStore-owned commit bypass of the retained external decision coordinator
 old/new MVCC storage-authority mixing rejected in both registration orders
 clean shutdown and reopen
@@ -276,6 +277,8 @@ replacement-version and tombstone chains
 historical snapshot traversal across committed UPDATE and DELETE
 stale-snapshot writer rejection
 UPDATE/DELETE rollback, savepoint, crash, reopen, multi-table, and memory behavior
+mixed heap/MVCC commit, rollback, savepoint, crash, reopen, and memory behavior
+heap-only commits do not consume MVCC identities
 ```
 
 Permanent architecture task:
@@ -284,6 +287,7 @@ Permanent architecture task:
 delosMvccRawStoreVerticalSliceStaticAnalysis
 delosMvccRawStoreMultiTableTransactionStaticAnalysis
 delosMvccRawStoreUpdateDeleteStaticAnalysis
+delosMvccRawStoreMixedHeapTransactionStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
