@@ -11,8 +11,10 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -27,7 +29,10 @@ import org.apache.derby.iapi.services.locks.ShExQual;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Database-scoped semantic coordinator for the isolated RawStore table format. */
@@ -48,12 +53,16 @@ final class MvccRawStoreRuntime {
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
+    private final AtomicLong diagnosticCaptureSequence = new AtomicLong();
     private final AtomicLong nextSnapshotLeaseId = new AtomicLong(1L);
     private final Map<Long, Long> retainedSnapshotSequences = new HashMap<>();
     private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile String diagnosticIdentity = "<unbound>";
+    private volatile MvccRawStoreMaintenanceService maintenanceService;
 
     MvccRawStoreRuntime(Object databaseIdentity, LockFactory lockFactory) {
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
@@ -62,6 +71,40 @@ final class MvccRawStoreRuntime {
 
     Object databaseIdentity() {
         return databaseIdentity;
+    }
+
+    synchronized void startMaintenance(
+            String databaseIdentity,
+            RawStoreFactory rawStoreFactory,
+            boolean readOnly,
+            Properties serviceProperties) {
+        if (maintenanceService != null) {
+            throw new IllegalStateException("RawStore MVCC maintenance is already started");
+        }
+        diagnosticIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
+        maintenanceService = new MvccRawStoreMaintenanceService(
+                diagnosticIdentity, rawStoreFactory, this, readOnly, serviceProperties);
+    }
+
+    void registerTable(MvccRawStoreTable.Descriptor table) {
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        if (maintenance != null) {
+            maintenance.register(table);
+        }
+    }
+
+    void unregisterTable(MvccRawStoreTable.Descriptor table) {
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        if (maintenance != null) {
+            maintenance.unregister(table);
+        }
+    }
+
+    void afterUserCommit(List<MvccRawStoreTable.PendingVersion> committed) {
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        if (maintenance != null) {
+            maintenance.afterCommit(committed);
+        }
     }
 
     MvccRawStoreTransactionContext context(
@@ -96,6 +139,16 @@ final class MvccRawStoreRuntime {
     void lockExclusive(Transaction transaction, MvccRawStoreLogicalLock lock)
             throws StandardException {
         lock(transaction, lock, ShExQual.EX);
+    }
+
+    boolean tryLockExclusive(Transaction transaction, MvccRawStoreLogicalLock lock)
+            throws StandardException {
+        return lockFactory.lockObject(
+                transaction.getCompatibilitySpace(),
+                transaction,
+                lock,
+                ShExQual.EX,
+                C_LockFactory.NO_WAIT);
     }
 
     private void lock(Transaction transaction, MvccRawStoreLogicalLock lock, Object qualifier)
@@ -274,6 +327,88 @@ final class MvccRawStoreRuntime {
         publishedHighWater.accumulateAndGet(sequence, Math::max);
     }
 
+
+    DelosStorageMaintenanceSnapshot maintenanceSnapshot() {
+        long published;
+        long horizon;
+        int retainedCount;
+        commitPublicationLock.lock();
+        try {
+            published = publishedHighWater.get();
+            horizon = published;
+            retainedCount = retainedSnapshotSequences.size();
+            for (long retained : retainedSnapshotSequences.values()) {
+                horizon = Math.min(horizon, retained);
+            }
+        } finally {
+            commitPublicationLock.unlock();
+        }
+
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        MvccRawStoreMaintenanceService.Snapshot snapshot = maintenance == null
+                ? new MvccRawStoreMaintenanceService.Snapshot(
+                        false, false, false, 0, 0, 0, 0L, 0L, 0, 0,
+                        0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+                        0, 0L, List.of())
+                : maintenance.snapshot();
+        return new DelosStorageMaintenanceSnapshot(
+                DelosStorageMaintenanceSnapshot.CURRENT_SCHEMA_VERSION,
+                DelosStorageProviderIds.MVCC_PROVIDER_ID,
+                diagnosticIdentity,
+                DelosStorageMaintenanceSnapshot.RAWSTORE_MVCC_MODE,
+                DelosStorageMaintenanceSnapshot.IMMUTABLE_COLLECTION,
+                diagnosticCaptureSequence.incrementAndGet(),
+                System.currentTimeMillis(),
+                !closed.get(),
+                snapshot.enabled(),
+                snapshot.readOnly(),
+                snapshot.accepting(),
+                snapshot.workerCount(),
+                snapshot.registeredTableCount(),
+                snapshot.queuedTableCount(),
+                snapshot.oldestQueuedAtEpochMillis(),
+                snapshot.oldestQueuedAgeMillis(),
+                snapshot.activeWorkerCount(),
+                snapshot.maximumActiveWorkerCount(),
+                snapshot.commitWakeupCount(),
+                snapshot.notificationFailureCount(),
+                snapshot.periodicScanCount(),
+                snapshot.scheduledRunCount(),
+                snapshot.completedRunCount(),
+                snapshot.skippedRunCount(),
+                snapshot.failedRunCount(),
+                snapshot.mutatedRunCount(),
+                snapshot.removedVersionCount(),
+                snapshot.removedLogicalRowCount(),
+                published,
+                horizon,
+                retainedCount,
+                horizon,
+                activeTransactionIds.size(),
+                snapshot.tableSnapshotCapacity(),
+                snapshot.tableSnapshotDroppedCount(),
+                snapshot.tableSnapshots());
+    }
+
+    void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        maintenanceService = null;
+        if (maintenance != null) {
+            maintenance.close();
+        }
+        tableIdentityAllocators.clear();
+        tableMaintenanceBoundaries.clear();
+        activeTransactionIds.clear();
+        commitPublicationLock.lock();
+        try {
+            retainedSnapshotSequences.clear();
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
 
     static final class SnapshotLease implements AutoCloseable {
         private final MvccRawStoreRuntime runtime;

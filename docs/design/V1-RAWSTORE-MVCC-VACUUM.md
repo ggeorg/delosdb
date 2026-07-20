@@ -172,10 +172,10 @@ There is no filesystem fallback.
 
 ## What this slice does not claim
 
-It does not add a background purge daemon, automatic scheduling, page relocation, end truncation,
-incremental ordered-index splits or merges, overflow-page compaction, vacuum statistics, operator
-telemetry, configurable retention windows, XA MVCC writes, nested update transactions, or migration of
-retained Phase 8 tables. Those belong to later maintenance/diagnostic or convergence work.
+It does not itself own automatic scheduling, page relocation, end truncation, incremental ordered-index
+splits or merges, overflow-page compaction, configurable retention windows, XA MVCC writes, nested
+update transactions, or migration of retained Phase 8 tables. The separate database-owned scheduling
+and immutable evidence layer is defined by `V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md`.
 
 ## Executable proof
 

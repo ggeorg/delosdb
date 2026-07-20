@@ -309,6 +309,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
 :delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest
 :delosdb-tests:runDelosMvccRawStoreVacuumTest
+:delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest
 ```
 
 It covers:
@@ -357,6 +358,9 @@ oldest-retained-snapshot protection and held-cursor leases
 transactional predecessor/head relinking before logged purge
 complete deleted-row reclamation and identity non-reuse
 vacuum savepoint/rollback, both crash boundaries, reopen, and memory proofs
+bounded commit/periodic maintenance scheduling and retained-reader retry
+database-scoped immutable queue, horizon, outcome, failure, and reclamation evidence
+maintenance isolation, shutdown, and memory-database parity
 ```
 
 Permanent architecture task:
@@ -371,6 +375,7 @@ delosMvccRawStoreOrderedIndexStaticAnalysis
 delosMvccRawStoreUniqueConstraintStaticAnalysis
 delosMvccRawStoreUniqueLifecycleStaticAnalysis
 delosMvccRawStoreVacuumStaticAnalysis
+delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
@@ -434,5 +439,32 @@ delosMvccRawStoreVacuumStaticAnalysis
 ```
 
 See `V1-RAWSTORE-MVCC-VACUUM.md` for the retained-snapshot horizon, fail-closed chain validation,
-relink-before-purge order, crash points, and limits. Background scheduling, page relocation,
-defragmentation, end truncation, and maintenance diagnostics remain later work.
+relink-before-purge order, crash points, and limits. Page relocation, defragmentation, and end truncation
+remain later work.
+
+
+## Database-owned automatic maintenance and immutable diagnostics
+
+The RawStore-backed format can explicitly enable one database-owned FIFO maintenance worker. Commit
+wakeups coalesce changed-row evidence per table; a lightweight periodic scanner retries only targets
+with retained history, a busy/failure outcome, or enough deferred changes. One table target cannot be
+duplicated in the queue, and a rerun returns to the FIFO tail.
+
+Each attempt starts one inherited RawStore transaction, tries the exclusive logical schema lock without
+waiting, enters the existing physical maintenance boundary, captures the retained-snapshot horizon, and
+runs the same `MvccRawStoreVacuum` used by manual compression. History removal rebuilds and publishes a
+private ordered-index generation in that transaction. No database URL, maintenance WAL, or independent
+recovery path exists.
+
+`DelosStorageMaintenanceSnapshot` provides immutable database-scoped evidence for worker bounds, queue
+age, commit and periodic wakeups, outcomes and failures, reclamation totals, published/vacuum high-water,
+retained readers, active writers, and a bounded table list. Diagnostics locate active file runtimes
+through weak non-owning paths; memory databases use the same unambiguous runtime observation.
+
+```text
+:delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest
+delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
+```
+
+See `V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md` for configuration, scheduling, lifecycle, diagnostic
+semantics, and limits. Automatic maintenance remains separately opt-in during convergence.

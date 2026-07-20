@@ -26,6 +26,7 @@ import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -72,9 +73,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     public void clearRuntimeStateForTesting() {
         if (databaseDirectory == null) {
             MvccRuntimeDiagnosticsDirectory.clearAllForTesting();
+            MvccRawStoreDiagnosticsDirectory.clearAllForTesting();
             clearTransactionsForTesting();
         } else {
             MvccRuntimeDiagnosticsDirectory.clearForTesting(databaseDirectory);
+            MvccRawStoreDiagnosticsDirectory.clearForTesting(databaseDirectory);
         }
     }
 
@@ -89,7 +92,17 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     public boolean runtimeActiveForTesting() {
         return databaseDirectory == null
                 ? MvccRuntimeDiagnosticsDirectory.runtimeCount() > 0
-                : MvccRuntimeDiagnosticsDirectory.isActive(databaseDirectory);
+                        || MvccRawStoreDiagnosticsDirectory.runtimeCount() > 0
+                : MvccRuntimeDiagnosticsDirectory.isActive(databaseDirectory)
+                        || MvccRawStoreDiagnosticsDirectory.isActive(databaseDirectory);
+    }
+
+    @Override
+    public DelosStorageMaintenanceSnapshot databaseMaintenanceSnapshot() {
+        MvccRawStoreRuntime rawStoreRuntime = databaseDirectory == null
+                ? MvccRawStoreDiagnosticsDirectory.requireSingle()
+                : MvccRawStoreDiagnosticsDirectory.require(databaseDirectory);
+        return rawStoreRuntime.maintenanceSnapshot();
     }
 
     @Override

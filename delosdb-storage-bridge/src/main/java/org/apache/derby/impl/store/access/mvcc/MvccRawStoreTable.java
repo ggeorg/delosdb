@@ -971,6 +971,17 @@ final class MvccRawStoreTable {
                 collectIndexVersions(transaction, table, context));
     }
 
+    static void rebuildOrderedIndexForMaintenance(
+            Transaction transaction,
+            Descriptor table,
+            ContainerKey target) throws StandardException {
+        MvccRawStoreOrderedIndex.rebuild(
+                transaction,
+                table,
+                target,
+                collectIndexVersions(transaction, table, null));
+    }
+
     private static List<MvccRawStoreOrderedIndex.VersionInput> collectIndexVersions(
             Transaction transaction,
             Descriptor table,
@@ -999,13 +1010,21 @@ final class MvccRawStoreTable {
                     if (version == null || version.tombstone()) {
                         continue;
                     }
-                    if (version.creatorTransactionId() != context.transactionId()
-                            && context.isTransactionActive(version.creatorTransactionId())) {
-                        continue;
-                    }
-                    if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                            && version.creatorTransactionId() != context.transactionId()) {
-                        continue;
+                    if (context == null) {
+                        if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+                            throw new IllegalStateException(
+                                    "RawStore MVCC encountered an uncommitted version while rebuilding a maintenance index under the exclusive table-schema lock: "
+                                            + version.versionId());
+                        }
+                    } else {
+                        if (version.creatorTransactionId() != context.transactionId()
+                                && context.isTransactionActive(version.creatorTransactionId())) {
+                            continue;
+                        }
+                        if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                                && version.creatorTransactionId() != context.transactionId()) {
+                            continue;
+                        }
                     }
                     versions.add(new MvccRawStoreOrderedIndex.VersionInput(
                             version.rowId(),

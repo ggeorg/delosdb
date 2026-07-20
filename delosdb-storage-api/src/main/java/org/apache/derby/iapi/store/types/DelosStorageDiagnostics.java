@@ -71,6 +71,11 @@ public interface DelosStorageDiagnostics {
         return DelosDatabaseStorageSnapshot.unavailable(providerId());
     }
 
+    /** Return the immutable database-owned maintenance and reclamation observation. */
+    default DelosStorageMaintenanceSnapshot databaseMaintenanceSnapshot() {
+        return DelosStorageMaintenanceSnapshot.unavailable(providerId());
+    }
+
     default List<DelosTableStorageSnapshot> tableStorageSnapshots() {
         return databaseStorageSnapshot().tableSnapshots();
     }

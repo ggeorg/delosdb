@@ -63,6 +63,7 @@ public final class MvccConglomerateFactory
     private Object formatUUID;
     private MvccDatabaseRuntime runtime;
     private MvccRawStoreRuntime rawStoreRuntime;
+    private Path rawStoreDiagnosticsDirectory;
     private boolean rawStoreVerticalSliceEnabled;
     private long nextRawStoreConglomerateId;
 
@@ -121,6 +122,8 @@ public final class MvccConglomerateFactory
                     collationIds,
                     properties,
                     temporaryFlag);
+            rawStoreRuntime().context(xact_mgr, xact_mgr.getRawStoreXact())
+                    .markCreatedTable(descriptor);
             return new MvccConglomerate(rawStoreRuntime(), descriptor);
         }
         MvccDatabaseRuntime currentRuntime = runtime();
@@ -237,6 +240,7 @@ public final class MvccConglomerateFactory
                                 + MvccRawStoreFormat.ENABLED_PROPERTY + "=true");
             }
             rawStoreRuntime().ensureMetadata(xact_mgr);
+            rawStoreRuntime().registerTable(descriptor);
             return new MvccConglomerate(rawStoreRuntime(), descriptor);
         }
         return new MvccConglomerate(runtime(), container_key);
@@ -264,6 +268,10 @@ public final class MvccConglomerateFactory
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
 
         Properties serviceProperties = context.serviceProperties();
+        String storageRoot = context.dataFactory().getRootDirectory();
+        Path legacyStorageDirectory = storageRoot == null || storageRoot.isBlank()
+                ? null
+                : Path.of(storageRoot);
         String configuredRawStoreMode = serviceProperties.getProperty(
                 MvccRawStoreFormat.ENABLED_PROPERTY,
                 System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false"));
@@ -272,12 +280,25 @@ public final class MvccConglomerateFactory
             rawStoreRuntime = new MvccRawStoreRuntime(
                     context.databaseIdentity(),
                     context.rawStoreFactory().getLockFactory());
+            String diagnosticIdentity = legacyStorageDirectory != null
+                    && legacyStorageDirectory.isAbsolute()
+                    ? legacyStorageDirectory.toAbsolutePath().normalize().toString()
+                    : "memory-" + Integer.toHexString(
+                            System.identityHashCode(context.databaseIdentity()));
+            rawStoreRuntime.startMaintenance(
+                    diagnosticIdentity,
+                    context.rawStoreFactory(),
+                    context.readOnly(),
+                    serviceProperties);
+            if (legacyStorageDirectory != null && legacyStorageDirectory.isAbsolute()) {
+                rawStoreDiagnosticsDirectory = legacyStorageDirectory;
+                MvccRawStoreDiagnosticsDirectory.register(
+                        rawStoreDiagnosticsDirectory, rawStoreRuntime);
+            } else {
+                MvccRawStoreDiagnosticsDirectory.register(null, rawStoreRuntime);
+            }
         }
 
-        String storageRoot = context.dataFactory().getRootDirectory();
-        Path legacyStorageDirectory = storageRoot == null || storageRoot.isBlank()
-                ? null
-                : Path.of(storageRoot);
         if (legacyStorageDirectory != null && legacyStorageDirectory.isAbsolute()) {
             runtime = new MvccDatabaseRuntime(
                     context.databaseIdentity(),
@@ -301,10 +322,18 @@ public final class MvccConglomerateFactory
     @Override
     public void stop() {
         MvccDatabaseRuntime currentRuntime = runtime;
+        MvccRawStoreRuntime currentRawStoreRuntime = rawStoreRuntime;
+        Path currentRawStoreDiagnosticsDirectory = rawStoreDiagnosticsDirectory;
         runtime = null;
         rawStoreRuntime = null;
+        rawStoreDiagnosticsDirectory = null;
         rawStoreVerticalSliceEnabled = false;
         nextRawStoreConglomerateId = 0L;
+        if (currentRawStoreRuntime != null) {
+            MvccRawStoreDiagnosticsDirectory.unregister(
+                    currentRawStoreDiagnosticsDirectory, currentRawStoreRuntime);
+            currentRawStoreRuntime.close();
+        }
         if (currentRuntime != null) {
             currentRuntime.close();
         }

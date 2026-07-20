@@ -5411,7 +5411,8 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'rawStoreBacked()',
                     'new MvccRawStoreConglomerateController(',
                     'new MvccRawStoreScanController(',
-                    'registerRawStoreOwnedMvcc(xactManager)',
+                    'rawStoreRuntime.context(',
+                    'context.beforeDrop(rawStoreTable)',
                     'MvccRawStoreTable.drop('
             ])
 
@@ -8080,6 +8081,353 @@ tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies bounded database-owned RawStore MVCC maintenance and immutable queue/horizon diagnostics.'
+
+    def databaseSnapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java')
+    def tableSnapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java')
+    def diagnosticsApiFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+    def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def serviceFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java')
+    def directoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def vacuumFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
+    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def vacuumDesignFile = file('docs/design/V1-RAWSTORE-MVCC-VACUUM.md')
+    def requiredFiles = [databaseSnapshotFile, tableSnapshotFile, diagnosticsApiFile,
+            diagnosticsRegistryFile, factoryFile, runtimeFile, serviceFile, directoryFile,
+            contextFile, tableFile, vacuumFile, diagnosticsFile, sqlTestFile, testsBuildFile,
+            designFile, implementationFile, vacuumDesignFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-maintenance-diagnostics-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def databaseSnapshotText = databaseSnapshotFile.getText('UTF-8')
+            def tableSnapshotText = tableSnapshotFile.getText('UTF-8')
+            def diagnosticsApiText = diagnosticsApiFile.getText('UTF-8')
+            def diagnosticsRegistryText = diagnosticsRegistryFile.getText('UTF-8')
+            def factoryText = factoryFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def serviceText = serviceFile.getText('UTF-8')
+            def directoryText = directoryFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def vacuumText = vacuumFile.getText('UTF-8')
+            def diagnosticsText = diagnosticsFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def vacuumDesignText = vacuumDesignFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Immutable database maintenance snapshot', databaseSnapshotText, [
+                    'public record DelosStorageMaintenanceSnapshot(',
+                    'CURRENT_SCHEMA_VERSION',
+                    'databaseIdentity',
+                    'IMMUTABLE_COLLECTION',
+                    'oldestQueuedAgeMillis',
+                    'publishedCommitHighWater',
+                    'vacuumHorizon',
+                    'retainedSnapshotCount',
+                    'activeWriterTransactionCount',
+                    'notificationFailureCount',
+                    'tableSnapshotDroppedCount',
+                    'List.copyOf('
+            ])
+            requireTokens('Immutable table maintenance snapshot', tableSnapshotText, [
+                    'public record DelosStorageMaintenanceTableSnapshot(',
+                    'queuedAtEpochMillis',
+                    'retryRequired',
+                    'committedChangesSinceLastRun',
+                    'lastDecision',
+                    'lastVacuumHorizon',
+                    'remainingVersions',
+                    'remainingLogicalRows'
+            ])
+            requireTokens('Public diagnostics contract', diagnosticsApiText, [
+                    'DelosStorageMaintenanceSnapshot databaseMaintenanceSnapshot()',
+                    'DelosStorageMaintenanceSnapshot.unavailable(providerId())'
+            ])
+            requireTokens('Database-scoped diagnostics registry', diagnosticsRegistryText, [
+                    'mvccDatabaseMaintenanceSnapshot(',
+                    'mvcc(databaseDirectory).databaseMaintenanceSnapshot()'
+            ])
+
+            requireTokens('Database-owned maintenance boot', factoryText, [
+                    'rawStoreRuntime = new MvccRawStoreRuntime(',
+                    'rawStoreRuntime.startMaintenance(',
+                    'context.rawStoreFactory()',
+                    'context.readOnly()',
+                    'serviceProperties',
+                    'MvccRawStoreDiagnosticsDirectory.register('
+            ])
+            requireOrdered('Database shutdown removes diagnostics before stopping maintenance',
+                    section(factoryText, 'public void stop()', 'private MvccDatabaseRuntime runtime()',
+                            'RawStore MVCC factory stop section'),
+                    ['MvccRawStoreDiagnosticsDirectory.unregister(', 'currentRawStoreRuntime.close()'])
+
+            requireTokens('Bounded FIFO maintenance service', serviceText, [
+                    'private final LinkedBlockingQueue<MaintenanceTask> queue',
+                    'private final Map<ContainerKey, TableTarget> targets',
+                    'Thread.ofVirtual()',
+                    '.unstarted(this::workerLoop)',
+                    'newSingleThreadScheduledExecutor(',
+                    'if (state != State.IDLE)',
+                    'rerunRequested = true',
+                    'state = State.QUEUED',
+                    'queuedAtEpochMillis = System.currentTimeMillis()',
+                    'TABLE_SNAPSHOT_CAPACITY = 128',
+                    'oldestQueuedAt',
+                    'tableSnapshotDroppedCount'
+            ])
+            if (serviceText.count('.unstarted(this::workerLoop)') != 1) {
+                failures << 'RawStore MVCC maintenance must create exactly one database worker'
+            }
+            if (serviceText.count('newSingleThreadScheduledExecutor(') != 1) {
+                failures << 'RawStore MVCC maintenance must create exactly one periodic scanner'
+            }
+            ['newFixedThreadPool', 'newCachedThreadPool', 'parallelStream()', 'CompletableFuture'].each { token ->
+                if (serviceText.contains(token)) {
+                    failures << 'RawStore MVCC maintenance contains an unbounded/concurrent execution token: ' + token
+                }
+            }
+            requireTokens('Explicit convergence configuration', serviceText, [
+                    'delosdb.mvcc.rawStoreMaintenance.enabled',
+                    'delosdb.mvcc.rawStoreMaintenance.periodMillis',
+                    'delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold',
+                    'configuredValue(serviceProperties, ENABLED_PROPERTY, "false")',
+                    'Boolean.parseBoolean(',
+                    'Math.max(10L',
+                    'Math.max(1'
+            ])
+            requireTokens('Commit and periodic scheduling', serviceText, [
+                    'void afterCommit(List<MvccRawStoreTable.PendingVersion> committed)',
+                    'commitWakeupCount.incrementAndGet()',
+                    'notificationFailureCount.incrementAndGet()',
+                    'saturatingAdd(',
+                    'Scheduling evidence must never change the user transaction',
+                    'committedChangesSinceLastRun < changedRowsThreshold',
+                    'private void scanPeriodic()',
+                    'target.periodicEligible()',
+                    'retryRequired || committedChangesSinceLastRun >= changedRowsThreshold'
+            ])
+            requireOrdered('One autonomous RawStore maintenance outcome',
+                    section(serviceText, 'private void runMaintenance(', 'private boolean enqueue(',
+                            'RawStore MVCC autonomous maintenance section'),
+                    ['rawStoreFactory.startTransaction(',
+                     'runtime.tryLockExclusive(transaction, MvccRawStoreLogicalLock.table(table))',
+                     'runtime.enterVacuum(table)',
+                     'runtime.vacuumHorizon()',
+                     'MvccRawStoreVacuum.vacuum(',
+                     'MvccRawStoreOrderedIndex.createPrivateGeneration(',
+                     'MvccRawStoreTable.rebuildOrderedIndexForMaintenance(',
+                     'MvccRawStoreTable.publishOrderedIndexContainer(',
+                     'transaction.dropContainer(replaced)',
+                     'transaction.commit()',
+                     'observeOrderedIndexContainer(replacement)'])
+            requireTokens('Busy/failure retry and transaction cleanup', serviceText, [
+                    'transaction.abort()',
+                    'completeSkipped(trigger, "table-busy")',
+                    'retryRequired = true',
+                    'completeFailure(trigger, failure)',
+                    'transaction.close()',
+                    'transaction.destroy()',
+                    'worker.join(SHUTDOWN_TIMEOUT.toMillis())'
+            ])
+
+            requireTokens('Runtime maintenance ownership and horizon diagnostics', runtimeText, [
+                    'private volatile MvccRawStoreMaintenanceService maintenanceService',
+                    'void startMaintenance(',
+                    'void afterUserCommit(',
+                    'boolean tryLockExclusive(',
+                    'C_LockFactory.NO_WAIT',
+                    'DelosStorageMaintenanceSnapshot maintenanceSnapshot()',
+                    'diagnosticCaptureSequence.incrementAndGet()',
+                    'snapshot.oldestQueuedAgeMillis()',
+                    'snapshot.notificationFailureCount()',
+                    'activeTransactionIds.size()',
+                    'maintenance.close()'
+            ])
+            requireOrdered('Maintenance diagnostics capture the authoritative horizon first',
+                    section(runtimeText, 'DelosStorageMaintenanceSnapshot maintenanceSnapshot()',
+                            'void close()', 'RawStore MVCC maintenance snapshot section'),
+                    ['commitPublicationLock.lock()', 'publishedHighWater.get()',
+                     'horizon = Math.min(horizon, retained)', 'commitPublicationLock.unlock()',
+                     'maintenance.snapshot()', 'new DelosStorageMaintenanceSnapshot('])
+
+            requireTokens('Transactional table registration lifecycle', contextText, [
+                    'private final Map<ContainerKey, MvccRawStoreTable.Descriptor> createdTables',
+                    'private final Map<ContainerKey, MvccRawStoreTable.Descriptor> droppedTables',
+                    'void markCreatedTable(',
+                    'void beforeDrop(',
+                    'beforeSchemaChange(table)',
+                    'committedCreates.forEach(runtime::registerTable)',
+                    'runtime.afterUserCommit(committedVersions)',
+                    'committedDrops.forEach(runtime::unregisterTable)',
+                    'MvccRawStoreOrderedIndex.containerExists('
+            ])
+            requireTokens('Maintenance index rebuild remains subordinate to authoritative versions', tableText, [
+                    'rebuildOrderedIndexForMaintenance(',
+                    'collectIndexVersions(transaction, table, null)',
+                    'uncommitted version while rebuilding a maintenance index'
+            ])
+            requireTokens('Maintenance reuses the proven vacuum', vacuumText, [
+                    'static Result vacuum(',
+                    'requiresOrderedIndexReplacement()',
+                    'page.purgeAtSlot(slot.slot(), 1, true)'
+            ])
+
+            requireTokens('Weak non-owning diagnostics directory', directoryText, [
+                    'WeakReference<MvccRawStoreRuntime>',
+                    'static void register(',
+                    'static void unregister(',
+                    'static MvccRawStoreRuntime require(',
+                    'static MvccRawStoreRuntime requireSingle()',
+                    'static int runtimeCount()'
+            ])
+            ['runtime.close()', 'new MvccRawStoreRuntime(', 'RawStoreFactory'].each { token ->
+                if (directoryText.contains(token)) {
+                    failures << 'RawStore MVCC diagnostics directory must remain non-owning: ' + token
+                }
+            }
+            requireTokens('Diagnostics adapter exposes RawStore maintenance', diagnosticsText, [
+                    'MvccRawStoreDiagnosticsDirectory.requireSingle()',
+                    'MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)',
+                    'rawStoreRuntime.maintenanceSnapshot()',
+                    'MvccRawStoreDiagnosticsDirectory.runtimeCount() > 0'
+            ])
+
+            [
+                    'testMaintenanceIsExplicitDuringConvergenceAndDiagnosticsRemainDatabaseScoped',
+                    'testCommitWakeupsAutonomouslyReclaimHistoryWithOneBoundedWorker',
+                    'testRetainedReaderConstrainsAutonomousVacuumUntilLeaseRelease',
+                    'testDatabaseWorkersAreIsolatedAndMemoryUsesTheSameMaintenancePath'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'RawStore MVCC maintenance proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Maintenance executable evidence', sqlTestText, [
+                    'rawStoreMaintenance.enabled',
+                    'rawStoreMaintenance.periodMillis',
+                    'rawStoreMaintenance.changedRowsThreshold',
+                    'mutatedRunCount()',
+                    'notificationFailureCount()',
+                    'maximumActiveWorkerCount()',
+                    'retainedSnapshotCount()',
+                    'vacuumHorizon() < current.publishedCommitHighWater()',
+                    'table.retryRequired()',
+                    'tableSnapshots().clear()',
+                    'assertNoActiveRuntime(',
+                    'jdbc:derby:',
+                    'memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreMaintenanceDiagnosticsTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreMaintenanceDiagnosticsTest'
+            }
+
+            requireTokens('Maintenance and diagnostics design record', designText, [
+                    'one FIFO maintenance worker',
+                    'one autonomous inherited RawStore transaction',
+                    'malformed enable values remain disabled',
+                    'oldest queued age',
+                    'published MvccCommitSequence high-water',
+                    'versioned immutable',
+                    'weak path lookup',
+                    ':delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest',
+                    'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis'
+            ])
+            requireTokens('Current isolated-format implementation record', implementationText, [
+                    'Database-owned automatic maintenance and immutable diagnostics',
+                    ':delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest',
+                    'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis'
+            ])
+            requireTokens('Vacuum remains a separate authority-free algorithm', vacuumDesignText, [
+                    'V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md'
+            ])
+
+            [serviceText, runtimeText, contextText, tableText, vacuumText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel', 'RandomAccessFile',
+                 'DriverManager', 'jdbc:derby:', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC maintenance production code contains forbidden authority token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-maintenance-diagnostics-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC maintenance and diagnostics static analysis')
+            writer.println('==========================================================')
+            writer.println()
+            writer.println('Rule: automatic reclamation is one bounded database-owned scheduler over the proven RawStore vacuum, with immutable non-owning horizon/queue evidence.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC maintenance and diagnostics static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC maintenance and diagnostics static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -8114,6 +8462,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreLogicalLockingStaticAnalysis',
             'delosMvccRawStorePhysicalLockingStaticAnalysis',
             'delosMvccRawStoreVacuumStaticAnalysis',
+            'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

@@ -823,6 +823,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreMaintenanceDiagnosticsTest',
+        'Runs bounded autonomous RawStore MVCC maintenance, retained-reader retry, immutable diagnostics, database isolation, shutdown, and memory proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

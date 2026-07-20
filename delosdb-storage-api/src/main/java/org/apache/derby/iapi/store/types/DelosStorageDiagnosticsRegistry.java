@@ -50,6 +50,11 @@ public final class DelosStorageDiagnosticsRegistry {
         return mvcc(databaseDirectory).databaseStorageSnapshot();
     }
 
+    public static DelosStorageMaintenanceSnapshot mvccDatabaseMaintenanceSnapshot(
+            Path databaseDirectory) {
+        return mvcc(databaseDirectory).databaseMaintenanceSnapshot();
+    }
+
     public static List<DelosTableStorageSnapshot> mvccTableStorageSnapshots(
             Path databaseDirectory) {
         return mvcc(databaseDirectory).tableStorageSnapshots();

@@ -146,14 +146,9 @@ public final class MvccConglomerate
                     "delos_mvcc DDL in XA transactions");
         }
         if (rawStoreBacked()) {
-            try {
-                DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(xactManager);
-            } catch (IllegalStateException mixedAuthorities) {
-                throw StandardException.newException(
-                        SQLState.NOT_IMPLEMENTED,
-                        mixedAuthorities,
-                        mixedAuthorities.getMessage());
-            }
+            MvccRawStoreTransactionContext context = rawStoreRuntime.context(
+                    xactManager, xactManager.getRawStoreXact());
+            context.beforeDrop(rawStoreTable);
             MvccRawStoreTable.drop(xactManager.getRawStoreXact(), rawStoreTable);
             return;
         }

@@ -42,6 +42,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
     private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
     private final Map<Long, OrderedIndexGeneration> orderedIndexGenerations = new LinkedHashMap<>();
+    private final Map<ContainerKey, MvccRawStoreTable.Descriptor> createdTables =
+            new LinkedHashMap<>();
+    private final Map<ContainerKey, MvccRawStoreTable.Descriptor> droppedTables =
+            new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreRuntime.TableMaintenanceBoundary> vacuumBoundaries =
             new LinkedHashMap<>();
 
@@ -96,6 +100,15 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireExclusive(MvccRawStoreLogicalLock.table(table));
+    }
+
+    void markCreatedTable(MvccRawStoreTable.Descriptor table) {
+        createdTables.put(table.metadataContainer(), table);
+    }
+
+    void beforeDrop(MvccRawStoreTable.Descriptor table) throws StandardException {
+        beforeSchemaChange(table);
+        droppedTables.put(table.metadataContainer(), table);
     }
 
     void beforeVacuum(MvccRawStoreTable.Descriptor table) throws StandardException {
@@ -287,6 +300,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterCommit(CommitMode mode, DatabaseInstant instant) {
+        List<MvccRawStoreTable.PendingVersion> committedVersions = List.copyOf(pending);
+        List<MvccRawStoreTable.Descriptor> committedCreates =
+                List.copyOf(createdTables.values());
+        List<MvccRawStoreTable.Descriptor> committedDrops =
+                List.copyOf(droppedTables.values());
         if (vacuumMutation) {
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION,
@@ -308,6 +326,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             runtime.publishAndUnlock(reservedCommitSequence);
         }
         clearLocalState();
+        committedCreates.forEach(runtime::registerTable);
+        runtime.afterUserCommit(committedVersions);
+        committedDrops.forEach(runtime::unregisterTable);
     }
 
     @Override
@@ -358,6 +379,23 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                 return !MvccRawStoreOrderedIndex.containerExists(
                         rawTransaction,
                         entry.getValue().privateContainer());
+            } catch (StandardException failure) {
+                throw new OrderedIndexReconciliationFailure(failure);
+            }
+        });
+
+        createdTables.entrySet().removeIf(entry -> {
+            try {
+                return !MvccRawStoreOrderedIndex.containerExists(
+                        rawTransaction, entry.getKey());
+            } catch (StandardException failure) {
+                throw new OrderedIndexReconciliationFailure(failure);
+            }
+        });
+        droppedTables.entrySet().removeIf(entry -> {
+            try {
+                return MvccRawStoreOrderedIndex.containerExists(
+                        rawTransaction, entry.getKey());
             } catch (StandardException failure) {
                 throw new OrderedIndexReconciliationFailure(failure);
             }
@@ -516,6 +554,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         exclusiveLocks.clear();
         allocatorReservations.clear();
         orderedIndexGenerations.clear();
+        createdTables.clear();
+        droppedTables.clear();
         transactionId = 0L;
         snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;
