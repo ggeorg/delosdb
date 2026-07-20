@@ -69,6 +69,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 assertEquals(3,
                         MvccRawStoreMetadataInspection.versions(
                                 connection, "MAINTENANCE_DISABLED_T").size());
+                connection.commit();
             }
             shutdownDatabase(database);
             assertNoActiveRuntime(database);
