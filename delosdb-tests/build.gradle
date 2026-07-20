@@ -813,6 +813,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStorePhysicalLockingTest',
+        'Runs row-level RawStore MVCC physical concurrency, private ordered-index publication, savepoint, crash, reopen, and memory proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

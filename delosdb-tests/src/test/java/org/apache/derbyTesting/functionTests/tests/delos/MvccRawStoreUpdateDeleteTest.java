@@ -192,25 +192,37 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
                 MvccRawStoreMetadataInspection.versions(connection, "MUTATION_T");
         assertEquals(6, versions.size());
 
-        assertVersion(versions.get(0), 1L, 1L, 1L, 1L, 2L, 0L, false);
-        assertVersion(versions.get(1), 2L, 2L, 1L, 1L, 2L, 0L, false);
-        assertVersion(versions.get(2), 3L, 3L, 1L, 1L, CURRENT_END_SEQUENCE, 0L, false);
-        assertVersion(versions.get(3), 1L, 4L, 3L, 2L, 2L, 1L, false);
-        assertVersion(versions.get(4), 1L, 5L, 3L, 2L, CURRENT_END_SEQUENCE, 4L, false);
-        assertVersion(versions.get(5), 2L, 6L, 3L, 2L, CURRENT_END_SEQUENCE, 2L, true);
+        MvccRawStoreMetadataInspection.VersionIdentity rowOneBase = versions.get(0);
+        MvccRawStoreMetadataInspection.VersionIdentity rowTwoBase = versions.get(1);
+        MvccRawStoreMetadataInspection.VersionIdentity rowThreeBase = versions.get(2);
+        MvccRawStoreMetadataInspection.VersionIdentity rowOneFirst = versions.get(3);
+        MvccRawStoreMetadataInspection.VersionIdentity rowOneSecond = versions.get(4);
+        MvccRawStoreMetadataInspection.VersionIdentity rowTwoDelete = versions.get(5);
+
+        assertVersion(rowOneBase, 1L, 1L, 1L, 2L, 0L, false);
+        assertVersion(rowTwoBase, 2L, 1L, 1L, 2L, 0L, false);
+        assertVersion(rowThreeBase, 3L, 1L, 1L, CURRENT_END_SEQUENCE, 0L, false);
+        assertVersion(rowOneFirst, 1L, 3L, 2L, 2L, rowOneBase.versionId(), false);
+        assertVersion(rowOneSecond, 1L, 3L, 2L, CURRENT_END_SEQUENCE,
+                rowOneFirst.versionId(), false);
+        assertVersion(rowTwoDelete, 2L, 3L, 2L, CURRENT_END_SEQUENCE,
+                rowTwoBase.versionId(), true);
+
+        for (int index = 1; index < versions.size(); index++) {
+            assertTrue("version IDs must remain monotonic even when rollback leaves gaps",
+                    versions.get(index - 1).versionId() < versions.get(index).versionId());
+        }
     }
 
     private static void assertVersion(
             MvccRawStoreMetadataInspection.VersionIdentity actual,
             long rowId,
-            long versionId,
             long transactionId,
             long begin,
             long end,
             long previous,
             boolean tombstone) {
         assertEquals("row ID", rowId, actual.rowId());
-        assertEquals("version ID", versionId, actual.versionId());
         assertEquals("creator transaction ID", transactionId, actual.creatorTransactionId());
         assertEquals("begin sequence", begin, actual.beginCommitSequence());
         assertEquals("end sequence", end, actual.endCommitSequence());

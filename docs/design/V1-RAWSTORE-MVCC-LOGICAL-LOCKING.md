@@ -113,13 +113,15 @@ immediately acquire the same logical identity in a new transaction.
 The same inherited lock manager and RawStore protocol are used for `jdbc:derby:memory:` databases.
 No filesystem fallback or memory-specific lock registry exists.
 
-## Current physical-locking limit
+## Physical locking completion
 
-The accepted RawStore table and ordered-index implementations still use conservative serializable
-container locks for physical allocator, directory, version, and sorted-index rewrites. The logical
-locks introduced here define stable semantic conflict identities and ordering, but they do not yet
-remove all table-level physical serialization. That physical granularity work remains a separate
-Stage 4 completion slice before vacuum and final performance claims.
+The physical lock-granularity completion is now implemented. Normal table and ordered-index access
+uses inherited RawStore record locking, active-writer filtering, and transaction-private ordered-index
+generations. Logical schema, row, and typed key locks remain the semantic conflict authority.
+
+See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for the publication and recovery protocol. Short
+serializable container ownership remains only around database-wide identity metadata, not normal row
+mutation.
 
 ## Executable proof
 
@@ -148,4 +150,4 @@ abrupt JVM exit and clean reopen
 jdbc:derby:memory:
 ```
 
-Savepoint rollback retains these logical locks until transaction completion. Physical lock-granularity completion remains a separate Stage 4 milestone.
+Savepoint rollback retains these logical locks until transaction completion. The complementary row-level physical protocol is recorded in `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md`.

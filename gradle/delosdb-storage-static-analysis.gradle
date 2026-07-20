@@ -5280,9 +5280,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'Page.INSERT_OVERFLOW',
                     'page.updateFieldAtSlot(',
                     'page.insertAtSlot(',
-                    'transaction.newLockingPolicy(',
-                    'LockingPolicy.MODE_CONTAINER',
-                    'TransactionController.ISOLATION_SERIALIZABLE',
+                    'MvccRawStorePhysicalLocking.rowLevel(transaction)',
                     'DirectoryHead head = findHead(',
                     'findVersion(',
                     'pendingVersionExists(',
@@ -5296,9 +5294,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'StoreTypeUtil.compare',
                     'ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE',
                     'ORDERED_INDEX_ENTRY_END_SEQUENCE',
-                    'transaction.newLockingPolicy(',
-                    'LockingPolicy.MODE_CONTAINER',
-                    'TransactionController.ISOLATION_SERIALIZABLE'
+                    'MvccRawStorePhysicalLocking.rowLevel(transaction)'
             ])
             if (tableText.count('rawTransaction.addContainer(') != 3) {
                 failures << 'RawStore MVCC CREATE must allocate exactly three table containers'
@@ -5306,9 +5302,11 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             requireOrdered('RawStore MVCC INSERT ownership',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeTableWrite(table)', 'ensureOrderedIndex(', 'allocateIdentifiers(',
+                    ['context.beforeTableWrite(table)', 'MvccRawStoreOrderedIndex.assertUnique(',
+                            'context.reserveInsertIdentifiers(table)',
                             'insertRow(rawTransaction, table.versionContainer()',
                             'insertRow(rawTransaction, table.metadataContainer()',
+                            'context.orderedIndexForWrite(table)',
                             'MvccRawStoreOrderedIndex.insertVersion(', 'context.addPending('])
             requireOrdered('RawStore MVCC DROP lock order',
                     section(tableText, 'static void drop(', 'private static void initializeMetadataContainer(',
@@ -6029,11 +6027,11 @@ tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
             def appendVersionSection = section(
                     tableText,
                     'private static PendingVersion appendVersion(',
-                    'private static long allocateVersionIdentifier(',
+                    'static AllocatorHighWater readAllocatorHighWater(',
                     'RawStore MVCC append-version section')
-            requireOrdered('Write-time version append and directory publication',
+            requireOrdered('Write-time version reservation, append, and directory publication',
                     appendVersionSection,
-                    ['allocateVersionIdentifier(transaction, table)',
+                    ['context.reserveVersionIdentifier(table)',
                             'insertRow(transaction, table.versionContainer(), versionRow)',
                             'updateDirectoryHead(',
                             'context.addPending(pending)'])
@@ -6645,8 +6643,9 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'rebuildOrderedIndex(',
                     'rewriteControlRow(',
                     'MvccRawStoreOrderedIndex.insertVersion(',
-                    'MvccRawStoreOrderedIndex.stampVersionBegin(',
-                    'MvccRawStoreOrderedIndex.stampVersionEnd(',
+                    'rebuildOrderedIndexForTransaction(',
+                    'rebuildOrderedIndexForPublication(',
+                    'publishOrderedIndexContainer(',
                     'rawTransaction.dropContainer(orderedIndex)'
             ])
             if (tableText.count('rawTransaction.addContainer(') != 3) {
@@ -6664,7 +6663,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'ScanDecision.MATCH',
                     'ScanDecision.FINISH',
                     'LinkedHashSet<Long> distinctRowIds',
-                    'visible(entry, transactionId, snapshotSequence)'
+                    'visible(entry, context)'
             ])
             requireOrdered('Statement-time ordered-index rewrite',
                     section(indexText, 'static void insertVersion(', 'static void rebuild(',
@@ -6679,7 +6678,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     section(indexText, 'static Optional<List<Long>> rowIdsFor(',
                             'private static void addVersionEntries(', 'ordered-index lookup section'),
                     ['IndexPredicate.from(', 'ScanDecision decision', 'ScanDecision.FINISH',
-                            'visible(entry, transactionId, snapshotSequence)', 'distinctRowIds.add('])
+                            'visible(entry, context)', 'distinctRowIds.add('])
 
             requireOrdered('Index candidate reread remains subordinate to base MVCC',
                     section(scanText, 'private void reload()', 'private boolean qualifies(',
@@ -6911,26 +6910,27 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
             requireOrdered('INSERT uniqueness precedes physical mutation',
                     section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
                             'RawStore MVCC INSERT section'),
-                    ['context.beforeTableWrite(table)', 'ensureOrderedIndex(',
+                    ['context.beforeTableWrite(table)',
                      'MvccRawStoreOrderedIndex.assertUnique(',
-                     'allocateIdentifiers(', 'insertRow(rawTransaction, table.versionContainer()'])
+                     'context.reserveInsertIdentifiers(table)',
+                     'insertRow(rawTransaction, table.versionContainer()'])
             requireOrdered('UPDATE uniqueness precedes replacement append',
                     section(tableText, 'static boolean replace(', 'static boolean delete(',
                             'RawStore MVCC UPDATE section'),
-                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(', 'mutationTarget(',
+                    ['context.beforeRowWrite(table, rowId)', 'mutationTarget(',
                      'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
 
             requireTokens('RawStore-native unique enforcement', indexText, [
                     'static void assertUnique(',
-                    'acquireUpdateLock(transaction, table.metadataContainer())',
-                    'MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true)',
+                    'MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false)',
                     'if (constraints.isEmpty())',
-                    'acquireUpdateLock(transaction, table.versionContainer())',
-                    'readEntriesForUpdate(transaction, table)',
+                    'context.lockUniqueKeys(table, constraints, previousValues, values)',
+                    'ContainerKey indexKey = context.orderedIndexForWrite(table)',
+                    'readEntriesForUpdate(transaction, table, indexKey)',
                     'context.currentCommittedSequence()',
                     'constraint.duplicateNullsAllowed()',
                     'containsNull(values, columns)',
-                    'visible(entry, context.transactionId(), committedSequence)',
+                    'visibleAt(entry, context, committedSequence)',
                     'candidateRowId == currentRowId',
                     'MvccRawStoreTable.readVisibleAt(',
                     'sameKey(values, candidate.values(), columns)',
@@ -6939,11 +6939,11 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
             requireOrdered('Unique check uses the latest committed horizon after table locks',
                     section(indexText, 'static void assertUnique(', 'private static boolean containsNull(',
                             'RawStore MVCC unique check section'),
-                    ['acquireUpdateLock(transaction, table.metadataContainer())',
-                     'MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true)',
+                    ['MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false)',
                      'if (constraints.isEmpty())',
-                     'acquireUpdateLock(transaction, table.versionContainer())',
-                     'readEntriesForUpdate(transaction, table)',
+                     'context.lockUniqueKeys(table, constraints, previousValues, values)',
+                     'ContainerKey indexKey = context.orderedIndexForWrite(table)',
+                     'readEntriesForUpdate(transaction, table, indexKey)',
                      'context.currentCommittedSequence()',
                      'MvccRawStoreTable.readVisibleAt(',
                      'sameKey('])
@@ -7208,8 +7208,6 @@ tasks.register('delosMvccRawStoreUniqueLifecycleStaticAnalysis') {
             ])
             requireTokens('Existing-row authoritative duplicate validation', indexText, [
                     'static void assertConstraintCanBeAdded(',
-                    'acquireUpdateLock(transaction, table.metadataContainer())',
-                    'acquireUpdateLock(transaction, table.versionContainer())',
                     'context.currentCommittedSequence()',
                     'MvccRawStoreTable.scanVisibleAt(',
                     'constraint.duplicateNullsAllowed()',
@@ -7412,18 +7410,18 @@ tasks.register('delosMvccRawStoreLogicalLockingStaticAnalysis') {
             requireOrdered('Stable-row lock precedes physical UPDATE work',
                     section(tableText, 'static boolean replace(', 'static boolean delete(',
                             'RawStore MVCC UPDATE section'),
-                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(',
-                     'mutationTarget(', 'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
+                    ['context.beforeRowWrite(table, rowId)', 'mutationTarget(',
+                     'MvccRawStoreOrderedIndex.assertUnique(', 'appendVersion('])
             requireOrdered('Stable-row and old-key locks precede DELETE tombstone append',
                     section(tableText, 'static boolean delete(', 'static List<VisibleRow> scanVisible(',
                             'RawStore MVCC DELETE section'),
-                    ['context.beforeRowWrite(table, rowId)', 'ensureOrderedIndex(',
-                     'mutationTarget(', 'lockUniqueKeysForDelete(', 'appendVersion('])
+                    ['context.beforeRowWrite(table, rowId)', 'mutationTarget(',
+                     'lockUniqueKeysForDelete(', 'appendVersion('])
             requireOrdered('Unique locks precede latest-horizon validation',
                     section(indexText, 'static void assertUnique(', 'static void lockUniqueKeysForDelete(',
                             'RawStore MVCC unique check section'),
-                    ['refreshUniqueConstraints(', 'context.lockUniqueKeys(',
-                     'acquireUpdateLock(transaction, table.versionContainer())',
+                    ['refreshUniqueConstraints(transaction, table, false)',
+                     'context.lockUniqueKeys(', 'context.orderedIndexForWrite(table)',
                      'context.currentCommittedSequence()'])
             requireTokens('Schema and stable-row controller integration', controllerText, [
                     'context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId())',
@@ -7513,6 +7511,247 @@ tasks.register('delosMvccRawStoreLogicalLockingStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStorePhysicalLockingStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies row-level RawStore physical locking, active-writer filtering, and transaction-private ordered-index publication for MVCC.'
+
+    def physicalLockFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStorePhysicalLocking.java')
+    def databaseMetadataFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def logicalDesignFile = file('docs/design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md')
+    def requiredFiles = [physicalLockFile, databaseMetadataFile, runtimeFile, contextFile,
+            tableFile, indexFile, inspectionFile, sqlTestFile, testsBuildFile,
+            designFile, implementationFile, logicalDesignFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-physical-locking-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def physicalText = physicalLockFile.getText('UTF-8')
+            def databaseMetadataText = databaseMetadataFile.getText('UTF-8')
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def inspectionText = inspectionFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def logicalDesignText = logicalDesignFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Shared RawStore physical policies', physicalText, [
+                    'LockingPolicy.MODE_RECORD',
+                    'TransactionController.ISOLATION_READ_UNCOMMITTED',
+                    'LockingPolicy.MODE_CONTAINER',
+                    'TransactionController.ISOLATION_SERIALIZABLE'
+            ])
+            requireTokens('Normal table physical access', tableText, [
+                    'MvccRawStorePhysicalLocking.rowLevel(rawTransaction)',
+                    'MvccRawStorePhysicalLocking.rowLevel(transaction)',
+                    'readAllocatorHighWater(',
+                    'stageAllocatorHighWater(',
+                    'page.updateAtSlot(',
+                    'controlRow(transaction, table, table.uniqueConstraints(), replacement)'
+            ])
+            requireTokens('Normal ordered-index physical access', indexText, [
+                    'MvccRawStorePhysicalLocking.rowLevel(transaction)',
+                    'createPrivateGeneration(',
+                    'refreshUniqueConstraints(transaction, table, false)',
+                    'context.orderedIndexForWrite(table)',
+                    'return Optional.empty();'
+            ])
+            if (tableText.contains('newLockingPolicy(') || indexText.contains('newLockingPolicy(')) {
+                failures << 'Normal RawStore MVCC table/index code must use the shared physical-lock policy rather than creating ad-hoc locking policies'
+            }
+            requireTokens('Short database-metadata serialization boundary', databaseMetadataText, [
+                    'LockingPolicy.MODE_CONTAINER',
+                    'TransactionController.ISOLATION_SERIALIZABLE',
+                    'nested.getLogFactory().flush(commitInstant)'
+            ])
+
+            requireTokens('Database-scoped active writer and allocator registry', runtimeText, [
+                    'private final Map<Long, TableIdentityAllocator> tableIdentityAllocators',
+                    'private final Set<Long> activeTransactionIds',
+                    'activeTransactionIds.add(transactionId)',
+                    'activeTransactionIds.contains(transactionId)',
+                    'activeTransactionIds.remove(transactionId)',
+                    'reserveInsertIdentifiers(',
+                    'reserveVersionIdentifier('
+            ])
+            requireTokens('Transaction-private generation and allocator state', contextText, [
+                    'private final Map<Long, AllocatorReservation> allocatorReservations',
+                    'private final Map<Long, OrderedIndexGeneration> orderedIndexGenerations',
+                    'ContainerKey orderedIndexForRead(',
+                    'ContainerKey orderedIndexForWrite(',
+                    'MvccRawStoreOrderedIndex.createPrivateGeneration(',
+                    'MvccRawStoreTable.rebuildOrderedIndexForTransaction(',
+                    'MvccRawStoreOrderedIndex.containerExists(',
+                    'orderedIndexGenerations.clear()'
+            ])
+            requireOrdered('Precommit physical publication ordering',
+                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
+                            'RawStore MVCC beforeCommit section'),
+                    ['stageAllocatorHighWaters()', 'stampPendingVersions(',
+                     'publishOrderedIndexes()', 'stageCommittedHighWater('])
+            requireOrdered('Postcommit active-writer retirement and publication ordering',
+                    section(contextText, 'public void afterCommit(', 'public void commitFailed(',
+                            'RawStore MVCC afterCommit section'),
+                    ['observeOrderedIndexContainer(', 'runtime.retireTransaction(transactionId)',
+                     'runtime.publishAndUnlock(reservedCommitSequence)'])
+            requireOrdered('Private ordered-index publication and old-generation retirement',
+                    section(contextText, 'private void publishOrderedIndexes()',
+                            'private void stageAllocatorHighWaters()',
+                            'RawStore MVCC private-index publication section'),
+                    ['rebuildOrderedIndexForPublication(', 'publishOrderedIndexContainer(',
+                     'rawTransaction.dropContainer(replaced)'])
+
+            requireTokens('Active-writer filtering of dirty physical rows', tableText, [
+                    'context.isTransactionActive(version.creatorTransactionId())',
+                    'version.creatorTransactionId() != context.transactionId()'
+            ])
+            requireTokens('Active-writer filtering of dirty ordered-index entries', indexText, [
+                    'context.isTransactionActive(entry.creatorTransactionId())',
+                    'entry.creatorTransactionId() != context.transactionId()'
+            ])
+            requireTokens('Unavailable private-generation fallback', indexText, [
+                    "writer's not-yet-published private generation",
+                    'fall back to the base version chain',
+                    'return Optional.empty();'
+            ])
+            requireTokens('Compatibility control-row rewrite', tableText, [
+                    'A compatibility table may still have the shorter pre-index',
+                    'page.updateAtSlot(',
+                    'controlRow(transaction, table, table.uniqueConstraints(), replacement)'
+            ])
+            requireTokens('Physical-container test inspection', inspectionText, [
+                    'static boolean containerExists(Connection connection, long containerId)'
+            ])
+
+            [
+                    'testReaderAndDifferentRowWritersDoNotSerializeOnTableContainers',
+                    'testPrivateOrderedIndexGenerationPublishesOnlyAtCommit',
+                    'testPrivateGenerationRecoveryOnBothRawStoreCommitBoundaries',
+                    'testMemoryDatabaseUsesTheSameRowLevelPhysicalLocking'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'Physical-locking proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Physical-locking executable evidence', sqlTestText, [
+                    'a different stable row must not wait for a table-wide physical lock',
+                    'a snapshot reader must not wait behind uncommitted physical writes',
+                    'A private generation created after the savepoint is fully undone',
+                    'atomically switches generations and drops the old one',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'memory writers on different rows must not serialize physically',
+                    'jdbc:derby:memory:'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStorePhysicalLockingTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStorePhysicalLockingTest'
+            }
+            requireTokens('Physical-locking design record', designText, [
+                    'MODE_RECORD',
+                    'READ_UNCOMMITTED',
+                    'active-writer registry',
+                    'transaction-private ordered-index generation',
+                    'complete control-row rewrite',
+                    ':delosdb-tests:runDelosMvccRawStorePhysicalLockingTest',
+                    'delosMvccRawStorePhysicalLockingStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'Row-level RawStore physical locking',
+                    'transaction-private ordered-index generation',
+                    ':delosdb-tests:runDelosMvccRawStorePhysicalLockingTest',
+                    'delosMvccRawStorePhysicalLockingStaticAnalysis'
+            ])
+            requireTokens('Logical/physical locking relationship', logicalDesignText, [
+                    'physical lock-granularity completion is now implemented',
+                    'V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md'
+            ])
+
+            [physicalText, runtimeText, contextText, tableText, indexText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC physical-locking production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-physical-locking-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC physical-locking static analysis')
+            writer.println('===================================================')
+            writer.println()
+            writer.println('Rule: normal MVCC physical access uses inherited row-level RawStore locking; semantic conflicts remain logical, and ordered-index generations publish atomically with the parent RawStore commit.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC physical-locking static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC physical-locking static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -7545,6 +7784,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreUniqueConstraintStaticAnalysis',
             'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
             'delosMvccRawStoreLogicalLockingStaticAnalysis',
+            'delosMvccRawStorePhysicalLockingStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

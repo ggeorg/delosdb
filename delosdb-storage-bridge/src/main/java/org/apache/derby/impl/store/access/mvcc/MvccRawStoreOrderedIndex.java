@@ -58,10 +58,16 @@ final class MvccRawStoreOrderedIndex {
 
     static void initialize(Transaction transaction, MvccRawStoreTable.Descriptor table)
             throws StandardException {
-        ContainerKey key = requireContainer(table);
+        initialize(transaction, table, requireContainer(table));
+    }
+
+    static void initialize(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey key) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_FORUPDATE
                         | (table.temporary() ? ContainerHandle.MODE_TEMP_IS_KEPT : 0));
         if (container == null) {
@@ -86,9 +92,45 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
+    static ContainerKey createPrivateGeneration(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table) throws StandardException {
+        int temporaryFlag = table.temporary()
+                ? TransactionController.IS_TEMPORARY
+                : TransactionController.IS_DEFAULT;
+        long containerId = transaction.addContainer(
+                table.metadataContainer().getSegmentId(),
+                0L,
+                ContainerHandle.MODE_DEFAULT,
+                null,
+                temporaryFlag);
+        if (containerId < 0L) {
+            throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
+        }
+        ContainerKey target = new ContainerKey(
+                table.metadataContainer().getSegmentId(),
+                containerId);
+        initialize(transaction, table, target);
+        return target;
+    }
+
+    static boolean containerExists(Transaction transaction, ContainerKey key)
+            throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                key,
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            return false;
+        }
+        container.close();
+        return true;
+    }
+
     static void insertVersion(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
+            ContainerKey key,
             long rowId,
             long versionId,
             long creatorTransactionId,
@@ -98,7 +140,7 @@ final class MvccRawStoreOrderedIndex {
         if (values == null) {
             return;
         }
-        List<IndexEntry> entries = readEntriesForUpdate(transaction, table);
+        List<IndexEntry> entries = readEntriesForUpdate(transaction, table, key);
         addVersionEntries(
                 entries,
                 table,
@@ -108,12 +150,13 @@ final class MvccRawStoreOrderedIndex {
                 beginSequence,
                 endSequence,
                 values);
-        rewriteSorted(transaction, table, entries);
+        rewriteSorted(transaction, table, key, entries);
     }
 
     static void rebuild(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
+            ContainerKey key,
             List<VersionInput> versions) throws StandardException {
         List<IndexEntry> entries = new ArrayList<>();
         for (VersionInput version : versions) {
@@ -130,7 +173,7 @@ final class MvccRawStoreOrderedIndex {
                     version.endSequence(),
                     version.values());
         }
-        rewriteSorted(transaction, table, entries);
+        rewriteSorted(transaction, table, key, entries);
     }
 
     static void stampVersionBegin(
@@ -189,17 +232,17 @@ final class MvccRawStoreOrderedIndex {
             throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
         }
 
-        // Preserve the database-metadata -> table metadata -> versions ->
-        // ordered-index lock order used by every mutation path.
-        acquireUpdateLock(transaction, table.metadataContainer());
+        // The transaction-duration shared schema lock protects constraint
+        // metadata. Read the control row without a physical update lock so
+        // unrelated constrained writers do not serialize on one record.
         List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true);
+                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false);
         if (constraints.isEmpty()) {
             return;
         }
         context.lockUniqueKeys(table, constraints, previousValues, values);
-        acquireUpdateLock(transaction, table.versionContainer());
-        List<IndexEntry> entries = readEntriesForUpdate(transaction, table);
+        ContainerKey indexKey = context.orderedIndexForWrite(table);
+        List<IndexEntry> entries = readEntriesForUpdate(transaction, table, indexKey);
         long committedSequence = context.currentCommittedSequence();
 
         for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
@@ -212,7 +255,7 @@ final class MvccRawStoreOrderedIndex {
             LinkedHashSet<Long> candidates = new LinkedHashSet<>();
             for (IndexEntry entry : entries) {
                 if (entry.columnId() != firstColumn
-                        || !visible(entry, context.transactionId(), committedSequence)
+                        || !visibleAt(entry, context, committedSequence)
                         || StoreTypeUtil.compare(entry.key(), firstValue, true) != 0) {
                     continue;
                 }
@@ -226,8 +269,8 @@ final class MvccRawStoreOrderedIndex {
                         transaction,
                         table,
                         candidateRowId,
-                        context.transactionId(),
-                        committedSequence);
+                        committedSequence,
+                        context);
                 if (candidate != null && sameKey(values, candidate.values(), columns)) {
                     throw StandardException.newException(
                             SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
@@ -243,9 +286,8 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.Descriptor table,
             StoreDataValue[] previousValues,
             MvccRawStoreTransactionContext context) throws StandardException {
-        acquireUpdateLock(transaction, table.metadataContainer());
         List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, true);
+                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false);
         if (!constraints.isEmpty()) {
             context.lockUniqueKeys(table, constraints, previousValues);
         }
@@ -256,16 +298,12 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.Descriptor table,
             MvccRawStoreTable.UniqueConstraint constraint,
             MvccRawStoreTransactionContext context) throws StandardException {
-        acquireUpdateLock(transaction, table.metadataContainer());
-        acquireUpdateLock(transaction, table.versionContainer());
-        readEntriesForUpdate(transaction, table);
-
         long committedSequence = context.currentCommittedSequence();
         List<MvccRawStoreTable.VisibleRow> rows = MvccRawStoreTable.scanVisibleAt(
                 transaction,
                 table,
-                context.transactionId(),
-                committedSequence);
+                committedSequence,
+                context);
         int[] columns = constraint.columns();
         for (int leftIndex = 0; leftIndex < rows.size(); leftIndex++) {
             StoreDataValue[] left = rows.get(leftIndex).values();
@@ -316,25 +354,27 @@ final class MvccRawStoreOrderedIndex {
     static Optional<List<Long>> rowIdsFor(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
+            ContainerKey key,
             Qualifier[][] qualifiers,
-            long transactionId,
-            long snapshotSequence) throws StandardException {
+            MvccRawStoreTransactionContext context) throws StandardException {
         Optional<IndexPredicate> predicate = IndexPredicate.from(qualifiers);
         if (predicate.isEmpty()) {
             return Optional.empty();
         }
 
-        // Preserve the table-wide container order used by mutations and drop.
-        acquireReadLock(transaction, table.metadataContainer());
-        acquireReadLock(transaction, table.versionContainer());
-
-        ContainerKey key = requireContainer(table);
+        if (key == null) {
+            return Optional.empty();
+        }
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_READONLY);
         if (container == null) {
-            throw new IllegalStateException("RawStore MVCC ordered-index container is absent: " + key);
+            // READ_UNCOMMITTED control-row discovery can transiently observe a
+            // writer's not-yet-published private generation. The logical row
+            // directory remains authoritative, so an unavailable generation
+            // means "fall back to the base version chain", never query failure.
+            return Optional.empty();
         }
 
         LinkedHashSet<Long> distinctRowIds = new LinkedHashSet<>();
@@ -361,7 +401,7 @@ final class MvccRawStoreOrderedIndex {
                         break;
                     }
                     if (decision == ScanDecision.MATCH
-                            && visible(entry, transactionId, snapshotSequence)) {
+                            && visible(entry, context)) {
                         distinctRowIds.add(entry.rowId());
                     }
                 }
@@ -406,11 +446,11 @@ final class MvccRawStoreOrderedIndex {
 
     private static List<IndexEntry> readEntriesForUpdate(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table) throws StandardException {
-        ContainerKey key = requireContainer(table);
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey key) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw new IllegalStateException("RawStore MVCC ordered-index container is absent: " + key);
@@ -459,12 +499,12 @@ final class MvccRawStoreOrderedIndex {
     private static void rewriteSorted(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
+            ContainerKey key,
             List<IndexEntry> entries) throws StandardException {
         sortEntries(entries);
-        ContainerKey key = requireContainer(table);
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw new IllegalStateException("RawStore MVCC ordered-index container is absent: " + key);
@@ -577,7 +617,7 @@ final class MvccRawStoreOrderedIndex {
         ContainerKey key = requireContainer(table);
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw new IllegalStateException("RawStore MVCC ordered-index container is absent: " + key);
@@ -835,30 +875,6 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
-    private static void acquireUpdateLock(Transaction transaction, ContainerKey key)
-            throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                key,
-                lockingPolicy(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            throw new IllegalStateException("RawStore MVCC parent container is absent: " + key);
-        }
-        container.close();
-    }
-
-    private static void acquireReadLock(Transaction transaction, ContainerKey key)
-            throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                key,
-                lockingPolicy(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            throw new IllegalStateException("RawStore MVCC parent container is absent: " + key);
-        }
-        container.close();
-    }
-
     private static ContainerKey requireContainer(MvccRawStoreTable.Descriptor table) {
         ContainerKey key = table.orderedIndexContainer();
         if (key == null) {
@@ -867,17 +883,32 @@ final class MvccRawStoreOrderedIndex {
         return key;
     }
 
-    private static LockingPolicy lockingPolicy(Transaction transaction) {
-        return transaction.newLockingPolicy(
-                LockingPolicy.MODE_CONTAINER,
-                TransactionController.ISOLATION_SERIALIZABLE,
-                true);
+    private static boolean visibleAt(
+            IndexEntry entry,
+            MvccRawStoreTransactionContext context,
+            long snapshotSequence) {
+        if (entry.creatorTransactionId() != context.transactionId()
+                && context.isTransactionActive(entry.creatorTransactionId())) {
+            return false;
+        }
+        if (entry.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            return entry.creatorTransactionId() == context.transactionId();
+        }
+        return entry.beginSequence() <= snapshotSequence
+                && snapshotSequence < entry.endSequence();
     }
 
-    private static boolean visible(IndexEntry entry, long transactionId, long snapshotSequence) {
-        if (entry.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-            return entry.creatorTransactionId() == transactionId;
+    private static boolean visible(
+            IndexEntry entry,
+            MvccRawStoreTransactionContext context) {
+        if (entry.creatorTransactionId() != context.transactionId()
+                && context.isTransactionActive(entry.creatorTransactionId())) {
+            return false;
         }
+        if (entry.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            return entry.creatorTransactionId() == context.transactionId();
+        }
+        long snapshotSequence = context.snapshotSequence();
         return entry.beginSequence() <= snapshotSequence
                 && snapshotSequence < entry.endSequence();
     }

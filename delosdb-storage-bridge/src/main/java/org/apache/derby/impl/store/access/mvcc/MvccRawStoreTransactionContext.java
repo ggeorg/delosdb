@@ -12,6 +12,8 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
@@ -19,6 +21,7 @@ import java.util.TreeSet;
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -37,6 +40,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final List<SavepointMarker> savepoints = new ArrayList<>();
     private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
+    private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
+    private final Map<Long, OrderedIndexGeneration> orderedIndexGenerations = new LinkedHashMap<>();
 
     private long transactionId;
     private long snapshotSequence = UNCAPTURED_SNAPSHOT;
@@ -116,6 +121,84 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
     }
 
+    MvccRawStoreTable.Allocation reserveInsertIdentifiers(
+            MvccRawStoreTable.Descriptor table) throws StandardException {
+        MvccRawStoreTable.Allocation allocation =
+                runtime.reserveInsertIdentifiers(rawTransaction, table);
+        observeAllocatorReservation(
+                table,
+                allocation.rowId() + 1L,
+                allocation.versionId() + 1L);
+        return allocation;
+    }
+
+    long reserveVersionIdentifier(MvccRawStoreTable.Descriptor table)
+            throws StandardException {
+        long versionId = runtime.reserveVersionIdentifier(rawTransaction, table);
+        observeAllocatorReservation(table, 0L, versionId + 1L);
+        return versionId;
+    }
+
+    private void observeAllocatorReservation(
+            MvccRawStoreTable.Descriptor table,
+            long nextRowId,
+            long nextVersionId) throws StandardException {
+        long tableId = table.metadataContainer().getContainerId();
+        AllocatorReservation current = allocatorReservations.get(tableId);
+        if (current == null) {
+            MvccRawStoreTable.AllocatorHighWater persisted =
+                    MvccRawStoreTable.readAllocatorHighWater(rawTransaction, table);
+            current = new AllocatorReservation(
+                    table,
+                    persisted.nextRowId(),
+                    persisted.nextVersionId());
+        }
+        allocatorReservations.put(
+                tableId,
+                new AllocatorReservation(
+                        table,
+                        Math.max(current.nextRowId(), nextRowId),
+                        Math.max(current.nextVersionId(), nextVersionId)));
+    }
+
+    ContainerKey orderedIndexForRead(MvccRawStoreTable.Descriptor table)
+            throws StandardException {
+        OrderedIndexGeneration generation = orderedIndexGenerations.get(
+                table.metadataContainer().getContainerId());
+        if (generation != null) {
+            return generation.privateContainer();
+        }
+        return MvccRawStoreTable.discoverOrderedIndexContainer(
+                rawTransaction,
+                table,
+                false);
+    }
+
+    ContainerKey orderedIndexForWrite(MvccRawStoreTable.Descriptor table)
+            throws StandardException {
+        long tableId = table.metadataContainer().getContainerId();
+        OrderedIndexGeneration generation = orderedIndexGenerations.get(tableId);
+        if (generation != null) {
+            return generation.privateContainer();
+        }
+        ContainerKey published = MvccRawStoreTable.discoverOrderedIndexContainer(
+                rawTransaction,
+                table,
+                false);
+        ContainerKey privateContainer = MvccRawStoreOrderedIndex.createPrivateGeneration(
+                rawTransaction,
+                table);
+        MvccRawStoreTable.rebuildOrderedIndexForTransaction(
+                rawTransaction,
+                table,
+                privateContainer,
+                this);
+        orderedIndexGenerations.put(
+                tableId,
+                new OrderedIndexGeneration(table, published, privateContainer));
+        return privateContainer;
+    }
+
     void addPending(MvccRawStoreTable.PendingVersion version) {
         pending.add(version);
     }
@@ -131,6 +214,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return runtime.captureSnapshot();
     }
 
+    boolean isTransactionActive(long candidateTransactionId) {
+        return runtime.isTransactionActive(candidateTransactionId);
+    }
+
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
         if (pending.isEmpty()) {
@@ -139,10 +226,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         reservedCommitSequence = runtime.reserveCommitSequence(rawTransaction);
         publicationLockHeld = true;
         try {
+            stageAllocatorHighWaters();
             MvccRawStoreTable.stampPendingVersions(
                     rawTransaction,
                     List.copyOf(pending),
                     reservedCommitSequence);
+            publishOrderedIndexes();
             runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
@@ -161,6 +250,13 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
+            for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
+                generation.table().observeOrderedIndexContainer(generation.privateContainer());
+            }
+            // A snapshot at the newly published high-water must never reject
+            // this transaction's committed versions as though the writer were
+            // still active. Retire the identity before releasing publication.
+            runtime.retireTransaction(transactionId);
             runtime.publishAndUnlock(reservedCommitSequence);
         }
         clearLocalState();
@@ -208,6 +304,16 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                 pending.remove(index);
             }
         }
+
+        orderedIndexGenerations.entrySet().removeIf(entry -> {
+            try {
+                return !MvccRawStoreOrderedIndex.containerExists(
+                        rawTransaction,
+                        entry.getValue().privateContainer());
+            } catch (StandardException failure) {
+                throw new OrderedIndexReconciliationFailure(failure);
+            }
+        });
 
         int markerIndex = findSavepoint(savepoint);
         if (markerIndex < 0) {
@@ -259,6 +365,40 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
 
+    private void publishOrderedIndexes() throws StandardException {
+        List<OrderedIndexGeneration> ordered = new ArrayList<>(orderedIndexGenerations.values());
+        ordered.sort(java.util.Comparator.comparingLong(
+                generation -> generation.table().metadataContainer().getContainerId()));
+        for (OrderedIndexGeneration generation : ordered) {
+            MvccRawStoreTable.rebuildOrderedIndexForPublication(
+                    rawTransaction,
+                    generation.table(),
+                    generation.privateContainer(),
+                    transactionId,
+                    this);
+            ContainerKey replaced = MvccRawStoreTable.publishOrderedIndexContainer(
+                    rawTransaction,
+                    generation.table(),
+                    generation.privateContainer());
+            if (replaced != null && !replaced.equals(generation.privateContainer())) {
+                rawTransaction.dropContainer(replaced);
+            }
+        }
+    }
+
+    private void stageAllocatorHighWaters() throws StandardException {
+        List<AllocatorReservation> ordered = new ArrayList<>(allocatorReservations.values());
+        ordered.sort(java.util.Comparator.comparingLong(
+                reservation -> reservation.table().metadataContainer().getContainerId()));
+        for (AllocatorReservation reservation : ordered) {
+            MvccRawStoreTable.stageAllocatorHighWater(
+                    rawTransaction,
+                    reservation.table(),
+                    reservation.nextRowId(),
+                    reservation.nextVersionId());
+        }
+    }
+
     private void acquireShared(MvccRawStoreLogicalLock lock) throws StandardException {
         if (exclusiveLocks.contains(lock) || !sharedLocks.add(lock)) {
             return;
@@ -309,10 +449,13 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
     private void clearLocalState() {
+        runtime.retireTransaction(transactionId);
         pending.clear();
         savepoints.clear();
         sharedLocks.clear();
         exclusiveLocks.clear();
+        allocatorReservations.clear();
+        orderedIndexGenerations.clear();
         transactionId = 0L;
         snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;
@@ -320,5 +463,23 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
     private record SavepointMarker(SavepointIdentity identity, int pendingSize) {
+    }
+
+    private record AllocatorReservation(
+            MvccRawStoreTable.Descriptor table,
+            long nextRowId,
+            long nextVersionId) {
+    }
+
+    private record OrderedIndexGeneration(
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey publishedContainer,
+            ContainerKey privateContainer) {
+    }
+
+    private static final class OrderedIndexReconciliationFailure extends RuntimeException {
+        OrderedIndexReconciliationFailure(StandardException cause) {
+            super(cause);
+        }
     }
 }

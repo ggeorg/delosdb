@@ -10,7 +10,11 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -37,6 +41,8 @@ final class MvccRawStoreRuntime {
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
+    private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
+    private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
 
     MvccRawStoreRuntime(Object databaseIdentity, LockFactory lockFactory) {
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
@@ -92,7 +98,54 @@ final class MvccRawStoreRuntime {
     }
 
     long reserveTransactionId(Transaction rawTransaction) throws StandardException {
-        return metadata.reserveTransactionId(rawTransaction);
+        long transactionId = metadata.reserveTransactionId(rawTransaction);
+        if (!activeTransactionIds.add(transactionId)) {
+            throw new IllegalStateException(
+                    "RawStore MVCC transaction identity is already active: " + transactionId);
+        }
+        return transactionId;
+    }
+
+    boolean isTransactionActive(long transactionId) {
+        return transactionId > 0L && activeTransactionIds.contains(transactionId);
+    }
+
+    void retireTransaction(long transactionId) {
+        if (transactionId > 0L) {
+            activeTransactionIds.remove(transactionId);
+        }
+    }
+
+    synchronized MvccRawStoreTable.Allocation reserveInsertIdentifiers(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table) throws StandardException {
+        TableIdentityAllocator allocator = tableIdentityAllocator(transaction, table);
+        return new MvccRawStoreTable.Allocation(
+                allocator.nextRowId++,
+                allocator.nextVersionId++);
+    }
+
+    synchronized long reserveVersionIdentifier(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table) throws StandardException {
+        return tableIdentityAllocator(transaction, table).nextVersionId++;
+    }
+
+    private TableIdentityAllocator tableIdentityAllocator(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table) throws StandardException {
+        long tableId = table.metadataContainer().getContainerId();
+        TableIdentityAllocator existing = tableIdentityAllocators.get(tableId);
+        if (existing != null) {
+            return existing;
+        }
+        MvccRawStoreTable.AllocatorHighWater persisted =
+                MvccRawStoreTable.readAllocatorHighWater(transaction, table);
+        TableIdentityAllocator created = new TableIdentityAllocator(
+                persisted.nextRowId(),
+                persisted.nextVersionId());
+        tableIdentityAllocators.put(tableId, created);
+        return created;
     }
 
     long captureSnapshot() {
@@ -132,6 +185,16 @@ final class MvccRawStoreRuntime {
 
     void observeCommittedHighWater(long sequence) {
         publishedHighWater.accumulateAndGet(sequence, Math::max);
+    }
+
+    private static final class TableIdentityAllocator {
+        private long nextRowId;
+        private long nextVersionId;
+
+        private TableIdentityAllocator(long nextRowId, long nextVersionId) {
+            this.nextRowId = nextRowId;
+            this.nextVersionId = nextVersionId;
+        }
     }
 
     static void haltAtFailurePoint(String failurePoint, int status) {

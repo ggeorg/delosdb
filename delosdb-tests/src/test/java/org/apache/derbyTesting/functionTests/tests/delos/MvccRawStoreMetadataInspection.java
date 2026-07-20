@@ -185,6 +185,22 @@ final class MvccRawStoreMetadataInspection {
         return layout.orderedIndexContainerId();
     }
 
+    static boolean containerExists(Connection connection, long containerId) throws Exception {
+        if (containerId <= 0L) {
+            return false;
+        }
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, containerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            return false;
+        }
+        container.close();
+        return true;
+    }
+
     static long orderedIndexPageCount(Connection connection, String tableName) throws Exception {
         long metadataContainerId = baseConglomerateId(connection, tableName);
         Transaction raw = transactionManager(connection).getRawStoreXact();

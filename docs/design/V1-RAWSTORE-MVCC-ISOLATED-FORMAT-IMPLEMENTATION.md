@@ -373,16 +373,24 @@ duplicate-null semantics, and direct-access/concurrency/recovery proofs are prot
 
 Native unique metadata now follows later SQL DDL as well as inline CREATE TABLE. ADD validates existing authoritative MVCC rows before publishing one logical definition; DROP removes one matching definition in the same RawStore transaction as Derby catalog and backing-index changes. Shared logical definitions act as reference counts, and tables with no native metadata remain compatible with inherited DROP lifecycle. Permanent evidence is `:delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest` and `delosMvccRawStoreUniqueLifecycleStaticAnalysis`.
 
-## Transaction-duration logical locking
+## Transaction-duration logical locking and Row-level RawStore physical locking
 
-The current RawStore path now acquires stable schema, row, and unique-key identities through the
-inherited Derby lock manager. The focused proof covers commit, abort, savepoint retention, unique DDL
-serialization, diagnostics, abrupt exit, reopen, and memory databases.
+The RawStore path acquires stable schema, row, and unique-key identities through the inherited Derby
+lock manager. Normal table and ordered-index physical access uses `MODE_RECORD` with
+`READ_UNCOMMITTED`; MVCC visibility rejects records owned by another active transaction.
+
+Each writer maintains a transaction-private ordered-index generation. Precommit rebuilds and publishes
+that generation through a logged control-row rewrite, and the replaced generation is dropped in the
+same parent RawStore transaction. Readers that transiently observe an unavailable private generation
+fall back to the authoritative base version chain.
 
 ```text
 :delosdb-tests:runDelosMvccRawStoreLogicalLockingTest
 delosMvccRawStoreLogicalLockingStaticAnalysis
+:delosdb-tests:runDelosMvccRawStorePhysicalLockingTest
+delosMvccRawStorePhysicalLockingStaticAnalysis
 ```
 
-The physically sorted ordered index still requires conservative RawStore container locking; removing
-that remaining table-level physical serialization is not claimed by this milestone.
+See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for active-writer filtering, allocator high-water staging,
+private-generation publication, compatibility control-row rewrites, crash behavior, and remaining
+limits.
