@@ -818,6 +818,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreVacuumTest',
+        'Runs RawStore MVCC transaction/held-cursor horizons, hint repair, chain relinking, physical purge, rollback, crash, reopen, identity, and memory proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

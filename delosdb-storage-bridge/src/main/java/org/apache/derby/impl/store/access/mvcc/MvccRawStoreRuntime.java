@@ -15,8 +15,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.derby.iapi.services.locks.C_LockFactory;
 import org.apache.derby.iapi.services.locks.LockFactory;
@@ -24,6 +26,7 @@ import org.apache.derby.iapi.services.locks.ShExQual;
 
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -35,13 +38,21 @@ final class MvccRawStoreRuntime {
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
             "after-raw-commit-before-publication";
+    static final String AFTER_VACUUM_BEFORE_RAW_COMMIT =
+            "after-vacuum-before-raw-commit";
+    static final String AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION =
+            "after-vacuum-raw-commit-before-publication";
 
     private final Object databaseIdentity;
     private final LockFactory lockFactory;
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
+    private final AtomicLong nextSnapshotLeaseId = new AtomicLong(1L);
+    private final Map<Long, Long> retainedSnapshotSequences = new HashMap<>();
     private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
+    private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
+            new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
 
     MvccRawStoreRuntime(Object databaseIdentity, LockFactory lockFactory) {
@@ -157,6 +168,82 @@ final class MvccRawStoreRuntime {
         }
     }
 
+    SnapshotLease openSnapshotLease() {
+        commitPublicationLock.lock();
+        try {
+            long sequence = publishedHighWater.get();
+            return registerSnapshotLease(sequence);
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    SnapshotLease retainSnapshot(long sequence) {
+        if (sequence < 0L) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC retained snapshot must be committed: " + sequence);
+        }
+        commitPublicationLock.lock();
+        try {
+            long published = publishedHighWater.get();
+            if (sequence > published) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC retained snapshot is ahead of publication: "
+                                + sequence + " > " + published);
+            }
+            return registerSnapshotLease(sequence);
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    long vacuumHorizon() {
+        commitPublicationLock.lock();
+        try {
+            long horizon = publishedHighWater.get();
+            for (long retained : retainedSnapshotSequences.values()) {
+                horizon = Math.min(horizon, retained);
+            }
+            return horizon;
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    TableReadBoundary enterTableRead(MvccRawStoreTable.Descriptor table) {
+        ReentrantReadWriteLock.ReadLock readLock = tableMaintenanceBoundary(table).readLock();
+        readLock.lock();
+        return new TableReadBoundary(readLock);
+    }
+
+    TableMaintenanceBoundary enterVacuum(MvccRawStoreTable.Descriptor table) {
+        ReentrantReadWriteLock.WriteLock writeLock = tableMaintenanceBoundary(table).writeLock();
+        writeLock.lock();
+        return new TableMaintenanceBoundary(writeLock);
+    }
+
+    private SnapshotLease registerSnapshotLease(long sequence) {
+        long leaseId = nextSnapshotLeaseId.getAndIncrement();
+        retainedSnapshotSequences.put(leaseId, sequence);
+        return new SnapshotLease(this, leaseId, sequence);
+    }
+
+    private void closeSnapshotLease(long leaseId) {
+        commitPublicationLock.lock();
+        try {
+            retainedSnapshotSequences.remove(leaseId);
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    private ReentrantReadWriteLock tableMaintenanceBoundary(
+            MvccRawStoreTable.Descriptor table) {
+        return tableMaintenanceBoundaries.computeIfAbsent(
+                table.metadataContainer(),
+                ignored -> new ReentrantReadWriteLock(true));
+    }
+
     long reserveCommitSequence(Transaction rawTransaction) throws StandardException {
         commitPublicationLock.lock();
         try {
@@ -185,6 +272,65 @@ final class MvccRawStoreRuntime {
 
     void observeCommittedHighWater(long sequence) {
         publishedHighWater.accumulateAndGet(sequence, Math::max);
+    }
+
+
+    static final class SnapshotLease implements AutoCloseable {
+        private final MvccRawStoreRuntime runtime;
+        private final long leaseId;
+        private final long sequence;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        private SnapshotLease(MvccRawStoreRuntime runtime, long leaseId, long sequence) {
+            this.runtime = runtime;
+            this.leaseId = leaseId;
+            this.sequence = sequence;
+        }
+
+        long sequence() {
+            return sequence;
+        }
+
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                runtime.closeSnapshotLease(leaseId);
+            }
+        }
+    }
+
+    static final class TableReadBoundary implements AutoCloseable {
+        private final ReentrantReadWriteLock.ReadLock readLock;
+        private boolean closed;
+
+        private TableReadBoundary(ReentrantReadWriteLock.ReadLock readLock) {
+            this.readLock = readLock;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                readLock.unlock();
+            }
+        }
+    }
+
+    static final class TableMaintenanceBoundary implements AutoCloseable {
+        private final ReentrantReadWriteLock.WriteLock writeLock;
+        private boolean closed;
+
+        private TableMaintenanceBoundary(ReentrantReadWriteLock.WriteLock writeLock) {
+            this.writeLock = writeLock;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                writeLock.unlock();
+            }
+        }
     }
 
     private static final class TableIdentityAllocator {

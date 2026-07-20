@@ -264,6 +264,10 @@ pre-hint shorter-row compatibility
 version-aware physically sorted ordered-index entries
 safe equality/range candidate lookup with authoritative base-row recheck
 pre-index shorter-control compatibility and transactional lazy rebuild
+transactional RawStore MVCC vacuum and purge
+oldest-retained-snapshot history protection
+logical-chain relinking before logged physical reclamation
+transaction-private ordered-index replacement after vacuum
 persisted primary-key and unique-constraint metadata
 RawStore-native uniqueness enforcement over the authoritative version chain
 composite keys and SQL duplicate-null semantics
@@ -278,10 +282,11 @@ mutation, but the remaining items are not yet claimed as supported:
 SQL secondary-index DDL lifecycle
 deferrable unique constraints
 retroactive boot-time discovery of pre-existing catalog uniqueness
-vacuum, purge, compression, and relocation
+offline table rebuild, defragmentation, page relocation, and end truncation
+background purge scheduling and maintenance diagnostics
 XA participation
 nested update transactions
-final lock granularity and final completed table binary format
+predicate/range-gap locking and final completed table binary format
 default routing or migration of existing tables
 ```
 
@@ -303,6 +308,7 @@ Focused runtime task:
 :delosdb-tests:runDelosMvccRawStoreOrderedIndexTest
 :delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
 :delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest
+:delosdb-tests:runDelosMvccRawStoreVacuumTest
 ```
 
 It covers:
@@ -347,6 +353,10 @@ single-column and composite uniqueness with duplicate-null semantics
 UPDATE, DELETE/reuse, savepoint, reopen, concurrent-writer, crash, and memory uniqueness proofs
 ALTER TABLE and CREATE/DROP UNIQUE INDEX native metadata lifecycle
 logical-definition reference counts, DDL rollback, recovery, and memory lifecycle proofs
+oldest-retained-snapshot protection and held-cursor leases
+transactional predecessor/head relinking before logged purge
+complete deleted-row reclamation and identity non-reuse
+vacuum savepoint/rollback, both crash boundaries, reopen, and memory proofs
 ```
 
 Permanent architecture task:
@@ -360,6 +370,7 @@ delosMvccRawStoreLookupHintStaticAnalysis
 delosMvccRawStoreOrderedIndexStaticAnalysis
 delosMvccRawStoreUniqueConstraintStaticAnalysis
 delosMvccRawStoreUniqueLifecycleStaticAnalysis
+delosMvccRawStoreVacuumStaticAnalysis
 ```
 
 The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
@@ -389,8 +400,39 @@ fall back to the authoritative base version chain.
 delosMvccRawStoreLogicalLockingStaticAnalysis
 :delosdb-tests:runDelosMvccRawStorePhysicalLockingTest
 delosMvccRawStorePhysicalLockingStaticAnalysis
+:delosdb-tests:runDelosMvccRawStoreVacuumTest
+delosMvccRawStoreVacuumStaticAnalysis
 ```
 
 See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for active-writer filtering, allocator high-water staging,
 private-generation publication, compatibility control-row rewrites, crash behavior, and remaining
 limits.
+
+
+## Transactional RawStore MVCC vacuum and purge
+
+The opt-in RawStore-backed format now reclaims obsolete history through the inherited in-place purge
+entry point. The database runtime registers transaction and held-cursor snapshot leases atomically with
+snapshot capture. Vacuum chooses the oldest retained snapshot as its horizon, then takes the exclusive
+logical table-schema lock and a table-scoped physical maintenance boundary.
+
+For each directory chain it validates stable identities and complete reachability, retains every
+version newer than the horizon plus the live version visible at the horizon, relinks the retained
+`previousVersionId` edges and optional hints, refreshes the directory head, and only then performs
+logged physical purge. A tombstone visible at the horizon permits complete directory and history
+removal. Allocator high-water is untouched, so committed row and version identities are never reused.
+
+A history-removing vacuum creates a transaction-private ordered-index generation. Hint-only repair
+commits through RawStore without replacing unchanged index state. Base-chain relinking, physical purge,
+control-row generation publication, and old-generation drop share one parent RawStore commit.
+Savepoint rollback, transaction rollback, crash recovery, reopen, and `jdbc:derby:memory:` therefore use
+the same undo and recovery authority.
+
+```text
+:delosdb-tests:runDelosMvccRawStoreVacuumTest
+delosMvccRawStoreVacuumStaticAnalysis
+```
+
+See `V1-RAWSTORE-MVCC-VACUUM.md` for the retained-snapshot horizon, fail-closed chain validation,
+relink-before-purge order, crash points, and limits. Background scheduling, page relocation,
+defragmentation, end truncation, and maintenance diagnostics remain later work.

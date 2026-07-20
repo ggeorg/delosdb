@@ -105,10 +105,10 @@ implementation. No filesystem fallback or memory-specific storage authority exis
 
 ## Current limits
 
-This milestone does not add predicate/range-gap locks, finalize page-layout performance, implement
-vacuum, or remove the retained Phase 8 storage system. Ordered-index generation replacement is a
-correct transactional baseline; later incremental page maintenance can optimize it without changing
-the authority or publication model.
+This milestone does not add predicate/range-gap locks, finalize page-layout performance, or remove the
+retained Phase 8 storage system. Transactional vacuum and purge are implemented by the next Stage 4
+slice in `V1-RAWSTORE-MVCC-VACUUM.md`; background maintenance, relocation, and incremental ordered-index
+page maintenance remain later work.
 
 ## Executable proof
 

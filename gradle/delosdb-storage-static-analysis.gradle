@@ -5346,11 +5346,17 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'publishAndUnlock(',
                     'observeCommittedHighWater('
             ])
-            def snapshotSection = section(runtimeText, 'long captureSnapshot()', 'long reserveCommitSequence(Transaction rawTransaction)',
+            def snapshotCaptureSection = section(runtimeText, 'long captureSnapshot()', 'SnapshotLease openSnapshotLease()',
                     'snapshot capture section')
-            if (snapshotSection.contains('MvccRawStoreTable.')
-                    || snapshotSection.contains('openContainer(')) {
+            if (snapshotCaptureSection.contains('MvccRawStoreTable.')
+                    || snapshotCaptureSection.contains('openContainer(')) {
                 failures << 'Snapshot capture must not acquire RawStore locks while holding the publication lock'
+            }
+            def snapshotLeaseSection = section(runtimeText, 'SnapshotLease openSnapshotLease()', 'long vacuumHorizon()',
+                    'snapshot lease section')
+            if (snapshotLeaseSection.contains('MvccRawStoreTable.')
+                    || snapshotLeaseSection.contains('openContainer(')) {
+                failures << 'Snapshot lease registration must not acquire RawStore locks while holding the publication lock'
             }
             def reserveSection = section(runtimeText, 'long reserveCommitSequence(Transaction rawTransaction)', 'void stageCommittedHighWater(',
                     'commit-sequence reservation section')
@@ -5364,7 +5370,8 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'transactionManager.isGlobal()',
                     'registerRawStoreOwnedMvcc(transactionManager)',
                     'UNCAPTURED_SNAPSHOT',
-                    'snapshotSequence = runtime.captureSnapshot()',
+                    'snapshotLease = runtime.openSnapshotLease()',
+                    'snapshotSequence = snapshotLease.sequence()',
                     'beforeCommit(CommitMode mode)',
                     'stampPendingVersions(',
                     'afterCommit(CommitMode mode, DatabaseInstant instant)',
@@ -5392,8 +5399,10 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'MvccRawStoreTable.insert('
             ])
             requireTokens('RawStore scan logical positioning', scanText, [
-                    'MvccRawStoreTable.scanVisible(',
-                    'MvccRawStoreTable.readVisible(',
+                    'runtime.enterTableRead(table)',
+                    'MvccRawStoreTable.scanVisibleAt(',
+                    'MvccRawStoreTable.readVisibleAt(',
+                    'snapshotSequence',
                     'positionAtRowLocation(',
                     'public boolean isTableLocked() {',
                     'return true;'
@@ -5803,7 +5812,8 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
                     'private final List<MvccRawStoreTable.PendingVersion> pending',
                     'private long transactionId',
                     'private long snapshotSequence = UNCAPTURED_SNAPSHOT',
-                    'snapshotSequence = runtime.captureSnapshot()',
+                    'snapshotLease = runtime.openSnapshotLease()',
+                    'snapshotSequence = snapshotLease.sequence()',
                     'return snapshotSequence',
                     'MvccRawStoreTable.stampPendingVersions(',
                     'List.copyOf(pending)',
@@ -5826,7 +5836,8 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
                     section(contextText, 'long snapshotSequence(', 'public void beforeCommit(',
                             'RawStore multi-table snapshot section'),
                     ['if (snapshotSequence == UNCAPTURED_SNAPSHOT)',
-                            'snapshotSequence = runtime.captureSnapshot()',
+                            'snapshotLease = runtime.openSnapshotLease()',
+                            'snapshotSequence = snapshotLease.sequence()',
                             'return snapshotSequence'])
             requireTokens('Cross-table savepoint reconciliation', contextText, [
                     'MvccRawStoreTable.pendingVersionExists(',
@@ -6663,7 +6674,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'ScanDecision.MATCH',
                     'ScanDecision.FINISH',
                     'LinkedHashSet<Long> distinctRowIds',
-                    'visible(entry, context)'
+                    'visibleAt(entry, context, snapshotSequence)'
             ])
             requireOrdered('Statement-time ordered-index rewrite',
                     section(indexText, 'static void insertVersion(', 'static void rebuild(',
@@ -6675,15 +6686,15 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     ['sortEntries(entries)', 'transaction.openContainer(', 'purgeEntries(',
                             'appendEntries(', 'container.setEstimatedRowCount('])
             requireOrdered('Ordered range traversal stops at the upper boundary',
-                    section(indexText, 'static Optional<List<Long>> rowIdsFor(',
+                    section(indexText, 'static Optional<List<Long>> rowIdsForAt(',
                             'private static void addVersionEntries(', 'ordered-index lookup section'),
                     ['IndexPredicate.from(', 'ScanDecision decision', 'ScanDecision.FINISH',
-                            'visible(entry, context)', 'distinctRowIds.add('])
+                            'visibleAt(entry, context, snapshotSequence)', 'distinctRowIds.add('])
 
             requireOrdered('Index candidate reread remains subordinate to base MVCC',
                     section(scanText, 'private void reload()', 'private boolean qualifies(',
                             'RawStore MVCC scan reload section'),
-                    ['orderedIndexRowIdsFor(', 'readVisible(', 'rows = List.copyOf(indexedRows)'])
+                    ['orderedIndexRowIdsForAt(', 'readVisibleAt(', 'rows = List.copyOf(indexedRows)'])
             requireTokens('Full SQL qualification remains authoritative', scanText, [
                     'private boolean qualifies(',
                     'RowUtil.qualifyRow(row, qualifiers)'
@@ -7752,6 +7763,323 @@ tasks.register('delosMvccRawStorePhysicalLockingStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies retained-snapshot horizons, transactional logical-chain relinking, physical purge, and ordered-index replacement for RawStore MVCC.'
+
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
+    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def vacuumFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
+    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-VACUUM.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def identityFile = file('docs/design/V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md')
+    def requiredFiles = [runtimeFile, contextFile, conglomerateFile, controllerFile, scanFile,
+            tableFile, indexFile, vacuumFile, sqlTestFile, testsBuildFile, designFile,
+            implementationFile, identityFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-vacuum-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def runtimeText = runtimeFile.getText('UTF-8')
+            def contextText = contextFile.getText('UTF-8')
+            def conglomerateText = conglomerateFile.getText('UTF-8')
+            def controllerText = controllerFile.getText('UTF-8')
+            def scanText = scanFile.getText('UTF-8')
+            def tableText = tableFile.getText('UTF-8')
+            def indexText = indexFile.getText('UTF-8')
+            def vacuumText = vacuumFile.getText('UTF-8')
+            def sqlTestText = sqlTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def identityText = identityFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            requireTokens('Database retained-snapshot registry', runtimeText, [
+                    'private final Map<Long, Long> retainedSnapshotSequences',
+                    'SnapshotLease openSnapshotLease()',
+                    'SnapshotLease retainSnapshot(long sequence)',
+                    'retained snapshot is ahead of publication',
+                    'long vacuumHorizon()',
+                    'horizon = Math.min(horizon, retained)',
+                    'private SnapshotLease registerSnapshotLease(long sequence)',
+                    'private void closeSnapshotLease(long leaseId)',
+                    'AtomicBoolean closed'
+            ])
+            requireTokens('Table physical maintenance boundary', runtimeText, [
+                    'private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries',
+                    'TableReadBoundary enterTableRead(',
+                    'TableMaintenanceBoundary enterVacuum(',
+                    'new ReentrantReadWriteLock(true)',
+                    'readLock.lock()',
+                    'writeLock.lock()'
+            ])
+            requireOrdered('Atomic snapshot registration under the publication boundary',
+                    section(runtimeText, 'SnapshotLease openSnapshotLease()',
+                            'SnapshotLease retainSnapshot(long sequence)',
+                            'RawStore MVCC open-snapshot lease section'),
+                    ['commitPublicationLock.lock()', 'publishedHighWater.get()',
+                     'registerSnapshotLease(sequence)', 'commitPublicationLock.unlock()'])
+
+            requireTokens('Transaction snapshot and vacuum lifecycle', contextText, [
+                    'private MvccRawStoreRuntime.SnapshotLease snapshotLease',
+                    'private final Map<ContainerKey, MvccRawStoreRuntime.TableMaintenanceBoundary> vacuumBoundaries',
+                    'void beforeVacuum(',
+                    'beforeSchemaChange(table)',
+                    'runtime.enterVacuum(table)',
+                    'snapshotLease = runtime.openSnapshotLease()',
+                    'MvccRawStoreRuntime.SnapshotLease retainSnapshotLease()',
+                    'return runtime.retainSnapshot(snapshotSequence())',
+                    'long vacuumHorizon()',
+                    'return runtime.vacuumHorizon()',
+                    'void markVacuumMutation()',
+                    'publishVacuumOrderedIndexes()',
+                    'AFTER_VACUUM_BEFORE_RAW_COMMIT',
+                    'AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION',
+                    'snapshotLease.close()',
+                    'boundary.close()'
+            ])
+            requireOrdered('Vacuum schema and physical maintenance acquisition order',
+                    section(contextText, 'void beforeVacuum(', 'void lockUniqueKeys(',
+                            'RawStore MVCC beforeVacuum section'),
+                    ['beforeSchemaChange(table)', 'ContainerKey tableKey = table.metadataContainer()', 'runtime.enterVacuum(table)'])
+            requireOrdered('Vacuum precommit publication before the inherited commit record',
+                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
+                            'RawStore MVCC vacuum beforeCommit section'),
+                    ['publishVacuumOrderedIndexes()', 'AFTER_VACUUM_BEFORE_RAW_COMMIT'])
+            requireOrdered('Vacuum postcommit failure boundary precedes local index publication',
+                    section(contextText, 'public void afterCommit(', 'public void commitFailed(',
+                            'RawStore MVCC vacuum afterCommit section'),
+                    ['AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION',
+                     'generation.table().observeOrderedIndexContainer('])
+            requireOrdered('Normal postcommit failure boundary remains before local publication',
+                    section(contextText, 'public void afterCommit(', 'public void commitFailed(',
+                            'RawStore MVCC normal afterCommit section'),
+                    ['AFTER_RAW_COMMIT_BEFORE_PUBLICATION',
+                     'generation.table().observeOrderedIndexContainer(',
+                     'runtime.publishAndUnlock(reservedCommitSequence)'])
+
+            requireOrdered('Vacuum lifecycle resource release',
+                    section(contextText, 'private void clearLocalState()',
+                            'private record SavepointMarker(',
+                            'RawStore MVCC clearLocalState section'),
+                    ['snapshotLease.close()', 'boundary.close()', 'vacuumBoundaries.clear()',
+                     'orderedIndexGenerations.clear()', 'vacuumMutation = false'])
+
+            requireTokens('Inherited purge dispatch', conglomerateText, [
+                    'public void purgeConglomerate(',
+                    'if (rawStoreBacked())',
+                    'context.beforeVacuum(rawStoreTable)',
+                    'MvccRawStoreVacuum.vacuum(',
+                    'context.vacuumHorizon()',
+                    'result.requiresOrderedIndexReplacement()',
+                    'context.orderedIndexForWrite(rawStoreTable)',
+                    'result.mutated()',
+                    'context.markVacuumMutation()',
+                    'public void compressConglomerate(',
+                    'purgeConglomerate(xactManager, rawtran)'
+            ])
+
+            requireOrdered('Transactional relink-before-purge protocol',
+                    section(vacuumText, 'static Result vacuum(', 'private static VacuumPlan plan(',
+                            'RawStore MVCC vacuum mutation section'),
+                    ['plan(', 'if (!plan.mutated())', 'rewriteRetainedLinks(', 'rewriteRetainedHeads(',
+                     'purgeVersions(', 'purgeDirectories('])
+            requireTokens('Fail-closed logical-chain validation', vacuumText, [
+                    'duplicate MvccVersionId',
+                    'cycle in logical version chain',
+                    'missing predecessor version',
+                    'cross-row predecessor',
+                    'version belongs to multiple directory chains',
+                    'orphan version records',
+                    'invalid predecessor ordering',
+                    'unsupported directory format version',
+                    'unsupported version format version'
+            ])
+            requireTokens('Retained-snapshot pruning rule', vacuumText, [
+                    'retainedForHorizon(',
+                    'version.beginSequence() > oldestVisibleThrough',
+                    'oldestVisibleThrough < version.endSequence()',
+                    '!visibleAtHorizon.tombstone()',
+                    'MvccRawStoreFormat.NO_PREVIOUS_VERSION'
+            ])
+            requireTokens('Logged logical relinking and physical reclamation', vacuumText, [
+                    'VERSION_PREVIOUS_VERSION_ID',
+                    'versionHintPageField(',
+                    'versionHintRecordField(',
+                    'DIRECTORY_HEAD_VERSION_ID',
+                    'DIRECTORY_HEAD_HINT_PAGE',
+                    'DIRECTORY_HEAD_HINT_RECORD',
+                    'page.updateFieldAtSlot(',
+                    'page.purgeAtSlot(slot.slot(), 1, true)',
+                    'boolean requiresOrderedIndexReplacement()',
+                    'boolean mutated()'
+            ])
+            requireTokens('Purge target validation and descending slot order', vacuumText, [
+                    'purge target identity changed',
+                    'target.formatVersionField()',
+                    'slots.sort(Comparator.comparingInt(SlotTarget::slot).reversed())',
+                    'MvccRawStorePhysicalLocking.rowLevel(transaction)',
+                    'ContainerHandle.MODE_FORUPDATE'
+            ])
+
+            requireTokens('Read-side physical maintenance protection', controllerText, [
+                    'runtime.enterTableRead(table)',
+                    'MvccRawStoreTable.readVisible('
+            ])
+            requireTokens('Transaction and held-cursor snapshot protection', scanText, [
+                    'private final long snapshotSequence',
+                    'private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease',
+                    'context.snapshotSequence()',
+                    'hold ? context.retainSnapshotLease() : null',
+                    'heldSnapshotLease.close()',
+                    'runtime.enterTableRead(table)',
+                    'orderedIndexRowIdsForAt(',
+                    'readVisibleAt(',
+                    'scanVisibleAt('
+            ])
+            requireTokens('Explicit-snapshot ordered-index lookup', tableText, [
+                    'orderedIndexRowIdsForAt(',
+                    'MvccRawStoreOrderedIndex.rowIdsForAt('
+            ])
+            requireTokens('Explicit-snapshot ordered-index visibility', indexText, [
+                    'rowIdsForAt(',
+                    'visibleAt(entry, context, snapshotSequence)'
+            ])
+
+            [
+                    'testOldestRetainedSnapshotProtectsHistoryAndVacuumRelinksTheChain',
+                    'testHeldCursorRetainsItsSnapshotLeaseAcrossCommitAndVacuum',
+                    'testVacuumRepairsStaleHintsWithoutReplacingOrderedIndex',
+                    'testDeletedRowsArePurgedAndStableIdentitiesAreNeverReused',
+                    'testVacuumRollbackAndSavepointRestoreOneRawStoreOutcome',
+                    'testVacuumRecoversOnBothSidesOfTheRawStoreCommitRecord',
+                    'testMemoryDatabaseUsesTheSameTransactionalVacuumPath'
+            ].each { methodName ->
+                if (!sqlTestText.contains(methodName)) {
+                    failures << 'RawStore MVCC vacuum proof is missing: ' + methodName
+                }
+            }
+            requireTokens('Vacuum executable evidence', sqlTestText, [
+                    'The reader pins the second committed version as the oldest live snapshot',
+                    'HOLD_CURSORS_OVER_COMMIT',
+                    'the held scan keeps its duplicate',
+                    'invalidateLookupHints(',
+                    'publishedIndex',
+                    'vacuumed logical row identities must never be reused',
+                    'before_vacuum',
+                    'after-vacuum-before-raw-commit',
+                    'after-vacuum-raw-commit-before-publication',
+                    'jdbc:derby:memory:',
+                    'assertChain('
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreVacuumTest'")) {
+                failures << 'delosdb-tests must expose runDelosMvccRawStoreVacuumTest'
+            }
+
+            requireTokens('Vacuum design record', designText, [
+                    'oldest retained snapshot',
+                    'transactional chain relinking',
+                    'logged `purgeAtSlot`',
+                    'transaction-private ordered-index generation',
+                    'after-vacuum-before-raw-commit',
+                    'after-vacuum-raw-commit-before-publication',
+                    ':delosdb-tests:runDelosMvccRawStoreVacuumTest',
+                    'delosMvccRawStoreVacuumStaticAnalysis'
+            ])
+            requireTokens('Current implementation record', implementationText, [
+                    'Transactional RawStore MVCC vacuum and purge',
+                    ':delosdb-tests:runDelosMvccRawStoreVacuumTest',
+                    'delosMvccRawStoreVacuumStaticAnalysis'
+            ])
+            requireTokens('Stable identity vacuum contract', identityText, [
+                    'vacuum updates the logical link in the same RawStore',
+                    'vacuumed row IDs are not reused'
+            ])
+
+            def rawStoreVacuumDispatchText = section(
+                    conglomerateText,
+                    'public void purgeConglomerate(',
+                    'public void compressConglomerate(',
+                    'RawStore MVCC vacuum dispatch section')
+            [runtimeText, contextText, rawStoreVacuumDispatchText, controllerText, scanText,
+             tableText, indexText, vacuumText].each { productionText ->
+                ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
+                 'RandomAccessFile', 'DelosPageVolume'].each { token ->
+                    if (productionText.contains(token)) {
+                        failures << 'RawStore MVCC vacuum production code contains forbidden I/O token: ' + token
+                    }
+                }
+            }
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-vacuum-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC vacuum and purge static analysis')
+            writer.println('================================================')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC vacuum static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC vacuum static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -7785,6 +8113,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
             'delosMvccRawStoreLogicalLockingStaticAnalysis',
             'delosMvccRawStorePhysicalLockingStaticAnalysis',
+            'delosMvccRawStoreVacuumStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

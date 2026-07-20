@@ -278,7 +278,21 @@ public final class MvccConglomerate
     @Override
     public void purgeConglomerate(TransactionManager xactManager, Transaction rawtran) throws StandardException {
         if (rawStoreBacked()) {
-            throw unsupported();
+            MvccRawStoreTransactionContext context = rawStoreRuntime.context(
+                    xactManager,
+                    rawtran);
+            context.beforeVacuum(rawStoreTable);
+            MvccRawStoreVacuum.Result result = MvccRawStoreVacuum.vacuum(
+                    rawtran,
+                    rawStoreTable,
+                    context.vacuumHorizon());
+            if (result.requiresOrderedIndexReplacement()) {
+                context.orderedIndexForWrite(rawStoreTable);
+            }
+            if (result.mutated()) {
+                context.markVacuumMutation();
+            }
+            return;
         }
         try {
             requireState().vacuumSafely();

@@ -357,6 +357,22 @@ final class MvccRawStoreOrderedIndex {
             ContainerKey key,
             Qualifier[][] qualifiers,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return rowIdsForAt(
+                transaction,
+                table,
+                key,
+                qualifiers,
+                context.snapshotSequence(),
+                context);
+    }
+
+    static Optional<List<Long>> rowIdsForAt(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey key,
+            Qualifier[][] qualifiers,
+            long snapshotSequence,
+            MvccRawStoreTransactionContext context) throws StandardException {
         Optional<IndexPredicate> predicate = IndexPredicate.from(qualifiers);
         if (predicate.isEmpty()) {
             return Optional.empty();
@@ -401,7 +417,7 @@ final class MvccRawStoreOrderedIndex {
                         break;
                     }
                     if (decision == ScanDecision.MATCH
-                            && visible(entry, context)) {
+                            && visibleAt(entry, context, snapshotSequence)) {
                         distinctRowIds.add(entry.rowId());
                     }
                 }
@@ -894,21 +910,6 @@ final class MvccRawStoreOrderedIndex {
         if (entry.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             return entry.creatorTransactionId() == context.transactionId();
         }
-        return entry.beginSequence() <= snapshotSequence
-                && snapshotSequence < entry.endSequence();
-    }
-
-    private static boolean visible(
-            IndexEntry entry,
-            MvccRawStoreTransactionContext context) {
-        if (entry.creatorTransactionId() != context.transactionId()
-                && context.isTransactionActive(entry.creatorTransactionId())) {
-            return false;
-        }
-        if (entry.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-            return entry.creatorTransactionId() == context.transactionId();
-        }
-        long snapshotSequence = context.snapshotSequence();
         return entry.beginSequence() <= snapshotSequence
                 && snapshotSequence < entry.endSequence();
     }

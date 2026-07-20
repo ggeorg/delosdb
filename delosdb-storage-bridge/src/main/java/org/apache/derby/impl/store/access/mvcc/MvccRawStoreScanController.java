@@ -32,6 +32,8 @@ final class MvccRawStoreScanController implements ScanManager {
     private final Transaction rawTransaction;
     private final boolean hold;
     private final FormatableBitSet scanColumnList;
+    private final long snapshotSequence;
+    private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease;
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;
     private int nextIndex;
@@ -58,7 +60,19 @@ final class MvccRawStoreScanController implements ScanManager {
         this.hold = hold;
         this.scanColumnList = scanColumnList;
         this.qualifiers = qualifiers;
-        reload();
+        MvccRawStoreTransactionContext context = runtime.context(
+                transactionManager,
+                rawTransaction);
+        this.snapshotSequence = context.snapshotSequence();
+        this.heldSnapshotLease = hold ? context.retainSnapshotLease() : null;
+        try {
+            reload();
+        } catch (StandardException | RuntimeException | Error failure) {
+            if (heldSnapshotLease != null) {
+                heldSnapshotLease.close();
+            }
+            throw failure;
+        }
     }
 
     @Override
@@ -67,6 +81,9 @@ final class MvccRawStoreScanController implements ScanManager {
             closed = true;
             rows = List.of();
             current = null;
+            if (heldSnapshotLease != null) {
+                heldSnapshotLease.close();
+            }
             transactionManager.closeMe(this);
         }
     }
@@ -273,11 +290,18 @@ final class MvccRawStoreScanController implements ScanManager {
     public boolean positionAtRowLocation(StoreRowLocation rowLocation) throws StandardException {
         ensureOpen();
         long rowId = MvccRowLocation.from(rowLocation).rowId();
-        MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
-                rawTransaction,
-                table,
-                rowId,
-                runtime.context(transactionManager, rawTransaction));
+        MvccRawStoreTransactionContext context = runtime.context(
+                transactionManager,
+                rawTransaction);
+        MvccRawStoreTable.VisibleRow visible;
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            visible = MvccRawStoreTable.readVisibleAt(
+                    rawTransaction,
+                    table,
+                    rowId,
+                    snapshotSequence,
+                    context);
+        }
         if (visible == null || !qualifies(visible.values())) {
             current = null;
             currentDeleted = false;
@@ -317,28 +341,37 @@ final class MvccRawStoreScanController implements ScanManager {
 
     private void reload() throws StandardException {
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
-        java.util.Optional<List<Long>> candidateRowIds = MvccRawStoreTable.orderedIndexRowIdsFor(
-                rawTransaction,
-                table,
-                qualifiers,
-                context);
-        if (candidateRowIds.isPresent()) {
-            List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
-            for (long rowId : candidateRowIds.get()) {
-                MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            java.util.Optional<List<Long>> candidateRowIds =
+                    MvccRawStoreTable.orderedIndexRowIdsForAt(
+                            rawTransaction,
+                            table,
+                            qualifiers,
+                            snapshotSequence,
+                            context);
+            if (candidateRowIds.isPresent()) {
+                List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
+                for (long rowId : candidateRowIds.get()) {
+                    MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisibleAt(
+                            rawTransaction,
+                            table,
+                            rowId,
+                            snapshotSequence,
+                            context);
+                    if (visible != null) {
+                        indexedRows.add(visible);
+                    }
+                }
+                rows = List.copyOf(indexedRows);
+                orderedIndexScan = true;
+            } else {
+                rows = MvccRawStoreTable.scanVisibleAt(
                         rawTransaction,
                         table,
-                        rowId,
+                        snapshotSequence,
                         context);
-                if (visible != null) {
-                    indexedRows.add(visible);
-                }
+                orderedIndexScan = false;
             }
-            rows = List.copyOf(indexedRows);
-            orderedIndexScan = true;
-        } else {
-            rows = MvccRawStoreTable.scanVisible(rawTransaction, table, context);
-            orderedIndexScan = false;
         }
         nextIndex = 0;
         current = null;

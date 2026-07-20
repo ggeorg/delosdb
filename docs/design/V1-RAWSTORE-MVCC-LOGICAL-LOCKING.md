@@ -151,3 +151,13 @@ jdbc:derby:memory:
 ```
 
 Savepoint rollback retains these logical locks until transaction completion. The complementary row-level physical protocol is recorded in `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md`.
+
+## Vacuum maintenance conflicts
+
+Transactional RawStore MVCC vacuum uses the existing exclusive table-schema logical lock. DML holds the
+shared form until transaction completion, so chain relinking and physical purge cannot overlap a table
+writer. The vacuum then takes the table-scoped physical maintenance boundary before reading or removing
+RawStore records. Snapshot readers remain semantically protected by retained-snapshot leases; they hold
+the physical read side only while materializing records.
+
+See `V1-RAWSTORE-MVCC-VACUUM.md`.

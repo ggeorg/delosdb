@@ -42,11 +42,15 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
     private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
     private final Map<Long, OrderedIndexGeneration> orderedIndexGenerations = new LinkedHashMap<>();
+    private final Map<ContainerKey, MvccRawStoreRuntime.TableMaintenanceBoundary> vacuumBoundaries =
+            new LinkedHashMap<>();
 
     private long transactionId;
     private long snapshotSequence = UNCAPTURED_SNAPSHOT;
+    private MvccRawStoreRuntime.SnapshotLease snapshotLease;
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
+    private boolean vacuumMutation;
 
     MvccRawStoreTransactionContext(
             MvccRawStoreRuntime runtime,
@@ -92,6 +96,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireExclusive(MvccRawStoreLogicalLock.table(table));
+    }
+
+    void beforeVacuum(MvccRawStoreTable.Descriptor table) throws StandardException {
+        beforeSchemaChange(table);
+        ContainerKey tableKey = table.metadataContainer();
+        vacuumBoundaries.computeIfAbsent(tableKey, ignored -> runtime.enterVacuum(table));
     }
 
     void lockUniqueKeys(
@@ -205,13 +215,26 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     long snapshotSequence() {
         if (snapshotSequence == UNCAPTURED_SNAPSHOT) {
-            snapshotSequence = runtime.captureSnapshot();
+            snapshotLease = runtime.openSnapshotLease();
+            snapshotSequence = snapshotLease.sequence();
         }
         return snapshotSequence;
     }
 
+    MvccRawStoreRuntime.SnapshotLease retainSnapshotLease() {
+        return runtime.retainSnapshot(snapshotSequence());
+    }
+
     long currentCommittedSequence() {
         return runtime.captureSnapshot();
+    }
+
+    long vacuumHorizon() {
+        return runtime.vacuumHorizon();
+    }
+
+    void markVacuumMutation() {
+        vacuumMutation = true;
     }
 
     boolean isTransactionActive(long candidateTransactionId) {
@@ -220,9 +243,22 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
-        if (pending.isEmpty()) {
+        boolean hasPendingVersions = !pending.isEmpty();
+        boolean hasPrivateIndexes = !orderedIndexGenerations.isEmpty();
+        if (!hasPendingVersions && !hasPrivateIndexes && !vacuumMutation) {
             return;
         }
+
+        if (!hasPendingVersions) {
+            publishVacuumOrderedIndexes();
+            if (vacuumMutation) {
+                MvccRawStoreRuntime.haltAtFailurePoint(
+                        MvccRawStoreRuntime.AFTER_VACUUM_BEFORE_RAW_COMMIT,
+                        93);
+            }
+            return;
+        }
+
         reservedCommitSequence = runtime.reserveCommitSequence(rawTransaction);
         publicationLockHeld = true;
         try {
@@ -236,6 +272,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
                     91);
+            if (vacuumMutation) {
+                MvccRawStoreRuntime.haltAtFailurePoint(
+                        MvccRawStoreRuntime.AFTER_VACUUM_BEFORE_RAW_COMMIT,
+                        93);
+            }
         } catch (StandardException | RuntimeException | Error failure) {
             runtime.unlockWithoutPublication();
             publicationLockHeld = false;
@@ -246,13 +287,20 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterCommit(CommitMode mode, DatabaseInstant instant) {
+        if (vacuumMutation) {
+            MvccRawStoreRuntime.haltAtFailurePoint(
+                    MvccRawStoreRuntime.AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION,
+                    94);
+        }
         if (publicationLockHeld) {
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
-            for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
-                generation.table().observeOrderedIndexContainer(generation.privateContainer());
-            }
+        }
+        for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
+            generation.table().observeOrderedIndexContainer(generation.privateContainer());
+        }
+        if (publicationLockHeld) {
             // A snapshot at the newly published high-water must never reject
             // this transaction's committed versions as though the writer were
             // still active. Retire the identity before releasing publication.
@@ -365,6 +413,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
 
+    private void publishVacuumOrderedIndexes() throws StandardException {
+        publishOrderedIndexes();
+    }
+
     private void publishOrderedIndexes() throws StandardException {
         List<OrderedIndexGeneration> ordered = new ArrayList<>(orderedIndexGenerations.values());
         ordered.sort(java.util.Comparator.comparingLong(
@@ -450,6 +502,14 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     private void clearLocalState() {
         runtime.retireTransaction(transactionId);
+        if (snapshotLease != null) {
+            snapshotLease.close();
+            snapshotLease = null;
+        }
+        for (MvccRawStoreRuntime.TableMaintenanceBoundary boundary : vacuumBoundaries.values()) {
+            boundary.close();
+        }
+        vacuumBoundaries.clear();
         pending.clear();
         savepoints.clear();
         sharedLocks.clear();
@@ -460,6 +520,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;
         publicationLockHeld = false;
+        vacuumMutation = false;
     }
 
     private record SavepointMarker(SavepointIdentity identity, int pendingSize) {

@@ -76,16 +76,18 @@ final class MvccRawStoreConglomerateController
             throws StandardException {
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
-        MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
-                rawTransaction,
-                table,
-                MvccRowLocation.from(loc).rowId(),
-                context);
-        if (visible == null) {
-            return false;
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
+                    rawTransaction,
+                    table,
+                    MvccRowLocation.from(loc).rowId(),
+                    context);
+            if (visible == null) {
+                return false;
+            }
+            MvccConglomerateController.copyRow(visible.values(), destRow, validColumns);
+            return true;
         }
-        MvccConglomerateController.copyRow(visible.values(), destRow, validColumns);
-        return true;
     }
 
     @Override

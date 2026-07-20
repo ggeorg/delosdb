@@ -432,12 +432,27 @@ final class MvccRawStoreTable {
             Descriptor table,
             org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return orderedIndexRowIdsForAt(
+                transaction,
+                table,
+                qualifiers,
+                context.snapshotSequence(),
+                context);
+    }
+
+    static java.util.Optional<List<Long>> orderedIndexRowIdsForAt(
+            Transaction transaction,
+            Descriptor table,
+            org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
+            long snapshotSequence,
+            MvccRawStoreTransactionContext context) throws StandardException {
         ContainerKey orderedIndex = context.orderedIndexForRead(table);
-        return MvccRawStoreOrderedIndex.rowIdsFor(
+        return MvccRawStoreOrderedIndex.rowIdsForAt(
                 transaction,
                 table,
                 orderedIndex,
                 qualifiers,
+                snapshotSequence,
                 context);
     }
 
