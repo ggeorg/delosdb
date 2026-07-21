@@ -512,3 +512,12 @@ delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
 
 See `V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md` for configuration, scheduling, lifecycle, diagnostic
 semantics, and limits. Automatic maintenance remains separately opt-in during convergence.
+
+
+## Stage 5 RawStore SQL transaction-authority proof cutover
+
+The SQL transaction proof now explicitly enables the RawStore-backed format for two-table MVCC commit,
+two-table MVCC rollback, and mixed heap/multiple-MVCC commit and rollback. Each database is shut down
+before reopen and is checked for zero retained inherited-store files. The permanent focused task is
+`:delosdb-tests:runDelosMvccRawStoreSqlTransactionCutoverTest`; the old database-decision task name is
+only a compatibility alias. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.

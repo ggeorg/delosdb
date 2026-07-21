@@ -369,3 +369,14 @@ The proof no longer installs the retained failure registry through reflection, c
 Derby log directory, or inspects retained transaction-decision files. It also verifies that the
 RawStore database contains no retained MVCC regular files. This retires the first permanent Phase 8
 fault-proof dependency without yet deleting the retained implementation.
+
+
+## Stage 5 SQL transaction-authority proof cutover
+
+The permanent SQL multi-table transaction lane now explicitly enables RawStore-backed MVCC. Two MVCC
+tables share one inherited RawStore transaction for commit and rollback. A heap table and multiple MVCC
+tables also share that same outcome and survive normal shutdown/reopen together. The proof creates no
+retained `delos_mvcc/inherited-store` file.
+
+The historical `runDelosMvccDatabaseCommitDecisionTest` task remains only as a compatibility alias for
+`runDelosMvccRawStoreSqlTransactionCutoverTest`; it no longer selects retained decision-journal tests.

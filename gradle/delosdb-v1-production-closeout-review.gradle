@@ -404,7 +404,7 @@ tasks.register('verifyDelosV1ProductionCloseout') {
             project(':delosdb-storage-mvcc').tasks.named('check'),
             tasks.named('check'),
             tasks.named('runDelosMvccTransactionParticipationTest'),
-            tasks.named('runDelosMvccDatabaseCommitDecisionTest'),
+            tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest'),
             tasks.named('reviewDelosV1ProductionCloseoutCapture')
 
     outputs.upToDateWhen { false }

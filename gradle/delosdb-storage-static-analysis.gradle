@@ -4454,28 +4454,42 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
                         && testBuildText.contains('includeTestsMatching pattern'),
                 'Focused test registration must support method-level proof splits')
         def participationStart = testBuildText.indexOf("'runDelosMvccTransactionParticipationTest'")
-        def decisionStart = testBuildText.indexOf("'runDelosMvccDatabaseCommitDecisionTest'")
+        def rawStoreTransactionStart = testBuildText.indexOf(
+                "'runDelosMvccRawStoreSqlTransactionCutoverTest'")
+        def compatibilityAliasStart = testBuildText.indexOf(
+                "'runDelosMvccDatabaseCommitDecisionTest'")
         def crashStart = testBuildText.indexOf("'runDelosMvccRawStoreDecisionWalCrashTest'")
-        def participationText = participationStart >= 0 && decisionStart > participationStart
-                ? testBuildText.substring(participationStart, decisionStart) : ''
-        def decisionText = decisionStart >= 0 && crashStart > decisionStart
-                ? testBuildText.substring(decisionStart, crashStart) : ''
+        def participationText = participationStart >= 0
+                        && rawStoreTransactionStart > participationStart
+                ? testBuildText.substring(participationStart, rawStoreTransactionStart) : ''
+        def transactionCutoverText = rawStoreTransactionStart >= 0
+                        && compatibilityAliasStart > rawStoreTransactionStart
+                ? testBuildText.substring(rawStoreTransactionStart, compatibilityAliasStart) : ''
+        def compatibilityAliasText = compatibilityAliasStart >= 0
+                        && crashStart > compatibilityAliasStart
+                ? testBuildText.substring(compatibilityAliasStart, crashStart) : ''
         ['testSingleMvccTableAndHeapOnlyWritesRemainSupported',
          'testReadOnlyCrossTableAndMixedAccessRemainsSupported',
          'testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported'].each { methodName ->
             DelosDbStaticAnalysisSupport.require(failures, participationText.contains(methodName),
                     'Transaction-participation task is missing method: ' + methodName)
-            DelosDbStaticAnalysisSupport.require(failures, !decisionText.contains(methodName),
-                    'Database-decision task must not rerun participation method: ' + methodName)
+            DelosDbStaticAnalysisSupport.require(failures,
+                    !transactionCutoverText.contains(methodName),
+                    'RawStore transaction-cutover task must not rerun participation method: ' + methodName)
         }
-        ['testTwoMvccTablesCommitThroughOneDatabaseDecision',
-         'testTwoMvccTableRollbackRemainsAtomic',
-         'testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision'].each { methodName ->
-            DelosDbStaticAnalysisSupport.require(failures, decisionText.contains(methodName),
-                    'Database-decision task is missing method: ' + methodName)
+        ['testTwoMvccTablesCommitThroughOneRawStoreTransaction',
+         'testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
+         'testMixedHeapAndMvccWritesShareOneRawStoreTransaction'].each { methodName ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    transactionCutoverText.contains(methodName),
+                    'RawStore transaction-cutover task is missing method: ' + methodName)
             DelosDbStaticAnalysisSupport.require(failures, !participationText.contains(methodName),
-                    'Transaction-participation task must not rerun decision method: ' + methodName)
+                    'Transaction-participation task must not rerun cutover method: ' + methodName)
         }
+        DelosDbStaticAnalysisSupport.require(failures,
+                compatibilityAliasText.contains(
+                        "dependsOn tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest')"),
+                'The Phase 8 database-decision task name must remain only as a compatibility alias')
 
         DelosDbStaticAnalysisSupport.require(failures,
                 !coordinatorText.contains('ThreadDeath')
@@ -8661,9 +8675,10 @@ tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
                     'RawStore mode no longer boots the retained runtime and never falls back to it'
             ])
             requireTokens('Roadmap retains verified Stage 5.1 authority evidence', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC decision/recovery proof cutover',
+                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
                     '## Stage 5.1 — RawStore authority cutover',
                     '## Stage 5.2 — decision and recovery proof cutover',
+                    '## Stage 5.3 — SQL transaction-authority proof cutover',
                     'VERIFIED'
             ])
         }
@@ -8800,7 +8815,7 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
                     '## Stage 5 mixed decision and recovery proof cutover slice',
                     'after-stamp-before-raw-commit',
                     'after-raw-commit-before-publication',
-                    'Stage 5.1 exclusive RawStore authority is user-verified'
+                    'Stage 5.1 exclusive RawStore authority and Stage 5.2 decision/recovery proof cutover are user-verified'
             ])
             requireTokens('Permanent gate record', gatesText, [
                     '## Stage 5 RawStore MVCC decision/recovery proof cutover gate',
@@ -8808,11 +8823,12 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
                     'no copied or restored Derby log directory participates in recovery'
             ])
             requireTokens('Roadmap Stage 5.2 state', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC decision/recovery proof cutover',
+                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
                     '## Stage 5.1 — RawStore authority cutover',
                     '## Stage 5.2 — decision and recovery proof cutover',
-                    'Stage 5.1 exclusive authority cutover are user-verified',
-                    'Stage 5.2 is'
+                    '## Stage 5.3 — SQL transaction-authority proof cutover',
+                    'Stage 5.2 decision/recovery',
+                    'proof cutover are user-verified'
             ])
         }
 
@@ -8836,6 +8852,154 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
         }
         logger.lifecycle(
                 'RawStore MVCC decision and recovery proof cutover static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
+
+tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies permanent SQL multi-table and mixed heap/MVCC transaction proofs use one inherited RawStore authority.'
+
+    def transactionTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def architectureFile = file('docs/V1-RAWSTORE-CONVERGENCE-ARCHITECTURE.md')
+    def roadmapFile = file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    def freezeFile = file('.delosdb-v1/01-architecture/07-V1-RAWSTORE-CONVERGENCE-FREEZE.md')
+    def gatesFile = file('.delosdb-v1/02-quality/07-DESIGN-PROOF-GATES.md')
+    inputs.files(transactionTestFile, testsBuildFile, designFile, implementationFile,
+            architectureFile, roadmapFile, freezeFile, gatesFile)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-sql-transaction-cutover-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def requiredFiles = [transactionTestFile, testsBuildFile, designFile, implementationFile,
+                architectureFile, roadmapFile, freezeFile, gatesFile]
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def transactionText = transactionTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def architectureText = architectureFile.getText('UTF-8')
+            def roadmapText = roadmapFile.getText('UTF-8')
+            def freezeText = freezeFile.getText('UTF-8')
+            def gatesText = gatesFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def forbidTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (source.contains(token)) {
+                        failures << description + ' retains forbidden token: ' + token
+                    }
+                }
+            }
+
+            requireTokens('RawStore SQL transaction proof', transactionText, [
+                    'private static final String RAW_STORE_PROPERTY',
+                    'testTwoMvccTablesCommitThroughOneRawStoreTransaction',
+                    'testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
+                    'testMixedHeapAndMvccWritesShareOneRawStoreTransaction',
+                    'create table heap_transaction_t',
+                    'create table mvcc_transaction_a',
+                    'create table mvcc_transaction_b',
+                    'shutdownDatabase(databaseName)',
+                    'inheritedMvccStateFileCount(databaseName)'
+            ])
+            if (transactionText.count('setSystemProperty(RAW_STORE_PROPERTY, "true")') != 3) {
+                failures << 'Each of the three SQL transaction-cutover methods must explicitly enable RawStore MVCC'
+            }
+            if (transactionText.count('inheritedMvccStateFileCount(databaseName)') != 3) {
+                failures << 'Each SQL transaction-cutover method must prove zero retained inherited-store files'
+            }
+            if (transactionText.count('shutdownDatabase(databaseName)') < 5) {
+                failures << 'SQL transaction cutover must shut down before both reopen proofs and final file checks'
+            }
+            forbidTokens('RawStore SQL transaction proof', transactionText, [
+                    'testTwoMvccTablesCommitThroughOneDatabaseDecision',
+                    'testTwoMvccTableRollbackRemainsAtomic',
+                    'testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision'
+            ])
+
+            requireTokens('Focused Gradle lane', testsBuildText, [
+                    "'runDelosMvccRawStoreSqlTransactionCutoverTest'",
+                    'Runs the Stage 5 RawStore SQL multi-table and mixed heap/MVCC transaction-authority proof.',
+                    'testTwoMvccTablesCommitThroughOneRawStoreTransaction',
+                    'testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
+                    'testMixedHeapAndMvccWritesShareOneRawStoreTransaction',
+                    "tasks.register('runDelosMvccDatabaseCommitDecisionTest')",
+                    "dependsOn tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest')"
+            ])
+            requireTokens('Public Stage 5.3 design', designText, [
+                    'This is the third Stage 5 retirement slice.',
+                    'one inherited RawStore transaction',
+                    'runDelosMvccRawStoreSqlTransactionCutoverTest',
+                    'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis'
+            ])
+            requireTokens('Implementation record', implementationText, [
+                    '## Stage 5 RawStore SQL transaction-authority proof cutover',
+                    'zero retained inherited-store files',
+                    'V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md'
+            ])
+            requireTokens('Public architecture record', architectureText, [
+                    '## Stage 5 SQL transaction-authority proof cutover',
+                    'one inherited RawStore transaction',
+                    'compatibility alias'
+            ])
+            requireTokens('Frozen architecture record', freezeText, [
+                    '## Stage 5 SQL transaction-authority proof cutover slice',
+                    'one inherited RawStore transaction',
+                    'runDelosMvccRawStoreSqlTransactionCutoverTest'
+            ])
+            requireTokens('Permanent gate record', gatesText, [
+                    '## Stage 5 RawStore MVCC SQL transaction-authority proof cutover gate',
+                    'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
+                    'the historical database-decision task is only a compatibility alias'
+            ])
+            requireTokens('Roadmap Stage 5.3 state', roadmapText, [
+                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
+                    '## Stage 5.2 — decision and recovery proof cutover',
+                    '## Stage 5.3 — SQL transaction-authority proof cutover',
+                    'Stage 5.2 decision/recovery',
+                    'proof cutover are user-verified',
+                    'IMPLEMENTED / PENDING USER VERIFICATION'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-sql-transaction-cutover-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC SQL transaction-authority proof cutover static analysis')
+            writer.println('=====================================================================')
+            writer.println()
+            writer.println('Rule: permanent SQL multi-table and mixed heap/MVCC proofs use one inherited RawStore transaction and no retained decision proof.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC SQL transaction-authority proof cutover static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC SQL transaction-authority proof cutover static analysis passed. Report: {}',
                 reportFile)
     }
 }
@@ -8877,6 +9041,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
             'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
             'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
+            'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

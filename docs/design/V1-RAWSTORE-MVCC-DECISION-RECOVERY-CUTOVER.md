@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTED / PENDING USER VERIFICATION
+VERIFIED
 ```
 
 This is the second Stage 5 retirement slice. It retargets the permanent mixed heap/MVCC power-loss
@@ -116,3 +116,9 @@ retire storage modules
 
 Those responsibilities are removed only after their corresponding RawStore replacement suites and
 absence gates are green.
+
+
+## Stage 5.3 follow-on
+
+The permanent SQL multi-table and mixed heap/MVCC transaction lane is now retargeted to explicit
+RawStore MVCC as well. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.

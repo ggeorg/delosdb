@@ -743,15 +743,21 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
-        'runDelosMvccDatabaseCommitDecisionTest',
-        'Runs the Phase 8.3 database-scoped multi-table and mixed heap/MVCC decision proof.',
+        'runDelosMvccRawStoreSqlTransactionCutoverTest',
+        'Runs the Stage 5 RawStore SQL multi-table and mixed heap/MVCC transaction-authority proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
         [:],
         [
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTablesCommitThroughOneDatabaseDecision',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTableRollbackRemainsAtomic',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMixedHeapAndMultipleMvccWritesUseOneRawStoreDecision'
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTablesCommitThroughOneRawStoreTransaction',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMixedHeapAndMvccWritesShareOneRawStoreTransaction'
         ])
+
+tasks.register('runDelosMvccDatabaseCommitDecisionTest') {
+    group = 'verification'
+    description = 'Compatibility alias for the Stage 5 RawStore SQL transaction-authority proof.'
+    dependsOn tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest')
+}
 
 registerDelosFocusedTest(
         'runDelosMvccRawStoreDecisionWalCrashTest',

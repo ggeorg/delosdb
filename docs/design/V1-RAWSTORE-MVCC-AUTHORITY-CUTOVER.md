@@ -162,3 +162,9 @@ The first permanent mixed heap/MVCC power-loss lane has now been retargeted to t
 commit and recovery boundaries. See `V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md`. The retained
 failure registry, copied-log restoration, and database-decision inspection are no longer used by that
 proof.
+
+
+## Stage 5.3 follow-on
+
+The SQL multi-table and mixed heap/MVCC transaction proof now selects RawStore authority explicitly and
+uses no retained database-decision proof. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.
