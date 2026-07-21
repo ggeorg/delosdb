@@ -381,6 +381,7 @@ delosMvccRawStoreUniqueLifecycleStaticAnalysis
 delosMvccRawStoreVacuumStaticAnalysis
 delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
 delosMvccRawStoreAuthorityCutoverStaticAnalysis
+delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis
 ```
 
 The gates fix the ownership boundary, ordinary RawStore operation set, conservative locking order,
@@ -410,6 +411,26 @@ cannot coexist in one boot.
 docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md
 :delosdb-tests:runDelosMvccRawStoreAuthorityCutoverTest
 delosMvccRawStoreAuthorityCutoverStaticAnalysis
+delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis
+```
+
+
+## Stage 5 RawStore decision and recovery proof cutover
+
+The second retirement slice retargets the permanent mixed heap/MVCC process-halt proof to the
+RawStore-backed format. The child JVM now explicitly enables RawStore MVCC and halts at
+`after-stamp-before-raw-commit` or `after-raw-commit-before-publication`. Normal Derby reopen is the
+only recovery pass: heap and MVCC both roll back before the inherited commit record and both survive
+after it.
+
+The proof no longer uses `MvccFailurePointRegistry`, reflection, `BEFORE_DERBY_RAW_STORE_COMMIT`, a
+copied/restored log directory, or retained `database-decisions` state. It also verifies that no
+regular file exists below the retained `delos_mvcc` provider path.
+
+```text
+docs/design/V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md
+:delosdb-tests:runDelosMvccRawStoreDecisionWalCrashTest
+delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis
 ```
 
 ## Transaction-duration logical locking and Row-level RawStore physical locking

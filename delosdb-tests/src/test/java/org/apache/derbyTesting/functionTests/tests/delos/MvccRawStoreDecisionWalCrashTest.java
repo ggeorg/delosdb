@@ -1,5 +1,7 @@
 /*
 
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.MvccRawStoreDecisionWalCrashTest
+
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
    this work for additional information regarding copyright ownership.
@@ -19,107 +21,115 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 
-/** Proves that an unforced raw-store decision cannot leave committed MVCC evidence. */
+/**
+ * Stage 5 proof that one inherited RawStore recovery decision owns mixed heap/MVCC work.
+ */
 public final class MvccRawStoreDecisionWalCrashTest extends MvccSqlTestSupport {
-    private static final int HALT_STATUS = 84;
+    private static final String ENABLED_PROPERTY =
+            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
+    private static final String FAILURE_POINT_PROPERTY =
+            "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+    private static final String BEFORE_RAW_COMMIT =
+            "after-stamp-before-raw-commit";
+    private static final String AFTER_RAW_COMMIT =
+            "after-raw-commit-before-publication";
 
-    public void testPowerLossAfterDecisionStageBeforeRawCommitDoesNotFalseCommit()
-            throws Exception {
-        Path database = Path.of("mvcc-raw-store-wal-crash").toAbsolutePath().normalize();
-        Path logSnapshot = Path.of("mvcc-raw-store-wal-crash-log-snapshot")
-                .toAbsolutePath().normalize();
+    public void testMixedDecisionRecoversOnlyThroughInheritedRawStore() throws Exception {
+        verifyBoundary(BEFORE_RAW_COMMIT, 91, false);
+        verifyBoundary(AFTER_RAW_COMMIT, 92, true);
+    }
+
+    private static void verifyBoundary(
+            String failurePoint,
+            int expectedStatus,
+            boolean expectCommitted) throws Exception {
+        Path database = Path.of(
+                "mvcc-raw-store-decision-recovery-"
+                        + expectedStatus + '-'
+                        + Long.toUnsignedString(System.nanoTime()))
+                .toAbsolutePath()
+                .normalize();
         deleteRecursively(database);
-        deleteRecursively(logSnapshot);
+
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database.toString(), true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table decision_heap_t (id int primary key, value int)");
+                executeUpdate(setup,
+                        "create table decision_mvcc_t (id int, value int) using delos_mvcc");
+                setup.commit();
+            }
+            shutdownDatabase(database.toString());
+        }
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
+                "-D" + ENABLED_PROPERTY + "=true",
+                "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
-                database.toString(),
-                logSnapshot.toString())
+                database.toString())
                 .redirectErrorStream(true)
                 .start();
         boolean finished = process.waitFor(
                 Duration.ofSeconds(45).toMillis(), TimeUnit.MILLISECONDS);
         if (!finished) {
             process.destroyForcibly();
-            fail("raw-store WAL crash worker did not terminate");
+            fail("RawStore decision-recovery worker did not terminate at " + failurePoint);
         }
         String output = new String(
                 process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertEquals("worker must halt at the configured pre-commit boundary; output=" + output,
-                HALT_STATUS, process.exitValue());
+        assertEquals(
+                "worker must halt at " + failurePoint + "; output=" + output,
+                expectedStatus,
+                process.exitValue());
 
-        restoreDirectory(logSnapshot, database.resolve("log"));
-
-        try (Connection connection = openDatabase(database.toString(), false)) {
-            assertCount(connection, "select count(*) from heap_wal_t", 0);
-            assertCount(connection, "select count(*) from mvcc_wal_t", 0);
-        }
-
-        Path decisions = database.resolve(
-                "delos_mvcc/inherited-store/database-decisions");
-        if (Files.isDirectory(decisions)) {
-            try (var files = Files.list(decisions)) {
-                assertEquals("an uncommitted raw-store operation must leave no decision marker",
-                        0L,
-                        files.filter(path -> path.getFileName().toString().endsWith(".decision"))
-                                .count());
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection recovered = openDatabase(database.toString(), false)) {
+                recovered.setAutoCommit(false);
+                String[] expectedRows = expectCommitted ? new String[] {"1|10"} : new String[0];
+                assertRows(recovered,
+                        "select id, value from decision_heap_t order by id",
+                        expectedRows);
+                assertRows(recovered,
+                        "select id, value from decision_mvcc_t order by id",
+                        expectedRows);
+                recovered.commit();
             }
+            shutdownDatabase(database.toString());
         }
-        shutdownDatabase(database.toString());
+
+        assertNoRetainedDecisionAuthority(database);
         deleteRecursively(database);
-        deleteRecursively(logSnapshot);
     }
 
-    private static void assertCount(Connection connection, String sql, int expected)
-            throws Exception {
-        try (Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(sql)) {
-            assertTrue(result.next());
-            assertEquals(expected, result.getInt(1));
+    private static void assertNoRetainedDecisionAuthority(Path database) throws IOException {
+        Path retained = database.resolve("delos_mvcc");
+        if (!Files.exists(retained)) {
+            return;
+        }
+        try (var paths = Files.walk(retained)) {
+            assertEquals(
+                    "RawStore recovery must create no retained MVCC WAL, decision, or sidecar file",
+                    0L,
+                    paths.filter(Files::isRegularFile).count());
         }
     }
 
     private static String javaExecutable() {
         return Path.of(System.getProperty("java.home"), "bin", "java").toString();
-    }
-
-    private static void copyDirectory(Path source, Path target) throws IOException {
-        deleteRecursively(target);
-        try (var paths = Files.walk(source)) {
-            for (Path path : paths.sorted().toList()) {
-                Path relative = source.relativize(path);
-                Path destination = target.resolve(relative);
-                if (Files.isDirectory(path)) {
-                    Files.createDirectories(destination);
-                } else {
-                    Files.createDirectories(destination.getParent());
-                    Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
-                }
-            }
-        }
-    }
-
-    private static void restoreDirectory(Path snapshot, Path target) throws IOException {
-        if (!Files.isDirectory(snapshot)) {
-            throw new IOException("missing raw-store log snapshot " + snapshot);
-        }
-        copyDirectory(snapshot, target);
     }
 
     private static void deleteRecursively(Path path) throws IOException {
@@ -133,56 +143,26 @@ public final class MvccRawStoreDecisionWalCrashTest extends MvccSqlTestSupport {
         }
     }
 
+    /** Child JVM halted on one side of the inherited RawStore commit record. */
     public static final class CrashWorker {
         private CrashWorker() {
         }
 
         public static void main(String[] args) throws Exception {
-            if (args.length != 2) {
-                System.err.println("expected database and log-snapshot paths");
+            if (args.length != 1) {
+                System.err.println("expected database path");
                 System.exit(90);
             }
-            Path database = Path.of(args[0]).toAbsolutePath().normalize();
-            Path logSnapshot = Path.of(args[1]).toAbsolutePath().normalize();
-            installHalt(database);
-
-            try (Connection connection = DriverManager.getConnection(
-                    "jdbc:derby:" + database + ";create=true")) {
-                try (Statement statement = connection.createStatement()) {
-                    statement.executeUpdate(
-                            "create table heap_wal_t (id int primary key, value int)");
-                    statement.executeUpdate(
-                            "create table mvcc_wal_t (id int primary key, value int) using delos_mvcc");
-                }
-                copyDirectory(database.resolve("log"), logSnapshot);
-
+            try (Connection connection = DriverManager.getConnection("jdbc:derby:" + args[0])) {
                 connection.setAutoCommit(false);
                 try (Statement statement = connection.createStatement()) {
-                    statement.executeUpdate("insert into heap_wal_t values (1, 10)");
-                    statement.executeUpdate("insert into mvcc_wal_t values (1, 10)");
+                    statement.executeUpdate("insert into decision_heap_t values (1, 10)");
+                    statement.executeUpdate("insert into decision_mvcc_t values (1, 10)");
                 }
                 connection.commit();
             }
-            System.err.println("mixed commit returned without the configured process halt");
-            System.exit(91);
-        }
-
-        private static void installHalt(Path database) throws Exception {
-            Class<?> registry = Class.forName(
-                    "io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailurePointRegistry");
-            Method install = registry.getDeclaredMethod(
-                    "installHaltForTesting",
-                    Path.class,
-                    String.class,
-                    long.class,
-                    int.class);
-            install.setAccessible(true);
-            install.invoke(
-                    null,
-                    database,
-                    "BEFORE_DERBY_RAW_STORE_COMMIT",
-                    1L,
-                    HALT_STATUS);
+            System.err.println("commit returned without the configured RawStore MVCC halt");
+            System.exit(93);
         }
     }
 }

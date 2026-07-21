@@ -755,7 +755,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccRawStoreDecisionWalCrashTest',
-        'Runs the power-loss proof after mixed-decision staging and before raw-store commit.',
+        'Runs the Stage 5 mixed heap/MVCC recovery proof on both sides of the inherited RawStore commit.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class'])
 
 registerDelosFocusedTest(

@@ -53,11 +53,13 @@ MVCC factory directly owns one runtime; the former static `acquire(Path)`/lease 
 the inherited RawStore commit, commitNoSync, abort, savepoint, nested-user-transaction, XA, and
 destroy paths. This is a semantic extension seam, not another commit coordinator.
 
-The complete RawStore-backed table path is now proven through maintenance and diagnostics. Stage 5
-has begun by making RawStore mode and retained Phase 8 mode mutually exclusive inside one factory
+The complete RawStore-backed table path is now proven through maintenance and diagnostics. Stage 5.1
+is user-verified: RawStore mode and retained Phase 8 mode are mutually exclusive inside one factory
 boot. RawStore mode no longer constructs the retained runtime or opens its provider store; retained
-files fail closed before the RawStore runtime starts. The retained implementation remains available
-only while its fault and recovery suites are retargeted.
+files fail closed before the RawStore runtime starts. Stage 5.2 now retargets the permanent mixed
+heap/MVCC power-loss proof to the inherited RawStore commit and recovery boundaries, with no retained
+decision journal or copied-log restoration. The retained implementation remains available only while
+its remaining fault and recovery suites are retargeted.
 
 Implementation records:
 
@@ -65,6 +67,7 @@ Implementation records:
 docs/design/V1-DATABASE-OWNED-ACCESS-METHOD-BOOT.md
 docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
 docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md
+docs/design/V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md
 ```
 
 ## Frozen v1 invariants
@@ -353,3 +356,16 @@ storage-derby remains a build-only patch artifact
 Stage 2.3 installs `delosV1ModuleArchitectureStaticAnalysis`, backed by the machine-readable
 `gradle/static-analysis/delosdb-v1-final-module-target.txt` contract. It enforces the current neutral
 provider boundary now and remains migration-aware until the final module-removal gates become active.
+
+
+## Stage 5 decision and recovery proof cutover
+
+The permanent mixed heap/MVCC crash lane now proves the converged authority directly. A child JVM
+mutates a heap table and a RawStore-backed MVCC table in one JDBC transaction, then halts immediately
+before or immediately after the inherited RawStore commit record. Normal Derby reopen is the only
+recovery pass: both mutations roll back before the commit and both survive after it.
+
+The proof no longer installs the retained failure registry through reflection, copies or restores the
+Derby log directory, or inspects retained transaction-decision files. It also verifies that the
+RawStore database contains no retained MVCC regular files. This retires the first permanent Phase 8
+fault-proof dependency without yet deleting the retained implementation.

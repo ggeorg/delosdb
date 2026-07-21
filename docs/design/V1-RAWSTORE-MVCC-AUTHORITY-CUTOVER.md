@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTED / PENDING USER VERIFICATION
+VERIFIED
 ```
 
 This is the first Stage 5 retirement slice. It removes the retained Phase 8 persistence runtime from
@@ -11,6 +11,7 @@ any database boot that explicitly selects the RawStore-backed `delos_mvcc` forma
 
 The retained format is not deleted in this slice. A database booted without the RawStore opt-in may
 still open it as the differential and recovery oracle while the remaining Stage 5 tests are retargeted.
+The focused authority cutover and accumulated gates are user-verified.
 The two persistence systems are no longer allowed to coexist inside one booted access-method factory.
 
 ## Authority rule
@@ -144,7 +145,7 @@ This slice does not yet:
 ```text
 make RawStore the default delos_mvcc format
 delete the retained Phase 8 implementation
-retarget all Phase 8 fault/recovery tests
+retarget the remaining Phase 8 fault/recovery tests
 remove transaction-outcome journals or decision retention
 remove external MVCC WAL, checkpoint, recovery, page volumes, or sidecars
 remove compatibility diagnostics APIs
@@ -153,3 +154,11 @@ retire storage modules
 
 Those responsibilities are removed only after their corresponding RawStore tests and gates are
 retargeted and green.
+
+
+## Stage 5.2 follow-on
+
+The first permanent mixed heap/MVCC power-loss lane has now been retargeted to the inherited RawStore
+commit and recovery boundaries. See `V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md`. The retained
+failure registry, copied-log restoration, and database-decision inspection are no longer used by that
+proof.

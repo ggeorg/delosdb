@@ -8660,10 +8660,11 @@ tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
                     'V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md',
                     'RawStore mode no longer boots the retained runtime and never falls back to it'
             ])
-            requireTokens('Roadmap advances to Stage 5.1', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC authority cutover',
+            requireTokens('Roadmap retains verified Stage 5.1 authority evidence', roadmapText, [
+                    'Current milestone: Stage 5 RawStore MVCC decision/recovery proof cutover',
                     '## Stage 5.1 — RawStore authority cutover',
-                    'IMPLEMENTED / PENDING USER VERIFICATION'
+                    '## Stage 5.2 — decision and recovery proof cutover',
+                    'VERIFIED'
             ])
         }
 
@@ -8687,6 +8688,154 @@ tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
         }
         logger.lifecycle(
                 'RawStore MVCC authority cutover static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
+
+tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies the permanent mixed heap/MVCC crash proof uses only inherited RawStore commit and recovery authority.'
+
+    def crashTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def architectureFile = file('docs/V1-RAWSTORE-CONVERGENCE-ARCHITECTURE.md')
+    def roadmapFile = file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    def freezeFile = file('.delosdb-v1/01-architecture/07-V1-RAWSTORE-CONVERGENCE-FREEZE.md')
+    def gatesFile = file('.delosdb-v1/02-quality/07-DESIGN-PROOF-GATES.md')
+    inputs.files(crashTestFile, testsBuildFile, designFile, implementationFile,
+            architectureFile, roadmapFile, freezeFile, gatesFile)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-decision-recovery-cutover-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def requiredFiles = [crashTestFile, testsBuildFile, designFile, implementationFile,
+                architectureFile, roadmapFile, freezeFile, gatesFile]
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def crashText = crashTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def architectureText = architectureFile.getText('UTF-8')
+            def roadmapText = roadmapFile.getText('UTF-8')
+            def freezeText = freezeFile.getText('UTF-8')
+            def gatesText = gatesFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def forbidTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (source.contains(token)) {
+                        failures << description + ' retains forbidden token: ' + token
+                    }
+                }
+            }
+
+            requireTokens('Retargeted mixed decision crash proof', crashText, [
+                    'delosdb.mvcc.rawStoreVerticalSlice.enabled',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'verifyBoundary(BEFORE_RAW_COMMIT, 91, false)',
+                    'verifyBoundary(AFTER_RAW_COMMIT, 92, true)',
+                    'create table decision_heap_t',
+                    'create table decision_mvcc_t',
+                    'insert into decision_heap_t values (1, 10)',
+                    'insert into decision_mvcc_t values (1, 10)',
+                    'openDatabase(database.toString(), false)',
+                    'assertNoRetainedDecisionAuthority(database)',
+                    'paths.filter(Files::isRegularFile).count()'
+            ])
+            forbidTokens('Retargeted mixed decision crash proof', crashText, [
+                    'MvccFailurePointRegistry',
+                    'Class.forName(',
+                    'getDeclaredMethod(',
+                    'BEFORE_DERBY_RAW_STORE_COMMIT',
+                    'database-decisions',
+                    'StandardCopyOption',
+                    'copyDirectory(',
+                    'restoreDirectory(',
+                    'logSnapshot',
+                    'database.resolve("log")'
+            ])
+
+            requireTokens('Focused Gradle lane', testsBuildText, [
+                    "'runDelosMvccRawStoreDecisionWalCrashTest'",
+                    'Runs the Stage 5 mixed heap/MVCC recovery proof on both sides of the inherited RawStore commit.',
+                    'MvccRawStoreDecisionWalCrashTest.class'
+            ])
+            requireTokens('Public Stage 5.2 design', designText, [
+                    'This is the second Stage 5 retirement slice.',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'one inherited RawStore recovery decision',
+                    ':delosdb-tests:runDelosMvccRawStoreDecisionWalCrashTest',
+                    'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis'
+            ])
+            requireTokens('Implementation record', implementationText, [
+                    '## Stage 5 RawStore decision and recovery proof cutover',
+                    'Normal Derby reopen is the',
+                    'only recovery pass:',
+                    'V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md'
+            ])
+            requireTokens('Public architecture record', architectureText, [
+                    'Stage 5.2 now retargets the permanent mixed',
+                    '## Stage 5 decision and recovery proof cutover',
+                    'decision journal or copied-log restoration'
+            ])
+            requireTokens('Frozen architecture record', freezeText, [
+                    '## Stage 5 mixed decision and recovery proof cutover slice',
+                    'after-stamp-before-raw-commit',
+                    'after-raw-commit-before-publication',
+                    'Stage 5.1 exclusive RawStore authority is user-verified'
+            ])
+            requireTokens('Permanent gate record', gatesText, [
+                    '## Stage 5 RawStore MVCC decision/recovery proof cutover gate',
+                    'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
+                    'no copied or restored Derby log directory participates in recovery'
+            ])
+            requireTokens('Roadmap Stage 5.2 state', roadmapText, [
+                    'Current milestone: Stage 5 RawStore MVCC decision/recovery proof cutover',
+                    '## Stage 5.1 — RawStore authority cutover',
+                    '## Stage 5.2 — decision and recovery proof cutover',
+                    'Stage 5.1 exclusive authority cutover are user-verified',
+                    'Stage 5.2 is'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-decision-recovery-cutover-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC decision and recovery proof cutover static analysis')
+            writer.println('================================================================')
+            writer.println()
+            writer.println('Rule: the permanent mixed heap/MVCC crash proof uses one inherited RawStore commit and one inherited recovery pass, with no retained decision authority.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC decision and recovery proof cutover static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC decision and recovery proof cutover static analysis passed. Report: {}',
                 reportFile)
     }
 }
@@ -8727,6 +8876,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreVacuumStaticAnalysis',
             'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
             'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
+            'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',
