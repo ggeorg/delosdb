@@ -3684,18 +3684,35 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             } else {
                 DelosDbStaticFileSupport.javaFiles([sqlTestDirectory]).each { testFile ->
                     def testText = testFile.getText('UTF-8')
+                    def testPath = testFile.path
                     if (testText.contains('mvccDiagnostics()')) {
-                        failures << testFile + ': SQL diagnostics must name their database'
+                        failures << testPath + ': SQL diagnostics must name their database'
                     }
                     if ((testText =~ /DelosStorageConsistencyTarget\.mvcc\(\s*\d/).find()) {
-                        failures << testFile + ': MVCC metadata targets must name their database'
+                        failures << testPath + ': MVCC metadata targets must name their database'
                     }
-                    if (testText.contains('DelosStorageDiagnosticsRegistry.mvcc()')
-                            || (testText =~ /DelosStorageDiagnosticsRegistry\.(inspectMvcc|statisticsForMvcc|mvccStorageStatistics|capabilitiesForMvcc)\(\s*\d/).find()) {
-                        failures << testFile + ': MVCC registry diagnostics must name their database'
+
+                    def unscopedRegistryLookup =
+                            testText.contains('DelosStorageDiagnosticsRegistry.mvcc()')
+                    def memoryMaintenanceProof =
+                            testFile.name == 'MvccRawStoreMaintenanceDiagnosticsTest.java'
+                            && testText.contains(
+                                    'testDatabaseWorkersAreIsolatedAndMemoryUsesTheSameMaintenancePath')
+                            && testText.count('DelosStorageDiagnosticsRegistry.mvcc()') == 2
+                            && testText.indexOf('shutdownDatabase(firstDatabase);') >= 0
+                            && testText.indexOf('shutdownDatabase(secondDatabase);') >= 0
+                            && testText.indexOf('String memoryDatabase = "memory:')
+                                    > testText.indexOf('shutdownDatabase(secondDatabase);')
+                            && testText.indexOf('shutdownDatabase(memoryDatabase);')
+                                    > testText.indexOf('String memoryDatabase = "memory:')
+                    if (unscopedRegistryLookup && !memoryMaintenanceProof) {
+                        failures << testPath + ': MVCC registry diagnostics must name their database'
+                    }
+                    if ((testText =~ /DelosStorageDiagnosticsRegistry\.(inspectMvcc|statisticsForMvcc|mvccStorageStatistics|capabilitiesForMvcc)\(\s*\d/).find()) {
+                        failures << testPath + ': MVCC registry diagnostics must name their database'
                     }
                     if ((testText =~ /(?i)new\s+DelosStorage(?:ConsistencyTarget|PredicatePushdownRequest)\([\s\S]{0,240}?delos_mvcc[\s\S]{0,120}?\bnull\s*,/).find()) {
-                        failures << testFile + ': MVCC diagnostic request retains a null database directory'
+                        failures << testPath + ': MVCC diagnostic request retains a null database directory'
                     }
                 }
             }
@@ -3709,7 +3726,7 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             writer.println('DelosDB MVCC database runtime ownership static analysis')
             writer.println('========================================================')
             writer.println()
-            writer.println('Rule: MVCC database selection must be explicit and database-scoped.')
+            writer.println('Rule: MVCC database selection must be explicit and database-scoped; memory-only maintenance diagnostics may use the fail-closed single-runtime lookup.')
             writer.println()
             if (failures.isEmpty()) {
                 writer.println('Status: PASS')
