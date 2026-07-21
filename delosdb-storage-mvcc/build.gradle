@@ -8,8 +8,9 @@ import org.gradle.api.tasks.testing.Test
 version = rootProject.version
 group = rootProject.group
 
-// Gradle Java module for the DelosDB MVCC storage provider. Its canonical
-// jar task owns the provider artifact used by runtime ServiceLoader checks.
+// Quarantined Phase 8 retained-store oracle. This module is assembled only for
+// explicit legacyRetainedCheck use; it is not a DelosDB runtime provider and is
+// absent from all normal runtime/test classpaths.
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 def testClassDir = layout.buildDirectory.dir('classes/test')
 
@@ -30,7 +31,11 @@ dependencies {
 sourceSets {
     main {
         java {
+            exclude 'io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java'
             destinationDirectory.set(mainClassDir)
+        }
+        resources {
+            exclude 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
         }
     }
     test {
@@ -57,9 +62,9 @@ tasks.named('compileTestJava', JavaCompile) {
     options.warnings = true
 }
 
-// The MVCC module intentionally uses named proof tasks below. The Java plugin
-// adds a default `test` task, but this module's verification contract is the
-// explicit runMvcc* tasks wired into `check`, matching the pre-conversion build.
+// The quarantined oracle retains its named proof tasks below. The Java plugin
+// adds a default `test` task, but neither it nor the retained proofs participate
+// in normal `check`; `legacyRetainedCheck` is the only aggregate entry point.
 tasks.named('test', Test) {
     enabled = false
 }
@@ -1295,7 +1300,7 @@ delosMvccLifecycleProofTasks.each { proof ->
 
 tasks.register('runDelosMvccLifecycleProofs') {
     group = 'verification'
-    description = 'Runs MVCC lifecycle/depth proof tests wired into the storage MVCC check task.'
+    description = 'Runs the archived MVCC lifecycle/depth proof tests for explicit legacy-oracle verification.'
     dependsOn delosMvccLifecycleProofTasks.collect { proof -> proof[0] }
 }
 
@@ -1307,7 +1312,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Experimental MVCC Storage')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Retired MVCC Oracle Archive')
         attributes 'Automatic-Module-Name': 'io.github.ggeorg.delosdb.storage.mvcc'
     }
 }
@@ -1316,8 +1321,34 @@ tasks.named('assemble') {
     dependsOn tasks.named('classes'), tasks.named('jar')
 }
 
-tasks.named('check') {
+tasks.register('verifyRetainedOracleQuarantine') {
+    group = 'verification'
+    description = 'Verifies that the archived Phase 8 oracle exposes no production provider class or service.'
+
+    def retiredProviderSource = file(
+            'src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java')
+    def retiredProviderService = file(
+            'src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory')
+    inputs.files(retiredProviderSource, retiredProviderService)
+
+    doLast {
+        if (sourceSets.main.java.files.contains(retiredProviderSource)) {
+            throw new GradleException('Retired MVCC provider factory remains in the production source set')
+        }
+        if (sourceSets.main.resources.files.contains(retiredProviderService)) {
+            throw new GradleException('Retired MVCC provider service remains in the production resource set')
+        }
+    }
+}
+
+tasks.register('legacyRetainedCheck') {
+    group = 'verification'
+    description = 'Runs the quarantined Phase 8 retained-store oracle suite outside normal production verification.'
     dependsOn 'runMvccCoreModelTest', 'runMvccTableScanModelTest', 'runVersionedStorageProviderSpiTest', 'runMvccRecoveryLogTest', 'runDelosMvccProviderOwnedIndexTest', 'runDelosMvccSnapshotIsolationTest', 'runMvccSnapshotVisibilityTest', 'runMvccKernelReviewCloseoutTest', 'runDelosMvccCleanupVacuumTest', 'runDelosMvccRecoveryHardeningTest', 'runDelosMvccWriteConflictTest', 'runDelosMvccIndexStatsTest', 'runDelosMvccOrderedIndexRangeTest', 'runDelosMvccOrderedIndexOrderByTest', 'runMvccPageFileTest', 'runMvccVersionRecordCodecTest', 'runPageBackedMvccTableTest', 'runMvccPageRecoveryTest', 'runMvccPageMutationLogContractTest', 'runMvccRecoveryBootProof', 'runMvccRecoveryReplayEngineTest', 'runPageVolumeMvccWriteAheadLogBatchTest', 'runMvccDurableIndexVisibilityTest', 'runMvccDurableIndexRecoveryTest', 'runMvccVacuumSafetyTest', 'runMvccVacuumRecoveryTest', 'runMvccConcurrencyStressTest', 'runMvccTransactionLockOrderTest', 'runMvccStoreAdapterSmoke', 'runMvccSqlOptInSmoke', 'runMvccSqlRecoverySmoke', 'runMvccSqlIndexVisibilitySmoke', 'runMvccStaticAnalysisHardeningTest', 'runDelosMvccLifecycleProofs'
+}
+
+tasks.named('check') {
+    setDependsOn([tasks.named('verifyRetainedOracleQuarantine')])
 }
 
 tasks.register('runDelosMvccBufferCacheBenchmark', Test) {

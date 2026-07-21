@@ -24,30 +24,17 @@ package org.apache.derby.impl.store.access.mvcc;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
-import org.apache.derby.iapi.store.types.DelosMvccOptimizerCostDiagnostics;
-import org.apache.derby.iapi.store.types.DelosStorageCostEstimate;
-import org.apache.derby.iapi.store.types.DelosStorageStatistics;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.shared.common.error.StandardException;
 
-/**
- * Optimizer cost controller for the {@code delos_mvcc} access method.
- *
- * <p>This is deliberately conservative. It exists so Derby's inherited
- * optimizer can prepare a normal {@code TableScanResultSet} against an MVCC
- * physical conglomerate and then open {@link MvccScanController}. When
- * MVCC optimizer-cost diagnostics are enabled, it derives estimates from
- * MVCC storage statistics through this inherited Derby cost-controller seam
- * rather than through a parallel optimizer statistics channel.</p>
- */
+/** Conservative optimizer cost model for RawStore-backed MVCC scans. */
 final class MvccStoreCostController implements StoreCostController {
     private final MvccConglomerate conglomerate;
     private long estimatedRowCount = 1L;
     private boolean closed;
 
     MvccStoreCostController(MvccConglomerate conglomerate) {
-        this.conglomerate = conglomerate;
+        this.conglomerate = java.util.Objects.requireNonNull(conglomerate, "conglomerate");
     }
 
     @Override
@@ -64,8 +51,6 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public double getFetchFromFullKeyCost(FormatableBitSet validColumns, int accessType) {
         ensureOpen();
-        // Model this request through the currently available MVCC access paths.
-        // a small scan rather than promising true full-key lookup semantics.
         return BASE_NONGROUPSCAN_ROW_FETCH_COST;
     }
 
@@ -85,33 +70,6 @@ final class MvccStoreCostController implements StoreCostController {
             int accessType,
             StoreCostResult costResult) {
         ensureOpen();
-        if (DelosMvccOptimizerCostDiagnostics.enabled() && !conglomerate.rawStoreBacked()) {
-            DelosStorageStatistics statistics = conglomerate.state().storageStatisticsSnapshot();
-            DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatisticsForOptimizerCosting(statistics);
-            long rows = statistics.logicalRowCount() > 0L
-                    ? statistics.logicalRowCount()
-                    : fallbackRows(rowCount);
-            double cost = boundedCost(estimate.estimatedFullScanCost());
-            if (scanType == STORECOST_SCAN_SET) {
-                cost += Math.max(1.0d, rows * BASE_HASHSCAN_ROW_FETCH_COST);
-            }
-            if (groupSize > 1) {
-                cost += Math.max(1.0d, rows * BASE_GROUPSCAN_ROW_COST);
-            }
-            if (forUpdate) {
-                cost += Math.max(1.0d, rows * BASE_CACHED_ROW_FETCH_COST);
-            }
-            if (reopenScan) {
-                cost += BASE_CACHED_ROW_FETCH_COST;
-            }
-            cost = Math.max(1.0d, cost);
-            costResult.setEstimatedRowCount(rows);
-            costResult.setEstimatedCost(cost);
-            DelosMvccOptimizerCostDiagnostics.recordStatisticsEstimate(
-                    conglomerate.getContainerid(), statistics, cost, rows);
-            return;
-        }
-
         long rows = fallbackRows(rowCount);
         double perRow = scanType == STORECOST_SCAN_SET
                 ? BASE_HASHSCAN_ROW_FETCH_COST
@@ -139,10 +97,6 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public long getEstimatedRowCount() {
         ensureOpen();
-        if (DelosMvccOptimizerCostDiagnostics.enabled() && !conglomerate.rawStoreBacked()) {
-            long rows = conglomerate.state().storageStatisticsSnapshot().logicalRowCount();
-            return rows > 0L ? rows : estimatedRowCount;
-        }
         return estimatedRowCount;
     }
 
@@ -157,16 +111,10 @@ final class MvccStoreCostController implements StoreCostController {
         return rows > 0L ? rows : 1L;
     }
 
-    private static double boundedCost(long cost) {
-        if (cost <= 0L) {
-            return 1.0d;
-        }
-        return Math.min((double) cost, Double.MAX_VALUE / 4.0d);
-    }
-
     private void ensureOpen() {
         if (closed) {
-            throw new IllegalStateException("MVCC cost controller is closed for " + conglomerate.getId());
+            throw new IllegalStateException(
+                    "MVCC cost controller is closed for " + conglomerate.getId());
         }
     }
 }

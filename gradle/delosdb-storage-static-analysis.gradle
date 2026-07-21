@@ -1240,9 +1240,17 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('project.ext.delosdbAssembledJarTaskPaths'),
                 'Root :jars task must be derived from ext.delosdbAssembledJarTaskPaths')
 
-        ['storageMvcc', 'delosdb-storage-mvcc', 'jar', 'delosdb-storage-mvcc.jar'].each { token ->
-            DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains(token),
-                    "Runtime artifact convention script must model MVCC provider artifact token: ${token}")
+        def runtimeArtifactSection = runtimeText.substring(
+                runtimeText.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
+                runtimeText.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['))
+        def supportArtifactSection = runtimeText.substring(
+                runtimeText.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['),
+                runtimeText.indexOf('ext.delosdbAssembledJarArtifacts'))
+        ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar'].each { retiredJar ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    !runtimeArtifactSection.contains(retiredJar)
+                            && !supportArtifactSection.contains(retiredJar),
+                    'Retired archive must be outside root runtime and assembly models: ' + retiredJar)
         }
         ['delosdb-storage-api.jar', 'delosdb-derby-store-api.jar'].each { token ->
             DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains(token),
@@ -1254,11 +1262,18 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains("dependsOn 'jars'"),
                 'verifyDelosRuntimeStorageProviders must depend on root :jars')
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('ServiceLoader.load'),
-                'verifyDelosRuntimeStorageProviders must verify provider discovery through ServiceLoader')
-        DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'),
-                'verifyDelosRuntimeStorageProviders must check the DelosStorageProviderFactory service file')
-        DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains("expectedProviderName = 'delos_mvcc'"),
-                'verifyDelosRuntimeStorageProviders must check providerName() == delos_mvcc')
+                'verifyDelosRuntimeStorageProviders must verify access-method discovery through ServiceLoader')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
+                        && runtimeText.contains('DerbyMvccAccessMethodProvider'),
+                'verifyDelosRuntimeStorageProviders must verify the RawStore access-method provider from derby.jar')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory')
+                        && runtimeText.contains('Retired external MVCC provider service remains'),
+                'verifyDelosRuntimeStorageProviders must reject the retired external provider service')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains("it.name in ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar']"),
+                'verifyDelosRuntimeStorageProviders must reject retained MVCC/page-volume archives from runtime classpaths')
         DelosDbStaticAnalysisSupport.require(failures, !runtimeText.contains('doLast {\n        def runtimeFiles = project.'),
                 'Runtime provider verification must not resolve Project state from its task action')
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('delosdbRuntimeJarFileCollection.files')
@@ -1349,6 +1364,8 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
 
         DelosDbStaticAnalysisSupport.require(failures, testsText.contains('rootProject.ext.delosdbRuntimeJarFiles.call()'),
                 'delosdb-tests/build.gradle must derive Derby runtime jars from rootProject.ext.delosdbRuntimeJarFiles.call()')
+        DelosDbStaticAnalysisSupport.require(failures, testsText.contains('rootProject.ext.delosdbLegacyOracleTestJarFiles.call()'),
+                'delosdb-tests/build.gradle must obtain the archived page-volume module only through the explicit test-only collection')
         DelosDbStaticAnalysisSupport.require(failures, testsText.contains("dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')"),
                 'Focused MVCC SQL/DRDA gates must depend on verifyDelosRuntimeStorageProviders')
         [
@@ -3532,214 +3549,109 @@ tasks.register('delosNoTransitionalStorageRoutingStaticAnalysis') {
 
 tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies explicit database-scoped MVCC runtime ownership and rejects ambient database identity.'
+    description = 'Verifies database-scoped ownership for the sole RawStore MVCC runtime.'
 
-    def bootContextFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java')
-    def providerContractFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
-    def runtimeDiagnosticsDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRuntimeDiagnosticsDirectory.java')
-    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
-    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
-    def accessManagerFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java')
-    def analyzeDiagnosticsFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java')
-    def indexStatisticsFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java')
-    def fromBaseTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
-    def sqlTestSupportFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTestSupport.java')
+    def files = [
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java'),
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
+            file('delosdb-storage-bridge/build.gradle'),
+            file('delosdb-engine/src/main/java/module-info.java')
+    ]
     def sqlTestDirectory = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos')
-    inputs.files(bootContextFile, providerContractFile, runtimeFile,
-            runtimeDiagnosticsDirectoryFile, conglomerateFile, factoryFile,
-            diagnosticsFile, accessManagerFile, analyzeDiagnosticsFile,
-            indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile)
+    inputs.files(files)
     inputs.dir(sqlTestDirectory)
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt'))
 
     doLast {
         def failures = []
-        [bootContextFile, providerContractFile, runtimeFile,
-                runtimeDiagnosticsDirectoryFile, conglomerateFile, factoryFile,
-                diagnosticsFile, accessManagerFile, analyzeDiagnosticsFile,
-                indexStatisticsFile, fromBaseTableFile, sqlTestSupportFile].each { sourceFile ->
-            if (!sourceFile.isFile()) {
-                failures << 'Missing required source: ' + sourceFile
-            }
+        files.each { source ->
+            if (!source.isFile()) failures << 'Missing required source: ' + source
         }
-
         if (failures.isEmpty()) {
-            def bootContextText = bootContextFile.getText('UTF-8')
-            def providerContractText = providerContractFile.getText('UTF-8')
-            def conglomerateText = conglomerateFile.getText('UTF-8')
-            def runtimeText = runtimeFile.getText('UTF-8')
-            def runtimeDiagnosticsDirectoryText = runtimeDiagnosticsDirectoryFile.getText('UTF-8')
-            def factoryText = factoryFile.getText('UTF-8')
-            def diagnosticsText = diagnosticsFile.getText('UTF-8')
-            def accessManagerText = accessManagerFile.getText('UTF-8')
-            def analyzeDiagnosticsText = analyzeDiagnosticsFile.getText('UTF-8')
-            def indexStatisticsText = indexStatisticsFile.getText('UTF-8')
-            def fromBaseTableText = fromBaseTableFile.getText('UTF-8')
-            def sqlTestSupportText = sqlTestSupportFile.getText('UTF-8')
+            def boot = files[0].getText('UTF-8')
+            def provider = files[1].getText('UTF-8')
+            def factory = files[2].getText('UTF-8')
+            def runtime = files[3].getText('UTF-8')
+            def directory = files[4].getText('UTF-8')
+            def diagnostics = files[5].getText('UTF-8')
+            def bridgeBuild = files[6].getText('UTF-8')
+            def moduleInfo = files[7].getText('UTF-8')
 
-            [
-                    'static volatile Path databaseDirectory',
-                    'configureDatabaseDirectory(',
-                    'clearStatesForDatabase(',
-                    'new StateIdentity(databaseDirectory',
-                    'new DatabaseIdentity(databaseDirectory)'
-            ].each { token ->
-                if (conglomerateText.contains(token)) {
-                    failures << 'MvccConglomerate retains ambient database ownership token: ' + token
+            if (!boot.contains('RawStoreFactory rawStoreFactory')
+                    || !boot.contains('DataFactory dataFactory')
+                    || !boot.contains('Object databaseIdentity')) {
+                failures << 'External access methods must receive the owning database RawStore context'
+            }
+            if (!provider.contains('AccessMethodBootContext context')) {
+                failures << 'External access-method providers must boot from database-owned context'
+            }
+            if (!factory.contains('private MvccRawStoreRuntime runtime;')
+                    || !factory.contains('new MvccRawStoreRuntime(')
+                    || !factory.contains('context.databaseIdentity()')) {
+                failures << 'MvccConglomerateFactory must own exactly one context-bound RawStore runtime'
+            }
+            ['MvccDatabaseRuntime', 'MvccRuntimeDiagnosticsDirectory',
+             'PersistentService.ROOT', 'runtimeLease'].each { token ->
+                if (factory.contains(token)) failures << 'Factory retains retired runtime ownership token: ' + token
+            }
+            if (!runtime.contains('final class MvccRawStoreRuntime')
+                    || runtime.contains('java.nio.file.Files')
+                    || runtime.contains('MvccDatabaseRuntime')) {
+                failures << 'RawStore runtime must remain database-scoped and free of retained filesystem authority'
+            }
+            if (!directory.contains('WeakReference<MvccRawStoreRuntime>')
+                    || !directory.contains('requireSingle()')
+                    || directory.contains('.close()')) {
+                failures << 'RawStore diagnostics directory must be weak, non-owning, and fail closed when ambiguous'
+            }
+            if (!diagnostics.contains('DelosStorageDiagnostics withContext')
+                    || !diagnostics.contains('MvccRawStoreDiagnosticsDirectory.require(')
+                    || diagnostics.contains('MvccRuntimeDiagnosticsDirectory')) {
+                failures << 'MVCC diagnostics must resolve the RawStore runtime through explicit database context'
+            }
+            if (!bridgeBuild.contains("exclude 'org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java'")) {
+                failures << 'Retained MvccDatabaseRuntime must be excluded from the production bridge artifact'
+            }
+            if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
+                failures << 'Derby runtime module must not discover the retired external MVCC provider'
+            }
+
+            DelosDbStaticFileSupport.javaFiles([sqlTestDirectory]).each { testFile ->
+                def text = testFile.getText('UTF-8')
+                def path = testFile.path
+                if (text.contains('mvccDiagnostics()')) {
+                    failures << path + ': file-database MVCC diagnostics must name their database'
                 }
-            }
-
-            if (!bootContextText.contains('public final class AccessMethodBootContext')
-                    || !bootContextText.contains('RawStoreFactory rawStoreFactory')
-                    || !bootContextText.contains('DataFactory dataFactory')
-                    || !bootContextText.contains('StorageFactory storageFactory')
-                    || !bootContextText.contains('Object databaseIdentity')) {
-                failures << 'External access methods must receive the owning RawStore/DataFactory/StorageFactory context'
-            }
-            if (!providerContractText.contains('AccessMethodBootContext context')
-                    || providerContractText.contains('boolean create')
-                    || providerContractText.contains('Properties serviceProperties')) {
-                failures << 'External access-method providers must boot from the database-owned context'
-            }
-            if (!runtimeText.contains('final class MvccDatabaseRuntime')) {
-                failures << 'MvccDatabaseRuntime must own database-scoped MVCC bridge state'
-            }
-            if (!runtimeText.contains('private final DelosStorageStore store')) {
-                failures << 'MvccDatabaseRuntime must own one DelosStorageStore'
-            }
-            if (!runtimeText.contains('private final Map<TableIdentity, MvccConglomerateState> states')) {
-                failures << 'MvccDatabaseRuntime must own the table-state registry'
-            }
-            ['static Lease acquire(', 'REGISTRY_MONITOR', 'RUNTIMES =', 'RegistryEntry',
-             'record DatabaseIdentity', 'MvccDatabaseRuntime.acquire('].each { token ->
-                if (runtimeText.contains(token)) {
-                    failures << 'MvccDatabaseRuntime retains static/path-keyed ownership token: ' + token
-                }
-            }
-            if (!factoryText.contains('new MvccDatabaseRuntime(')
-                    || !factoryText.contains('context.databaseIdentity()')
-                    || factoryText.contains('PersistentService.ROOT')
-                    || factoryText.contains('runtimeLease')) {
-                failures << 'MvccConglomerateFactory must directly own one context-bound runtime without path lookup or leases'
-            }
-            if (!runtimeDiagnosticsDirectoryText.contains('WeakReference<MvccDatabaseRuntime>')
-                    || !runtimeDiagnosticsDirectoryText.contains('It never acquires,')
-                    || runtimeDiagnosticsDirectoryText.contains('.close()')) {
-                failures << 'Legacy path diagnostics may observe runtimes weakly but must not own or close them'
-            }
-            if (!accessManagerText.contains('new AccessMethodBootContext(')
-                    || !accessManagerText.contains('externalAccessMethodContext(conglomProperties)')
-                    || !accessManagerText.contains('externalAccessMethodDatabaseIdentity')) {
-                failures << 'RAMAccessManager must create and pass one database-owned external access-method context'
-            }
-            if (!diagnosticsText.contains('DelosStorageDiagnostics withContext')) {
-                failures << 'MVCC diagnostics must support explicit database context'
-            }
-            if (!accessManagerText.contains('registerExternalAccessMethodLifecycle(factory)')) {
-                failures << 'RAMAccessManager must own lifecycle for ServiceLoader-booted access methods'
-            }
-            if (!analyzeDiagnosticsText.contains('Path databaseDirectory')) {
-                failures << 'MVCC analyze diagnostics must receive explicit database identity'
-            }
-            if (!indexStatisticsText.contains('Path.of(Monitor.getServiceName(lcc.getDatabase()))')) {
-                failures << 'Explicit update-statistics diagnostics must bind to the owning database service'
-            }
-            if (!fromBaseTableText.contains('Path.of(databaseServiceName)')) {
-                failures << 'Optimizer metadata diagnostics must bind to the compiling database service'
-            }
-            if (!sqlTestSupportText.contains('activatePersistedMvccConglomerates(connection)')) {
-                failures << 'Embedded SQL reopen helper must activate persisted MVCC conglomerates explicitly'
-            }
-            if (!sqlTestSupportText.contains('ConglomerateFactory.MVCC_FACTORY_ID')) {
-                failures << 'Embedded SQL reopen helper must select only persisted MVCC conglomerates'
-            }
-            if (!sqlTestSupportText.contains('and c.isindex = false')) {
-                failures << 'Embedded SQL reopen helper must activate MVCC base tables rather than indexes'
-            }
-            if (!sqlTestSupportText.contains('lock table ')
-                    || !sqlTestSupportText.contains(' in share mode')) {
-                failures << 'Embedded SQL reopen helper must activate tables through context-safe LOCK TABLE execution'
-            }
-            if (sqlTestSupportText.contains('transaction.openConglomerate(')
-                    || sqlTestSupportText.contains('getTransactionExecute()')) {
-                failures << 'Embedded SQL reopen helper must not call internal transaction APIs outside a JDBC context'
-            }
-            if (sqlTestSupportText.contains('select * from ')
-                    || sqlTestSupportText.contains('fetch first row')) {
-                failures << 'Embedded SQL reopen helper must not activate MVCC by scanning user rows'
-            }
-
-            def runtimeIsolationTest = new File(sqlTestDirectory, 'MvccSqlDatabaseRuntimeIsolationTest.java')
-            def runtimeIsolationText = runtimeIsolationTest.isFile()
-                    ? runtimeIsolationTest.getText('UTF-8') : ''
-            if (!runtimeIsolationText.contains('testMemoryDatabaseFailsClosedBeforeLegacyMvccStorageBoot')
-                    || !runtimeIsolationText.contains('assertEquals("0A000", expected.getSQLState())')) {
-                failures << 'Runtime ownership proof must keep legacy MVCC storage fail-closed for memory databases'
-            }
-
-            if (!sqlTestDirectory.isDirectory()) {
-                failures << 'Missing DelosDB SQL test directory: ' + sqlTestDirectory
-            } else {
-                DelosDbStaticFileSupport.javaFiles([sqlTestDirectory]).each { testFile ->
-                    def testText = testFile.getText('UTF-8')
-                    def testPath = testFile.path
-                    if (testText.contains('mvccDiagnostics()')) {
-                        failures << testPath + ': SQL diagnostics must name their database'
-                    }
-                    if ((testText =~ /DelosStorageConsistencyTarget\.mvcc\(\s*\d/).find()) {
-                        failures << testPath + ': MVCC metadata targets must name their database'
-                    }
-
-                    def unscopedRegistryLookup =
-                            testText.contains('DelosStorageDiagnosticsRegistry.mvcc()')
-                    def memoryMaintenanceProof =
-                            testFile.name == 'MvccRawStoreMaintenanceDiagnosticsTest.java'
-                            && testText.contains(
-                                    'testDatabaseWorkersAreIsolatedAndMemoryUsesTheSameMaintenancePath')
-                            && testText.count('DelosStorageDiagnosticsRegistry.mvcc()') == 2
-                            && testText.indexOf('shutdownDatabase(firstDatabase);') >= 0
-                            && testText.indexOf('shutdownDatabase(secondDatabase);') >= 0
-                            && testText.indexOf('String memoryDatabase = "memory:')
-                                    > testText.indexOf('shutdownDatabase(secondDatabase);')
-                            && testText.indexOf('shutdownDatabase(memoryDatabase);')
-                                    > testText.indexOf('String memoryDatabase = "memory:')
-                    if (unscopedRegistryLookup && !memoryMaintenanceProof) {
-                        failures << testPath + ': MVCC registry diagnostics must name their database'
-                    }
-                    if ((testText =~ /DelosStorageDiagnosticsRegistry\.(inspectMvcc|statisticsForMvcc|mvccStorageStatistics|capabilitiesForMvcc)\(\s*\d/).find()) {
-                        failures << testPath + ': MVCC registry diagnostics must name their database'
-                    }
-                    if ((testText =~ /(?i)new\s+DelosStorage(?:ConsistencyTarget|PredicatePushdownRequest)\([\s\S]{0,240}?delos_mvcc[\s\S]{0,120}?\bnull\s*,/).find()) {
-                        failures << testPath + ': MVCC diagnostic request retains a null database directory'
-                    }
+                def unscoped = text.contains('DelosStorageDiagnosticsRegistry.mvcc()')
+                def memoryProof = testFile.name == 'MvccRawStoreMaintenanceDiagnosticsTest.java'
+                        && text.contains('testDatabaseWorkersAreIsolatedAndMemoryUsesTheSameMaintenancePath')
+                        && text.count('DelosStorageDiagnosticsRegistry.mvcc()') == 2
+                        && text.indexOf('shutdownDatabase(firstDatabase);') >= 0
+                        && text.indexOf('shutdownDatabase(secondDatabase);') >= 0
+                        && text.indexOf('String memoryDatabase = "memory:')
+                                > text.indexOf('shutdownDatabase(secondDatabase);')
+                if (unscoped && !memoryProof) {
+                    failures << path + ': unscoped MVCC diagnostics are only permitted for the isolated memory proof'
                 }
             }
         }
 
-        def reportFile = layout.buildDirectory
-                .file('reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt')
-                .get().asFile
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-database-runtime-ownership-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB MVCC database runtime ownership static analysis')
-            writer.println('========================================================')
-            writer.println()
-            writer.println('Rule: MVCC database selection must be explicit and database-scoped; memory-only maintenance diagnostics may use the fail-closed single-runtime lookup.')
-            writer.println()
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { writer.println('- ' + it) }
-            }
+            writer.println('DelosDB RawStore MVCC database runtime ownership static analysis')
+            writer.println('================================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
         }
-
-        if (!failures.isEmpty()) {
-            throw new GradleException('MVCC database runtime ownership validation failed. Report: ' + reportFile)
-        }
-        println 'DelosDB MVCC database runtime ownership static analysis passed. Report: ' + reportFile
+        if (!failures.isEmpty()) throw new GradleException(
+                'MVCC database runtime ownership validation failed. Report: ' + reportFile)
+        logger.lifecycle('DelosDB MVCC database runtime ownership static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -4581,180 +4493,72 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
 
 tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
     group = 'verification'
-    description = 'Protects raw-store-owned transactional MVCC CREATE/DROP and DDL-plus-DML decisions.'
+    description = 'Protects RawStore-owned transactional MVCC CREATE/DROP and savepoint semantics.'
 
-    def requiredFiles = [
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionLifecycleAction.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateLifecycleFiles.java',
-            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosMvccConglomerateLifecycleOperation.java',
-            'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosMvccConglomerateLifecycleUndoOperation.java',
-            'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/StoredFormatIds.java',
-            'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/RegisteredFormatIds.java',
-            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.java',
-            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.java',
-            'delosdb-tests/build.gradle',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailurePointRegistry.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTransactionLifecycleTest.java'
+    def required = [
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.java')
     ]
-    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
-    outputs.file(layout.buildDirectory.file(
-            'reports/delosdb/mvcc-transactional-ddl-static-analysis.txt'))
+    inputs.files(required)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-transactional-ddl-static-analysis.txt'))
 
     doLast {
         def failures = []
-        def read = { int index ->
-            def source = new File(delosRepositoryRoot, requiredFiles[index])
-            DelosDbStaticAnalysisSupport.require(
-                    failures, source.isFile(),
-                    'Missing transactional MVCC DDL source: ' + requiredFiles[index])
-            source.isFile() ? source.getText('UTF-8') : ''
-        }
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (failures.isEmpty()) {
+            def factory = required[0].getText('UTF-8')
+            def conglomerate = required[1].getText('UTF-8')
+            def context = required[2].getText('UTF-8')
+            def table = required[3].getText('UTF-8')
+            def physicalTest = required[4].getText('UTF-8')
+            def vacuumTest = required[5].getText('UTF-8')
 
-        def registryText = read(0)
-        def actionText = read(1)
-        def factoryText = read(2)
-        def conglomerateText = read(3)
-        def runtimeText = read(4)
-        def filesText = read(5)
-        def operationText = read(6)
-        def undoText = read(7)
-        def storedIdsText = read(8)
-        def registeredIdsText = read(9)
-        def sqlTestText = read(10)
-        def crashTestText = read(11)
-        def testBuildText = read(12)
-        def failureRegistryText = read(13)
-        def transactionLifecycleTestText = read(14)
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                registryText.contains('return !writersFor(ownerTransaction).isEmpty()')
-                        && registryText.contains(
-                                '|| !lifecycleActionsFor(ownerTransaction).isEmpty();')
-                        && registryText.contains(
-                                'boolean externalMvccWrite = !writers.isEmpty();')
-                        && registryText.contains(
-                                'boolean requiresRawStoreDecision = externalMvccWrite || !lifecycleActions.isEmpty();')
-                        && registryText.contains('if (externalMvccWrite)')
-                        && registryText.contains(
-                                'rawStoreParticipant.stageMvccConglomerateLifecycle(action.lifecycle());'),
-                'Every retained external MVCC write and surviving DDL lifecycle must use the raw-store decision')
-        DelosDbStaticAnalysisSupport.require(failures,
-                registryText.contains('registerRawStoreOwnedMvcc(Object ownerTransaction)')
-                        && registryText.contains('RAW_STORE_OWNED_MVCC.containsKey(requiredOwner)')
-                        && registryText.count('throw mixedMvccStorageAuthorities();') >= 2
-                        && transactionLifecycleTestText.contains(
-                                'rawStoreOwnedMvccUsesInheritedCommitWithoutExternalDecision')
-                        && transactionLifecycleTestText.contains(
-                                'assertFalse(DelosStorageTransactionRegistry.requiresRawStoreDecision')
-                        && transactionLifecycleTestText.contains(
-                                'rawStoreOwnedAndRetainedMvccWritersCannotMix'),
-                'RawStore-owned MVCC must bypass the retained external coordinator and fail before mixed-authority mutation')
-        DelosDbStaticAnalysisSupport.require(failures,
-                actionText.contains('DelosMvccConglomerateLifecycle lifecycle();'),
-                'Lifecycle actions must expose the exact raw-log lifecycle identity')
-        DelosDbStaticAnalysisSupport.require(failures,
-                factoryText.contains('currentRuntime.stageCreate(lifecycle);')
-                        && factoryText.contains('registerLifecycleAction(')
-                        && factoryText.contains('MvccConglomerateLifecycleAction.create('),
-                'MVCC CREATE must stage pending state and register transaction-owned completion')
-        DelosDbStaticAnalysisSupport.require(failures,
-                conglomerateText.contains('MvccConglomerateLifecycleAction.drop(')
-                        && !conglomerateText.contains('requireRuntime().drop(')
-                        && !conglomerateText.contains('dropDurableState();'),
-                'MVCC DROP must not physically retire provider state before raw-store commit')
-        DelosDbStaticAnalysisSupport.require(failures,
-                runtimeText.contains('recoverInterruptedCreates(this.databaseDirectory);')
-                        && runtimeText.contains('void abortCreate(')
-                        && runtimeText.contains('void completeDrop(')
-                        && runtimeText.contains('private void retireState(')
-                        && runtimeText.contains(
-                                'DelosStorageTransactionRegistry.abortTableParticipants(currentState.table());')
-                        && runtimeText.count('retireState(identity, currentState);') == 2,
-                'Database runtime must release table participants before CREATE abort or committed DROP closes provider state')
-        DelosDbStaticAnalysisSupport.require(failures,
-                filesText.contains('A lone pending marker has no durable raw-store commit')
-                        && filesText.contains('deleteStateFiles(databaseDirectory, lifecycle);')
-                        && filesText.contains('database-transactions.txstatus'),
-                'External lifecycle cleanup must distinguish pending/committed CREATE and compact final status')
-        DelosDbStaticAnalysisSupport.require(failures,
-                operationText.contains('implements Undoable')
-                        && operationText.contains('rawTransaction.handlesPostTerminationWork()')
-                        && !operationText.contains('addPostCommitWork(')
-                        && operationText.contains('case DROP -> deleteStateFiles')
-                        && undoText.contains('applyUndo(transaction, lifecycle);'),
-                'Raw lifecycle must defer live publication until after raw commit and recover through redo')
-        DelosDbStaticAnalysisSupport.require(failures,
-                storedIdsText.contains('LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE')
-                        && storedIdsText.contains('(MIN_ID_2 + 483)')
-                        && registeredIdsText.contains('DelosMvccConglomerateLifecycleOperation')
-                        && registeredIdsText.contains('DelosMvccConglomerateLifecycleUndoOperation'),
-                'Transactional MVCC DDL log records must remain registered formatables')
-
-        [
-                'testCreateMvccRollbackRemovesProviderStateAcrossReopen',
-                'testDropMvccRollbackPreservesRowsAcrossReopen',
-                'testDropMvccCommitRetiresProviderStateAcrossReopen',
-                'testMvccIndexCreateAndDropRollbackAcrossReopen',
-                'testMvccDmlAndTransactionalDdlShareOneRawDecision',
-                'testCreateAndDropOrderWithSameTableDml',
-                'testDdlPlusMvccRawStoreFailureRollsBackBoth',
-                'testCreateAndDropLifecycleRollBackToSavepoint'
-        ].each { methodName ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    sqlTestText.contains(methodName),
-                    'Transactional MVCC DDL SQL proof is missing: ' + methodName)
-        }
-        [
-                'testCreateBeforeRawCommitIsUndoneOnReopen',
-                'testCreateAfterRawCommitIsRecoveredOnReopen',
-                'testDropBeforeRawCommitPreservesTableOnReopen',
-                'testDropAfterRawCommitRetiresTableOnReopen'
-        ].each { methodName ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    crashTestText.contains(methodName),
-                    'Transactional MVCC DDL process-halt proof is missing: ' + methodName)
-        }
-        DelosDbStaticAnalysisSupport.require(failures,
-                failureRegistryText.contains('installFailureForTesting(')
-                        && sqlTestText.contains('BEFORE_DERBY_RAW_STORE_COMMIT')
-                        && sqlTestText.contains('if (!connection.isClosed())'),
-                'Transactional DDL must retain a checked pre-raw-store-commit failure proof that tolerates Derby connection invalidation')
-        DelosDbStaticAnalysisSupport.require(failures,
-                crashTestText.contains('shutdownDatabase(database.toString());')
-                        && crashTestText.indexOf('shutdownDatabase(database.toString());')
-                                < crashTestText.indexOf('installHalt(database, failurePoint);'),
-                'Transactional DDL crash schedules must be installed after setup-runtime shutdown and before reopen')
-        DelosDbStaticAnalysisSupport.require(failures,
-                testBuildText.contains("'runDelosMvccTransactionalDdlTest'")
-                        && testBuildText.contains('MvccSqlTransactionalDdlTest.class')
-                        && testBuildText.contains('MvccTransactionalDdlCrashTest.class'),
-                'Transactional MVCC DDL tests must have a permanent focused Gradle lane')
-
-        def reportFile = new File(
-                delosBuildRoot,
-                'reports/delosdb/mvcc-transactional-ddl-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB transactional MVCC DDL static analysis')
-            writer.println('================================================')
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-                writer.println('MVCC CREATE/DROP and DDL-plus-DML remain subordinate to one raw-store transaction decision.')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { failure -> writer.println('- ' + failure) }
+            if (!factory.contains('MvccRawStoreTable.create(')
+                    || !factory.contains('.markCreatedTable(descriptor)')) {
+                failures << 'MVCC CREATE must create containers and register them in the owning RawStore transaction context'
+            }
+            if (!conglomerate.contains('context.beforeDrop(currentTable);')
+                    || !conglomerate.contains('MvccRawStoreTable.drop(')) {
+                failures << 'MVCC DROP must register lifecycle intent before transactional RawStore container drop'
+            }
+            if (!context.contains('private final Map<ContainerKey, MvccRawStoreTable.Descriptor> createdTables')
+                    || !context.contains('private final Map<ContainerKey, MvccRawStoreTable.Descriptor> droppedTables')
+                    || !context.contains('void markCreatedTable(')
+                    || !context.contains('void beforeDrop(')
+                    || !context.contains('afterRollbackToSavepoint')) {
+                failures << 'RawStore transaction context must own CREATE/DROP and savepoint reconciliation state'
+            }
+            if (!table.contains('rawTransaction.dropContainer(table.metadataContainer())')
+                    || !table.contains('rawTransaction.dropContainer(table.versionContainer())')) {
+                failures << 'MVCC DROP must use inherited transactional RawStore container operations'
+            }
+            if (!physicalTest.contains('rollback(beforeGeneration)')
+                    || !vacuumTest.contains('rollback(beforeVacuum)')) {
+                failures << 'Permanent RawStore savepoint proofs must remain present'
+            }
+            ['MvccConglomerateLifecycleAction', 'MvccDatabaseRuntime',
+             'database-decisions', 'BEFORE_DERBY_RAW_STORE_COMMIT'].each { token ->
+                if (factory.contains(token) || conglomerate.contains(token) || context.contains(token)) {
+                    failures << 'RawStore transactional DDL path retains retired lifecycle authority token: ' + token
+                }
             }
         }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'Transactional MVCC DDL static analysis failed. Report: ' + reportFile)
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-transactional-ddl-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore transactional MVCC DDL static analysis')
+            writer.println('=======================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
         }
-        logger.lifecycle(
-                'Transactional MVCC DDL static analysis passed. Report: {}', reportFile)
+        if (!failures.isEmpty()) throw new GradleException(
+                'Transactional MVCC DDL static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Transactional MVCC DDL static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -5204,392 +5008,77 @@ tasks.register('delosAccessMethodTransactionLifecycleStaticAnalysis') {
 
 tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies the isolated MVCC format uses RawStore as its only physical and transactional authority.'
+    description = 'Protects the production RawStore-backed delos_mvcc vertical slice.'
 
-    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def orderedIndexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
-    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
-    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
-    def legacyRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
-    def transactionRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
-    def transactionLifecycleTestFile = file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTransactionLifecycleTest.java')
-    def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java')
-    def recoveryTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreRecoveryTest.java')
-    def testsBuildFile = file('delosdb-tests/build.gradle')
-    def proofFile = file('docs/design/V1-RAWSTORE-MVCC-VERTICAL-SLICE.md')
-    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
-    def rawStoreAuthorityFiles = [formatFile, tableFile, orderedIndexFile, runtimeFile, contextFile,
-            controllerFile, scanFile]
-    def productionFiles = rawStoreAuthorityFiles + [conglomerateFile, factoryFile]
-    inputs.files(productionFiles + [legacyRuntimeFile, transactionRegistryFile, transactionLifecycleTestFile,
-            sqlTestFile, recoveryTestFile, testsBuildFile, proofFile, implementationFile])
-    outputs.file(layout.buildDirectory.file(
-            'reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt'))
+    def required = [
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java'),
+            file('delosdb-tests/build.gradle')
+    ]
+    inputs.files(required)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt'))
 
     doLast {
         def failures = []
-        def requiredFiles = productionFiles + [legacyRuntimeFile, transactionRegistryFile,
-                transactionLifecycleTestFile, sqlTestFile, recoveryTestFile,
-                testsBuildFile, proofFile, implementationFile]
-        requiredFiles.each { sourceFile ->
-            if (!sourceFile.isFile()) {
-                failures << 'Missing required file: ' + sourceFile
-            }
-        }
-
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
         if (failures.isEmpty()) {
-            def formatText = formatFile.getText('UTF-8')
-            def tableText = tableFile.getText('UTF-8')
-            def orderedIndexText = orderedIndexFile.getText('UTF-8')
-            def runtimeText = runtimeFile.getText('UTF-8')
-            def contextText = contextFile.getText('UTF-8')
-            def controllerText = controllerFile.getText('UTF-8')
-            def scanText = scanFile.getText('UTF-8')
-            def conglomerateText = conglomerateFile.getText('UTF-8')
-            def factoryText = factoryFile.getText('UTF-8')
-            def legacyRuntimeText = legacyRuntimeFile.getText('UTF-8')
-            def transactionRegistryText = transactionRegistryFile.getText('UTF-8')
-            def transactionLifecycleTestText = transactionLifecycleTestFile.getText('UTF-8')
-            def sqlTestText = sqlTestFile.getText('UTF-8')
-            def recoveryTestText = recoveryTestFile.getText('UTF-8')
-            def testsBuildText = testsBuildFile.getText('UTF-8')
-            def proofText = proofFile.getText('UTF-8')
-            def implementationText = implementationFile.getText('UTF-8')
+            def factory = required[0].getText('UTF-8')
+            def conglomerate = required[1].getText('UTF-8')
+            def runtime = required[2].getText('UTF-8')
+            def table = required[3].getText('UTF-8')
+            def context = required[4].getText('UTF-8')
+            def test = required[5].getText('UTF-8')
+            def build = required[6].getText('UTF-8')
 
-            def requireTokens = { String description, String source, List<String> tokens ->
-                tokens.each { token ->
-                    if (!source.contains(token)) {
-                        failures << description + ' is missing token: ' + token
-                    }
-                }
+            if (!factory.contains('new MvccRawStoreRuntime(')
+                    || !factory.contains('MvccRawStoreTable.create(')
+                    || !factory.contains('MvccRawStoreTable.read(')
+                    || factory.contains('MvccRawStoreFormat.ENABLED_PROPERTY')
+                    || factory.contains('new MvccDatabaseRuntime(')) {
+                failures << 'delos_mvcc factory must route unconditionally through RawStore'
             }
-            def requireOrdered = { String description, String source, List<String> tokens ->
-                int previous = -1
-                tokens.each { token ->
-                    int current = source.indexOf(token)
-                    if (current < 0) {
-                        failures << description + ' is missing token: ' + token
-                    } else if (current <= previous) {
-                        failures << description + ' has incorrect ordering at token: ' + token
-                    }
-                    previous = current
-                }
+            if (!conglomerate.contains('MvccRawStoreConglomerateController')
+                    || !conglomerate.contains('MvccRawStoreScanController')
+                    || conglomerate.contains('MvccConglomerateController')
+                    || conglomerate.contains('MvccScanController')) {
+                failures << 'Conglomerate operations must use only RawStore controllers'
             }
-            def section = { String source, String start, String end, String description ->
-                int startIndex = source.indexOf(start)
-                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
-                if (startIndex < 0 || endIndex < 0) {
-                    failures << 'Could not isolate ' + description
-                    return ''
-                }
-                source.substring(startIndex, endIndex)
+            if (!runtime.contains('captureSnapshot()')
+                    || !runtime.contains('openSnapshotLease()')
+                    || !runtime.contains('reserveCommitSequence(')
+                    || runtime.contains('java.nio.file.Files')) {
+                failures << 'RawStore runtime must own MVCC sequencing without direct filesystem persistence'
             }
-
-            requireTokens('RawStore physical format', formatText, [
-                    'delosdb.mvcc.rawStoreVerticalSlice.enabled',
-                    'CONTROL_METADATA_CONTAINER',
-                    'CONTROL_VERSION_CONTAINER',
-                    'ALLOCATOR_NEXT_ROW_ID',
-                    'ALLOCATOR_NEXT_VERSION_ID',
-                    'ALLOCATOR_COMMITTED_HIGH_WATER',
-                    'VERSION_CREATOR_TRANSACTION_ID',
-                    'VERSION_BEGIN_SEQUENCE',
-                    'VERSION_PREVIOUS_VERSION_ID',
-                    'ORDERED_INDEX_CONTAINER_KIND',
-                    'ORDERED_INDEX_ENTRY_KIND',
-                    'controlOrderedIndexContainerField'
-            ])
-            requireTokens('RawStore table implementation', tableText, [
-                    'rawTransaction.addContainer(',
-                    'rawTransaction.dropContainer(',
-                    'Page.INSERT_UNDO_WITH_PURGE',
-                    'Page.INSERT_OVERFLOW',
-                    'page.updateFieldAtSlot(',
-                    'page.insertAtSlot(',
-                    'MvccRawStorePhysicalLocking.rowLevel(transaction)',
-                    'DirectoryHead head = findHead(',
-                    'findVersion(',
-                    'pendingVersionExists(',
-                    'MvccRawStoreFormat.VERSION_ID,',
-                    'updateVersionBeginByLogicalId('
-            ])
-            requireTokens('RawStore ordered-index implementation', orderedIndexText, [
-                    'Page.INSERT_UNDO_WITH_PURGE',
-                    'Page.INSERT_OVERFLOW',
-                    'StoreDataValue',
-                    'StoreTypeUtil.compare',
-                    'ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE',
-                    'ORDERED_INDEX_ENTRY_END_SEQUENCE',
-                    'MvccRawStorePhysicalLocking.rowLevel(transaction)'
-            ])
-            if (tableText.count('rawTransaction.addContainer(') != 3) {
-                failures << 'RawStore MVCC CREATE must allocate exactly three table containers'
+            if (!table.contains('rawTransaction.addContainer(')
+                    || !table.contains('rawTransaction.openContainer(')
+                    || !context.contains('rawTransaction.commit()')) {
+                failures << 'Physical MVCC state and commit must remain subordinate to inherited RawStore'
             }
-            requireOrdered('RawStore MVCC INSERT ownership',
-                    section(tableText, 'static PendingVersion insert(', 'static VisibleRow readVisible(',
-                            'RawStore MVCC INSERT section'),
-                    ['context.beforeTableWrite(table)', 'MvccRawStoreOrderedIndex.assertUnique(',
-                            'context.reserveInsertIdentifiers(table)',
-                            'insertRow(rawTransaction, table.versionContainer()',
-                            'insertRow(rawTransaction, table.metadataContainer()',
-                            'context.orderedIndexForWrite(table)',
-                            'MvccRawStoreOrderedIndex.insertVersion(', 'context.addPending('])
-            requireOrdered('RawStore MVCC DROP lock order',
-                    section(tableText, 'static void drop(', 'private static void initializeMetadataContainer(',
-                            'RawStore MVCC DROP section'),
-                    ['dropContainer(table.metadataContainer())', 'dropContainer(table.versionContainer())',
-                            'dropContainer(orderedIndex)'])
-
-            def forbiddenProductionTokens = [
-                    'java.nio.file',
-                    'java.io.File',
-                    'Path.of(',
-                    'Files.',
-                    'DelosStorageStore',
-                    'MvccPageMutationLog',
-                    'MvccTransactionOutcomeLog',
-                    'implements Loggable',
-                    'new Loggable',
-                    'PersistentService.ROOT'
-            ]
-            rawStoreAuthorityFiles.each { sourceFile ->
-                def source = sourceFile.getText('UTF-8')
-                forbiddenProductionTokens.each { token ->
-                    if (source.contains(token)) {
-                        failures << sourceFile.name + ' contains forbidden independent-storage token: ' + token
-                    }
-                }
+            if (!test.contains('testRawStoreIsTheDefaultMvccFormat')
+                    || !test.contains('testRetiredExternalFormatCannotBeReenabled')
+                    || !test.contains('testMemoryDatabaseUsesRawStoreAndLeavesNoFilesystemVolume')) {
+                failures << 'Default, retained-format rejection, and memory vertical-slice proofs must remain present'
             }
-
-            requireTokens('Commit-publication runtime', runtimeText, [
-                    'ReentrantLock commitPublicationLock',
-                    'void ensureMetadata(TransactionManager transactionManager)',
-                    'long committedHighWater = metadata.ensureInitialized(transactionManager)',
-                    'observeCommittedHighWater(committedHighWater)',
-                    'long captureSnapshot()',
-                    'return publishedHighWater.get()',
-                    'long reserveCommitSequence(Transaction rawTransaction)',
-                    'publishAndUnlock(',
-                    'observeCommittedHighWater('
-            ])
-            def snapshotCaptureSection = section(runtimeText, 'long captureSnapshot()', 'SnapshotLease openSnapshotLease()',
-                    'snapshot capture section')
-            if (snapshotCaptureSection.contains('MvccRawStoreTable.')
-                    || snapshotCaptureSection.contains('openContainer(')) {
-                failures << 'Snapshot capture must not acquire RawStore locks while holding the publication lock'
+            if (!build.contains("'runDelosMvccRawStoreVerticalSliceTest'")) {
+                failures << 'RawStore vertical slice must retain a focused Gradle lane'
             }
-            def snapshotLeaseSection = section(runtimeText, 'SnapshotLease openSnapshotLease()', 'long vacuumHorizon()',
-                    'snapshot lease section')
-            if (snapshotLeaseSection.contains('MvccRawStoreTable.')
-                    || snapshotLeaseSection.contains('openContainer(')) {
-                failures << 'Snapshot lease registration must not acquire RawStore locks while holding the publication lock'
-            }
-            def reserveSection = section(runtimeText, 'long reserveCommitSequence(Transaction rawTransaction)', 'void stageCommittedHighWater(',
-                    'commit-sequence reservation section')
-            if (reserveSection.contains('MvccRawStoreTable.')
-                    || reserveSection.contains('openContainer(')) {
-                failures << 'Commit-sequence reservation must not invert publication and RawStore lock order'
-            }
-
-            requireTokens('RawStore transaction lifecycle participant', contextText, [
-                    'implements AccessMethodTransactionLifecycle',
-                    'transactionManager.isGlobal()',
-                    'registerRawStoreOwnedMvcc(transactionManager)',
-                    'UNCAPTURED_SNAPSHOT',
-                    'snapshotLease = runtime.openSnapshotLease()',
-                    'snapshotSequence = snapshotLease.sequence()',
-                    'beforeCommit(CommitMode mode)',
-                    'stampPendingVersions(',
-                    'afterCommit(CommitMode mode, DatabaseInstant instant)',
-                    'publishAndUnlock(',
-                    'commitFailed(',
-                    'afterRollbackToSavepoint(',
-                    'MvccRawStoreTable.pendingVersionExists(',
-                    'beforeNestedUserTransaction(boolean readOnly)',
-                    'beforeXaOperation(XaOperation operation)'
-            ])
-            requireOrdered('RawStore MVCC precommit protocol',
-                    section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
-                            'RawStore MVCC precommit section'),
-                    ['runtime.reserveCommitSequence(rawTransaction)', 'stampPendingVersions(',
-                            'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
-                            'AFTER_STAMP_BEFORE_RAW_COMMIT'])
-            requireOrdered('RawStore MVCC postcommit publication',
-                    section(contextText, 'public void afterCommit(', 'public void commitFailed(',
-                            'RawStore MVCC postcommit section'),
-                    ['AFTER_RAW_COMMIT_BEFORE_PUBLICATION', 'publishAndUnlock(', 'clearLocalState()'])
-
-            requireTokens('RawStore controller point fetch', controllerText, [
-                    'MvccRawStoreTable.readVisible(',
-                    'MvccRowLocation.from(loc).rowId()',
-                    'MvccRawStoreTable.insert('
-            ])
-            requireTokens('RawStore scan logical positioning', scanText, [
-                    'runtime.enterTableRead(table)',
-                    'MvccRawStoreTable.scanVisibleAt(',
-                    'MvccRawStoreTable.readVisibleAt(',
-                    'snapshotSequence',
-                    'positionAtRowLocation(',
-                    'public boolean isTableLocked() {',
-                    'return true;'
-            ])
-            requireTokens('Conglomerate RawStore dispatch', conglomerateText, [
-                    'rawStoreBacked()',
-                    'new MvccRawStoreConglomerateController(',
-                    'new MvccRawStoreScanController(',
-                    'rawStoreRuntime.context(',
-                    'context.beforeDrop(rawStoreTable)',
-                    'MvccRawStoreTable.drop('
-            ])
-
-            requireTokens('Transitional transaction-authority isolation', transactionRegistryText, [
-                    'RAW_STORE_OWNED_MVCC',
-                    'registerRawStoreOwnedMvcc(Object ownerTransaction)',
-                    'boolean externalMvccWrite = !writers.isEmpty()',
-                    'if (externalMvccWrite)',
-                    'cannot mix RawStore-owned delos_mvcc mutations',
-                    'RAW_STORE_OWNED_MVCC.remove(ownerTransaction)'
-            ])
-            requireOrdered('RawStore-owned commit bypasses the retained coordinator',
-                    section(transactionRegistryText, 'public static CommitPreparation prepareCommit(',
-                            'public static void beforeRawStoreCommit(',
-                            'transaction registry prepare section'),
-                    ['List<Writer> writers = writersFor(requiredOwner)',
-                            'boolean externalMvccWrite = !writers.isEmpty()',
-                            'if (!requiresRawStoreDecision)',
-                            'if (externalMvccWrite)'])
-            requireTokens('Transaction-authority isolation proof', transactionLifecycleTestText, [
-                    'rawStoreOwnedMvccUsesInheritedCommitWithoutExternalDecision',
-                    'assertFalse(DelosStorageTransactionRegistry.requiresRawStoreDecision',
-                    'assertFalse(prepared.requiresRawStoreDecision())',
-                    'rawStoreOwnedAndRetainedMvccWritersCannotMix',
-                    'cannot mix RawStore-owned delos_mvcc mutations'
-            ])
-
-            if (legacyRuntimeText.contains('maximumPersistedContainerId(')
-                    || legacyRuntimeText.contains('PERSISTED_TABLE_FILE')) {
-                failures << 'Stage 5 must remove retained-format conglomerate-ID discovery from MvccDatabaseRuntime'
-            }
-            requireTokens('Factory opt-in and authority route', factoryText, [
-                    'System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false")',
-                    'if (rawStoreVerticalSliceEnabled)',
-                    'rejectRetainedExternalState(legacyStorageDirectory)',
-                    'reserveRawStoreConglomerateId(input_containerid)',
-                    'MvccRawStoreTable.create(',
-                    'MvccRawStoreTable.read(',
-                    'if (!rawStoreVerticalSliceEnabled)',
-                    'MvccRawStoreFormat.ENABLED_PROPERTY + "=true"',
-                    'rawStoreRuntime().ensureMetadata(xact_mgr)',
-                    'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
-                    'return new MvccConglomerate(runtime(), container_key)',
-                    'memory and non-directory databases require the RawStore-backed table format'
-            ])
-            requireOrdered('Factory CREATE route',
-                    section(factoryText, 'public Conglomerate createConglomerate(',
-                            'private static void rejectUnsupportedDurableTypes(', 'factory CREATE section'),
-                    ['if (rawStoreVerticalSliceEnabled)', 'registerRawStoreOwnedMvcc(xact_mgr)',
-                            'reserveRawStoreConglomerateId(', 'MvccRawStoreTable.create(',
-                            'MvccDatabaseRuntime currentRuntime = runtime()'])
-            requireOrdered('Factory READ authority route',
-                    section(factoryText, 'public Conglomerate readConglomerate(',
-                            'public void boot(', 'factory READ section'),
-                    ['MvccRawStoreTable.read(', 'if (descriptor != null)',
-                            'if (!rawStoreVerticalSliceEnabled)',
-                            'rawStoreRuntime().ensureMetadata(xact_mgr)',
-                            'return new MvccConglomerate(rawStoreRuntime(), descriptor)',
-                            'if (rawStoreVerticalSliceEnabled)',
-                            'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
-                            'return new MvccConglomerate(runtime(), container_key)'])
-
-            requireTokens('Focused SQL proof', sqlTestText, [
-                    'testSupportedWorkloadMatchesEarlierFormatOracle',
-                    'legacyEvidence',
-                    'rawStoreEvidence',
-                    'testFileDatabaseCreateInsertVisibilityRollbackCommitAndReopen',
-                    'testRawStoreAuthorityRejectsEarlierFormatFallback',
-                    'retained external delos_mvcc state',
-                    'RAW_MVCC_ROLLED_BACK',
-                    "insert into raw_mvcc_t values (2, 'rolled-back')",
-                    "insert into raw_mvcc_t values (3, 'after-rollback')",
-                    "insert into raw_mvcc_t values (5, 'first-table')",
-                    "insert into raw_mvcc_u values (6, 'second-table')",
-                    'select id from raw_mvcc_t where id = 5',
-                    'select id from raw_mvcc_u where id = 6',
-                    'inheritedMvccStateFileCount(database)',
-                    'RawStore-backed table access must require the explicit opt-in',
-                    'expected.toString().contains(ENABLED_PROPERTY)',
-                    'testMemoryDatabaseUsesRawStoreAndLeavesNoFilesystemVolume',
-                    'DriverManager.getConnection(jdbcUrl)',
-                    'Files.exists(accidentalFilesystemDatabase)'
-            ])
-            requireOrdered('Retained-format authority rejection proof',
-                    section(sqlTestText, 'public void testRawStoreAuthorityRejectsEarlierFormatFallback()',
-                            'private static List<String> runComparableWorkload(',
-                            'retained-format rejection section'),
-                    ['create table legacy_mvcc_t',
-                            'retainedFileCount = inheritedMvccStateFileCount(database)',
-                            'RawStore authority must reject retained external-format tables',
-                            'the rejected RawStore boot must not mutate retained Phase 8 state',
-                            'try (Connection reopened = openDatabase(database, false))',
-                            'assertRows(reopened,'])
-            requireTokens('Focused crash-recovery proof', recoveryTestText, [
-                    'after-stamp-before-raw-commit',
-                    'after-raw-commit-before-publication',
-                    'expectedStatus',
-                    'expectCommitted ? new String[] {"1|survivor"} : new String[0]'
-            ])
-            if (!testsBuildText.contains("'runDelosMvccRawStoreVerticalSliceTest'")) {
-                failures << 'delosdb-tests must expose runDelosMvccRawStoreVerticalSliceTest'
-            }
-
-            requireTokens('Accepted design proof', proofText, [
-                    'The first slice uses two containers:',
-                    'Page.insertAtSlot()',
-                    'Page.updateFieldAtSlot()',
-                    'RawStore commit record is the only durable decision',
-                    'memory database'
-            ])
-            requireTokens('Public implementation record', implementationText, [
-                    'IMPLEMENTED BEHIND AN EXPLICIT OPT-IN',
-                    'mutually exclusive within one booted access-method factory',
-                    'stores its authoritative state only through the caller',
-                    'Page.INSERT_UNDO_WITH_PURGE',
-                    'Transaction-duration logical locks use the database `LockFactory`',
-                    'inherited serializable container',
-                    'locking as a conservative correctness boundary',
-                    'without introducing a publication-lock/container-lock',
-                    'does not open a filesystem path',
-                    ':delosdb-tests:runDelosMvccRawStoreVerticalSliceTest',
-                    'delosMvccRawStoreVerticalSliceStaticAnalysis'
-            ])
         }
-
-        def reportFile = layout.buildDirectory
-                .file('reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt')
-                .get().asFile
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-raw-store-vertical-slice-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB RawStore-backed MVCC vertical-slice static analysis')
-            writer.println('=============================================================')
-            writer.println()
-            writer.println('Rule: the isolated MVCC format stores and commits authoritative data only through Derby RawStore.')
-            writer.println()
+            writer.println('RawStore-backed MVCC vertical-slice static analysis')
+            writer.println('===================================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'RawStore-backed MVCC vertical-slice static analysis failed. Report: '
-                            + reportFile)
-        }
-        logger.lifecycle(
-                'RawStore-backed MVCC vertical-slice static analysis passed. Report: {}',
-                reportFile)
+        if (!failures.isEmpty()) throw new GradleException(
+                'RawStore-backed MVCC vertical-slice static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('RawStore-backed MVCC vertical-slice static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -8466,244 +7955,70 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
 
 tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies Stage 5 RawStore authority boots without the retained Phase 8 runtime and rejects retained state before registration.'
+    description = 'Protects unconditional RawStore MVCC authority and fail-closed retained-format rejection.'
 
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
-    def legacyRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
-    def rawRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def rawDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
-    def legacyDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRuntimeDiagnosticsDirectory.java')
-    def verticalTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java')
-    def cutoverTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.java')
-    def testsBuildFile = file('delosdb-tests/build.gradle')
-    def designFile = file('docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md')
-    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
-    def roadmapFile = file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
-    def requiredFiles = [factoryFile, legacyRuntimeFile, rawRuntimeFile, rawDirectoryFile,
-            legacyDirectoryFile, verticalTestFile, cutoverTestFile, testsBuildFile,
-            designFile, implementationFile, roadmapFile]
-
-    inputs.files(requiredFiles)
-    outputs.file(layout.buildDirectory.file(
-            'reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt'))
+    def required = [
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.java'),
+            file('docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    inputs.files(required)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt'))
 
     doLast {
         def failures = []
-        requiredFiles.each { sourceFile ->
-            if (!sourceFile.isFile()) {
-                failures << 'Missing required file: ' + sourceFile
-            }
-        }
-
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
         if (failures.isEmpty()) {
-            def factoryText = factoryFile.getText('UTF-8')
-            def legacyRuntimeText = legacyRuntimeFile.getText('UTF-8')
-            def rawRuntimeText = rawRuntimeFile.getText('UTF-8')
-            def rawDirectoryText = rawDirectoryFile.getText('UTF-8')
-            def legacyDirectoryText = legacyDirectoryFile.getText('UTF-8')
-            def verticalTestText = verticalTestFile.getText('UTF-8')
-            def cutoverTestText = cutoverTestFile.getText('UTF-8')
-            def testsBuildText = testsBuildFile.getText('UTF-8')
-            def designText = designFile.getText('UTF-8')
-            def implementationText = implementationFile.getText('UTF-8')
-            def roadmapText = roadmapFile.getText('UTF-8')
+            def factory = required[0].getText('UTF-8')
+            def conglomerate = required[1].getText('UTF-8')
+            def runtime = required[2].getText('UTF-8')
+            def test = required[3].getText('UTF-8')
+            def design = required[4].getText('UTF-8')
+            def roadmap = required[5].getText('UTF-8')
 
-            def requireTokens = { String description, String source, List<String> tokens ->
-                tokens.each { token ->
-                    if (!source.contains(token)) {
-                        failures << description + ' is missing token: ' + token
-                    }
-                }
+            if (!factory.contains('rejectRetainedExternalState(databaseDirectory);')
+                    || factory.indexOf('rejectRetainedExternalState(databaseDirectory);')
+                            > factory.indexOf('new MvccRawStoreRuntime(')) {
+                failures << 'Retained-format rejection must happen before RawStore runtime construction'
             }
-            def requireOrdered = { String description, String source, List<String> tokens ->
-                int previous = -1
-                tokens.each { token ->
-                    int current = source.indexOf(token)
-                    if (current < 0) {
-                        failures << description + ' is missing token: ' + token
-                    } else if (current <= previous) {
-                        failures << description + ' has incorrect ordering at token: ' + token
-                    }
-                    previous = current
-                }
+            if (factory.count('new MvccRawStoreRuntime(') != 1
+                    || factory.contains('new MvccDatabaseRuntime(')
+                    || factory.contains('MvccRawStoreFormat.ENABLED_PROPERTY')) {
+                failures << 'Factory boot must have one unconditional RawStore authority and no legacy branch'
             }
-            def section = { String source, String start, String end, String description ->
-                int startIndex = source.indexOf(start)
-                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
-                if (startIndex < 0 || endIndex < 0) {
-                    failures << 'Could not isolate ' + description
-                    return ''
-                }
-                source.substring(startIndex, endIndex)
+            if (!factory.contains('LinkOption.NOFOLLOW_LINKS')
+                    || !factory.contains('UncheckedIOException')
+                    || !factory.contains('Files.walk(providerDirectory)')) {
+                failures << 'Retained-state guard must remain read-only, no-follow, and fail closed'
             }
-
-            def bootSection = section(factoryText,
-                    'void boot(AccessMethodBootContext context)',
-                    'private static void rejectRetainedExternalState(',
-                    'factory boot section')
-            requireOrdered('One-authority factory boot', bootSection, [
-                    'rawStoreVerticalSliceEnabled = Boolean.parseBoolean(configuredRawStoreMode)',
-                    'if (rawStoreVerticalSliceEnabled)',
-                    'rejectRetainedExternalState(legacyStorageDirectory)',
-                    'rawStoreRuntime = new MvccRawStoreRuntime(',
-                    'rawStoreRuntime.startMaintenance(',
-                    'MvccRawStoreDiagnosticsDirectory.register(',
-                    'return;',
-                    'runtime = new MvccDatabaseRuntime('
-            ])
-            if (factoryText.count('new MvccDatabaseRuntime(') != 1) {
-                failures << 'Factory must construct the retained runtime in exactly one non-RawStore branch'
+            if (conglomerate.contains('MvccDatabaseRuntime') || runtime.contains('MvccDatabaseRuntime')) {
+                failures << 'Active RawStore classes must not reference the retired runtime authority'
             }
-            if (factoryText.count('new MvccRawStoreRuntime(') != 1) {
-                failures << 'Factory must construct exactly one RawStore runtime branch'
+            if (!test.contains('testRawStoreIsTheOnlyBootedMvccRuntime')
+                    || !test.contains('testRetainedStateFailsClosedWithoutLegacyFallback')
+                    || !test.contains('mvccDiagnostics(database).databaseStorageSnapshot()')) {
+                failures << 'Authority test must prove sole RawStore boot and absence of legacy diagnostics'
             }
-
-            def guardSection = section(factoryText,
-                    'private static void rejectRetainedExternalState(',
-                    'private static StandardException retainedExternalState(',
-                    'retained-state guard section')
-            requireTokens('Fail-closed retained-state guard', guardSection, [
-                    'DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY',
-                    'Files.notExists(providerDirectory, LinkOption.NOFOLLOW_LINKS)',
-                    'Files.isDirectory(providerDirectory, LinkOption.NOFOLLOW_LINKS)',
-                    'Files.walk(providerDirectory)',
-                    '.skip(1L)',
-                    'Files.isSymbolicLink(path)',
-                    '!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)',
-                    'IOException | UncheckedIOException',
-                    'retainedExternalState(providerDirectory)',
-                    'Unable to verify that retained external delos_mvcc state is absent'
-            ])
-            requireTokens('Explicit retained-state rejection', factoryText, [
-                    'private static StandardException retainedExternalState(',
-                    'RawStore-owned delos_mvcc mode cannot boot while retained external',
-                    'boot with " + MvccRawStoreFormat.ENABLED_PROPERTY'
-            ])
-            ['new MvccDatabaseRuntime(', 'DelosStorageStore', 'createDirectories(',
-             'delete(', 'write(', 'new MvccRawStoreRuntime('].each { token ->
-                if (guardSection.contains(token)) {
-                    failures << 'Retained-state guard must remain read-only and non-owning: ' + token
-                }
+            if (!design.contains('RawStore is the only production authority')
+                    || !roadmap.contains('Stage 5.4')) {
+                failures << 'Authority design and roadmap must record final retained-runtime retirement'
             }
-
-            def readSection = section(factoryText,
-                    'public Conglomerate readConglomerate(',
-                    'public void insertUndoNotify(',
-                    'factory read dispatch')
-            requireOrdered('RawStore read never falls back to retained runtime', readSection, [
-                    'MvccRawStoreTable.read(',
-                    'if (descriptor != null)',
-                    'return new MvccConglomerate(rawStoreRuntime(), descriptor)',
-                    'if (rawStoreVerticalSliceEnabled)',
-                    'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
-                    'return new MvccConglomerate(runtime(), container_key)'
-            ])
-
-            def reservationSection = section(factoryText,
-                    'private synchronized long reserveRawStoreConglomerateId(',
-                    'private static void registerRawStoreOwnedMvcc(',
-                    'RawStore conglomerate reservation')
-            requireTokens('Factory-local RawStore identity reservation', reservationSection, [
-                    'ContainerHandle.DEFAULT_ASSIGN_ID',
-                    'nextRawStoreConglomerateId',
-                    'Math.addExact(candidate, 16L)'
-            ])
-            ['MvccDatabaseRuntime', 'maximumPersistedContainerId', 'Files.', 'Path'].each { token ->
-                if (reservationSection.contains(token)) {
-                    failures << 'RawStore identity reservation must not inspect retained persistence: ' + token
-                }
-            }
-
-            ['maximumPersistedContainerId(', 'PERSISTED_TABLE_FILE',
-             'Files.newDirectoryStream(inheritedStore'].each { token ->
-                if (legacyRuntimeText.contains(token)) {
-                    failures << 'Retained runtime still exposes removed cross-authority identity discovery: ' + token
-                }
-            }
-            requireTokens('Separate weak diagnostic directories', rawDirectoryText, [
-                    'WeakReference<MvccRawStoreRuntime>',
-                    'No active RawStore-backed delos_mvcc runtime'
-            ])
-            requireTokens('Retained diagnostics remain explicit to retained mode', legacyDirectoryText, [
-                    'WeakReference<MvccDatabaseRuntime>',
-                    'No active delos_mvcc runtime for database'
-            ])
-            ['MvccDatabaseRuntime', 'DelosStorageStore', 'PageVolumeMvccStateStore'].each { token ->
-                if (rawRuntimeText.contains(token)) {
-                    failures << 'RawStore runtime must not reference retained persistence authority: ' + token
-                }
-            }
-
-            requireTokens('Accumulated vertical-slice authority proof', verticalTestText, [
-                    'testRawStoreAuthorityRejectsEarlierFormatFallback',
-                    'RawStore authority must reject retained external-format tables',
-                    'the rejected RawStore boot must not mutate retained Phase 8 state'
-            ])
-            if (verticalTestText.contains('testOptedInBootKeepsEarlierFormatAsFallback')
-                    || verticalTestText.contains('raw_after_legacy_t')) {
-                failures << 'Vertical-slice proof still authorizes RawStore-mode fallback to retained tables'
-            }
-
-            requireTokens('Focused Stage 5 executable proof', cutoverTestText, [
-                    'testCleanRawStoreDatabaseOwnsNoRetainedPersistenceRuntime',
-                    'testRetainedFormatFailsClosedBeforeRawStoreRuntimeStarts',
-                    'RawStore authority must not boot MvccDatabaseRuntime',
-                    'databaseMaintenanceSnapshot()',
-                    'databaseStorageSnapshot()',
-                    'No active delos_mvcc runtime',
-                    'Rejected authority cutover must not register a RawStore runtime',
-                    'No active RawStore-backed delos_mvcc runtime',
-                    'fail-closed cutover must not rewrite retained state'
-            ])
-            if (!testsBuildText.contains("'runDelosMvccRawStoreAuthorityCutoverTest'")
-                    || !testsBuildText.contains('MvccRawStoreAuthorityCutoverTest.class')) {
-                failures << 'delosdb-tests must expose the focused Stage 5 authority-cutover lane'
-            }
-
-            requireTokens('Public authority-cutover design', designText, [
-                    'one `MvccConglomerateFactory` owns only',
-                    'It does not construct or register',
-                    'runs before MvccRawStoreRuntime construction',
-                    'There is no RawStore-mode fallback',
-                    'The former compatibility scan',
-                    ':delosdb-tests:runDelosMvccRawStoreAuthorityCutoverTest',
-                    'delosMvccRawStoreAuthorityCutoverStaticAnalysis'
-            ])
-            requireTokens('Implementation record includes Stage 5 authority', implementationText, [
-                    'mutually exclusive within one booted access-method factory',
-                    'V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md',
-                    'RawStore mode no longer boots the retained runtime and never falls back to it'
-            ])
-            requireTokens('Roadmap retains verified Stage 5.1 authority evidence', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
-                    '## Stage 5.1 — RawStore authority cutover',
-                    '## Stage 5.2 — decision and recovery proof cutover',
-                    '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'VERIFIED'
-            ])
         }
-
-        def reportFile = layout.buildDirectory
-                .file('reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt')
-                .get().asFile
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
             writer.println('RawStore MVCC authority cutover static analysis')
-            writer.println('================================================')
-            writer.println()
-            writer.println('Rule: one factory boot selects one persistence authority; RawStore mode rejects retained state before starting or registering its runtime.')
-            writer.println()
+            writer.println('===============================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'RawStore MVCC authority cutover static analysis failed. Report: '
-                            + reportFile)
-        }
-        logger.lifecycle(
-                'RawStore MVCC authority cutover static analysis passed. Report: {}',
-                reportFile)
+        if (!failures.isEmpty()) throw new GradleException(
+                'RawStore MVCC authority cutover static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('RawStore MVCC authority cutover static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -8823,12 +8138,11 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
                     'no copied or restored Derby log directory participates in recovery'
             ])
             requireTokens('Roadmap Stage 5.2 state', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
+                    'Current milestone: Stage 5 retained-runtime retirement',
                     '## Stage 5.1 — RawStore authority cutover',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 5.2 decision/recovery',
-                    'proof cutover are user-verified'
+                    'Stage 4, Stage 5.1, Stage 5.2, and Stage 5.3 are user-verified'
             ])
         }
 
@@ -8971,12 +8285,11 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
                     'the historical database-decision task is only a compatibility alias'
             ])
             requireTokens('Roadmap Stage 5.3 state', roadmapText, [
-                    'Current milestone: Stage 5 RawStore MVCC SQL transaction-authority cutover',
+                    'Current milestone: Stage 5 retained-runtime retirement',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 5.2 decision/recovery',
-                    'proof cutover are user-verified',
-                    'IMPLEMENTED / PENDING USER VERIFICATION'
+                    'Stage 4, Stage 5.1, Stage 5.2, and Stage 5.3 are user-verified',
+                    'VERIFIED'
             ])
         }
 
@@ -9001,6 +8314,206 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
         logger.lifecycle(
                 'RawStore MVCC SQL transaction-authority proof cutover static analysis passed. Report: {}',
                 reportFile)
+    }
+}
+
+tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies that the retained Phase 8 MVCC system is absent from production runtime and normal verification.'
+
+    def required = [
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
+            file('delosdb-storage-bridge/build.gradle'),
+            file('delosdb-storage-mvcc/build.gradle'),
+            file('gradle/delosdb-runtime-artifacts.gradle'),
+            file('delosdb-engine/src/main/java/module-info.java'),
+            file('delosdb-tests/build.gradle'),
+            file('docs/design/V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            file('build.gradle'),
+            file('benchmarks/jmh/build.gradle'),
+            file('delosdb-optionaltools/build.gradle'),
+            file('delosdb-optionaltools/src/main/java/module-info.java'),
+            file('delosdb-tests/src/test/java/module-info.java')
+    ]
+    inputs.files(required)
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (failures.isEmpty()) {
+            def factory = required[0].getText('UTF-8')
+            def conglomerate = required[1].getText('UTF-8')
+            def diagnostics = required[2].getText('UTF-8')
+            def bridgeBuild = required[3].getText('UTF-8')
+            def retainedBuild = required[4].getText('UTF-8')
+            def artifacts = required[5].getText('UTF-8')
+            def moduleInfo = required[6].getText('UTF-8')
+            def testsBuild = required[7].getText('UTF-8')
+            def design = required[8].getText('UTF-8')
+            def roadmap = required[9].getText('UTF-8')
+            def rootBuild = required[10].getText('UTF-8')
+            def benchmarkBuild = required[11].getText('UTF-8')
+            def optionalBuild = required[12].getText('UTF-8')
+            def optionalModuleInfo = required[13].getText('UTF-8')
+            def testModuleInfo = required[14].getText('UTF-8')
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            if (!factory.contains('new MvccRawStoreRuntime(')
+                    || factory.count('new MvccRawStoreRuntime(') != 1
+                    || factory.contains('MvccRawStoreFormat.ENABLED_PROPERTY')
+                    || factory.contains('new MvccDatabaseRuntime(')
+                    || factory.contains('DelosStorageStore')) {
+                failures << 'Factory must expose one unconditional RawStore runtime and no retained branch'
+            }
+            ['MvccDatabaseRuntime', 'MvccConglomerateState', 'MvccConglomerateController',
+             'MvccScanController', 'MvccConglomerateLifecycleAction'].each { token ->
+                if (conglomerate.contains(token)) {
+                    failures << 'Active conglomerate retains retired production token: ' + token
+                }
+            }
+            if (diagnostics.contains('MvccDatabaseRuntime')
+                    || diagnostics.contains('MvccRuntimeDiagnosticsDirectory')
+                    || !diagnostics.contains('Retained delos_mvcc database-storage diagnostics were retired')) {
+                failures << 'Active diagnostics must observe only RawStore and reject retained database snapshots'
+            }
+
+            [
+                    'MvccConglomerateController.java',
+                    'MvccConglomerateLifecycleAction.java',
+                    'MvccConglomerateLifecycleFiles.java',
+                    'MvccConglomerateState.java',
+                    'MvccDatabaseRuntime.java',
+                    'MvccRuntimeDiagnosticsDirectory.java',
+                    'MvccScanController.java',
+                    'MvccStoreAccessTransactionRegistry.java'
+            ].each { sourceName ->
+                if (!bridgeBuild.contains("exclude 'org/apache/derby/impl/store/access/mvcc/${sourceName}'")) {
+                    failures << 'Production bridge must exclude retained source: ' + sourceName
+                }
+            }
+
+            if (!retainedBuild.contains("exclude 'io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java'")
+                    || !retainedBuild.contains("exclude 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'")
+                    || !retainedBuild.contains("tasks.register('verifyRetainedOracleQuarantine')")
+                    || !retainedBuild.contains("tasks.register('legacyRetainedCheck')")
+                    || !retainedBuild.toLowerCase(java.util.Locale.ROOT).contains('quarantined phase 8 retained-store oracle')) {
+                failures << 'Retained module must be quarantined and stripped of its runtime provider service'
+            }
+            def retainedCheck = retainedBuild.substring(retainedBuild.indexOf("tasks.named('check')"))
+            retainedCheck = retainedCheck.substring(0, retainedCheck.indexOf("tasks.register('runDelosMvccBufferCacheBenchmark'"))
+            if (!retainedCheck.contains("setDependsOn([tasks.named('verifyRetainedOracleQuarantine')])")
+                    || retainedCheck.contains("tasks.named('classes')")
+                    || retainedCheck.contains("tasks.named('jar')")
+                    || retainedCheck.contains('runMvccCoreModelTest')
+                    || retainedCheck.contains('runDelosMvccLifecycleProofs')) {
+                failures << 'Normal storage-mvcc check must verify quarantine without compiling or executing the retained Phase 8 system'
+            }
+
+            def runtimeSection = artifacts.substring(
+                    artifacts.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
+                    artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['))
+            def supportSection = artifacts.substring(
+                    artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['),
+                    artifacts.indexOf('ext.delosdbAssembledJarArtifacts'))
+            if (runtimeSection.contains('delosdb-storage-mvcc.jar')
+                    || runtimeSection.contains('delosdb-storage-io.jar')
+                    || supportSection.contains('delosdb-storage-mvcc.jar')
+                    || supportSection.contains('delosdb-storage-io.jar')
+                    || artifacts.contains('delosdbLegacyOracleTestJarFiles')
+                    || !artifacts.contains("it.name in ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar']")
+                    || !artifacts.contains('DerbyMvccAccessMethodProvider')
+                    || !artifacts.contains('Retired external MVCC provider service remains')) {
+                failures << 'Root assembly/runtime model must load RawStore from derby.jar and exclude retained MVCC/page-volume archives and provider'
+            }
+            if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
+                failures << 'module-info must not discover the retired external provider'
+            }
+
+            def classRuntimeStart = rootBuild.indexOf('def moduleDirsForRuntime = files(')
+            def classRuntimeEnd = rootBuild.indexOf('apply from:', classRuntimeStart)
+            def classRuntime = classRuntimeStart >= 0 && classRuntimeEnd > classRuntimeStart
+                    ? rootBuild.substring(classRuntimeStart, classRuntimeEnd) : ''
+            if (classRuntime.isEmpty() || classRuntime.contains('delosdb-storage-io')) {
+                failures << 'Class-directory runtime must not include the retired page-volume module'
+            }
+            def benchmarkRuntimeStart = benchmarkBuild.indexOf('final List<String> runtimeJarNames = [')
+            def benchmarkRuntimeEnd = benchmarkBuild.indexOf(']', benchmarkRuntimeStart)
+            def benchmarkRuntime = benchmarkRuntimeStart >= 0 && benchmarkRuntimeEnd > benchmarkRuntimeStart
+                    ? benchmarkBuild.substring(benchmarkRuntimeStart, benchmarkRuntimeEnd) : ''
+            if (benchmarkRuntime.isEmpty()
+                    || benchmarkRuntime.contains('delosdb-storage-mvcc.jar')
+                    || benchmarkRuntime.contains('delosdb-storage-io.jar')
+                    || benchmarkBuild.contains('MvccInheritedStorageProviderFactory')
+                    || benchmarkBuild.contains('DelosStorageProviderFactory')
+                    || !benchmarkBuild.contains('DerbyMvccAccessMethodProvider')) {
+                failures << 'Standalone benchmark runtime must load RawStore from derby.jar without retired MVCC/page-volume jars or provider'
+            }
+            if (optionalBuild.contains("project(':delosdb-storage-io')")
+                    || optionalModuleInfo.contains('requires io.github.ggeorg.delosdb.storage.io')) {
+                failures << 'Optional tools must not retain a production dependency on the retired page-volume module'
+            }
+            if (testsBuild.contains("testImplementation project(':delosdb-storage-io')")
+                    || testsBuild.contains('delosdbLegacyOracleTestJarFiles')
+                    || !testsBuild.contains("exclude 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java'")
+                    || testsBuild.contains("'runDelosHeapMvccRecoveryDifferentialTest'")
+                    || testModuleInfo.contains('requires io.github.ggeorg.delosdb.storage.io')) {
+                failures << 'Normal SQL test compilation must not depend on the retired page-volume module or recovery differential lane'
+            }
+
+            def integrationStart = testsBuild.indexOf("'runDelosMvccSqlIntegrationTest'")
+            def integrationEnd = testsBuild.indexOf("'runDelosMvccTableRebuildProviderTruthTest'", integrationStart)
+            def integration = integrationStart >= 0 && integrationEnd > integrationStart
+                    ? testsBuild.substring(integrationStart, integrationEnd) : ''
+            if (!integration.contains('MvccRawStoreVerticalSliceTest.class')
+                    || !integration.contains('MvccRawStoreMaintenanceDiagnosticsTest.class')
+                    || integration.contains('MvccSqlLifecycleTest.class')
+                    || integration.contains('MvccSqlTransactionTest.class')
+                    || integration.contains('MvccSqlPageBacked')) {
+                failures << 'Normal SQL integration lane must contain only the production RawStore proof family'
+            }
+
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            [
+                    'delosDatabaseDecisionRetentionStaticAnalysis',
+                    'delosPhase8EntropyStaticAnalysis',
+                    'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis',
+                    'delosPhase9TableTransactionSnapshotStaticAnalysis',
+                    'delosMvccTableRebuildProviderTruthStaticAnalysis'
+            ].each { retiredGate ->
+                if (s0.contains("'${retiredGate}'")) failures << 'S0 retains retired Phase 8 gate: ' + retiredGate
+            }
+            if (!s0.contains("'delosMvccRetainedRuntimeRetirementStaticAnalysis'")) {
+                failures << 'S0 must include the consolidated retained-runtime retirement gate'
+            }
+
+            ['factory branch removed', 'retained MVCC and page-volume jars removed from runtime classpaths',
+             ':delosdb-storage-mvcc:legacyRetainedCheck'].each { token ->
+                if (!design.contains(token)) failures << 'Retirement design is missing: ' + token
+            }
+            ['## Stage 5.4 — retained production runtime retirement',
+             'IMPLEMENTED / PENDING USER VERIFICATION',
+             'one production MVCC runtime'].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 5.4 token: ' + token
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB retained MVCC production runtime retirement static analysis')
+            writer.println('===================================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Retained MVCC runtime retirement static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Retained MVCC runtime retirement static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -9042,11 +8555,6 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
             'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
             'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
-            'delosMvccTableRebuildProviderTruthStaticAnalysis',
-            'delosDatabaseDecisionRetentionStaticAnalysis',
-            'delosPhase8EntropyStaticAnalysis',
-            'delosMvccTransactionalDdlStaticAnalysis',
-            'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis',
-            'delosPhase9TableTransactionSnapshotStaticAnalysis'
+            'delosMvccRetainedRuntimeRetirementStaticAnalysis',
+            'delosMvccTransactionalDdlStaticAnalysis'
 }
-

@@ -27,10 +27,7 @@ import junit.framework.TestCase;
 /** Runs DRDA and the network client from the captured jlink runtime image. */
 public final class V1ModularImageDrdaTest extends TestCase {
     private static final String PREFIX = "delosdb.v1Baseline.modularImage.";
-    private static final String SERVER_ROOT_MODULES = String.join(",",
-            "org.apache.derby.server",
-            "io.github.ggeorg.delosdb.storage.mvcc",
-            "io.github.ggeorg.delosdb.storage.io");
+    private static final String SERVER_ROOT_MODULES = "org.apache.derby.server";
     private static final String CLIENT_ROOT_MODULES = String.join(",",
             "org.apache.derby.tools",
             "org.apache.derby.client");
@@ -131,8 +128,6 @@ public final class V1ModularImageDrdaTest extends TestCase {
                 0, modules.exitCode());
         assertTrue("runner module missing from modular image launch",
                 modules.output().contains("org.apache.derby.runner"));
-        assertTrue("MVCC provider automatic module missing from modular image launch",
-                modules.output().contains("io.github.ggeorg.delosdb.storage.mvcc"));
 
         long imageBytes = directoryBytes(imageRoot);
         String semanticDigest = sha256("heap=10|mvcc=20|DELOSDB_MODULAR_OK");

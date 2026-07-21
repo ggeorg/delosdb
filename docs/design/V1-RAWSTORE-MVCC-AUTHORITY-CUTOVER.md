@@ -3,26 +3,19 @@
 ## Status
 
 ```text
-VERIFIED
+STAGE 5.1 VERIFIED
+STAGE 5.4 PRODUCTION RETIREMENT IMPLEMENTED / PENDING USER VERIFICATION
 ```
 
-This is the first Stage 5 retirement slice. It removes the retained Phase 8 persistence runtime from
-any database boot that explicitly selects the RawStore-backed `delos_mvcc` format.
+RawStore is the only production authority for `delos_mvcc`.
 
-The retained format is not deleted in this slice. A database booted without the RawStore opt-in may
-still open it as the differential and recovery oracle while the remaining Stage 5 tests are retargeted.
-The focused authority cutover and accumulated gates are user-verified.
-The two persistence systems are no longer allowed to coexist inside one booted access-method factory.
+The former `delosdb.mvcc.rawStoreVerticalSlice.enabled` property remains only as an ignored
+compatibility key for old launch scripts and tests. It no longer selects a second format and setting
+it to `false` cannot restore the retained runtime.
 
-## Authority rule
+## Sole production boot path
 
-When:
-
-```text
-delosdb.mvcc.rawStoreVerticalSlice.enabled=true
-```
-
-one `MvccConglomerateFactory` owns only:
+One booted `MvccConglomerateFactory` owns:
 
 ```text
 one MvccRawStoreRuntime
@@ -31,140 +24,73 @@ RawStore transaction lifecycle participants
 RawStore maintenance and diagnostics
 ```
 
-It does not construct or register:
+The factory does not construct or register:
 
 ```text
 MvccDatabaseRuntime
 DelosStorageStore
 MvccInheritedStore
 MvccDatabaseCommitCoordinator
-Phase 8 page/WAL/checkpoint/recovery objects
-Phase 8 table-state diagnostics
+external MVCC WAL/checkpoint/recovery/page-volume state
+retained table-state diagnostics
 ```
 
-The factory returns immediately after the RawStore runtime and its non-owning diagnostics registration
-are established. The retained runtime is constructed only in the explicit non-RawStore branch.
+The retained controller/runtime classes are excluded from the production bridge artifact.
 
 ## Retained-state guard
 
-A directory database may contain durable Phase 8 files from an earlier boot. RawStore authority does
-not attempt to interpret, migrate, dual-write, delete, or recover those files.
+A directory database can still contain files created by the retired Phase 8 format. DelosDB does not
+interpret, migrate, dual-write, delete, or recover those files.
 
-Before the RawStore runtime starts, the factory performs one read-only transitional guard over:
+Before constructing `MvccRawStoreRuntime`, the factory checks `<database>/delos_mvcc/` read-only with
+`NOFOLLOW_LINKS`. Any regular file, symbolic link, unknown entry, unreadable state, or failed traversal
+rejects boot before maintenance or diagnostics registration. Empty compatibility directories remain
+harmless.
 
-```text
-<database>/delos_mvcc/
-```
-
-If any non-directory entry or symbolic link exists below that retained provider directory, RawStore authority fails closed
-with an explicit instruction to boot with the RawStore property disabled to access the retained
-format.
-
-The guard:
-
-```text
-runs before MvccRawStoreRuntime construction
-opens no DelosStorageStore
-starts no maintenance worker
-registers no RawStore diagnostics runtime
-mutates no retained file
-```
-
-Empty compatibility directories left by earlier convergence builds are harmless and do not prevent a
-RawStore-only boot.
+There is no property or fallback path that opens retained state.
 
 ## Read routing
 
-A persisted RawStore table is still identified only by its RawStore control-row magic.
-
-Read dispatch is now:
-
 ```text
 RawStore descriptor present
-    -> require RawStore mode
     -> return RawStore-backed conglomerate
 
-RawStore descriptor absent + RawStore mode selected
-    -> reject retained external-format table
-
-RawStore descriptor absent + RawStore mode not selected
-    -> use retained Phase 8 runtime
+RawStore descriptor absent
+    -> fail closed as retired external format
 ```
 
-There is no RawStore-mode fallback to the retained runtime.
+The former cross-authority maximum-container-ID scan is removed because a production boot has only one
+physical authority.
 
-## Conglomerate identity
+## Runtime and verification boundary
 
-The former compatibility scan for the maximum persisted Phase 8 conglomerate ID is removed.
-RawStore mode cannot coexist with retained Phase 8 state, so no cross-authority ID collision needs to
-be avoided inside one boot.
+`derby.jar` publishes `DerbyMvccAccessMethodProvider` through the neutral
+`ExternalAccessMethodProvider` service.
 
-RawStore table creation keeps only the factory-local monotonic reservation needed for multiple
-RawStore MVCC tables created during one boot. RawStore remains the physical container-ID authority.
-
-## Failure and reopen behavior
-
-A rejected cutover:
+`delosdb-storage-mvcc.jar` and `delosdb-storage-io.jar` are outside root assembly, normal runtime,
+and SQL/DRDA test classpaths. The retired `DelosStorageProviderFactory` service entry is excluded.
+The archived implementation is built and tested only through:
 
 ```text
-leaves retained files byte-for-byte owned by the retained format
-creates no RawStore MVCC table
-starts no RawStore maintenance runtime
-publishes no RawStore diagnostics registration
+:delosdb-storage-mvcc:legacyRetainedCheck
 ```
 
-Rebooting with the RawStore property disabled continues to open the retained table and its data.
-
-A clean RawStore database proves the opposite boundary: RawStore maintenance diagnostics are
-available, while retained database-storage diagnostics fail because no `MvccDatabaseRuntime` exists.
+Normal `check` and S0 use the RawStore-backed implementation.
 
 ## Permanent evidence
 
 ```text
-docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md
+docs/design/V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md
 :delosdb-tests:runDelosMvccRawStoreAuthorityCutoverTest
+:delosdb-tests:runDelosMvccSqlIntegrationTest
 delosMvccRawStoreAuthorityCutoverStaticAnalysis
+delosMvccRetainedRuntimeRetirementStaticAnalysis
+verifyDelosRuntimeStorageProviders
 ```
 
-The focused executable proof covers:
+## Deferred work
 
-```text
-clean file-database RawStore operation
-absence of retained sidecar files
-absence of MvccDatabaseRuntime
-presence of the RawStore runtime
-fail-closed retained-state detection before RawStore runtime registration
-non-mutation of retained files
-successful retained-format reopen when RawStore mode is disabled
-```
-
-## Remaining Stage 5 work
-
-This slice does not yet:
-
-```text
-make RawStore the default delos_mvcc format
-delete the retained Phase 8 implementation
-retarget the remaining Phase 8 fault/recovery tests
-remove transaction-outcome journals or decision retention
-remove external MVCC WAL, checkpoint, recovery, page volumes, or sidecars
-remove compatibility diagnostics APIs
-retire storage modules
-```
-
-Those responsibilities are removed only after their corresponding RawStore tests and gates are
-retargeted and green.
-
-
-## Stage 5.2 follow-on
-
-The first permanent mixed heap/MVCC power-loss lane has now been retargeted to the inherited RawStore
-commit and recovery boundaries. See `V1-RAWSTORE-MVCC-DECISION-RECOVERY-CUTOVER.md`. The retained
-failure registry, copied-log restoration, and database-decision inspection are no longer used by that
-proof.
-
-
-## Stage 5.3 follow-on
-
-The SQL multi-table and mixed heap/MVCC transaction proof now selects RawStore authority explicitly and
-uses no retained database-decision proof. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.
+This cut does not yet delete every archived Phase 8 source file or retire the temporary Gradle module
+itself. Source/module deletion follows after the explicit legacy oracle is no longer needed for
+historical differential analysis. It does not begin Stage 6 memory completion, final module collapse,
+JDK 25 modernization, or Lucene work.

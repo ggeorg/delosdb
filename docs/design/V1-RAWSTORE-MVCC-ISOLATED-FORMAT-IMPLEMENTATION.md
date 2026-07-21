@@ -3,21 +3,16 @@
 ## Status
 
 ```text
-IMPLEMENTED BEHIND AN EXPLICIT OPT-IN
+PRODUCTION DEFAULT — RAWSTORE IS THE ONLY DELOS_MVCC FORMAT
 ```
 
 The implementation is authorized by the accepted RawStore vertical-slice, stable logical identity,
-commit-ordering, and access-transaction lifecycle proofs.
+commit-ordering, access-transaction lifecycle, Stage 4 physical convergence, and Stage 5 authority
+proofs.
 
-It is intentionally not the default `delos_mvcc` format yet. Enable it at database boot with:
-
-```text
-delosdb.mvcc.rawStoreVerticalSlice.enabled=true
-```
-
-The property defaults to `false`. A persisted RawStore-backed table is always identified by its
-control-row magic. Reopening that table without the opt-in fails with an explicit property error; it
-never falls through to the earlier external format.
+The historical `delosdb.mvcc.rawStoreVerticalSlice.enabled` property is ignored. A persisted
+RawStore-backed table is identified by its control-row magic. A missing RawStore descriptor fails
+closed as retired external format and never falls through to a second persistence system.
 
 ## Ownership boundary
 
@@ -521,3 +516,11 @@ two-table MVCC rollback, and mixed heap/multiple-MVCC commit and rollback. Each 
 before reopen and is checked for zero retained inherited-store files. The permanent focused task is
 `:delosdb-tests:runDelosMvccRawStoreSqlTransactionCutoverTest`; the old database-decision task name is
 only a compatibility alias. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.
+
+
+## Stage 5 retained production runtime retirement
+
+The RawStore-backed implementation is now the unconditional production path. Retained bridge classes
+are excluded from the production artifact, the external provider is absent from runtime classpaths,
+and the Phase 8 suite is quarantined behind `legacyRetainedCheck`. See
+`V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md`.

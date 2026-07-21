@@ -7,8 +7,9 @@ import org.gradle.api.tasks.compile.JavaCompile
 version = rootProject.version
 group = rootProject.group
 
-// Temporary Derby-facing MVCC access-method adapter. It keeps inherited Derby
-// registration/runtime wiring away from concrete storage provider modules.
+// Production Derby-facing RawStore MVCC access method. Retained Phase 8 bridge
+// classes remain source-archived for the temporary legacy oracle but are excluded
+// from this production artifact.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 
@@ -38,6 +39,16 @@ sourceSets {
         java {
             srcDir sourceRoot
             include 'org/apache/derby/impl/store/access/mvcc/**/*.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccBridgeDiagnosticsSupport.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccBridgeIsolationPolicy.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccConglomerateLifecycleAction.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccConglomerateLifecycleFiles.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccRuntimeDiagnosticsDirectory.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccScanController.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccStoreAccessTransactionRegistry.java'
             destinationDirectory.set(mainClassDir)
         }
     }

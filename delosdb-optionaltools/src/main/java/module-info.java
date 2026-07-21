@@ -23,13 +23,13 @@
  * <p>
  * This module corresponds to <i>derbyoptionaltools.jar</i>.
  * </p>
- * 
+ *
  * <p>
  * An extra set of tools supports metadata introspection, access to other
  * vendors' databases, full-text search, and the importing of
  * JSON-formatted data. Optional functionality includes:
  * </p>
- * 
+ *
  * <ul>
  *  <li><b><font color="gray">json.simple</font></b> - To import
  *  JSON-formatted data, include the <i>JSON.simple</i> jar file available from
@@ -49,7 +49,7 @@
  *  module supports JNDI lookup of LDAP authenticators when running with
  *  the embedded driver.</li>
  * </ul>
- * 
+ *
  * <p><b>Module Diagram:</b></p>
  *
  * <div style="text-align:center;">
@@ -72,10 +72,9 @@ module org.apache.derby.optionaltools
 
     requires org.apache.derby.engine;
     requires io.github.ggeorg.delosdb.runtime.api;
-    requires io.github.ggeorg.delosdb.storage.io;
     requires org.apache.derby.tools;
     requires org.apache.derby.commons;
-    
+
     //
     // OPTIONAL IMPORTS
     //
@@ -104,7 +103,7 @@ module org.apache.derby.optionaltools
     // OPEN TO REFLECTIVE ACCESS FROM THE ENGINE
     //
     opens org.apache.derby.optional.lucene to org.apache.derby.engine;
-    
+
     //
     // FIXME! EXPOSED SO THAT THESE PACKAGES CAN BE ACCESSED
     // BY THE QUERY PLANS WHICH ARE CODE-GENERATED

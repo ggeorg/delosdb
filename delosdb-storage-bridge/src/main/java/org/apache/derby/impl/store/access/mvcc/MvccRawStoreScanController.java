@@ -22,6 +22,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Materialized scan over RawStore directory and version rows. */
@@ -103,7 +104,7 @@ final class MvccRawStoreScanController implements ScanManager {
         ensureOpen();
         long count = 0L;
         while ((maxRowCount < 0L || count < maxRowCount) && next()) {
-            StoreDataValue[] row = MvccConglomerateController.cloneRow(current.values());
+            StoreDataValue[] row = StoreValueCopySupport.cloneRow(current.values());
             hashTable.putRow(true, row, new MvccRowLocation(current.rowId()));
             count++;
         }
@@ -203,7 +204,7 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public void fetch(StoreDataValue[] destRow) throws StandardException {
         ensurePositioned();
-        MvccConglomerateController.copyRow(current.values(), destRow, scanColumnList);
+        StoreValueCopySupport.copyRow(current.values(), destRow, scanColumnList);
     }
 
     @Override
@@ -231,7 +232,7 @@ final class MvccRawStoreScanController implements ScanManager {
                 }
                 rowArray[count] = RowUtil.newRowFromTemplatePreservingArrayType(rowArray[0]);
             }
-            MvccConglomerateController.copyRow(current.values(), rowArray[count], scanColumnList);
+            StoreValueCopySupport.copyRow(current.values(), rowArray[count], scanColumnList);
             if (rowlocArray != null) {
                 if (rowlocArray[count] == null) {
                     rowlocArray[count] = new MvccRowLocation();
@@ -318,7 +319,7 @@ final class MvccRawStoreScanController implements ScanManager {
         if (currentDeleted) {
             return false;
         }
-        StoreDataValue[] replacement = MvccConglomerateController.replacementRow(
+        StoreDataValue[] replacement = StoreValueCopySupport.replacementRow(
                 current.values(),
                 row,
                 validColumns);

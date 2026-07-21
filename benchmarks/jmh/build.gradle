@@ -16,11 +16,9 @@ final File runtimeJarDirectory = new File(repositoryRoot, 'build/libs')
 final List<String> runtimeJarNames = [
         'delosdb-annotations.jar',
         'delosdb-spi.jar',
-        'delosdb-storage-io.jar',
         'osgi-framework-stub.jar',
         'derbyshared.jar',
         'delosdb-runtime-api.jar',
-        'delosdb-storage-mvcc.jar',
         'derby.jar',
         'derbytools.jar'
 ]
@@ -281,20 +279,23 @@ tasks.register('verifyDelosRuntimeJars') {
             }
         }
 
-        File mvccJar = new File(runtimeJarDirectory, 'delosdb-storage-mvcc.jar')
-        String providerService = 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
-        new ZipFile(mvccJar).withCloseable { zip ->
+        File engineJar = new File(runtimeJarDirectory, 'derby.jar')
+        String providerService =
+                'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
+        String expectedProvider =
+                'org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider'
+        new ZipFile(engineJar).withCloseable { zip ->
             def entry = zip.getEntry(providerService)
             if (entry == null) {
-                throw new GradleException("${mvccJar} does not contain ${providerService}")
+                throw new GradleException("${engineJar} does not contain ${providerService}")
             }
             List<String> providersInJar = zip.getInputStream(entry)
                     .getText('UTF-8')
                     .readLines()
                     .collect { it.trim() }
                     .findAll { it && !it.startsWith('#') }
-            if (!providersInJar.contains('io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccInheritedStorageProviderFactory')) {
-                throw new GradleException("${mvccJar} does not advertise the MVCC storage provider")
+            if (!providersInJar.contains(expectedProvider)) {
+                throw new GradleException("${engineJar} does not advertise ${expectedProvider}")
             }
         }
     }

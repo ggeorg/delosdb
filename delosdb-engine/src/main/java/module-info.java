@@ -26,7 +26,7 @@
  * module. This public driver is only required by applications which shutdown and reboot
  * the embedded engine.
  * </p>
- * 
+ *
  * <p>
  * The smallest footprint, core Derby configuration consists of the embedded engine. In
  * this configuration, Derby is a complete, secure, transactional,
@@ -35,7 +35,7 @@
  * accessed via <i>java.sql.DriverManager.getConnection()</i>. More
  * functionality can be enabled by adding other, optional modules to this configuration:
  * </p>
- * 
+ *
  * <ul>
  *  <li><b><font color="gray">org.apache.derby.tools</font></b> - This module lets the application access Derby via
  *   <i>javax.sql.DataSource</i>s.</li>
@@ -77,7 +77,7 @@ module org.apache.derby.engine
     requires java.sql.rowset;
     requires java.xml;
     requires jdk.jfr;
-    
+
     requires org.apache.derby.commons;
     requires io.github.ggeorg.delosdb.runtime.api;
     requires io.github.ggeorg.delosdb.annotations;
@@ -135,7 +135,6 @@ module org.apache.derby.engine
     // Patched storage-api and bridge classes also use ServiceLoader.
     uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
     uses org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
-    uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory;
     uses org.apache.derby.iapi.store.types.StoreRowLocationFactory;
     uses org.apache.derby.iapi.store.types.StoreTypeSupport;
 
@@ -170,7 +169,7 @@ module org.apache.derby.engine
     //
     // ALLOW RESOURCE LOOKUP VIA REFLECTION
     //
-    
+
     // ALLOW THE Monitor TO FIND modules.properties
     opens org.apache.derby;
     // ALLOW ACCESS TO ENGLISH MESSAGES
@@ -181,7 +180,7 @@ module org.apache.derby.engine
     //
     // ALLOW CLASS INSTANTIATION VIA REFLECTION
     //
-    
+
     // ALLOW ExceptionFactory TO INSTANTIATE SQLExceptionFactory
     opens org.apache.derby.impl.jdbc to org.apache.derby.commons;
 
@@ -245,7 +244,6 @@ module org.apache.derby.engine
     // MODULE3 keeps storage-api classes patched into org.apache.derby.engine
     // at runtime. Export the engine-facing store type contracts to Derby tests.
     exports org.apache.derby.iapi.store.types to
-        io.github.ggeorg.delosdb.storage.mvcc,
         org.apache.derby.tests;
 
     exports org.apache.derby.iapi.store.raw to

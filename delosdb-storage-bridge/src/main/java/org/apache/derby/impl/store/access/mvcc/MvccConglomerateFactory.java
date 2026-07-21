@@ -51,13 +51,7 @@ import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
-/**
- * Access-method factory for {@code delos_mvcc} conglomerates.
- *
- * <p>The factory registers the MVCC conglomerate implementation with Derby's
- * monitor and access-method infrastructure and reconstructs persisted
- * conglomerate descriptors during database boot.</p>
- */
+/** Access-method factory for the RawStore-owned {@code delos_mvcc} format. */
 public final class MvccConglomerateFactory
         implements ConglomerateFactory, ModuleControl, ModuleSupportable {
     public static final String IMPLEMENTATION_ID = "delos_mvcc";
@@ -65,11 +59,9 @@ public final class MvccConglomerateFactory
     private static final String FORMAT_UUID_STRING = "3FD22170-28F5-4EF4-8C32-EC5FB6E6115B";
 
     private Object formatUUID;
-    private MvccDatabaseRuntime runtime;
-    private MvccRawStoreRuntime rawStoreRuntime;
-    private Path rawStoreDiagnosticsDirectory;
-    private boolean rawStoreVerticalSliceEnabled;
-    private long nextRawStoreConglomerateId;
+    private MvccRawStoreRuntime runtime;
+    private Path diagnosticsDirectory;
+    private long nextConglomerateId;
 
     @Override
     public Properties defaultProperties() {
@@ -103,72 +95,108 @@ public final class MvccConglomerateFactory
 
     @Override
     public Conglomerate createConglomerate(
-            TransactionManager xact_mgr,
+            TransactionManager xactManager,
             int segment,
-            long input_containerid,
+            long inputContainerId,
             StoreDataValue[] template,
             ColumnOrdering[] columnOrder,
             int[] collationIds,
             Properties properties,
             int temporaryFlag) throws StandardException {
         rejectUnsupportedDurableTypes(template);
-        rejectGlobalLifecycle(xact_mgr);
-        if (rawStoreVerticalSliceEnabled) {
-            rawStoreRuntime().ensureMetadata(xact_mgr);
-            registerRawStoreOwnedMvcc(xact_mgr);
-            long rawStoreContainerId = reserveRawStoreConglomerateId(input_containerid);
-            MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.create(
-                    xact_mgr.getRawStoreXact(),
-                    segment,
-                    rawStoreContainerId,
-                    template,
-                    collationIds,
-                    properties,
-                    temporaryFlag);
-            rawStoreRuntime().context(xact_mgr, xact_mgr.getRawStoreXact())
-                    .markCreatedTable(descriptor);
-            return new MvccConglomerate(rawStoreRuntime(), descriptor);
-        }
-        MvccDatabaseRuntime currentRuntime = runtime();
-        ContainerKey key = new ContainerKey(segment, input_containerid);
-        DelosMvccConglomerateLifecycle lifecycle = new DelosMvccConglomerateLifecycle(
-                DelosMvccConglomerateLifecycle.Operation.CREATE,
+        rejectGlobalLifecycle(xactManager);
+
+        MvccRawStoreRuntime currentRuntime = runtime();
+        currentRuntime.ensureMetadata(xactManager);
+        registerRawStoreOwnedMvcc(xactManager);
+        long containerId = reserveConglomerateId(inputContainerId);
+        MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.create(
+                xactManager.getRawStoreXact(),
                 segment,
-                input_containerid);
-        try {
-            currentRuntime.stageCreate(lifecycle);
-            MvccConglomerate conglomerate = new MvccConglomerate(
-                    currentRuntime,
-                    segment,
-                    input_containerid,
-                    template,
-                    collationIds,
-                    temporaryFlag);
-            DelosStorageTransactionRegistry.registerLifecycleAction(
-                    xact_mgr,
-                    MvccConglomerateLifecycleAction.create(
-                            currentRuntime, key, lifecycle));
-            return conglomerate;
-        } catch (RuntimeException | Error failure) {
-            try {
-                currentRuntime.abortCreate(key, lifecycle);
-            } catch (RuntimeException | Error cleanupFailure) {
-                failure.addSuppressed(cleanupFailure);
-            }
-            throw StandardException.plainWrapException(failure);
+                containerId,
+                template,
+                collationIds,
+                properties,
+                temporaryFlag);
+        currentRuntime.context(xactManager, xactManager.getRawStoreXact())
+                .markCreatedTable(descriptor);
+        return new MvccConglomerate(currentRuntime, descriptor);
+    }
+
+    @Override
+    public Conglomerate readConglomerate(
+            TransactionManager xactManager,
+            ContainerKey containerKey) throws StandardException {
+        MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.read(
+                xactManager.getRawStoreXact(),
+                containerKey);
+        if (descriptor == null) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "The retained external delos_mvcc format has been retired; "
+                            + "only RawStore-backed delos_mvcc tables are supported");
+        }
+        MvccRawStoreRuntime currentRuntime = runtime();
+        currentRuntime.ensureMetadata(xactManager);
+        currentRuntime.registerTable(descriptor);
+        return new MvccConglomerate(currentRuntime, descriptor);
+    }
+
+    @Override
+    public void insertUndoNotify(
+            AccessFactory accessFactory,
+            Transaction transaction,
+            PageKey pageKey) {
+        // All physical undo is inherited RawStore undo.
+    }
+
+    @Override
+    public boolean canSupport(Properties startParams) {
+        return supportsImplementation(
+                startParams.getProperty("derby.access.Conglomerate.type"));
+    }
+
+    void boot(AccessMethodBootContext context) throws StandardException {
+        java.util.Objects.requireNonNull(context, "context");
+        ModuleFactory monitor = Monitor.getMonitor();
+        UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
+        formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
+
+        String storageRoot = context.dataFactory().getRootDirectory();
+        Path databaseDirectory = storageRoot == null || storageRoot.isBlank()
+                ? null
+                : Path.of(storageRoot);
+        rejectRetainedExternalState(databaseDirectory);
+
+        runtime = new MvccRawStoreRuntime(
+                context.databaseIdentity(),
+                context.rawStoreFactory().getLockFactory());
+        String diagnosticIdentity = databaseDirectory != null && databaseDirectory.isAbsolute()
+                ? databaseDirectory.toAbsolutePath().normalize().toString()
+                : "memory-" + Integer.toHexString(
+                        System.identityHashCode(context.databaseIdentity()));
+        runtime.startMaintenance(
+                diagnosticIdentity,
+                context.rawStoreFactory(),
+                context.readOnly(),
+                context.serviceProperties());
+        if (databaseDirectory != null && databaseDirectory.isAbsolute()) {
+            diagnosticsDirectory = databaseDirectory.toAbsolutePath().normalize();
+            MvccRawStoreDiagnosticsDirectory.register(diagnosticsDirectory, runtime);
+        } else {
+            MvccRawStoreDiagnosticsDirectory.register(null, runtime);
         }
     }
 
-    private synchronized long reserveRawStoreConglomerateId(long proposedContainerId) {
+    private synchronized long reserveConglomerateId(long proposedContainerId) {
         if (proposedContainerId == ContainerHandle.DEFAULT_ASSIGN_ID) {
             return proposedContainerId;
         }
-
         long candidate = proposedContainerId;
-        if (nextRawStoreConglomerateId != 0L && candidate < nextRawStoreConglomerateId) {
-            candidate = nextRawStoreConglomerateId;
+        if (nextConglomerateId != 0L && candidate < nextConglomerateId) {
+            candidate = nextConglomerateId;
         }
-        nextRawStoreConglomerateId = Math.addExact(candidate, 16L);
+        nextConglomerateId = Math.addExact(candidate, 16L);
         return candidate;
     }
 
@@ -212,108 +240,11 @@ public final class MvccConglomerateFactory
         }
     }
 
-    @Override
-    public Conglomerate readConglomerate(
-            TransactionManager xact_mgr,
-            ContainerKey container_key) throws StandardException {
-        MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.read(
-                xact_mgr.getRawStoreXact(),
-                container_key);
-        if (descriptor != null) {
-            if (!rawStoreVerticalSliceEnabled) {
-                throw StandardException.newException(
-                        SQLState.NOT_IMPLEMENTED,
-                        "RawStore-backed delos_mvcc table requires "
-                                + MvccRawStoreFormat.ENABLED_PROPERTY + "=true");
-            }
-            rawStoreRuntime().ensureMetadata(xact_mgr);
-            rawStoreRuntime().registerTable(descriptor);
-            return new MvccConglomerate(rawStoreRuntime(), descriptor);
-        }
-        if (rawStoreVerticalSliceEnabled) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "RawStore-owned delos_mvcc mode cannot open a retained external-format table; "
-                            + "boot with " + MvccRawStoreFormat.ENABLED_PROPERTY
-                            + "=false to access retained Phase 8 state");
-        }
-        return new MvccConglomerate(runtime(), container_key);
-    }
-
-    @Override
-    public void insertUndoNotify(
-            AccessFactory access_factory,
-            Transaction xact,
-            PageKey page_key) throws StandardException {
-        // MVCC undo and recovery are owned by the DelosDB storage engine and are not
-        // wired into inherited raw-store undo notifications in this milestone.
-    }
-
-    @Override
-    public boolean canSupport(Properties startParams) {
-        String implementation = startParams.getProperty("derby.access.Conglomerate.type");
-        return supportsImplementation(implementation);
-    }
-
-    void boot(AccessMethodBootContext context) throws StandardException {
-        java.util.Objects.requireNonNull(context, "context");
-        ModuleFactory monitor = Monitor.getMonitor();
-        UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
-        formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
-
-        Properties serviceProperties = context.serviceProperties();
-        String storageRoot = context.dataFactory().getRootDirectory();
-        Path legacyStorageDirectory = storageRoot == null || storageRoot.isBlank()
-                ? null
-                : Path.of(storageRoot);
-        String configuredRawStoreMode = serviceProperties.getProperty(
-                MvccRawStoreFormat.ENABLED_PROPERTY,
-                System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false"));
-        rawStoreVerticalSliceEnabled = Boolean.parseBoolean(configuredRawStoreMode);
-        if (rawStoreVerticalSliceEnabled) {
-            rejectRetainedExternalState(legacyStorageDirectory);
-            rawStoreRuntime = new MvccRawStoreRuntime(
-                    context.databaseIdentity(),
-                    context.rawStoreFactory().getLockFactory());
-            String diagnosticIdentity = legacyStorageDirectory != null
-                    && legacyStorageDirectory.isAbsolute()
-                    ? legacyStorageDirectory.toAbsolutePath().normalize().toString()
-                    : "memory-" + Integer.toHexString(
-                            System.identityHashCode(context.databaseIdentity()));
-            rawStoreRuntime.startMaintenance(
-                    diagnosticIdentity,
-                    context.rawStoreFactory(),
-                    context.readOnly(),
-                    serviceProperties);
-            if (legacyStorageDirectory != null && legacyStorageDirectory.isAbsolute()) {
-                rawStoreDiagnosticsDirectory = legacyStorageDirectory;
-                MvccRawStoreDiagnosticsDirectory.register(
-                        rawStoreDiagnosticsDirectory, rawStoreRuntime);
-            } else {
-                MvccRawStoreDiagnosticsDirectory.register(null, rawStoreRuntime);
-            }
-            return;
-        }
-
-        if (legacyStorageDirectory != null && legacyStorageDirectory.isAbsolute()) {
-            runtime = new MvccDatabaseRuntime(
-                    context.databaseIdentity(),
-                    legacyStorageDirectory);
-            return;
-        }
-        if (!rawStoreVerticalSliceEnabled) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "delos_mvcc memory and non-directory databases require the RawStore-backed table format");
-        }
-    }
-
     private static void rejectRetainedExternalState(Path databaseDirectory)
             throws StandardException {
         if (databaseDirectory == null || !databaseDirectory.isAbsolute()) {
             return;
         }
-
         Path providerDirectory = databaseDirectory
                 .toAbsolutePath()
                 .normalize()
@@ -321,7 +252,6 @@ public final class MvccConglomerateFactory
         if (Files.notExists(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
-
         try {
             if (!Files.isDirectory(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
                 throw retainedExternalState(providerDirectory);
@@ -347,10 +277,9 @@ public final class MvccConglomerateFactory
     private static StandardException retainedExternalState(Path providerDirectory) {
         return StandardException.newException(
                 SQLState.NOT_IMPLEMENTED,
-                "RawStore-owned delos_mvcc mode cannot boot while retained external "
-                        + "delos_mvcc state exists under " + providerDirectory
-                        + "; boot with " + MvccRawStoreFormat.ENABLED_PROPERTY
-                        + "=false to access the retained format");
+                "The retained external delos_mvcc format has been retired; "
+                        + "remove or migrate state under " + providerDirectory
+                        + " before booting this database");
     }
 
     @Override
@@ -362,37 +291,22 @@ public final class MvccConglomerateFactory
 
     @Override
     public void stop() {
-        MvccDatabaseRuntime currentRuntime = runtime;
-        MvccRawStoreRuntime currentRawStoreRuntime = rawStoreRuntime;
-        Path currentRawStoreDiagnosticsDirectory = rawStoreDiagnosticsDirectory;
+        MvccRawStoreRuntime current = runtime;
+        Path currentDirectory = diagnosticsDirectory;
         runtime = null;
-        rawStoreRuntime = null;
-        rawStoreDiagnosticsDirectory = null;
-        rawStoreVerticalSliceEnabled = false;
-        nextRawStoreConglomerateId = 0L;
-        if (currentRawStoreRuntime != null) {
-            MvccRawStoreDiagnosticsDirectory.unregister(
-                    currentRawStoreDiagnosticsDirectory, currentRawStoreRuntime);
-            currentRawStoreRuntime.close();
-        }
-        if (currentRuntime != null) {
-            currentRuntime.close();
+        diagnosticsDirectory = null;
+        nextConglomerateId = 0L;
+        if (current != null) {
+            MvccRawStoreDiagnosticsDirectory.unregister(currentDirectory, current);
+            current.close();
         }
     }
 
-    private MvccDatabaseRuntime runtime() {
-        MvccDatabaseRuntime current = runtime;
+    private MvccRawStoreRuntime runtime() {
+        MvccRawStoreRuntime current = runtime;
         if (current == null) {
             throw new IllegalStateException("delos_mvcc conglomerate factory is not booted");
         }
         return current;
     }
-    private MvccRawStoreRuntime rawStoreRuntime() {
-        MvccRawStoreRuntime current = rawStoreRuntime;
-        if (current == null) {
-            throw new IllegalStateException("RawStore delos_mvcc runtime is not enabled");
-        }
-        return current;
-    }
-
 }

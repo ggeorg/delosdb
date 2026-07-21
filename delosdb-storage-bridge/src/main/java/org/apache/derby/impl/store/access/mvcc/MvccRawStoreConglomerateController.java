@@ -20,6 +20,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Controller for the isolated RawStore-backed MVCC table format. */
@@ -85,7 +86,7 @@ final class MvccRawStoreConglomerateController
             if (visible == null) {
                 return false;
             }
-            MvccConglomerateController.copyRow(visible.values(), destRow, validColumns);
+            StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);
             return true;
         }
     }

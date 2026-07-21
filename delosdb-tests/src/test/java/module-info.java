@@ -23,11 +23,11 @@
  * <p>
  * This module corresponds to <i>derbyTesting.jar</i>.
  * </p>
- * 
+ *
  * <p>
  * The Derby tests exercise all of the modules.
  * </p>
- * 
+ *
  * <p><b>Module Diagram:</b></p>
  *
  * <div style="text-align:center;">
@@ -55,7 +55,6 @@ open module org.apache.derby.tests
     requires org.apache.derby.commons;
     requires org.apache.derby.engine;
     requires io.github.ggeorg.delosdb.runtime.api;
-    requires io.github.ggeorg.delosdb.storage.io;
     requires org.apache.derby.server;
     requires org.apache.derby.client;
     requires org.apache.derby.tools;

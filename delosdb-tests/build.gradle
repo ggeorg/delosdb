@@ -210,7 +210,6 @@ dependencies {
     testImplementation project(':delosdb-optionaltools')
     testImplementation project(':delosdb-runner')
     testImplementation project(':delosdb-server')
-    testImplementation project(':delosdb-storage-io')
     testImplementation project(':delosdb-storage-derby')
     testImplementation project(':delosdb-tools')
 
@@ -233,6 +232,7 @@ sourceSets {
             setSrcDirs([testSourceRoot, toursDbSourceRoot])
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
+            exclude 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -914,11 +914,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosHeapMvccRecoveryDifferentialTest',
-        'Runs heap/MVCC crash-recovery differential proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class'])
-
-registerDelosFocusedTest(
         'runDelosJdbcPreparedStatementTransactionReuseTest',
         'Runs prepared DELETE/reinsert reuse across rollback and commit boundaries for heap and MVCC.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcPreparedStatementTransactionReuseTest.class'])
@@ -1000,109 +995,23 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccSqlIntegrationTest',
-        'Runs focused real Derby/JDBC SQL integration tests for CREATE TABLE ... USING delos_mvcc.',
+        'Runs the production RawStore-backed delos_mvcc SQL integration lane.',
         [
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBasicTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIsolationLevelCheckpointTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlIndexTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/JdbcPreparedStatementTransactionReuseTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVacuumTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConsistencyCheckTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBloatMeasurementTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageReuseTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageCacheTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStorageInspectorTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageInspectorTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapSanityCheckerTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsExpansionTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapInternalCleanupPhase1Test.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticFormattingTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDebugAssertionConsolidationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageInspectorConsolidationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageStatisticsFoundationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccStorageStatisticsTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapStorageStatisticsTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageCostIntegrationCheckpointTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataProviderChainTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataContextPurityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageCapabilitiesTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StoragePredicatePushdownModelTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/StorageOptimizerReviewGateTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerStorageCostOptInTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccStatisticsOptimizerCostIntegrationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccAnalyzeStatisticsLifecycleTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownOptInTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownExecutionCheckpointTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownConsumptionOptInTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownProductionHookTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexRefreshTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLogicalRowIdentityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHotIndexSuppressionTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedAuthorityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommitIsolationTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommitVersionGateTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedChangedCommitTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedWriteIntentTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedWriteIntentPayloadTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlProviderWriteAppendGateTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlProviderFirstWriteAppendTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontQuarantineTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontBypassTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlInMemoryWriteFrontRemovalTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRowIdFastPathTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFreeSpaceMapTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlVisibilityPruneMapTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageLocalPruningTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageMutationContextTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPurgeQueueTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPurgeDaemonSchedulingTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongReaderPurgeStressTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexPagesSkeletonTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexEqualityLookupTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexRangeScanTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexAuthorityCheckpointTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexCompositeRangeProofTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStoragePathDiagnosticsRuntimeTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexQuarantineTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlCandidateIndexAuthorityRemovalTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlWriteIntentReadTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedBaseReadTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedTransactionScanTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLegacySnapshotFallbackGateTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlNoLegacySnapshotFallbackCloseoutTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCandidateIndexRebuildTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlPageBackedCommittedReadTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTableRebuildProviderTruthTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOverflowLifecycleTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlAttributeOverflowStorageTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSubsystemRecoveryRecordsTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypeCoverageTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSavepointTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlHeapParityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'
         ])
 
 
@@ -1131,7 +1040,6 @@ registerDelosFocusedTest(
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosHeapMvccDifferentialSqlHarnessTest',
         'runDelosHeapMvccIsolationDifferentialTest',
-        'runDelosHeapMvccRecoveryDifferentialTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest',
@@ -1446,7 +1354,6 @@ tasks.register('captureDelosV1Baseline') {
             tasks.named('runDelosJdbcBenchmarkRowScaling'),
             tasks.named('runDelosDrdaConcurrentClientStressTest'),
             tasks.named('runDelosV1ModularImageDrdaTest'),
-            tasks.named('runDelosHeapMvccRecoveryDifferentialTest'),
             rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
             project(':delosdb-storage-mvcc').tasks.named('runDelosMvccBufferCacheBenchmark'),
             project(':delosdb-storage-mvcc').tasks.named('runDelosMvccPageCodecBenchmark'),
@@ -1480,8 +1387,6 @@ tasks.register('captureDelosV1Baseline') {
                 [id: 'drda-stress', source: layout.buildDirectory
                         .dir('test-results/runDelosDrdaConcurrentClientStressTest').get().asFile],
                 [id: 'modular-image-drda', source: delosV1ModularImageReportDirectory.get().asFile],
-                [id: 'recovery-differential', source: layout.buildDirectory
-                        .dir('test-results/runDelosHeapMvccRecoveryDifferentialTest').get().asFile],
                 [id: 'failure-replay', source: delosV1FailureReplayResultsDirectory.get().asFile],
                 [id: 'low-level-failure-replay', source: delosV1LowLevelFailureReplayResultsDirectory.get().asFile]
         ]

@@ -308,7 +308,6 @@ tasks.register('generateOdbcMetadata') {
 
 def moduleDirsForRuntime = files(
         project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
-        project(':delosdb-storage-io').layout.buildDirectory.dir('classes/main'),
         moduleClassDir(moduleNames.osgi),
         moduleClassDir(moduleNames.commons),
         moduleClassDir(moduleNames.runtimeApi),
