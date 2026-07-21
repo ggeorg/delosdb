@@ -42,15 +42,17 @@ transitional transaction registry distinguishes RawStore-owned participation fro
 writers, so this format proceeds through the inherited commit path without staging a Phase 8 database
 decision.
 
-Existing tables created by the earlier independent format are not migrated or dual-written. In a
-directory database, opted-in boot first detects the RawStore control-row magic. A nonmatching
-conglomerate continues through the earlier implementation so it remains available as a differential
-oracle while convergence proceeds. Before a new RawStore table is created, the retained compatibility
-runtime reports the highest persisted earlier-format conglomerate identity. The factory reserves the
-next MVCC-factory-owned identity above that boundary, preventing an earlier logical conglomerate ID
-from aliasing a new RawStore container after reboot. This filesystem inspection belongs only to the
-retained compatibility path; the new RawStore table implementation still receives only RawStore
-transactions and container identities.
+Existing tables created by the earlier independent format are not migrated or dual-written. Stage 5
+now makes the two formats mutually exclusive within one booted access-method factory. An opted-in
+RawStore boot never constructs the retained `MvccDatabaseRuntime` or opens its provider store. Before
+the RawStore runtime starts, one read-only transitional guard rejects any non-directory entry or
+symbolic link below the retained `<database>/delos_mvcc/` provider directory. Empty compatibility directories are ignored.
+
+A nonmatching conglomerate in RawStore mode is rejected as a retained external-format table rather
+than falling through to the earlier implementation. Booting with the RawStore property disabled still
+opens retained Phase 8 tables while their fault and recovery suites are retargeted. The former scan for
+the maximum retained conglomerate identity is removed because RawStore mode can no longer coexist
+with retained durable state. See `V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md`.
 
 ## Physical format
 
@@ -361,6 +363,8 @@ vacuum savepoint/rollback, both crash boundaries, reopen, and memory proofs
 bounded commit/periodic maintenance scheduling and retained-reader retry
 database-scoped immutable queue, horizon, outcome, failure, and reclamation evidence
 maintenance isolation, shutdown, and memory-database parity
+RawStore authority without retained runtime boot
+fail-closed retained-state detection and non-mutating legacy reopen
 ```
 
 Permanent architecture task:
@@ -376,18 +380,37 @@ delosMvccRawStoreUniqueConstraintStaticAnalysis
 delosMvccRawStoreUniqueLifecycleStaticAnalysis
 delosMvccRawStoreVacuumStaticAnalysis
 delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
+delosMvccRawStoreAuthorityCutoverStaticAnalysis
 ```
 
-The gate fixes the ownership boundary, ordinary RawStore operation set, conservative locking order,
-transaction-lifecycle ordering, opt-in compatibility route, retained/new-format identity separation,
+The gates fix the ownership boundary, ordinary RawStore operation set, conservative locking order,
+transaction-lifecycle ordering, explicit authority selection, fail-closed retained-state detection,
 recovery tests, memory proof, differential oracle proof, and absence of filesystem/external-durability
-dependencies from the new RawStore production path. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`. The third RawStore container, physical typed ordering, version-aware visibility, candidate revalidation, compatibility rebuild, and recovery/memory proofs are protected by `delosMvccRawStoreOrderedIndexStaticAnalysis`. Persisted primary-key and
+dependencies from the new RawStore production path. RawStore mode no longer boots the retained runtime and never falls back to it. Database-wide identity allocation and publication are additionally protected by `delosMvccRawStoreDatabaseIdentityStaticAnalysis`. Optional physical lookup fields and mandatory logical fallback are protected by `delosMvccRawStoreLookupHintStaticAnalysis`. The third RawStore container, physical typed ordering, version-aware visibility, candidate revalidation, compatibility rebuild, and recovery/memory proofs are protected by `delosMvccRawStoreOrderedIndexStaticAnalysis`. Persisted primary-key and
 unique-constraint metadata, latest-committed conflict checks, authoritative base-chain revalidation,
 duplicate-null semantics, and direct-access/concurrency/recovery proofs are protected by
 `delosMvccRawStoreUniqueConstraintStaticAnalysis`.
 
 
 Native unique metadata now follows later SQL DDL as well as inline CREATE TABLE. ADD validates existing authoritative MVCC rows before publishing one logical definition; DROP removes one matching definition in the same RawStore transaction as Derby catalog and backing-index changes. Shared logical definitions act as reference counts, and tables with no native metadata remain compatible with inherited DROP lifecycle. Permanent evidence is `:delosdb-tests:runDelosMvccRawStoreUniqueLifecycleTest` and `delosMvccRawStoreUniqueLifecycleStaticAnalysis`.
+
+## Stage 5 RawStore authority cutover
+
+The first retirement slice makes the opt-in an authority boundary rather than a dual-runtime routing
+hint. A clean RawStore database boots only `MvccRawStoreRuntime`. A database containing any
+non-directory entry or symbolic link under the retained `delos_mvcc` provider directory is rejected
+before the RawStore runtime, maintenance
+worker, or diagnostics registration starts. No retained file is modified.
+
+A missing RawStore descriptor in RawStore mode is now an explicit retained-format error, not a fallback
+to `MvccDatabaseRuntime`. The old maximum-retained-container-ID scan is removed because both formats
+cannot coexist in one boot.
+
+```text
+docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md
+:delosdb-tests:runDelosMvccRawStoreAuthorityCutoverTest
+delosMvccRawStoreAuthorityCutoverStaticAnalysis
+```
 
 ## Transaction-duration logical locking and Row-level RawStore physical locking
 

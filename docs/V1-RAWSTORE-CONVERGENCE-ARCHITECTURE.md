@@ -53,15 +53,18 @@ MVCC factory directly owns one runtime; the former static `acquire(Path)`/lease 
 the inherited RawStore commit, commitNoSync, abort, savepoint, nested-user-transaction, XA, and
 destroy paths. This is a semantic extension seam, not another commit coordinator.
 
-The existing Phase 8 MVCC files and `DelosStorageTransactionRegistry` remain transitional and
-authoritative until the RawStore-backed table slice is proven. Memory/non-directory MVCC creation
-continues to fail closed before those files can be opened.
+The complete RawStore-backed table path is now proven through maintenance and diagnostics. Stage 5
+has begun by making RawStore mode and retained Phase 8 mode mutually exclusive inside one factory
+boot. RawStore mode no longer constructs the retained runtime or opens its provider store; retained
+files fail closed before the RawStore runtime starts. The retained implementation remains available
+only while its fault and recovery suites are retargeted.
 
 Implementation records:
 
 ```text
 docs/design/V1-DATABASE-OWNED-ACCESS-METHOD-BOOT.md
 docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
+docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md
 ```
 
 ## Frozen v1 invariants
@@ -89,12 +92,13 @@ docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
 
 ## Current transitional truth
 
-The current MVCC implementation still has independent page files, WAL/checkpoint/status artifacts,
-recovery machinery, and bridge/provider infrastructure. Those components are not deleted merely
-because the target architecture is approved.
+The retained Phase 8 implementation still contains independent page files, WAL/checkpoint/status
+artifacts, recovery machinery, and bridge/provider infrastructure. Those classes are not deleted
+merely because the target architecture is approved.
 
-They remain in service until a complete RawStore-backed replacement passes the corresponding
-transaction, recovery, reopen, memory-database, and differential gates.
+They are now reachable only when RawStore mode is disabled. An opted-in RawStore boot rejects retained
+provider files instead of booting both authorities. The remaining retained components stay available
+until their fault, recovery, reopen, and operational gates are retargeted to RawStore boundaries.
 
 The migration must not create a lifecycle-only RawStore shell around table data that remains
 authoritative in external MVCC files.

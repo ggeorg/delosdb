@@ -828,6 +828,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosMvccRawStoreAuthorityCutoverTest',
+        'Runs the Stage 5 RawStore-authority cutover proof: no retained runtime boot, fail-closed retained-format detection, and non-mutating legacy access.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
         [

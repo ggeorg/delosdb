@@ -21,6 +21,10 @@
 
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Properties;
 
@@ -112,8 +116,7 @@ public final class MvccConglomerateFactory
         if (rawStoreVerticalSliceEnabled) {
             rawStoreRuntime().ensureMetadata(xact_mgr);
             registerRawStoreOwnedMvcc(xact_mgr);
-            long rawStoreContainerId = reserveRawStoreConglomerateId(
-                    segment, input_containerid);
+            long rawStoreContainerId = reserveRawStoreConglomerateId(input_containerid);
             MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.create(
                     xact_mgr.getRawStoreXact(),
                     segment,
@@ -156,33 +159,17 @@ public final class MvccConglomerateFactory
         }
     }
 
-    private synchronized long reserveRawStoreConglomerateId(
-            int segment,
-            long proposedContainerId) {
+    private synchronized long reserveRawStoreConglomerateId(long proposedContainerId) {
         if (proposedContainerId == ContainerHandle.DEFAULT_ASSIGN_ID) {
             return proposedContainerId;
         }
 
         long candidate = proposedContainerId;
-        MvccDatabaseRuntime currentRuntime = runtime;
-        if (currentRuntime != null) {
-            long retainedMaximum = currentRuntime.maximumPersistedContainerId(segment);
-            if (candidate <= retainedMaximum) {
-                candidate = nextFactoryOwnedIdAfter(retainedMaximum);
-            }
-        }
         if (nextRawStoreConglomerateId != 0L && candidate < nextRawStoreConglomerateId) {
             candidate = nextRawStoreConglomerateId;
         }
         nextRawStoreConglomerateId = Math.addExact(candidate, 16L);
         return candidate;
-    }
-
-    private static long nextFactoryOwnedIdAfter(long containerId) {
-        long nextHighBits = Math.addExact(containerId >>> 4, 1L);
-        return Math.addExact(
-                Math.multiplyExact(nextHighBits, 16L),
-                ConglomerateFactory.MVCC_FACTORY_ID);
     }
 
     private static void registerRawStoreOwnedMvcc(TransactionManager transaction)
@@ -243,6 +230,13 @@ public final class MvccConglomerateFactory
             rawStoreRuntime().registerTable(descriptor);
             return new MvccConglomerate(rawStoreRuntime(), descriptor);
         }
+        if (rawStoreVerticalSliceEnabled) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "RawStore-owned delos_mvcc mode cannot open a retained external-format table; "
+                            + "boot with " + MvccRawStoreFormat.ENABLED_PROPERTY
+                            + "=false to access retained Phase 8 state");
+        }
         return new MvccConglomerate(runtime(), container_key);
     }
 
@@ -277,6 +271,7 @@ public final class MvccConglomerateFactory
                 System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false"));
         rawStoreVerticalSliceEnabled = Boolean.parseBoolean(configuredRawStoreMode);
         if (rawStoreVerticalSliceEnabled) {
+            rejectRetainedExternalState(legacyStorageDirectory);
             rawStoreRuntime = new MvccRawStoreRuntime(
                     context.databaseIdentity(),
                     context.rawStoreFactory().getLockFactory());
@@ -297,6 +292,7 @@ public final class MvccConglomerateFactory
             } else {
                 MvccRawStoreDiagnosticsDirectory.register(null, rawStoreRuntime);
             }
+            return;
         }
 
         if (legacyStorageDirectory != null && legacyStorageDirectory.isAbsolute()) {
@@ -310,6 +306,51 @@ public final class MvccConglomerateFactory
                     SQLState.NOT_IMPLEMENTED,
                     "delos_mvcc memory and non-directory databases require the RawStore-backed table format");
         }
+    }
+
+    private static void rejectRetainedExternalState(Path databaseDirectory)
+            throws StandardException {
+        if (databaseDirectory == null || !databaseDirectory.isAbsolute()) {
+            return;
+        }
+
+        Path providerDirectory = databaseDirectory
+                .toAbsolutePath()
+                .normalize()
+                .resolve(DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY);
+        if (Files.notExists(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+
+        try {
+            if (!Files.isDirectory(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
+                throw retainedExternalState(providerDirectory);
+            }
+            try (var paths = Files.walk(providerDirectory)) {
+                boolean retainedStatePresent = paths
+                        .skip(1L)
+                        .anyMatch(path -> Files.isSymbolicLink(path)
+                                || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS));
+                if (retainedStatePresent) {
+                    throw retainedExternalState(providerDirectory);
+                }
+            }
+        } catch (IOException | UncheckedIOException failure) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    failure,
+                    "Unable to verify that retained external delos_mvcc state is absent under "
+                            + providerDirectory);
+        }
+    }
+
+    private static StandardException retainedExternalState(Path providerDirectory) {
+        return StandardException.newException(
+                SQLState.NOT_IMPLEMENTED,
+                "RawStore-owned delos_mvcc mode cannot boot while retained external "
+                        + "delos_mvcc state exists under " + providerDirectory
+                        + "; boot with " + MvccRawStoreFormat.ENABLED_PROPERTY
+                        + "=false to access the retained format");
     }
 
     @Override

@@ -5457,23 +5457,21 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'cannot mix RawStore-owned delos_mvcc mutations'
             ])
 
-            requireTokens('Retained-format identity discovery', legacyRuntimeText, [
-                    'long maximumPersistedContainerId(long segmentId)',
-                    'DelosMvccConglomerateLifecycle.INHERITED_STORE_DIRECTORY',
-                    'Files.newDirectoryStream(inheritedStore, glob)',
-                    'PERSISTED_TABLE_FILE.matcher('
-            ])
-            requireTokens('Factory opt-in and compatibility route', factoryText, [
+            if (legacyRuntimeText.contains('maximumPersistedContainerId(')
+                    || legacyRuntimeText.contains('PERSISTED_TABLE_FILE')) {
+                failures << 'Stage 5 must remove retained-format conglomerate-ID discovery from MvccDatabaseRuntime'
+            }
+            requireTokens('Factory opt-in and authority route', factoryText, [
                     'System.getProperty(MvccRawStoreFormat.ENABLED_PROPERTY, "false")',
                     'if (rawStoreVerticalSliceEnabled)',
-                    'reserveRawStoreConglomerateId(',
-                    'maximumPersistedContainerId(segment)',
-                    'nextFactoryOwnedIdAfter(retainedMaximum)',
+                    'rejectRetainedExternalState(legacyStorageDirectory)',
+                    'reserveRawStoreConglomerateId(input_containerid)',
                     'MvccRawStoreTable.create(',
                     'MvccRawStoreTable.read(',
                     'if (!rawStoreVerticalSliceEnabled)',
                     'MvccRawStoreFormat.ENABLED_PROPERTY + "=true"',
                     'rawStoreRuntime().ensureMetadata(xact_mgr)',
+                    'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
                     'return new MvccConglomerate(runtime(), container_key)',
                     'memory and non-directory databases require the RawStore-backed table format'
             ])
@@ -5483,13 +5481,15 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     ['if (rawStoreVerticalSliceEnabled)', 'registerRawStoreOwnedMvcc(xact_mgr)',
                             'reserveRawStoreConglomerateId(', 'MvccRawStoreTable.create(',
                             'MvccDatabaseRuntime currentRuntime = runtime()'])
-            requireOrdered('Factory READ compatibility route',
+            requireOrdered('Factory READ authority route',
                     section(factoryText, 'public Conglomerate readConglomerate(',
                             'public void boot(', 'factory READ section'),
                     ['MvccRawStoreTable.read(', 'if (descriptor != null)',
                             'if (!rawStoreVerticalSliceEnabled)',
                             'rawStoreRuntime().ensureMetadata(xact_mgr)',
                             'return new MvccConglomerate(rawStoreRuntime(), descriptor)',
+                            'if (rawStoreVerticalSliceEnabled)',
+                            'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
                             'return new MvccConglomerate(runtime(), container_key)'])
 
             requireTokens('Focused SQL proof', sqlTestText, [
@@ -5497,8 +5497,8 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'legacyEvidence',
                     'rawStoreEvidence',
                     'testFileDatabaseCreateInsertVisibilityRollbackCommitAndReopen',
-                    'testOptedInBootKeepsEarlierFormatAsFallback',
-                    'raw_after_legacy_t',
+                    'testRawStoreAuthorityRejectsEarlierFormatFallback',
+                    'retained external delos_mvcc state',
                     'RAW_MVCC_ROLLED_BACK',
                     "insert into raw_mvcc_t values (2, 'rolled-back')",
                     "insert into raw_mvcc_t values (3, 'after-rollback')",
@@ -5513,13 +5513,16 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
                     'DriverManager.getConnection(jdbcUrl)',
                     'Files.exists(accidentalFilesystemDatabase)'
             ])
-            requireOrdered('Retained-format identity collision proof',
-                    section(sqlTestText, 'public void testOptedInBootKeepsEarlierFormatAsFallback()',
+            requireOrdered('Retained-format authority rejection proof',
+                    section(sqlTestText, 'public void testRawStoreAuthorityRejectsEarlierFormatFallback()',
                             'private static List<String> runComparableWorkload(',
-                            'retained-format fallback section'),
-                    ['create table raw_after_legacy_t',
-                            'select id, name from legacy_mvcc_t order by id',
-                            "insert into legacy_mvcc_t values (2, 'legacy-write')"])
+                            'retained-format rejection section'),
+                    ['create table legacy_mvcc_t',
+                            'retainedFileCount = inheritedMvccStateFileCount(database)',
+                            'RawStore authority must reject retained external-format tables',
+                            'the rejected RawStore boot must not mutate retained Phase 8 state',
+                            'try (Connection reopened = openDatabase(database, false))',
+                            'assertRows(reopened,'])
             requireTokens('Focused crash-recovery proof', recoveryTestText, [
                     'after-stamp-before-raw-commit',
                     'after-raw-commit-before-publication',
@@ -5539,6 +5542,7 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             ])
             requireTokens('Public implementation record', implementationText, [
                     'IMPLEMENTED BEHIND AN EXPLICIT OPT-IN',
+                    'mutually exclusive within one booted access-method factory',
                     'stores its authoritative state only through the caller',
                     'Page.INSERT_UNDO_WITH_PURGE',
                     'Transaction-duration logical locks use the database `LockFactory`',
@@ -8445,6 +8449,248 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 5 RawStore authority boots without the retained Phase 8 runtime and rejects retained state before registration.'
+
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def legacyRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java')
+    def rawRuntimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def rawDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
+    def legacyDirectoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRuntimeDiagnosticsDirectory.java')
+    def verticalTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java')
+    def cutoverTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md')
+    def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
+    def roadmapFile = file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    def requiredFiles = [factoryFile, legacyRuntimeFile, rawRuntimeFile, rawDirectoryFile,
+            legacyDirectoryFile, verticalTestFile, cutoverTestFile, testsBuildFile,
+            designFile, implementationFile, roadmapFile]
+
+    inputs.files(requiredFiles)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        requiredFiles.each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def factoryText = factoryFile.getText('UTF-8')
+            def legacyRuntimeText = legacyRuntimeFile.getText('UTF-8')
+            def rawRuntimeText = rawRuntimeFile.getText('UTF-8')
+            def rawDirectoryText = rawDirectoryFile.getText('UTF-8')
+            def legacyDirectoryText = legacyDirectoryFile.getText('UTF-8')
+            def verticalTestText = verticalTestFile.getText('UTF-8')
+            def cutoverTestText = cutoverTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def designText = designFile.getText('UTF-8')
+            def implementationText = implementationFile.getText('UTF-8')
+            def roadmapText = roadmapFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) {
+                        failures << description + ' is missing token: ' + token
+                    }
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token)
+                    if (current < 0) {
+                        failures << description + ' is missing token: ' + token
+                    } else if (current <= previous) {
+                        failures << description + ' has incorrect ordering at token: ' + token
+                    }
+                    previous = current
+                }
+            }
+            def section = { String source, String start, String end, String description ->
+                int startIndex = source.indexOf(start)
+                int endIndex = startIndex < 0 ? -1 : source.indexOf(end, startIndex + start.length())
+                if (startIndex < 0 || endIndex < 0) {
+                    failures << 'Could not isolate ' + description
+                    return ''
+                }
+                source.substring(startIndex, endIndex)
+            }
+
+            def bootSection = section(factoryText,
+                    'void boot(AccessMethodBootContext context)',
+                    'private static void rejectRetainedExternalState(',
+                    'factory boot section')
+            requireOrdered('One-authority factory boot', bootSection, [
+                    'rawStoreVerticalSliceEnabled = Boolean.parseBoolean(configuredRawStoreMode)',
+                    'if (rawStoreVerticalSliceEnabled)',
+                    'rejectRetainedExternalState(legacyStorageDirectory)',
+                    'rawStoreRuntime = new MvccRawStoreRuntime(',
+                    'rawStoreRuntime.startMaintenance(',
+                    'MvccRawStoreDiagnosticsDirectory.register(',
+                    'return;',
+                    'runtime = new MvccDatabaseRuntime('
+            ])
+            if (factoryText.count('new MvccDatabaseRuntime(') != 1) {
+                failures << 'Factory must construct the retained runtime in exactly one non-RawStore branch'
+            }
+            if (factoryText.count('new MvccRawStoreRuntime(') != 1) {
+                failures << 'Factory must construct exactly one RawStore runtime branch'
+            }
+
+            def guardSection = section(factoryText,
+                    'private static void rejectRetainedExternalState(',
+                    'private static StandardException retainedExternalState(',
+                    'retained-state guard section')
+            requireTokens('Fail-closed retained-state guard', guardSection, [
+                    'DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY',
+                    'Files.notExists(providerDirectory, LinkOption.NOFOLLOW_LINKS)',
+                    'Files.isDirectory(providerDirectory, LinkOption.NOFOLLOW_LINKS)',
+                    'Files.walk(providerDirectory)',
+                    '.skip(1L)',
+                    'Files.isSymbolicLink(path)',
+                    '!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)',
+                    'IOException | UncheckedIOException',
+                    'retainedExternalState(providerDirectory)',
+                    'Unable to verify that retained external delos_mvcc state is absent'
+            ])
+            requireTokens('Explicit retained-state rejection', factoryText, [
+                    'private static StandardException retainedExternalState(',
+                    'RawStore-owned delos_mvcc mode cannot boot while retained external',
+                    'boot with " + MvccRawStoreFormat.ENABLED_PROPERTY'
+            ])
+            ['new MvccDatabaseRuntime(', 'DelosStorageStore', 'createDirectories(',
+             'delete(', 'write(', 'new MvccRawStoreRuntime('].each { token ->
+                if (guardSection.contains(token)) {
+                    failures << 'Retained-state guard must remain read-only and non-owning: ' + token
+                }
+            }
+
+            def readSection = section(factoryText,
+                    'public Conglomerate readConglomerate(',
+                    'public void insertUndoNotify(',
+                    'factory read dispatch')
+            requireOrdered('RawStore read never falls back to retained runtime', readSection, [
+                    'MvccRawStoreTable.read(',
+                    'if (descriptor != null)',
+                    'return new MvccConglomerate(rawStoreRuntime(), descriptor)',
+                    'if (rawStoreVerticalSliceEnabled)',
+                    'RawStore-owned delos_mvcc mode cannot open a retained external-format table',
+                    'return new MvccConglomerate(runtime(), container_key)'
+            ])
+
+            def reservationSection = section(factoryText,
+                    'private synchronized long reserveRawStoreConglomerateId(',
+                    'private static void registerRawStoreOwnedMvcc(',
+                    'RawStore conglomerate reservation')
+            requireTokens('Factory-local RawStore identity reservation', reservationSection, [
+                    'ContainerHandle.DEFAULT_ASSIGN_ID',
+                    'nextRawStoreConglomerateId',
+                    'Math.addExact(candidate, 16L)'
+            ])
+            ['MvccDatabaseRuntime', 'maximumPersistedContainerId', 'Files.', 'Path'].each { token ->
+                if (reservationSection.contains(token)) {
+                    failures << 'RawStore identity reservation must not inspect retained persistence: ' + token
+                }
+            }
+
+            ['maximumPersistedContainerId(', 'PERSISTED_TABLE_FILE',
+             'Files.newDirectoryStream(inheritedStore'].each { token ->
+                if (legacyRuntimeText.contains(token)) {
+                    failures << 'Retained runtime still exposes removed cross-authority identity discovery: ' + token
+                }
+            }
+            requireTokens('Separate weak diagnostic directories', rawDirectoryText, [
+                    'WeakReference<MvccRawStoreRuntime>',
+                    'No active RawStore-backed delos_mvcc runtime'
+            ])
+            requireTokens('Retained diagnostics remain explicit to retained mode', legacyDirectoryText, [
+                    'WeakReference<MvccDatabaseRuntime>',
+                    'No active delos_mvcc runtime for database'
+            ])
+            ['MvccDatabaseRuntime', 'DelosStorageStore', 'PageVolumeMvccStateStore'].each { token ->
+                if (rawRuntimeText.contains(token)) {
+                    failures << 'RawStore runtime must not reference retained persistence authority: ' + token
+                }
+            }
+
+            requireTokens('Accumulated vertical-slice authority proof', verticalTestText, [
+                    'testRawStoreAuthorityRejectsEarlierFormatFallback',
+                    'RawStore authority must reject retained external-format tables',
+                    'the rejected RawStore boot must not mutate retained Phase 8 state'
+            ])
+            if (verticalTestText.contains('testOptedInBootKeepsEarlierFormatAsFallback')
+                    || verticalTestText.contains('raw_after_legacy_t')) {
+                failures << 'Vertical-slice proof still authorizes RawStore-mode fallback to retained tables'
+            }
+
+            requireTokens('Focused Stage 5 executable proof', cutoverTestText, [
+                    'testCleanRawStoreDatabaseOwnsNoRetainedPersistenceRuntime',
+                    'testRetainedFormatFailsClosedBeforeRawStoreRuntimeStarts',
+                    'RawStore authority must not boot MvccDatabaseRuntime',
+                    'databaseMaintenanceSnapshot()',
+                    'databaseStorageSnapshot()',
+                    'No active delos_mvcc runtime',
+                    'Rejected authority cutover must not register a RawStore runtime',
+                    'No active RawStore-backed delos_mvcc runtime',
+                    'fail-closed cutover must not rewrite retained state'
+            ])
+            if (!testsBuildText.contains("'runDelosMvccRawStoreAuthorityCutoverTest'")
+                    || !testsBuildText.contains('MvccRawStoreAuthorityCutoverTest.class')) {
+                failures << 'delosdb-tests must expose the focused Stage 5 authority-cutover lane'
+            }
+
+            requireTokens('Public authority-cutover design', designText, [
+                    'one `MvccConglomerateFactory` owns only',
+                    'It does not construct or register',
+                    'runs before MvccRawStoreRuntime construction',
+                    'There is no RawStore-mode fallback',
+                    'The former compatibility scan',
+                    ':delosdb-tests:runDelosMvccRawStoreAuthorityCutoverTest',
+                    'delosMvccRawStoreAuthorityCutoverStaticAnalysis'
+            ])
+            requireTokens('Implementation record includes Stage 5 authority', implementationText, [
+                    'mutually exclusive within one booted access-method factory',
+                    'V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md',
+                    'RawStore mode no longer boots the retained runtime and never falls back to it'
+            ])
+            requireTokens('Roadmap advances to Stage 5.1', roadmapText, [
+                    'Current milestone: Stage 5 RawStore MVCC authority cutover',
+                    '## Stage 5.1 — RawStore authority cutover',
+                    'IMPLEMENTED / PENDING USER VERIFICATION'
+            ])
+        }
+
+        def reportFile = layout.buildDirectory
+                .file('reports/delosdb/mvcc-raw-store-authority-cutover-static-analysis.txt')
+                .get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC authority cutover static analysis')
+            writer.println('================================================')
+            writer.println()
+            writer.println('Rule: one factory boot selects one persistence authority; RawStore mode rejects retained state before starting or registering its runtime.')
+            writer.println()
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'RawStore MVCC authority cutover static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'RawStore MVCC authority cutover static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -8480,6 +8726,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStorePhysicalLockingStaticAnalysis',
             'delosMvccRawStoreVacuumStaticAnalysis',
             'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
+            'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
             'delosMvccTableRebuildProviderTruthStaticAnalysis',
             'delosDatabaseDecisionRetentionStaticAnalysis',
             'delosPhase8EntropyStaticAnalysis',

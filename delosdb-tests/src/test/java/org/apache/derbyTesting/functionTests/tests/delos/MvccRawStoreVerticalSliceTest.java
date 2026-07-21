@@ -146,8 +146,8 @@ public final class MvccRawStoreVerticalSliceTest extends MvccSqlTestSupport {
     }
 
 
-    public void testOptedInBootKeepsEarlierFormatAsFallback() throws Exception {
-        String database = databaseName("mvcc-raw-store-legacy-fallback");
+    public void testRawStoreAuthorityRejectsEarlierFormatFallback() throws Exception {
+        String database = databaseName("mvcc-raw-store-legacy-rejected");
 
         try (SystemPropertyScope ignored = clearSystemProperty(ENABLED_PROPERTY)) {
             try (Connection legacy = openDatabase(database, true)) {
@@ -159,51 +159,42 @@ public final class MvccRawStoreVerticalSliceTest extends MvccSqlTestSupport {
             }
             shutdownDatabase(database);
         }
+        long retainedFileCount = inheritedMvccStateFileCount(database);
         assertTrue(
                 "the retained oracle table must have earlier-format durable state",
-                inheritedMvccStateFileCount(database) > 0L);
+                retainedFileCount > 0L);
 
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, false)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table raw_after_legacy_t (id int, name varchar(64)) using delos_mvcc");
-                connection.commit();
-                executeUpdate(connection,
-                        "insert into raw_after_legacy_t values (3, 'raw-store')");
-                connection.commit();
-
-                assertRows(connection,
-                        "select id, name from legacy_mvcc_t order by id",
-                        "1|legacy");
-                connection.commit();
-                executeUpdate(connection, "insert into legacy_mvcc_t values (2, 'legacy-write')");
-                connection.commit();
-
-                assertRows(connection,
-                        "select id, name from legacy_mvcc_t order by id",
-                        "1|legacy",
-                        "2|legacy-write");
-                connection.commit();
-                assertRows(connection,
-                        "select id, name from raw_after_legacy_t order by id",
-                        "3|raw-store");
-                connection.commit();
+            try {
+                try (Connection connection = DriverManager.getConnection("jdbc:derby:" + database)) {
+                    assertRows(connection,
+                            "select id, name from legacy_mvcc_t order by id",
+                            "1|legacy");
+                }
+                fail("RawStore authority must reject retained external-format tables");
+            } catch (java.sql.SQLException expected) {
+                assertTrue(expected.toString(),
+                        containsMessage(expected, "retained external delos_mvcc state")
+                                || containsMessage(expected, "retained external-format table"));
             }
             shutdownDatabase(database);
+        }
 
+        assertEquals(
+                "the rejected RawStore boot must not mutate retained Phase 8 state",
+                retainedFileCount,
+                inheritedMvccStateFileCount(database));
+
+        try (SystemPropertyScope ignored = clearSystemProperty(ENABLED_PROPERTY)) {
             try (Connection reopened = openDatabase(database, false)) {
                 assertRows(reopened,
                         "select id, name from legacy_mvcc_t order by id",
-                        "1|legacy",
-                        "2|legacy-write");
-                assertRows(reopened,
-                        "select id, name from raw_after_legacy_t order by id",
-                        "3|raw-store");
+                        "1|legacy");
             }
             shutdownDatabase(database);
         }
     }
+
 
 
     private static List<String> runComparableWorkload(String database) throws Exception {
