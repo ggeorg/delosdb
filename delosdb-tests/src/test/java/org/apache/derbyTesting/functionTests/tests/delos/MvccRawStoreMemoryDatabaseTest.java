@@ -121,7 +121,7 @@ public final class MvccRawStoreMemoryDatabaseTest extends MvccSqlTestSupport {
             assertTrue(memory.databaseIdentity().startsWith("memory:"));
         } finally {
             if (memoryRuntimeActive(database)) {
-                shutdownMemoryDatabase(database);
+                shutdownNamedMemoryDatabase(database);
             }
         }
 
@@ -171,7 +171,7 @@ public final class MvccRawStoreMemoryDatabaseTest extends MvccSqlTestSupport {
 
             first.close();
             first = null;
-            shutdownMemoryDatabase(firstDatabase);
+            shutdownNamedMemoryDatabase(firstDatabase);
             assertMemoryRuntimeAbsent(firstDatabase);
             assertTrue(DelosStorageDiagnosticsRegistry
                     .mvccMemoryDatabaseMemorySnapshot(secondDatabase)
@@ -186,10 +186,10 @@ public final class MvccRawStoreMemoryDatabaseTest extends MvccSqlTestSupport {
                 second.close();
             }
             if (memoryRuntimeActive(firstDatabase)) {
-                shutdownMemoryDatabase(firstDatabase);
+                shutdownNamedMemoryDatabase(firstDatabase);
             }
             if (memoryRuntimeActive(secondDatabase)) {
-                shutdownMemoryDatabase(secondDatabase);
+                shutdownNamedMemoryDatabase(secondDatabase);
             }
         }
 

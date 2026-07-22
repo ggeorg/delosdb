@@ -40,7 +40,8 @@ public class BlockedByteArrayTest
         super(name);
     }
 
-    public void testLengthNoInitialBlocksWriteSingleByte() {
+    public void testLengthNoInitialBlocksWriteSingleByte()
+            throws IOException {
         BlockedByteArray src = new BlockedByteArray();
         assertEquals(0, src.length());
         src.writeByte(0, (byte)1);
@@ -51,7 +52,8 @@ public class BlockedByteArrayTest
         }
     }
 
-    public void testLengthNoInitialBlocksWriteMultipleBytes4K() {
+    public void testLengthNoInitialBlocksWriteMultipleBytes4K()
+            throws IOException {
         BlockedByteArray src = new BlockedByteArray();
         byte[] buf = new byte[4*1024];
         Arrays.fill(buf, (byte)1);
@@ -64,7 +66,8 @@ public class BlockedByteArrayTest
         assertEquals(2 * buf.length, src.length());
     }
 
-    public void testLengthNoInitialBlocksWriteMultipleBytes4KPlussAFew() {
+    public void testLengthNoInitialBlocksWriteMultipleBytes4KPlussAFew()
+            throws IOException {
         BlockedByteArray src = new BlockedByteArray();
         byte[] buf = new byte[4*1024+37];
         Arrays.fill(buf, (byte)1);

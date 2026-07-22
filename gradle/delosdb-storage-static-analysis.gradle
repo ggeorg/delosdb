@@ -5205,8 +5205,8 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
                 failures << 'Table-local committed high-water must no longer drive MVCC visibility'
             }
 
-            if (factoryText.count('rawStoreRuntime().ensureMetadata(xact_mgr);') < 2) {
-                failures << 'MVCC CREATE and RawStore descriptor reopen must initialize database-wide metadata'
+            if (factoryText.count('currentRuntime.ensureMetadata(xactManager);') < 2) {
+                failures << 'MVCC CREATE and RawStore descriptor reopen must initialize database-wide metadata through the sole RawStore runtime'
             }
 
             requireTokens('RawStore metadata inspection proof', inspectionText, [
@@ -8196,7 +8196,7 @@ tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
             requireTokens('Named database isolation proof', memoryTest, [
                     'mvcc-stage6-memory-a-',
                     'mvcc-stage6-memory-b-',
-                    'shutdownMemoryDatabase(firstDatabase)',
+                    'shutdownNamedMemoryDatabase(firstDatabase)',
                     'mvccMemoryDatabaseMemorySnapshot(secondDatabase)',
                     'assertMemoryRuntimeAbsent(secondDatabase)'
             ])
@@ -8208,7 +8208,7 @@ tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
                     'assertEquals(0L, factory.memoryUsedBytes())'
             ])
             requireTokens('Memory shutdown helper', testSupport, [
-                    'shutdownMemoryDatabase(String databaseName)',
+                    'shutdownNamedMemoryDatabase(String databaseName)',
                     'jdbc:derby:memory:'
             ])
             forbidTokens('Memory diagnostics tests', memoryTest + maintenanceTest, [
@@ -8450,7 +8450,7 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
                     '## Stage 5.1 — RawStore authority cutover',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 4, Stage 5.1, Stage 5.2, and Stage 5.3 are user-verified'
+                    'Stage 4 and all Stage 5 slices are user-verified'
             ])
         }
 
@@ -8596,7 +8596,7 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
                     'Current milestone: Stage 5 retained-runtime retirement',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 4, Stage 5.1, Stage 5.2, and Stage 5.3 are user-verified',
+                    'Stage 4 and all Stage 5 slices are user-verified',
                     'VERIFIED'
             ])
         }

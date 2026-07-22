@@ -283,7 +283,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                         "20");
                 memory.commit();
             }
-            shutdownMemoryDatabase(memoryDatabase);
+            shutdownNamedMemoryDatabase(memoryDatabase);
         }
     }
 
