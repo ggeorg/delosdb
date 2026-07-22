@@ -15,7 +15,7 @@ V1B-MODULAR-ASSEMBLY|delosdb-tests/build.gradle|assembleDelosV1ModularRuntimeIma
 V1B-MODULAR-EXECUTION|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.java|--module-path|DRDA server and client execution must use the JPMS module path from the captured image.
 V1B-MODULAR-LANE|delosdb-tests/build.gradle|id: 'modular-image-drda'|The complete capture manifest must retain the modular-image DRDA evidence lane.
 V1B-MVCC-MODULE|delosdb-storage-mvcc/build.gradle|Automatic-Module-Name|The MVCC provider must have a stable automatic module identity.
-V1B-ENGINE-SERVICES|delosdb-engine/src/main/java/module-info.java|uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory|Named-module execution must preserve storage-provider ServiceLoader discovery.
+V1B-ENGINE-SERVICES|delosdb-engine/src/main/java/module-info.java|uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;|Named-module execution must preserve neutral access-method ServiceLoader discovery.
 V1B-ENGINE-PATCH|delosdb-engine/build.gradle|derbyRuntimePatchArtifactFiles|The engine module descriptor must compile against the declared provider artifacts merged into derby.jar.
 V1B-MANIFEST|delosdb-tests/build.gradle|status: 'CAPTURED_NOT_ACCEPTED'|Capture and acceptance must remain separate decisions.
 V1B-SEMANTIC|delosdb-tests/build.gradle|semanticChecksum|The bundle must preserve an aggregate semantic checksum.

@@ -79,9 +79,6 @@ public final class MvccConglomerate
         this.temporary = table.temporary();
     }
 
-    boolean rawStoreBacked() {
-        return table != null;
-    }
 
     @Override
     public void addColumn(

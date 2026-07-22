@@ -7443,19 +7443,24 @@ tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
                     ['snapshotLease.close()', 'boundary.close()', 'vacuumBoundaries.clear()',
                      'orderedIndexGenerations.clear()', 'vacuumMutation = false'])
 
-            requireTokens('Inherited purge dispatch', conglomerateText, [
+            requireTokens('Unconditional inherited purge dispatch', conglomerateText, [
                     'public void purgeConglomerate(',
-                    'if (rawStoreBacked())',
-                    'context.beforeVacuum(rawStoreTable)',
+                    'MvccRawStoreTable.Descriptor currentTable = requireTable()',
+                    'MvccRawStoreTransactionContext context = requireRuntime().context(',
+                    'context.beforeVacuum(currentTable)',
                     'MvccRawStoreVacuum.vacuum(',
                     'context.vacuumHorizon()',
                     'result.requiresOrderedIndexReplacement()',
-                    'context.orderedIndexForWrite(rawStoreTable)',
+                    'context.orderedIndexForWrite(currentTable)',
                     'result.mutated()',
                     'context.markVacuumMutation()',
                     'public void compressConglomerate(',
                     'purgeConglomerate(xactManager, rawtran)'
             ])
+            if (conglomerateText.contains('rawStoreBacked()')
+                    || conglomerateText.contains('rawStoreTable')) {
+                failures << 'Vacuum dispatch must not retain the retired dual-format predicate or field names'
+            }
 
             requireOrdered('Transactional relink-before-purge protocol',
                     section(vacuumText, 'static Result vacuum(', 'private static VacuumPlan plan(',
@@ -7732,17 +7737,18 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
             ])
 
             requireTokens('Database-owned maintenance boot', factoryText, [
-                    'rawStoreRuntime = new MvccRawStoreRuntime(',
-                    'rawStoreRuntime.startMaintenance(',
+                    'runtime = new MvccRawStoreRuntime(',
+                    'runtime.startMaintenance(',
                     'context.rawStoreFactory()',
                     'context.readOnly()',
                     'serviceProperties',
                     'MvccRawStoreDiagnosticsDirectory.register('
             ])
             requireOrdered('Database shutdown removes diagnostics before stopping maintenance',
-                    section(factoryText, 'public void stop()', 'private MvccDatabaseRuntime runtime()',
+                    section(factoryText, 'public void stop()', 'private MvccRawStoreRuntime runtime()',
                             'RawStore MVCC factory stop section'),
-                    ['MvccRawStoreDiagnosticsDirectory.unregister(', 'currentRawStoreRuntime.close()'])
+                    ['MvccRawStoreDiagnosticsDirectory.unregister(currentDirectory, current)',
+                     'current.close()'])
 
             requireTokens('Bounded FIFO maintenance service', serviceText, [
                     'private final LinkedBlockingQueue<MaintenanceTask> queue',
@@ -7871,7 +7877,7 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
             requireTokens('Diagnostics adapter exposes RawStore maintenance', diagnosticsText, [
                     'MvccRawStoreDiagnosticsDirectory.requireSingle()',
                     'MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)',
-                    'rawStoreRuntime.maintenanceSnapshot()',
+                    'rawStoreRuntime().maintenanceSnapshot()',
                     'MvccRawStoreDiagnosticsDirectory.runtimeCount() > 0'
             ])
 
