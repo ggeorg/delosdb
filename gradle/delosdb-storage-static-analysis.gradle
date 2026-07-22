@@ -6148,11 +6148,9 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
             def requireOrdered = { String description, String source, List<String> tokens ->
                 int previous = -1
                 tokens.each { token ->
-                    int current = source.indexOf(token)
+                    int current = source.indexOf(token, previous + 1)
                     if (current < 0) {
-                        failures << description + ' is missing token: ' + token
-                    } else if (current <= previous) {
-                        failures << description + ' has incorrect ordering at token: ' + token
+                        failures << description + ' is missing token after position ' + previous + ': ' + token
                     }
                     previous = current
                 }
@@ -6190,6 +6188,19 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'publishOrderedIndexContainer(',
                     'rawTransaction.dropContainer(orderedIndex)'
             ])
+            requireTokens('RawStore MVCC long-row table insertion policy', tableText, [
+                    'private static byte insertFlags(Page page)',
+                    'page.recordCount() == 0',
+                    'Page.INSERT_OVERFLOW',
+                    'Page.INSERT_DEFAULT'
+            ])
+            requireOrdered('RawStore MVCC table insertion advances before overflow',
+                    section(tableText, 'private static RecordHandle insertRow(',
+                            'private static void updateDirectoryHead(',
+                            'RawStore MVCC table row insertion section'),
+                    ['page.insertAtSlot(', 'insertFlags(page)',
+                            'container.getNextPage(', 'container.addPage()',
+                            'page.insertAtSlot(', 'insertFlags(page)'])
             if (tableText.count('rawTransaction.addContainer(') != 3) {
                 failures << 'New RawStore MVCC tables must allocate metadata, version, and ordered-index containers'
             }
@@ -6207,6 +6218,18 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'LinkedHashSet<Long> distinctRowIds',
                     'visibleAt(entry, context, snapshotSequence)'
             ])
+            requireTokens('RawStore MVCC long-row ordered-index insertion policy', indexText, [
+                    'private static byte insertFlags(Page page)',
+                    'page.recordCount() == 0',
+                    'Page.INSERT_OVERFLOW',
+                    'Page.INSERT_DEFAULT'
+            ])
+            requireOrdered('RawStore MVCC ordered-index insertion advances before overflow',
+                    section(indexText, 'private static void appendEntries(',
+                            'private static void sortEntries(',
+                            'RawStore MVCC ordered-index append section'),
+                    ['page.insertAtSlot(', 'insertFlags(page)',
+                            'container.getNextPage(', 'container.addPage()'])
             requireOrdered('Statement-time ordered-index rewrite',
                     section(indexText, 'static void insertVersion(', 'static void rebuild(',
                             'ordered-index INSERT section'),

@@ -34,7 +34,6 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 /** One table encoded entirely as ordinary RawStore rows and containers. */
 final class MvccRawStoreTable {
-    private static final int INSERT_FLAGS = Page.INSERT_UNDO_WITH_PURGE | Page.INSERT_OVERFLOW;
     private static final int OVERFLOW_THRESHOLD = 100;
 
     static final class Descriptor {
@@ -140,6 +139,20 @@ final class MvccRawStoreTable {
         boolean tombstone() {
             return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
         }
+    }
+
+    /**
+     * Use Derby's canonical long-row insertion policy. A populated page must
+     * reject a row which does not fit so the caller can advance to another
+     * normal page. Overflow is permitted only on an empty page, where RawStore
+     * can root the complete long-row chain without mixing it with existing
+     * control or data records.
+     */
+    private static byte insertFlags(Page page) throws StandardException {
+        return (byte) (Page.INSERT_UNDO_WITH_PURGE
+                | (page.recordCount() == 0
+                        ? Page.INSERT_OVERFLOW
+                        : Page.INSERT_DEFAULT));
     }
 
     private MvccRawStoreTable() {
@@ -1115,14 +1128,14 @@ final class MvccRawStoreTable {
                     controlRow(rawTransaction, descriptor),
                     null,
                     null,
-                    (byte) INSERT_FLAGS,
+                    insertFlags(page),
                     OVERFLOW_THRESHOLD);
             page.insertAtSlot(
                     Page.FIRST_SLOT_NUMBER + 1,
                     allocatorRow(rawTransaction),
                     null,
                     null,
-                    (byte) INSERT_FLAGS,
+                    insertFlags(page),
                     OVERFLOW_THRESHOLD);
             container.setEstimatedRowCount(0L, 0);
         } finally {
@@ -1153,7 +1166,7 @@ final class MvccRawStoreTable {
                     },
                     null,
                     null,
-                    (byte) INSERT_FLAGS,
+                    insertFlags(page),
                     OVERFLOW_THRESHOLD);
             container.setEstimatedRowCount(0L, 0);
         } finally {
@@ -1479,7 +1492,7 @@ final class MvccRawStoreTable {
                         row,
                         (FormatableBitSet) null,
                         null,
-                        (byte) INSERT_FLAGS,
+                        insertFlags(page),
                         OVERFLOW_THRESHOLD);
                 if (handle != null) {
                     return handle;
@@ -1494,7 +1507,7 @@ final class MvccRawStoreTable {
                     row,
                     null,
                     null,
-                    (byte) INSERT_FLAGS,
+                    insertFlags(page),
                     OVERFLOW_THRESHOLD);
             if (handle == null) {
                 throw new IllegalStateException("RawStore MVCC row did not fit on an empty page");
