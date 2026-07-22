@@ -5055,8 +5055,14 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
             }
             if (!table.contains('rawTransaction.addContainer(')
                     || !table.contains('rawTransaction.openContainer(')
-                    || !context.contains('rawTransaction.commit()')) {
-                failures << 'Physical MVCC state and commit must remain subordinate to inherited RawStore'
+                    || !context.contains('implements AccessMethodTransactionLifecycle')
+                    || !context.contains('beforeCommit(CommitMode mode)')
+                    || !context.contains('afterCommit(CommitMode mode, DatabaseInstant instant)')
+                    || !context.contains('runtime.reserveCommitSequence(rawTransaction)')
+                    || !context.contains('runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)')
+                    || context.contains('rawTransaction.commit()')
+                    || context.contains('rawTransaction.commitNoSync(')) {
+                failures << 'Physical MVCC state must use RawStore containers while commit remains owned by RAMTransaction lifecycle callbacks'
             }
             if (!test.contains('testRawStoreIsTheDefaultMvccFormat')
                     || !test.contains('testRetiredExternalFormatCannotBeReenabled')
