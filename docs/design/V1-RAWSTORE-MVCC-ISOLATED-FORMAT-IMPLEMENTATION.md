@@ -75,11 +75,14 @@ first page slot 0: ordered-index control row
 remaining records: physically sorted, version-aware typed key entries
 ```
 
-Each non-tombstone version contributes one entry per table column. Entries are ordered by column,
-SQL typed key, stable row identity, and version identity. They retain creator, begin, and end sequence
-fields so transaction-local and historical snapshot visibility match the base version. Index results
-are candidate `MvccRowId` values only; the authoritative base version chain is always reread and the
-complete SQL qualifiers are reapplied. See `V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
+Each non-tombstone version contributes one entry per SQL-orderable table column. BLOB, CLOB,
+LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined values remain only in the authoritative
+base version and never enter the auxiliary ordered index. Entries are ordered by column, SQL typed key,
+stable row identity, and version identity. They retain creator, begin, and end sequence fields so
+transaction-local and historical snapshot visibility match the base version. Index results are
+candidate `MvccRowId` values only; the authoritative base version chain is always reread and the
+complete SQL qualifiers are reapplied. Non-orderable qualifiers fall back to the base chain. See
+`V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
 
 A version row contains format-versioned logical identity and visibility fields followed by the normal
 RawStore-encoded payload:
@@ -97,7 +100,9 @@ payload columns
 
 `MvccRowId` and `MvccVersionId` are durable identities. Directory rows may carry the current head's
 RawStore page/record locator and version rows may carry the predecessor's locator as optional trailing
-fields. These locators are validated hints only: row shape, row kind, `MvccRowId`, and `MvccVersionId`
+fields. Materialized scans detach stream-backed LOB payloads before closing the source RawStore
+container; cloned `OverflowInputStream` instances retain their owner handle and must not escape that
+boundary. These locators are validated hints only: row shape, row kind, `MvccRowId`, and `MvccVersionId`
 must match before decoding or commit stamping uses them. A missing, stale, reused, or mismatched hint
 falls back to authoritative logical-ID lookup. Older shorter rows remain valid without migration. See
 `V1-RAWSTORE-MVCC-LOOKUP-HINTS.md`.

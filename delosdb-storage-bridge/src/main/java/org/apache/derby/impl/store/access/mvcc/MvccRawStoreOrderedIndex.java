@@ -25,6 +25,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 
+import org.apache.derby.iapi.services.io.StoredFormatIds;
+
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
@@ -226,11 +228,12 @@ final class MvccRawStoreOrderedIndex {
                 MvccRawStoreFormat.ORDERED_INDEX_ENTRY_END_SEQUENCE,
                 MvccRawStoreFormat.CURRENT_END_SEQUENCE,
                 commitSequence);
-        if (updated != table.columnCount()) {
+        int expectedEntryCount = indexedColumnCount(table);
+        if (updated != expectedEntryCount) {
             throw new IllegalStateException(
                     "RawStore MVCC ordered-index end stamping mismatch for row "
                             + rowId + ", version " + versionId
-                            + ": expected " + table.columnCount() + " entries, found " + updated);
+                            + ": expected " + expectedEntryCount + " entries, found " + updated);
         }
     }
 
@@ -390,6 +393,9 @@ final class MvccRawStoreOrderedIndex {
         if (predicate.isEmpty()) {
             return Optional.empty();
         }
+        if (!indexesColumn(table, predicate.get().columnId())) {
+            return Optional.empty();
+        }
 
         if (key == null) {
             return Optional.empty();
@@ -462,6 +468,9 @@ final class MvccRawStoreOrderedIndex {
             throw new IllegalArgumentException("RawStore MVCC ordered-index value count mismatch");
         }
         for (int column = 0; column < table.columnCount(); column++) {
+            if (!indexesColumn(table, column)) {
+                continue;
+            }
             entries.add(new IndexEntry(
                     column,
                     StoreValueCopySupport.cloneValue(values[column]),
@@ -798,6 +807,9 @@ final class MvccRawStoreOrderedIndex {
         if (columnId < 0 || columnId >= table.columnCount()) {
             throw new IllegalStateException("RawStore MVCC ordered-index column is invalid: " + columnId);
         }
+        if (!indexesColumn(table, columnId)) {
+            return null;
+        }
         if (page.fetchNumFieldsAtSlot(slot) != MvccRawStoreFormat.ORDERED_INDEX_ENTRY_FIELD_COUNT) {
             throw new IllegalStateException("RawStore MVCC ordered-index entry has an invalid field count");
         }
@@ -904,6 +916,47 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
+    static boolean indexesColumn(MvccRawStoreTable.Descriptor table, int columnId) {
+        if (columnId < 0 || columnId >= table.columnCount()) {
+            return false;
+        }
+        return isOrderableFormat(table.formatIds()[columnId]);
+    }
+
+    static void validateConstraintColumns(
+            MvccRawStoreTable.Descriptor table,
+            int[] columns) throws StandardException {
+        for (int column : columns) {
+            if (!indexesColumn(table, column)) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        "RawStore MVCC unique constraints require orderable columns");
+            }
+        }
+    }
+
+    private static int indexedColumnCount(MvccRawStoreTable.Descriptor table) {
+        int count = 0;
+        for (int column = 0; column < table.columnCount(); column++) {
+            if (indexesColumn(table, column)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static boolean isOrderableFormat(int formatId) {
+        return switch (formatId) {
+            case StoredFormatIds.SQL_BLOB_ID,
+                    StoredFormatIds.SQL_CLOB_ID,
+                    StoredFormatIds.SQL_LONGVARCHAR_ID,
+                    StoredFormatIds.SQL_LONGVARBIT_ID,
+                    StoredFormatIds.SQL_USERTYPE_ID_V3,
+                    StoredFormatIds.XML_ID -> false;
+            default -> true;
+        };
+    }
+
     private static ContainerKey requireContainer(MvccRawStoreTable.Descriptor table) {
         ContainerKey key = table.orderedIndexContainer();
         if (key == null) {
@@ -928,6 +981,8 @@ final class MvccRawStoreOrderedIndex {
     }
 
     private sealed interface IndexPredicate permits EqualityPredicate, RangePredicate {
+        int columnId();
+
         ScanDecision decide(int columnId, StoreDataValue key) throws StandardException;
 
         static Optional<IndexPredicate> from(Qualifier[][] qualifiers) throws StandardException {

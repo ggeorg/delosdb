@@ -45,6 +45,22 @@ public final class StoreValueCopySupport
     public static StoreDataValue[] cloneRow(StoreDataValue[] row)
         throws StandardException
     {
+        return cloneRow(row, false);
+    }
+
+    /**
+     * Clone a complete store row.
+     *
+     * <p>Use {@code forceMaterialization} when the cloned values must remain
+     * valid after the RawStore container which produced their streams has been
+     * closed. In particular, RawStore overflow streams retain their owning
+     * container handle and therefore cannot escape a materialized MVCC scan.</p>
+     */
+    public static StoreDataValue[] cloneRow(
+            StoreDataValue[] row,
+            boolean forceMaterialization)
+        throws StandardException
+    {
         if (row == null)
         {
             return new StoreDataValue[0];
@@ -52,7 +68,7 @@ public final class StoreValueCopySupport
         StoreDataValue[] copy = new StoreDataValue[row.length];
         for (int i = 0; i < row.length; i++)
         {
-            copy[i] = cloneValue(row[i]);
+            copy[i] = cloneValue(row[i], forceMaterialization);
         }
         return copy;
     }
@@ -132,18 +148,32 @@ public final class StoreValueCopySupport
         {
             return null;
         }
-        StoreDataValue cloned = tryCloneValue(value);
+        StoreDataValue cloned = tryCloneValue(value, false);
         return cloned == null ? value : cloned;
     }
 
     public static StoreDataValue cloneValue(StoreDataValue value)
         throws StandardException
     {
+        return cloneValue(value, false);
+    }
+
+    /**
+     * Clone one opaque Derby store value.
+     *
+     * @param forceMaterialization whether stream-backed values must be detached
+     *      from their current stream/container owner
+     */
+    public static StoreDataValue cloneValue(
+            StoreDataValue value,
+            boolean forceMaterialization)
+        throws StandardException
+    {
         if (value == null)
         {
             return null;
         }
-        StoreDataValue cloned = tryCloneValue(value);
+        StoreDataValue cloned = tryCloneValue(value, forceMaterialization);
         if (cloned != null)
         {
             return cloned;
@@ -232,19 +262,23 @@ public final class StoreValueCopySupport
     }
 
 
-    private static StoreDataValue tryCloneValue(StoreDataValue value)
+    private static StoreDataValue tryCloneValue(
+            StoreDataValue value,
+            boolean forceMaterialization)
         throws StandardException
     {
         if (value instanceof StoreValueOperations operations)
         {
-            return operations.cloneValue(false);
+            return operations.cloneValue(forceMaterialization);
         }
-        StoreDataValue cloned = cloneValueThroughTypeSupport(value);
+        StoreDataValue cloned = cloneValueThroughTypeSupport(
+                value,
+                forceMaterialization);
         if (cloned != null)
         {
             return cloned;
         }
-        return cloneSqlValueReflectively(value);
+        return cloneSqlValueReflectively(value, forceMaterialization);
     }
 
     private static StoreDataValue cloneHolderThroughTypeSupport(StoreDataValue value)
@@ -259,12 +293,14 @@ public final class StoreValueCopySupport
         }
     }
 
-    private static StoreDataValue cloneValueThroughTypeSupport(StoreDataValue value)
+    private static StoreDataValue cloneValueThroughTypeSupport(
+            StoreDataValue value,
+            boolean forceMaterialization)
         throws StandardException
     {
         try
         {
-            return StoreTypeUtil.cloneValue(value, false);
+            return StoreTypeUtil.cloneValue(value, forceMaterialization);
         }
         catch (ClassCastException | IllegalArgumentException | IllegalStateException e)
         {
@@ -323,13 +359,15 @@ public final class StoreValueCopySupport
         }
     }
 
-    private static StoreDataValue cloneSqlValueReflectively(StoreDataValue value)
+    private static StoreDataValue cloneSqlValueReflectively(
+            StoreDataValue value,
+            boolean forceMaterialization)
         throws StandardException
     {
         try
         {
             Method cloneValue = value.getClass().getMethod("cloneValue", boolean.class);
-            Object cloned = cloneValue.invoke(value, false);
+            Object cloned = cloneValue.invoke(value, forceMaterialization);
             if (cloned instanceof StoreDataValue storeDataValue)
             {
                 return storeDataValue;

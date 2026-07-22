@@ -316,6 +316,7 @@ final class MvccRawStoreTable {
                     "deferrable unique constraints for RawStore-backed delos_mvcc");
         }
         validateUniqueColumns(table, baseColumnPositions);
+        MvccRawStoreOrderedIndex.validateConstraintColumns(table, baseColumnPositions);
     }
 
     static void addUniqueConstraint(
@@ -1297,7 +1298,7 @@ final class MvccRawStoreTable {
                 transaction,
                 flags);
         if (values != null) {
-            StoreDataValue[] clone = StoreValueCopySupport.cloneRow(values);
+            StoreDataValue[] clone = StoreValueCopySupport.cloneRow(values, true);
             System.arraycopy(clone, 0, row, MvccRawStoreFormat.VERSION_PAYLOAD_START, clone.length);
         }
         row[MvccRawStoreFormat.versionHintPageField(table.columnCount())] =
@@ -2124,7 +2125,8 @@ final class MvccRawStoreTable {
         StoreDataValue[] values = new StoreDataValue[table.columnCount()];
         for (int index = 0; index < values.length; index++) {
             values[index] = StoreValueCopySupport.cloneValue(
-                    (StoreDataValue) row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index]);
+                    (StoreDataValue) row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index],
+                    true);
         }
         boolean hasHint = row.length == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
         RecordHint previousHint = hasHint

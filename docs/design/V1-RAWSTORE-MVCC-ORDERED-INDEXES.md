@@ -29,7 +29,7 @@ qualifier set is applied again before a row is returned.
 
 ## Physical ordered layout
 
-Each non-tombstone version contributes one entry per table column:
+Each non-tombstone version contributes one entry per SQL-orderable table column:
 
 ```text
 column identifier
@@ -40,6 +40,12 @@ creating MvccTransactionId
 begin MvccCommitSequence
 end MvccCommitSequence
 ```
+
+BLOB, CLOB, LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined values are not
+orderable under Derby SQL semantics and are therefore never duplicated into this auxiliary
+container. Qualifiers on those columns use the authoritative stable-row directory and version-chain
+scan. This also prevents stream-backed LOB values from being consumed a second time after the base
+version has been written.
 
 Entries are physically sorted in the RawStore container by:
 
@@ -105,7 +111,8 @@ ordered-index candidate MvccRowId
     -> returned row
 ```
 
-Unsupported qualifier shapes fall back to the full stable-row directory scan.
+Unsupported qualifier shapes and qualifiers on non-orderable columns fall back to the full stable-row
+directory scan.
 
 ## Compatibility and lazy rebuild
 

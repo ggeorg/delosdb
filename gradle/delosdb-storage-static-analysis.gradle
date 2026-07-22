@@ -6098,6 +6098,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     group = 'verification'
     description = 'Verifies version-aware ordered indexes are physically sorted RawStore state and remain subordinate to the base MVCC chain.'
 
+    def valueCopyFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/StoreValueCopySupport.java')
     def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
     def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
     def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
@@ -6108,7 +6109,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-ORDERED-INDEXES.md')
     def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
-    def requiredFiles = [formatFile, tableFile, indexFile, scanFile, scanInfoFile,
+    def requiredFiles = [valueCopyFile, formatFile, tableFile, indexFile, scanFile, scanInfoFile,
             inspectionFile, sqlTestFile, testsBuildFile, designFile, implementationFile]
 
     inputs.files(requiredFiles)
@@ -6124,6 +6125,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
         }
 
         if (failures.isEmpty()) {
+            def valueCopyText = valueCopyFile.getText('UTF-8')
             def formatText = formatFile.getText('UTF-8')
             def tableText = tableFile.getText('UTF-8')
             def indexText = indexFile.getText('UTF-8')
@@ -6221,6 +6223,33 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'Page.INSERT_OVERFLOW',
                     'Page.INSERT_DEFAULT'
             ])
+            requireTokens('Ordered index excludes non-orderable payloads', indexText, [
+                    'import org.apache.derby.iapi.services.io.StoredFormatIds;',
+                    'static boolean indexesColumn(',
+                    'private static boolean isOrderableFormat(int formatId)',
+                    'StoredFormatIds.SQL_BLOB_ID',
+                    'StoredFormatIds.SQL_CLOB_ID',
+                    'StoredFormatIds.SQL_LONGVARCHAR_ID',
+                    'StoredFormatIds.SQL_LONGVARBIT_ID',
+                    'StoredFormatIds.SQL_USERTYPE_ID_V3',
+                    'StoredFormatIds.XML_ID',
+                    'if (!indexesColumn(table, column))',
+                    'if (!indexesColumn(table, predicate.get().columnId()))',
+                    'return Optional.empty()'
+            ])
+            requireTokens('Materialized MVCC values detach RawStore overflow streams', valueCopyText, [
+                    'cloneRow(StoreDataValue[] row)',
+                    'boolean forceMaterialization',
+                    'cloneValue(row[i], forceMaterialization)',
+                    'StoreTypeUtil.cloneValue(value, forceMaterialization)',
+                    'cloneValue.invoke(value, forceMaterialization)'
+            ])
+            requireTokens('Version payloads detach before container close', tableText, [
+                    'StoreValueCopySupport.cloneRow(values, true)',
+                    'StoreValueCopySupport.cloneValue(',
+                    'true);',
+                    'MvccRawStoreOrderedIndex.validateConstraintColumns('
+            ])
             requireOrdered('RawStore MVCC ordered-index insertion advances before overflow',
                     section(indexText, 'private static void appendEntries(',
                             'private static void sortEntries(',
@@ -6292,6 +6321,8 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'third ordinary RawStore container',
                     'physically sorted',
                     'version-aware',
+                    'SQL-orderable table column',
+                    'never duplicated into this auxiliary',
                     'authoritative MVCC version chain',
                     'transaction-local',
                     'historical snapshot',
@@ -6305,6 +6336,8 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'ordered-index container',
                     'physically sorted',
                     'version-aware index entries',
+                    'SQL-orderable table column',
+                    'detach stream-backed LOB payloads',
                     'authoritative base version chain',
                     ':delosdb-tests:runDelosMvccRawStoreOrderedIndexTest'
             ])
