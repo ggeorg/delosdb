@@ -29,7 +29,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
+import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceTableSnapshot;
@@ -57,6 +60,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
     static final int TABLE_SNAPSHOT_CAPACITY = 128;
     private static final Duration SHUTDOWN_TIMEOUT = Duration.ofSeconds(30L);
     private static final String TRANSACTION_NAME = "DelosDB RawStore MVCC maintenance";
+    private static final String DIAGNOSTICS_TRANSACTION_NAME =
+            "DelosDB RawStore MVCC diagnostics";
 
     enum Trigger {
         REGISTER,
@@ -200,6 +205,110 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                 commitWakeupCount.incrementAndGet();
                 target.request(Trigger.COMMIT, change.changedRows());
             }
+        }
+    }
+
+    TableStorageSnapshot tableStorageSnapshot(ContainerKey metadataContainer) {
+        TableTarget target = targets.get(Objects.requireNonNull(
+                metadataContainer, "metadataContainer"));
+        if (target == null) {
+            throw new IllegalArgumentException(
+                    "No registered RawStore MVCC table for " + metadataContainer);
+        }
+
+        ContextService contextService = ContextService.getFactory();
+        ContextManager contextManager = contextService.newContextManager();
+        contextService.setCurrentContextManager(contextManager);
+        try {
+            return captureTableStorageSnapshot(target.descriptor(), contextManager);
+        } finally {
+            contextService.resetCurrentContextManager(contextManager);
+            StandardException close = StandardException.newException(SQLState.CLOSE_REQUEST);
+            close.setSeverity(ExceptionSeverity.SESSION_SEVERITY);
+            contextManager.cleanupOnError(close, false);
+        }
+    }
+
+    private TableStorageSnapshot captureTableStorageSnapshot(
+            MvccRawStoreTable.Descriptor table,
+            ContextManager contextManager) {
+        Transaction transaction = null;
+        boolean transactionIdle = false;
+        try {
+            transaction = rawStoreFactory.startTransaction(
+                    contextManager, DIAGNOSTICS_TRANSACTION_NAME);
+            TableStorageSnapshot snapshot = inspectContainer(
+                    transaction, table.metadataContainer())
+                    .plus(inspectContainer(transaction, table.versionContainer()))
+                    .plus(inspectContainer(transaction, table.orderedIndexContainer()));
+            transaction.commit();
+            transactionIdle = true;
+            return snapshot;
+        } catch (StandardException failure) {
+            if (transaction != null && !transactionIdle) {
+                try {
+                    transaction.abort();
+                    transactionIdle = true;
+                } catch (StandardException abortFailure) {
+                    failure.addSuppressed(abortFailure);
+                }
+            }
+            throw new IllegalStateException(
+                    "Could not inspect RawStore MVCC table " + table.metadataContainer(),
+                    failure);
+        } finally {
+            if (transaction != null) {
+                try {
+                    if (transactionIdle) {
+                        transaction.close();
+                    } else {
+                        transaction.destroy();
+                    }
+                } catch (StandardException closeFailure) {
+                    throw new IllegalStateException(
+                            "Could not close RawStore MVCC diagnostics transaction",
+                            closeFailure);
+                }
+            }
+        }
+    }
+
+    private static TableStorageSnapshot inspectContainer(
+            Transaction transaction,
+            ContainerKey containerKey) throws StandardException {
+        if (containerKey == null) {
+            return TableStorageSnapshot.EMPTY;
+        }
+        ContainerHandle container = transaction.openContainer(
+                containerKey,
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC container is absent: " + containerKey);
+        }
+        Page page = null;
+        long nonOverflowPageCount = 0L;
+        try {
+            SpaceInfo spaceInfo = container.getSpaceInfo();
+            long allocatedPageCount = spaceInfo.getNumAllocatedPages();
+            long reusablePageCount = spaceInfo.getNumFreePages();
+            page = container.getFirstPage();
+            while (page != null) {
+                nonOverflowPageCount++;
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+            long overflowPageCount = Math.max(
+                    0L, allocatedPageCount - nonOverflowPageCount);
+            return new TableStorageSnapshot(
+                    allocatedPageCount, overflowPageCount, reusablePageCount);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
         }
     }
 
@@ -382,6 +491,32 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             }
             activeWorkerCount.decrementAndGet();
             target.finishRun();
+        }
+    }
+
+    record TableStorageSnapshot(
+            long pageCount,
+            long overflowPageCount,
+            long reusablePageCount) {
+        private static final TableStorageSnapshot EMPTY =
+                new TableStorageSnapshot(0L, 0L, 0L);
+
+        TableStorageSnapshot {
+            if (pageCount < 0L
+                    || overflowPageCount < 0L
+                    || reusablePageCount < 0L
+                    || overflowPageCount > pageCount) {
+                throw new IllegalArgumentException(
+                        "Invalid RawStore MVCC table-storage snapshot");
+            }
+        }
+
+        TableStorageSnapshot plus(TableStorageSnapshot other) {
+            Objects.requireNonNull(other, "other");
+            return new TableStorageSnapshot(
+                    Math.addExact(pageCount, other.pageCount),
+                    Math.addExact(overflowPageCount, other.overflowPageCount),
+                    Math.addExact(reusablePageCount, other.reusablePageCount));
         }
     }
 

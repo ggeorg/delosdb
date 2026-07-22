@@ -165,17 +165,17 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public long pageCountForTesting(int segment, long containerId) {
-        return 0L;
+        return rawStoreRuntime().tableStorageSnapshot(segment, containerId).pageCount();
     }
 
     @Override
     public long overflowPageCountForTesting(int segment, long containerId) {
-        return 0L;
+        return rawStoreRuntime().tableStorageSnapshot(segment, containerId).overflowPageCount();
     }
 
     @Override
     public long reusablePageCountForTesting(int segment, long containerId) {
-        return 0L;
+        return rawStoreRuntime().tableStorageSnapshot(segment, containerId).reusablePageCount();
     }
 
     @Override

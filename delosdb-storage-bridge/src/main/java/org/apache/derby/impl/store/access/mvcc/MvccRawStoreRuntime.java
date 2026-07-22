@@ -338,6 +338,22 @@ final class MvccRawStoreRuntime {
     }
 
 
+    MvccRawStoreMaintenanceService.TableStorageSnapshot tableStorageSnapshot(
+            int segment,
+            long containerId) {
+        if (segment < 0 || containerId < 0L) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC container identity must not be negative: "
+                            + segment + ':' + containerId);
+        }
+        MvccRawStoreMaintenanceService maintenance = maintenanceService;
+        if (maintenance == null || closed.get()) {
+            throw new IllegalStateException(
+                    "RawStore MVCC runtime is not active for " + diagnosticIdentity);
+        }
+        return maintenance.tableStorageSnapshot(new ContainerKey(segment, containerId));
+    }
+
     DelosStorageMaintenanceSnapshot maintenanceSnapshot() {
         long published;
         long horizon;

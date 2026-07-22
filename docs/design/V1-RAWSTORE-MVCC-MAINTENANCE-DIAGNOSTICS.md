@@ -190,3 +190,19 @@ delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis
 The focused proof covers explicit-disable behavior, commit-driven autonomous reclamation, one bounded
 worker, immutable snapshots, retained-reader horizon/retry, release-driven periodic reclamation,
 per-database isolation, shutdown removal, and the same worker path for `jdbc:derby:memory:`.
+
+## RawStore table page diagnostics
+
+A diagnostics request names the public MVCC base conglomerate. The active
+database runtime resolves that metadata container to its registered table
+descriptor and inspects the table's metadata, version, and current ordered-index
+containers in one autonomous read-only RawStore transaction.
+
+`ContainerHandle.getSpaceInfo()` supplies the inherited allocation map's
+allocated and free user-page totals. The allocated count includes overflow
+pages. Iteration through `getFirstPage()` and `getNextPage()` counts the valid
+non-overflow user pages, so the difference is the allocated overflow-page
+count. The free-page total is reported as reusable capacity. Diagnostics do not
+open files directly, retain container handles, or create a second storage
+authority.
+

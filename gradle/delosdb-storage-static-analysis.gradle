@@ -7927,13 +7927,40 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
                     failures << 'RawStore MVCC diagnostics directory must remain non-owning: ' + token
                 }
             }
-            requireTokens('Diagnostics adapter exposes RawStore maintenance', diagnosticsText, [
+            requireTokens('Diagnostics adapter exposes RawStore maintenance and table storage', diagnosticsText, [
                     'MvccRawStoreDiagnosticsDirectory.require(databaseIdentity)',
                     'MvccRawStoreDiagnosticsDirectory.requireSingle()',
                     'MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)',
                     'rawStoreRuntime().maintenanceSnapshot()',
+                    'rawStoreRuntime().tableStorageSnapshot(segment, containerId).pageCount()',
+                    'rawStoreRuntime().tableStorageSnapshot(segment, containerId).overflowPageCount()',
+                    'rawStoreRuntime().tableStorageSnapshot(segment, containerId).reusablePageCount()',
                     'MvccRawStoreDiagnosticsDirectory.runtimeCount() > 0'
             ])
+            requireTokens('RawStore-owned table page diagnostics', runtimeText, [
+                    'tableStorageSnapshot(',
+                    'maintenance.tableStorageSnapshot(new ContainerKey(segment, containerId))'
+            ])
+            requireTokens('Autonomous inherited-store page inspection', serviceText, [
+                    'DIAGNOSTICS_TRANSACTION_NAME',
+                    'TableStorageSnapshot tableStorageSnapshot(',
+                    'rawStoreFactory.startTransaction(',
+                    'table.metadataContainer()',
+                    'table.versionContainer()',
+                    'table.orderedIndexContainer()',
+                    'container.getSpaceInfo()',
+                    'spaceInfo.getNumAllocatedPages()',
+                    'spaceInfo.getNumFreePages()',
+                    'container.getFirstPage()',
+                    'container.getNextPage(pageNumber)',
+                    'allocatedPageCount - nonOverflowPageCount'
+            ])
+            if (section(diagnosticsText,
+                    'public long pageCountForTesting(',
+                    'public long pageCacheMaxPageCountForTesting(',
+                    'RawStore MVCC page diagnostics section').contains('return 0L;')) {
+                failures << 'RawStore MVCC page diagnostics must not return constant-zero placeholders'
+            }
 
             [
                     'testMaintenanceIsExplicitDuringConvergenceAndDiagnosticsRemainDatabaseScoped',
@@ -7972,6 +7999,8 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
                     'published MvccCommitSequence high-water',
                     'versioned immutable',
                     'weak path lookup',
+                    'RawStore table page diagnostics',
+                    'getSpaceInfo()',
                     ':delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest',
                     'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis'
             ])
