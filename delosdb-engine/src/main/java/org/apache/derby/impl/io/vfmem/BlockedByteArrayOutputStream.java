@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.io.vfmem;
 
+import java.io.IOException;
 import java.io.OutputStream;
 
 /**
@@ -72,7 +73,7 @@ public class BlockedByteArrayOutputStream
      *
      * @param b the byte to write
      */
-    public void write(int b) {
+    public void write(int b) throws IOException {
         pos += src.writeByte(pos, (byte)b);
     }
 
@@ -83,7 +84,7 @@ public class BlockedByteArrayOutputStream
      * @param offset index of the first byte to write
      * @param len the number of bytes to write
      */
-    public void write(byte[] buf, int offset, int len) {
+    public void write(byte[] buf, int offset, int len) throws IOException {
         pos += src.writeBytes(pos, buf, offset, len);
     }
 

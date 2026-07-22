@@ -22,6 +22,7 @@
 package org.apache.derby.impl.io.vfmem;
 
 import java.io.FileNotFoundException;
+import java.io.IOException;
 
 /**
  * A data store entry representing either a file or a directory.
@@ -47,13 +48,16 @@ public class DataStoreEntry {
      * @param path the path of the entry
      * @param isDir whether the entry is a directory or a regular file
      */
-    public DataStoreEntry(String path, boolean isDir) {
+    public DataStoreEntry(
+            String path,
+            boolean isDir,
+            DataStoreMemoryBudget memoryBudget) {
         this.path = path;
         this.isDir = isDir;
         if (isDir) {
             src = null;
         } else {
-            src = new BlockedByteArray();
+            src = new BlockedByteArray(memoryBudget);
         }
     }
 
@@ -106,8 +110,12 @@ public class DataStoreEntry {
         if (append) {
             out = src.getOutputStream(src.length());
         } else {
-            // Truncate existing data.
-            src.setLength(0L);
+            // Truncation only releases accounted capacity and cannot exceed the limit.
+            try {
+                src.setLength(0L);
+            } catch (IOException impossible) {
+                throw new AssertionError(impossible);
+            }
             out = src.getOutputStream(0L);
         }
         return out;
@@ -157,7 +165,7 @@ public class DataStoreEntry {
      *
      * @param newLength the length in number of bytes
      */
-    public void setLength(long newLength) {
+    public void setLength(long newLength) throws IOException {
         checkIfReleased();
         src.setLength(newLength);
     }

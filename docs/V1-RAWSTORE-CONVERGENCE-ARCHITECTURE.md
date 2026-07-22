@@ -388,3 +388,21 @@ classes are excluded from the active bridge artifact, the retained MVCC/page-vol
 root assembly and normal runtime/test classpaths, and the archived suite is available only through
 `legacyRetainedCheck`. Existing retained files fail closed and require an external migration path;
 they are never dual-read or mutated.
+
+## Stage 6 named memory databases and bounded accounting
+
+Named `memory:` databases now use the complete RawStore MVCC feature set through
+`VFMemoryStorageFactory`. Heap and MVCC tables, mixed transactions, indexes, savepoints,
+transactional DDL, and vacuum share one inherited database storage namespace and create no filesystem
+database directory.
+
+Memory diagnostics use an explicit canonical `memory:` identity. Two named memory databases can remain
+booted simultaneously, be observed independently, and shut down without affecting each other.
+
+The neutral `DatabaseMemoryStorage` contract bounds allocated virtual-file payload capacity per
+database. `delosdb.memory.maxBytes` defaults to 256 MiB. Capacity is reserved before block allocation,
+rejected before the bound is exceeded, and released on truncate, deletion, and purge. Immutable
+`DelosDatabaseMemorySnapshot` observations expose current and peak bytes, the configured limit,
+rejected growth, and entry count.
+
+See `design/V1-RAWSTORE-MVCC-MEMORY-DATABASE.md`.

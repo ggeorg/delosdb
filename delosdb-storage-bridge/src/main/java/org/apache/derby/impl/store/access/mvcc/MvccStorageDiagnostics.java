@@ -23,6 +23,7 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.nio.file.Path;
 
+import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
 import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
@@ -34,23 +35,31 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 /** Non-owning diagnostics adapter for the RawStore-backed MVCC runtime. */
 public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     private final Path databaseDirectory;
+    private final String databaseIdentity;
 
     public MvccStorageDiagnostics() {
-        this(null);
+        this(null, null);
     }
 
-    private MvccStorageDiagnostics(Path databaseDirectory) {
+    private MvccStorageDiagnostics(Path databaseDirectory, String databaseIdentity) {
         this.databaseDirectory = databaseDirectory == null
                 ? null
                 : databaseDirectory.toAbsolutePath().normalize();
+        this.databaseIdentity = databaseIdentity;
     }
 
     @Override
     public DelosStorageDiagnostics withContext(DelosStorageDiagnosticsContext context) {
-        if (context == null || !context.hasDatabaseDirectory()) {
+        if (context == null) {
             return this;
         }
-        return new MvccStorageDiagnostics(context.databaseDirectory());
+        if (context.hasDatabaseDirectory()) {
+            return new MvccStorageDiagnostics(context.databaseDirectory(), null);
+        }
+        if (context.hasDatabaseIdentity()) {
+            return new MvccStorageDiagnostics(null, context.databaseIdentity());
+        }
+        return this;
     }
 
     @Override
@@ -60,10 +69,12 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public void clearRuntimeStateForTesting() {
-        if (databaseDirectory == null) {
-            MvccRawStoreDiagnosticsDirectory.clearAllForTesting();
-        } else {
+        if (databaseIdentity != null) {
+            MvccRawStoreDiagnosticsDirectory.clearForTesting(databaseIdentity);
+        } else if (databaseDirectory != null) {
             MvccRawStoreDiagnosticsDirectory.clearForTesting(databaseDirectory);
+        } else {
+            MvccRawStoreDiagnosticsDirectory.clearAllForTesting();
         }
         clearTransactionsForTesting();
     }
@@ -78,6 +89,9 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public boolean runtimeActiveForTesting() {
+        if (databaseIdentity != null) {
+            return MvccRawStoreDiagnosticsDirectory.isActive(databaseIdentity);
+        }
         return databaseDirectory == null
                 ? MvccRawStoreDiagnosticsDirectory.runtimeCount() > 0
                 : MvccRawStoreDiagnosticsDirectory.isActive(databaseDirectory);
@@ -86,6 +100,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public DelosStorageMaintenanceSnapshot databaseMaintenanceSnapshot() {
         return rawStoreRuntime().maintenanceSnapshot();
+    }
+
+    @Override
+    public DelosDatabaseMemorySnapshot databaseMemorySnapshot() {
+        return rawStoreRuntime().memorySnapshot();
     }
 
     @Override
@@ -305,6 +324,9 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     private MvccRawStoreRuntime rawStoreRuntime() {
+        if (databaseIdentity != null) {
+            return MvccRawStoreDiagnosticsDirectory.require(databaseIdentity);
+        }
         return databaseDirectory == null
                 ? MvccRawStoreDiagnosticsDirectory.requireSingle()
                 : MvccRawStoreDiagnosticsDirectory.require(databaseDirectory);

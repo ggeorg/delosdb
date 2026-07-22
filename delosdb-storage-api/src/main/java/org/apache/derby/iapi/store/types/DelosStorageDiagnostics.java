@@ -76,6 +76,11 @@ public interface DelosStorageDiagnostics {
         return DelosStorageMaintenanceSnapshot.unavailable(providerId());
     }
 
+    /** Return database-scoped inherited memory-storage accounting. */
+    default DelosDatabaseMemorySnapshot databaseMemorySnapshot() {
+        return DelosDatabaseMemorySnapshot.unavailable(providerId());
+    }
+
     default List<DelosTableStorageSnapshot> tableStorageSnapshots() {
         return databaseStorageSnapshot().tableSnapshots();
     }

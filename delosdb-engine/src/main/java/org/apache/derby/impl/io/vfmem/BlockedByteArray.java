@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.io.vfmem;
 
+import java.io.IOException;
+
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -58,6 +60,8 @@ public class BlockedByteArray {
     private int allocatedBlocks;
     /** The number of bytes stored in the blocked byte array. */
     private long length;
+    /** Database-scoped budget for allocated payload blocks. */
+    private final DataStoreMemoryBudget memoryBudget;
 
     /**
      * Creates a new blocked byte array with the default number of slots to
@@ -68,6 +72,11 @@ public class BlockedByteArray {
      * @see #INITIAL_BLOCK_HOLDER_SIZE
      */
     public BlockedByteArray() {
+        this(new DataStoreMemoryBudget());
+    }
+
+    BlockedByteArray(DataStoreMemoryBudget memoryBudget) {
+        this.memoryBudget = memoryBudget;
         blocks = new byte[INITIAL_BLOCK_HOLDER_SIZE][];
     }
 
@@ -138,7 +147,7 @@ public class BlockedByteArray {
      *
      * @param newLength the new length of the allocated data in bytes
      */
-    public synchronized void setLength(final long newLength) {
+    public synchronized void setLength(final long newLength) throws IOException {
         // If capacity is requested before any writes has taken place.
         if (blockSize == 0) {
             checkBlockSize((int)Math.min(Integer.MAX_VALUE, newLength));
@@ -150,17 +159,20 @@ public class BlockedByteArray {
         } else if (newLength < currentCapacity) {
             if (newLength <= 0L) {
                 // Just clear everything.
+                memoryBudget.release((long) allocatedBlocks * blockSize);
                 allocatedBlocks = 0;
                 blocks = new byte[INITIAL_BLOCK_HOLDER_SIZE][];
             } else {
-                // Nullify the surplus data.
-                int blocksToKeep = (int)(newLength / blockSize) +1;
-                for (int i=blocksToKeep; i <= allocatedBlocks; i++) {
+                // Nullify surplus data blocks and release their accounted capacity.
+                int blocksToKeep = (int) ((newLength - 1L) / blockSize) + 1;
+                int releasedBlocks = Math.max(0, allocatedBlocks - blocksToKeep);
+                for (int i = blocksToKeep; i < allocatedBlocks; i++) {
                     blocks[i] = null;
                 }
                 allocatedBlocks = Math.min(allocatedBlocks, blocksToKeep);
+                memoryBudget.release((long) releasedBlocks * blockSize);
                 // We keep the holder slots around, since the overhead for
-                // doing so is pretty small.
+                // doing so is small and is not part of payload accounting.
             }
         }
         length = Math.max(0L, newLength);
@@ -176,7 +188,7 @@ public class BlockedByteArray {
      * @return The number of bytes written.
      */
     public synchronized int writeBytes(final long pos, final byte[] buf,
-                                       int offset, final int len) {
+                                       int offset, final int len) throws IOException {
         // Optimize block size if possible on first write.
         if (blockSize == 0) {
             checkBlockSize(len);
@@ -218,7 +230,7 @@ public class BlockedByteArray {
      * @param b the byte to write
      * @return {@code 1}, which is the number of bytes written.
      */
-    public synchronized int writeByte(long pos, byte b) {
+    public synchronized int writeByte(long pos, byte b) throws IOException {
         // Optimize block size if possible on first write.
         if (blockSize == 0) {
             checkBlockSize(0);
@@ -261,6 +273,9 @@ public class BlockedByteArray {
      * Releases this array.
      */
     synchronized void release() {
+        if (allocatedBlocks > 0 && blockSize > 0) {
+            memoryBudget.release((long) allocatedBlocks * blockSize);
+        }
         blocks = null;
         length = allocatedBlocks = -1;
     }
@@ -291,7 +306,7 @@ public class BlockedByteArray {
      * @param lastIndex the index that must fit into the array
      */
     //@GuardedBy("this")
-    private void increaseCapacity(long lastIndex) {
+    private void increaseCapacity(long lastIndex) throws IOException {
         if (SanityManager.DEBUG) {
             SanityManager.ASSERT(blockSize > 0, "Invalid/unset block size");
         }
@@ -316,10 +331,22 @@ public class BlockedByteArray {
             // Copy the data array references.
             System.arraycopy(tmpBlocks, 0, blocks, 0, allocatedBlocks);
         }
-        // Allocate new data arrays to accomodate lastIndex bytes.
-        for (int i=allocatedBlocks; i < blocksRequired; i++) {
-            blocks[i] = new byte[blockSize];
+        // Reserve the database budget before allocating new payload blocks.
+        int additionalBlocks = blocksRequired - allocatedBlocks;
+        long additionalBytes = (long) additionalBlocks * blockSize;
+        memoryBudget.reserve(additionalBytes);
+        int previousAllocatedBlocks = allocatedBlocks;
+        try {
+            for (int i = allocatedBlocks; i < blocksRequired; i++) {
+                blocks[i] = new byte[blockSize];
+            }
+            allocatedBlocks = blocksRequired;
+        } catch (OutOfMemoryError allocationFailure) {
+            for (int i = previousAllocatedBlocks; i < blocksRequired; i++) {
+                blocks[i] = null;
+            }
+            memoryBudget.release(additionalBytes);
+            throw allocationFailure;
         }
-        allocatedBlocks = blocksRequired;
     }
 }

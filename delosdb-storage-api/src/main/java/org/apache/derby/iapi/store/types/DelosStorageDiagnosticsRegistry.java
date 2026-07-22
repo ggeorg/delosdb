@@ -46,6 +46,11 @@ public final class DelosStorageDiagnosticsRegistry {
                 DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));
     }
 
+    public static DelosStorageDiagnostics mvccMemory(String databaseName) {
+        return mvcc().withContext(
+                DelosStorageDiagnosticsContext.memoryDatabase(databaseName));
+    }
+
     public static DelosDatabaseStorageSnapshot mvccDatabaseStorageSnapshot(Path databaseDirectory) {
         return mvcc(databaseDirectory).databaseStorageSnapshot();
     }
@@ -53,6 +58,21 @@ public final class DelosStorageDiagnosticsRegistry {
     public static DelosStorageMaintenanceSnapshot mvccDatabaseMaintenanceSnapshot(
             Path databaseDirectory) {
         return mvcc(databaseDirectory).databaseMaintenanceSnapshot();
+    }
+
+    public static DelosStorageMaintenanceSnapshot mvccMemoryDatabaseMaintenanceSnapshot(
+            String databaseName) {
+        return mvccMemory(databaseName).databaseMaintenanceSnapshot();
+    }
+
+    public static DelosDatabaseMemorySnapshot mvccDatabaseMemorySnapshot(
+            Path databaseDirectory) {
+        return mvcc(databaseDirectory).databaseMemorySnapshot();
+    }
+
+    public static DelosDatabaseMemorySnapshot mvccMemoryDatabaseMemorySnapshot(
+            String databaseName) {
+        return mvccMemory(databaseName).databaseMemorySnapshot();
     }
 
     public static List<DelosTableStorageSnapshot> mvccTableStorageSnapshots(

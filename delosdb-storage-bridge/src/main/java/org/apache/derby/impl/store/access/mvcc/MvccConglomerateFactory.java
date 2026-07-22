@@ -46,6 +46,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
+import org.apache.derby.io.DatabaseMemoryStorage;
 import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
@@ -57,10 +58,13 @@ public final class MvccConglomerateFactory
     public static final String IMPLEMENTATION_ID = "delos_mvcc";
 
     private static final String FORMAT_UUID_STRING = "3FD22170-28F5-4EF4-8C32-EC5FB6E6115B";
+    static final String MEMORY_LIMIT_PROPERTY = DatabaseMemoryStorage.MEMORY_LIMIT_PROPERTY;
+    static final long DEFAULT_MEMORY_LIMIT_BYTES =
+            DatabaseMemoryStorage.DEFAULT_MEMORY_LIMIT_BYTES;
 
     private Object formatUUID;
     private MvccRawStoreRuntime runtime;
-    private Path diagnosticsDirectory;
+    private String diagnosticsIdentity;
     private long nextConglomerateId;
 
     @Override
@@ -162,30 +166,31 @@ public final class MvccConglomerateFactory
         UUIDFactory uuidFactory = (UUIDFactory) monitor.getUUIDFactory();
         formatUUID = uuidFactory.recreateUUID(FORMAT_UUID_STRING);
 
+        DatabaseMemoryStorage memoryStorage = context.storageFactory()
+                instanceof DatabaseMemoryStorage candidate ? candidate : null;
         String storageRoot = context.dataFactory().getRootDirectory();
-        Path databaseDirectory = storageRoot == null || storageRoot.isBlank()
+        Path databaseDirectory = memoryStorage != null
+                || storageRoot == null
+                || storageRoot.isBlank()
                 ? null
                 : Path.of(storageRoot);
         rejectRetainedExternalState(databaseDirectory);
 
+        diagnosticsIdentity = memoryStorage != null
+                ? configureMemoryStorage(memoryStorage, context.serviceProperties())
+                : MvccRawStoreDiagnosticsDirectory.fileIdentity(databaseDirectory);
+
         runtime = new MvccRawStoreRuntime(
                 context.databaseIdentity(),
-                context.rawStoreFactory().getLockFactory());
-        String diagnosticIdentity = databaseDirectory != null && databaseDirectory.isAbsolute()
-                ? databaseDirectory.toAbsolutePath().normalize().toString()
-                : "memory-" + Integer.toHexString(
-                        System.identityHashCode(context.databaseIdentity()));
+                context.rawStoreFactory().getLockFactory(),
+                memoryStorage,
+                diagnosticsIdentity);
         runtime.startMaintenance(
-                diagnosticIdentity,
+                diagnosticsIdentity,
                 context.rawStoreFactory(),
                 context.readOnly(),
                 context.serviceProperties());
-        if (databaseDirectory != null && databaseDirectory.isAbsolute()) {
-            diagnosticsDirectory = databaseDirectory.toAbsolutePath().normalize();
-            MvccRawStoreDiagnosticsDirectory.register(diagnosticsDirectory, runtime);
-        } else {
-            MvccRawStoreDiagnosticsDirectory.register(null, runtime);
-        }
+        MvccRawStoreDiagnosticsDirectory.register(diagnosticsIdentity, runtime);
     }
 
     private synchronized long reserveConglomerateId(long proposedContainerId) {
@@ -237,6 +242,52 @@ public final class MvccConglomerateFactory
                         SQLState.NOT_IMPLEMENTED,
                         "JAVA_OBJECT/UserType columns for delos_mvcc");
             }
+        }
+    }
+
+    private static String configureMemoryStorage(
+            DatabaseMemoryStorage memoryStorage,
+            Properties serviceProperties) throws StandardException {
+        if (memoryStorage == null) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "Non-directory delos_mvcc databases require inherited memory storage");
+        }
+        long maximumBytes = configuredMemoryLimit(serviceProperties);
+        try {
+            memoryStorage.configureMemoryLimit(maximumBytes);
+            return MvccRawStoreDiagnosticsDirectory.memoryIdentity(
+                    memoryStorage.memoryDatabaseIdentity());
+        } catch (IOException memoryConfigurationFailure) {
+            throw StandardException.newException(
+                    SQLState.DATA_UNEXPECTED_EXCEPTION,
+                    memoryConfigurationFailure);
+        }
+    }
+
+    private static long configuredMemoryLimit(Properties serviceProperties)
+            throws StandardException {
+        String value = serviceProperties == null
+                ? null
+                : serviceProperties.getProperty(MEMORY_LIMIT_PROPERTY);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty(MEMORY_LIMIT_PROPERTY);
+        }
+        if (value == null || value.isBlank()) {
+            return DEFAULT_MEMORY_LIMIT_BYTES;
+        }
+        try {
+            long parsed = Long.parseLong(value.trim());
+            if (parsed <= 0L) {
+                throw new NumberFormatException("non-positive memory limit");
+            }
+            return parsed;
+        } catch (NumberFormatException invalidLimit) {
+            throw StandardException.newException(
+                    SQLState.DATA_UNEXPECTED_EXCEPTION,
+                    new IOException(
+                            "Invalid " + MEMORY_LIMIT_PROPERTY + " value: " + value,
+                            invalidLimit));
         }
     }
 
@@ -292,12 +343,14 @@ public final class MvccConglomerateFactory
     @Override
     public void stop() {
         MvccRawStoreRuntime current = runtime;
-        Path currentDirectory = diagnosticsDirectory;
+        String currentIdentity = diagnosticsIdentity;
         runtime = null;
-        diagnosticsDirectory = null;
+        diagnosticsIdentity = null;
         nextConglomerateId = 0L;
         if (current != null) {
-            MvccRawStoreDiagnosticsDirectory.unregister(currentDirectory, current);
+            if (currentIdentity != null) {
+                MvccRawStoreDiagnosticsDirectory.unregister(currentIdentity, current);
+            }
             current.close();
         }
     }

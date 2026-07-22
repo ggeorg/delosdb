@@ -3583,6 +3583,7 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
 
             if (!boot.contains('RawStoreFactory rawStoreFactory')
                     || !boot.contains('DataFactory dataFactory')
+                    || !boot.contains('StorageFactory storageFactory')
                     || !boot.contains('Object databaseIdentity')) {
                 failures << 'External access methods must receive the owning database RawStore context'
             }
@@ -3603,12 +3604,16 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
                     || runtime.contains('MvccDatabaseRuntime')) {
                 failures << 'RawStore runtime must remain database-scoped and free of retained filesystem authority'
             }
-            if (!directory.contains('WeakReference<MvccRawStoreRuntime>')
+            if (!directory.contains('Map<String, WeakReference<MvccRawStoreRuntime>>')
+                    || !directory.contains('WeakReference<MvccRawStoreRuntime>')
+                    || !directory.contains('static MvccRawStoreRuntime require(String databaseIdentity)')
                     || !directory.contains('requireSingle()')
                     || directory.contains('.close()')) {
-                failures << 'RawStore diagnostics directory must be weak, non-owning, and fail closed when ambiguous'
+                failures << 'RawStore diagnostics directory must be identity-scoped, weak, non-owning, and fail closed when ambiguous'
             }
             if (!diagnostics.contains('DelosStorageDiagnostics withContext')
+                    || !diagnostics.contains('context.hasDatabaseIdentity()')
+                    || !diagnostics.contains('MvccRawStoreDiagnosticsDirectory.require(databaseIdentity)')
                     || !diagnostics.contains('MvccRawStoreDiagnosticsDirectory.require(')
                     || diagnostics.contains('MvccRuntimeDiagnosticsDirectory')) {
                 failures << 'MVCC diagnostics must resolve the RawStore runtime through explicit database context'
@@ -3626,16 +3631,8 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
                 if (text.contains('mvccDiagnostics()')) {
                     failures << path + ': file-database MVCC diagnostics must name their database'
                 }
-                def unscoped = text.contains('DelosStorageDiagnosticsRegistry.mvcc()')
-                def memoryProof = testFile.name == 'MvccRawStoreMaintenanceDiagnosticsTest.java'
-                        && text.contains('testDatabaseWorkersAreIsolatedAndMemoryUsesTheSameMaintenancePath')
-                        && text.count('DelosStorageDiagnosticsRegistry.mvcc()') == 2
-                        && text.indexOf('shutdownDatabase(firstDatabase);') >= 0
-                        && text.indexOf('shutdownDatabase(secondDatabase);') >= 0
-                        && text.indexOf('String memoryDatabase = "memory:')
-                                > text.indexOf('shutdownDatabase(secondDatabase);')
-                if (unscoped && !memoryProof) {
-                    failures << path + ': unscoped MVCC diagnostics are only permitted for the isolated memory proof'
+                if (text.contains('DelosStorageDiagnosticsRegistry.mvcc()')) {
+                    failures << path + ': MVCC diagnostics must explicitly name a file or memory database'
                 }
             }
         }
@@ -7770,7 +7767,7 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
             requireOrdered('Database shutdown removes diagnostics before stopping maintenance',
                     section(factoryText, 'public void stop()', 'private MvccRawStoreRuntime runtime()',
                             'RawStore MVCC factory stop section'),
-                    ['MvccRawStoreDiagnosticsDirectory.unregister(currentDirectory, current)',
+                    ['MvccRawStoreDiagnosticsDirectory.unregister(currentIdentity, current)',
                      'current.close()'])
 
             requireTokens('Bounded FIFO maintenance service', serviceText, [
@@ -7898,6 +7895,7 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
                 }
             }
             requireTokens('Diagnostics adapter exposes RawStore maintenance', diagnosticsText, [
+                    'MvccRawStoreDiagnosticsDirectory.require(databaseIdentity)',
                     'MvccRawStoreDiagnosticsDirectory.requireSingle()',
                     'MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)',
                     'rawStoreRuntime().maintenanceSnapshot()',
@@ -7987,6 +7985,281 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
     }
 }
 
+
+
+tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 6 named memory-database parity, database-scoped accounting, diagnostics, and shutdown isolation.'
+
+    def memoryContractFile = file('delosdb-runtime-api/src/main/java/org/apache/derby/io/DatabaseMemoryStorage.java')
+    def memoryFactoryFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/VFMemoryStorageFactory.java')
+    def budgetFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStoreMemoryBudget.java')
+    def blockedArrayFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/BlockedByteArray.java')
+    def dataStoreFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStore.java')
+    def snapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java')
+    def diagnosticsContextFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java')
+    def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
+    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def directoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
+    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
+    def memoryTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.java')
+    def maintenanceTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.java')
+    def testSupportFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTestSupport.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def designFile = file('docs/design/V1-RAWSTORE-MVCC-MEMORY-DATABASE.md')
+    def roadmapFile = file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    def required = [memoryContractFile, memoryFactoryFile, budgetFile, blockedArrayFile,
+            dataStoreFile, snapshotFile, diagnosticsContextFile, diagnosticsRegistryFile,
+            factoryFile, runtimeFile, directoryFile, diagnosticsFile, memoryTestFile,
+            maintenanceTestFile, testSupportFile, testsBuildFile, designFile, roadmapFile]
+
+    inputs.files(required)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-raw-store-memory-database-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { source ->
+            if (!source.isFile()) failures << 'Missing required source: ' + source
+        }
+        if (failures.isEmpty()) {
+            def memoryContract = memoryContractFile.getText('UTF-8')
+            def memoryFactory = memoryFactoryFile.getText('UTF-8')
+            def budget = budgetFile.getText('UTF-8')
+            def blockedArray = blockedArrayFile.getText('UTF-8')
+            def dataStore = dataStoreFile.getText('UTF-8')
+            def snapshot = snapshotFile.getText('UTF-8')
+            def diagnosticsContext = diagnosticsContextFile.getText('UTF-8')
+            def diagnosticsRegistry = diagnosticsRegistryFile.getText('UTF-8')
+            def factory = factoryFile.getText('UTF-8')
+            def runtime = runtimeFile.getText('UTF-8')
+            def directory = directoryFile.getText('UTF-8')
+            def diagnostics = diagnosticsFile.getText('UTF-8')
+            def memoryTest = memoryTestFile.getText('UTF-8')
+            def maintenanceTest = maintenanceTestFile.getText('UTF-8')
+            def testSupport = testSupportFile.getText('UTF-8')
+            def testsBuild = testsBuildFile.getText('UTF-8')
+            def design = designFile.getText('UTF-8')
+            def roadmap = roadmapFile.getText('UTF-8')
+
+            def requireTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (!source.contains(token)) failures << description + ' is missing token: ' + token
+                }
+            }
+            def forbidTokens = { String description, String source, List<String> tokens ->
+                tokens.each { token ->
+                    if (source.contains(token)) failures << description + ' contains forbidden token: ' + token
+                }
+            }
+            def requireOrdered = { String description, String source, List<String> tokens ->
+                int previous = -1
+                tokens.each { token ->
+                    int current = source.indexOf(token, previous + 1)
+                    if (current < 0) failures << description + ' is missing token: ' + token
+                    else if (current <= previous) failures << description + ' has incorrect ordering at token: ' + token
+                    previous = current
+                }
+            }
+
+            requireTokens('Neutral inherited memory-storage contract', memoryContract, [
+                    'public interface DatabaseMemoryStorage',
+                    'MEMORY_LIMIT_PROPERTY = "delosdb.memory.maxBytes"',
+                    'DEFAULT_MEMORY_LIMIT_BYTES = 256L * 1024L * 1024L',
+                    'String memoryDatabaseIdentity()',
+                    'void configureMemoryLimit(long maximumBytes) throws IOException',
+                    'long memoryUsedBytes()',
+                    'long memoryPeakBytes()',
+                    'long memoryRejectedGrowthCount()',
+                    'int memoryEntryCount()'
+            ])
+            requireTokens('Inherited virtual-file memory authority', memoryFactory, [
+                    'implements StorageFactory, WritableStorageFactory, DatabaseMemoryStorage',
+                    'dbData.configureMemoryLimit(configuredMemoryLimit())',
+                    'public String memoryDatabaseIdentity()',
+                    'public void configureMemoryLimit(long maximumBytes) throws IOException',
+                    'public long memoryUsedBytes()',
+                    'public long memoryPeakBytes()',
+                    'public long memoryRejectedGrowthCount()',
+                    'private DataStore requireDatabaseStore()'
+            ])
+            requireTokens('Database-scoped memory budget', budget, [
+                    'synchronized void configureLimit(long maximumBytes) throws IOException',
+                    'synchronized void reserve(long bytes) throws IOException',
+                    'bytes > limitBytes - usedBytes',
+                    'rejectedGrowthCount++',
+                    'usedBytes += bytes',
+                    'peakBytes = Math.max(peakBytes, usedBytes)',
+                    'synchronized void release(long bytes)',
+                    'usedBytes = Math.max(0L, usedBytes - bytes)'
+            ])
+            requireOrdered('Payload allocation reserves before block creation', blockedArray, [
+                    'memoryBudget.reserve(additionalBytes)',
+                    'new byte[blockSize]'
+            ])
+            requireTokens('Payload memory release', blockedArray, [
+                    'memoryBudget.release(additionalBytes)',
+                    'memoryBudget.release((long) allocatedBlocks * blockSize)',
+                    'void release()',
+                    'for (int i = blocksToKeep; i < allocatedBlocks; i++)'
+            ])
+            requireTokens('One budget shared by a database data store', dataStore, [
+                    'private final DataStoreMemoryBudget memoryBudget',
+                    'new DataStoreEntry(nPath, isDir, memoryBudget)',
+                    'public void configureMemoryLimit(long maximumBytes) throws java.io.IOException',
+                    'long memoryUsedBytes()',
+                    'long memoryPeakBytes()',
+                    'long memoryRejectedGrowthCount()'
+            ])
+
+            requireTokens('Immutable database memory snapshot', snapshot, [
+                    'public record DelosDatabaseMemorySnapshot(',
+                    'CURRENT_SCHEMA_VERSION',
+                    'databaseIdentity',
+                    'memoryDatabase',
+                    'limitBytes',
+                    'usedBytes',
+                    'peakBytes',
+                    'rejectedGrowthCount',
+                    'entryCount'
+            ])
+            requireTokens('Canonical named memory diagnostics context', diagnosticsContext, [
+                    'public static DelosStorageDiagnosticsContext memoryDatabase(String databaseName)',
+                    'System.getProperty("derby.system.home")',
+                    '"memory:" + database.getCanonicalPath()',
+                    'public boolean hasDatabaseIdentity()'
+            ])
+            requireTokens('Explicit memory diagnostics registry', diagnosticsRegistry, [
+                    'public static DelosStorageDiagnostics mvccMemory(String databaseName)',
+                    'DelosStorageDiagnosticsContext.memoryDatabase(databaseName)',
+                    'mvccMemoryDatabaseMaintenanceSnapshot(',
+                    'mvccMemoryDatabaseMemorySnapshot('
+            ])
+            requireTokens('Memory-aware RawStore factory boot', factory, [
+                    'context.storageFactory()',
+                    'instanceof DatabaseMemoryStorage candidate',
+                    'configureMemoryStorage(memoryStorage, context.serviceProperties())',
+                    'MvccRawStoreDiagnosticsDirectory.memoryIdentity(',
+                    'new MvccRawStoreRuntime(',
+                    'memoryStorage,',
+                    'diagnosticsIdentity'
+            ])
+            forbidTokens('Memory runtime identity', factory, [
+                    'System.identityHashCode(context.databaseIdentity())'
+            ])
+            requireTokens('RawStore memory accounting diagnostics', runtime, [
+                    'private final DatabaseMemoryStorage memoryStorage',
+                    'DelosDatabaseMemorySnapshot memorySnapshot()',
+                    'storage.memoryLimitBytes()',
+                    'storage.memoryUsedBytes()',
+                    'storage.memoryPeakBytes()',
+                    'storage.memoryRejectedGrowthCount()',
+                    'storage.memoryEntryCount()'
+            ])
+            requireTokens('Identity-scoped weak diagnostics directory', directory, [
+                    'Map<String, WeakReference<MvccRawStoreRuntime>> BY_IDENTITY',
+                    'static String memoryIdentity(String canonicalName)',
+                    'static void register(String databaseIdentity, MvccRawStoreRuntime runtime)',
+                    'static MvccRawStoreRuntime require(String databaseIdentity)',
+                    'static void unregister(String databaseIdentity, MvccRawStoreRuntime runtime)'
+            ])
+            requireTokens('Explicit identity diagnostics adapter', diagnostics, [
+                    'context.hasDatabaseIdentity()',
+                    'MvccRawStoreDiagnosticsDirectory.require(databaseIdentity)',
+                    'public DelosDatabaseMemorySnapshot databaseMemorySnapshot()',
+                    'rawStoreRuntime().memorySnapshot()'
+            ])
+            forbidTokens('RawStore runtime direct filesystem authority', runtime, [
+                    'java.nio.file.Files', 'java.nio.file.Path', 'FileChannel', 'RandomAccessFile'
+            ])
+
+            [
+                    'testCompleteFeatureSetUsesInheritedMemoryStorage',
+                    'testTwoNamedMemoryDatabasesHaveScopedDiagnosticsAndShutdownIsolation',
+                    'testInheritedMemoryStoreRejectsGrowthBeforeItsDatabaseBudget'
+            ].each { methodName ->
+                if (!memoryTest.contains(methodName)) failures << 'Stage 6 executable proof is missing: ' + methodName
+            }
+            requireTokens('Complete memory feature proof', memoryTest, [
+                    'using delos_mvcc',
+                    'create index memory_balance_idx',
+                    'Savepoint dmlSavepoint',
+                    'connection.rollback(dmlSavepoint)',
+                    'Savepoint ddlSavepoint',
+                    'connection.rollback(ddlSavepoint)',
+                    'inPlaceCompressTable(connection, "MEMORY_ACCOUNT_T")',
+                    'mvccMemoryDatabaseMaintenanceSnapshot(database)',
+                    'mvccMemoryDatabaseMemorySnapshot(database)',
+                    'assertFalse(Files.exists(accidentalFilesystemDatabase))'
+            ])
+            requireTokens('Named database isolation proof', memoryTest, [
+                    'mvcc-stage6-memory-a-',
+                    'mvcc-stage6-memory-b-',
+                    'shutdownMemoryDatabase(firstDatabase)',
+                    'mvccMemoryDatabaseMemorySnapshot(secondDatabase)',
+                    'assertMemoryRuntimeAbsent(secondDatabase)'
+            ])
+            requireTokens('Bounded growth proof', memoryTest, [
+                    'factory.configureMemoryLimit(8L * 1024L)',
+                    'memory storage must reject growth above the database budget',
+                    'Memory database limit exceeded',
+                    'assertEquals(1L, factory.memoryRejectedGrowthCount())',
+                    'assertEquals(0L, factory.memoryUsedBytes())'
+            ])
+            requireTokens('Memory shutdown helper', testSupport, [
+                    'shutdownMemoryDatabase(String databaseName)',
+                    'jdbc:derby:memory:'
+            ])
+            forbidTokens('Memory diagnostics tests', memoryTest + maintenanceTest, [
+                    'DelosStorageDiagnosticsRegistry.mvcc()'
+            ])
+            requireTokens('Focused and normal verification wiring', testsBuild, [
+                    "'runDelosMvccRawStoreMemoryDatabaseTest'",
+                    'MvccRawStoreMemoryDatabaseTest.class'
+            ])
+            def integrationStart = testsBuild.indexOf("'runDelosMvccSqlIntegrationTest'")
+            def integrationEnd = testsBuild.indexOf("'runDelosMvccTableRebuildProviderTruthTest'", integrationStart)
+            def integration = integrationStart >= 0 && integrationEnd > integrationStart
+                    ? testsBuild.substring(integrationStart, integrationEnd) : ''
+            if (!integration.contains('MvccRawStoreMemoryDatabaseTest.class')) {
+                failures << 'Normal SQL integration must include the Stage 6 memory-database proof'
+            }
+
+            [
+                    'inherited `memory:` storage lifecycle',
+                    'delosdb.memory.maxBytes',
+                    'One budget is owned',
+                    'simultaneously active named memory',
+                    'memory-specific table, index, visibility, vacuum, transaction, or recovery algorithm'
+            ].each { token ->
+                if (!design.contains(token)) failures << 'Stage 6 design is missing token: ' + token
+            }
+            [
+                    '# Stage 6 — memory-database completion',
+                    'IMPLEMENTED / PENDING USER VERIFICATION',
+                    'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
+                    ':delosdb-tests:runDelosMvccRawStoreMemoryDatabaseTest',
+                    'per-database bounded accounted payload capacity'
+            ].each { token ->
+                if (!roadmap.contains(token)) failures << 'Stage 6 roadmap is missing token: ' + token
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-raw-store-memory-database-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('RawStore MVCC named memory-database static analysis')
+            writer.println('====================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'RawStore MVCC memory-database static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('RawStore MVCC memory-database static analysis passed. Report: {}', reportFile)
+    }
+}
 
 tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
     group = 'verification'
@@ -8531,7 +8804,7 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
                 if (!design.contains(token)) failures << 'Retirement design is missing: ' + token
             }
             ['## Stage 5.4 — retained production runtime retirement',
-             'IMPLEMENTED / PENDING USER VERIFICATION',
+             'VERIFIED',
              'one production MVCC runtime'].each { token ->
                 if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 5.4 token: ' + token
             }
@@ -8591,5 +8864,6 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
             'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
             'delosMvccRetainedRuntimeRetirementStaticAnalysis',
+            'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

@@ -524,3 +524,23 @@ The RawStore-backed implementation is now the unconditional production path. Ret
 are excluded from the production artifact, the external provider is absent from runtime classpaths,
 and the Phase 8 suite is quarantined behind `legacyRetainedCheck`. See
 `V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md`.
+
+## Stage 6 complete named memory-database support
+
+The production format now treats `jdbc:derby:memory:<name>` as a first-class inherited RawStore
+lifecycle. The same table, ordered-index, transaction, savepoint, DDL, vacuum, and maintenance classes
+used by file databases operate on `VFMemoryStorageFactory`; no filesystem fallback or alternate MVCC
+store exists.
+
+Memory runtimes are registered by canonical named identity and can be queried through
+`DelosStorageDiagnosticsRegistry.mvccMemory(name)`. `DelosDatabaseMemorySnapshot` reports the shared
+virtual DataStore budget configured by `delosdb.memory.maxBytes` (256 MiB by default), current and peak
+accounted payload capacity, rejected growth, and virtual entry count.
+
+```text
+:delosdb-tests:runDelosMvccRawStoreMemoryDatabaseTest
+delosMvccRawStoreMemoryDatabaseStaticAnalysis
+```
+
+See `V1-RAWSTORE-MVCC-MEMORY-DATABASE.md` for the accounting boundary, identity rules, complete feature
+matrix, and non-goals.

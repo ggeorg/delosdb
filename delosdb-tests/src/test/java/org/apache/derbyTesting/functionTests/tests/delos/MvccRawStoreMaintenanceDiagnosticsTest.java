@@ -255,9 +255,9 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
             shutdownDatabase(secondDatabase);
             assertNoActiveRuntime(secondDatabase);
 
-            String memoryDatabase = "memory:mvcc_raw_store_maintenance_memory";
+            String memoryDatabase = "mvcc_raw_store_maintenance_memory";
             try (Connection memory = DriverManager.getConnection(
-                    "jdbc:derby:" + memoryDatabase + ";create=true")) {
+                    "jdbc:derby:memory:" + memoryDatabase + ";create=true")) {
                 memory.setAutoCommit(false);
                 executeUpdate(memory,
                         "create table maintenance_memory_t ("
@@ -269,11 +269,13 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                         "update maintenance_memory_t set value = 20 where id = 1");
                 memory.commit();
                 waitUntil("memory maintenance did not use the database-owned worker", () ->
-                        DelosStorageDiagnosticsRegistry.mvcc()
-                                .databaseMaintenanceSnapshot().completedRunCount() > 0L);
+                        DelosStorageDiagnosticsRegistry
+                                .mvccMemoryDatabaseMaintenanceSnapshot(memoryDatabase)
+                                .completedRunCount() > 0L);
                 DelosStorageMaintenanceSnapshot memorySnapshot =
-                        DelosStorageDiagnosticsRegistry.mvcc().databaseMaintenanceSnapshot();
-                assertTrue(memorySnapshot.databaseIdentity().startsWith("memory-"));
+                        DelosStorageDiagnosticsRegistry
+                                .mvccMemoryDatabaseMaintenanceSnapshot(memoryDatabase);
+                assertTrue(memorySnapshot.databaseIdentity().startsWith("memory:"));
                 assertEquals(1, memorySnapshot.workerCount());
                 assertEquals(0L, memorySnapshot.failedRunCount());
                 assertRows(memory,
@@ -281,7 +283,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                         "20");
                 memory.commit();
             }
-            shutdownDatabase(memoryDatabase);
+            shutdownMemoryDatabase(memoryDatabase);
         }
     }
 

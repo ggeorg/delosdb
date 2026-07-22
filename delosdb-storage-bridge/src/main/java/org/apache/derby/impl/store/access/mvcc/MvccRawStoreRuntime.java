@@ -31,8 +31,10 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
+import org.apache.derby.io.DatabaseMemoryStorage;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Database-scoped semantic coordinator for the isolated RawStore table format. */
@@ -50,6 +52,7 @@ final class MvccRawStoreRuntime {
 
     private final Object databaseIdentity;
     private final LockFactory lockFactory;
+    private final DatabaseMemoryStorage memoryStorage;
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
@@ -64,9 +67,16 @@ final class MvccRawStoreRuntime {
     private volatile String diagnosticIdentity = "<unbound>";
     private volatile MvccRawStoreMaintenanceService maintenanceService;
 
-    MvccRawStoreRuntime(Object databaseIdentity, LockFactory lockFactory) {
+    MvccRawStoreRuntime(
+            Object databaseIdentity,
+            LockFactory lockFactory,
+            DatabaseMemoryStorage memoryStorage,
+            String diagnosticIdentity) {
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         this.lockFactory = Objects.requireNonNull(lockFactory, "lockFactory");
+        this.memoryStorage = memoryStorage;
+        this.diagnosticIdentity = Objects.requireNonNull(
+                diagnosticIdentity, "diagnosticIdentity");
     }
 
     Object databaseIdentity() {
@@ -388,6 +398,34 @@ final class MvccRawStoreRuntime {
                 snapshot.tableSnapshotCapacity(),
                 snapshot.tableSnapshotDroppedCount(),
                 snapshot.tableSnapshots());
+    }
+
+    DelosDatabaseMemorySnapshot memorySnapshot() {
+        DatabaseMemoryStorage storage = memoryStorage;
+        if (storage == null) {
+            return new DelosDatabaseMemorySnapshot(
+                    DelosDatabaseMemorySnapshot.CURRENT_SCHEMA_VERSION,
+                    DelosStorageProviderIds.MVCC_PROVIDER_ID,
+                    diagnosticIdentity,
+                    !closed.get(),
+                    false,
+                    0L,
+                    0L,
+                    0L,
+                    0L,
+                    0);
+        }
+        return new DelosDatabaseMemorySnapshot(
+                DelosDatabaseMemorySnapshot.CURRENT_SCHEMA_VERSION,
+                DelosStorageProviderIds.MVCC_PROVIDER_ID,
+                diagnosticIdentity,
+                !closed.get(),
+                true,
+                storage.memoryLimitBytes(),
+                storage.memoryUsedBytes(),
+                storage.memoryPeakBytes(),
+                storage.memoryRejectedGrowthCount(),
+                storage.memoryEntryCount());
     }
 
     void close() {

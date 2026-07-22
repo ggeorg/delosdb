@@ -31,6 +31,7 @@ import org.apache.derby.impl.io.vfmem.PathUtil;
 import org.apache.derby.impl.io.vfmem.DataStore;
 import org.apache.derby.impl.io.vfmem.VirtualFile;
 
+import org.apache.derby.io.DatabaseMemoryStorage;
 import org.apache.derby.io.StorageFactory;
 import org.apache.derby.io.StorageFile;
 import org.apache.derby.io.WritableStorageFactory;
@@ -50,7 +51,7 @@ import org.apache.derby.io.WritableStorageFactory;
  * environments (2 CPUs/cores should be enough to reproduce).
  */
 public class VFMemoryStorageFactory
-        implements StorageFactory, WritableStorageFactory {
+        implements StorageFactory, WritableStorageFactory, DatabaseMemoryStorage {
 
     /** References to the databases created / existing. */
     //@GuardedBy("DATABASES")
@@ -150,6 +151,10 @@ public class VFMemoryStorageFactory
             tempDir = new VirtualFile(getSeparator() + "tmp", dbData);
         }
 
+        if (dbData != null && dbData != DUMMY_STORE) {
+            dbData.configureMemoryLimit(configuredMemoryLimit());
+        }
+
         // Create the temporary directory, if one has been specified.
         // Creating the temporary directory too early casues the
         // BaseDataFileFactory to fail, hence the check for uniqueName.
@@ -185,19 +190,81 @@ public class VFMemoryStorageFactory
         }
     }
 
+    private static long configuredMemoryLimit() throws IOException {
+        String configured = System.getProperty(DatabaseMemoryStorage.MEMORY_LIMIT_PROPERTY);
+        if (configured == null || configured.isBlank()) {
+            return DatabaseMemoryStorage.DEFAULT_MEMORY_LIMIT_BYTES;
+        }
+        try {
+            long parsed = Long.parseLong(configured.trim());
+            if (parsed <= 0L) {
+                throw new NumberFormatException("non-positive memory limit");
+            }
+            return parsed;
+        } catch (NumberFormatException invalidLimit) {
+            throw new IOException(
+                    "Invalid " + DatabaseMemoryStorage.MEMORY_LIMIT_PROPERTY
+                            + " value: " + configured,
+                    invalidLimit);
+        }
+    }
+
     public String getCanonicalName() {
         return canonicalName;
     }
 
+    @Override
+    public String memoryDatabaseIdentity() {
+        return canonicalName;
+    }
+
+    @Override
+    public void configureMemoryLimit(long maximumBytes) throws IOException {
+        requireDatabaseStore().configureMemoryLimit(maximumBytes);
+    }
+
+    @Override
+    public long memoryLimitBytes() {
+        return requireDatabaseStore().memoryLimitBytes();
+    }
+
+    @Override
+    public long memoryUsedBytes() {
+        return requireDatabaseStore().memoryUsedBytes();
+    }
+
+    @Override
+    public long memoryPeakBytes() {
+        return requireDatabaseStore().memoryPeakBytes();
+    }
+
+    @Override
+    public long memoryRejectedGrowthCount() {
+        return requireDatabaseStore().memoryRejectedGrowthCount();
+    }
+
+    @Override
+    public int memoryEntryCount() {
+        return requireDatabaseStore().memoryEntryCount();
+    }
+
+    private DataStore requireDatabaseStore() {
+        if (dbData == null || dbData == DUMMY_STORE || canonicalName == null) {
+            throw new IllegalStateException(
+                    "Memory storage factory is not bound to a database namespace");
+        }
+        return dbData;
+    }
+
     /**
      * Set the canonicalName. May need adjustment due to DERBY-5096
-     * 
+     *
      * @param name uniquely identifiable name for this database
      */
     public void setCanonicalName(String name) {
        canonicalName = name;
     }
-    
+
     /**
      * Returns a handle to the specific storage file.
      *

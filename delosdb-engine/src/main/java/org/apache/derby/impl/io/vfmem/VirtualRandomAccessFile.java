@@ -125,7 +125,7 @@ public class VirtualRandomAccessFile
         }
     }
 
-    public void setLength(long newLength) {
+    public void setLength(long newLength) throws IOException {
         if (bOut == null) {
             throw new NullPointerException();
         }

@@ -107,6 +107,18 @@ abstract class MvccSqlTestSupport extends TestCase {
         }
     }
 
+    protected static void shutdownMemoryDatabase(String databaseName) throws SQLException {
+        try {
+            DriverManager.getConnection(
+                    "jdbc:derby:memory:" + databaseName + ";shutdown=true");
+            fail("Memory database shutdown should throw the normal Derby shutdown exception");
+        } catch (SQLException e) {
+            if (!"08006".equals(e.getSQLState())) {
+                throw e;
+            }
+        }
+    }
+
     protected static int executeUpdate(Connection connection, String sql) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             return statement.executeUpdate(sql);

@@ -55,6 +55,8 @@ public final class DataStore {
      * database, pluss a few more.
      */
     private final Map<String,DataStoreEntry> files = new HashMap<String,DataStoreEntry>(80);
+    /** Database-scoped accounted payload budget. */
+    private final DataStoreMemoryBudget memoryBudget = new DataStoreMemoryBudget();
 
     /**
      * The name of the database this store serves, expected to be the absolute
@@ -85,6 +87,39 @@ public final class DataStore {
      */
     public String getDatabaseName() {
         return this.databaseName;
+    }
+
+
+    /** Configure the maximum accounted payload capacity for this data store. */
+    public void configureMemoryLimit(long maximumBytes) throws java.io.IOException {
+        memoryBudget.configureLimit(maximumBytes);
+    }
+
+    /** Current accounted payload capacity. */
+    public long memoryUsedBytes() {
+        return memoryBudget.usedBytes();
+    }
+
+    /** Highest accounted payload capacity observed for this store. */
+    public long memoryPeakBytes() {
+        return memoryBudget.peakBytes();
+    }
+
+    /** Configured maximum accounted payload capacity. */
+    public long memoryLimitBytes() {
+        return memoryBudget.limitBytes();
+    }
+
+    /** Number of growth requests rejected by the budget. */
+    public long memoryRejectedGrowthCount() {
+        return memoryBudget.rejectedGrowthCount();
+    }
+
+    /** Current number of virtual filesystem entries. */
+    public int memoryEntryCount() {
+        synchronized (LOCK) {
+            return files.size();
+        }
     }
 
     /**
@@ -126,7 +161,7 @@ public final class DataStore {
                     return null;
                 }
             }
-            DataStoreEntry newEntry = new DataStoreEntry(nPath, isDir);
+            DataStoreEntry newEntry = new DataStoreEntry(nPath, isDir, memoryBudget);
             files.put(nPath, newEntry);
             return newEntry;
         }

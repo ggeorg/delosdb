@@ -5,7 +5,7 @@
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
    this work for additional information regarding copyright ownership.
-   The ASF licenses this file to you under the Apache License, Version 2.0.
+   The ASF licenses this file to You under the Apache License, Version 2.0.
 
  */
 package org.apache.derby.impl.store.access.mvcc;
@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Non-owning diagnostics lookup for already booted RawStore-backed MVCC runtimes. */
 final class MvccRawStoreDiagnosticsDirectory {
-    private static final Map<Path, WeakReference<MvccRawStoreRuntime>> BY_DIRECTORY =
+    private static final Map<String, WeakReference<MvccRawStoreRuntime>> BY_IDENTITY =
             new ConcurrentHashMap<>();
     private static final Set<WeakReference<MvccRawStoreRuntime>> ALL =
             ConcurrentHashMap.newKeySet();
@@ -29,33 +29,49 @@ final class MvccRawStoreDiagnosticsDirectory {
     private MvccRawStoreDiagnosticsDirectory() {
     }
 
-    static void register(Path databaseDirectory, MvccRawStoreRuntime runtime) {
-        WeakReference<MvccRawStoreRuntime> reference = new WeakReference<>(runtime);
-        ALL.add(reference);
-        if (databaseDirectory != null) {
-            BY_DIRECTORY.put(normalize(databaseDirectory), reference);
+    static String fileIdentity(Path databaseDirectory) {
+        Path absolute = databaseDirectory.toAbsolutePath().normalize();
+        try {
+            absolute = absolute.toRealPath();
+        } catch (IOException ignored) {
+            // A just-created or just-shut-down database may not currently resolve.
         }
+        return "file:" + absolute;
     }
 
-    static void unregister(Path databaseDirectory, MvccRawStoreRuntime runtime) {
-        if (databaseDirectory != null) {
-            Path identity = normalize(databaseDirectory);
-            BY_DIRECTORY.computeIfPresent(identity, (ignored, reference) ->
-                    reference.get() == runtime ? null : reference);
+    static String memoryIdentity(String canonicalName) {
+        if (canonicalName == null || canonicalName.isBlank()) {
+            throw new IllegalArgumentException("memory database identity must not be blank");
         }
+        return canonicalName.startsWith("memory:")
+                ? canonicalName
+                : "memory:" + canonicalName;
+    }
+
+    static void register(String databaseIdentity, MvccRawStoreRuntime runtime) {
+        String identity = requireIdentity(databaseIdentity);
+        WeakReference<MvccRawStoreRuntime> reference = new WeakReference<>(runtime);
+        ALL.add(reference);
+        BY_IDENTITY.put(identity, reference);
+    }
+
+    static void unregister(String databaseIdentity, MvccRawStoreRuntime runtime) {
+        String identity = requireIdentity(databaseIdentity);
+        BY_IDENTITY.computeIfPresent(identity, (ignored, reference) ->
+                reference.get() == runtime ? null : reference);
         ALL.removeIf(reference -> {
             MvccRawStoreRuntime candidate = reference.get();
             return candidate == null || candidate == runtime;
         });
     }
 
-    static MvccRawStoreRuntime require(Path databaseDirectory) {
-        Path identity = normalize(databaseDirectory);
-        WeakReference<MvccRawStoreRuntime> reference = BY_DIRECTORY.get(identity);
+    static MvccRawStoreRuntime require(String databaseIdentity) {
+        String identity = requireIdentity(databaseIdentity);
+        WeakReference<MvccRawStoreRuntime> reference = BY_IDENTITY.get(identity);
         MvccRawStoreRuntime runtime = reference == null ? null : reference.get();
         if (runtime == null) {
             if (reference != null) {
-                BY_DIRECTORY.remove(identity, reference);
+                BY_IDENTITY.remove(identity, reference);
                 ALL.remove(reference);
             }
             throw new IllegalStateException(
@@ -64,38 +80,51 @@ final class MvccRawStoreDiagnosticsDirectory {
         return runtime;
     }
 
+    static MvccRawStoreRuntime require(Path databaseDirectory) {
+        return require(fileIdentity(databaseDirectory));
+    }
+
     static MvccRawStoreRuntime requireSingle() {
         List<MvccRawStoreRuntime> runtimes = activeRuntimes();
         if (runtimes.size() != 1) {
             throw new IllegalStateException(
-                    "RawStore MVCC maintenance diagnostics require an explicit database directory when "
+                    "RawStore MVCC diagnostics require an explicit database identity when "
                             + runtimes.size() + " runtimes are active");
         }
         return runtimes.get(0);
     }
 
-    static boolean isActive(Path databaseDirectory) {
+    static boolean isActive(String databaseIdentity) {
         try {
-            require(databaseDirectory);
+            require(databaseIdentity);
             return true;
         } catch (IllegalStateException absent) {
             return false;
         }
     }
 
+    static boolean isActive(Path databaseDirectory) {
+        return isActive(fileIdentity(databaseDirectory));
+    }
+
     static int runtimeCount() {
         return activeRuntimes().size();
     }
 
-    static void clearForTesting(Path databaseDirectory) {
-        WeakReference<MvccRawStoreRuntime> reference = BY_DIRECTORY.remove(normalize(databaseDirectory));
+    static void clearForTesting(String databaseIdentity) {
+        WeakReference<MvccRawStoreRuntime> reference =
+                BY_IDENTITY.remove(requireIdentity(databaseIdentity));
         if (reference != null) {
             ALL.remove(reference);
         }
     }
 
+    static void clearForTesting(Path databaseDirectory) {
+        clearForTesting(fileIdentity(databaseDirectory));
+    }
+
     static void clearAllForTesting() {
-        BY_DIRECTORY.clear();
+        BY_IDENTITY.clear();
         ALL.clear();
     }
 
@@ -104,6 +133,7 @@ final class MvccRawStoreDiagnosticsDirectory {
         ALL.removeIf(reference -> {
             MvccRawStoreRuntime runtime = reference.get();
             if (runtime == null) {
+                BY_IDENTITY.values().removeIf(candidate -> candidate == reference);
                 return true;
             }
             active.add(runtime);
@@ -112,12 +142,10 @@ final class MvccRawStoreDiagnosticsDirectory {
         return active;
     }
 
-    private static Path normalize(Path databaseDirectory) {
-        Path absolute = databaseDirectory.toAbsolutePath().normalize();
-        try {
-            return absolute.toRealPath();
-        } catch (IOException ignored) {
-            return absolute;
+    private static String requireIdentity(String databaseIdentity) {
+        if (databaseIdentity == null || databaseIdentity.isBlank()) {
+            throw new IllegalArgumentException("database identity must not be blank");
         }
+        return databaseIdentity;
     }
 }

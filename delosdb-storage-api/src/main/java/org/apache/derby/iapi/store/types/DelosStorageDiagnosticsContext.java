@@ -5,27 +5,36 @@
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
    this work for additional information regarding copyright ownership.
-   The ASF licenses this file to you under the Apache License, Version 2.0
-   (the "License"); you may not use this file except in compliance with
-   the License.  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+   The ASF licenses this file to You under the Apache License, Version 2.0.
 
  */
 package org.apache.derby.iapi.store.types;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
 
 /** Explicit immutable context for storage diagnostics requests. */
-public record DelosStorageDiagnosticsContext(Path databaseDirectory) {
-    public static final DelosStorageDiagnosticsContext EMPTY = new DelosStorageDiagnosticsContext(null);
+public record DelosStorageDiagnosticsContext(
+        Path databaseDirectory,
+        String databaseIdentity) {
+    public static final DelosStorageDiagnosticsContext EMPTY =
+            new DelosStorageDiagnosticsContext(null, null);
+
+    public DelosStorageDiagnosticsContext(Path databaseDirectory) {
+        this(databaseDirectory, null);
+    }
+
+    public DelosStorageDiagnosticsContext {
+        if (databaseDirectory != null && databaseIdentity != null) {
+            throw new IllegalArgumentException(
+                    "diagnostics context cannot name both a directory and database identity");
+        }
+        if (databaseIdentity != null) {
+            databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
+        }
+    }
 
     public static DelosStorageDiagnosticsContext empty() {
         return EMPTY;
@@ -33,7 +42,24 @@ public record DelosStorageDiagnosticsContext(Path databaseDirectory) {
 
     public static DelosStorageDiagnosticsContext databaseDirectory(Path databaseDirectory) {
         return new DelosStorageDiagnosticsContext(
-                Objects.requireNonNull(databaseDirectory, "databaseDirectory"));
+                Objects.requireNonNull(databaseDirectory, "databaseDirectory"), null);
+    }
+
+    public static DelosStorageDiagnosticsContext memoryDatabase(String databaseName) {
+        String name = requireNonBlank(databaseName, "databaseName");
+        try {
+            String home = System.getProperty("derby.system.home");
+            File database = home != null && !new File(name).isAbsolute()
+                    ? new File(home, name)
+                    : new File(name);
+            return new DelosStorageDiagnosticsContext(
+                    null,
+                    "memory:" + database.getCanonicalPath());
+        } catch (IOException canonicalFailure) {
+            throw new IllegalArgumentException(
+                    "Unable to canonicalize memory database name " + name,
+                    canonicalFailure);
+        }
     }
 
     public static DelosStorageDiagnosticsContext fromTarget(DelosStorageConsistencyTarget target) {
@@ -43,5 +69,17 @@ public record DelosStorageDiagnosticsContext(Path databaseDirectory) {
 
     public boolean hasDatabaseDirectory() {
         return databaseDirectory != null;
+    }
+
+    public boolean hasDatabaseIdentity() {
+        return databaseIdentity != null;
+    }
+
+    private static String requireNonBlank(String value, String name) {
+        String normalized = Objects.requireNonNull(value, name).trim();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return normalized;
     }
 }
