@@ -1364,8 +1364,8 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
 
         DelosDbStaticAnalysisSupport.require(failures, testsText.contains('rootProject.ext.delosdbRuntimeJarFiles.call()'),
                 'delosdb-tests/build.gradle must derive Derby runtime jars from rootProject.ext.delosdbRuntimeJarFiles.call()')
-        DelosDbStaticAnalysisSupport.require(failures, testsText.contains('rootProject.ext.delosdbLegacyOracleTestJarFiles.call()'),
-                'delosdb-tests/build.gradle must obtain the archived page-volume module only through the explicit test-only collection')
+        DelosDbStaticAnalysisSupport.require(failures, !testsText.contains('rootProject.ext.delosdbLegacyOracleTestJarFiles.call()'),
+                'Normal delosdb-tests verification must not restore the archived page-volume module through a legacy-oracle jar collection')
         DelosDbStaticAnalysisSupport.require(failures, testsText.contains("dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')"),
                 'Focused MVCC SQL/DRDA gates must depend on verifyDelosRuntimeStorageProviders')
         [
