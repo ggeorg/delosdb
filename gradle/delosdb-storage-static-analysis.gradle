@@ -453,7 +453,6 @@ def delosBuildRoot = layout.buildDirectory.get().asFile
 
 def delosStorageStaticSourceRoots = [
         'delosdb-storage-api/src/main/java',
-        'delosdb-storage-io/src/main/java',
         'delosdb-storage-mvcc/src/main/java',
         'delosdb-derby-store-api/src/main/java'
 ]
@@ -1084,7 +1083,6 @@ tasks.register('delosDerbyModuleParityStaticAnalysis') {
                 ':delosdb-runtime-api',
                 ':delosdb-annotations',
                 ':delosdb-spi',
-                ':delosdb-storage-io',
                 ':delosdb-storage-api',
                 ':delosdb-derby-store-api',
                 ':delosdb-storage-derby',
@@ -1170,7 +1168,6 @@ def delosRuntimeArtifactModelFiles = [
         'delosdb-storage-api/build.gradle',
         'delosdb-storage-mvcc/build.gradle',
         'delosdb-storage-derby/build.gradle',
-        'delosdb-storage-io/build.gradle',
         'delosdb-tests/build.gradle',
         'delosdb-tools/build.gradle',
         'gradle/delosdb-product-info.gradle',
@@ -3611,7 +3608,9 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
                     || !mvccBuild.contains('legacyRetained {')
                     || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
+                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
                     || !mvccBuild.contains('verifyRetainedOracleQuarantine')
+                    || !mvccBuild.contains("file('src/main/java/io/github/ggeorg/delosdb/storage')")
                     || !mvccBuild.contains('retainedProductionSources = sourceSets.main.java.files.findAll')
                     || !mvccBuild.contains("setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])")) {
                 failures << 'Production RawStore MVCC sources must remain isolated from the legacyRetained oracle source set'
@@ -8449,6 +8448,7 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
                     || !mvccBuild.contains('legacyRetained {')
                     || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
+                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
                     || !mvccBuild.contains('setSrcDirs([])')
                     || !mvccBuild.contains("tasks.register('verifyRetainedOracleQuarantine')")
                     || !mvccBuild.contains("tasks.register('legacyRetainedCheck')")
@@ -8461,8 +8461,8 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
                     'delosdb-storage-mvcc/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory').exists()) {
                 failures << 'Retired external MVCC provider source and service must be absent from the repository tree'
             }
-            if (mvccBuild.contains("implementation project(':delosdb-storage-io')")) {
-                failures << 'Production MVCC must not depend on the retired page-volume module'
+            if (mvccBuild.contains("project(':delosdb-storage-io')")) {
+                failures << 'MVCC production, retained, and test source sets must not depend on the retired page-volume module'
             }
             def runtimeSection = artifacts.substring(artifacts.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
                     artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['))
@@ -8603,7 +8603,6 @@ tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
                 if (!normalizedDesign.contains(token)) failures << 'Module-convergence design is missing: ' + token
             }
             ['## Stage 7.1 — production MVCC provider module convergence',
-             'IMPLEMENTED / PENDING USER VERIFICATION',
              'delosMvccStorageModuleConvergenceStaticAnalysis'].each { token ->
                 if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.1 token: ' + token
             }
@@ -8618,6 +8617,93 @@ tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
         }
         if (!failures.isEmpty()) throw new GradleException('RawStore MVCC storage-module convergence static analysis failed. Report: ' + reportFile)
         logger.lifecycle('RawStore MVCC storage-module convergence static analysis passed. Report: {}', reportFile)
+    }
+}
+
+tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 7.2 retirement of the standalone Delos-native page-volume module.'
+
+    def required = [
+            file('settings.gradle'),
+            file('delosdb-storage-mvcc/build.gradle'),
+            file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
+            file('docs/design/V1-RAWSTORE-STORAGE-IO-MODULE-RETIREMENT.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io/page/DelosPage.java'),
+            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io/volume/FileChannelPageVolume.java')
+    ]
+    inputs.files(required)
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-io-module-retirement-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (failures.isEmpty()) {
+            def settings = required[0].getText('UTF-8')
+            def mvccBuild = required[1].getText('UTF-8')
+            def parity = required[2].getText('UTF-8')
+            def design = required[3].getText('UTF-8')
+            def roadmap = required[4].getText('UTF-8')
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            if (settings.contains("include 'delosdb-storage-io'")
+                    || new File(delosRepositoryRoot, 'delosdb-storage-io').exists()) {
+                failures << 'delosdb-storage-io must be absent from settings and the repository tree'
+            }
+            if (!mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
+                    || mvccBuild.contains("project(':delosdb-storage-io')")) {
+                failures << 'Retained page-volume support must compile only inside the MVCC legacyRetained source set'
+            }
+            def legacyIoSources = DelosDbStaticFileSupport.javaFiles([
+                    file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io')
+            ])
+            if (legacyIoSources.size() != 13) {
+                failures << 'Expected 13 quarantined Delos-native page-volume sources; found ' + legacyIoSources.size()
+            }
+            def productionIoImports = []
+            [file('delosdb-engine/src/main/java'), file('delosdb-storage-derby/src/main/java'),
+             file('delosdb-storage-mvcc/src/main/java/org/apache/derby')].each { sourceRoot ->
+                if (!sourceRoot.isDirectory()) return
+                DelosDbStaticFileSupport.javaFiles([sourceRoot]).each { sourceFile ->
+                    if (sourceFile.getText('UTF-8').contains('io.github.ggeorg.delosdb.storage.io')) {
+                        productionIoImports << DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, sourceFile)
+                    }
+                }
+            }
+            if (!productionIoImports.isEmpty()) {
+                failures << 'Active RawStore/engine sources import the retired page-volume authority: ' + productionIoImports
+            }
+            if (parity.contains(':delosdb-storage-io|')) {
+                failures << 'Derby module parity must not retain the removed storage-io extension row'
+            }
+            ['no active production consumer', 'legacyRetained source set',
+             'no second page-volume authority', '13 source files'].each { token ->
+                if (!design.contains(token)) failures << 'Storage-I/O retirement design is missing: ' + token
+            }
+            ['## Stage 7.2 — standalone page-volume module retirement',
+             'delosStorageIoModuleRetirementStaticAnalysis'].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.2 token: ' + token
+            }
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosStorageIoModuleRetirementStaticAnalysis'")) {
+                failures << 'S0 must include the storage-I/O module retirement gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/storage-io-module-retirement-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage-I/O module retirement static analysis')
+            writer.println('=====================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Storage-I/O module retirement static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Storage-I/O module retirement static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -8661,6 +8747,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
             'delosMvccRetainedRuntimeRetirementStaticAnalysis',
             'delosMvccStorageModuleConvergenceStaticAnalysis',
+            'delosStorageIoModuleRetirementStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

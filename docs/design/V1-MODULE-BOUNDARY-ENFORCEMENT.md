@@ -2,18 +2,19 @@
 
 ## Status
 
-Stage 2.3 froze the final target. Stage 7.1 has now removed the bridge after moving its valid
-provider responsibilities into `delosdb-storage-mvcc`.
+Stage 2.3 froze the final target. Stage 7.1 removed the bridge after moving its valid provider
+responsibilities into `delosdb-storage-mvcc`. Stage 7.2 removed `delosdb-storage-io` after moving its
+retained-only page-volume sources into the MVCC `legacyRetained` quarantine.
 
 ## Final target
 
 The final graph contains 21 Gradle subprojects:
 
 ```text
-current subprojects after Stage 7.1: 22
+current subprojects after Stage 7.2: 21
 required new module: delosdb-search-lucene
-remaining retirement targets: delosdb-storage-api, delosdb-storage-io
-already retired: delosdb-storage-bridge
+remaining retirement target: delosdb-storage-api
+already retired: delosdb-storage-bridge, delosdb-storage-io
 final subprojects: 21
 ```
 
@@ -69,7 +70,7 @@ verifyNoLegacyLucene
 verifyRetiredStorageModules
 ```
 
-## Production provider registration after Stage 7.1
+## Production provider registration after Stage 7.2
 
 `delosdb-storage-bridge` is absent. `delosdb-storage-mvcc` owns exactly one
 `ExternalAccessMethodProvider` implementation and service entry.
@@ -141,10 +142,10 @@ delosdb-storage-derby.jar
 
 ## Scope boundary
 
-Stage 7.1 does not:
+Stage 7.2 does not:
 
 ```text
-remove storage-api or storage-io
+remove storage-api
 add delosdb-search-lucene
 change SQL routing or table formats
 change transaction, recovery, locking, vacuum, or maintenance semantics

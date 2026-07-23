@@ -11,11 +11,13 @@ The current modules remain until their responsibilities have moved and replaceme
 The neutral boot and transaction-lifecycle seams live in `delosdb-derby-store-api`.
 `delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
 bracketing. Stage 7.1 moved the valid provider/adaptation implementation directly into
-`delosdb-storage-mvcc` and removed `delosdb-storage-bridge`.
+`delosdb-storage-mvcc` and removed `delosdb-storage-bridge`. Stage 7.2 moved the retained-only
+Delos-native page-volume sources into the same module's `legacyRetained` source set and removed
+`delosdb-storage-io`.
 
 Stage 2.3 adds a machine-readable final target and the permanent
 `delosV1ModuleArchitectureStaticAnalysis` gate. The gate enforces current provider isolation while
-remaining valid after the bridge absorption, while storage-api/storage-io are retired and
+remaining valid after the bridge and storage-I/O retirements, while storage-api is retired and
 `delosdb-search-lucene` is added.
 
 ## Architectural rules
@@ -68,17 +70,17 @@ Add:
 delosdb-search-lucene
 ```
 
-Already retired after absorption:
+Already retired after absorption or quarantine convergence:
 
 ```text
 delosdb-storage-bridge
+delosdb-storage-io
 ```
 
-Retire later only after their remaining responsibilities move:
+Retire later only after its remaining responsibilities move:
 
 ```text
 delosdb-storage-api
-delosdb-storage-io
 ```
 
 ## Dependency direction
@@ -272,8 +274,8 @@ Removed in Stage 7.1 after its valid provider/registration glue moved into
 
 ### `delosdb-storage-io`
 
-Removed after useful implementation work is absorbed into the shared RawStore/storage
-implementation. `DelosPageVolume` does not survive as a second public I/O authority.
+Removed in Stage 7.2 after its 13 retained-only page/volume sources moved into the MVCC
+`legacyRetained` quarantine. `DelosPageVolume` does not survive as a production I/O authority.
 
 ### `delosdb-storage-api`
 

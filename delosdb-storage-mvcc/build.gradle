@@ -10,8 +10,8 @@ group = rootProject.group
 
 // Production RawStore-backed MVCC access method. Stage 7 absorbs the former
 // storage-bridge implementation into this provider artifact. The Phase 8
-// retained-store oracle remains source-archived under io.github.* and is
-// compiled only by the explicit legacyRetained source set.
+// retained-store oracle and its retired Delos-native page-volume support remain
+// source-archived under io.github.* and compile only in legacyRetained.
 def sourceRoot = file('src/main/java')
 def resourceRoot = file('src/main/resources')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
@@ -51,6 +51,7 @@ sourceSets {
         java {
             srcDir sourceRoot
             include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'
+            include 'io/github/ggeorg/delosdb/storage/io/**/*.java'
             destinationDirectory.set(legacyClassDir)
         }
         resources {
@@ -75,9 +76,7 @@ dependencies {
     legacyRetainedImplementation project(':delosdb-commons')
     legacyRetainedImplementation project(':delosdb-runtime-api')
     legacyRetainedImplementation project(':delosdb-storage-api')
-    legacyRetainedImplementation project(':delosdb-storage-io')
 
-    testImplementation project(':delosdb-storage-io')
     testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
 }
 
@@ -1396,7 +1395,7 @@ tasks.register('verifyRetainedOracleQuarantine') {
             throw new GradleException('Retired MVCC provider service remains in the repository tree')
         }
         def retainedProductionSources = sourceSets.main.java.files.findAll {
-            it.toPath().startsWith(file('src/main/java/io/github/ggeorg/delosdb/storage/mvcc').toPath())
+            it.toPath().startsWith(file('src/main/java/io/github/ggeorg/delosdb/storage').toPath())
         }
         if (!retainedProductionSources.isEmpty()) {
             throw new GradleException('Retained Phase 8 sources remain in the production MVCC source set: '
