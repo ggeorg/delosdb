@@ -399,7 +399,6 @@ tasks.register('verifyDelosV1ProductionCloseout') {
     description = 'Runs normal gates, S0, a clean authoritative capture, and final Phase 8 evidence review in one command.'
 
     dependsOn rootProject.tasks.named('s0CloseoutVerification'),
-            project(':delosdb-storage-api').tasks.named('check'),
             project(':delosdb-engine').tasks.named('check'),
             project(':delosdb-storage-mvcc').tasks.named('check'),
             tasks.named('check'),

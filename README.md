@@ -174,7 +174,7 @@ Full storage-module verification:
 
 ```bash
 ./gradlew \
-  :delosdb-storage-api:check \
+  :delosdb-derby-store-api:check \
   :delosdb-storage-derby:check \
   :delosdb-storage-mvcc:check
 ```
@@ -206,7 +206,6 @@ Runtime jars are written to `build/libs/`.
 | `delosdb-client` | Derby-compatible network client |
 | `delosdb-server` | Derby-compatible DRDA server |
 | `delosdb-storage-derby` | inherited heap and raw-store implementation |
-| `delosdb-storage-api` | provider-neutral storage contracts and diagnostics |
 | `delosdb-storage-mvcc` | RawStore-backed MVCC access method and Derby provider integration |
 | `delosdb-tools` | command-line and administrative tools |
 | `delosdb-tests` | inherited compatibility and DelosDB integration tests |

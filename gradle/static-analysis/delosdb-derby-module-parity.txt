@@ -27,7 +27,6 @@ DERBY-MOD-014|KEEP_DERBY_PEER|java/build|:delosdb-buildtools|build helper module
 DERBY-MOD-015|DELOSDB_EXTENSION|none|:delosdb-runtime-api|runtime seam|DelosDB split for runtime-format and storage-provider integration seams.
 DERBY-MOD-016|DELOSDB_EXTENSION|none|:delosdb-annotations|annotation seam|DelosDB-owned annotations used by extension APIs.
 DERBY-MOD-017|DELOSDB_EXTENSION|none|:delosdb-spi|extension SPI|DelosDB-owned experimental SPI surface.
-DERBY-MOD-019|DELOSDB_EXTENSION|none|:delosdb-storage-api|storage provider API|DelosDB-owned storage diagnostics/provider API seam.
-DERBY-MOD-020|DELOSDB_EXTENSION|none|:delosdb-derby-store-api|inherited store API split|DelosDB split for inherited Derby store API exposure.
+DERBY-MOD-020|DELOSDB_EXTENSION|none|:delosdb-derby-store-api|inherited store and diagnostics API split|DelosDB split for inherited Derby store APIs plus shared storage lifecycle, diagnostics, and typed-value contracts.
 DERBY-MOD-021|DELOSDB_EXTENSION|none|:delosdb-storage-derby|Derby heap/raw-store compatibility|DelosDB-owned module boundary for inherited Derby storage implementation.
 DERBY-MOD-022|DELOSDB_EXTENSION|none|:delosdb-storage-mvcc|RawStore MVCC access method|DelosDB-owned MVCC semantics and Derby access-method provider integration.

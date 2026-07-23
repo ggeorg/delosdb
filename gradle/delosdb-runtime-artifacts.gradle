@@ -21,13 +21,12 @@ ext.delosdbRuntimeJarArtifacts = [
 ]
 
 // These jars are assembled but are not placed directly on the current
-// Derby-compatible runtime classpath. storage-api/store-api are patched into
+// Derby-compatible runtime classpath. derby-store-api is patched into
 // derby.jar. The production MVCC provider is also published independently,
 // while its org.apache.derby implementation package is patched into derby.jar
 // until the final distribution/module-path packaging step. The retained Phase 8
 // oracle is compiled only by explicit legacy source-set tasks.
 ext.delosdbAssembledSupportJarArtifacts = [
-        [key: 'storageApi',  gradleProject: 'delosdb-storage-api',     jarTask: 'jar', jarName: 'delosdb-storage-api.jar'],
         [key: 'storeApi',    gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar'],
         [key: 'mvcc',        gradleProject: 'delosdb-storage-mvcc',     jarTask: 'jar', jarName: 'delosdb-storage-mvcc.jar']
 ]
@@ -52,7 +51,6 @@ ext.delosdbRuntimeBuildTasks = [
         ':delosdb-osgi-stub:classes',
         ':delosdb-commons:classes',
         ':delosdb-runtime-api:classes',
-        ':delosdb-storage-api:classes',
         ':delosdb-storage-mvcc:classes',
         ':delosdb-engine:classes',
         ':delosdb-client:classes',

@@ -60,5 +60,5 @@ NULL keys are durable and safe.
 ./gradlew :delosdb-storage-mvcc:runMvccOrderedIndexPageStoreTest
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew s0CloseoutVerification
-./gradlew :delosdb-storage-api:check :delosdb-storage-derby:check :delosdb-storage-mvcc:check
+./gradlew :delosdb-derby-store-api:check :delosdb-storage-derby:check :delosdb-storage-mvcc:check
 ```

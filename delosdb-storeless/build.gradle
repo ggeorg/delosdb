@@ -21,7 +21,6 @@ java {
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-runtime-api')
-    implementation project(':delosdb-storage-api')
     implementation project(':delosdb-derby-store-api')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
 }

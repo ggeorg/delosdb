@@ -43,10 +43,8 @@ dependencies {
     // Optional dump tools compile against inherited Derby raw-store contracts
     // and implementation helpers patched into org.apache.derby.engine.
     // DataValueDescriptor's inherited Store* interfaces are owned by
-    // delosdb-storage-api, so that artifact is a classfile-signature input even
-    // though DataFileVTI does not import those interfaces directly.
+    // delosdb-derby-store-api, which is already a patch-module input.
     enginePatchModule project(':delosdb-derby-store-api')
-    enginePatchModule project(':delosdb-storage-api')
     enginePatchModule project(':delosdb-storage-derby')
 }
 

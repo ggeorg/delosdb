@@ -146,14 +146,14 @@ Decision: `ALREADY_SHARED_DIAGNOSTIC_BOUNDARY`
 Heap proof:
 
 ```text
-delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
-delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageStatistics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageStatistics.java
 ```
 
 MVCC proof:
 
 ```text
-delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
 ```
 
@@ -168,7 +168,7 @@ Decision: `DEFER_MVCC_ONLY_PROOF`
 Heap proof:
 
 ```text
-delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenance.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenance.java
 ```
 
 MVCC proof:

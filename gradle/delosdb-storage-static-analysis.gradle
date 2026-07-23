@@ -452,7 +452,6 @@ def delosBuildRoot = layout.buildDirectory.get().asFile
  */
 
 def delosStorageStaticSourceRoots = [
-        'delosdb-storage-api/src/main/java',
         'delosdb-storage-mvcc/src/main/java',
         'delosdb-derby-store-api/src/main/java'
 ]
@@ -1083,7 +1082,6 @@ tasks.register('delosDerbyModuleParityStaticAnalysis') {
                 ':delosdb-runtime-api',
                 ':delosdb-annotations',
                 ':delosdb-spi',
-                ':delosdb-storage-api',
                 ':delosdb-derby-store-api',
                 ':delosdb-storage-derby',
                 ':delosdb-storage-mvcc'
@@ -1165,7 +1163,6 @@ def delosRuntimeArtifactModelFiles = [
         'delosdb-runner/build.gradle',
         'delosdb-server/build.gradle',
         'delosdb-spi/build.gradle',
-        'delosdb-storage-api/build.gradle',
         'delosdb-storage-mvcc/build.gradle',
         'delosdb-storage-derby/build.gradle',
         'delosdb-tests/build.gradle',
@@ -1248,10 +1245,13 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
                 !runtimeArtifactSection.contains('delosdb-storage-io.jar')
                         && !supportArtifactSection.contains('delosdb-storage-io.jar'),
                 'Retired page-volume archive must remain outside root runtime and assembly models')
-        ['delosdb-storage-api.jar', 'delosdb-derby-store-api.jar'].each { token ->
-            DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains(token),
-                    "Runtime artifact convention script must keep support artifact modeled outside the runtime jar list: ${token}")
-        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                supportArtifactSection.contains('delosdb-derby-store-api.jar'),
+                'Inherited Derby/store contracts must remain modeled through delosdb-derby-store-api.jar')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !runtimeArtifactSection.contains('delosdb-storage-api.jar')
+                        && !supportArtifactSection.contains('delosdb-storage-api.jar'),
+                'Retired storage-api artifact must remain outside runtime and support assembly models')
 
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains("tasks.register('verifyDelosRuntimeStorageProviders')"),
                 'Runtime artifact convention script must register verifyDelosRuntimeStorageProviders')
@@ -1430,12 +1430,12 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
 
 
 def delosCrossEngineConsistencyFrameworkFiles = [
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java',
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java',
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java',
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java',
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
-        'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
+        'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java',
         'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java'
 ]
 
@@ -1458,12 +1458,12 @@ tasks.register('delosCrossEngineConsistencyFrameworkStaticAnalysis') {
                     "Missing cross-engine consistency framework file: ${relativePath}")
         }
 
-        def reportText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java']
-        def findingText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java']
-        def targetText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java']
-        def diagnosticsText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java']
-        def registryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java']
-        def queryText = texts['delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java']
+        def reportText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java']
+        def findingText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyFinding.java']
+        def targetText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyTarget.java']
+        def diagnosticsText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java']
+        def registryText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java']
+        def queryText = texts['delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java']
         def testText = texts['delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java']
 
         DelosDbStaticAnalysisSupport.require(failures,
@@ -1685,7 +1685,7 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
         def mvccBuild = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/build.gradle')
         def mvccBuildText = mvccBuild.isFile() ? mvccBuild.getText('UTF-8') : ''
         if (!mvccBuildText.contains("implementation project(':delosdb-runtime-api')")) {
-            failures << "delosdb-storage-mvcc must declare its direct runtime-api dependency; do not rely on transitive storage-api wiring."
+            failures << "delosdb-storage-mvcc must declare its direct runtime-api dependency; do not rely on transitive neutral-API wiring."
         }
 
         def baseMonitor = new File(delosRepositoryRoot,
@@ -2859,7 +2859,7 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
             }
         }
 
-        def sourceText = new File(delosRepositoryRoot, 'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java').getText('UTF-8')
+        def sourceText = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java').getText('UTF-8')
         [
                 'import jdk.jfr.Category;',
                 'import jdk.jfr.Event;',
@@ -2894,7 +2894,7 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
             }
         }
 
-        def analyzeText = new File(delosRepositoryRoot, 'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
+        def analyzeText = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
         if (!analyzeText.contains('DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics')) {
             failures << 'MVCC analyze/statistics lifecycle must record a JFR event at the proven diagnostic checkpoint'
         }
@@ -3100,7 +3100,7 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
             failures << 'Legacy IndexProvider cost mode must remain diagnostic-only even for enabled spelling'
         }
 
-        def analyzeText = new File(delosRepositoryRoot, 'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
+        def analyzeText = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
         if (!analyzeText.contains('optimizerAuthority=derby')) {
             failures << 'MVCC analyze/statistics lifecycle must keep optimizerAuthority=derby marker'
         }
@@ -3153,7 +3153,7 @@ tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
     inputs.file('docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md')
     inputs.file('docs/MVCC-ORDERED-INDEX-KEY-SEMANTICS.md')
     inputs.file('docs/ALGORITHM-INVENTORY.md')
-    inputs.file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
+    inputs.file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
     inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStoreTest.java')
     inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java')
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt'))
@@ -3242,7 +3242,7 @@ tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
             failures << 'SQL NULL key proof must not introduce generic Java object serialization'
         }
 
-        def typedKey = new File(delosRepositoryRoot, 'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java').getText('UTF-8')
+        def typedKey = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java').getText('UTF-8')
         if (!typedKey.contains('return encodeNull();') || !typedKey.contains("NULL('N', 0)")) {
             failures << 'Typed ordered-index key API must keep stable NULL envelope markers'
         }
@@ -4279,7 +4279,7 @@ tasks.register('delosPhase8EntropyStaticAnalysis') {
     description = 'Protects the Phase 8 entropy cleanup and inherited-table lifecycle responsibility split.'
 
     def requiredFiles = [
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
+            'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
             'delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java',
             'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.java',
             'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailureReplayTestSupport.java',
@@ -5412,7 +5412,7 @@ tasks.register('delosMvccRawStoreMixedHeapTransactionStaticAnalysis') {
     description = 'Verifies heap and RawStore-backed MVCC share one inherited RawStore transaction outcome.'
 
     def dmlFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java')
-    def registryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
+    def registryFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
     def ramTransactionFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java')
     def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.java')
@@ -5796,7 +5796,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     group = 'verification'
     description = 'Verifies version-aware ordered indexes are physically sorted RawStore state and remain subordinate to the base MVCC chain.'
 
-    def valueCopyFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/StoreValueCopySupport.java')
+    def valueCopyFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/StoreValueCopySupport.java')
     def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
     def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
     def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
@@ -7372,10 +7372,10 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
     group = 'verification'
     description = 'Verifies bounded database-owned RawStore MVCC maintenance and immutable queue/horizon diagnostics.'
 
-    def databaseSnapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java')
-    def tableSnapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java')
-    def diagnosticsApiFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
-    def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
+    def databaseSnapshotFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java')
+    def tableSnapshotFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java')
+    def diagnosticsApiFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+    def diagnosticsRegistryFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
     def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
     def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
     def serviceFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java')
@@ -7756,9 +7756,9 @@ tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
     def budgetFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStoreMemoryBudget.java')
     def blockedArrayFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/BlockedByteArray.java')
     def dataStoreFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStore.java')
-    def snapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java')
-    def diagnosticsContextFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java')
-    def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
+    def snapshotFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java')
+    def diagnosticsContextFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java')
+    def diagnosticsRegistryFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
     def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
     def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
     def directoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
@@ -8707,6 +8707,159 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 7.3 retirement of the standalone DelosDB storage-contract module.'
+
+    def required = [
+            file('settings.gradle'),
+            file('delosdb-derby-store-api/build.gradle'),
+            file('delosdb-engine/build.gradle'),
+            file('delosdb-optionaltools/build.gradle'),
+            file('gradle/delosdb-runtime-artifacts.gradle'),
+            file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
+            file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    inputs.files(required)
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file('reports/delosdb/storage-api-module-retirement-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (failures.isEmpty()) {
+            def settings = required[0].getText('UTF-8')
+            def derbyApiBuild = required[1].getText('UTF-8')
+            def engineBuild = required[2].getText('UTF-8')
+            def optionalToolsBuild = required[3].getText('UTF-8')
+            def artifacts = required[4].getText('UTF-8')
+            def parity = required[5].getText('UTF-8')
+            def design = required[6].getText('UTF-8')
+            def roadmap = required[7].getText('UTF-8')
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            if (settings.contains("include 'delosdb-storage-api'")
+                    || new File(delosRepositoryRoot, 'delosdb-storage-api').exists()) {
+                failures << 'delosdb-storage-api must be absent from settings and the repository tree'
+            }
+
+            def migratedTypeRoot = file(
+                    'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types')
+            def migratedTypes = DelosDbStaticFileSupport.javaFiles([migratedTypeRoot])
+            if (migratedTypes.size() != 101) {
+                failures << 'Expected 101 shared store/type contracts in derby-store-api; found ' + migratedTypes.size()
+            }
+
+            def deletedFacadeTypes = [
+                    'DelosAccessContext', 'DelosContextKey', 'DelosCostableTableAccess',
+                    'DelosFilterableTableAccess', 'DelosIndexAccess', 'DelosIndexStats',
+                    'DelosIndexableTableAccess', 'DelosMutableTableAccess', 'DelosMutationPreparation',
+                    'DelosMutationResult', 'DelosMvccMutationReservation', 'DelosMvccReservableTableAccess',
+                    'DelosPredicate', 'DelosPredicateOperator', 'DelosProjection', 'DelosRange',
+                    'DelosRow', 'DelosRowIdentity', 'DelosScan', 'DelosTableAccess',
+                    'DelosTableCapabilities', 'DelosTableCapability', 'DelosTableCostEstimate',
+                    'DelosTableGuarantee', 'DelosTableIdentity', 'DelosTableShape',
+                    'DelosStorageProviderFactory'
+            ]
+            deletedFacadeTypes.each { typeName ->
+                if (new File(migratedTypeRoot, typeName + '.java').exists()) {
+                    failures << 'Unused parallel storage facade contract remains: ' + typeName
+                }
+            }
+            def retiredProviderServices = fileTree(delosRepositoryRoot) {
+                include 'delosdb-*/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
+            }.files
+            if (!retiredProviderServices.isEmpty()) {
+                failures << 'Retired DelosStorageProviderFactory service registration remains: ' + retiredProviderServices
+            }
+            def retiredProviderTypes = fileTree(delosRepositoryRoot) {
+                include 'delosdb-*/src/main/java/**/DelosStorageProviderFactory.java'
+            }.files
+            if (!retiredProviderTypes.isEmpty()) {
+                failures << 'Retired DelosStorageProviderFactory contract remains: ' + retiredProviderTypes
+            }
+
+            def providerRoot = file(
+                    'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider')
+            [
+                    'DerbyStorageProvider.java', 'DerbyStorageTable.java',
+                    'DerbyStorageScan.java', 'DerbyStorageRows.java',
+                    'DerbyStorageRowLocation.java', 'DerbyStorageTransaction.java'
+            ].each { fileName ->
+                if (new File(providerRoot, fileName).exists()) {
+                    failures << 'Unused parallel Derby storage facade implementation remains: ' + fileName
+                }
+            }
+
+            def activeBuildFiles = [file('build.gradle'), file('settings.gradle')]
+            activeBuildFiles.addAll(fileTree(delosRepositoryRoot) {
+                include 'delosdb-*/build.gradle'
+                include 'gradle/delosdb-runtime-artifacts.gradle'
+                include 'gradle/delosdb-v1-production-closeout-review.gradle'
+                exclude 'delosdb-storage-api/**'
+            }.files)
+            activeBuildFiles.unique().each { buildFile ->
+                def buildText = buildFile.getText('UTF-8')
+                if (buildText.contains("project(':delosdb-storage-api')")
+                        || buildText.contains(':delosdb-storage-api:')
+                        || buildText.contains('delosdb-storage-api.jar')) {
+                    failures << 'Active build wiring retains storage-api: '
+                            + DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, buildFile)
+                }
+            }
+            if (!engineBuild.contains("project(':delosdb-derby-store-api')")
+                    && !engineBuild.contains("project(path: ':delosdb-derby-store-api'")) {
+                failures << 'Engine patch wiring must consume the consolidated derby-store-api artifact'
+            }
+            if (optionalToolsBuild.contains(':delosdb-storage-api')) {
+                failures << 'Optional tools must not patch or compile against the retired storage-api project'
+            }
+            if (artifacts.contains('delosdb-storage-api.jar')) {
+                failures << 'Runtime/support artifact model must not contain delosdb-storage-api.jar'
+            }
+            if (!artifacts.contains('delosdb-derby-store-api.jar')) {
+                failures << 'Runtime/support artifact model must retain delosdb-derby-store-api.jar'
+            }
+            if (parity.contains(':delosdb-storage-api|')) {
+                failures << 'Derby module parity must not retain the removed storage-api extension row'
+            }
+            if (!file('delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index').isDirectory()) {
+                failures << 'Provider-neutral external-index vocabulary must remain owned by delosdb-spi'
+            }
+
+            def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
+            ['101 shared', '27 unused parallel', '6 unused derbystorage',
+             'no `delosstorageproviderfactory` service registration',
+             '20'].each { token ->
+                if (!normalizedDesign.contains(token)) failures << 'Storage-API retirement design is missing: ' + token
+            }
+            ['## Stage 7.3 — storage-contract module retirement',
+             'delosStorageApiModuleRetirementStaticAnalysis'].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.3 token: ' + token
+            }
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosStorageApiModuleRetirementStaticAnalysis'")) {
+                failures << 'S0 must include the storage-API module retirement gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/storage-api-module-retirement-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB storage-API module retirement static analysis')
+            writer.println('======================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Storage-API module retirement static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Storage-API module retirement static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -8748,6 +8901,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRetainedRuntimeRetirementStaticAnalysis',
             'delosMvccStorageModuleConvergenceStaticAnalysis',
             'delosStorageIoModuleRetirementStaticAnalysis',
+            'delosStorageApiModuleRetirementStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

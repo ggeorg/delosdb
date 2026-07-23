@@ -28,7 +28,7 @@ import org.apache.derby.impl.store.access.heap.HeapRowLocation;
 public final class DerbyStoreRowLocationFactory implements StoreRowLocationFactory {
     @Override
     public String providerName() {
-        return DerbyStorageProvider.PROVIDER_NAME;
+        return "derby";
     }
 
     @Override

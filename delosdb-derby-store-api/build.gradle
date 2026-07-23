@@ -5,8 +5,8 @@ plugins {
 version = rootProject.version
 group = rootProject.group
 
-// Gradle Java module for inherited Derby store contracts. The retained
-// compile alias is consumed by patch-module build wiring.
+// Neutral inherited Derby store/access contracts and DelosDB storage diagnostics.
+// Stage 7.3 absorbs the former storage-api source ownership into this module.
 def mainClassDir = layout.buildDirectory.dir('classes/store-api')
 
 java {
@@ -17,7 +17,6 @@ java {
 dependencies {
     api project(':delosdb-commons')
     api project(':delosdb-runtime-api')
-    api project(':delosdb-storage-api')
 }
 
 sourceSets {

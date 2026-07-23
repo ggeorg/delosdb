@@ -70,12 +70,11 @@ sourceSets {
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-runtime-api')
-    implementation project(':delosdb-storage-api')
     implementation project(':delosdb-derby-store-api')
 
     legacyRetainedImplementation project(':delosdb-commons')
     legacyRetainedImplementation project(':delosdb-runtime-api')
-    legacyRetainedImplementation project(':delosdb-storage-api')
+    legacyRetainedImplementation project(':delosdb-derby-store-api')
 
     testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
 }

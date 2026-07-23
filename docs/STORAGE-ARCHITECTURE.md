@@ -49,7 +49,7 @@ The integration path is:
 ```text
 Derby statement and result-set execution
     -> MVCC conglomerate and scan/controller bridge
-    -> delosdb-storage-api
+    -> delosdb-derby-store-api
     -> MvccInheritedTable
     -> PageBackedMvccTable and page-volume stores
 ```

@@ -63,14 +63,16 @@ active production imports:      zero
 legacyRetained source count:    13 page-volume sources plus the archived MVCC oracle
 ```
 
-The repository now has 21 current Gradle subprojects. The frozen final arithmetic remains:
+At the Stage 7.2 checkpoint, the repository had 21 Gradle subprojects:
 
 ```text
-21 current modules
+21 Stage 7.2 modules
 + 1 delosdb-search-lucene
-- 1 remaining transitional module (delosdb-storage-api)
+- 1 then-remaining transitional module (delosdb-storage-api)
 = 21 final modules
 ```
+
+Stage 7.3 subsequently retires storage-api and leaves 20 current modules before the Lucene addition.
 
 ## Permanent evidence
 

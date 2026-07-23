@@ -132,7 +132,7 @@ module org.apache.derby.engine
     // SQL types resolve engine row-location adapters through a narrow service.
     uses org.apache.derby.iapi.types.RowLocationServices;
 
-    // Patched storage-api and bridge classes also use ServiceLoader.
+    // Patched store API and MVCC provider classes also use ServiceLoader.
     uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;
     uses org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
     uses org.apache.derby.iapi.store.types.StoreRowLocationFactory;
@@ -241,7 +241,7 @@ module org.apache.derby.engine
         org.apache.derby.server,
         org.apache.derby.tests;
 
-    // MODULE3 keeps storage-api classes patched into org.apache.derby.engine
+    // Stage 7.3 keeps store API classes patched into org.apache.derby.engine
     // at runtime. Export the engine-facing store type contracts to Derby tests.
     exports org.apache.derby.iapi.store.types to
         org.apache.derby.tests;

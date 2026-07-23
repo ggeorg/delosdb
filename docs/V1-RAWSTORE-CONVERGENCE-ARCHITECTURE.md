@@ -326,8 +326,9 @@ exact package and class names
 4. Extend that format to updates, deletes, chains, indexes, overflow, savepoints, and vacuum.
 5. Remove the independent MVCC persistence system only after parity and recovery gates pass.
 6. Absorb the bridge and obsolete storage modules after their responsibilities have moved.
-7. Reach the frozen 21-subproject target: add `delosdb-search-lucene`; retire
-   `delosdb-storage-api`; `delosdb-storage-bridge` was removed in Stage 7.1 and `delosdb-storage-io` in Stage 7.2.
+7. Complete storage-module convergence: Stage 7.1 removed the bridge, Stage 7.2 removed
+   storage-io, and Stage 7.3 removed storage-api. Add `delosdb-search-lucene` to reach the frozen
+   21-subproject target.
 8. Modernize shared JDK 25 file and memory storage.
 9. Replace legacy Lucene with a neutral optional provider over transactional RawStore journals.
 10. Capture a new v1 baseline only after the converged architecture is complete.

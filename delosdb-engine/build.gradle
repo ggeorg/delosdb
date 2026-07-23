@@ -57,7 +57,6 @@ dependencies {
     implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
     compileOnly project(':delosdb-osgi-stub')
 
-    enginePatch project(':delosdb-storage-api')
     enginePatch project(':delosdb-derby-store-api')
 
     // Runtime-only Derby compatibility payloads. These are copied into the
@@ -231,7 +230,6 @@ tasks.named('jar', Jar) {
 // Derby runtime resources.
 tasks.register('derbyJar', Jar) {
     dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog'),
-            ':delosdb-storage-api:compileStorageApi',
             ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-storage-derby:processResources',

@@ -10,15 +10,14 @@ The current modules remain until their responsibilities have moved and replaceme
 
 The neutral boot and transaction-lifecycle seams live in `delosdb-derby-store-api`.
 `delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
-bracketing. Stage 7.1 moved the valid provider/adaptation implementation directly into
-`delosdb-storage-mvcc` and removed `delosdb-storage-bridge`. Stage 7.2 moved the retained-only
-Delos-native page-volume sources into the same module's `legacyRetained` source set and removed
-`delosdb-storage-io`.
+bracketing. Stage 7.1 moved the provider implementation into `delosdb-storage-mvcc` and removed the bridge.
+Stage 7.2 moved retained-only page-volume support into `legacyRetained` and removed storage-io.
+Stage 7.3 moves 101 shared store/type contracts into `delosdb-derby-store-api`, deletes the unused
+parallel facade, and removes storage-api.
 
 Stage 2.3 adds a machine-readable final target and the permanent
 `delosV1ModuleArchitectureStaticAnalysis` gate. The gate enforces current provider isolation while
-remaining valid after the bridge and storage-I/O retirements, while storage-api is retired and
-`delosdb-search-lucene` is added.
+remaining valid after all three storage-module retirements and while `delosdb-search-lucene` is added.
 
 ## Architectural rules
 
@@ -70,17 +69,12 @@ Add:
 delosdb-search-lucene
 ```
 
-Already retired after absorption or quarantine convergence:
-
-```text
-delosdb-storage-bridge
-delosdb-storage-io
-```
-
-Retire later only after its remaining responsibilities move:
+Retired after responsibility absorption or quarantine convergence:
 
 ```text
 delosdb-storage-api
+delosdb-storage-bridge
+delosdb-storage-io
 ```
 
 ## Dependency direction
@@ -279,8 +273,9 @@ Removed in Stage 7.2 after its 13 retained-only page/volume sources moved into t
 
 ### `delosdb-storage-api`
 
-Removed after its valid contracts move to `delosdb-derby-store-api` and `delosdb-spi`, and its
-parallel store/commit abstractions are deleted.
+Removed in Stage 7.3 after 101 shared contracts moved to `delosdb-derby-store-api`. Twenty-seven
+unused parallel facade/provider-factory contracts and six unused Derby facade implementations were
+deleted; neutral external-index vocabulary remains in `delosdb-spi`.
 
 ## Migration order
 
@@ -289,9 +284,9 @@ parallel store/commit abstractions are deleted.
 2. neutral provider seams
 3. complete RawStore MVCC vertical slice
 4. absorb and remove bridge (complete)
-5. converge remaining MVCC persistence
-6. absorb shared storage API and I/O implementation work
-7. modernize Lucene
+5. quarantine retained-only page-volume support and remove storage-io (complete)
+6. absorb shared store/type contracts and remove storage-api (complete)
+7. add the isolated Lucene provider module
 8. enforce final module and runtime-artifact gates
 ```
 
