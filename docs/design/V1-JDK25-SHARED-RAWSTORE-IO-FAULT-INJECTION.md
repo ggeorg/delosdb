@@ -177,3 +177,9 @@ mapped files or native/off-heap pages
 Those require separate design and proof. Stage 8.4 now implements the heap-backed `MemorySegment`
 page-buffer proof while retaining this fault/replay lane as a standing regression gate. Native and
 mapped ownership remain deferred to later stages.
+
+## Stage 8.5 compatibility
+
+The bounded native mirror remains inside the existing Stage 8.3 before/after page-read, page-write,
+force, and channel-reopen boundaries. Fault occurrence and replay semantics do not depend on whether
+the physical transfer selected the heap alias or a native mirror.

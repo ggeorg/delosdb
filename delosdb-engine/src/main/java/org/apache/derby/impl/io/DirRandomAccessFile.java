@@ -137,7 +137,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
     }
 
 
-    /** Read a complete range from a heap-backed JDK 25 memory segment. */
+    /** Read a complete range from a heap or native JDK 25 memory segment. */
     @Override
     public void readFullyAt(long position,
                             MemorySegment buffer,
@@ -145,7 +145,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                             long length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer target = heapSegmentView(buffer, offset, length, true);
+        ByteBuffer target = segmentView(buffer, offset, length, true);
         long readPosition = position;
         while (target.hasRemaining())
         {
@@ -164,7 +164,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
         }
     }
 
-    /** Write a complete range from a heap-backed JDK 25 memory segment. */
+    /** Write a complete range from a heap or native JDK 25 memory segment. */
     @Override
     public void writeAt(long position,
                         MemorySegment buffer,
@@ -172,7 +172,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                         long length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer source = heapSegmentView(buffer, offset, length, false);
+        ByteBuffer source = segmentView(buffer, offset, length, false);
         long writePosition = position;
         try
         {
@@ -209,7 +209,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
     }
 
 
-    private static ByteBuffer heapSegmentView(
+    private static ByteBuffer segmentView(
             MemorySegment buffer,
             long offset,
             long length,
@@ -218,11 +218,6 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
         if (buffer == null)
         {
             throw new NullPointerException("buffer");
-        }
-        if (buffer.isNative())
-        {
-            throw new IllegalArgumentException(
-                    "Stage 8.4 accepts heap-backed memory segments only");
         }
         if (writable && buffer.isReadOnly())
         {

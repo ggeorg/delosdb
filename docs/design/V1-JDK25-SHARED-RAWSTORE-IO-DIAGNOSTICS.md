@@ -183,3 +183,10 @@ Stage 8.3 adds deterministic database-scoped fault injection and replay over thi
 Stage 8.4 routes the same counted page operations through heap-backed `MemorySegment` aliases. The
 diagnostics schema and success/failure accounting do not change: completed bytes are still counted
 exactly once after the same physical transfer, and heap/MVCC observations remain identical.
+
+## Stage 8.5 schema version 2
+
+Stage 8.5 advances `DelosRawStoreIoSnapshot` to schema version 2. It adds the database native-memory
+limit, current/peak bytes and buffers, allocation/release/fallback/release-failure counts, native page
+read/write operations and bytes, and terminal unreleased-buffer evidence. Native operation counts are
+subsets of the unchanged total physical page counters.

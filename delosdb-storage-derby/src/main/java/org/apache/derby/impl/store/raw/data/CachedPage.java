@@ -380,7 +380,15 @@ public abstract class CachedPage extends BasePage implements Cacheable
 		if (this.pageData != null) 
         {
 			realPage.alreadyReadPage = true;
-            realPage.installPageBuffer(this.pageData);
+            if (this.heapPageBuffer != null)
+            {
+                realPage.adoptPageBuffer(this.heapPageBuffer);
+                this.heapPageBuffer = null;
+            }
+            else
+            {
+                realPage.installPageBuffer(this.pageData);
+            }
 		}
 
         // RESOLVE (12/15/06) - the following code is commented out, but
@@ -644,6 +652,7 @@ public abstract class CachedPage extends BasePage implements Cacheable
 	public void clearIdentity() 
     {
 		alreadyReadPage = false;
+        releasePageBuffer();
 		super.clearIdentity();
 	}
 
@@ -867,15 +876,16 @@ public abstract class CachedPage extends BasePage implements Cacheable
             // Give a chance for garbage collection to free
             // the old array before the new array is allocated.
             // Just in case memory is low.
+            releasePageBuffer();
             pageData = null;
-            heapPageBuffer = null;
             installPageBuffer(new byte[pageSize]);
 		}
         else
         {
             if (heapPageBuffer == null || !heapPageBuffer.wraps(pageData))
             {
-                heapPageBuffer = DelosHeapPageBuffer.wrap(pageData);
+                heapPageBuffer = DelosHeapPageBuffer.wrap(
+                        pageData, dataFactory.rawStoreNativeMemory());
             }
 
             // Always call usePageBuffer(), even when we reuse the buffer, so that
@@ -886,12 +896,36 @@ public abstract class CachedPage extends BasePage implements Cacheable
 
     private void installPageBuffer(byte[] buffer)
     {
-        heapPageBuffer = DelosHeapPageBuffer.wrap(buffer);
+        releasePageBuffer();
+        heapPageBuffer = DelosHeapPageBuffer.wrap(
+                buffer, dataFactory.rawStoreNativeMemory());
         usePageBuffer(buffer);
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(pageData == buffer,
                     "CachedPage subclass did not retain the installed page array");
+        }
+    }
+
+    private void adoptPageBuffer(DelosHeapPageBuffer buffer)
+    {
+        releasePageBuffer();
+        heapPageBuffer = buffer;
+        usePageBuffer(buffer.array());
+        if (SanityManager.DEBUG)
+        {
+            SanityManager.ASSERT(pageData == buffer.array(),
+                    "CachedPage subtype did not retain the adopted page array");
+        }
+    }
+
+    private void releasePageBuffer()
+    {
+        DelosHeapPageBuffer buffer = heapPageBuffer;
+        heapPageBuffer = null;
+        if (buffer != null)
+        {
+            buffer.close();
         }
     }
 

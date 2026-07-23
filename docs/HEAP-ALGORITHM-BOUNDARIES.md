@@ -79,6 +79,11 @@ RawStore remains the Derby backup/restore compatibility authority.
   It aliases the existing byte array and does not alter Derby heap format code. Other MemorySegment or
   VarHandle use still requires a separate compatibility plan.
 
+* Stage 8.5 permits one additional DelosDB-owned native-memory allocator,
+  `DelosRawStoreNativeMemory`, beside `DelosHeapPageBuffer`. It may create only bounded physical-I/O
+  mirrors. The inherited `byte[]` remains the page-format and cache authority; other foreign-memory
+  use in inherited RawStore code remains a compatibility failure.
+
 ## Next allowed work
 
 This audit permits only bounded follow-up slices:
@@ -90,3 +95,4 @@ This audit permits only bounded follow-up slices:
 
 It does not permit heap page-format rewrite, raw-log rewrite, allocation algorithm replacement, or
 shared page/cache/allocation service extraction.
+

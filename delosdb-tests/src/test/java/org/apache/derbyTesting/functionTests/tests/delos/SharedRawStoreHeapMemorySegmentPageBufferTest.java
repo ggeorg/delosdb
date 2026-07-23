@@ -14,7 +14,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -193,17 +192,6 @@ public final class SharedRawStoreHeapMemorySegmentPageBufferTest
                 fail("read-only destination segments must be rejected");
             } catch (IllegalArgumentException expected) {
                 assertTrue(expected.getMessage().contains("read-only"));
-            }
-
-            MemorySegment nativeSegment = MemorySegment.ofBuffer(
-                    ByteBuffer.allocateDirect(TRANSFER_LENGTH));
-            assertTrue(nativeSegment.isNative());
-            try {
-                randomAccess.writeAt(PAGE_POSITION, nativeSegment,
-                        0L, TRANSFER_LENGTH);
-                fail("Stage 8.4 must reject native segment ownership");
-            } catch (IllegalArgumentException expected) {
-                assertTrue(expected.getMessage().contains("heap-backed"));
             }
 
             try {

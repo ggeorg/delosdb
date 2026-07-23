@@ -58,6 +58,8 @@ def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/dem
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+def rawStoreNativeMemoryTestSupportSource = file(
+        'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java')
 def rawStoreIoFaultInjectionTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-io-fault-injection-test-support')
 def rawStoreIoFaultInjectionTestSupportClassDir = layout.buildDirectory.dir(
@@ -244,6 +246,7 @@ sourceSets {
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -256,12 +259,15 @@ artifacts {
     }
 }
 
-// The Stage 8.3 bridge must share org.apache.derby.engine's runtime package in
-// order to reach the package-private destructive test seam. Compile only that
-// source as a test patch of the engine module. The resulting classes are test
+// The Stage 8.3 and Stage 8.5 bridges must share org.apache.derby.engine's runtime package in
+// order to reach their package-private proof seams. Compile only those
+// sources as a test patch of the engine module. The resulting classes are test
 // runtime inputs only and are never packaged into a production artifact.
 tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(rawStoreNativeMemoryTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     into rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
@@ -269,7 +275,7 @@ tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync) {
 
 tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile) {
     group = 'build'
-    description = 'Compiles the package-private Stage 8.3 test bridge as an org.apache.derby.engine test patch.'
+    description = 'Compiles the package-private Stage 8.3 and Stage 8.5 test bridges as an org.apache.derby.engine test patch.'
     dependsOn tasks.named('prepareRawStoreIoFaultInjectionTestSupportSource'), ':jars'
 
     source rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
@@ -766,6 +772,15 @@ registerDelosFocusedTest(
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosSharedRawStoreHeapMemorySegmentPageBufferTest')
+}
+
+registerDelosFocusedTest(
+        'runDelosSharedRawStoreNativeMemoryPageBufferTest',
+        'Runs Stage 8.5 bounded database-scoped native page-I/O ownership, fallback, isolation, and shutdown proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.class'])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedRawStoreNativeMemoryPageBufferTest')
 }
 
 

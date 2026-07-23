@@ -289,8 +289,9 @@ class RAFContainer extends FileContainer
             }
 			synchronized (this) {
                 fileData.readFullyAt(
-                        pageOffset, pageBuffer.segment(), 0L, pageSize);
+                        pageOffset, pageBuffer.readSegment(), 0L, pageSize);
 			}
+            pageBuffer.completeRead();
             if (context != null)
             {
                 injector.hit(
@@ -298,6 +299,10 @@ class RAFContainer extends FileContainer
                         context);
             }
             ioMetrics.pageReadSucceeded(pageSize);
+            if (pageBuffer.nativeIo())
+            {
+                ioMetrics.nativePageReadSucceeded(pageSize);
+            }
         }
         catch (IOException ioe)
         {
@@ -440,7 +445,7 @@ class RAFContainer extends FileContainer
                         context);
             }
             fileData.writeAt(
-                    pageOffset, pageBuffer.segment(), 0L, pageLength);
+                    pageOffset, pageBuffer.writeSegment(), 0L, pageLength);
             if (context != null)
             {
                 injector.hit(
@@ -448,6 +453,10 @@ class RAFContainer extends FileContainer
                         context);
             }
             ioMetrics.pageWriteSucceeded(pageSize);
+            if (pageBuffer.nativeIo())
+            {
+                ioMetrics.nativePageWriteSucceeded(pageSize);
+            }
         }
         catch (IOException ioe)
         {

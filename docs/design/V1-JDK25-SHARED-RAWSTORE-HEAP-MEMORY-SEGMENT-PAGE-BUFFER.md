@@ -1,6 +1,6 @@
 # DelosDB v1 JDK 25 shared RawStore heap MemorySegment page buffer
 
-Status: Stage 8.4 implemented; user verification pending.
+Status: Stage 8.4 verified.
 
 ## Purpose
 
@@ -84,21 +84,20 @@ heap and MVCC transaction semantics
 
 ## Safety boundary
 
-Stage 8.4 accepts heap-backed segments only.
-
-The shared contract rejects:
+The Stage 8.4 default compatibility overload accepts heap-backed segments only. It continues to reject:
 
 ```text
-native segments
+native segments on storage implementations without an explicit override
 mapped segments
 read-only destination segments
 out-of-range slices
 transfers larger than ByteBuffer capacity
 ```
 
-Production Stage 8.4 code contains no `Arena`, native allocation, mapped region, or explicit segment
-lifetime. Native and mapped memory remain out of scope until Stage 8.5 and Stage 8.6 define database
-ownership, limits, shutdown, leak detection, recovery, and fallback behavior.
+The Stage 8.4 slice itself introduced no `Arena`, native allocation, mapped region, or explicit segment
+lifetime. Stage 8.5 now gives directory storage an explicit native-segment override backed by a bounded
+database-owned physical-I/O mirror. Mapped memory remains out of scope until Stage 8.6 defines its
+ownership and production decision.
 
 ## Executable proof
 
@@ -152,8 +151,9 @@ a second page cache or storage backend
 Lucene work
 ```
 
-## Next stage
+## Stage 8.5 follow-on
 
-Stage 8.5 may evaluate native/off-heap segment ownership only after this heap-backed proof is verified.
-That stage must define database-scoped ownership, hard limits, deterministic release, shutdown leak
-proofs, fallback behavior, and recovery interaction before native memory can enter a production path.
+Stage 8.5 preserves every Stage 8.4 heap-ownership invariant while permitting one bounded native
+physical-I/O mirror for directory storage. The stable heap segment remains the fallback and the
+`byte[]` remains authoritative. Native enablement, limits, copies, lease closure, and diagnostics are
+defined separately in `V1-JDK25-SHARED-RAWSTORE-NATIVE-MEMORY-PAGE-BUFFER.md`.

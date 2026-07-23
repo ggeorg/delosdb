@@ -78,3 +78,8 @@ codec replacement, native ownership, or mapped pages.
 ## Current position
 
 Default behavior remains unchanged. This audit does not replace any codec, does not change on-disk format, and does not create a shared heap/MVCC page codec. Future implementation work must start with proof paths and explicit compatibility gates.
+
+Stage 8.5 does not change the codec. A native segment may mirror the complete inherited page image only
+for a physical directory read or write. Heap-to-native copying occurs after encoding and before write;
+native-to-heap copying occurs after read and before decoding. No native buffer becomes a page-format
+authority.

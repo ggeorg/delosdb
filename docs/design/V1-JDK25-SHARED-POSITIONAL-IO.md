@@ -194,3 +194,10 @@ Stage 8.4 adds heap-backed `MemorySegment` overloads to this positional contract
 implementation performs complete `FileChannel` transfers through the segment view, while compatible
 storage wrappers delegate to the existing byte-array methods without copying. The page cache retains
 byte-array ownership; native and mapped segment ownership remain rejected.
+
+## Stage 8.5 follow-on
+
+Directory storage now explicitly advertises native positional-segment support and uses the same
+complete absolute `FileChannel` loops for heap and native segments. Other storage factories retain a
+default false capability. The inherited file pointer, force semantics, and closed-on-interrupt reopen
+protocol are unchanged.

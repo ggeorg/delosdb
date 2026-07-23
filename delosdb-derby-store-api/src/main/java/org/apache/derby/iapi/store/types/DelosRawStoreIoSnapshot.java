@@ -35,9 +35,25 @@ public record DelosRawStoreIoSnapshot(
         long peakInFlightPageIo,
         long currentOpenContainerHandles,
         long peakOpenContainerHandles,
-        long unclosedContainerHandlesAtShutdown) {
+        long unclosedContainerHandlesAtShutdown,
+        boolean nativeMemoryEnabled,
+        long nativeMemoryLimitBytes,
+        long currentNativeMemoryBytes,
+        long peakNativeMemoryBytes,
+        long nativeBufferAllocations,
+        long nativeBufferReleases,
+        long nativeBufferFallbacks,
+        long nativeBufferReleaseFailures,
+        long nativePageReadOperations,
+        long nativePageReadBytes,
+        long nativePageWriteOperations,
+        long nativePageWriteBytes,
+        long currentNativeBuffers,
+        long peakNativeBuffers,
+        long unclosedNativeBuffersAtShutdown,
+        long unreleasedNativeMemoryBytesAtShutdown) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
 
     public DelosRawStoreIoSnapshot {
         if (schemaVersion <= 0) {
@@ -62,7 +78,22 @@ public record DelosRawStoreIoSnapshot(
                 peakInFlightPageIo,
                 currentOpenContainerHandles,
                 peakOpenContainerHandles,
-                unclosedContainerHandlesAtShutdown
+                unclosedContainerHandlesAtShutdown,
+                nativeMemoryLimitBytes,
+                currentNativeMemoryBytes,
+                peakNativeMemoryBytes,
+                nativeBufferAllocations,
+                nativeBufferReleases,
+                nativeBufferFallbacks,
+                nativeBufferReleaseFailures,
+                nativePageReadOperations,
+                nativePageReadBytes,
+                nativePageWriteOperations,
+                nativePageWriteBytes,
+                currentNativeBuffers,
+                peakNativeBuffers,
+                unclosedNativeBuffersAtShutdown,
+                unreleasedNativeMemoryBytesAtShutdown
         };
         for (long value : values) {
             if (value < 0L) {
@@ -83,7 +114,40 @@ public record DelosRawStoreIoSnapshot(
             throw new IllegalArgumentException(
                     "channel reopen outcomes exceed recovery attempts");
         }
-        if (runtimeActive && unclosedContainerHandlesAtShutdown != 0L) {
+        if (currentNativeMemoryBytes > peakNativeMemoryBytes) {
+            throw new IllegalArgumentException(
+                    "current native memory exceeds its peak");
+        }
+        if (currentNativeMemoryBytes > nativeMemoryLimitBytes) {
+            throw new IllegalArgumentException(
+                    "current native memory exceeds its hard limit");
+        }
+        if (currentNativeBuffers > peakNativeBuffers) {
+            throw new IllegalArgumentException(
+                    "current native buffers exceed their peak");
+        }
+        if (nativeBufferReleases > nativeBufferAllocations) {
+            throw new IllegalArgumentException(
+                    "native buffer releases exceed allocations");
+        }
+        if (nativePageReadOperations > pageReadOperations
+                || nativePageReadBytes > pageReadBytes
+                || nativePageWriteOperations > pageWriteOperations
+                || nativePageWriteBytes > pageWriteBytes) {
+            throw new IllegalArgumentException(
+                    "native page I/O exceeds total page I/O");
+        }
+        if (!nativeMemoryEnabled && nativeMemoryLimitBytes != 0L) {
+            throw new IllegalArgumentException(
+                    "disabled native memory must have a zero hard limit");
+        }
+        if (nativeMemoryEnabled && nativeMemoryLimitBytes == 0L) {
+            throw new IllegalArgumentException(
+                    "enabled native memory must have a positive hard limit");
+        }
+        if (runtimeActive && (unclosedContainerHandlesAtShutdown != 0L
+                || unclosedNativeBuffersAtShutdown != 0L
+                || unreleasedNativeMemoryBytesAtShutdown != 0L)) {
             throw new IllegalArgumentException(
                     "an active runtime cannot report shutdown leaks");
         }
@@ -98,6 +162,22 @@ public record DelosRawStoreIoSnapshot(
                 0L,
                 0L,
                 0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                false,
                 0L,
                 0L,
                 0L,

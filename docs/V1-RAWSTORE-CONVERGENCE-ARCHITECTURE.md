@@ -494,3 +494,12 @@ CachedPage byte[]
 Stage 8.4 rejects native and mapped segments. It adds no arena, off-heap limit, mapped region, or new
 cache ownership. See
 `design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md`.
+
+## Stage 8.5 bounded native RawStore page-I/O mirrors
+
+Stage 8.5 adds an optional database-owned native segment only as a physical directory-I/O mirror.
+`CachedPage.pageData` remains the cache and page-format authority. The default limit is zero; directory
+storage explicitly opts into native positional segments, while memory and alternate storage remain
+heap-only. Each admitted page mirror has an explicit shared-arena lease, a hard database byte limit,
+heap fallback, exact diagnostics, and shutdown leak evidence. No mapped region or second page cache is
+introduced.

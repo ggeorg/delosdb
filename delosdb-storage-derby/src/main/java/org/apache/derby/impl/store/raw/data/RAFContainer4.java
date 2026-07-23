@@ -440,13 +440,17 @@ class RAFContainer4 extends RAFContainer {
                             context);
                 }
                 pageFile.readFullyAt(
-                        readOffset, pageBuffer.segment(), 0L, pageBuffer.length());
+                        readOffset, pageBuffer.readSegment(), 0L, pageBuffer.length());
+                pageBuffer.completeRead();
                 if (context != null) {
                     injector.hit(
                             DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_READ,
                             context);
                 }
                 ioMetrics.pageReadSucceeded(pageData.length);
+                if (pageBuffer.nativeIo()) {
+                    ioMetrics.nativePageReadSucceeded(pageData.length);
+                }
             }
             catch (IOException ioe) {
                 ioMetrics.pageReadFailed();
@@ -1070,7 +1074,7 @@ class RAFContainer4 extends RAFContainer {
                             context);
                 }
                 pageFile.writeAt(
-                        pageOffset, bufferToWrite.segment(),
+                        pageOffset, bufferToWrite.writeSegment(),
                         0L, bufferToWrite.length());
                 if (context != null) {
                     injector.hit(
@@ -1078,6 +1082,9 @@ class RAFContainer4 extends RAFContainer {
                             context);
                 }
                 ioMetrics.pageWriteSucceeded(dataToWrite.length);
+                if (bufferToWrite.nativeIo()) {
+                    ioMetrics.nativePageWriteSucceeded(dataToWrite.length);
+                }
             } catch (ClosedChannelException ioe) {
                 ioMetrics.pageWriteFailed();
                 synchronized(this) {

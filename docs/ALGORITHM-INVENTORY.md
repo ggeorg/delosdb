@@ -740,3 +740,8 @@ Rules:
   normal gates.
 * A passing differential harness does not authorize heap/MVCC shared-service
   extraction or provider authority changes.
+
+Stage 8.5 current anchor: directory RawStore I/O may use a database-bounded native segment mirror,
+while the inherited byte array remains authoritative. Admission, fallback, copies, lease closure, and
+current/peak/leak accounting are explicit. Memory databases remain heap-only and mapped regions remain
+a separate Stage 8.6 decision.
