@@ -140,6 +140,7 @@ public final class SharedRawStoreHeapMemorySegmentPageBufferTest
                 assertRows(connection,
                         "select id, value from segment_mvcc_t order by id",
                         "1|30", "2|40");
+                connection.commit();
             } finally {
                 shutdownNamedMemoryDatabase(database);
             }
