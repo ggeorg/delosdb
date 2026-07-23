@@ -3568,7 +3568,7 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
             def runtime = files[3].getText('UTF-8')
             def directory = files[4].getText('UTF-8')
             def diagnostics = files[5].getText('UTF-8')
-            def bridgeBuild = files[6].getText('UTF-8')
+            def mvccBuild = files[6].getText('UTF-8')
             def moduleInfo = files[7].getText('UTF-8')
 
             if (!boot.contains('RawStoreFactory rawStoreFactory')
@@ -3608,8 +3608,13 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
                     || diagnostics.contains('MvccRuntimeDiagnosticsDirectory')) {
                 failures << 'MVCC diagnostics must resolve the RawStore runtime through explicit database context'
             }
-            if (!bridgeBuild.contains("exclude 'org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java'")) {
-                failures << 'Retained MvccDatabaseRuntime must be excluded from the production bridge artifact'
+            if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
+                    || !mvccBuild.contains('legacyRetained {')
+                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
+                    || !mvccBuild.contains('verifyRetainedOracleQuarantine')
+                    || !mvccBuild.contains('retainedProductionSources = sourceSets.main.java.files.findAll')
+                    || !mvccBuild.contains("setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])")) {
+                failures << 'Production RawStore MVCC sources must remain isolated from the legacyRetained oracle source set'
             }
             if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
                 failures << 'Derby runtime module must not discover the retired external MVCC provider'
