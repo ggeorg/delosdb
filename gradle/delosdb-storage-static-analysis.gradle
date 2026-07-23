@@ -9422,6 +9422,25 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
             }
 
             [
+                    "exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'",
+                    "tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync)",
+                    "tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile)",
+                    "dependsOn tasks.named('prepareRawStoreIoFaultInjectionTestSupportSource'), ':jars'",
+                    "source rawStoreIoFaultInjectionTestSupportGeneratedSourceDir",
+                    "destinationDirectory.set(rawStoreIoFaultInjectionTestSupportClassDir)",
+                    "'--patch-module'",
+                    'org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportGeneratedSourceDir.get().asFile.absolutePath}',
+                    "dependsOn ':jars', tasks.named('compileRawStoreIoFaultInjectionTestSupport')",
+                    'org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportClassDir.get().asFile.absolutePath}',
+                    'rawStoreIoFaultInjectionTestSupportClassDir,',
+                    'never packaged into a production artifact'
+            ].each { token ->
+                if (!text.testBuild.contains(token)) {
+                    failures << 'Stage 8.3 JPMS test-patch wiring is missing: ' + token
+                }
+            }
+
+            [
                     'testControllerIsExactSeededBoundedAndDisabledByDefault',
                     'testReplayManifestIsStrictAndRoundTrips',
                     'testDatabaseSchedulesAreIsolatedAndNormalApplicationsStayDisabled',

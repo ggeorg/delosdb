@@ -91,6 +91,14 @@ only external bridge lives under `delosdb-tests/src/test/java` in the same packa
 seam. Normal applications cannot arm a schedule through a JDBC URL, SQL routine, JVM property,
 provider configuration, or service lookup.
 
+The bridge is excluded from the named `org.apache.derby.tests` source set. Gradle copies that one
+source into a generated test-only source root and compiles it with
+`--patch-module org.apache.derby.engine=...`. The ordinary Derby test module is then compiled with
+the generated bridge classes patched into `org.apache.derby.engine` and with the existing
+test-only implementation package export. At execution time the bridge output is present only on the
+focused test classpath and is never added to an engine, storage, or distribution jar. This avoids an
+illegal JPMS split package without widening the production module or using reflection.
+
 This is intentionally stricter than a normal product feature. Destructive failure controls remain
 research and verification infrastructure.
 

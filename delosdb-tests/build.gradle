@@ -6,6 +6,7 @@ import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.api.tasks.bundling.Jar
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Sync
 import java.net.ServerSocket
 
 version = rootProject.version
@@ -55,6 +56,12 @@ def legacyHarnessQuarantineExcludes = [
 
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
+def rawStoreIoFaultInjectionTestSupportSource = file(
+        'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+def rawStoreIoFaultInjectionTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
+        'generated/sources/raw-store-io-fault-injection-test-support')
+def rawStoreIoFaultInjectionTestSupportClassDir = layout.buildDirectory.dir(
+        'classes/test-support/org.apache.derby.engine')
 def generatedNativeAuthResourceDir = layout.buildDirectory.dir('generated/test-resources/native-auth')
 def generatedNativeAuthWorkDir = layout.buildDirectory.dir('generated/native-auth-test-db')
 
@@ -155,6 +162,7 @@ def testModulePath = {
 def testRuntimeClasspath = {
     rootProject.files(
             derbyTestsClassDir,
+            rawStoreIoFaultInjectionTestSupportClassDir,
             derbyRuntimeJars,
             generatedNativeAuthResourceDir,
             testSourceRoot,
@@ -232,6 +240,10 @@ sourceSets {
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
             exclude 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java'
+            // This bridge belongs to org.apache.derby.engine so it is compiled
+            // separately as a test-only patch instead of creating a split package
+            // inside the named org.apache.derby.tests module.
+            exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -244,8 +256,43 @@ artifacts {
     }
 }
 
+// The Stage 8.3 bridge must share org.apache.derby.engine's runtime package in
+// order to reach the package-private destructive test seam. Compile only that
+// source as a test patch of the engine module. The resulting classes are test
+// runtime inputs only and are never packaged into a production artifact.
+tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync) {
+    from(rawStoreIoFaultInjectionTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    into rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
+}
+
+tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile) {
+    group = 'build'
+    description = 'Compiles the package-private Stage 8.3 test bridge as an org.apache.derby.engine test patch.'
+    dependsOn tasks.named('prepareRawStoreIoFaultInjectionTestSupportSource'), ':jars'
+
+    source rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
+    destinationDirectory.set(rawStoreIoFaultInjectionTestSupportClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+    classpath = files()
+    modularity.inferModulePath = false
+
+    doFirst {
+        options.compilerArgs = [
+                '--module-path', testModulePath().asPath,
+                '--patch-module',
+                "org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportGeneratedSourceDir.get().asFile.absolutePath}",
+                '-proc:none'
+        ]
+    }
+}
+
 tasks.named('compileTestJava', JavaCompile) {
-    dependsOn ':jars'
+    dependsOn ':jars', tasks.named('compileRawStoreIoFaultInjectionTestSupport')
     destinationDirectory.set(derbyTestsClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -257,6 +304,8 @@ tasks.named('compileTestJava', JavaCompile) {
     doFirst {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
+                '--patch-module',
+                "org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportClassDir.get().asFile.absolutePath}",
                 '-proc:none'
         ] + inheritedStoreImplementationExports + securityTruthTestExports
     }
