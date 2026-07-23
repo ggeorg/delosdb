@@ -474,3 +474,23 @@ active database identity
 No production property, SQL procedure, connection attribute, service, or provider configuration can
 arm the seam. The test bridge exists only in test sources. See
 `design/V1-JDK25-SHARED-RAWSTORE-IO-FAULT-INJECTION.md`.
+
+
+## Stage 8.4 shared heap-backed MemorySegment page buffers
+
+`CachedPage` now retains a stable heap `MemorySegment` alias over its inherited byte-array page image.
+The array remains the page-cache owner and the page-format authority. `FileContainer` carries a
+compatibility bridge for alternate containers, while `RAFContainer` and `RAFContainer4` route ordinary
+page transfers through the segment-aware positional contract.
+
+```text
+CachedPage byte[]
+    -> DelosHeapPageBuffer / MemorySegment.ofArray
+    -> StorageRandomAccessFile segment positional API
+    -> directory FileChannel or virtual-memory array bridge
+    -> unchanged heap and RawStore-backed MVCC page format
+```
+
+Stage 8.4 rejects native and mapped segments. It adds no arena, off-heap limit, mapped region, or new
+cache ownership. See
+`design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md`.

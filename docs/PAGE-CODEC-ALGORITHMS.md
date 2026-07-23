@@ -59,7 +59,10 @@ PostgreSQL and InnoDB page-layout discipline are reference models for page heade
 
 H2 is a reference model for compact Java storage and inspector-friendly persistent structures.
 
-JDK 25 MemorySegment/VarHandle is a candidate for owned DelosDB page codec experiments only. It must not be introduced into inherited Derby heap/raw-store format code without a compatibility plan.
+JDK 25 MemorySegment/VarHandle remains a candidate for owned DelosDB page-codec work. Stage 8.4
+provides the compatibility plan for one narrower use: a heap-backed segment alias over the existing
+inherited RawStore byte array. It does not alter the heap/raw-store format or authorize VarHandle
+codec replacement, native ownership, or mapped pages.
 
 ## Known modernization candidates
 

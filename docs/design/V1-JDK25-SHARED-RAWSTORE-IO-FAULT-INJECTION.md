@@ -1,6 +1,6 @@
 # DelosDB v1 shared RawStore I/O fault injection and replay
 
-Status: Stage 8.3 implemented; user verification pending.
+Status: Stage 8.3 verified.
 
 ## Decision
 
@@ -174,5 +174,6 @@ MemorySegment ownership
 mapped files or native/off-heap pages
 ```
 
-Those require separate design and proof. Stage 8.4 may now begin the heap-backed `MemorySegment`
-page-buffer proof while retaining this fault/replay lane as a standing regression gate.
+Those require separate design and proof. Stage 8.4 now implements the heap-backed `MemorySegment`
+page-buffer proof while retaining this fault/replay lane as a standing regression gate. Native and
+mapped ownership remain deferred to later stages.

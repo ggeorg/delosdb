@@ -28,6 +28,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.FileChannel;
@@ -135,6 +136,65 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
         }
     }
 
+
+    /** Read a complete range from a heap-backed JDK 25 memory segment. */
+    @Override
+    public void readFullyAt(long position,
+                            MemorySegment buffer,
+                            long offset,
+                            long length) throws IOException
+    {
+        checkPosition(position);
+        ByteBuffer target = heapSegmentView(buffer, offset, length, true);
+        long readPosition = position;
+        while (target.hasRemaining())
+        {
+            int count = channel.read(target, readPosition);
+            if (count < 0)
+            {
+                throw new EOFException();
+            }
+            if (count == 0)
+            {
+                Thread.onSpinWait();
+                continue;
+            }
+            readPosition += count;
+            detectClosedByInterrupt();
+        }
+    }
+
+    /** Write a complete range from a heap-backed JDK 25 memory segment. */
+    @Override
+    public void writeAt(long position,
+                        MemorySegment buffer,
+                        long offset,
+                        long length) throws IOException
+    {
+        checkPosition(position);
+        ByteBuffer source = heapSegmentView(buffer, offset, length, false);
+        long writePosition = position;
+        try
+        {
+            while (source.hasRemaining())
+            {
+                int count = channel.write(source, writePosition);
+                if (count == 0)
+                {
+                    Thread.onSpinWait();
+                    continue;
+                }
+                writePosition += count;
+                detectClosedByInterrupt();
+            }
+        }
+        catch (NonWritableChannelException notWritable)
+        {
+            throw new IOException("Random-access file is read-only: " + name,
+                    notWritable);
+        }
+    }
+
     /** Force file contents and, when requested, file metadata. */
     @Override
     public void force(boolean metadata) throws IOException
@@ -148,6 +208,42 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
         force(true);
     }
 
+
+    private static ByteBuffer heapSegmentView(
+            MemorySegment buffer,
+            long offset,
+            long length,
+            boolean writable)
+    {
+        if (buffer == null)
+        {
+            throw new NullPointerException("buffer");
+        }
+        if (buffer.isNative())
+        {
+            throw new IllegalArgumentException(
+                    "Stage 8.4 accepts heap-backed memory segments only");
+        }
+        if (writable && buffer.isReadOnly())
+        {
+            throw new IllegalArgumentException(
+                    "Destination memory segment is read-only");
+        }
+        if (offset < 0L || length < 0L
+                || offset > buffer.byteSize() - length)
+        {
+            throw new IndexOutOfBoundsException(
+                    "offset=" + offset + ", length=" + length
+                            + ", buffer.byteSize=" + buffer.byteSize());
+        }
+        if (length > Integer.MAX_VALUE)
+        {
+            throw new IllegalArgumentException(
+                    "Memory-segment transfer exceeds ByteBuffer capacity: "
+                            + length);
+        }
+        return buffer.asSlice(offset, length).asByteBuffer();
+    }
 
     private void detectClosedByInterrupt() throws ClosedByInterruptException
     {

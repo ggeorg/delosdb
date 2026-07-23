@@ -759,6 +759,15 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosSharedRawStoreIoFaultInjectionTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest',
+        'Runs Stage 8.4 heap-backed MemorySegment page-buffer proofs for file, memory, heap, and MVCC RawStore paths.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.class'])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedRawStoreHeapMemorySegmentPageBufferTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

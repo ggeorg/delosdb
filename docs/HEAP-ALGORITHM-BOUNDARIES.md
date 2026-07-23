@@ -75,7 +75,9 @@ RawStore remains the Derby backup/restore compatibility authority.
 * PostgreSQL and InnoDB are recovery, pruning, and storage-lifecycle reference models only.
 * HerdDB is a Java-engine reference for checkpoint/page-cache lifecycle, not a heap replacement.
 * MapDB is a compact-codec reference for future DelosDB-owned page/metadata encodings, not a heap format input.
-* JDK 25 MemorySegment and VarHandle may be used in DelosDB-owned storage code, not in Derby heap format code until a compatibility plan exists.
+* Stage 8.4 permits one DelosDB-owned `DelosHeapPageBuffer` adapter in the inherited RawStore package.
+  It aliases the existing byte array and does not alter Derby heap format code. Other MemorySegment or
+  VarHandle use still requires a separate compatibility plan.
 
 ## Next allowed work
 

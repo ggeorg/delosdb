@@ -24,6 +24,9 @@ package org.apache.derby.io;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
+import java.util.Objects;
 
 /**
  * This interface abstracts an object that implements reading and writing on a random access
@@ -171,6 +174,51 @@ public interface StorageRandomAccessFile extends DataInput, DataOutput
     }
 
     /**
+     * Reads exactly {@code length} bytes into a heap-backed memory segment without changing the
+     * file pointer. Stage 8.4 deliberately accepts only heap-backed segments so page-cache
+     * ownership remains with the inherited byte array. Native and mapped segment ownership is a
+     * later storage decision.
+     *
+     * @param position absolute byte position at which reading starts
+     * @param buffer writable heap-backed destination segment
+     * @param offset first destination byte within the segment
+     * @param length number of bytes to read
+     * @exception IOException if the position is negative, EOF is reached, or an I/O error occurs
+     */
+    default void readFullyAt(long position,
+                             MemorySegment buffer,
+                             long offset,
+                             long length) throws IOException {
+        checkPosition(position);
+        ByteBuffer target = heapSegmentView(buffer, offset, length, true);
+        readFullyAt(position, target.array(),
+                Math.addExact(target.arrayOffset(), target.position()),
+                target.remaining());
+    }
+
+    /**
+     * Writes exactly {@code length} bytes from a heap-backed memory segment without changing the
+     * file pointer. Stage 8.4 deliberately accepts only heap-backed segments so page-cache
+     * ownership remains with the inherited byte array.
+     *
+     * @param position absolute byte position at which writing starts
+     * @param buffer heap-backed source segment
+     * @param offset first source byte within the segment
+     * @param length number of bytes to write
+     * @exception IOException if the position is negative or an I/O error occurs
+     */
+    default void writeAt(long position,
+                         MemorySegment buffer,
+                         long offset,
+                         long length) throws IOException {
+        checkPosition(position);
+        ByteBuffer source = heapSegmentView(buffer, offset, length, false);
+        writeAt(position, source.array(),
+                Math.addExact(source.arrayOffset(), source.position()),
+                source.remaining());
+    }
+
+    /**
      * Reads up to {@code len} bytes of data from this file into an array of bytes.
      *
      * @param b the buffer into which the data is read
@@ -196,6 +244,38 @@ public interface StorageRandomAccessFile extends DataInput, DataOutput
                     "offset=" + offset + ", length=" + length
                             + ", buffer.length=" + buffer.length);
         }
+    }
+
+    private static ByteBuffer heapSegmentView(
+            MemorySegment buffer,
+            long offset,
+            long length,
+            boolean writable) {
+        Objects.requireNonNull(buffer, "buffer");
+        if (buffer.isNative()) {
+            throw new IllegalArgumentException(
+                    "Stage 8.4 accepts heap-backed memory segments only");
+        }
+        if (writable && buffer.isReadOnly()) {
+            throw new IllegalArgumentException(
+                    "Destination memory segment is read-only");
+        }
+        if (offset < 0L || length < 0L
+                || offset > buffer.byteSize() - length) {
+            throw new IndexOutOfBoundsException(
+                    "offset=" + offset + ", length=" + length
+                            + ", buffer.byteSize=" + buffer.byteSize());
+        }
+        if (length > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Memory-segment transfer exceeds ByteBuffer capacity: " + length);
+        }
+        ByteBuffer view = buffer.asSlice(offset, length).asByteBuffer();
+        if (!view.hasArray()) {
+            throw new IllegalArgumentException(
+                    "Heap-backed memory segment did not expose its byte array");
+        }
+        return view;
     }
 
     private void restorePosition(long originalPosition, Throwable failure)

@@ -176,3 +176,10 @@ Lucene work
 ```
 
 Stage 8.3 adds deterministic database-scoped fault injection and replay over this observable shared boundary.
+
+
+## Stage 8.4 follow-on
+
+Stage 8.4 routes the same counted page operations through heap-backed `MemorySegment` aliases. The
+diagnostics schema and success/failure accounting do not change: completed bytes are still counted
+exactly once after the same physical transfer, and heap/MVCC observations remain identical.

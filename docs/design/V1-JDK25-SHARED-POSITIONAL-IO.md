@@ -186,3 +186,11 @@ per-operation event recording
 Stage 8.2 adds bounded shared I/O diagnostics and container-handle accounting at this boundary.
 Fault injection and memory-ownership changes remain later shared Stage 8 decisions inside the one
 inherited RawStore authority.
+
+
+## Stage 8.4 follow-on
+
+Stage 8.4 adds heap-backed `MemorySegment` overloads to this positional contract. The directory
+implementation performs complete `FileChannel` transfers through the segment view, while compatible
+storage wrappers delegate to the existing byte-array methods without copying. The page cache retains
+byte-array ownership; native and mapped segment ownership remain rejected.

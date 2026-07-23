@@ -283,6 +283,8 @@ class DelosDbStaticAnalysisSupport {
         def findings = []
         javaSources(repositoryRoot, sourceRoots).each { sourceFile ->
             def lines = sourceFile.readLines('UTF-8')
+            def approvedHeapSegmentAdapter =
+                    sourceFile.name == 'DelosHeapPageBuffer.java'
             lines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
                 def importedType = importTarget(line)
@@ -299,14 +301,16 @@ class DelosDbStaticAnalysisSupport {
                             || importedType.startsWith('jakarta.servlet.')) {
                         findings << finding(repositoryRoot, 'HEAP_SERVER_OR_DRDA_DEPENDENCY', sourceFile, lineNumber, line)
                     }
-                    if (importedType.startsWith('java.lang.foreign.')) {
+                    if (importedType.startsWith('java.lang.foreign.')
+                            && !approvedHeapSegmentAdapter) {
                         findings << finding(repositoryRoot, 'HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
                     }
                 }
                 if (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream')) {
                     findings << finding(repositoryRoot, 'HEAP_OBJECT_STREAM_SITE', sourceFile, lineNumber, line)
                 }
-                if (line.contains('java.lang.foreign.')) {
+                if (line.contains('java.lang.foreign.')
+                        && !approvedHeapSegmentAdapter) {
                     findings << finding(repositoryRoot, 'HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
                 }
             }
@@ -591,7 +595,7 @@ def delosHeapStdoutClassificationDecisions = [
 
 tasks.register('delosHeapCompatibilityStaticAnalysis') {
     group = 'verification'
-    description = 'Protects Derby-compatible heap/raw-store core from MVCC, quarantine, protocol, and foreign-memory drift.'
+    description = 'Protects Derby-compatible heap/raw-store core from MVCC, quarantine, protocol, and unapproved foreign-memory drift.'
 
     inputs.files(DelosDbStaticAnalysisSupport.javaSources(delosRepositoryRoot, delosHeapCompatibilityStaticSourceRoots))
     inputs.file(delosHeapStdoutClassificationFile).optional()
@@ -9508,6 +9512,235 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
     }
 }
 
+tasks.register('delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the Stage 8.4 heap-backed MemorySegment page-buffer proof and no-native-ownership boundary.'
+
+    def stage84Files = [
+            runtimeContract: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
+            directoryFile : file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            pageBuffer     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
+            cachedPage     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
+            fileContainer  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java'),
+            rafContainer   : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            rafContainer4  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            focusedTest    : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.java'),
+            testBuild      : file('delosdb-tests/build.gradle'),
+            design         : file('docs/design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md'),
+            roadmap        : file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            handoff        : file('.delosdb-v1/NEW-SESSION-README.md')
+    ]
+    inputs.files(stage84Files.values())
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/shared-rawstore-heap-memory-segment-page-buffer-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def text = stage84Files.collectEntries { key, sourceFile ->
+            if (!sourceFile.exists()) {
+                failures << 'Stage 8.4 file is missing: ' + sourceFile
+                [(key): '']
+            } else {
+                [(key): sourceFile.getText('UTF-8')]
+            }
+        }
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+        [
+                'import java.lang.foreign.MemorySegment;',
+                'default void readFullyAt(long position,',
+                'MemorySegment buffer,',
+                'default void writeAt(long position,',
+                'Stage 8.4 accepts heap-backed memory segments only',
+                'buffer.isNative()',
+                'buffer.isReadOnly()',
+                'buffer.asSlice(offset, length).asByteBuffer()',
+                'readFullyAt(position, target.array()',
+                'writeAt(position, source.array()'
+        ].each { token ->
+            if (!text.runtimeContract.contains(token)) {
+                failures << 'Shared segment positional contract is missing: ' + token
+            }
+        }
+
+        [
+                'public void readFullyAt(long position,',
+                'public void writeAt(long position,',
+                'MemorySegment buffer,',
+                'channel.read(target, readPosition)',
+                'channel.write(source, writePosition)',
+                'detectClosedByInterrupt()',
+                'Stage 8.4 accepts heap-backed memory segments only'
+        ].each { token ->
+            if (!text.directoryFile.contains(token)) {
+                failures << 'Directory segment I/O implementation is missing: ' + token
+            }
+        }
+
+        [
+                'final class DelosHeapPageBuffer',
+                'private final byte[] array;',
+                'private final MemorySegment segment;',
+                'MemorySegment.ofArray(array)',
+                'boolean wraps(byte[] candidate)',
+                'return array == candidate;'
+        ].each { token ->
+            if (!text.pageBuffer.contains(token)) {
+                failures << 'Stable heap page-buffer alias is missing: ' + token
+            }
+        }
+        [
+                'private DelosHeapPageBuffer heapPageBuffer;',
+                'installPageBuffer(new byte[pageSize])',
+                'heapPageBuffer.wraps(pageData)',
+                'realPage.installPageBuffer(this.pageData)',
+                'myContainer.readPage(',
+                'newIdentity.getPageNumber(), heapPageBuffer)',
+                'identity.getPageNumber(), heapPageBuffer, syncMe)'
+        ].each { token ->
+            if (!text.cachedPage.contains(token)) {
+                failures << 'CachedPage stable segment ownership is missing: ' + token
+            }
+        }
+        [
+                'protected void readPage(long pageNumber, DelosHeapPageBuffer pageBuffer)',
+                'readPage(pageNumber, pageBuffer.array())',
+                'DelosHeapPageBuffer pageBuffer,',
+                'writePage(pageNumber, pageBuffer.array(), syncPage)'
+        ].each { token ->
+            if (!text.fileContainer.contains(token)) {
+                failures << 'Alternate-container page-buffer bridge is missing: ' + token
+            }
+        }
+        [
+                'DelosHeapPageBuffer.wrap(pageData)',
+                'pageBuffer.segment()',
+                'readFullyAt(',
+                'writeAt(',
+                'writePageAt(pageNumber, pageOffset, bufferToWrite)'
+        ].each { token ->
+            if (!text.rafContainer.contains(token)) {
+                failures << 'Fallback RawStore segment page path is missing: ' + token
+            }
+        }
+        [
+                'DelosHeapPageBuffer.wrap(pageData)',
+                'pageBuffer.segment()',
+                'readFullyAt(',
+                'writeAt(',
+                'bufferToWrite.segment()'
+        ].each { token ->
+            if (!text.rafContainer4.contains(token)) {
+                failures << 'Concurrent RawStore segment page path is missing: ' + token
+            }
+        }
+
+        def productionSegmentFiles = [
+                text.runtimeContract,
+                text.directoryFile,
+                text.pageBuffer,
+                text.cachedPage,
+                text.fileContainer,
+                text.rafContainer,
+                text.rafContainer4
+        ].join('\n')
+        [
+                'Arena.of',
+                'Arena.global',
+                'allocateFrom(',
+                'allocate(',
+                'FileChannel.MapMode',
+                'MemorySegment.mapFile',
+                'MappedMemorySegment'
+        ].each { forbidden ->
+            if (productionSegmentFiles.contains(forbidden)) {
+                failures << 'Stage 8.4 must not own native or mapped memory: ' + forbidden
+            }
+        }
+
+        [
+                'testDirectoryStorageUsesHeapSegmentPositionalIo',
+                'testMemoryStorageUsesTheSameHeapSegmentContract',
+                'testFileDatabasePreservesHeapAndMvccStateAcrossReopen',
+                'testMemoryDatabaseKeepsInheritedHeapPageOwnership',
+                'MemorySegment.ofArray',
+                'source.isNative()',
+                'target.asReadOnly()',
+                'ByteBuffer.allocateDirect',
+                'using delos_mvcc',
+                'syscs_checkpoint_database',
+                'shutdownDatabase(database)'
+        ].each { token ->
+            if (!text.focusedTest.contains(token)) {
+                failures << 'Focused Stage 8.4 proof is missing: ' + token
+            }
+        }
+        if (!text.testBuild.contains("'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest'")) {
+            failures << 'Tests build must register the Stage 8.4 focused task'
+        }
+        if (!text.testBuild.contains("dependsOn tasks.named('runDelosSharedRawStoreHeapMemorySegmentPageBufferTest')")) {
+            failures << 'Normal delosdb-tests:check must include the Stage 8.4 focused task'
+        }
+
+        [
+                'heap-backed `MemorySegment`',
+                'byte array remains',
+                'no page-format change',
+                'Native and mapped memory remain out of scope',
+                'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest',
+                'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
+                'Stage 8.5'
+        ].each { token ->
+            if (!text.design.contains(token)) failures << 'Stage 8.4 design is missing: ' + token
+        }
+        [
+                'Stage 8.3 — deterministic database-scoped I/O fault injection and replay',
+                'VERIFIED',
+                'Stage 8.4 — heap-backed MemorySegment page-buffer proof',
+                'IMPLEMENTED / PENDING USER VERIFICATION'
+        ].each { token ->
+            if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.4 token: ' + token
+        }
+        if (!text.handoff.contains('Stage 8.4 heap-backed MemorySegment page-buffer proof:')) {
+            failures << 'Session handoff is missing the Stage 8.4 status line'
+        }
+
+        def foreignMemorySites = []
+        DelosDbStaticAnalysisSupport.javaSources(delosRepositoryRoot, delosHeapCompatibilityStaticSourceRoots).each { sourceFile ->
+            sourceFile.readLines('UTF-8').eachWithIndex { line, index ->
+                if (line.contains('java.lang.foreign.')) {
+                    foreignMemorySites << sourceFile.name + ':' + (index + 1)
+                }
+            }
+        }
+        if (foreignMemorySites.any { !it.startsWith('DelosHeapPageBuffer.java:') }) {
+            failures << 'Foreign-memory use escaped the approved RawStore adapter: ' + foreignMemorySites
+        }
+        if (!foreignMemorySites.any { it.startsWith('DelosHeapPageBuffer.java:') }) {
+            failures << 'Approved RawStore heap-segment adapter is not visible to the compatibility scan'
+        }
+
+        def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (!s0.contains("'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis'")) {
+            failures << 'S0 must include the Stage 8.4 heap MemorySegment page-buffer gate'
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-rawstore-heap-memory-segment-page-buffer-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared RawStore heap MemorySegment page-buffer static analysis')
+            writer.println('====================================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Shared RawStore heap MemorySegment page-buffer static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Shared RawStore heap MemorySegment page-buffer static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -9553,6 +9786,7 @@ tasks.register('s0CloseoutVerification') {
             'delosSharedStoragePositionalIoStaticAnalysis',
             'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
             'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
+            'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

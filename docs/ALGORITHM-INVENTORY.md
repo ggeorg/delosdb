@@ -442,11 +442,14 @@ Current owner: DelosDB storage I/O module.
 
 Classification: `JDK25_MODERNIZATION_CANDIDATE`, `DELOSDB_OWNED_ALGORITHM`.
 
-Current anchor: `DelosPage` uses `MemorySegment` for owned page images.
+Current anchor: Stage 8.4 gives inherited RawStore cached pages a stable heap-backed
+`MemorySegment` alias while preserving the byte-array page owner and on-disk format. The older
+`DelosPage` use remains only in the quarantined retained oracle.
 
 Algorithmic goal:
 
-* Use JDK 25 memory APIs in owned DelosDB page codecs and I/O, not in Derby heap format code until a compatibility plan exists.
+* Prove JDK 25 memory APIs first through heap aliases and unchanged formats.
+* Require explicit database ownership and limits before native or mapped memory is allowed.
 
 ### Raw log boundary
 
