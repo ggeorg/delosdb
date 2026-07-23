@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTED / PENDING USER VERIFICATION
+VERIFIED
 ```
 
 ## Decision
@@ -15,7 +15,7 @@ This is a production cut, not another proof retargeting:
 
 ```text
 factory branch removed
-retained bridge classes removed from production compilation
+retained Phase 8 classes excluded from production compilation
 external provider service removed
 retained MVCC and page-volume jars removed from runtime classpaths
 normal retained test graph removed from check and S0
@@ -28,21 +28,20 @@ RawStore SQL integration becomes the normal lane
 property is ignored. A missing RawStore descriptor fails closed; no retained controller is created.
 
 `MvccConglomerate` contains only RawStore controller/scan/drop/vacuum paths. The production
-`delosdb-storage-bridge` source set excludes the retained runtime, retained controllers, retained
-conglomerate state, retained lifecycle files/actions, path diagnostics directory, and retained access
-transaction registry.
+`delosdb-storage-mvcc` main source set contains only the RawStore provider implementation. The retained
+Phase 8 runtime, controllers, formats, and page-volume code compile only in `legacyRetained`.
 
 ## Artifact boundary
 
 The normal runtime artifact list contains `derby.jar`, where the neutral
-`DerbyMvccAccessMethodProvider` service is packaged. It does not contain
-`delosdb-storage-mvcc.jar` or `delosdb-storage-io.jar`. The same exclusion applies to the
-class-directory `sysinfo` runtime and the standalone JMH runtime.
+`DerbyMvccAccessMethodProvider` service is packaged. `delosdb-storage-mvcc.jar` is assembled and
+verified as the production provider/patch artifact but is not placed beside `derby.jar` on the current
+runtime classpath. `delosdb-storage-io.jar` remains absent.
 
 The retained source remains temporarily as an explicit historical oracle, but:
 
 ```text
-root jars does not assemble delosdb-storage-mvcc.jar or delosdb-storage-io.jar
+root jars assembles the production delosdb-storage-mvcc.jar patch artifact but not delosdb-storage-io.jar
 normal module check does not compile the retained implementation
 normal SQL test compilation excludes the page-volume recovery differential
 its DelosStorageProviderFactory service resource is excluded
@@ -93,7 +92,7 @@ step before such a database can run on the final format.
 
 ## Permanent gate
 
-`delosMvccRetainedRuntimeRetirementStaticAnalysis` checks the factory, active bridge source set,
+`delosMvccRetainedRuntimeRetirementStaticAnalysis` checks the factory, active MVCC source sets,
 module-info, runtime artifact model, class-directory runtime, standalone JMH runtime, optional-tools
 dependencies, ServiceLoader boundary, quarantined provider resource, normal and legacy verification
 graphs, RawStore SQL integration lane, and this design/roadmap record.
@@ -104,9 +103,7 @@ This slice does not yet:
 
 ```text
 delete every archived Phase 8 source and test file
-remove the temporary delosdb-storage-mvcc Gradle project
 perform retained-format migration
-begin Stage 6 memory completion
 retire final transitional modules
 start JDK 25 I/O modernization
 begin Lucene work

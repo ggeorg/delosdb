@@ -176,7 +176,6 @@ Full storage-module verification:
 ./gradlew \
   :delosdb-storage-api:check \
   :delosdb-storage-derby:check \
-  :delosdb-storage-bridge:check \
   :delosdb-storage-mvcc:check
 ```
 
@@ -208,8 +207,7 @@ Runtime jars are written to `build/libs/`.
 | `delosdb-server` | Derby-compatible DRDA server |
 | `delosdb-storage-derby` | inherited heap and raw-store implementation |
 | `delosdb-storage-api` | provider-neutral storage contracts and diagnostics |
-| `delosdb-storage-bridge` | Derby access-method integration for DelosDB storage |
-| `delosdb-storage-mvcc` | page-backed MVCC engine |
+| `delosdb-storage-mvcc` | RawStore-backed MVCC access method and Derby provider integration |
 | `delosdb-tools` | command-line and administrative tools |
 | `delosdb-tests` | inherited compatibility and DelosDB integration tests |
 | `benchmarks/jmh` | opt-in public-JDBC and storage benchmarks |

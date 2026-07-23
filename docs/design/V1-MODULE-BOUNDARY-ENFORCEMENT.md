@@ -2,17 +2,18 @@
 
 ## Status
 
-Stage 2.3 is implemented. This milestone freezes the final 21-subproject destination and adds a
-migration-aware permanent gate. It does not remove a module or move table data.
+Stage 2.3 froze the final target. Stage 7.1 has now removed the bridge after moving its valid
+provider responsibilities into `delosdb-storage-mvcc`.
 
 ## Final target
 
 The final graph contains 21 Gradle subprojects:
 
 ```text
-current subprojects: 23
+current subprojects after Stage 7.1: 22
 required new module: delosdb-search-lucene
-required retired modules: delosdb-storage-api, delosdb-storage-io, delosdb-storage-bridge
+remaining retirement targets: delosdb-storage-api, delosdb-storage-io
+already retired: delosdb-storage-bridge
 final subprojects: 21
 ```
 
@@ -68,25 +69,16 @@ verifyNoLegacyLucene
 verifyRetiredStorageModules
 ```
 
-## Transitional provider registration
+## Production provider registration after Stage 7.1
 
-`delosdb-storage-bridge` remains present during the RawStore vertical-slice work. While it remains,
-the gate requires exactly one `ExternalAccessMethodProvider` implementation and service entry in that
-module.
+`delosdb-storage-bridge` is absent. `delosdb-storage-mvcc` owns exactly one
+`ExternalAccessMethodProvider` implementation and service entry.
 
-The provider is still patched into `derby.jar` for the current runtime artifact model. This is a
-tracked migration condition, not the final module architecture. The engine has no Gradle dependency
-on the bridge or MVCC module and performs discovery through the neutral store API.
-
-After bridge absorption, the same gate changes its expectation automatically:
-
-```text
-delosdb-storage-bridge absent
-delosdb-storage-mvcc publishes ExternalAccessMethodProvider directly
-```
-
-Stage 7 must then remove the patched engine provider declaration and make MVCC a separate named
-provider module.
+The engine consumes `delosdb-storage-mvcc.jar` only through the build-time
+`derbyRuntimePatchElements` configuration. The provider implementation is incorporated into
+`derby.jar` for the current compatibility runtime and the provider jar is not simultaneously placed
+on the runtime classpath. This preserves neutral ServiceLoader discovery without a production compile
+edge or split-package runtime duplication.
 
 ## Final dependency direction
 
@@ -149,16 +141,13 @@ delosdb-storage-derby.jar
 
 ## Scope boundary
 
-This milestone does not:
+Stage 7.1 does not:
 
 ```text
-remove storage-api, storage-io, or storage-bridge
+remove storage-api or storage-io
 add delosdb-search-lucene
-move bridge classes into storage-mvcc
-change SQL routing
-create RawStore MVCC containers
-change transaction behavior
-remove the Phase 8 persistence implementation
+change SQL routing or table formats
+change transaction, recovery, locking, vacuum, or maintenance semantics
+delete the quarantined Phase 8 differential oracle
+place both derby.jar and the MVCC patch jar on the runtime classpath
 ```
-
-The next milestone is the complete RawStore-backed MVCC vertical slice.

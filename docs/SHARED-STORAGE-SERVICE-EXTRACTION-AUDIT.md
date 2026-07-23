@@ -154,7 +154,7 @@ MVCC proof:
 
 ```text
 delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java
-delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
 ```
 
 This concern already has a shared diagnostic/reporting boundary. Phase K added

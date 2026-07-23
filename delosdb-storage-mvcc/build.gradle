@@ -8,10 +8,14 @@ import org.gradle.api.tasks.testing.Test
 version = rootProject.version
 group = rootProject.group
 
-// Quarantined Phase 8 retained-store oracle. This module is assembled only for
-// explicit legacyRetainedCheck use; it is not a DelosDB runtime provider and is
-// absent from all normal runtime/test classpaths.
+// Production RawStore-backed MVCC access method. Stage 7 absorbs the former
+// storage-bridge implementation into this provider artifact. The Phase 8
+// retained-store oracle remains source-archived under io.github.* and is
+// compiled only by the explicit legacyRetained source set.
+def sourceRoot = file('src/main/java')
+def resourceRoot = file('src/main/resources')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
+def legacyClassDir = layout.buildDirectory.dir('classes/legacy-retained')
 def testClassDir = layout.buildDirectory.dir('classes/test')
 
 java {
@@ -19,34 +23,67 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-dependencies {
-    implementation project(':delosdb-commons')
-    implementation project(':delosdb-runtime-api')
-    api project(':delosdb-storage-api')
-    api project(':delosdb-storage-io')
-    testImplementation project(':delosdb-storage-io')
-    testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
+configurations {
+    derbyRuntimePatchElements {
+        canBeConsumed = true
+        canBeResolved = false
+        transitive = false
+    }
 }
 
 sourceSets {
     main {
         java {
-            exclude 'io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java'
+            srcDir sourceRoot
+            include 'org/apache/derby/impl/store/access/mvcc/**/*.java'
             destinationDirectory.set(mainClassDir)
         }
         resources {
-            exclude 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
+            // Replace the Java plugin default with one explicit root. Adding the
+            // same src/main/resources directory again makes processResources
+            // see each service descriptor twice.
+            setSrcDirs([resourceRoot])
+            include 'META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
+            include 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageDiagnostics'
+        }
+    }
+    legacyRetained {
+        java {
+            srcDir sourceRoot
+            include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'
+            destinationDirectory.set(legacyClassDir)
+        }
+        resources {
+            setSrcDirs([])
         }
     }
     test {
         java {
             destinationDirectory.set(testClassDir)
         }
+        compileClasspath += sourceSets.legacyRetained.output
+        runtimeClasspath += sourceSets.legacyRetained.output
     }
+}
+
+dependencies {
+    implementation project(':delosdb-commons')
+    implementation project(':delosdb-runtime-api')
+    implementation project(':delosdb-storage-api')
+    implementation project(':delosdb-derby-store-api')
+
+    legacyRetainedImplementation project(':delosdb-commons')
+    legacyRetainedImplementation project(':delosdb-runtime-api')
+    legacyRetainedImplementation project(':delosdb-storage-api')
+    legacyRetainedImplementation project(':delosdb-storage-io')
+
+    testImplementation project(':delosdb-storage-io')
+    testImplementation "org.junit.platform:junit-platform-console-standalone:${rootProject.ext.junitPlatformConsoleVersion}"
 }
 
 tasks.named('compileJava', JavaCompile) {
     destinationDirectory.set(mainClassDir)
+    modularity.inferModulePath = false
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
@@ -54,12 +91,26 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
 }
 
+tasks.named('compileLegacyRetainedJava', JavaCompile) {
+    destinationDirectory.set(legacyClassDir)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+    options.deprecation = false
+    options.warnings = true
+}
+
 tasks.named('compileTestJava', JavaCompile) {
+    dependsOn tasks.named('legacyRetainedClasses')
     destinationDirectory.set(testClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
+}
+
+// Compatibility alias consumed by root assembly and engine patch-module tasks.
+tasks.register('compileStorageMvcc') {
+    dependsOn tasks.named('compileJava')
 }
 
 // The quarantined oracle retains its named proof tasks below. The Java plugin
@@ -1312,13 +1363,19 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Retired MVCC Oracle Archive')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB RawStore MVCC Access Method')
         attributes 'Automatic-Module-Name': 'io.github.ggeorg.delosdb.storage.mvcc'
     }
 }
 
 tasks.named('assemble') {
     dependsOn tasks.named('classes'), tasks.named('jar')
+}
+
+artifacts {
+    derbyRuntimePatchElements(tasks.named('jar')) {
+        builtBy tasks.named('jar')
+    }
 }
 
 tasks.register('verifyRetainedOracleQuarantine') {
@@ -1332,11 +1389,18 @@ tasks.register('verifyRetainedOracleQuarantine') {
     inputs.files(retiredProviderSource, retiredProviderService)
 
     doLast {
-        if (sourceSets.main.java.files.contains(retiredProviderSource)) {
-            throw new GradleException('Retired MVCC provider factory remains in the production source set')
+        if (retiredProviderSource.exists()) {
+            throw new GradleException('Retired MVCC provider factory remains in the repository tree')
         }
-        if (sourceSets.main.resources.files.contains(retiredProviderService)) {
-            throw new GradleException('Retired MVCC provider service remains in the production resource set')
+        if (retiredProviderService.exists()) {
+            throw new GradleException('Retired MVCC provider service remains in the repository tree')
+        }
+        def retainedProductionSources = sourceSets.main.java.files.findAll {
+            it.toPath().startsWith(file('src/main/java/io/github/ggeorg/delosdb/storage/mvcc').toPath())
+        }
+        if (!retainedProductionSources.isEmpty()) {
+            throw new GradleException('Retained Phase 8 sources remain in the production MVCC source set: '
+                    + retainedProductionSources)
         }
     }
 }
@@ -1348,7 +1412,7 @@ tasks.register('legacyRetainedCheck') {
 }
 
 tasks.named('check') {
-    setDependsOn([tasks.named('verifyRetainedOracleQuarantine')])
+    setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])
 }
 
 tasks.register('runDelosMvccBufferCacheBenchmark', Test) {

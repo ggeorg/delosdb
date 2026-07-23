@@ -31,5 +31,4 @@ DERBY-MOD-018|DELOSDB_EXTENSION|none|:delosdb-storage-io|storage IO seam|DelosDB
 DERBY-MOD-019|DELOSDB_EXTENSION|none|:delosdb-storage-api|storage provider API|DelosDB-owned storage diagnostics/provider API seam.
 DERBY-MOD-020|DELOSDB_EXTENSION|none|:delosdb-derby-store-api|inherited store API split|DelosDB split for inherited Derby store API exposure.
 DERBY-MOD-021|DELOSDB_EXTENSION|none|:delosdb-storage-derby|Derby heap/raw-store compatibility|DelosDB-owned module boundary for inherited Derby storage implementation.
-DERBY-MOD-022|DELOSDB_EXTENSION|none|:delosdb-storage-bridge|storage bridge|DelosDB-owned Derby access-method to storage-provider bridge.
-DERBY-MOD-023|DELOSDB_EXTENSION|none|:delosdb-storage-mvcc|MVCC engine|DelosDB-owned opt-in MVCC storage engine.
+DERBY-MOD-022|DELOSDB_EXTENSION|none|:delosdb-storage-mvcc|RawStore MVCC access method|DelosDB-owned MVCC semantics and Derby access-method provider integration.

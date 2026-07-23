@@ -8,14 +8,14 @@ The current modules remain until their responsibilities have moved and replaceme
 
 ## Current migration state
 
-The neutral boot and transaction-lifecycle seams now live in `delosdb-derby-store-api`.
+The neutral boot and transaction-lifecycle seams live in `delosdb-derby-store-api`.
 `delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
-bracketing. `delosdb-storage-bridge` consumes those neutral seams temporarily. This is a migration
-condition, not a reason to retain the bridge module in the final graph.
+bracketing. Stage 7.1 moved the valid provider/adaptation implementation directly into
+`delosdb-storage-mvcc` and removed `delosdb-storage-bridge`.
 
 Stage 2.3 adds a machine-readable final target and the permanent
 `delosV1ModuleArchitectureStaticAnalysis` gate. The gate enforces current provider isolation while
-remaining valid as the bridge is absorbed, the three legacy storage modules are retired, and
+remaining valid after the bridge absorption, while storage-api/storage-io are retired and
 `delosdb-search-lucene` is added.
 
 ## Architectural rules
@@ -68,12 +68,17 @@ Add:
 delosdb-search-lucene
 ```
 
-Retire only after absorption:
+Already retired after absorption:
+
+```text
+delosdb-storage-bridge
+```
+
+Retire later only after their remaining responsibilities move:
 
 ```text
 delosdb-storage-api
 delosdb-storage-io
-delosdb-storage-bridge
 ```
 
 ## Dependency direction
@@ -164,8 +169,8 @@ forbidden engine/provider and RawStore/provider production edges
 no Lucene implementation types in neutral APIs
 ```
 
-During migration, the bridge is allowed only as the single neutral access-method provider owner. Once
-it is removed, the gate requires `delosdb-storage-mvcc` to publish the provider directly.
+The bridge is now removed. The gate requires `delosdb-storage-mvcc` to publish the sole neutral
+access-method provider directly while the engine remains implementation-independent.
 
 The Stage 2.3 task is the current implementation of the proposed `verifyStorageAuthorityModuleGraph`
 and migration-time `verifyProviderIsolation` contracts. Final closeout additionally requires strict
@@ -235,8 +240,9 @@ It may continue producing a build-time patch artifact whose classes are incorpor
 
 Becomes a RawStore peer access method. It owns MVCC semantics, not physical durability.
 
-After a neutral provider seam exists, the valid Derby-facing bridge classes move into this module.
-There is no production compile dependency on `delosdb-engine`.
+It owns the valid Derby-facing provider and adaptation classes formerly held by the bridge.
+There is no production compile dependency on `delosdb-engine`. The provider patch artifact is consumed
+only by the Derby-compatible jar assembly.
 
 ### `delosdb-search-lucene`
 
@@ -261,7 +267,7 @@ provider reaches parity.
 
 ### `delosdb-storage-bridge`
 
-Removed after its valid provider/registration glue moves into neutral APIs and
+Removed in Stage 7.1 after its valid provider/registration glue moved into
 `delosdb-storage-mvcc`.
 
 ### `delosdb-storage-io`
@@ -280,7 +286,7 @@ parallel store/commit abstractions are deleted.
 1. design proofs
 2. neutral provider seams
 3. complete RawStore MVCC vertical slice
-4. absorb bridge
+4. absorb and remove bridge (complete)
 5. converge remaining MVCC persistence
 6. absorb shared storage API and I/O implementation work
 7. modernize Lucene

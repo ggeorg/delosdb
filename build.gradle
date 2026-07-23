@@ -175,7 +175,7 @@ def commonsClassDir = moduleClassDir(moduleNames.commons)
 def storageApiClassDir = project(':delosdb-storage-api').layout.buildDirectory.dir('classes/storage-api')
 def derbyStoreApiClassDir = project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
 def derbyStorageClassDir = project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storageBridgeClassDir = project(':delosdb-storage-bridge').layout.buildDirectory.dir('classes/main')
+def storageMvccClassDir = project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main')
 def classSizeCatalogOutputFile = generatedSourceDir(moduleNames.runtimeApi).map {
     it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
 }
@@ -187,11 +187,11 @@ def classSizeCrawlerClasspath = files(
         storageApiClassDir,
         derbyStoreApiClassDir,
         derbyStorageClassDir,
-        storageBridgeClassDir)
+        storageMvccClassDir)
 def rootProjectDirectory = layout.projectDirectory.asFile
 
 tasks.register('generateClassSizeCatalog') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-storage-api:compileStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-bridge:compileStorageBridge', 'compileDerbyBuildTools'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-storage-api:compileStorageApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-mvcc:compileStorageMvcc', 'compileDerbyBuildTools'
     inputs.files(classSizeCrawlerClasspath).withPropertyName('classSizeCrawlerClasspath')
     outputs.file(classSizeCatalogOutputFile)
     doLast {

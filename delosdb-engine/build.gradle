@@ -64,7 +64,7 @@ dependencies {
     // Derby-compatible derby.jar from declared outgoing artifacts instead of
     // reaching directly into another project's build/classes directories.
     derbyRuntimePatchArtifacts project(path: ':delosdb-storage-derby', configuration: 'derbyRuntimePatchElements')
-    derbyRuntimePatchArtifacts project(path: ':delosdb-storage-bridge', configuration: 'derbyRuntimePatchElements')
+    derbyRuntimePatchArtifacts project(path: ':delosdb-storage-mvcc', configuration: 'derbyRuntimePatchElements')
 }
 
 def enginePatchFiles = objects.fileCollection().from(configurations.enginePatch)
@@ -235,8 +235,8 @@ tasks.register('derbyJar', Jar) {
             ':delosdb-derby-store-api:compileDerbyStoreApi',
             ':delosdb-storage-derby:compileLegacyDerbyStorage',
             ':delosdb-storage-derby:processResources',
-            ':delosdb-storage-bridge:compileStorageBridge',
-            ':delosdb-storage-bridge:processResources'
+            ':delosdb-storage-mvcc:compileStorageMvcc',
+            ':delosdb-storage-mvcc:processResources'
     dependsOn derbyRuntimePatchArtifactFiles
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')

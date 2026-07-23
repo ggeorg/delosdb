@@ -455,7 +455,6 @@ def delosStorageStaticSourceRoots = [
         'delosdb-storage-api/src/main/java',
         'delosdb-storage-io/src/main/java',
         'delosdb-storage-mvcc/src/main/java',
-        'delosdb-storage-bridge/src/main/java',
         'delosdb-derby-store-api/src/main/java'
 ]
 
@@ -1089,7 +1088,6 @@ tasks.register('delosDerbyModuleParityStaticAnalysis') {
                 ':delosdb-storage-api',
                 ':delosdb-derby-store-api',
                 ':delosdb-storage-derby',
-                ':delosdb-storage-bridge',
                 ':delosdb-storage-mvcc'
         ]
         requiredExtensions.each { moduleName ->
@@ -1170,10 +1168,9 @@ def delosRuntimeArtifactModelFiles = [
         'delosdb-server/build.gradle',
         'delosdb-spi/build.gradle',
         'delosdb-storage-api/build.gradle',
-        'delosdb-storage-bridge/build.gradle',
+        'delosdb-storage-mvcc/build.gradle',
         'delosdb-storage-derby/build.gradle',
         'delosdb-storage-io/build.gradle',
-        'delosdb-storage-mvcc/build.gradle',
         'delosdb-tests/build.gradle',
         'delosdb-tools/build.gradle',
         'gradle/delosdb-product-info.gradle',
@@ -1246,12 +1243,14 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
         def supportArtifactSection = runtimeText.substring(
                 runtimeText.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['),
                 runtimeText.indexOf('ext.delosdbAssembledJarArtifacts'))
-        ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar'].each { retiredJar ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    !runtimeArtifactSection.contains(retiredJar)
-                            && !supportArtifactSection.contains(retiredJar),
-                    'Retired archive must be outside root runtime and assembly models: ' + retiredJar)
-        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                !runtimeArtifactSection.contains('delosdb-storage-mvcc.jar')
+                        && supportArtifactSection.contains('delosdb-storage-mvcc.jar'),
+                'Production MVCC must be assembled as a provider patch artifact outside the current runtime jar list')
+        DelosDbStaticAnalysisSupport.require(failures,
+                !runtimeArtifactSection.contains('delosdb-storage-io.jar')
+                        && !supportArtifactSection.contains('delosdb-storage-io.jar'),
+                'Retired page-volume archive must remain outside root runtime and assembly models')
         ['delosdb-storage-api.jar', 'delosdb-derby-store-api.jar'].each { token ->
             DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains(token),
                     "Runtime artifact convention script must keep support artifact modeled outside the runtime jar list: ${token}")
@@ -1272,8 +1271,11 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
                         && runtimeText.contains('Retired external MVCC provider service remains'),
                 'verifyDelosRuntimeStorageProviders must reject the retired external provider service')
         DelosDbStaticAnalysisSupport.require(failures,
-                runtimeText.contains("it.name in ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar']"),
-                'verifyDelosRuntimeStorageProviders must reject retained MVCC/page-volume archives from runtime classpaths')
+                runtimeText.contains("it.name == 'delosdb-storage-io.jar'"),
+                'verifyDelosRuntimeStorageProviders must reject the retained page-volume archive from runtime classpaths')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('Retained Phase 8 classes remain in production MVCC provider jar'),
+                'verifyDelosRuntimeStorageProviders must reject retained Phase 8 classes from the production MVCC jar')
         DelosDbStaticAnalysisSupport.require(failures, !runtimeText.contains('doLast {\n        def runtimeFiles = project.'),
                 'Runtime provider verification must not resolve Project state from its task action')
         DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('delosdbRuntimeJarFileCollection.files')
@@ -1922,7 +1924,12 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
             }
         }
 
-        forbidProjectReference('delosdb-engine', 'delosdb-storage-mvcc')
+        def engineBuildCode = buildCode('delosdb-engine')
+        def forbiddenEngineMvccDependency = Pattern.compile(
+                "(?m)^\\s*(?:api|implementation|compileOnly|runtimeOnly)\\s+project\\s*\\(\\s*(?:path\\s*:\\s*)?['\"]:delosdb-storage-mvcc['\"]")
+        if (forbiddenEngineMvccDependency.matcher(engineBuildCode).find()) {
+            failures << 'Forbidden production dependency: delosdb-engine -> delosdb-storage-mvcc'
+        }
         forbidProjectReference('delosdb-engine', 'delosdb-search-lucene')
         forbidProjectReference('delosdb-storage-derby', 'delosdb-storage-mvcc')
         forbidProjectReference('delosdb-storage-derby', 'delosdb-search-lucene')
@@ -2018,7 +2025,6 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         def providerImplementations = []
         [
                 'delosdb-engine/src/main/java',
-                'delosdb-storage-bridge/src/main/java',
                 'delosdb-storage-mvcc/src/main/java'
         ].each { String sourcePath ->
             def root = new File(delosRepositoryRoot, sourcePath)
@@ -2033,39 +2039,23 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
             }
         }
 
-        if (settingsModules.contains('delosdb-storage-bridge')) {
-            def expectedProvider = 'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'
-            if (providerImplementations != [expectedProvider]) {
-                failures << (
-                        'During bridge migration, the only ExternalAccessMethodProvider implementation must be ' +
-                                expectedProvider + '; found ' + providerImplementations)
-            }
-            def serviceFile = new File(
-                    delosRepositoryRoot,
-                    'delosdb-storage-bridge/src/main/resources/META-INF/services/'
-                            + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
-            def providers = serviceFile.isFile()
-                    ? serviceFile.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
-                    : []
-            if (providers != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
-                failures << 'The transitional bridge must publish exactly one neutral access-method provider.'
-            }
-            observations << 'The bridge provider is still patched into derby.jar during migration; Stage 7 moves it into the named MVCC module.'
-        } else {
-            def mvccServiceFile = new File(
-                    delosRepositoryRoot,
-                    'delosdb-storage-mvcc/src/main/resources/META-INF/services/'
-                            + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
-            def mvccModuleInfo = new File(
-                    delosRepositoryRoot,
-                    'delosdb-storage-mvcc/src/main/java/module-info.java')
-            boolean serviceDeclared = mvccServiceFile.isFile()
-                    || (mvccModuleInfo.isFile()
-                    && mvccModuleInfo.getText('UTF-8').contains('provides org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'))
-            if (!serviceDeclared) {
-                failures << 'After bridge removal, delosdb-storage-mvcc must publish the neutral access-method provider service.'
-            }
+        def expectedProvider = 'delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'
+        if (providerImplementations != [expectedProvider]) {
+            failures << ('The only ExternalAccessMethodProvider implementation must be ' +
+                    expectedProvider + '; found ' + providerImplementations)
         }
+        def mvccServiceFile = new File(
+                delosRepositoryRoot,
+                'delosdb-storage-mvcc/src/main/resources/META-INF/services/'
+                        + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
+        def providers = mvccServiceFile.isFile()
+                ? mvccServiceFile.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
+                : []
+        if (providers != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
+            failures << 'delosdb-storage-mvcc must publish exactly one neutral access-method provider.'
+        }
+        observations << 'Stage 7 provider ownership: delosdb-storage-mvcc; delosdb-storage-bridge retired.'
+
 
         def reportFile = new File(
                 delosBuildRoot,
@@ -3087,7 +3077,7 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
             }
         }
 
-        def mvccCostText = new File(delosRepositoryRoot, 'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java').getText('UTF-8')
+        def mvccCostText = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java').getText('UTF-8')
         [
                 'DelosMvccOptimizerCostDiagnostics.enabled()',
                 'storageStatisticsSnapshot()',
@@ -3554,11 +3544,11 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
     def files = [
             file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java'),
             file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
-            file('delosdb-storage-bridge/build.gradle'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
+            file('delosdb-storage-mvcc/build.gradle'),
             file('delosdb-engine/src/main/java/module-info.java')
     ]
     def sqlTestDirectory = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos')
@@ -4493,10 +4483,10 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
     description = 'Protects RawStore-owned transactional MVCC CREATE/DROP and savepoint semantics.'
 
     def required = [
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
             file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.java'),
             file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.java')
     ]
@@ -4556,302 +4546,6 @@ tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
         if (!failures.isEmpty()) throw new GradleException(
                 'Transactional MVCC DDL static analysis failed. Report: ' + reportFile)
         logger.lifecycle('Transactional MVCC DDL static analysis passed. Report: {}', reportFile)
-    }
-}
-
-tasks.register('delosPhase9ImmutableDatabaseSnapshotStaticAnalysis') {
-    group = 'verification'
-    description = 'Protects the Phase 9 versioned immutable database-scoped MVCC snapshot boundary.'
-
-    def requiredFiles = [
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccBridgeDiagnosticsSupport.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateController.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanController.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java',
-            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccDatabaseStorageSnapshotTest.java',
-            'delosdb-tests/build.gradle',
-            'docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md'
-    ]
-    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
-    outputs.file(layout.buildDirectory.file(
-            'reports/delosdb/phase9-immutable-database-snapshot-static-analysis.txt'))
-
-    doLast {
-        def failures = []
-        def read = { int index ->
-            def source = new File(delosRepositoryRoot, requiredFiles[index])
-            DelosDbStaticAnalysisSupport.require(
-                    failures, source.isFile(),
-                    'Missing Phase 9 database snapshot source: ' + requiredFiles[index])
-            source.isFile() ? source.getText('UTF-8') : ''
-        }
-
-        def snapshotText = read(0)
-        def diagnosticsApiText = read(1)
-        def registryText = read(2)
-        def supportText = read(3)
-        def runtimeText = read(4)
-        def stateText = read(5)
-        def controllerText = read(6)
-        def scanText = read(7)
-        def diagnosticsText = read(8)
-        def testText = read(9)
-        def testBuildText = read(10)
-        def documentationText = read(11)
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                snapshotText.contains('public record DelosDatabaseStorageSnapshot')
-                        && snapshotText.contains('CURRENT_SCHEMA_VERSION = 2')
-                        && snapshotText.contains('WEAKLY_CONSISTENT_COLLECTION')
-                        && snapshotText.contains('storagePathDiagnostics = List.copyOf')
-                        && !snapshotText.contains('org.apache.derby.impl.'),
-                'Database snapshot must remain versioned, immutable, value-only, and implementation-neutral')
-        DelosDbStaticAnalysisSupport.require(failures,
-                supportText.contains('STORAGE_PATH_DIAGNOSTIC_CAPACITY = 256')
-                        && supportText.contains('private final Deque<DelosStoragePathDiagnostic>')
-                        && supportText.contains('droppedStoragePathDiagnosticCount.incrementAndGet()')
-                        && supportText.contains('DelosDatabaseStorageSnapshot snapshot(')
-                        && !supportText.contains('private static final AtomicInteger'),
-                'MVCC bridge counters and path history must be database-owned and bounded')
-        DelosDbStaticAnalysisSupport.require(failures,
-                runtimeText.contains('private final MvccBridgeDiagnosticsSupport diagnostics')
-                        && runtimeText.contains('databaseStorageSnapshotForDiagnostics()')
-                        && runtimeText.contains('MvccRuntimeDiagnosticsDirectory.unregister(databaseDirectory, this)')
-                        && runtimeText.contains('new MvccConglomerateState(identity.containerKey(), store, diagnostics)'),
-                'MvccDatabaseRuntime must own snapshot observations and retire them with its database-owned lifecycle')
-        DelosDbStaticAnalysisSupport.require(failures,
-                stateText.contains('private final MvccBridgeDiagnosticsSupport databaseDiagnostics')
-                        && stateText.contains('MvccBridgeDiagnosticsSupport databaseDiagnostics()'),
-                'Each MVCC table bridge state must retain its owning database diagnostics')
-        [controllerText, scanText].eachWithIndex { sourceText, index ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    sourceText.contains('state.databaseDiagnostics().')
-                            && !sourceText.contains('MvccBridgeDiagnosticsSupport.'),
-                    'MVCC bridge source ' + index + ' must record through database ownership')
-        }
-        DelosDbStaticAnalysisSupport.require(failures,
-                diagnosticsApiText.contains('DelosDatabaseStorageSnapshot databaseStorageSnapshot()')
-                        && registryText.contains('mvccDatabaseStorageSnapshot(Path databaseDirectory)'),
-                'Storage diagnostics and registry must expose the immutable database snapshot')
-        DelosDbStaticAnalysisSupport.require(failures,
-                diagnosticsText.contains('return runtime().databaseStorageSnapshotForDiagnostics();')
-                        && diagnosticsText.contains('MvccRuntimeDiagnosticsDirectory.clearForTesting(databaseDirectory);')
-                        && diagnosticsText.contains('return databaseStorageSnapshot().storagePathDiagnostics();'),
-                'MVCC compatibility diagnostics must delegate to one database snapshot and non-owning scoped lookup cleanup')
-        DelosDbStaticAnalysisSupport.require(failures,
-                testText.contains('testSnapshotsAndCleanupRemainDatabaseScoped')
-                        && testText.contains('snapshotA.insertCount()')
-                        && testText.contains('snapshotB.insertCount()')
-                        && testText.contains('database-scoped cleanup must not close database B')
-                        && testText.contains('snapshotA.storagePathDiagnostics().clear()'),
-                'Phase 9 proof must cover database isolation, immutability, and scoped cleanup')
-        DelosDbStaticAnalysisSupport.require(failures,
-                testBuildText.contains("'runDelosMvccDatabaseStorageSnapshotTest'")
-                        && testBuildText.contains('MvccDatabaseStorageSnapshotTest.class'),
-                'Immutable database snapshot proof must have a permanent focused Gradle lane')
-        DelosDbStaticAnalysisSupport.require(failures,
-                documentationText.contains('weakly-consistent-database-counters-with-bounded-table-transaction-and-path-observations')
-                        && documentationText.contains('storage path diagnostics: 256 entries'),
-                'Public documentation must state collection semantics and bounded cost')
-
-        def reportFile = new File(
-                delosBuildRoot,
-                'reports/delosdb/phase9-immutable-database-snapshot-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB Phase 9 immutable database snapshot static analysis')
-            writer.println('===========================================================')
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-                writer.println('MVCC bridge observations are database-scoped, immutable, versioned, and bounded.')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { failure -> writer.println('- ' + failure) }
-            }
-        }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'Phase 9 immutable database snapshot static analysis failed. Report: '
-                            + reportFile)
-        }
-        logger.lifecycle(
-                'Phase 9 immutable database snapshot static analysis passed. Report: {}',
-                reportFile)
-    }
-}
-
-
-tasks.register('delosPhase9TableTransactionSnapshotStaticAnalysis') {
-    group = 'verification'
-    description = 'Protects Phase 9 immutable bounded table and provider-transaction snapshots.'
-
-    def requiredFiles = [
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosTransactionSnapshot.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionDiagnostics.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java',
-            'delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDatabaseRuntime.java',
-            'delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateState.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedHandles.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java',
-            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTableTransactionSnapshotTest.java',
-            'delosdb-tests/build.gradle',
-            'docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md'
-    ]
-    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
-    outputs.file(layout.buildDirectory.file(
-            'reports/delosdb/phase9-table-transaction-snapshot-static-analysis.txt'))
-
-    doLast {
-        def failures = []
-        def texts = requiredFiles.collect { path ->
-            def source = new File(delosRepositoryRoot, path)
-            DelosDbStaticAnalysisSupport.require(
-                    failures, source.isFile(),
-                    'Missing Phase 9 table/transaction snapshot source: ' + path)
-            source.isFile() ? source.getText('UTF-8') : ''
-        }
-        def databaseSnapshotText = texts[0]
-        def tableSnapshotText = texts[1]
-        def transactionSnapshotText = texts[2]
-        def transactionDiagnosticsText = texts[3]
-        def diagnosticsApiText = texts[4]
-        def diagnosticsRegistryText = texts[5]
-        def transactionRegistryText = texts[6]
-        def runtimeText = texts[7]
-        def stateText = texts[8]
-        def handlesText = texts[9]
-        def inheritedTableText = texts[10]
-        def testText = texts[11]
-        def testBuildText = texts[12]
-        def documentationText = texts[13]
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                databaseSnapshotText.contains('CURRENT_SCHEMA_VERSION = 2')
-                        && databaseSnapshotText.contains('List<DelosTableStorageSnapshot> tableSnapshots')
-                        && databaseSnapshotText.contains('List<DelosTransactionSnapshot> transactionSnapshots')
-                        && databaseSnapshotText.contains('tableSnapshots = List.copyOf')
-                        && databaseSnapshotText.contains('transactionSnapshots = List.copyOf'),
-                'Database snapshot schema 2 must own immutable nested table and transaction values')
-        DelosDbStaticAnalysisSupport.require(failures,
-                tableSnapshotText.contains('public record DelosTableStorageSnapshot')
-                        && tableSnapshotText.contains('CURRENT_SCHEMA_VERSION = 1')
-                        && tableSnapshotText.contains('weakly-consistent-table-diagnostics-with-registry-participants')
-                        && tableSnapshotText.contains('int registeredTransactionCount')
-                        && tableSnapshotText.contains('int registeredWriteIntentCount')
-                        && !tableSnapshotText.contains('org.apache.derby.impl.'),
-                'Table snapshot must remain versioned, value-only, and implementation-neutral')
-        DelosDbStaticAnalysisSupport.require(failures,
-                transactionSnapshotText.contains('public record DelosTransactionSnapshot')
-                        && transactionSnapshotText.contains('READ_ONLY')
-                        && transactionSnapshotText.contains('READ_WRITE')
-                        && transactionSnapshotText.contains('providerTransactionId')
-                        && !transactionSnapshotText.contains('nativeTransaction')
-                        && !transactionSnapshotText.contains('Object '),
-                'Transaction snapshot must expose values without provider or Derby handles')
-        DelosDbStaticAnalysisSupport.require(failures,
-                transactionDiagnosticsText.contains('public interface DelosStorageTransactionDiagnostics')
-                        && transactionDiagnosticsText.contains('Values diagnosticValues()')
-                        && transactionDiagnosticsText.contains('record Values(')
-                        && transactionDiagnosticsText.contains('long providerTransactionId')
-                        && transactionDiagnosticsText.contains('int writeIntentCount')
-                        && transactionDiagnosticsText.contains('int savepointCount'),
-                'Opaque provider transactions must expose one atomic value-only diagnostic bundle')
-        DelosDbStaticAnalysisSupport.require(failures,
-                transactionRegistryText.contains(
-                        'List<DelosTransactionSnapshot> transactionSnapshotsForTable(')
-                        && transactionRegistryText.contains(
-                                'transaction instanceof DelosStorageTransactionDiagnostics diagnostics')
-                        && transactionRegistryText.contains(
-                                'DelosStorageTransactionDiagnostics.Values values = diagnostics.diagnosticValues()')
-                        && transactionRegistryText.contains(
-                                'snapshots.sort(java.util.Comparator.comparingLong(')
-                        && transactionRegistryText.contains('return List.copyOf(snapshots);'),
-                'Transaction registry must own immutable participant membership and ordering')
-        DelosDbStaticAnalysisSupport.require(failures,
-                runtimeText.contains('TABLE_SNAPSHOT_CAPACITY = 256')
-                        && runtimeText.contains('TRANSACTION_SNAPSHOT_CAPACITY = 512')
-                        && runtimeText.contains('state.structuredObservation(')
-                        && runtimeText.contains('capturedAtEpochMillis,')
-                        && runtimeText.contains('droppedTables++')
-                        && runtimeText.contains('droppedTransactions++'),
-                'Database runtime must collect bounded nested snapshots from owned table states')
-        DelosDbStaticAnalysisSupport.require(failures,
-                stateText.contains('synchronized StructuredObservation structuredObservation(')
-                        && stateText.contains(
-                                'DelosStorageTransactionRegistry.transactionSnapshotsForTable(')
-                        && stateText.contains('new DelosTableStorageSnapshot(')
-                        && stateText.contains('record StructuredObservation('),
-                'Bridge table state must assemble physical and transaction observations')
-        DelosDbStaticAnalysisSupport.require(failures,
-                handlesText.contains(
-                        'implements DelosStorageTransaction, DelosStorageTransactionDiagnostics')
-                        && handlesText.contains(
-                                'public synchronized DelosStorageTransactionDiagnostics.Values diagnosticValues()')
-                        && handlesText.contains('synchronized void recordUpsertWriteIntent(')
-                        && handlesText.contains('public synchronized int savepointCount()'),
-                'MVCC transaction handles must atomically snapshot synchronized transaction-local state')
-        DelosDbStaticAnalysisSupport.require(failures,
-                inheritedTableText.readLines().size() <= 1800
-                        && !inheritedTableText.contains('DelosTableStorageSnapshot')
-                        && !inheritedTableText.contains('DelosTransactionSnapshot'),
-                'Structured observation must not regrow the inherited-table facade')
-        DelosDbStaticAnalysisSupport.require(failures,
-                diagnosticsApiText.contains('List<DelosTableStorageSnapshot> tableStorageSnapshots()')
-                        && diagnosticsApiText.contains('List<DelosTransactionSnapshot> transactionSnapshots()')
-                        && diagnosticsRegistryText.contains('mvccTableStorageSnapshots(')
-                        && diagnosticsRegistryText.contains('mvccTransactionSnapshots('),
-                'Diagnostics API and registry must expose nested immutable snapshots')
-        DelosDbStaticAnalysisSupport.require(failures,
-                testText.contains('testTableAndTransactionSnapshotsRemainBoundedImmutableAndScoped')
-                        && testText.contains('testConcurrentTransactionSnapshotCaptureRemainsCoherent')
-                        && testText.contains('snapshotA.tableSnapshots().clear()')
-                        && testText.contains('snapshotA.transactionSnapshots().clear()')
-                        && testText.contains('snapshotA.capturedAtEpochMillis()')
-                        && testText.contains('rollback must retire database A provider transactions')
-                        && testBuildText.contains("'runDelosMvccTableTransactionSnapshotTest'"),
-                'Permanent SQL proof must cover isolation, immutability, active state, and retirement')
-        DelosDbStaticAnalysisSupport.require(failures,
-                documentationText.contains('one shared root/nested capture timestamp')
-                        && documentationText.contains('table snapshots:          256 entries')
-                        && documentationText.contains('transaction snapshots:    512 entries')
-                        && documentationText.contains('weakly-consistent-table-diagnostics-with-registry-participants')
-                        && documentationText.contains('provider-neutral transaction registry')
-                        && documentationText.contains('one atomic,')
-                        && documentationText.contains('value-only counter bundle'),
-                'Documentation must state ownership, consistency, atomic transaction values, and bounded costs')
-
-        def reportFile = new File(
-                delosBuildRoot,
-                'reports/delosdb/phase9-table-transaction-snapshot-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB Phase 9 table and transaction snapshot static analysis')
-            writer.println('==============================================================')
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-                writer.println('Table and provider-transaction observations are immutable, scoped, and bounded.')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { failure -> writer.println('- ' + failure) }
-            }
-        }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'Phase 9 table/transaction snapshot static analysis failed. Report: '
-                            + reportFile)
-        }
-        logger.lifecycle(
-                'Phase 9 table/transaction snapshot static analysis passed. Report: {}',
-                reportFile)
     }
 }
 
@@ -5008,11 +4702,11 @@ tasks.register('delosMvccRawStoreVerticalSliceStaticAnalysis') {
     description = 'Protects the production RawStore-backed delos_mvcc vertical slice.'
 
     def required = [
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
             file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.java'),
             file('delosdb-tests/build.gradle')
     ]
@@ -5089,11 +4783,11 @@ tasks.register('delosMvccRawStoreDatabaseIdentityStaticAnalysis') {
     group = 'verification'
     description = 'Verifies durable database-wide MVCC transaction IDs, commit sequences, and committed high-water are RawStore-owned.'
 
-    def metadataFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def metadataFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def identityTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -5280,8 +4974,8 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
     group = 'verification'
     description = 'Verifies multiple RawStore-backed MVCC tables share one transaction identity, snapshot, commit sequence, and RawStore outcome.'
 
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-MULTI-TABLE-TRANSACTIONS.md')
@@ -5468,10 +5162,10 @@ tasks.register('delosMvccRawStoreUpdateDeleteStaticAnalysis') {
     group = 'verification'
     description = 'Verifies RawStore-backed MVCC UPDATE and DELETE use transactional version chains, tombstones, one commit sequence, and inherited recovery.'
 
-    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
-    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def controllerFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def scanFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
     def metadataInspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -5716,7 +5410,7 @@ tasks.register('delosMvccRawStoreMixedHeapTransactionStaticAnalysis') {
     def dmlFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java')
     def registryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java')
     def ramTransactionFile = file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-MIXED-HEAP-TRANSACTIONS.md')
@@ -5904,8 +5598,8 @@ tasks.register('delosMvccRawStoreLookupHintStaticAnalysis') {
     group = 'verification'
     description = 'Verifies RawStore MVCC physical locators remain optional validated hints with logical fallback.'
 
-    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -6099,11 +5793,11 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     description = 'Verifies version-aware ordered indexes are physically sorted RawStore state and remain subordinate to the base MVCC chain.'
 
     def valueCopyFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/StoreValueCopySupport.java')
-    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
-    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
-    def scanInfoFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java')
+    def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def scanFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def scanInfoFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -6384,10 +6078,10 @@ tasks.register('delosMvccRawStoreUniqueConstraintStaticAnalysis') {
     def propertyFile = file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java')
     def createTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateTableConstantAction.java')
     def createConstraintFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateConstraintConstantAction.java')
-    def formatFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
-    def transactionFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def transactionFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -6646,9 +6340,9 @@ tasks.register('delosMvccRawStoreUniqueLifecycleStaticAnalysis') {
     def createIndexFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateIndexConstantAction.java')
     def dropIndexFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DropIndexConstantAction.java')
     def dropConstraintFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DropConstraintConstantAction.java')
-    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def controllerFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md')
@@ -6895,13 +6589,13 @@ tasks.register('delosMvccRawStoreLogicalLockingStaticAnalysis') {
     group = 'verification'
     description = 'Verifies RawStore MVCC semantic row, unique-key, and schema locks use the inherited Derby lock manager and transaction lifetime.'
 
-    def logicalLockFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreLogicalLock.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
-    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def logicalLockFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreLogicalLock.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def controllerFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md')
@@ -7111,12 +6805,12 @@ tasks.register('delosMvccRawStorePhysicalLockingStaticAnalysis') {
     group = 'verification'
     description = 'Verifies row-level RawStore physical locking, active-writer filtering, and transaction-private ordered-index publication for MVCC.'
 
-    def physicalLockFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStorePhysicalLocking.java')
-    def databaseMetadataFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def physicalLockFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStorePhysicalLocking.java')
+    def databaseMetadataFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
@@ -7352,14 +7046,14 @@ tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
     group = 'verification'
     description = 'Verifies retained-snapshot horizons, transactional logical-chain relinking, physical purge, and ordered-index replacement for RawStore MVCC.'
 
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def conglomerateFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
-    def controllerFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
-    def scanFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def indexFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
-    def vacuumFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def conglomerateFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java')
+    def controllerFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java')
+    def scanFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def vacuumFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-VACUUM.md')
@@ -7678,14 +7372,14 @@ tasks.register('delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis') {
     def tableSnapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java')
     def diagnosticsApiFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
     def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def serviceFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java')
-    def directoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
-    def contextFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
-    def tableFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
-    def vacuumFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
-    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
+    def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def serviceFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java')
+    def directoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
+    def contextFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java')
+    def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
+    def vacuumFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java')
+    def diagnosticsFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
     def sqlTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.java')
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md')
@@ -8061,10 +7755,10 @@ tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
     def snapshotFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java')
     def diagnosticsContextFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java')
     def diagnosticsRegistryFile = file('delosdb-storage-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java')
-    def factoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
-    def runtimeFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
-    def directoryFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
-    def diagnosticsFile = file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
+    def factoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java')
+    def runtimeFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java')
+    def directoryFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java')
+    def diagnosticsFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java')
     def memoryTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.java')
     def maintenanceTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.java')
     def testSupportFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTestSupport.java')
@@ -8328,9 +8022,9 @@ tasks.register('delosMvccRawStoreAuthorityCutoverStaticAnalysis') {
     description = 'Protects unconditional RawStore MVCC authority and fail-closed retained-format rejection.'
 
     def required = [
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
             file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.java'),
             file('docs/design/V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md'),
             file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
@@ -8689,24 +8383,20 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
 
 tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies that the retained Phase 8 MVCC system is absent from production runtime and normal verification.'
+    description = 'Verifies that the retained Phase 8 MVCC system remains quarantined after Stage 7 module convergence.'
 
     def required = [
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
-            file('delosdb-storage-bridge/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
-            file('delosdb-storage-bridge/build.gradle'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
             file('delosdb-storage-mvcc/build.gradle'),
             file('gradle/delosdb-runtime-artifacts.gradle'),
+            file('delosdb-engine/build.gradle'),
             file('delosdb-engine/src/main/java/module-info.java'),
             file('delosdb-tests/build.gradle'),
             file('docs/design/V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md'),
             file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
-            file('build.gradle'),
-            file('benchmarks/jmh/build.gradle'),
-            file('delosdb-optionaltools/build.gradle'),
-            file('delosdb-optionaltools/src/main/java/module-info.java'),
-            file('delosdb-tests/src/test/java/module-info.java')
+            file('settings.gradle')
     ]
     inputs.files(required)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
@@ -8719,18 +8409,14 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             def factory = required[0].getText('UTF-8')
             def conglomerate = required[1].getText('UTF-8')
             def diagnostics = required[2].getText('UTF-8')
-            def bridgeBuild = required[3].getText('UTF-8')
-            def retainedBuild = required[4].getText('UTF-8')
-            def artifacts = required[5].getText('UTF-8')
+            def mvccBuild = required[3].getText('UTF-8')
+            def artifacts = required[4].getText('UTF-8')
+            def engineBuild = required[5].getText('UTF-8')
             def moduleInfo = required[6].getText('UTF-8')
             def testsBuild = required[7].getText('UTF-8')
             def design = required[8].getText('UTF-8')
             def roadmap = required[9].getText('UTF-8')
-            def rootBuild = required[10].getText('UTF-8')
-            def benchmarkBuild = required[11].getText('UTF-8')
-            def optionalBuild = required[12].getText('UTF-8')
-            def optionalModuleInfo = required[13].getText('UTF-8')
-            def testModuleInfo = required[14].getText('UTF-8')
+            def settings = required[10].getText('UTF-8')
             def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
 
             if (!factory.contains('new MvccRawStoreRuntime(')
@@ -8742,138 +8428,71 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             }
             ['MvccDatabaseRuntime', 'MvccConglomerateState', 'MvccConglomerateController',
              'MvccScanController', 'MvccConglomerateLifecycleAction'].each { token ->
-                if (conglomerate.contains(token)) {
-                    failures << 'Active conglomerate retains retired production token: ' + token
-                }
+                if (conglomerate.contains(token)) failures << 'Active conglomerate retains retired production token: ' + token
             }
             if (diagnostics.contains('MvccDatabaseRuntime')
                     || diagnostics.contains('MvccRuntimeDiagnosticsDirectory')
                     || !diagnostics.contains('Retained delos_mvcc database-storage diagnostics were retired')) {
                 failures << 'Active diagnostics must observe only RawStore and reject retained database snapshots'
             }
-
-            [
-                    'MvccConglomerateController.java',
-                    'MvccConglomerateLifecycleAction.java',
-                    'MvccConglomerateLifecycleFiles.java',
-                    'MvccConglomerateState.java',
-                    'MvccDatabaseRuntime.java',
-                    'MvccRuntimeDiagnosticsDirectory.java',
-                    'MvccScanController.java',
-                    'MvccStoreAccessTransactionRegistry.java'
-            ].each { sourceName ->
-                if (!bridgeBuild.contains("exclude 'org/apache/derby/impl/store/access/mvcc/${sourceName}'")) {
-                    failures << 'Production bridge must exclude retained source: ' + sourceName
-                }
+            if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
+                    || !mvccBuild.contains('legacyRetained {')
+                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
+                    || !mvccBuild.contains('setSrcDirs([])')
+                    || !mvccBuild.contains("tasks.register('verifyRetainedOracleQuarantine')")
+                    || !mvccBuild.contains("tasks.register('legacyRetainedCheck')")
+                    || !mvccBuild.contains("setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])")) {
+                failures << 'Production MVCC and the retained Phase 8 oracle must remain separated by explicit source sets'
             }
-
-            if (!retainedBuild.contains("exclude 'io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java'")
-                    || !retainedBuild.contains("exclude 'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'")
-                    || !retainedBuild.contains("tasks.register('verifyRetainedOracleQuarantine')")
-                    || !retainedBuild.contains("tasks.register('legacyRetainedCheck')")
-                    || !retainedBuild.toLowerCase(java.util.Locale.ROOT).contains('quarantined phase 8 retained-store oracle')) {
-                failures << 'Retained module must be quarantined and stripped of its runtime provider service'
+            if (new File(delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java').exists()
+                    || new File(delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory').exists()) {
+                failures << 'Retired external MVCC provider source and service must be absent from the repository tree'
             }
-            def retainedCheck = retainedBuild.substring(retainedBuild.indexOf("tasks.named('check')"))
-            retainedCheck = retainedCheck.substring(0, retainedCheck.indexOf("tasks.register('runDelosMvccBufferCacheBenchmark'"))
-            if (!retainedCheck.contains("setDependsOn([tasks.named('verifyRetainedOracleQuarantine')])")
-                    || retainedCheck.contains("tasks.named('classes')")
-                    || retainedCheck.contains("tasks.named('jar')")
-                    || retainedCheck.contains('runMvccCoreModelTest')
-                    || retainedCheck.contains('runDelosMvccLifecycleProofs')) {
-                failures << 'Normal storage-mvcc check must verify quarantine without compiling or executing the retained Phase 8 system'
+            if (mvccBuild.contains("implementation project(':delosdb-storage-io')")) {
+                failures << 'Production MVCC must not depend on the retired page-volume module'
             }
-
-            def runtimeSection = artifacts.substring(
-                    artifacts.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
+            def runtimeSection = artifacts.substring(artifacts.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
                     artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['))
-            def supportSection = artifacts.substring(
-                    artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['),
+            def supportSection = artifacts.substring(artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['),
                     artifacts.indexOf('ext.delosdbAssembledJarArtifacts'))
             if (runtimeSection.contains('delosdb-storage-mvcc.jar')
                     || runtimeSection.contains('delosdb-storage-io.jar')
-                    || supportSection.contains('delosdb-storage-mvcc.jar')
+                    || !supportSection.contains('delosdb-storage-mvcc.jar')
                     || supportSection.contains('delosdb-storage-io.jar')
-                    || artifacts.contains('delosdbLegacyOracleTestJarFiles')
-                    || !artifacts.contains("it.name in ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar']")
-                    || !artifacts.contains('DerbyMvccAccessMethodProvider')
-                    || !artifacts.contains('Retired external MVCC provider service remains')) {
-                failures << 'Root assembly/runtime model must load RawStore from derby.jar and exclude retained MVCC/page-volume archives and provider'
+                    || !artifacts.contains('Retained Phase 8 classes remain in production MVCC provider jar')) {
+                failures << 'Runtime artifact model must publish the production MVCC patch artifact without restoring retained jars'
+            }
+            if (!engineBuild.contains("project(path: ':delosdb-storage-mvcc', configuration: 'derbyRuntimePatchElements')")
+                    || engineBuild.contains(':delosdb-storage-bridge:')) {
+                failures << 'derby.jar must consume the production MVCC patch artifact directly'
+            }
+            if (settings.contains("include 'delosdb-storage-bridge'")
+                    || new File(delosRepositoryRoot, 'delosdb-storage-bridge').exists()) {
+                failures << 'The retired storage-bridge module must be absent'
             }
             if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
                 failures << 'module-info must not discover the retired external provider'
             }
-
-            def classRuntimeStart = rootBuild.indexOf('def moduleDirsForRuntime = files(')
-            def classRuntimeEnd = rootBuild.indexOf('apply from:', classRuntimeStart)
-            def classRuntime = classRuntimeStart >= 0 && classRuntimeEnd > classRuntimeStart
-                    ? rootBuild.substring(classRuntimeStart, classRuntimeEnd) : ''
-            if (classRuntime.isEmpty() || classRuntime.contains('delosdb-storage-io')) {
-                failures << 'Class-directory runtime must not include the retired page-volume module'
-            }
-            def benchmarkRuntimeStart = benchmarkBuild.indexOf('final List<String> runtimeJarNames = [')
-            def benchmarkRuntimeEnd = benchmarkBuild.indexOf(']', benchmarkRuntimeStart)
-            def benchmarkRuntime = benchmarkRuntimeStart >= 0 && benchmarkRuntimeEnd > benchmarkRuntimeStart
-                    ? benchmarkBuild.substring(benchmarkRuntimeStart, benchmarkRuntimeEnd) : ''
-            if (benchmarkRuntime.isEmpty()
-                    || benchmarkRuntime.contains('delosdb-storage-mvcc.jar')
-                    || benchmarkRuntime.contains('delosdb-storage-io.jar')
-                    || benchmarkBuild.contains('MvccInheritedStorageProviderFactory')
-                    || benchmarkBuild.contains('DelosStorageProviderFactory')
-                    || !benchmarkBuild.contains('DerbyMvccAccessMethodProvider')) {
-                failures << 'Standalone benchmark runtime must load RawStore from derby.jar without retired MVCC/page-volume jars or provider'
-            }
-            if (optionalBuild.contains("project(':delosdb-storage-io')")
-                    || optionalModuleInfo.contains('requires io.github.ggeorg.delosdb.storage.io')) {
-                failures << 'Optional tools must not retain a production dependency on the retired page-volume module'
-            }
             if (testsBuild.contains("testImplementation project(':delosdb-storage-io')")
-                    || testsBuild.contains('delosdbLegacyOracleTestJarFiles')
-                    || !testsBuild.contains("exclude 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java'")
-                    || testsBuild.contains("'runDelosHeapMvccRecoveryDifferentialTest'")
-                    || testModuleInfo.contains('requires io.github.ggeorg.delosdb.storage.io')) {
-                failures << 'Normal SQL test compilation must not depend on the retired page-volume module or recovery differential lane'
+                    || testsBuild.contains('delosdbLegacyOracleTestJarFiles')) {
+                failures << 'Normal SQL tests must not depend on the retained page-volume system'
             }
-
-            def integrationStart = testsBuild.indexOf("'runDelosMvccSqlIntegrationTest'")
-            def integrationEnd = testsBuild.indexOf("'runDelosMvccTableRebuildProviderTruthTest'", integrationStart)
-            def integration = integrationStart >= 0 && integrationEnd > integrationStart
-                    ? testsBuild.substring(integrationStart, integrationEnd) : ''
-            if (!integration.contains('MvccRawStoreVerticalSliceTest.class')
-                    || !integration.contains('MvccRawStoreMaintenanceDiagnosticsTest.class')
-                    || integration.contains('MvccSqlLifecycleTest.class')
-                    || integration.contains('MvccSqlTransactionTest.class')
-                    || integration.contains('MvccSqlPageBacked')) {
-                failures << 'Normal SQL integration lane must contain only the production RawStore proof family'
-            }
-
             def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            [
-                    'delosDatabaseDecisionRetentionStaticAnalysis',
-                    'delosPhase8EntropyStaticAnalysis',
-                    'delosPhase9ImmutableDatabaseSnapshotStaticAnalysis',
-                    'delosPhase9TableTransactionSnapshotStaticAnalysis',
-                    'delosMvccTableRebuildProviderTruthStaticAnalysis'
-            ].each { retiredGate ->
-                if (s0.contains("'${retiredGate}'")) failures << 'S0 retains retired Phase 8 gate: ' + retiredGate
-            }
             if (!s0.contains("'delosMvccRetainedRuntimeRetirementStaticAnalysis'")) {
-                failures << 'S0 must include the consolidated retained-runtime retirement gate'
+                failures << 'S0 must include the retained-runtime retirement gate'
             }
-
             ['factory branch removed', 'retained MVCC and page-volume jars removed from runtime classpaths',
              ':delosdb-storage-mvcc:legacyRetainedCheck'].each { token ->
                 if (!design.contains(token)) failures << 'Retirement design is missing: ' + token
             }
-            ['## Stage 5.4 — retained production runtime retirement',
-             'VERIFIED',
+            ['## Stage 5.4 — retained production runtime retirement', 'VERIFIED',
              'one production MVCC runtime'].each { token ->
                 if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 5.4 token: ' + token
             }
         }
-
-        def reportFile = layout.buildDirectory.file(
-                'reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt').get().asFile
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
             writer.println('DelosDB retained MVCC production runtime retirement static analysis')
@@ -8881,9 +8500,113 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) throw new GradleException(
-                'Retained MVCC runtime retirement static analysis failed. Report: ' + reportFile)
+        if (!failures.isEmpty()) throw new GradleException('Retained MVCC runtime retirement static analysis failed. Report: ' + reportFile)
         logger.lifecycle('Retained MVCC runtime retirement static analysis passed. Report: {}', reportFile)
+    }
+}
+
+tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 7.1 ownership of the production MVCC provider and removal of storage-bridge.'
+
+    def required = [
+            file('settings.gradle'), file('build.gradle'), file('delosdb-engine/build.gradle'),
+            file('delosdb-storage-mvcc/build.gradle'), file('gradle/delosdb-runtime-artifacts.gradle'),
+            file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
+            file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'),
+            file('delosdb-storage-mvcc/src/main/resources/META-INF/services/org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'),
+            file('delosdb-storage-mvcc/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageDiagnostics'),
+            file('docs/design/V1-RAWSTORE-MVCC-MODULE-CONVERGENCE.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    def engineDiagnosticsService = file(
+            'delosdb-engine/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageDiagnostics')
+    inputs.files(required)
+    inputs.file(engineDiagnosticsService)
+    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-storage-module-convergence-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (!engineDiagnosticsService.isFile()) failures << 'Missing Derby compatibility diagnostics service aggregate: ' + engineDiagnosticsService
+        if (failures.isEmpty()) {
+            def settings = required[0].getText('UTF-8')
+            def rootBuild = required[1].getText('UTF-8')
+            def engineBuild = required[2].getText('UTF-8')
+            def mvccBuild = required[3].getText('UTF-8')
+            def artifacts = required[4].getText('UTF-8')
+            def parity = required[5].getText('UTF-8')
+            def serviceProviders = required[7].readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
+            def diagnosticsProviders = required[8].readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
+            def design = required[9].getText('UTF-8')
+            def roadmap = required[10].getText('UTF-8')
+
+            if (settings.contains("include 'delosdb-storage-bridge'")
+                    || new File(delosRepositoryRoot, 'delosdb-storage-bridge').exists()) {
+                failures << 'delosdb-storage-bridge must be removed from settings and the repository tree'
+            }
+            if (!settings.contains("include 'delosdb-storage-mvcc'")) failures << 'delosdb-storage-mvcc must remain a Gradle subproject'
+            if (!mvccBuild.contains("tasks.register('compileStorageMvcc')")
+                    || !mvccBuild.contains('derbyRuntimePatchElements')
+                    || !mvccBuild.contains("archiveFileName = 'delosdb-storage-mvcc.jar'")
+                    || !mvccBuild.contains("attributes 'Automatic-Module-Name': 'io.github.ggeorg.delosdb.storage.mvcc'")) {
+                failures << 'delosdb-storage-mvcc must publish the production provider patch artifact'
+            }
+            if (!mvccBuild.contains('setSrcDirs([resourceRoot])')
+                    || mvccBuild.contains('srcDir resourceRoot')) {
+                failures << 'Production MVCC resources must use one explicit source root without duplicating Java plugin defaults'
+            }
+            if (!mvccBuild.contains('legacyRetained {') || !mvccBuild.contains("tasks.register('legacyRetainedCheck')")) {
+                failures << 'The Phase 8 differential oracle must remain explicit and outside production classes'
+            }
+            if (serviceProviders != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
+                failures << 'MVCC access-method service must publish exactly one production provider'
+            }
+            if (diagnosticsProviders != ['org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics']) {
+                failures << 'MVCC provider jar must publish exactly its own diagnostics provider'
+            }
+            def engineDiagnosticsProviders = engineDiagnosticsService.readLines('UTF-8')
+                    .collect { it.trim() }.findAll { it && !it.startsWith('#') }
+            if (engineDiagnosticsProviders != [
+                    'org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics',
+                    'org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics']) {
+                failures << 'derby.jar diagnostics service aggregate must publish heap and MVCC providers exactly once'
+            }
+            if (!rootBuild.contains("project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main')")
+                    || rootBuild.contains(':delosdb-storage-bridge:')) {
+                failures << 'Root build wiring must consume storage-mvcc rather than storage-bridge'
+            }
+            if (!engineBuild.contains("project(path: ':delosdb-storage-mvcc', configuration: 'derbyRuntimePatchElements')")
+                    || !engineBuild.contains(':delosdb-storage-mvcc:compileStorageMvcc')
+                    || engineBuild.contains(':delosdb-storage-bridge:')) {
+                failures << 'Engine patch wiring must consume the MVCC provider artifact directly'
+            }
+            if (!artifacts.contains("jarName: 'delosdb-storage-mvcc.jar'")
+                    || !artifacts.contains('Retained Phase 8 classes remain in production MVCC provider jar')) {
+                failures << 'Root assembly must publish and inspect the production MVCC provider jar'
+            }
+            if (parity.contains(':delosdb-storage-bridge|')) failures << 'Derby module parity must not retain the removed bridge extension row'
+            def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
+            ['provider implementation ownership', 'legacyretained source set',
+             'derbyruntimepatchelements', 'no split-package runtime duplication'].each { token ->
+                if (!normalizedDesign.contains(token)) failures << 'Module-convergence design is missing: ' + token
+            }
+            ['## Stage 7.1 — production MVCC provider module convergence',
+             'IMPLEMENTED / PENDING USER VERIFICATION',
+             'delosMvccStorageModuleConvergenceStaticAnalysis'].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.1 token: ' + token
+            }
+        }
+        def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-storage-module-convergence-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB RawStore MVCC storage-module convergence static analysis')
+            writer.println('================================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException('RawStore MVCC storage-module convergence static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('RawStore MVCC storage-module convergence static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -8926,6 +8649,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
             'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
             'delosMvccRetainedRuntimeRetirementStaticAnalysis',
+            'delosMvccStorageModuleConvergenceStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

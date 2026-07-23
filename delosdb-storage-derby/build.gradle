@@ -11,8 +11,8 @@ group = rootProject.group
 // org.apache.derby.engine, including heap/raw/access/WAL code. This source set is
 // compiled on the classpath because the current runtime still packages these
 // classes into the Derby engine jar. Derby-facing MVCC access-method glue lives
-// in delosdb-storage-bridge so this inherited storage module does not depend on
-// native MVCC storage.
+// in delosdb-storage-mvcc so this inherited storage module does not depend on
+// the MVCC access-method implementation.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 

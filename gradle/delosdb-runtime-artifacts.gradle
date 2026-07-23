@@ -20,13 +20,16 @@ ext.delosdbRuntimeJarArtifacts = [
         [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'jar',            jarName: 'derbyrun.jar']
 ]
 
-// These jars are assembled but are not placed directly on Derby-compatible
-// runtime classpaths. storage-api/store-api are patched into derby.jar. The
-// retired Phase 8 MVCC/page-volume modules are outside root assembly entirely
-// and are built only by their explicit legacy-oracle tasks.
+// These jars are assembled but are not placed directly on the current
+// Derby-compatible runtime classpath. storage-api/store-api are patched into
+// derby.jar. The production MVCC provider is also published independently,
+// while its org.apache.derby implementation package is patched into derby.jar
+// until the final distribution/module-path packaging step. The retained Phase 8
+// oracle is compiled only by explicit legacy source-set tasks.
 ext.delosdbAssembledSupportJarArtifacts = [
         [key: 'storageApi',  gradleProject: 'delosdb-storage-api',     jarTask: 'jar', jarName: 'delosdb-storage-api.jar'],
-        [key: 'storeApi',    gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar']
+        [key: 'storeApi',    gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar'],
+        [key: 'mvcc',        gradleProject: 'delosdb-storage-mvcc',     jarTask: 'jar', jarName: 'delosdb-storage-mvcc.jar']
 ]
 
 ext.delosdbAssembledJarArtifacts = ext.delosdbRuntimeJarArtifacts + ext.delosdbAssembledSupportJarArtifacts
@@ -50,6 +53,7 @@ ext.delosdbRuntimeBuildTasks = [
         ':delosdb-commons:classes',
         ':delosdb-runtime-api:classes',
         ':delosdb-storage-api:classes',
+        ':delosdb-storage-mvcc:classes',
         ':delosdb-engine:classes',
         ':delosdb-client:classes',
         ':delosdb-tools:classes',
@@ -72,7 +76,7 @@ def delosdbAsmRuntimeFileCollection = objects.fileCollection().from(configuratio
 
 tasks.register('verifyDelosRuntimeStorageProviders') {
     group = 'verification'
-    description = 'Verifies that RawStore MVCC is discovered from derby.jar and the retired external provider is absent from runtime jars.'
+    description = 'Verifies the production MVCC provider artifact, derby.jar discovery, and retained-provider absence.'
     dependsOn 'jars'
 
     def accessMethodServiceResource =
@@ -81,11 +85,21 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
             'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider'
     def expectedAccessMethodProvider =
             'org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider'
+    def diagnosticsServiceResource =
+            'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageDiagnostics'
+    def expectedMvccDiagnosticsProvider =
+            'org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics'
+    def expectedDerbyDiagnosticsProviders = [
+            'org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics',
+            expectedMvccDiagnosticsProvider
+    ]
     def retiredProviderServiceResource =
             'META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
     def engineJar = layout.buildDirectory.file('libs/derby.jar')
+    def mvccJar = layout.buildDirectory.file('libs/delosdb-storage-mvcc.jar')
 
     inputs.files(delosdbRuntimeJarFileCollection).withPropertyName('runtimeJars')
+    inputs.file(mvccJar).withPropertyName('mvccProviderJar')
     inputs.files(delosdbAsmRuntimeFileCollection).withPropertyName('asmRuntime')
 
     doLast {
@@ -93,6 +107,44 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
         if (!derbyJar.isFile()) {
             throw new GradleException('Missing Derby runtime jar: ' + derbyJar)
         }
+        def providerJar = mvccJar.get().asFile
+        if (!providerJar.isFile()) {
+            throw new GradleException('Missing MVCC provider jar: ' + providerJar)
+        }
+        new java.util.zip.ZipFile(providerJar).withCloseable { zip ->
+            def entry = zip.getEntry(accessMethodServiceResource)
+            if (entry == null) {
+                throw new GradleException('Missing ' + accessMethodServiceResource + ' in ' + providerJar)
+            }
+            def lines = zip.getInputStream(entry).getText('UTF-8')
+                    .readLines()
+                    .collect { it.trim() }
+                    .findAll { it && !it.startsWith('#') }
+            if (lines != [expectedAccessMethodProvider]) {
+                throw new GradleException(providerJar + ' must advertise exactly '
+                        + expectedAccessMethodProvider + '; found ' + lines)
+            }
+            def diagnosticsEntry = zip.getEntry(diagnosticsServiceResource)
+            if (diagnosticsEntry == null) {
+                throw new GradleException('Missing ' + diagnosticsServiceResource + ' in ' + providerJar)
+            }
+            def diagnosticsLines = zip.getInputStream(diagnosticsEntry).getText('UTF-8')
+                    .readLines().collect { it.trim() }.findAll { it && !it.startsWith('#') }
+            if (diagnosticsLines != [expectedMvccDiagnosticsProvider]) {
+                throw new GradleException(providerJar + ' must advertise exactly '
+                        + expectedMvccDiagnosticsProvider + '; found ' + diagnosticsLines)
+            }
+            if (zip.getEntry(retiredProviderServiceResource) != null) {
+                throw new GradleException('Retired provider service remains in ' + providerJar)
+            }
+            def entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                if (entries.nextElement().name.startsWith('io/github/ggeorg/delosdb/storage/mvcc/')) {
+                    throw new GradleException('Retained Phase 8 classes remain in production MVCC provider jar')
+                }
+            }
+        }
+
         new java.util.zip.ZipFile(derbyJar).withCloseable { zip ->
             def entry = zip.getEntry(accessMethodServiceResource)
             if (entry == null) {
@@ -106,6 +158,16 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
                 throw new GradleException(derbyJar + ' does not advertise '
                         + expectedAccessMethodProvider + '; found ' + lines)
             }
+            def diagnosticsEntry = zip.getEntry(diagnosticsServiceResource)
+            if (diagnosticsEntry == null) {
+                throw new GradleException('Missing ' + diagnosticsServiceResource + ' in ' + derbyJar)
+            }
+            def diagnosticsLines = zip.getInputStream(diagnosticsEntry).getText('UTF-8')
+                    .readLines().collect { it.trim() }.findAll { it && !it.startsWith('#') }
+            if (diagnosticsLines != expectedDerbyDiagnosticsProviders) {
+                throw new GradleException(derbyJar + ' must advertise heap and MVCC diagnostics; found '
+                        + diagnosticsLines)
+            }
         }
 
         def runtimeFiles = delosdbRuntimeJarFileCollection.files.toList()
@@ -115,8 +177,8 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
             throw new GradleException('DelosDB runtime jar set has missing file(s): '
                     + missingRuntimeFiles)
         }
-        if (runtimeFiles.any { it.name in ['delosdb-storage-mvcc.jar', 'delosdb-storage-io.jar'] }) {
-            throw new GradleException('Retired external MVCC storage jar remains on the runtime classpath')
+        if (runtimeFiles.any { it.name == 'delosdb-storage-io.jar' }) {
+            throw new GradleException('Retired page-volume storage jar remains on the runtime classpath')
         }
         runtimeFiles.each { runtimeFile ->
             new java.util.zip.ZipFile(runtimeFile).withCloseable { zip ->

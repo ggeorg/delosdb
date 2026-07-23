@@ -96,5 +96,5 @@ Normal compatibility verification remains unchanged:
 ```bash
 ./gradlew s0CloseoutVerification
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
-./gradlew :delosdb-storage-api:check :delosdb-storage-derby:check :delosdb-storage-bridge:check :delosdb-storage-mvcc:check
+./gradlew :delosdb-storage-api:check :delosdb-storage-derby:check :delosdb-storage-mvcc:check
 ```
