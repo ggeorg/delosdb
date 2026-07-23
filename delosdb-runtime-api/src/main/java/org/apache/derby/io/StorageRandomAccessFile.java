@@ -35,9 +35,11 @@ import java.io.IOException;
  * reading and writing takes place at the file pointer offset and advances it. Positional operations
  * do not change the associated file pointer.
  *<p>
- * An implementation of StorageRandomAccessFile need not be thread safe. The database engine
- * single-threads access to each StorageRandomAccessFile instance. Two threads will not access the
- * same StorageRandomAccessFile instance at the same time.
+ * An implementation of StorageRandomAccessFile need not make pointer-based operations thread safe.
+ * The database engine externally serializes ordinary operations that read or change the associated
+ * file pointer. Implementations which override the positional methods with true positional I/O may
+ * support concurrent operations on independent ranges. The pointer-preserving compatibility defaults
+ * must remain externally serialized with all other pointer-based access to the same instance.
  *<p>
  * @see <a href="http://java.sun.com/j2se/1.4.2/docs/api/java/io/RandomAccessFile.html">java.io.RandomAccessFile</a>
  */

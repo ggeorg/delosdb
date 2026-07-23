@@ -30,6 +30,8 @@ import java.util.Objects;
 import org.apache.derby.iapi.store.types.DelosHeapRawStoreBoundaryDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoDiagnosticsDirectory;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -44,13 +46,17 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
  */
 public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostics {
     private final Path explicitDatabaseDirectory;
+    private final String explicitDatabaseIdentity;
 
     public DerbyHeapStorageDiagnostics() {
-        this(null);
+        this(null, null);
     }
 
-    private DerbyHeapStorageDiagnostics(Path explicitDatabaseDirectory) {
+    private DerbyHeapStorageDiagnostics(
+            Path explicitDatabaseDirectory,
+            String explicitDatabaseIdentity) {
         this.explicitDatabaseDirectory = explicitDatabaseDirectory;
+        this.explicitDatabaseIdentity = explicitDatabaseIdentity;
     }
 
     @Override
@@ -61,9 +67,28 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
     @Override
     public DelosStorageDiagnostics withContext(DelosStorageDiagnosticsContext context) {
         Objects.requireNonNull(context, "context");
-        return context.hasDatabaseDirectory()
-                ? new DerbyHeapStorageDiagnostics(context.databaseDirectory())
-                : this;
+        if (context.hasDatabaseDirectory()) {
+            return new DerbyHeapStorageDiagnostics(
+                    context.databaseDirectory(), null);
+        }
+        if (context.hasDatabaseIdentity()) {
+            return new DerbyHeapStorageDiagnostics(
+                    null, context.databaseIdentity());
+        }
+        return this;
+    }
+
+    @Override
+    public DelosRawStoreIoSnapshot databaseRawStoreIoSnapshot() {
+        if (explicitDatabaseIdentity != null) {
+            return DelosRawStoreIoDiagnosticsDirectory.snapshot(
+                    explicitDatabaseIdentity);
+        }
+        if (explicitDatabaseDirectory != null) {
+            return DelosRawStoreIoDiagnosticsDirectory.snapshot(
+                    explicitDatabaseDirectory);
+        }
+        return DelosRawStoreIoSnapshot.unavailable();
     }
 
 

@@ -692,6 +692,15 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosSharedStoragePositionalIoTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosSharedRawStoreIoDiagnosticsTest',
+        'Runs Stage 8.2 shared heap/MVCC file/memory RawStore I/O diagnostics and resource-accounting proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.class'])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedRawStoreIoDiagnosticsTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

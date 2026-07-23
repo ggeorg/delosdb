@@ -75,6 +75,16 @@ public final class DelosStorageDiagnosticsRegistry {
         return mvccMemory(databaseName).databaseMemorySnapshot();
     }
 
+    public static DelosRawStoreIoSnapshot mvccDatabaseRawStoreIoSnapshot(
+            Path databaseDirectory) {
+        return mvcc(databaseDirectory).databaseRawStoreIoSnapshot();
+    }
+
+    public static DelosRawStoreIoSnapshot mvccMemoryDatabaseRawStoreIoSnapshot(
+            String databaseName) {
+        return mvccMemory(databaseName).databaseRawStoreIoSnapshot();
+    }
+
     public static List<DelosTableStorageSnapshot> mvccTableStorageSnapshots(
             Path databaseDirectory) {
         return mvcc(databaseDirectory).tableStorageSnapshots();
@@ -88,6 +98,18 @@ public final class DelosStorageDiagnosticsRegistry {
 
     public static DelosStorageDiagnostics heap() {
         return forProvider(HEAP_PROVIDER_ID);
+    }
+
+    public static DelosRawStoreIoSnapshot heapDatabaseRawStoreIoSnapshot(
+            Path databaseDirectory) {
+        return heapDiagnostics(databaseDirectory).databaseRawStoreIoSnapshot();
+    }
+
+    public static DelosRawStoreIoSnapshot heapMemoryDatabaseRawStoreIoSnapshot(
+            String databaseName) {
+        return heap().withContext(
+                DelosStorageDiagnosticsContext.memoryDatabase(databaseName))
+                .databaseRawStoreIoSnapshot();
     }
 
     public static DelosStorageMetadataQuery metadataQuery() {

@@ -53,7 +53,10 @@ preserve the primary failure and suppress restore failure
 ```
 
 This compatibility path keeps alternate and virtual storage implementations valid. It is not the
-production directory fast path.
+production directory fast path. Pointer-based operations and these compatibility defaults require
+external serialization on one instance. A storage implementation which overrides the methods with
+true positional I/O may execute independent positional ranges concurrently; directory storage does so
+under `RAFContainer4`'s existing container recovery coordination.
 
 The contract also defines:
 
@@ -176,8 +179,10 @@ asynchronous I/O
 io_uring
 backend selection
 new page format
-I/O metrics or fault injection
-resource-leak tracking
+deterministic I/O fault injection
+per-operation event recording
 ```
 
-Those are later shared Stage 8 decisions and must remain inside the one inherited RawStore authority.
+Stage 8.2 adds bounded shared I/O diagnostics and container-handle accounting at this boundary.
+Fault injection and memory-ownership changes remain later shared Stage 8 decisions inside the one
+inherited RawStore authority.

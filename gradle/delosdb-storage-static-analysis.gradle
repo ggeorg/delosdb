@@ -8994,6 +8994,241 @@ tasks.register('delosSharedStoragePositionalIoStaticAnalysis') {
     }
 }
 
+tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 8.2 shared RawStore I/O diagnostics and resource accounting.'
+
+    def required = [
+            snapshot: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java'),
+            metrics: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoMetrics.java'),
+            directory: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java'),
+            dataFactory: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/data/DataFactory.java'),
+            diagnostics: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java'),
+            registry: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java'),
+            baseFactory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
+            fallbackContainer: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            concurrentContainer: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            heapDiagnostics: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java'),
+            mvccRuntime: file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java'),
+            mvccDiagnostics: file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java'),
+            focusedTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.java'),
+            testBuild: file('delosdb-tests/build.gradle'),
+            randomAccessContract: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
+            positionalDesign: file('docs/design/V1-JDK25-SHARED-POSITIONAL-IO.md'),
+            design: file('docs/design/V1-JDK25-SHARED-RAWSTORE-IO-DIAGNOSTICS.md'),
+            roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    inputs.files(required.values())
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/shared-rawstore-io-diagnostics-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { name, source ->
+            if (!source.isFile()) failures << 'Missing required Stage 8.2 source: ' + name + ' -> ' + source
+        }
+        if (failures.isEmpty()) {
+            def text = required.collectEntries { name, source ->
+                [(name): source.getText('UTF-8')]
+            }
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            [
+                    'public record DelosRawStoreIoSnapshot(',
+                    'CURRENT_SCHEMA_VERSION = 1',
+                    'pageReadOperations',
+                    'pageReadBytes',
+                    'pageWriteOperations',
+                    'pageWriteBytes',
+                    'contentOnlyForceOperations',
+                    'metadataForceOperations',
+                    'closedChannelDetections',
+                    'channelRecoveryAttempts',
+                    'currentInFlightPageIo',
+                    'peakInFlightPageIo',
+                    'currentOpenContainerHandles',
+                    'peakOpenContainerHandles',
+                    'unclosedContainerHandlesAtShutdown'
+            ].each { token ->
+                if (!text.snapshot.contains(token)) failures << 'RawStore I/O snapshot is missing: ' + token
+            }
+            [
+                    'AtomicLong',
+                    'pageIoStarted()',
+                    'pageIoFinished()',
+                    'pageReadSucceeded(long bytes)',
+                    'pageWriteSucceeded(long bytes)',
+                    'forceSucceeded(boolean metadata)',
+                    'closedChannelDetected()',
+                    'channelRecoveryAttempted()',
+                    'containerHandleOpened()',
+                    'containerHandleClosed()',
+                    'unclosedContainerHandlesAtShutdown.set(',
+                    'Math.max(',
+                    'DelosRawStoreIoSnapshot snapshot()'
+            ].each { token ->
+                if (!text.metrics.contains(token)) failures << 'Database-owned I/O metrics are missing: ' + token
+            }
+            ['ArrayList', 'ConcurrentLinkedQueue', 'List<', 'Map<'].each { token ->
+                if (text.metrics.contains(token)) failures << 'Bounded I/O metrics must not retain event history: ' + token
+            }
+            [
+                    'WeakReference<DelosRawStoreIoMetrics>',
+                    'ConcurrentHashMap',
+                    'MAX_TERMINAL_SNAPSHOTS = 64',
+                    'removeEldestEntry(',
+                    'TERMINAL_SNAPSHOTS.put(',
+                    'fileIdentity(Path databaseDirectory)',
+                    'memoryIdentity(String canonicalName)',
+                    'register(String identity, DelosRawStoreIoMetrics metrics)',
+                    'unregister(String identity, DelosRawStoreIoMetrics metrics)'
+            ].each { token ->
+                if (!text.directory.contains(token)) failures << 'Weak diagnostics lookup is missing: ' + token
+            }
+
+            if (!text.dataFactory.contains('DelosRawStoreIoMetrics rawStoreIoMetrics()')) {
+                failures << 'DataFactory must expose the database-owned RawStore I/O metrics'
+            }
+            if (!text.diagnostics.contains('databaseRawStoreIoSnapshot()')) {
+                failures << 'The neutral diagnostics surface must expose the RawStore I/O snapshot'
+            }
+            [
+                    'heapDatabaseRawStoreIoSnapshot(',
+                    'heapMemoryDatabaseRawStoreIoSnapshot(',
+                    'mvccDatabaseRawStoreIoSnapshot(',
+                    'mvccMemoryDatabaseRawStoreIoSnapshot('
+            ].each { token ->
+                if (!text.registry.contains(token)) failures << 'Diagnostics registry is missing: ' + token
+            }
+
+            [
+                    'new DelosRawStoreIoMetrics()',
+                    'registerRawStoreIoMetrics()',
+                    'rawStoreIoMetrics.bind(',
+                    'DelosRawStoreIoDiagnosticsDirectory.register(',
+                    'rawStoreIoMetrics.shutdown()',
+                    'DelosRawStoreIoDiagnosticsDirectory.unregister('
+            ].each { token ->
+                if (!text.baseFactory.contains(token)) failures << 'BaseDataFileFactory ownership is missing: ' + token
+            }
+            [
+                    'installFileData(',
+                    'clearFileDataReference()',
+                    'containerHandleOpened()',
+                    'containerHandleClosed()',
+                    'pageIoStarted()',
+                    'pageReadSucceeded(pageSize)',
+                    'pageReadFailed()',
+                    'pageWriteSucceeded(pageSize)',
+                    'pageWriteFailed()',
+                    'forceSucceeded(true)',
+                    'forceFailed()',
+                    'fileData.readFullyAt(',
+                    'fileData.writeAt('
+            ].each { token ->
+                if (!text.fallbackContainer.contains(token)) failures << 'RAFContainer diagnostics are missing: ' + token
+            }
+            [
+                    'pageReadSucceeded(pageData.length)',
+                    'pageWriteSucceeded(dataToWrite.length)',
+                    'forceSucceeded(false)',
+                    'closedChannelDetected()',
+                    'channelRecoveryAttempted()',
+                    'channelReopenSucceeded()',
+                    'channelReopenFailed()',
+                    'pageFile.readFullyAt(',
+                    'pageFile.writeAt('
+            ].each { token ->
+                if (!text.concurrentContainer.contains(token)) failures << 'RAFContainer4 diagnostics are missing: ' + token
+            }
+
+            if (!text.heapDiagnostics.contains('DelosRawStoreIoDiagnosticsDirectory.snapshot(')) {
+                failures << 'Heap diagnostics must resolve the database-owned RawStore I/O snapshot'
+            }
+            [
+                    'DelosRawStoreIoMetrics rawStoreIoMetrics',
+                    'DelosRawStoreIoSnapshot rawStoreIoSnapshot()',
+                    'return rawStoreIoMetrics.snapshot()'
+            ].each { token ->
+                if (!text.mvccRuntime.contains(token)) failures << 'MVCC runtime shared observation is missing: ' + token
+            }
+            if (!text.mvccDiagnostics.contains('return rawStoreRuntime().rawStoreIoSnapshot()')) {
+                failures << 'MVCC diagnostics must expose the runtime-owned shared snapshot'
+            }
+
+            [
+                    'testCounterLifecycleIsBoundedExactAndLeakFree',
+                    'testConcurrentAccountingRemainsExactAndSnapshotSafe',
+                    'testFileDatabaseExposesOneSharedHeapAndMvccSnapshot',
+                    'testMemoryDatabaseUsesTheSameSnapshotShapeAndMetadataForcePath',
+                    'testTwoFileDatabasesKeepIndependentCounters',
+                    'unclosedContainerHandlesAtShutdown()',
+                    'assertFalse(stopped.runtimeActive())',
+                    'heapDatabaseRawStoreIoSnapshot(',
+                    'mvccDatabaseRawStoreIoSnapshot(',
+                    'heapMemoryDatabaseRawStoreIoSnapshot(',
+                    'mvccMemoryDatabaseRawStoreIoSnapshot('
+            ].each { token ->
+                if (!text.focusedTest.contains(token)) failures << 'Focused Stage 8.2 proof is missing: ' + token
+            }
+            if (!text.testBuild.contains("'runDelosSharedRawStoreIoDiagnosticsTest'")) {
+                failures << 'Tests build must register the Stage 8.2 focused task'
+            }
+            if (!text.testBuild.contains("dependsOn tasks.named('runDelosSharedRawStoreIoDiagnosticsTest')")) {
+                failures << 'Normal delosdb-tests:check must include the Stage 8.2 focused task'
+            }
+
+            [
+                    'true positional I/O may',
+                    'compatibility defaults',
+                    'externally serialized'
+            ].each { token ->
+                if (!text.randomAccessContract.contains(token)) failures << 'Shared random-access concurrency contract is missing: ' + token
+            }
+            if (!text.positionalDesign.contains('Stage 8.2 adds bounded shared I/O diagnostics')) {
+                failures << 'Stage 8.1 design must record the Stage 8.2 follow-on'
+            }
+            [
+                    'one bounded, database-owned observation model',
+                    'DelosRawStoreIoSnapshot',
+                    'weak, non-owning lookup',
+                    'concurrent snapshot safety',
+                    'runDelosSharedRawStoreIoDiagnosticsTest',
+                    'No second storage namespace'
+            ].each { token ->
+                if (!text.design.contains(token)) failures << 'Stage 8.2 design is missing: ' + token
+            }
+            [
+                    '## Stage 8.2 — shared RawStore I/O diagnostics and resource accounting',
+                    'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
+                    'Stage 8.1 — positional page I/O and explicit force semantics',
+                    'VERIFIED'
+            ].each { token ->
+                if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.2 token: ' + token
+            }
+
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosSharedRawStoreIoDiagnosticsStaticAnalysis'")) {
+                failures << 'S0 must include the shared RawStore I/O diagnostics gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-rawstore-io-diagnostics-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared RawStore I/O diagnostics static analysis')
+            writer.println('========================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Shared RawStore I/O diagnostics static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Shared RawStore I/O diagnostics static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -9037,6 +9272,7 @@ tasks.register('s0CloseoutVerification') {
             'delosStorageIoModuleRetirementStaticAnalysis',
             'delosStorageApiModuleRetirementStaticAnalysis',
             'delosSharedStoragePositionalIoStaticAnalysis',
+            'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

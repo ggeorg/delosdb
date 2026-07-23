@@ -430,3 +430,25 @@ StorageRandomAccessFile positional contract
 ```
 
 See `design/V1-JDK25-SHARED-POSITIONAL-IO.md`.
+
+## Stage 8.2 shared RawStore I/O diagnostics
+
+`BaseDataFileFactory` now owns one bounded `DelosRawStoreIoMetrics` object for the physical page path.
+`RAFContainer` and `RAFContainer4` publish completed page bytes, transfer failures, explicit force
+requirements, closed-channel recovery, in-flight operations, and long-lived container-handle lifetime.
+The counters do not participate in page locking, cache replacement, transaction outcome, or recovery.
+
+Heap and RawStore-backed MVCC diagnostics expose the same immutable `DelosRawStoreIoSnapshot`. File and
+named memory databases use explicit canonical identities, and simultaneously active databases remain
+isolated. A weak active lookup connects heap diagnostics to the database-owned metrics without extending the
+runtime lifetime. A bounded terminal cache retains only recent immutable shutdown snapshots, never
+per-operation event history.
+
+```text
+BaseDataFileFactory-owned metrics
+    -> RAFContainer / RAFContainer4 shared positional path
+    -> one immutable snapshot
+    -> heap diagnostics and MVCC diagnostics
+```
+
+See `design/V1-JDK25-SHARED-RAWSTORE-IO-DIAGNOSTICS.md`.

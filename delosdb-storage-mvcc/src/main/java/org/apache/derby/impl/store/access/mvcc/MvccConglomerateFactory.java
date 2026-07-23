@@ -184,6 +184,7 @@ public final class MvccConglomerateFactory
                 context.databaseIdentity(),
                 context.rawStoreFactory().getLockFactory(),
                 memoryStorage,
+                context.dataFactory().rawStoreIoMetrics(),
                 diagnosticsIdentity);
         runtime.startMaintenance(
                 diagnosticsIdentity,

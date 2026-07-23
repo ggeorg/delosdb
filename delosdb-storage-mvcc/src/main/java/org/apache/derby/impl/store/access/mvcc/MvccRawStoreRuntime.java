@@ -32,6 +32,8 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoMetrics;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.io.DatabaseMemoryStorage;
@@ -53,6 +55,7 @@ final class MvccRawStoreRuntime {
     private final Object databaseIdentity;
     private final LockFactory lockFactory;
     private final DatabaseMemoryStorage memoryStorage;
+    private final DelosRawStoreIoMetrics rawStoreIoMetrics;
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
     private final AtomicLong publishedHighWater = new AtomicLong();
@@ -71,10 +74,13 @@ final class MvccRawStoreRuntime {
             Object databaseIdentity,
             LockFactory lockFactory,
             DatabaseMemoryStorage memoryStorage,
+            DelosRawStoreIoMetrics rawStoreIoMetrics,
             String diagnosticIdentity) {
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         this.lockFactory = Objects.requireNonNull(lockFactory, "lockFactory");
         this.memoryStorage = memoryStorage;
+        this.rawStoreIoMetrics = Objects.requireNonNull(
+                rawStoreIoMetrics, "rawStoreIoMetrics");
         this.diagnosticIdentity = Objects.requireNonNull(
                 diagnosticIdentity, "diagnosticIdentity");
     }
@@ -414,6 +420,10 @@ final class MvccRawStoreRuntime {
                 snapshot.tableSnapshotCapacity(),
                 snapshot.tableSnapshotDroppedCount(),
                 snapshot.tableSnapshots());
+    }
+
+    DelosRawStoreIoSnapshot rawStoreIoSnapshot() {
+        return rawStoreIoMetrics.snapshot();
     }
 
     DelosDatabaseMemorySnapshot memorySnapshot() {

@@ -25,6 +25,7 @@ import java.nio.file.Path;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
 import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -105,6 +106,11 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public DelosDatabaseMemorySnapshot databaseMemorySnapshot() {
         return rawStoreRuntime().memorySnapshot();
+    }
+
+    @Override
+    public DelosRawStoreIoSnapshot databaseRawStoreIoSnapshot() {
+        return rawStoreRuntime().rawStoreIoSnapshot();
     }
 
     @Override

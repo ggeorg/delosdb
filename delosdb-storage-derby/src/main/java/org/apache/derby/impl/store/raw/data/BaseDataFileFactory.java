@@ -63,7 +63,10 @@ import org.apache.derby.iapi.store.raw.UndoHandler;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
 import org.apache.derby.iapi.store.access.RowSource;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoDiagnosticsDirectory;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoMetrics;
 
+import org.apache.derby.io.DatabaseMemoryStorage;
 import org.apache.derby.io.StorageFactory;
 import org.apache.derby.io.WritableStorageFactory;
 import org.apache.derby.io.StorageFile;
@@ -89,6 +92,7 @@ import java.io.File;
 import java.io.IOException;
 
 import java.net.URL;
+import java.nio.file.Path;
 
 import java.security.CodeSource;
 
@@ -119,6 +123,10 @@ public class BaseDataFileFactory
 
 
     StorageFactory storageFactory;
+
+    private final DelosRawStoreIoMetrics rawStoreIoMetrics =
+            new DelosRawStoreIoMetrics();
+    private String rawStoreIoIdentity;
 
     /* writableStorageFactory == (WritableStorageFactory) storageFactory if 
      * storageFactory also implements WritableStorageFactory, null if the 
@@ -306,6 +314,8 @@ public class BaseDataFileFactory
                     SQLState.DATABASE_NOT_FOUND, ioe, dataDirectory);
             }
         }
+
+        registerRawStoreIoMetrics();
 
         // you can't encrypt a database if the Lucene plugin is loaded
         if ( luceneLoaded() )
@@ -556,6 +566,7 @@ public class BaseDataFileFactory
         {
 			if (storageFactory != null)
 				storageFactory.shutdown();
+            shutdownRawStoreIoMetrics();
 			return;
         }
 
@@ -568,6 +579,7 @@ public class BaseDataFileFactory
 		releaseJBMSLockOnDB();
         
         if ( writableStorageFactory != null ) { writableStorageFactory.shutdown(); }
+        shutdownRawStoreIoMetrics();
 	} // end of stop
 
 	/*
@@ -2738,6 +2750,49 @@ public class BaseDataFileFactory
     public StorageFactory getStorageFactory()
     {
         return storageFactory;
+    }
+
+    @Override
+    public DelosRawStoreIoMetrics rawStoreIoMetrics()
+    {
+        return rawStoreIoMetrics;
+    }
+
+    private void registerRawStoreIoMetrics() throws StandardException
+    {
+        try
+        {
+            boolean memoryDatabase = storageFactory instanceof DatabaseMemoryStorage;
+            rawStoreIoIdentity = memoryDatabase
+                    ? DelosRawStoreIoDiagnosticsDirectory.memoryIdentity(
+                            ((DatabaseMemoryStorage) storageFactory)
+                                    .memoryDatabaseIdentity())
+                    : DelosRawStoreIoDiagnosticsDirectory.fileIdentity(
+                            Path.of(storageFactory.getCanonicalName()));
+            rawStoreIoMetrics.bind(rawStoreIoIdentity, memoryDatabase);
+            DelosRawStoreIoDiagnosticsDirectory.register(
+                    rawStoreIoIdentity, rawStoreIoMetrics);
+        }
+        catch (IOException ioe)
+        {
+            throw StandardException.newException(
+                    SQLState.FILE_CONTAINER_EXCEPTION,
+                    ioe,
+                    dataDirectory,
+                    "bind",
+                    "RawStore I/O diagnostics");
+        }
+    }
+
+    private void shutdownRawStoreIoMetrics()
+    {
+        rawStoreIoMetrics.shutdown();
+        if (rawStoreIoIdentity != null)
+        {
+            DelosRawStoreIoDiagnosticsDirectory.unregister(
+                    rawStoreIoIdentity, rawStoreIoMetrics);
+            rawStoreIoIdentity = null;
+        }
     }
 
     public final Object run() throws IOException, StandardException

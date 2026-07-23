@@ -39,6 +39,7 @@ import org.apache.derby.iapi.store.raw.UndoHandler;
 import org.apache.derby.io.StorageFactory;
 import org.apache.derby.iapi.store.access.FileResource;
 import org.apache.derby.iapi.store.access.RowSource;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoMetrics;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.util.ByteArray;
 
@@ -378,6 +379,9 @@ public interface DataFactory extends Corruptable {
      * @return The StorageFactory used by this dataFactory
      */
     public StorageFactory getStorageFactory();
+
+    /** Return the database-owned shared RawStore page-I/O counters. */
+    public DelosRawStoreIoMetrics rawStoreIoMetrics();
 
     /**
      * <p>

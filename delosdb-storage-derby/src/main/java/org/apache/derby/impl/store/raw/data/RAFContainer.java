@@ -33,6 +33,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoMetrics;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 
 import org.apache.derby.io.StorageFile;
@@ -56,6 +57,7 @@ class RAFContainer extends FileContainer
 	 * Immutable fields
 	 */
 	protected StorageRandomAccessFile fileData;
+    private boolean fileDataHandleCounted;
 
 	/* 
 	** Mutable fields, only valid when the identity is valid.
@@ -144,18 +146,39 @@ class RAFContainer extends FileContainer
 		// RESOLVE: leaveStub false
 	}
 
-	void closeContainer() {
+	synchronized void closeContainer() {
 
 		if (fileData != null) {
 			try {
 				fileData.close();
 			} catch (IOException ioe) {
 			} finally {
-
-				fileData = null;
+                clearFileDataReference();
 			}
 		}
 	}
+
+    private void installFileData(StorageRandomAccessFile openedFile)
+    {
+        fileData = openedFile;
+        fileDataHandleCounted = true;
+        rawStoreIoMetrics().containerHandleOpened();
+    }
+
+    protected final void clearFileDataReference()
+    {
+        if (fileDataHandleCounted)
+        {
+            rawStoreIoMetrics().containerHandleClosed();
+            fileDataHandleCounted = false;
+        }
+        fileData = null;
+    }
+
+    protected final DelosRawStoreIoMetrics rawStoreIoMetrics()
+    {
+        return dataFactory.rawStoreIoMetrics();
+    }
 
 
 	/*
@@ -177,10 +200,24 @@ class RAFContainer extends FileContainer
 		}
 
 		long pageOffset = pageNumber * pageSize;
-
-		synchronized (this) {
-			fileData.readFullyAt(pageOffset, pageData, 0, pageSize);
-		}
+        DelosRawStoreIoMetrics ioMetrics = rawStoreIoMetrics();
+        ioMetrics.pageIoStarted();
+        try
+        {
+			synchronized (this) {
+				fileData.readFullyAt(pageOffset, pageData, 0, pageSize);
+			}
+            ioMetrics.pageReadSucceeded(pageSize);
+        }
+        catch (IOException ioe)
+        {
+            ioMetrics.pageReadFailed();
+            throw ioe;
+        }
+        finally
+        {
+            ioMetrics.pageIoFinished();
+        }
 
 		if (dataFactory.databaseEncrypted() &&
 			pageNumber != FIRST_ALLOC_PAGE_NUMBER)
@@ -246,7 +283,18 @@ class RAFContainer extends FileContainer
 				try
 				{
                     if (!dataFactory.dataNotSyncedAtAllocation)
-                        fileData.force(true);
+                    {
+                        try
+                        {
+                            fileData.force(true);
+                            rawStoreIoMetrics().forceSucceeded(true);
+                        }
+                        catch (IOException ioe)
+                        {
+                            rawStoreIoMetrics().forceFailed();
+                            throw ioe;
+                        }
+                    }
 				}
 				finally
 				{
@@ -263,14 +311,23 @@ class RAFContainer extends FileContainer
     private void writePageAt(long pageOffset, byte[] pageData)
             throws IOException, StandardException
     {
+        DelosRawStoreIoMetrics ioMetrics = rawStoreIoMetrics();
+        ioMetrics.pageIoStarted();
         dataFactory.writeInProgress();
         try
         {
             fileData.writeAt(pageOffset, pageData, 0, pageSize);
+            ioMetrics.pageWriteSucceeded(pageSize);
+        }
+        catch (IOException ioe)
+        {
+            ioMetrics.pageWriteFailed();
+            throw ioe;
         }
         finally
         {
             dataFactory.writeFinished();
+            ioMetrics.pageIoFinished();
         }
     }
 
@@ -534,7 +591,18 @@ class RAFContainer extends FileContainer
 					inwrite = true;
 
                     if (!dataFactory.dataNotSyncedAtAllocation)
-                        fileData.force(true);
+                    {
+                        try
+                        {
+                            fileData.force(true);
+                            rawStoreIoMetrics().forceSucceeded(true);
+                        }
+                        catch (IOException ioe)
+                        {
+                            rawStoreIoMetrics().forceFailed();
+                            throw ioe;
+                        }
+                    }
   				}
 				catch (IOException ioe)
 				{
@@ -652,7 +720,18 @@ class RAFContainer extends FileContainer
 			try
 			{
                 if (!dataFactory.dataNotSyncedAtCheckpoint)
-                   file.force(true);
+                {
+                    try
+                    {
+                        file.force(true);
+                        rawStoreIoMetrics().forceSucceeded(true);
+                    }
+                    catch (IOException ioe)
+                    {
+                        rawStoreIoMetrics().forceFailed();
+                        throw ioe;
+                    }
+                }
 
 			}
 			finally
@@ -1295,7 +1374,7 @@ class RAFContainer extends FileContainer
                  dataFactory.writeInProgress();
                  try
                      {
-                         fileData = file.getRandomAccessFile( "rw");
+                         installFileData(file.getRandomAccessFile( "rw"));
                          file.limitAccessToOwner();
                      }
                  finally
@@ -1386,7 +1465,7 @@ class RAFContainer extends FileContainer
 
              try {
 
-                 fileData = file.getRandomAccessFile(canUpdate ? "rw" : "r");
+                 installFileData(file.getRandomAccessFile(canUpdate ? "rw" : "r"));
 
                  readHeader(getEmbryonicPage(fileData,
                                              FIRST_ALLOC_PAGE_OFFSET));
@@ -1420,6 +1499,18 @@ class RAFContainer extends FileContainer
                  {
                      try
                      {
+                         if (fileData != null)
+                         {
+                             try
+                             {
+                                 fileData.close();
+                             }
+                             finally
+                             {
+                                 clearFileDataReference();
+                             }
+                         }
+
                          boolean delete_status = privRemoveFile(file);
                          if (SanityManager.DEBUG)
                          {
@@ -1430,8 +1521,8 @@ class RAFContainer extends FileContainer
                              }
                          }
 
-                         fileData = 
-                             stub.getRandomAccessFile(canUpdate ? "rw" : "r");
+                         installFileData(
+                             stub.getRandomAccessFile(canUpdate ? "rw" : "r"));
 
                          readHeader(getEmbryonicPage(fileData,
                                                      FIRST_ALLOC_PAGE_OFFSET));
@@ -1472,8 +1563,8 @@ class RAFContainer extends FileContainer
 
              synchronized (this) {
                  try {
-                     fileData =
-                         file.getRandomAccessFile(canUpdate ? "rw" : "r");
+                     installFileData(
+                         file.getRandomAccessFile(canUpdate ? "rw" : "r"));
                  } catch (FileNotFoundException ioe) {
                      throw dataFactory.
                          markCorrupt(
@@ -1561,8 +1652,14 @@ class RAFContainer extends FileContainer
 
                      if (fileData != null)
                      {
-                         fileData.close();
-                         fileData = null;
+                         try
+                         {
+                             fileData.close();
+                         }
+                         finally
+                         {
+                             clearFileDataReference();
+                         }
                      }
                  }
                  catch (IOException ioe2)

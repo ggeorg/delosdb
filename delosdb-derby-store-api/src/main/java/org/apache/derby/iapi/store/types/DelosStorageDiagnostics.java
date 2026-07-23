@@ -81,6 +81,11 @@ public interface DelosStorageDiagnostics {
         return DelosDatabaseMemorySnapshot.unavailable(providerId());
     }
 
+    /** Return database-scoped shared RawStore page-I/O accounting. */
+    default DelosRawStoreIoSnapshot databaseRawStoreIoSnapshot() {
+        return DelosRawStoreIoSnapshot.unavailable();
+    }
+
     default List<DelosTableStorageSnapshot> tableStorageSnapshots() {
         return databaseStorageSnapshot().tableSnapshots();
     }

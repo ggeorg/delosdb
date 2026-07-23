@@ -200,6 +200,7 @@ class RAFContainer4 extends RAFContainer {
             SanityManager.ASSERT(!ourChannel.isOpen());
         }
         ourChannel = null;
+        clearFileDataReference();
         reopenContainer(currentIdentity);
     }
 
@@ -407,6 +408,8 @@ class RAFContainer4 extends RAFContainer {
                 SanityManager.ASSERT(pageNumber == -1L);
             }
 
+            var ioMetrics = rawStoreIoMetrics();
+            ioMetrics.pageIoStarted();
             try {
                 if (SanityManager.DEBUG) {
                     synchronized(this) {
@@ -414,6 +417,11 @@ class RAFContainer4 extends RAFContainer {
                     }
                 }
                 pageFile.readFullyAt(readOffset, pageData, 0, pageData.length);
+                ioMetrics.pageReadSucceeded(pageData.length);
+            }
+            catch (IOException ioe) {
+                ioMetrics.pageReadFailed();
+                throw ioe;
             }
             finally {
                 if (SanityManager.DEBUG) {
@@ -421,6 +429,7 @@ class RAFContainer4 extends RAFContainer {
                         iosInProgress--;
                     }
                 }
+                ioMetrics.pageIoFinished();
             }
 
             if (dataFactory.databaseEncrypted() &&
@@ -580,6 +589,8 @@ class RAFContainer4 extends RAFContainer {
                                      boolean stealthMode,
                                      int retries)
             throws StandardException {
+
+        rawStoreIoMetrics().closedChannelDetected();
 
         // if (e instanceof ClosedByInterruptException e) {
         // Java NIO Bug 6979009:
@@ -833,6 +844,7 @@ class RAFContainer4 extends RAFContainer {
             // also wait till we're done, see below
             restoreChannelInProgress = true;
         }
+        rawStoreIoMetrics().channelRecoveryAttempted();
 
         // Wait till other concurrent threads hit the wall
         // (ClosedChannelException) and are a ready waiting for us to clean up,
@@ -884,7 +896,9 @@ class RAFContainer4 extends RAFContainer {
                     synchronized(this) {
                         try {
                             reopen();
+                            rawStoreIoMetrics().channelReopenSucceeded();
                         } catch (Exception newE) {
+                            rawStoreIoMetrics().channelReopenFailed();
                             // Something else failed - shutdown happening?
                             synchronized(giveUpIOm) {
                                 // Make sure other threads will give up and
@@ -975,6 +989,8 @@ class RAFContainer4 extends RAFContainer {
                         "RAFContainer4: dataToWrite is null after updatePageArray()");
             }
 
+            var ioMetrics = rawStoreIoMetrics();
+            ioMetrics.pageIoStarted();
             dataFactory.writeInProgress();
             try {
                 if (SanityManager.DEBUG) {
@@ -984,7 +1000,9 @@ class RAFContainer4 extends RAFContainer {
                 }
 
                 pageFile.writeAt(pageOffset, dataToWrite, 0, dataToWrite.length);
+                ioMetrics.pageWriteSucceeded(dataToWrite.length);
             } catch (ClosedChannelException ioe) {
+                ioMetrics.pageWriteFailed();
                 synchronized(this) {
                     /* If the write failed because the container has been closed
                      * for deletion between the start of this method and the
@@ -1010,6 +1028,9 @@ class RAFContainer4 extends RAFContainer {
                         throw ioe;
                     }
                 }
+            } catch (IOException ioe) {
+                ioMetrics.pageWriteFailed();
+                throw ioe;
             } finally {
                 if (SanityManager.DEBUG) {
                     synchronized(this) {
@@ -1018,6 +1039,7 @@ class RAFContainer4 extends RAFContainer {
                 }
 
                 dataFactory.writeFinished();
+                ioMetrics.pageIoFinished();
             }
 
             /* Note that the original "try {write} catch IOException { pad file,
@@ -1035,7 +1057,13 @@ class RAFContainer4 extends RAFContainer {
                         }
                     }
                     if (!dataFactory.dataNotSyncedAtAllocation) {
-                        pageFile.force(false);
+                        try {
+                            pageFile.force(false);
+                            rawStoreIoMetrics().forceSucceeded(false);
+                        } catch (IOException ioe) {
+                            rawStoreIoMetrics().forceFailed();
+                            throw ioe;
+                        }
                     }
                 } finally {
                     if (SanityManager.DEBUG) {
