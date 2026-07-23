@@ -9168,7 +9168,9 @@ tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
                     'heapDatabaseRawStoreIoSnapshot(',
                     'mvccDatabaseRawStoreIoSnapshot(',
                     'heapMemoryDatabaseRawStoreIoSnapshot(',
-                    'mvccMemoryDatabaseRawStoreIoSnapshot('
+                    'mvccMemoryDatabaseRawStoreIoSnapshot(',
+                    'Requiring a physical read',
+                    'pageWriteBytes() > 0L'
             ].each { token ->
                 if (!text.focusedTest.contains(token)) failures << 'Focused Stage 8.2 proof is missing: ' + token
             }
@@ -9195,7 +9197,9 @@ tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
                     'weak, non-owning lookup',
                     'concurrent snapshot safety',
                     'runDelosSharedRawStoreIoDiagnosticsTest',
-                    'No second storage namespace'
+                    'No second storage namespace',
+                    'Zero physical page reads is therefore valid',
+                    'Cache replacement policy is outside the Stage 8.2 diagnostics contract'
             ].each { token ->
                 if (!text.design.contains(token)) failures << 'Stage 8.2 design is missing: ' + token
             }

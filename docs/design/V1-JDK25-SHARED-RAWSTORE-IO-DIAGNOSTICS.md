@@ -109,6 +109,11 @@ Named memory databases publish the same snapshot shape. Their positional operati
 metadata-force requests remain visible even though the virtual storage implementation correctly has
 no persistent-media durability.
 
+A freshly created memory database may satisfy every logical SQL read from the page cache.
+Zero physical page reads is therefore valid until RawStore actually invokes the positional read path.
+The executable proof must not manufacture cache eviction merely to obtain a positive read counter.
+Cache replacement policy is outside the Stage 8.2 diagnostics contract.
+
 ## Public diagnostics
 
 The existing diagnostics registry exposes explicit helpers for both providers and both database

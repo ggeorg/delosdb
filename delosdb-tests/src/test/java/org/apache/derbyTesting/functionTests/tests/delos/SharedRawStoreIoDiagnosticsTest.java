@@ -254,10 +254,14 @@ public final class SharedRawStoreIoDiagnosticsTest extends MvccSqlTestSupport {
                 assertTrue(heap.runtimeActive());
                 assertTrue(heap.memoryDatabase());
                 assertTrue(heap.databaseIdentity().startsWith("memory:"));
-                assertTrue(heap.pageReadOperations() > 0L);
+                // A newly created memory database may satisfy logical reads
+                // entirely from the page cache. Requiring a physical read
+                // would couple this diagnostics proof to cache eviction policy.
                 assertTrue(heap.pageWriteOperations() > 0L);
+                assertTrue(heap.pageWriteBytes() > 0L);
                 assertTrue(heap.metadataForceOperations() > 0L);
                 assertEquals(0L, heap.currentInFlightPageIo());
+                assertTrue(heap.peakInFlightPageIo() > 0L);
             } finally {
                 shutdownNamedMemoryDatabase(database);
             }
