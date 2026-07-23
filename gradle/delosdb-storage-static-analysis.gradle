@@ -8748,8 +8748,21 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             def migratedTypeRoot = file(
                     'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types')
             def migratedTypes = DelosDbStaticFileSupport.javaFiles([migratedTypeRoot])
-            if (migratedTypes.size() != 101) {
-                failures << 'Expected 101 shared store/type contracts in derby-store-api; found ' + migratedTypes.size()
+            def postRetirementSharedTypes = [
+                    'DelosRawStoreIoDiagnosticsDirectory.java',
+                    'DelosRawStoreIoFailureReplayManifest.java',
+                    'DelosRawStoreIoMetrics.java',
+                    'DelosRawStoreIoSnapshot.java'
+            ]
+            if (migratedTypes.size() != 105) {
+                failures << 'Expected 105 current shared store/type contracts in derby-store-api '
+                        + '(101 migrated at Stage 7.3 plus 4 Stage 8 contracts); found '
+                        + migratedTypes.size()
+            }
+            postRetirementSharedTypes.each { fileName ->
+                if (!new File(migratedTypeRoot, fileName).isFile()) {
+                    failures << 'Missing post-retirement shared store contract: ' + fileName
+                }
             }
 
             def deletedFacadeTypes = [
@@ -8830,7 +8843,8 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             }
 
             def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
-            ['101 shared', '27 unused parallel', '6 unused derbystorage',
+            ['101 shared', '4 post-retirement shared', '105 current shared',
+             '27 unused parallel', '6 unused derbystorage',
              'no `delosstorageproviderfactory` service registration',
              '20'].each { token ->
                 if (!normalizedDesign.contains(token)) failures << 'Storage-API retirement design is missing: ' + token
@@ -8917,7 +8931,9 @@ tasks.register('delosSharedStoragePositionalIoStaticAnalysis') {
             [
                     'fileData.readFullyAt(',
                     'fileData.writeAt(',
-                    'fileData.force(true)'
+                    'forceFile(fileData, true)',
+                    'protected final void forceFile(',
+                    'file.force(metadata)'
             ].each { token ->
                 if (!fallbackContainer.contains(token)) failures << 'RAFContainer is missing shared positional I/O: ' + token
             }
@@ -8928,7 +8944,7 @@ tasks.register('delosSharedStoragePositionalIoStaticAnalysis') {
             [
                     'pageFile.readFullyAt(',
                     'pageFile.writeAt(',
-                    'pageFile.force(false)',
+                    'forceFile(pageFile, false)',
                     'ClosedByInterruptException'
             ].each { token ->
                 if (!concurrentContainer.contains(token)) failures << 'RAFContainer4 is missing shared positional/recovery behavior: ' + token
@@ -9233,6 +9249,246 @@ tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 8.3 deterministic database-scoped RawStore I/O fault injection and replay.'
+
+    def required = [
+            manifest: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java'),
+            injector: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java'),
+            directory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java'),
+            baseFactory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
+            fallbackContainer: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            concurrentContainer: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            testBridge: file('delosdb-tests/src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'),
+            focusedTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoFaultInjectionTest.java'),
+            testBuild: file('delosdb-tests/build.gradle'),
+            diagnosticsDesign: file('docs/design/V1-JDK25-SHARED-RAWSTORE-IO-DIAGNOSTICS.md'),
+            design: file('docs/design/V1-JDK25-SHARED-RAWSTORE-IO-FAULT-INJECTION.md'),
+            roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    inputs.files(required.values())
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/shared-rawstore-io-fault-injection-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { name, source ->
+            if (!source.isFile()) failures << 'Missing required Stage 8.3 source: ' + name + ' -> ' + source
+        }
+        if (failures.isEmpty()) {
+            def text = required.collectEntries { name, source ->
+                [(name): source.getText('UTF-8')]
+            }
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            [
+                    'public record DelosRawStoreIoFailureReplayManifest(',
+                    'CURRENT_SCHEMA_VERSION = 1',
+                    'faultRegistryVersion',
+                    'sourceRevision',
+                    'environment',
+                    'databaseIdentity',
+                    'topology',
+                    'schedule',
+                    'invariant',
+                    'expectedDigest',
+                    'observedDigest',
+                    'replayCount',
+                    'reachedFaultPoints',
+                    'matchesExpectedState()',
+                    'String toText()',
+                    'parse(String text)',
+                    'Base64.getUrlEncoder()',
+                    'Pattern.compile("[0-9a-f]{64}")'
+            ].each { token ->
+                if (!text.manifest.contains(token)) failures << 'Replay manifest is missing: ' + token
+            }
+
+            [
+                    'final class DelosRawStoreIoFaultInjector',
+                    'REGISTRY_VERSION = 1',
+                    'MAX_RECORDED_HITS = 256',
+                    'BEFORE_PAGE_READ',
+                    'AFTER_PAGE_READ',
+                    'BEFORE_PAGE_WRITE',
+                    'AFTER_PAGE_WRITE',
+                    'BEFORE_FORCE_CONTENT',
+                    'AFTER_FORCE_CONTENT',
+                    'BEFORE_FORCE_METADATA',
+                    'AFTER_FORCE_METADATA',
+                    'BEFORE_CHANNEL_REOPEN',
+                    'AFTER_CHANNEL_REOPEN',
+                    'THROW_IO',
+                    'HALT',
+                    'SplittableRandom',
+                    'occurrences.merge(',
+                    'hits.removeFirst()',
+                    'InjectedIOException extends IOException',
+                    'Runtime.getRuntime()::halt',
+                    'boolean enabled()'
+            ].each { token ->
+                if (!text.injector.contains(token)) failures << 'Database-scoped I/O fault injector is missing: ' + token
+            }
+            if (text.injector.contains('public final class DelosRawStoreIoFaultInjector')) {
+                failures << 'The destructive I/O fault injector must remain package-private'
+            }
+            [
+                    'System.getProperty(',
+                    'System.setProperty(',
+                    'java.sql.',
+                    'PropertyUtil.',
+                    'ServiceLoader',
+                    'Connection'
+            ].each { token ->
+                if (text.injector.contains(token) || text.directory.contains(token)) {
+                    failures << 'Production I/O fault control must not expose application configuration: ' + token
+                }
+            }
+
+            [
+                    'WeakReference<DelosRawStoreIoFaultInjector>',
+                    'ConcurrentHashMap',
+                    'TERMINAL_SNAPSHOT_LIMIT = 64',
+                    'installThrowForTesting(',
+                    'installHaltForTesting(',
+                    'clearForTesting(',
+                    'snapshotForTesting(',
+                    'TERMINAL.put(',
+                    'ACTIVE.computeIfPresent('
+            ].each { token ->
+                if (!text.directory.contains(token)) failures << 'Weak same-package fault directory is missing: ' + token
+            }
+            if (text.directory.contains('public class') || text.directory.contains('public final class')) {
+                failures << 'The I/O fault control directory must remain package-private'
+            }
+
+            [
+                    'new DelosRawStoreIoFaultInjector()',
+                    'rawStoreIoFaultInjector.bind(rawStoreIoIdentity)',
+                    'DelosRawStoreIoFaultInjectionDirectory.register(',
+                    'rawStoreIoFaultInjector.shutdown()',
+                    'DelosRawStoreIoFaultInjectionDirectory.unregister('
+            ].each { token ->
+                if (!text.baseFactory.contains(token)) failures << 'BaseDataFileFactory fault ownership is missing: ' + token
+            }
+
+            [
+                    'BEFORE_PAGE_READ',
+                    'AFTER_PAGE_READ',
+                    'BEFORE_PAGE_WRITE',
+                    'AFTER_PAGE_WRITE',
+                    'BEFORE_FORCE_METADATA',
+                    'AFTER_FORCE_METADATA',
+                    'BEFORE_FORCE_CONTENT',
+                    'AFTER_FORCE_CONTENT',
+                    'ioe instanceof',
+                    'DelosRawStoreIoFaultInjector.InjectedIOException',
+                    'forceFile(',
+                    'if (!injector.enabled())'
+            ].each { token ->
+                if (!text.fallbackContainer.contains(token)) failures << 'RAFContainer fault boundary is missing: ' + token
+            }
+            [
+                    'BEFORE_PAGE_READ',
+                    'AFTER_PAGE_READ',
+                    'BEFORE_PAGE_WRITE',
+                    'AFTER_PAGE_WRITE',
+                    'BEFORE_CHANNEL_REOPEN',
+                    'AFTER_CHANNEL_REOPEN',
+                    'forceFile(pageFile, false)',
+                    'if (injector.enabled())'
+            ].each { token ->
+                if (!text.concurrentContainer.contains(token)) failures << 'RAFContainer4 fault boundary is missing: ' + token
+            }
+
+            [
+                    'src/test/java',
+                    'installThrow(',
+                    'installHalt(',
+                    'exerciseDeterministicController()',
+                    'ControllerProof',
+                    'Evidence'
+            ].each { token ->
+                if (token == 'src/test/java') {
+                    if (!required.testBridge.path.replace('\\', '/').contains(token)) {
+                        failures << 'The I/O fault bridge must exist only in test sources'
+                    }
+                } else if (!text.testBridge.contains(token)) {
+                    failures << 'Test-only I/O fault bridge is missing: ' + token
+                }
+            }
+
+            [
+                    'testControllerIsExactSeededBoundedAndDisabledByDefault',
+                    'testReplayManifestIsStrictAndRoundTrips',
+                    'testDatabaseSchedulesAreIsolatedAndNormalApplicationsStayDisabled',
+                    'testAfterMetadataForceHaltReplaysCommittedHeapAndMvccState',
+                    'AFTER_FORCE_METADATA',
+                    'Runtime.getRuntime().halt(94)',
+                    'assertTableAbsent(',
+                    'DelosRawStoreIoFailureReplayManifest',
+                    'manifest.toText()',
+                    'expectedDigest',
+                    'secondObserved'
+            ].each { token ->
+                if (!text.focusedTest.contains(token)) failures << 'Focused Stage 8.3 proof is missing: ' + token
+            }
+            if (!text.testBuild.contains("'runDelosSharedRawStoreIoFaultInjectionTest'")) {
+                failures << 'Tests build must register the Stage 8.3 focused task'
+            }
+            if (!text.testBuild.contains("dependsOn tasks.named('runDelosSharedRawStoreIoFaultInjectionTest')")) {
+                failures << 'Normal delosdb-tests:check must include the Stage 8.3 focused task'
+            }
+
+            [
+                    'disabled by default',
+                    'no SQL, connection attribute,',
+                    'MAX_RECORDED_HITS',
+                    'ambiguous outcome',
+                    'InjectedIOException',
+                    'DelosRawStoreIoFailureReplayManifest',
+                    'runDelosSharedRawStoreIoFaultInjectionTest',
+                    'Stage 8.4',
+                    'creates no per-operation hit or context objects'
+            ].each { token ->
+                if (!text.design.contains(token)) failures << 'Stage 8.3 design is missing: ' + token
+            }
+            if (!text.diagnosticsDesign.contains('Stage 8.3 adds deterministic database-scoped fault injection and replay')) {
+                failures << 'Stage 8.2 design must record the verified Stage 8.3 follow-on'
+            }
+            [
+                    '## Stage 8.3 — deterministic database-scoped I/O fault injection and replay',
+                    'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
+                    'Stage 8.2 — shared RawStore I/O diagnostics and resource accounting',
+                    'VERIFIED'
+            ].each { token ->
+                if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.3 token: ' + token
+            }
+
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosSharedRawStoreIoFaultInjectionStaticAnalysis'")) {
+                failures << 'S0 must include the shared RawStore I/O fault/replay gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-rawstore-io-fault-injection-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared RawStore I/O fault-injection static analysis')
+            writer.println('===========================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Shared RawStore I/O fault-injection static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Shared RawStore I/O fault-injection static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -9277,6 +9533,7 @@ tasks.register('s0CloseoutVerification') {
             'delosStorageApiModuleRetirementStaticAnalysis',
             'delosSharedStoragePositionalIoStaticAnalysis',
             'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
+            'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

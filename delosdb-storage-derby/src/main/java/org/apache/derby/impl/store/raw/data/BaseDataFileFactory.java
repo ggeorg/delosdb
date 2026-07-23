@@ -126,6 +126,8 @@ public class BaseDataFileFactory
 
     private final DelosRawStoreIoMetrics rawStoreIoMetrics =
             new DelosRawStoreIoMetrics();
+    private final DelosRawStoreIoFaultInjector rawStoreIoFaultInjector =
+            new DelosRawStoreIoFaultInjector();
     private String rawStoreIoIdentity;
 
     /* writableStorageFactory == (WritableStorageFactory) storageFactory if 
@@ -2758,6 +2760,11 @@ public class BaseDataFileFactory
         return rawStoreIoMetrics;
     }
 
+    DelosRawStoreIoFaultInjector rawStoreIoFaultInjector()
+    {
+        return rawStoreIoFaultInjector;
+    }
+
     private void registerRawStoreIoMetrics() throws StandardException
     {
         try
@@ -2770,8 +2777,11 @@ public class BaseDataFileFactory
                     : DelosRawStoreIoDiagnosticsDirectory.fileIdentity(
                             Path.of(storageFactory.getCanonicalName()));
             rawStoreIoMetrics.bind(rawStoreIoIdentity, memoryDatabase);
+            rawStoreIoFaultInjector.bind(rawStoreIoIdentity);
             DelosRawStoreIoDiagnosticsDirectory.register(
                     rawStoreIoIdentity, rawStoreIoMetrics);
+            DelosRawStoreIoFaultInjectionDirectory.register(
+                    rawStoreIoIdentity, rawStoreIoFaultInjector);
         }
         catch (IOException ioe)
         {
@@ -2786,9 +2796,12 @@ public class BaseDataFileFactory
 
     private void shutdownRawStoreIoMetrics()
     {
+        rawStoreIoFaultInjector.shutdown();
         rawStoreIoMetrics.shutdown();
         if (rawStoreIoIdentity != null)
         {
+            DelosRawStoreIoFaultInjectionDirectory.unregister(
+                    rawStoreIoIdentity, rawStoreIoFaultInjector);
             DelosRawStoreIoDiagnosticsDirectory.unregister(
                     rawStoreIoIdentity, rawStoreIoMetrics);
             rawStoreIoIdentity = null;

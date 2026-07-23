@@ -416,7 +416,21 @@ class RAFContainer4 extends RAFContainer {
                         iosInProgress++;
                     }
                 }
+                DelosRawStoreIoFaultInjector injector = rawStoreIoFaultInjector();
+                DelosRawStoreIoFaultInjector.Context context = null;
+                if (injector.enabled()) {
+                    context = pageIoFaultContext(
+                            pageNumber, readOffset, pageData.length);
+                    injector.hit(
+                            DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_READ,
+                            context);
+                }
                 pageFile.readFullyAt(readOffset, pageData, 0, pageData.length);
+                if (context != null) {
+                    injector.hit(
+                            DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_READ,
+                            context);
+                }
                 ioMetrics.pageReadSucceeded(pageData.length);
             }
             catch (IOException ioe) {
@@ -895,7 +909,23 @@ class RAFContainer4 extends RAFContainer {
                 while (true) {
                     synchronized(this) {
                         try {
+                            DelosRawStoreIoFaultInjector injector =
+                                    rawStoreIoFaultInjector();
+                            DelosRawStoreIoFaultInjector.Context context = null;
+                            if (injector.enabled()) {
+                                context = reopenFaultContext();
+                                injector.hit(
+                                        DelosRawStoreIoFaultInjector.Point
+                                                .BEFORE_CHANNEL_REOPEN,
+                                        context);
+                            }
                             reopen();
+                            if (context != null) {
+                                injector.hit(
+                                        DelosRawStoreIoFaultInjector.Point
+                                                .AFTER_CHANNEL_REOPEN,
+                                        context);
+                            }
                             rawStoreIoMetrics().channelReopenSucceeded();
                         } catch (Exception newE) {
                             rawStoreIoMetrics().channelReopenFailed();
@@ -999,7 +1029,21 @@ class RAFContainer4 extends RAFContainer {
                     }
                 }
 
+                DelosRawStoreIoFaultInjector injector = rawStoreIoFaultInjector();
+                DelosRawStoreIoFaultInjector.Context context = null;
+                if (injector.enabled()) {
+                    context = pageIoFaultContext(
+                            pageNumber, pageOffset, dataToWrite.length);
+                    injector.hit(
+                            DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_WRITE,
+                            context);
+                }
                 pageFile.writeAt(pageOffset, dataToWrite, 0, dataToWrite.length);
+                if (context != null) {
+                    injector.hit(
+                            DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_WRITE,
+                            context);
+                }
                 ioMetrics.pageWriteSucceeded(dataToWrite.length);
             } catch (ClosedChannelException ioe) {
                 ioMetrics.pageWriteFailed();
@@ -1058,7 +1102,7 @@ class RAFContainer4 extends RAFContainer {
                     }
                     if (!dataFactory.dataNotSyncedAtAllocation) {
                         try {
-                            pageFile.force(false);
+                            forceFile(pageFile, false);
                             rawStoreIoMetrics().forceSucceeded(false);
                         } catch (IOException ioe) {
                             rawStoreIoMetrics().forceFailed();

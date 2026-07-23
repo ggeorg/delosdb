@@ -452,3 +452,25 @@ BaseDataFileFactory-owned metrics
 ```
 
 See `design/V1-JDK25-SHARED-RAWSTORE-IO-DIAGNOSTICS.md`.
+
+
+## Stage 8.3 deterministic shared RawStore I/O fault injection
+
+`BaseDataFileFactory` now owns one package-private, disabled-by-default fault injector beside the
+Stage 8.2 metrics. Both `RAFContainer` implementations reach exact before/after page-read,
+page-write, content-force, metadata-force, and channel-reopen points. The same physical fault is
+therefore observed by inherited heap and RawStore-backed MVCC.
+
+```text
+active database identity
+    -> weak same-package test control lookup
+    -> exact or seeded schedule
+    -> THROW_IO or child-JVM HALT
+    -> bounded reached-point evidence
+    -> inherited RawStore recovery
+    -> canonical SHA-256 replay digest
+```
+
+No production property, SQL procedure, connection attribute, service, or provider configuration can
+arm the seam. The test bridge exists only in test sources. See
+`design/V1-JDK25-SHARED-RAWSTORE-IO-FAULT-INJECTION.md`.

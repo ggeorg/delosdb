@@ -175,4 +175,4 @@ new page format, WAL, cache, or storage namespace
 Lucene work
 ```
 
-The next slice is deterministic database-scoped fault injection over this observable shared boundary.
+Stage 8.3 adds deterministic database-scoped fault injection and replay over this observable shared boundary.

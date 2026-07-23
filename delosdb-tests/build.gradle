@@ -701,6 +701,15 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosSharedRawStoreIoDiagnosticsTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosSharedRawStoreIoFaultInjectionTest',
+        'Runs Stage 8.3 deterministic database-scoped RawStore I/O fault-injection and replay proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoFaultInjectionTest.class'])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedRawStoreIoFaultInjectionTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

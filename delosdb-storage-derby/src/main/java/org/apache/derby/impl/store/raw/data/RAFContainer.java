@@ -180,6 +180,68 @@ class RAFContainer extends FileContainer
         return dataFactory.rawStoreIoMetrics();
     }
 
+    protected final DelosRawStoreIoFaultInjector rawStoreIoFaultInjector()
+    {
+        return dataFactory.rawStoreIoFaultInjector();
+    }
+
+    protected final DelosRawStoreIoFaultInjector.Context pageIoFaultContext(
+            long pageNumber,
+            long position,
+            int length)
+    {
+        ContainerKey containerIdentity = identity;
+        return DelosRawStoreIoFaultInjector.Context.page(
+                containerIdentity == null ? -1L : containerIdentity.getSegmentId(),
+                containerIdentity == null ? -1L : containerIdentity.getContainerId(),
+                pageNumber,
+                position,
+                length);
+    }
+
+    protected final DelosRawStoreIoFaultInjector.Context forceFaultContext(
+            boolean metadata)
+    {
+        ContainerKey containerIdentity = identity;
+        return DelosRawStoreIoFaultInjector.Context.force(
+                containerIdentity == null ? -1L : containerIdentity.getSegmentId(),
+                containerIdentity == null ? -1L : containerIdentity.getContainerId(),
+                metadata);
+    }
+
+    protected final DelosRawStoreIoFaultInjector.Context reopenFaultContext()
+    {
+        ContainerKey containerIdentity = identity;
+        return DelosRawStoreIoFaultInjector.Context.reopen(
+                containerIdentity == null ? -1L : containerIdentity.getSegmentId(),
+                containerIdentity == null ? -1L : containerIdentity.getContainerId());
+    }
+
+    protected final void forceFile(
+            StorageRandomAccessFile file,
+            boolean metadata)
+            throws IOException
+    {
+        DelosRawStoreIoFaultInjector injector = rawStoreIoFaultInjector();
+        if (!injector.enabled())
+        {
+            file.force(metadata);
+            return;
+        }
+        DelosRawStoreIoFaultInjector.Context context = forceFaultContext(metadata);
+        injector.hit(
+                metadata
+                        ? DelosRawStoreIoFaultInjector.Point.BEFORE_FORCE_METADATA
+                        : DelosRawStoreIoFaultInjector.Point.BEFORE_FORCE_CONTENT,
+                context);
+        file.force(metadata);
+        injector.hit(
+                metadata
+                        ? DelosRawStoreIoFaultInjector.Point.AFTER_FORCE_METADATA
+                        : DelosRawStoreIoFaultInjector.Point.AFTER_FORCE_CONTENT,
+                context);
+    }
+
 
 	/*
 	** Methods used solely by StoredPage
@@ -204,9 +266,24 @@ class RAFContainer extends FileContainer
         ioMetrics.pageIoStarted();
         try
         {
+            DelosRawStoreIoFaultInjector injector = rawStoreIoFaultInjector();
+            DelosRawStoreIoFaultInjector.Context context = null;
+            if (injector.enabled())
+            {
+                context = pageIoFaultContext(pageNumber, pageOffset, pageSize);
+                injector.hit(
+                        DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_READ,
+                        context);
+            }
 			synchronized (this) {
 				fileData.readFullyAt(pageOffset, pageData, 0, pageSize);
 			}
+            if (context != null)
+            {
+                injector.hit(
+                        DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_READ,
+                        context);
+            }
             ioMetrics.pageReadSucceeded(pageSize);
         }
         catch (IOException ioe)
@@ -264,17 +341,22 @@ class RAFContainer extends FileContainer
 
 			try
 			{
-                writePageAt(pageOffset, dataToWrite);
+                writePageAt(pageNumber, pageOffset, dataToWrite);
 			}
 			catch (IOException ioe)
 			{
+                if (ioe instanceof
+                        DelosRawStoreIoFaultInjector.InjectedIOException)
+                {
+                    throw ioe;
+                }
                 // A positional write beyond EOF is supported by the JDK 25
                 // directory implementation. Preserve the inherited fallback
                 // for alternate StorageRandomAccessFile implementations.
 				if (!padFile(fileData, pageOffset))
 					throw ioe;
 
-                writePageAt(pageOffset, dataToWrite);
+                writePageAt(pageNumber, pageOffset, dataToWrite);
 			}
 
 			if (syncPage)
@@ -286,7 +368,7 @@ class RAFContainer extends FileContainer
                     {
                         try
                         {
-                            fileData.force(true);
+                            forceFile(fileData, true);
                             rawStoreIoMetrics().forceSucceeded(true);
                         }
                         catch (IOException ioe)
@@ -308,7 +390,10 @@ class RAFContainer extends FileContainer
 		}
 	}
 
-    private void writePageAt(long pageOffset, byte[] pageData)
+    private void writePageAt(
+            long pageNumber,
+            long pageOffset,
+            byte[] pageData)
             throws IOException, StandardException
     {
         DelosRawStoreIoMetrics ioMetrics = rawStoreIoMetrics();
@@ -316,7 +401,22 @@ class RAFContainer extends FileContainer
         dataFactory.writeInProgress();
         try
         {
+            DelosRawStoreIoFaultInjector injector = rawStoreIoFaultInjector();
+            DelosRawStoreIoFaultInjector.Context context = null;
+            if (injector.enabled())
+            {
+                context = pageIoFaultContext(pageNumber, pageOffset, pageSize);
+                injector.hit(
+                        DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_WRITE,
+                        context);
+            }
             fileData.writeAt(pageOffset, pageData, 0, pageSize);
+            if (context != null)
+            {
+                injector.hit(
+                        DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_WRITE,
+                        context);
+            }
             ioMetrics.pageWriteSucceeded(pageSize);
         }
         catch (IOException ioe)
@@ -594,7 +694,7 @@ class RAFContainer extends FileContainer
                     {
                         try
                         {
-                            fileData.force(true);
+                            forceFile(fileData, true);
                             rawStoreIoMetrics().forceSucceeded(true);
                         }
                         catch (IOException ioe)
@@ -723,7 +823,7 @@ class RAFContainer extends FileContainer
                 {
                     try
                     {
-                        file.force(true);
+                        forceFile(file, true);
                         rawStoreIoMetrics().forceSucceeded(true);
                     }
                     catch (IOException ioe)
