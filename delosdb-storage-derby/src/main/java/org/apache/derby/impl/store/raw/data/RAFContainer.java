@@ -179,10 +179,7 @@ class RAFContainer extends FileContainer
 		long pageOffset = pageNumber * pageSize;
 
 		synchronized (this) {
-
-			fileData.seek(pageOffset);
-
-			fileData.readFully(pageData, 0, pageSize);
+			fileData.readFullyAt(pageOffset, pageData, 0, pageSize);
 		}
 
 		if (dataFactory.databaseEncrypted() &&
@@ -205,93 +202,42 @@ class RAFContainer extends FileContainer
 	{
 		synchronized(this)
 		{
-
 			if (getCommittedDropState())
             {
                 // committed and dropped, do nothing.
                 // This file container may only be a stub
-
 				return;
             }
 
-            ///////////////////////////////////////////////////
-            //
-            // RESOLVE: right now, no logical -> physical mapping.
-            // We can calculate the offset.  In the future, we may need to
-            // look at the allocation page or the in memory translation table
-            // to figure out where the page should go
-            //
-            /////////////////////////////////////////////////
-
 			long pageOffset = pageNumber * pageSize;
 
-            byte [] encryptionBuf = null; 
-            if (dataFactory.databaseEncrypted() 
+            byte[] encryptionBuf = null;
+            if (dataFactory.databaseEncrypted()
                 && pageNumber != FIRST_ALLOC_PAGE_NUMBER)
             {
                 // We cannot encrypt the page in place because pageData is
-                // still being accessed as clear text.  The encryption
-                // buffer is shared by all who access this container and can
-                // only be used within the synchronized block.
-
+                // still being accessed as clear text. The encryption buffer
+                // is shared by all who access this container and can only be
+                // used within the synchronized block.
                 encryptionBuf = getEncryptionBuffer();
             }
 
-            byte[] dataToWrite = 
+            byte[] dataToWrite =
                 updatePageArray(pageNumber, pageData, encryptionBuf, false);
 
 			try
 			{
-				fileData.seek(pageOffset);
-
-				/**
-					On EPOC (www.symbian.com) a seek beyond the end of
-					a file just moves the file pointer to the end of the file.
-
-				*/
-				if (fileData.getFilePointer() != pageOffset)
-					padFile(fileData, pageOffset);
-
-				dataFactory.writeInProgress();
-				try
-				{
-					fileData.write(dataToWrite, 0, pageSize);
-				}
-				finally
-				{
-					dataFactory.writeFinished();
-				}
+                writePageAt(pageOffset, dataToWrite);
 			}
 			catch (IOException ioe)
 			{
-				// On some platforms, if we seek beyond the end of file, or try
-				// to write beyond the end of file (not appending to it, but
-				// skipping some bytes), it will give IOException.
-				// Try writing zeros from the current end of file to pageOffset
-				// and see if we can then do the seek/write.  The difference
-				// between pageOffset and current end of file is almost always
-				// going to be the multiple of pageSize
-
+                // A positional write beyond EOF is supported by the JDK 25
+                // directory implementation. Preserve the inherited fallback
+                // for alternate StorageRandomAccessFile implementations.
 				if (!padFile(fileData, pageOffset))
-					throw ioe;	// not writing beyond EOF, rethrow exception
+					throw ioe;
 
-				if (SanityManager.DEBUG)
-                {
-					SanityManager.ASSERT(
-                        fileData.length() >= pageOffset,
-                        "failed to blank filled missing pages");
-                }
-
-				fileData.seek(pageOffset);
-				dataFactory.writeInProgress();
-				try
-				{
-					fileData.write(dataToWrite, 0, pageSize);
-				}
-				finally
-				{
-					dataFactory.writeFinished();
-				}
+                writePageAt(pageOffset, dataToWrite);
 			}
 
 			if (syncPage)
@@ -300,7 +246,7 @@ class RAFContainer extends FileContainer
 				try
 				{
                     if (!dataFactory.dataNotSyncedAtAllocation)
-                        fileData.sync();
+                        fileData.force(true);
 				}
 				finally
 				{
@@ -312,8 +258,21 @@ class RAFContainer extends FileContainer
 				needsSync = true;
             }
 		}
-
 	}
+
+    private void writePageAt(long pageOffset, byte[] pageData)
+            throws IOException, StandardException
+    {
+        dataFactory.writeInProgress();
+        try
+        {
+            fileData.writeAt(pageOffset, pageData, 0, pageSize);
+        }
+        finally
+        {
+            dataFactory.writeFinished();
+        }
+    }
 
     /**
      * Updates the page array with container header if the page is a first
@@ -383,27 +342,21 @@ class RAFContainer extends FileContainer
 		if (currentEOF >= pageOffset)
 			return false;
 
-		// all objects in java are by definition initialized
-		byte zero[] = new byte[pageSize];
+		byte[] zero = new byte[pageSize];
 
-		file.seek(currentEOF);
-
-		while(currentEOF < pageOffset)
+		while (currentEOF < pageOffset)
 		{
+            int length = (int) Math.min(pageSize, pageOffset - currentEOF);
 			dataFactory.writeInProgress();
 			try
 			{
-				long len = pageOffset - currentEOF;
-				if (len > pageSize)
-					len = pageSize;
-
-				file.write(zero, 0, (int) len);
+                file.writeAt(currentEOF, zero, 0, length);
 			}
 			finally
 			{
 				dataFactory.writeFinished();
 			}
-			currentEOF += pageSize;
+            currentEOF += length;
 		}
 
 		return true;
@@ -581,7 +534,7 @@ class RAFContainer extends FileContainer
 					inwrite = true;
 
                     if (!dataFactory.dataNotSyncedAtAllocation)
-                        fileData.sync();
+                        fileData.force(true);
   				}
 				catch (IOException ioe)
 				{
@@ -699,7 +652,7 @@ class RAFContainer extends FileContainer
 			try
 			{
                 if (!dataFactory.dataNotSyncedAtCheckpoint)
-                   file.sync();
+                   file.force(true);
 
 			}
 			finally

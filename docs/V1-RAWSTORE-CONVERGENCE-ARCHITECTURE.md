@@ -407,3 +407,26 @@ rejected before the bound is exceeded, and released on truncate, deletion, and p
 rejected growth, and entry count.
 
 See `design/V1-RAWSTORE-MVCC-MEMORY-DATABASE.md`.
+
+
+## Stage 8.1 shared positional page I/O
+
+The common `StorageRandomAccessFile` boundary now defines pointer-stable positional reads and writes
+and an explicit `force(metadata)` operation. The directory implementation maps these operations to
+`FileChannel.read`, `FileChannel.write`, and `FileChannel.force`; virtual memory uses the compatible
+default implementation and no-op durability.
+
+Both inherited RawStore container variants route normal page I/O through this boundary. The existing
+`RAFContainer4` interrupt-driven channel reopen/retry protocol remains authoritative, while its
+duplicate full-page transfer loop is removed. The change affects the shared heap/MVCC physical path
+without changing page bytes, allocation, caching, logging, or recovery.
+
+```text
+StorageRandomAccessFile positional contract
+    -> directory FileChannel implementation
+    -> virtual-memory compatibility implementation
+    -> RAFContainer and RAFContainer4
+    -> inherited heap and RawStore-backed MVCC
+```
+
+See `design/V1-JDK25-SHARED-POSITIONAL-IO.md`.

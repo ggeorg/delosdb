@@ -23,8 +23,6 @@ package org.apache.derby.io;
 
 import java.io.DataInput;
 import java.io.DataOutput;
-import java.io.FileNotFoundException;
-import java.io.EOFException;
 import java.io.IOException;
 
 /**
@@ -33,8 +31,9 @@ import java.io.IOException;
  * interfaces. Any method in this interface that also appears in the java.io.RandomAccessFile class
  * should behave as the java.io.RandomAccessFile method does.
  *<p>
- * Each StorageRandomAccessFile has an associated file pointer, a byte offset in the file. All reading and writing takes
- * place at the file pointer offset and advances it.
+ * Each StorageRandomAccessFile has an associated file pointer, a byte offset in the file. Ordinary
+ * reading and writing takes place at the file pointer offset and advances it. Positional operations
+ * do not change the associated file pointer.
  *<p>
  * An implementation of StorageRandomAccessFile need not be thread safe. The database engine
  * single-threads access to each StorageRandomAccessFile instance. Two threads will not access the
@@ -48,85 +47,164 @@ public interface StorageRandomAccessFile extends DataInput, DataOutput
     /**
      * Closes this file.
      *
-     * @exception IOException - if an I/O error occurs.
+     * @exception IOException if an I/O error occurs.
      */
-    public void close() throws IOException;
+    void close() throws IOException;
 
     /**
      * Get the current offset in this file.
      *
-     * @return the current file pointer. 
-     *
-     * @exception IOException - if an I/O error occurs.
+     * @return the current file pointer.
+     * @exception IOException if an I/O error occurs.
      */
-    public long getFilePointer() throws IOException;
+    long getFilePointer() throws IOException;
 
     /**
      * Gets the length of this file.
      *
-     * @return the number of bytes this file. 
-     *
-     * @exception IOException - if an I/O error occurs.
+     * @return the number of bytes in this file.
+     * @exception IOException if an I/O error occurs.
      */
-    public long length() throws IOException;
+    long length() throws IOException;
 
     /**
      * Set the file pointer. It may be moved beyond the end of the file, but this does not change
-     * the length of the file. The length of the file is not changed until data is actually written..
+     * the length of the file. The length of the file is not changed until data is actually written.
      *
-     * @param newFilePointer the new file pointer, measured in bytes from the beginning of the file.
-     *
-     * @exception IOException - if newFilePointer is less than 0 or an I/O error occurs.
+     * @param newFilePointer the new file pointer, measured in bytes from the beginning of the file
+     * @exception IOException if {@code newFilePointer} is less than zero or an I/O error occurs
      */
-    public void seek(long newFilePointer) throws IOException;
+    void seek(long newFilePointer) throws IOException;
 
     /**
      * Sets the length of this file, either extending or truncating it.
      *<p>
      * If the file is extended then the contents of the extension are not defined.
-     *<p>
-     * If the file is truncated and the file pointer is greater than the new length then the file pointer
-     * is set to the new length.
+     * If the file is truncated and the file pointer is greater than the new length then the file
+     * pointer is set to the new length.
      *
-     * @param newLength The new file length.
-     *
-     * @exception IOException If an I/O error occurs.
+     * @param newLength the new file length
+     * @exception IOException if an I/O error occurs
      */
-    public void setLength(long newLength) throws IOException;
-    
-    /**
-     * Force any changes out to the persistent store. If the database is to be transient, that is, if the database
-     * does not survive a restart, then the sync method implementation need not do anything.
-     *
-     *
-     * @exception java.io.SyncFailedException if a possibly recoverable error occurs.
-     * @exception IOException If an IO error occurs.
-     */
-    public void sync() throws IOException;
+    void setLength(long newLength) throws IOException;
 
     /**
-     * Reads up to <code>len</code> bytes of data from this file into an
-     * array of bytes. This method blocks until at least one byte of input
-     * is available.
-     * <p>
+     * Force file contents and metadata out to persistent storage. Transient storage implementations
+     * may implement this as a no-op.
      *
-     * @param b     the buffer into which the data is read.
-     * @param off   the start offset in array <code>b</code>
-     *                   at which the data is written.
-     * @param len   the maximum number of bytes read.
-     * @return the total number of bytes read into the buffer, or
-     *             <code>-1</code> if there is no more data because the end of
-     *             the file has been reached.
-     * @exception IOException If the first byte cannot be read for any reason
-     * other than end of file, or if the random access file has been closed, or
-     * if some other I/O error occurs.
-     * @exception NullPointerException If <code>b</code> is <code>null</code>.
-     * @exception IndexOutOfBoundsException If <code>off</code> is negative,
-     * <code>len</code> is negative, or <code>len</code> is greater than
-     * <code>b.length - off</code>
+     * @exception java.io.SyncFailedException if a possibly recoverable error occurs
+     * @exception IOException if an I/O error occurs
      */
-    public int read(byte[] b, int off, int len) throws IOException;
+    void sync() throws IOException;
 
-    /** Clone this file abstraction */
-    public  StorageRandomAccessFile clone();
+    /**
+     * Force changes out to persistent storage with an explicit metadata requirement.
+     *
+     * @param metadata {@code true} when both file contents and metadata must be forced;
+     *                 {@code false} when forcing file contents is sufficient
+     * @exception IOException if an I/O error occurs
+     */
+    default void force(boolean metadata) throws IOException {
+        sync();
+    }
+
+    /**
+     * Reads exactly {@code len} bytes from {@code position} without changing the file pointer.
+     * Implementations backed by positional I/O should override this method. The compatibility
+     * implementation preserves the current file pointer around the ordinary DataInput operation.
+     *
+     * @param position absolute byte position at which reading starts
+     * @param buffer destination buffer
+     * @param offset first destination index
+     * @param length number of bytes to read
+     * @exception IOException if the position is negative, EOF is reached, or an I/O error occurs
+     */
+    default void readFullyAt(long position,
+                             byte[] buffer,
+                             int offset,
+                             int length) throws IOException {
+        checkPosition(position);
+        checkRange(buffer, offset, length);
+        long originalPosition = getFilePointer();
+        Throwable failure = null;
+        try {
+            seek(position);
+            readFully(buffer, offset, length);
+        } catch (IOException | RuntimeException | Error error) {
+            failure = error;
+            throw error;
+        } finally {
+            restorePosition(originalPosition, failure);
+        }
+    }
+
+    /**
+     * Writes exactly {@code length} bytes at {@code position} without changing the file pointer.
+     * Implementations backed by positional I/O should override this method. The compatibility
+     * implementation preserves the current file pointer around the ordinary DataOutput operation.
+     *
+     * @param position absolute byte position at which writing starts
+     * @param buffer source buffer
+     * @param offset first source index
+     * @param length number of bytes to write
+     * @exception IOException if the position is negative or an I/O error occurs
+     */
+    default void writeAt(long position,
+                         byte[] buffer,
+                         int offset,
+                         int length) throws IOException {
+        checkPosition(position);
+        checkRange(buffer, offset, length);
+        long originalPosition = getFilePointer();
+        Throwable failure = null;
+        try {
+            seek(position);
+            write(buffer, offset, length);
+        } catch (IOException | RuntimeException | Error error) {
+            failure = error;
+            throw error;
+        } finally {
+            restorePosition(originalPosition, failure);
+        }
+    }
+
+    /**
+     * Reads up to {@code len} bytes of data from this file into an array of bytes.
+     *
+     * @param b the buffer into which the data is read
+     * @param off the start offset in {@code b}
+     * @param len the maximum number of bytes read
+     * @return the total number of bytes read, or {@code -1} at end of file
+     * @exception IOException if an I/O error occurs
+     */
+    int read(byte[] b, int off, int len) throws IOException;
+
+    /** Clone this file abstraction. */
+    StorageRandomAccessFile clone();
+
+    private static void checkPosition(long position) throws IOException {
+        if (position < 0L) {
+            throw new IOException("Negative position: " + position);
+        }
+    }
+
+    private static void checkRange(byte[] buffer, int offset, int length) {
+        if (offset < 0 || length < 0 || offset > buffer.length - length) {
+            throw new IndexOutOfBoundsException(
+                    "offset=" + offset + ", length=" + length
+                            + ", buffer.length=" + buffer.length);
+        }
+    }
+
+    private void restorePosition(long originalPosition, Throwable failure)
+            throws IOException {
+        try {
+            seek(originalPosition);
+        } catch (IOException restoreFailure) {
+            if (failure == null) {
+                throw restoreFailure;
+            }
+            failure.addSuppressed(restoreFailure);
+        }
+    }
 }

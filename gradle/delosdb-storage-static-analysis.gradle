@@ -8860,6 +8860,140 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
     }
 }
 
+tasks.register('delosSharedStoragePositionalIoStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 8.1 shared positional page I/O and explicit force semantics.'
+
+    def required = [
+            file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
+            file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirStorageFactory.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedStoragePositionalIoTest.java'),
+            file('delosdb-tests/build.gradle'),
+            file('docs/design/V1-JDK25-SHARED-POSITIONAL-IO.md'),
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+    ]
+    inputs.files(required)
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file('reports/delosdb/shared-storage-positional-io-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (failures.isEmpty()) {
+            def contract = required[0].getText('UTF-8')
+            def directoryFile = required[1].getText('UTF-8')
+            def directoryFactory = required[2].getText('UTF-8')
+            def fallbackContainer = required[3].getText('UTF-8')
+            def concurrentContainer = required[4].getText('UTF-8')
+            def focusedTest = required[5].getText('UTF-8')
+            def testBuild = required[6].getText('UTF-8')
+            def design = required[7].getText('UTF-8')
+            def roadmap = required[8].getText('UTF-8')
+            def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            [
+                    'default void readFullyAt(',
+                    'default void writeAt(',
+                    'default void force(boolean metadata)',
+                    'restorePosition(originalPosition, failure)'
+            ].each { token ->
+                if (!contract.contains(token)) failures << 'Shared random-access contract is missing: ' + token
+            }
+            [
+                    'channel.read(target, readPosition)',
+                    'channel.write(source, writePosition)',
+                    'channel.force(metadata)',
+                    'detectClosedByInterrupt()'
+            ].each { token ->
+                if (!directoryFile.contains(token)) failures << 'Directory positional implementation is missing: ' + token
+            }
+            if (!directoryFactory.contains('getChannel().force(metadata)')) {
+                failures << 'Directory output-stream synchronization must honor the metadata force argument'
+            }
+
+            [
+                    'fileData.readFullyAt(',
+                    'fileData.writeAt(',
+                    'fileData.force(true)'
+            ].each { token ->
+                if (!fallbackContainer.contains(token)) failures << 'RAFContainer is missing shared positional I/O: ' + token
+            }
+            if (fallbackContainer.contains('fileData.seek(pageOffset)')) {
+                failures << 'RAFContainer page I/O must not mutate the shared file pointer with seek(pageOffset)'
+            }
+
+            [
+                    'pageFile.readFullyAt(',
+                    'pageFile.writeAt(',
+                    'pageFile.force(false)',
+                    'ClosedByInterruptException'
+            ].each { token ->
+                if (!concurrentContainer.contains(token)) failures << 'RAFContainer4 is missing shared positional/recovery behavior: ' + token
+            }
+            if (concurrentContainer.contains('readFull(pageBuf')) {
+                failures << 'RAFContainer4 must not retain a duplicate full-page read loop'
+            }
+            if (concurrentContainer.contains('writeFull(writeBuffer')) {
+                failures << 'RAFContainer4 ordinary page writes must not bypass StorageRandomAccessFile.writeAt'
+            }
+
+            [
+                    'new DirStorageFactory()',
+                    'new VFMemoryStorageFactory()',
+                    'writeAt(PAYLOAD_POSITION',
+                    'readFullyAt(PAYLOAD_POSITION',
+                    'force(false)',
+                    'force(true)',
+                    'must preserve the file pointer',
+                    'failed positional read must preserve the pointer'
+            ].each { token ->
+                if (!focusedTest.contains(token)) failures << 'Focused file/memory contract test is missing: ' + token
+            }
+            if (!testBuild.contains("'runDelosSharedStoragePositionalIoTest'")) {
+                failures << 'Tests build must register the Stage 8.1 focused task'
+            }
+            if (!testBuild.contains("dependsOn tasks.named('runDelosSharedStoragePositionalIoTest')")) {
+                failures << 'Normal delosdb-tests:check must include the Stage 8.1 focused task'
+            }
+
+            [
+                    'pointer-stable positional',
+                    'FileChannel.force(metadata)',
+                    'No second storage namespace',
+                    'runDelosSharedStoragePositionalIoTest'
+            ].each { token ->
+                if (!design.contains(token)) failures << 'Stage 8.1 design is missing: ' + token
+            }
+            [
+                    '## Stage 8.1 — positional page I/O and explicit force semantics',
+                    'delosSharedStoragePositionalIoStaticAnalysis'
+            ].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.1 token: ' + token
+            }
+            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosSharedStoragePositionalIoStaticAnalysis'")) {
+                failures << 'S0 must include the shared positional-I/O gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-storage-positional-io-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared storage positional-I/O static analysis')
+            writer.println('======================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Shared storage positional-I/O static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Shared storage positional-I/O static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -8902,6 +9036,7 @@ tasks.register('s0CloseoutVerification') {
             'delosMvccStorageModuleConvergenceStaticAnalysis',
             'delosStorageIoModuleRetirementStaticAnalysis',
             'delosStorageApiModuleRetirementStaticAnalysis',
+            'delosSharedStoragePositionalIoStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

@@ -135,9 +135,10 @@ public class DirStorageFactory extends BaseStorageFactory
      *            or because the system cannot guarantee that all the buffers have been
      *            synchronized with physical media.
      */
-    public void sync( OutputStream stream, boolean metaData) throws IOException, SyncFailedException
+    public void sync(OutputStream stream, boolean metadata)
+            throws IOException, SyncFailedException
     {
-        ((FileOutputStream) stream).getFD().sync();
+        ((FileOutputStream) stream).getChannel().force(metadata);
     }
 
     /**

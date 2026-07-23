@@ -21,67 +21,147 @@
 
 package org.apache.derby.impl.io;
 
-import org.apache.derby.shared.common.sanity.SanityManager;
-
-import org.apache.derby.io.StorageFile;
 import org.apache.derby.io.StorageRandomAccessFile;
 
+import java.io.EOFException;
 import java.io.File;
-import java.io.RandomAccessFile;
-import java.io.IOException;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.NonWritableChannelException;
 
 /**
- * This class provides a disk based implementation of the StIRandomAccess File interface. It is used by the
- * database engine to access persistent data and transaction logs under the directory (default) subsubprotocol.
+ * Disk-based random-access storage for the directory subsubprotocol.
+ *
+ * <p>Ordinary {@link RandomAccessFile} operations remain available for the inherited sequential
+ * log and metadata paths. RawStore page I/O uses the explicit positional methods, which delegate
+ * to {@link FileChannel} without mutating the shared file pointer.</p>
  */
 class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAccessFile
 {
-    // for cloning
-    private final   File    _name;
-    private final   String  _mode;
+    private final File name;
+    private final String mode;
+    private final FileChannel channel;
 
     /**
-     * Construct a StorageRandomAccessFileImpl.
+     * Construct a directory-backed random-access file.
      *
-     * @param name The file name.
-     * @param mode The file open mode: "r", "rw", "rws", or "rwd". The  "rws" and "rwd" modes specify that the file is to
-     *             be synchronized, consistent with the java.io.RandomAccessFile class. However the
-     *             StorageRandomAccessFile.sync() method will be called even if the file was opened
-     *             in "rws" or "rwd" mode.  If the "rws" or "rwd" modes are supported then the implementation
-     *             of StorageRandomAccessFile.sync need not do anything.
-     *
-     * @exception IllegalArgumentException if the mode argument is not equal to one of "r", "rw".
-     * @exception FileNotFoundException if the file exists but is a directory rather than a regular
-     *              file, or cannot be opened or created for any other reason .
+     * @param name file name
+     * @param mode open mode: {@code r}, {@code rw}, {@code rws}, or {@code rwd}
+     * @throws FileNotFoundException if the file cannot be opened
      */
-    DirRandomAccessFile( File name, String mode) throws FileNotFoundException
+    DirRandomAccessFile(File name, String mode) throws FileNotFoundException
     {
-        super( name, mode);
-        _name = name;
-        _mode = mode;
+        super(name, mode);
+        this.name = name;
+        this.mode = mode;
+        this.channel = getChannel();
     }
 
-    /** Clone this file abstaction */
-    public  DirRandomAccessFile clone()
+    /** Clone this file abstraction with an independent channel and file pointer. */
+    public DirRandomAccessFile clone()
     {
         try {
-            return new DirRandomAccessFile( _name, _mode );
+            return new DirRandomAccessFile(name, mode);
         }
         catch (IOException ioe)
         {
-            throw new RuntimeException( ioe.getMessage(), ioe );
+            throw new RuntimeException(ioe.getMessage(), ioe);
         }
     }
 
     /**
-     * Force any changes out to the persistent store.
-     *
-     * @exception IOException If an IO error occurs.
+     * Read a complete byte range using {@link FileChannel#read(ByteBuffer, long)}.
      */
-    public void sync( ) throws IOException
+    @Override
+    public void readFullyAt(long position,
+                            byte[] buffer,
+                            int offset,
+                            int length) throws IOException
     {
-        getFD().sync();
+        checkPosition(position);
+        ByteBuffer target = ByteBuffer.wrap(buffer, offset, length);
+        long readPosition = position;
+        while (target.hasRemaining())
+        {
+            int count = channel.read(target, readPosition);
+            if (count < 0)
+            {
+                throw new EOFException();
+            }
+            if (count == 0)
+            {
+                Thread.onSpinWait();
+                continue;
+            }
+            readPosition += count;
+            detectClosedByInterrupt();
+        }
+    }
+
+    /**
+     * Write a complete byte range using {@link FileChannel#write(ByteBuffer, long)}.
+     */
+    @Override
+    public void writeAt(long position,
+                        byte[] buffer,
+                        int offset,
+                        int length) throws IOException
+    {
+        checkPosition(position);
+        ByteBuffer source = ByteBuffer.wrap(buffer, offset, length);
+        long writePosition = position;
+        try
+        {
+            while (source.hasRemaining())
+            {
+                int count = channel.write(source, writePosition);
+                if (count == 0)
+                {
+                    Thread.onSpinWait();
+                    continue;
+                }
+                writePosition += count;
+                detectClosedByInterrupt();
+            }
+        }
+        catch (NonWritableChannelException notWritable)
+        {
+            throw new IOException("Random-access file is read-only: " + name,
+                    notWritable);
+        }
+    }
+
+    /** Force file contents and, when requested, file metadata. */
+    @Override
+    public void force(boolean metadata) throws IOException
+    {
+        channel.force(metadata);
+    }
+
+    /** Compatibility form of a full data-and-metadata force. */
+    public void sync() throws IOException
+    {
+        force(true);
+    }
+
+
+    private void detectClosedByInterrupt() throws ClosedByInterruptException
+    {
+        if (Thread.currentThread().isInterrupted() && !channel.isOpen())
+        {
+            throw new ClosedByInterruptException();
+        }
+    }
+
+    private static void checkPosition(long position) throws IOException
+    {
+        if (position < 0L)
+        {
+            throw new IOException("Negative position: " + position);
+        }
     }
 }
-    

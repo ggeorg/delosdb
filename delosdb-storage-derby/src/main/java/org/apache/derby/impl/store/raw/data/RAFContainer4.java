@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.util.InterruptStatus;
 import org.apache.derby.iapi.util.InterruptDetectedException;
 
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
@@ -41,34 +40,20 @@ import java.nio.channels.AsynchronousCloseException;
 import org.apache.derby.io.StorageRandomAccessFile;
 
 /**
- * RAFContainer4 overrides a few methods in FileContainer/RAFContainer in order
- * to use FileChannel from Java 1.4's New IO framework to issue multiple IO
- * operations to the same file concurrently instead of strictly serializing IO
- * operations using a mutex on the container object. Since we compile with Java
- * 1.4, the override "annotations" are inside the method javadoc headers.
- * <p>
- * Note that our requests for multiple concurrent IOs may be serialized further
- * down in the IO stack - this is entirely up to the JVM and OS. However, at
- * least in Linux on Sun's 1.4.2_09 JVM we see the desired behavior:
- * The FileChannel.read/write(ByteBuffer buf, long position) calls map to
- * pread/pwrite system calls, which enable efficient IO to the same file
- * descriptor by multiple threads.
- * <p>
- * This whole class should be merged back into RAFContainer when Derby
- * officially stops supporting Java 1.3.
- * <p>
- * Significant behavior changes from RAFContainer:
- * <ol>
- * <li> Multiple concurrent IOs permitted.
- * <li> State changes to the container (create, open, close) can now happen while
- *      IO is in progress due to the lack of locking. Closing a container while
- *      IO is in progress will cause IOExceptions in the thread calling readPage
- *      or writePage. If this happens something is probably amiss anyway.
- *      The iosInProgress variable is used in an attempt to detect this should it
- *      happen while running a debug build.
- * </ol>
+ * Concurrent RawStore container I/O with interrupt-safe channel recovery.
  *
- * @see java.nio.channels.FileChannel
+ * <p>Ordinary page reads and writes use the pointer-stable positional methods
+ * on {@link StorageRandomAccessFile}. Directory storage implements those
+ * methods with positional {@link FileChannel} operations, so concurrent page
+ * transfers do not share or mutate a file pointer.</p>
+ *
+ * <p>This class retains the inherited coordination that detects
+ * closed-on-interrupt channels, reopens the container, and retries an
+ * operation safely. The direct channel helper that remains is limited to the
+ * embryonic-header path whose recovery is coupled to that coordination.</p>
+ *
+ * @see StorageRandomAccessFile
+ * @see FileChannel
  */
 class RAFContainer4 extends RAFContainer {
 
@@ -395,6 +380,7 @@ class RAFContainer4 extends RAFContainer {
          throws IOException, StandardException
     {
         FileChannel ioChannel;
+        StorageRandomAccessFile pageFile;
         synchronized (this) {
             if (SanityManager.DEBUG) {
                 if (pageNumber != -1L) {
@@ -402,6 +388,7 @@ class RAFContainer4 extends RAFContainer {
                 } // else: can happen from getEmbryonicPage
             }
             ioChannel = getChannel();
+            pageFile = fileData;
         }
 
         if (SanityManager.DEBUG) {
@@ -413,33 +400,20 @@ class RAFContainer4 extends RAFContainer {
             }
         }
 
-        if(ioChannel != null) {
-
+        if (ioChannel != null) {
             long pageOffset = pageNumber * pageSize;
+            long readOffset = offset == -1L ? pageOffset : offset;
+            if (SanityManager.DEBUG && offset != -1L) {
+                SanityManager.ASSERT(pageNumber == -1L);
+            }
 
-            ByteBuffer pageBuf = ByteBuffer.wrap(pageData);
-
-            // I hope the try/finally is optimized away by the
-            // compiler/jvm when SanityManager.DEBUG == false?
             try {
                 if (SanityManager.DEBUG) {
                     synchronized(this) {
                         iosInProgress++;
                     }
                 }
-
-                if (offset == -1L) {
-                    // Normal page read doesn't specify offset,
-                    // so use one computed from page number.
-                    readFull(pageBuf, ioChannel, pageOffset);
-                } else {
-                    // getEmbryonicPage specifies it own offset, so use that
-                    if (SanityManager.DEBUG) {
-                        SanityManager.ASSERT(pageNumber == -1L);
-                    }
-
-                    readFull(pageBuf, ioChannel, offset);
-                }
+                pageFile.readFullyAt(readOffset, pageData, 0, pageData.length);
             }
             finally {
                 if (SanityManager.DEBUG) {
@@ -447,7 +421,6 @@ class RAFContainer4 extends RAFContainer {
                         iosInProgress--;
                     }
                 }
-
             }
 
             if (dataFactory.databaseEncrypted() &&
@@ -954,12 +927,14 @@ class RAFContainer4 extends RAFContainer {
          throws IOException, StandardException
     {
         FileChannel ioChannel;
+        StorageRandomAccessFile pageFile;
         synchronized (this) {
             // committed and dropped, do nothing.
             // This file container may only be a stub
             if (getCommittedDropState())
                 return;
             ioChannel = getChannel();
+            pageFile = fileData;
         }
 
         if (SanityManager.DEBUG) {
@@ -1000,8 +975,6 @@ class RAFContainer4 extends RAFContainer {
                         "RAFContainer4: dataToWrite is null after updatePageArray()");
             }
 
-            ByteBuffer writeBuffer = ByteBuffer.wrap(dataToWrite);
-
             dataFactory.writeInProgress();
             try {
                 if (SanityManager.DEBUG) {
@@ -1010,7 +983,7 @@ class RAFContainer4 extends RAFContainer {
                     }
                 }
 
-                writeFull(writeBuffer, ioChannel, pageOffset);
+                pageFile.writeAt(pageOffset, dataToWrite, 0, dataToWrite.length);
             } catch (ClosedChannelException ioe) {
                 synchronized(this) {
                     /* If the write failed because the container has been closed
@@ -1062,7 +1035,7 @@ class RAFContainer4 extends RAFContainer {
                         }
                     }
                     if (!dataFactory.dataNotSyncedAtAllocation) {
-                        ioChannel.force(false);
+                        pageFile.force(false);
                     }
                 } finally {
                     if (SanityManager.DEBUG) {
@@ -1154,42 +1127,6 @@ class RAFContainer4 extends RAFContainer {
             return buffer;
         } else {
             return super.getEmbryonicPage(file, offset);
-        }
-    }
-
-    /**
-     * Attempts to fill buf completely from start until it's full.
-     * <p/>
-     * FileChannel has no readFull() method, so we roll our own.
-     * <p/>
-     * @param dstBuffer buffer to read into
-     * @param srcChannel channel to read from
-     * @param position file position from where to read
-     *
-     * @throws IOException if an I/O error occurs while reading
-     * @throws StandardException If thread is interrupted.
-     */
-    private void readFull(ByteBuffer dstBuffer,
-                          FileChannel srcChannel,
-                          long position)
-            throws IOException, StandardException
-    {
-        while(dstBuffer.remaining() > 0) {
-            if (srcChannel.read(dstBuffer,
-                                    position + dstBuffer.position()) == -1) {
-                throw new EOFException(
-                    "Reached end of file while attempting to read a "
-                    + "whole page.");
-            }
-
-            // (**) Sun Java NIO is weird: it can close the channel due to an
-            // interrupt without throwing if bytes got transferred. Compensate,
-            // so we can clean up.  Bug 6979009,
-            // http://bugs.sun.com/view_bug.do?bug_id=6979009
-            if (Thread.currentThread().isInterrupted() &&
-                    !srcChannel.isOpen()) {
-                throw new ClosedByInterruptException();
-            }
         }
     }
 

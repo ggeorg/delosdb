@@ -684,6 +684,16 @@ tasks.named('assemble') {
 }
 
 registerDelosFocusedTest(
+        'runDelosSharedStoragePositionalIoTest',
+        'Runs the Stage 8 shared file/memory positional-I/O and explicit-force contract.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedStoragePositionalIoTest.class'])
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedStoragePositionalIoTest')
+}
+
+
+registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',
         'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'],
