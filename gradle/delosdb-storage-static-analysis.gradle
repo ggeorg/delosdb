@@ -8207,11 +8207,14 @@ tasks.register('delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis') {
                     'no copied or restored Derby log directory participates in recovery'
             ])
             requireTokens('Roadmap Stage 5.2 state', roadmapText, [
-                    'Current milestone: Stage 5 retained-runtime retirement',
+                    '# Stage 5 — remove the independent MVCC storage system',
                     '## Stage 5.1 — RawStore authority cutover',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 4 and all Stage 5 slices are user-verified'
+                    'The second retirement slice retargets the permanent mixed heap/MVCC power-loss proof',
+                    ':delosdb-tests:runDelosMvccRawStoreDecisionWalCrashTest',
+                    'one RawStore decision',
+                    'one recovery pass'
             ])
         }
 
@@ -8354,11 +8357,14 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
                     'the historical database-decision task is only a compatibility alias'
             ])
             requireTokens('Roadmap Stage 5.3 state', roadmapText, [
-                    'Current milestone: Stage 5 retained-runtime retirement',
+                    '# Stage 5 — remove the independent MVCC storage system',
                     '## Stage 5.2 — decision and recovery proof cutover',
                     '## Stage 5.3 — SQL transaction-authority proof cutover',
-                    'Stage 4 and all Stage 5 slices are user-verified',
-                    'VERIFIED'
+                    'The third retirement slice retargets the permanent SQL multi-table and mixed heap/MVCC transaction',
+                    ':delosdb-tests:runDelosMvccRawStoreSqlTransactionCutoverTest',
+                    'one SQL transaction authority',
+                    'one RawStore undo/commit boundary',
+                    'no retained database-decision proof dependency'
             ])
         }
 
