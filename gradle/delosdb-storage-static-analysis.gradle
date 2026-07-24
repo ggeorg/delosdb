@@ -10007,11 +10007,113 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
     }
 }
 
+
+def delosDrdaDisconnectCleanupProofFiles = [
+        helper: new File(delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaFailureTestSupport.java'),
+        disconnectTest: new File(delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaDisconnectCleanupTest.java'),
+        streamingTest: new File(delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaStreamingDisconnectTest.java'),
+        testBuild: new File(delosRepositoryRoot, 'delosdb-tests/build.gradle')
+]
+
+tasks.register('delosDrdaDisconnectCleanupStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects bounded DRDA disconnect rollback and lock-release proofs for heap and MVCC.'
+
+    inputs.files(delosDrdaDisconnectCleanupProofFiles.values())
+    inputs.file(new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/drda-disconnect-cleanup-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def helperText = delosDrdaDisconnectCleanupProofFiles.helper.getText('UTF-8')
+        def disconnectText = delosDrdaDisconnectCleanupProofFiles.disconnectTest.getText('UTF-8')
+        def streamingText = delosDrdaDisconnectCleanupProofFiles.streamingTest.getText('UTF-8')
+        def testBuildText = delosDrdaDisconnectCleanupProofFiles.testBuild.getText('UTF-8')
+        def staticFile = new File(delosRepositoryRoot,
+                'gradle/delosdb-storage-static-analysis.gradle')
+        def staticText = staticFile.getText('UTF-8')
+
+        [
+                'CLEANUP_DEADLOCK_TIMEOUT_SECONDS = 1',
+                'CLEANUP_LOCK_WAIT_TIMEOUT_SECONDS = 2',
+                'CLEANUP_DEADLINE_SECONDS = 30',
+                'DatabasePropertyTestSetup.setLockTimeouts(',
+                'withBoundedCleanupLockWaits(Test test)',
+                'attempts++;',
+                'bounded lock probes'
+        ].each { token ->
+            if (!helperText.contains(token)) {
+                failures << 'DRDA cleanup helper is missing bounded-wait token: ' + token
+            }
+        }
+        if (helperText.contains('TimeUnit.SECONDS.toNanos(15)')) {
+            failures << 'DRDA cleanup polling must not restore the ineffective 15-second default-lock wait loop'
+        }
+
+        [
+                'withBoundedCleanupLockWaits(test)',
+                'victim.abort(abortExecutor)',
+                'awaitRollbackAndCommit('
+        ].each { token ->
+            if (!disconnectText.contains(token)) {
+                failures << 'DRDA abort cleanup proof is missing: ' + token
+            }
+        }
+        [
+                'withBoundedCleanupLockWaits(test)',
+                'resetPhysicalClientSocket(victim)',
+                'assertTransportFailure(fetch, table)',
+                'awaitRollbackAndCommit('
+        ].each { token ->
+            if (!streamingText.contains(token)) {
+                failures << 'DRDA streaming cleanup proof is missing: ' + token
+            }
+        }
+        [
+                "'runDelosHeapMvccDrdaDisconnectCleanupTest'",
+                "'runDelosHeapMvccDrdaStreamingDisconnectTest'",
+                "dependsOn tasks.named('runDelosHeapMvccDrdaDisconnectCleanupTest')",
+                "dependsOn tasks.named('runDelosHeapMvccDrdaStreamingDisconnectTest')"
+        ].each { token ->
+            if (!testBuildText.contains(token)) {
+                failures << 'DRDA cleanup test wiring is missing: ' + token
+            }
+        }
+
+        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
+        if (s0Index < 0
+                || !staticText.substring(s0Index).contains(
+                        "'delosDrdaDisconnectCleanupStaticAnalysis'")) {
+            failures << 'S0 must include the DRDA disconnect-cleanup static gate'
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/drda-disconnect-cleanup-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB DRDA disconnect cleanup static analysis')
+            writer.println('================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DRDA disconnect cleanup static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle('DRDA disconnect cleanup static analysis passed. Report: {}', reportFile)
+    }
+}
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
     dependsOn 'delosStorageStaticAnalysis',
             'delosServerStaticAnalysis',
+            'delosDrdaDisconnectCleanupStaticAnalysis',
             'delosHeapCompatibilityStaticAnalysis',
             'delosHeapObjectDeserializationFilterStaticAnalysis',
             'delosSecurityTruthStaticAnalysis',

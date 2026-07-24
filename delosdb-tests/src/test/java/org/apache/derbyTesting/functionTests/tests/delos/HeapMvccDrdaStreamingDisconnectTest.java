@@ -60,8 +60,9 @@ public final class HeapMvccDrdaStreamingDisconnectTest extends BaseJDBCTestCase 
     public static Test suite() {
         BaseTestSuite suite = new BaseTestSuite(
                 HeapMvccDrdaStreamingDisconnectTest.class);
-        return TestConfiguration.clientServerDecorator(
-                new CleanDatabaseTestSetup(suite));
+        Test test = new CleanDatabaseTestSetup(suite);
+        test = HeapMvccDrdaFailureTestSupport.withBoundedCleanupLockWaits(test);
+        return TestConfiguration.clientServerDecorator(test);
     }
 
     public void testRawSocketLossDuringResultStreamingCleansHeapAndMvccSessions()

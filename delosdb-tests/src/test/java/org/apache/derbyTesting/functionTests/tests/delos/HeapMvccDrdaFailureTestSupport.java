@@ -29,12 +29,25 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import junit.framework.Assert;
+import junit.framework.Test;
 
+import org.apache.derbyTesting.junit.DatabasePropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /** Shared mechanics for heap/MVCC DRDA failure-path tests. */
 final class HeapMvccDrdaFailureTestSupport {
+    private static final int CLEANUP_DEADLOCK_TIMEOUT_SECONDS = 1;
+    private static final int CLEANUP_LOCK_WAIT_TIMEOUT_SECONDS = 2;
+    private static final int CLEANUP_DEADLINE_SECONDS = 30;
+
     private HeapMvccDrdaFailureTestSupport() {
+    }
+
+    static Test withBoundedCleanupLockWaits(Test test) {
+        return DatabasePropertyTestSetup.setLockTimeouts(
+                test,
+                CLEANUP_DEADLOCK_TIMEOUT_SECONDS,
+                CLEANUP_LOCK_WAIT_TIMEOUT_SECONDS);
     }
 
     static void assertNetworkClient(TestConfiguration configuration) {
@@ -114,9 +127,12 @@ final class HeapMvccDrdaFailureTestSupport {
                                        String table,
                                        int uncommittedRowId) throws Exception {
         SQLException lastLockFailure = null;
+        int attempts = 0;
         long deadline = System.nanoTime()
-                + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+                + java.util.concurrent.TimeUnit.SECONDS.toNanos(
+                        CLEANUP_DEADLINE_SECONDS);
         while (System.nanoTime() < deadline) {
+            attempts++;
             try (Connection survivor = connections.open()) {
                 survivor.setAutoCommit(false);
                 try {
@@ -141,7 +157,10 @@ final class HeapMvccDrdaFailureTestSupport {
             Thread.sleep(100L);
         }
         AssertionError timeout = new AssertionError(
-                "server did not release disconnected transaction state for " + table);
+                "server did not release disconnected transaction state for "
+                        + table + " after " + attempts
+                        + " bounded lock probes within "
+                        + CLEANUP_DEADLINE_SECONDS + " seconds");
         if (lastLockFailure != null) {
             timeout.initCause(lastLockFailure);
         }

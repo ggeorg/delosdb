@@ -49,8 +49,11 @@ public final class HeapMvccDrdaDisconnectCleanupTest extends BaseJDBCTestCase {
     }
 
     public static Test suite() {
-        BaseTestSuite suite = new BaseTestSuite(HeapMvccDrdaDisconnectCleanupTest.class);
-        return TestConfiguration.clientServerDecorator(new CleanDatabaseTestSetup(suite));
+        BaseTestSuite suite = new BaseTestSuite(
+                HeapMvccDrdaDisconnectCleanupTest.class);
+        Test test = new CleanDatabaseTestSetup(suite);
+        test = HeapMvccDrdaFailureTestSupport.withBoundedCleanupLockWaits(test);
+        return TestConfiguration.clientServerDecorator(test);
     }
 
     public void testAbortRollsBackAndReleasesHeapAndMvccTransactions()
