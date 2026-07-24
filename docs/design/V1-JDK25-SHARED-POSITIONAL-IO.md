@@ -184,7 +184,8 @@ per-operation event recording
 ```
 
 Stage 8.2 adds bounded shared I/O diagnostics and container-handle accounting at this boundary.
-Fault injection and memory-ownership changes remain later shared Stage 8 decisions inside the one
+Stage 8.3 adds deterministic fault points, Stage 8.4 adds the heap-segment proof, Stage 8.5 adds a
+bounded native mirror, and Stage 8.6 rejects mapped RawStore I/O for v1. All remain inside the one
 inherited RawStore authority.
 
 

@@ -91,12 +91,15 @@ only external bridge lives under `delosdb-tests/src/test/java` in the same packa
 seam. Normal applications cannot arm a schedule through a JDBC URL, SQL routine, JVM property,
 provider configuration, or service lookup.
 
-The bridge is excluded from the named `org.apache.derby.tests` source set. Gradle copies that one
-source into a generated test-only source root and compiles it with
+The package-private proof bridges are excluded from the named `org.apache.derby.tests` source set.
+Gradle copies only those sources into a generated test-only source root and compiles them with
 `--patch-module org.apache.derby.engine=...`. The ordinary Derby test module is then compiled with
 the generated bridge classes patched into `org.apache.derby.engine` and with the existing
 test-only implementation package export. At execution time the bridge output is present only on the
-focused test classpath and is never added to an engine, storage, or distribution jar. This avoids an
+focused test classpath and is never added to an engine, storage, or distribution jar. The Gradle
+lifecycle uses the neutral `prepareRawStoreInternalTestSupportSources` and
+`compileRawStoreInternalTestSupport` task names because the patch now serves more than one Stage 8
+proof. This avoids an
 illegal JPMS split package without widening the production module or using reflection.
 
 This is intentionally stricter than a normal product feature. Destructive failure controls remain
@@ -111,7 +114,8 @@ exact occurrence semantics and prevents an after-write injection from causing a 
 
 ## Replay manifest
 
-`DelosRawStoreIoFailureReplayManifest` is immutable evidence, not a control API. Schema 1 records:
+`DelosRawStoreIoFailureReplayManifest` is immutable test evidence, not a runtime or control API. It
+lives under `delosdb-tests` and is absent from `delosdb-derby-store-api`. Schema 1 records:
 
 ```text
 fault registry version
@@ -174,9 +178,10 @@ MemorySegment ownership
 mapped files or native/off-heap pages
 ```
 
-Those require separate design and proof. Stage 8.4 now implements the heap-backed `MemorySegment`
-page-buffer proof while retaining this fault/replay lane as a standing regression gate. Native and
-mapped ownership remain deferred to later stages.
+Those require separate design and proof. Stage 8.4 implements the heap-backed `MemorySegment`
+page-buffer proof while retaining this fault/replay lane as a standing regression gate. Stage 8.5
+adds only a bounded native physical-I/O mirror, and Stage 8.6 records `NO_GO_FOR_V1_RAWSTORE` for
+mapped regions.
 
 ## Stage 8.5 compatibility
 

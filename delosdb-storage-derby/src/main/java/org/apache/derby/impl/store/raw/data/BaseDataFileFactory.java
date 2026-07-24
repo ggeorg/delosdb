@@ -2796,14 +2796,30 @@ public class BaseDataFileFactory
             DelosRawStoreIoFaultInjectionDirectory.register(
                     rawStoreIoIdentity, rawStoreIoFaultInjector);
         }
-        catch (IOException ioe)
+        catch (IOException | RuntimeException failure)
         {
+            discardRawStoreIoMetrics();
             throw StandardException.newException(
                     SQLState.FILE_CONTAINER_EXCEPTION,
-                    ioe,
+                    failure,
                     dataDirectory,
                     "bind",
                     "RawStore I/O diagnostics");
+        }
+    }
+
+    private void discardRawStoreIoMetrics()
+    {
+        rawStoreNativeMemory.shutdown();
+        rawStoreIoFaultInjector.shutdown();
+        rawStoreIoMetrics.shutdown();
+        if (rawStoreIoIdentity != null)
+        {
+            DelosRawStoreIoFaultInjectionDirectory.discard(
+                    rawStoreIoIdentity, rawStoreIoFaultInjector);
+            DelosRawStoreIoDiagnosticsDirectory.discard(
+                    rawStoreIoIdentity, rawStoreIoMetrics);
+            rawStoreIoIdentity = null;
         }
     }
 

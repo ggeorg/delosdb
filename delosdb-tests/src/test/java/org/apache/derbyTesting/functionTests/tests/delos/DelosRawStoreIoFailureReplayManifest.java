@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.iapi.store.types.DelosRawStoreIoFailureReplayManifest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.DelosRawStoreIoFailureReplayManifest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -8,7 +8,7 @@
    The ASF licenses this file to You under the Apache License, Version 2.0.
 
  */
-package org.apache.derby.iapi.store.types;
+package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-/** Immutable, line-oriented evidence for one deterministic I/O failure replay. */
+/** Test-only immutable evidence for one deterministic I/O failure replay. */
 public record DelosRawStoreIoFailureReplayManifest(
         int schemaVersion,
         int faultRegistryVersion,

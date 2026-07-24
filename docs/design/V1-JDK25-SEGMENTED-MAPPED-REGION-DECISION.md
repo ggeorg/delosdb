@@ -1,6 +1,6 @@
 # DelosDB v1 JDK 25 segmented mapped-region experiment and decision
 
-Status: Stage 8.6 implemented; user verification pending.
+Status: Stage 8.6 verified.
 
 ## Decision
 

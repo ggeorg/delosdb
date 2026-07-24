@@ -523,3 +523,18 @@ path. The experiment adds no backend selector, mapped-region registry, page-form
 cache.
 
 See `design/V1-JDK25-SEGMENTED-MAPPED-REGION-DECISION.md`.
+## Stage 8.7.1 production closeout lifecycle and API simplification
+
+The first production-closeout slice rejects duplicate active diagnostics/fault-directory owners,
+rolls back partially completed registration, keeps failure replay manifests in test infrastructure,
+consolidates positional channel transfer loops, removes an unused native-memory method, and gives the
+shared engine test patch a neutral name. It changes no page format, I/O result, durability choice,
+recovery behavior, or heap/MVCC authority.
+
+Permanent evidence:
+
+```text
+docs/design/V1-JDK25-RAWSTORE-PRODUCTION-CLOSEOUT.md
+delosSharedRawStoreProductionCloseoutStaticAnalysis
+```
+

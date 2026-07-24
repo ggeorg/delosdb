@@ -106,6 +106,33 @@ public final class SharedRawStoreIoDiagnosticsTest extends MvccSqlTestSupport {
                 leakingIdentity, replacementMetrics);
     }
 
+    public void testDuplicateActiveRegistrationIsRejectedWithoutReplacement() {
+        String identity = "memory:stage8-duplicate-registration-proof";
+        DelosRawStoreIoMetrics first = new DelosRawStoreIoMetrics();
+        DelosRawStoreIoMetrics second = new DelosRawStoreIoMetrics();
+        first.bind(identity, true);
+        second.bind(identity, true);
+
+        DelosRawStoreIoDiagnosticsDirectory.register(identity, first);
+        try {
+            DelosRawStoreIoDiagnosticsDirectory.register(identity, second);
+            fail("Expected duplicate active diagnostics registration to fail");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains(identity));
+        }
+
+        assertEquals(first.snapshot(),
+                DelosRawStoreIoDiagnosticsDirectory.snapshot(identity));
+        first.shutdown();
+        DelosRawStoreIoDiagnosticsDirectory.unregister(identity, first);
+
+        DelosRawStoreIoDiagnosticsDirectory.register(identity, second);
+        assertTrue(DelosRawStoreIoDiagnosticsDirectory
+                .snapshot(identity).runtimeActive());
+        second.shutdown();
+        DelosRawStoreIoDiagnosticsDirectory.unregister(identity, second);
+    }
+
     public void testConcurrentAccountingRemainsExactAndSnapshotSafe()
             throws Exception {
         final int workers = 8;

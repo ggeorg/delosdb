@@ -15,6 +15,7 @@ import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Weak active lookup plus bounded terminal snapshots for RawStore I/O counters. */
@@ -56,10 +57,41 @@ public final class DelosRawStoreIoDiagnosticsDirectory {
 
     public static void register(String identity, DelosRawStoreIoMetrics metrics) {
         String normalized = requireIdentity(identity);
-        BY_IDENTITY.put(normalized, new WeakReference<>(metrics));
-        synchronized (TERMINAL_SNAPSHOTS) {
-            TERMINAL_SNAPSHOTS.remove(normalized);
+        DelosRawStoreIoMetrics required = Objects.requireNonNull(metrics, "metrics");
+        WeakReference<DelosRawStoreIoMetrics> replacement =
+                new WeakReference<>(required);
+
+        while (true) {
+            WeakReference<DelosRawStoreIoMetrics> previous =
+                    BY_IDENTITY.putIfAbsent(normalized, replacement);
+            if (previous == null) {
+                removeTerminalSnapshot(normalized);
+                return;
+            }
+
+            DelosRawStoreIoMetrics active = previous.get();
+            if (active == required) {
+                removeTerminalSnapshot(normalized);
+                return;
+            }
+            if (active != null) {
+                throw new IllegalStateException(
+                        "RawStore I/O diagnostics already registered for "
+                                + normalized);
+            }
+            if (BY_IDENTITY.replace(normalized, previous, replacement)) {
+                removeTerminalSnapshot(normalized);
+                return;
+            }
         }
+    }
+
+    public static void discard(String identity, DelosRawStoreIoMetrics metrics) {
+        String normalized = requireIdentity(identity);
+        DelosRawStoreIoMetrics required = Objects.requireNonNull(metrics, "metrics");
+        BY_IDENTITY.computeIfPresent(normalized, (ignored, reference) ->
+                reference.get() == required ? null : reference);
+        removeTerminalSnapshot(normalized);
     }
 
     public static void unregister(String identity, DelosRawStoreIoMetrics metrics) {
@@ -101,6 +133,13 @@ public final class DelosRawStoreIoDiagnosticsDirectory {
 
     public static DelosRawStoreIoSnapshot snapshot(Path databaseDirectory) {
         return snapshot(fileIdentity(databaseDirectory));
+    }
+
+
+    private static void removeTerminalSnapshot(String identity) {
+        synchronized (TERMINAL_SNAPSHOTS) {
+            TERMINAL_SNAPSHOTS.remove(identity);
+        }
     }
 
     private static String requireIdentity(String identity) {

@@ -22,7 +22,6 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.derby.iapi.store.types.DelosRawStoreIoFailureReplayManifest;
 import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.impl.store.raw.data.RawStoreIoFaultInjectionTestSupport;

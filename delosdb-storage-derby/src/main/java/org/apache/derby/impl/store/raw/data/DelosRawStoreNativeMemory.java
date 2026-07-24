@@ -100,10 +100,6 @@ final class DelosRawStoreNativeMemory {
         }
     }
 
-    synchronized boolean enabled() {
-        return accepting;
-    }
-
     void shutdown() {
         List<Lease> leaked;
         long leakedBytes;

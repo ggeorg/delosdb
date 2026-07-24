@@ -84,23 +84,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                             int length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer target = ByteBuffer.wrap(buffer, offset, length);
-        long readPosition = position;
-        while (target.hasRemaining())
-        {
-            int count = channel.read(target, readPosition);
-            if (count < 0)
-            {
-                throw new EOFException();
-            }
-            if (count == 0)
-            {
-                Thread.onSpinWait();
-                continue;
-            }
-            readPosition += count;
-            detectClosedByInterrupt();
-        }
+        readFully(ByteBuffer.wrap(buffer, offset, length), position);
     }
 
     /**
@@ -113,27 +97,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                         int length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer source = ByteBuffer.wrap(buffer, offset, length);
-        long writePosition = position;
-        try
-        {
-            while (source.hasRemaining())
-            {
-                int count = channel.write(source, writePosition);
-                if (count == 0)
-                {
-                    Thread.onSpinWait();
-                    continue;
-                }
-                writePosition += count;
-                detectClosedByInterrupt();
-            }
-        }
-        catch (NonWritableChannelException notWritable)
-        {
-            throw new IOException("Random-access file is read-only: " + name,
-                    notWritable);
-        }
+        writeFully(ByteBuffer.wrap(buffer, offset, length), position);
     }
 
 
@@ -145,23 +109,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                             long length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer target = segmentView(buffer, offset, length, true);
-        long readPosition = position;
-        while (target.hasRemaining())
-        {
-            int count = channel.read(target, readPosition);
-            if (count < 0)
-            {
-                throw new EOFException();
-            }
-            if (count == 0)
-            {
-                Thread.onSpinWait();
-                continue;
-            }
-            readPosition += count;
-            detectClosedByInterrupt();
-        }
+        readFully(segmentView(buffer, offset, length, true), position);
     }
 
     /** Write a complete range from a heap or native JDK 25 memory segment. */
@@ -172,27 +120,7 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
                         long length) throws IOException
     {
         checkPosition(position);
-        ByteBuffer source = segmentView(buffer, offset, length, false);
-        long writePosition = position;
-        try
-        {
-            while (source.hasRemaining())
-            {
-                int count = channel.write(source, writePosition);
-                if (count == 0)
-                {
-                    Thread.onSpinWait();
-                    continue;
-                }
-                writePosition += count;
-                detectClosedByInterrupt();
-            }
-        }
-        catch (NonWritableChannelException notWritable)
-        {
-            throw new IOException("Random-access file is read-only: " + name,
-                    notWritable);
-        }
+        writeFully(segmentView(buffer, offset, length, false), position);
     }
 
     /** Force file contents and, when requested, file metadata. */
@@ -208,6 +136,52 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
         force(true);
     }
 
+
+    private void readFully(ByteBuffer target, long position)
+            throws IOException
+    {
+        long readPosition = position;
+        while (target.hasRemaining())
+        {
+            int count = channel.read(target, readPosition);
+            if (count < 0)
+            {
+                throw new EOFException();
+            }
+            if (count == 0)
+            {
+                Thread.onSpinWait();
+                continue;
+            }
+            readPosition += count;
+            detectClosedByInterrupt();
+        }
+    }
+
+    private void writeFully(ByteBuffer source, long position)
+            throws IOException
+    {
+        long writePosition = position;
+        try
+        {
+            while (source.hasRemaining())
+            {
+                int count = channel.write(source, writePosition);
+                if (count == 0)
+                {
+                    Thread.onSpinWait();
+                    continue;
+                }
+                writePosition += count;
+                detectClosedByInterrupt();
+            }
+        }
+        catch (NonWritableChannelException notWritable)
+        {
+            throw new IOException("Random-access file is read-only: " + name,
+                    notWritable);
+        }
+    }
 
     private static ByteBuffer segmentView(
             MemorySegment buffer,

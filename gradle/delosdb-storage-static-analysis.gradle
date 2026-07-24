@@ -8755,13 +8755,12 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             def migratedTypes = DelosDbStaticFileSupport.javaFiles([migratedTypeRoot])
             def postRetirementSharedTypes = [
                     'DelosRawStoreIoDiagnosticsDirectory.java',
-                    'DelosRawStoreIoFailureReplayManifest.java',
                     'DelosRawStoreIoMetrics.java',
                     'DelosRawStoreIoSnapshot.java'
             ]
-            if (migratedTypes.size() != 105) {
-                failures << 'Expected 105 current shared store/type contracts in derby-store-api '
-                        + '(101 migrated at Stage 7.3 plus 4 Stage 8 contracts); found '
+            if (migratedTypes.size() != 104) {
+                failures << 'Expected 104 current shared store/type contracts in derby-store-api '
+                        + '(101 migrated at Stage 7.3 plus 3 Stage 8 runtime contracts); found '
                         + migratedTypes.size()
             }
             postRetirementSharedTypes.each { fileName ->
@@ -8848,7 +8847,7 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             }
 
             def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
-            ['101 shared', '4 post-retirement shared', '105 current shared',
+            ['101 shared', 'three post-retirement runtime', '104 current shared',
              '27 unused parallel', '6 unused derbystorage',
              'no `delosstorageproviderfactory` service registration',
              '20'].each { token ->
@@ -9260,7 +9259,7 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
     description = 'Verifies Stage 8.3 deterministic database-scoped RawStore I/O fault injection and replay.'
 
     def required = [
-            manifest: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java'),
+            manifest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/DelosRawStoreIoFailureReplayManifest.java'),
             injector: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java'),
             directory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java'),
             baseFactory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
@@ -9428,16 +9427,16 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
 
             [
                     "exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'",
-                    "tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync)",
-                    "tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile)",
-                    "dependsOn tasks.named('prepareRawStoreIoFaultInjectionTestSupportSource'), ':jars'",
-                    "source rawStoreIoFaultInjectionTestSupportGeneratedSourceDir",
-                    "destinationDirectory.set(rawStoreIoFaultInjectionTestSupportClassDir)",
+                    "tasks.register('prepareRawStoreInternalTestSupportSources', Sync)",
+                    "tasks.register('compileRawStoreInternalTestSupport', JavaCompile)",
+                    "dependsOn tasks.named('prepareRawStoreInternalTestSupportSources'), ':jars'",
+                    "source rawStoreInternalTestSupportGeneratedSourceDir",
+                    "destinationDirectory.set(rawStoreInternalTestSupportClassDir)",
                     "'--patch-module'",
-                    'org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportGeneratedSourceDir.get().asFile.absolutePath}',
-                    "dependsOn ':jars', tasks.named('compileRawStoreIoFaultInjectionTestSupport')",
-                    'org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportClassDir.get().asFile.absolutePath}',
-                    'rawStoreIoFaultInjectionTestSupportClassDir,',
+                    'org.apache.derby.engine=${rawStoreInternalTestSupportGeneratedSourceDir.get().asFile.absolutePath}',
+                    "dependsOn ':jars', tasks.named('compileRawStoreInternalTestSupport')",
+                    'org.apache.derby.engine=${rawStoreInternalTestSupportClassDir.get().asFile.absolutePath}',
+                    'rawStoreInternalTestSupportClassDir,',
                     'never packaged into a production artifact'
             ].each { token ->
                 if (!text.testBuild.contains(token)) {
@@ -9814,7 +9813,7 @@ tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
         }
         ['RawStoreNativeMemoryTestSupport.java',
          "exclude 'org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'",
-         'compileRawStoreIoFaultInjectionTestSupport', '--patch-module',
+         'compileRawStoreInternalTestSupport', '--patch-module',
          "'runDelosSharedRawStoreNativeMemoryPageBufferTest'",
          "dependsOn tasks.named('runDelosSharedRawStoreNativeMemoryPageBufferTest')"].each { token ->
             if (!text.testBuild.contains(token)) failures << 'Stage 8.5 test-only wiring is missing: ' + token
@@ -9964,7 +9963,7 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
             }
         }
 
-        ['Status: Stage 8.6 implemented; user verification pending.',
+        ['Status: Stage 8.6 verified.',
          'NO_GO_FOR_V1_RAWSTORE', 'Durability contract mismatch',
          'Fault and diagnostics boundary mismatch',
          'File-growth and region lifecycle cost',
@@ -9976,8 +9975,9 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
         }
         ['Stage 8.5 — bounded native RawStore page-I/O mirrors', 'VERIFIED',
          'Stage 8.6 — segmented mapped-region experiment and production decision',
-         'IMPLEMENTED / PENDING USER VERIFICATION',
-         'NO_GO_FOR_V1_RAWSTORE', '# Stage 9 — Lucene 10 foundation'].each { token ->
+         'VERIFIED',
+         'NO_GO_FOR_V1_RAWSTORE',
+         'Stage 8.7.1 — production closeout lifecycle and API simplification'].each { token ->
             if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.6 token: ' + token
         }
         if (!text.handoff.contains('Stage 8.6 segmented mapped-region experiment and v1 no-go decision:')) {
@@ -10108,6 +10108,8 @@ tasks.register('delosDrdaDisconnectCleanupStaticAnalysis') {
     }
 }
 
+apply from: file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle')
+
 tasks.register('s0CloseoutVerification') {
     group = 'verification'
     description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
@@ -10157,6 +10159,7 @@ tasks.register('s0CloseoutVerification') {
             'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
             'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis',
             'delosSharedRawStoreMappedRegionDecisionStaticAnalysis',
+            'delosSharedRawStoreProductionCloseoutStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

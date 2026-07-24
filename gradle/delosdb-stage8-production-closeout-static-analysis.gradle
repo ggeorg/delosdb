@@ -1,0 +1,205 @@
+/*
+ * Stage 8 production-closeout gates live in a dedicated script so the shared
+ * storage analysis does not continue growing as one monolithic file.
+ */
+
+tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 8.7.1 RawStore lifecycle, runtime-surface, and maintainability closeout.'
+
+    def required = [
+            diagnosticsDirectory: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java'),
+            faultDirectory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java'),
+            baseFactory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
+            nativeMemory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
+            directoryFile: file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            replayManifest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/DelosRawStoreIoFailureReplayManifest.java'),
+            diagnosticsTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.java'),
+            testBuild: file('delosdb-tests/build.gradle'),
+            storageApiDesign: file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
+            design: file('docs/design/V1-JDK25-RAWSTORE-PRODUCTION-CLOSEOUT.md'),
+            roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            handoff: file('.delosdb-v1/NEW-SESSION-README.md')
+    ]
+    inputs.files(required.values())
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    inputs.file(file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/shared-rawstore-production-closeout-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        required.each { name, source ->
+            if (!source.isFile()) {
+                failures << 'Missing required Stage 8.7.1 source: ' + name + ' -> ' + source
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def text = required.collectEntries { name, source ->
+                [(name): source.getText('UTF-8')]
+            }
+            def sharedStatic = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+            ['putIfAbsent(normalized, replacement)',
+             'if (active != null)',
+             'RawStore I/O diagnostics already registered for',
+             'BY_IDENTITY.replace(normalized, previous, replacement)',
+             'public static void discard(',
+             'removeTerminalSnapshot(normalized)'].each { token ->
+                if (!text.diagnosticsDirectory.contains(token)) {
+                    failures << 'Duplicate-safe diagnostics registration is missing: ' + token
+                }
+            }
+
+            ['ACTIVE.putIfAbsent(identity, replacement)',
+             'RawStore I/O fault injector already registered for',
+             'ACTIVE.replace(identity, previous, replacement)',
+             'static void discard(',
+             'removeTerminalSnapshot(identity)'].each { token ->
+                if (!text.faultDirectory.contains(token)) {
+                    failures << 'Duplicate-safe fault registration is missing: ' + token
+                }
+            }
+
+            ['catch (IOException | RuntimeException failure)',
+             'discardRawStoreIoMetrics();',
+             'DelosRawStoreIoFaultInjectionDirectory.discard(',
+             'DelosRawStoreIoDiagnosticsDirectory.discard('].each { token ->
+                if (!text.baseFactory.contains(token)) {
+                    failures << 'Partial registration rollback is missing: ' + token
+                }
+            }
+
+            def productionManifest = file(
+                    'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java')
+            if (productionManifest.exists()) {
+                failures << 'Replay manifest must not remain in the production runtime API'
+            }
+            ['package org.apache.derbyTesting.functionTests.tests.delos;',
+             'Test-only immutable evidence',
+             'public record DelosRawStoreIoFailureReplayManifest('].each { token ->
+                if (!text.replayManifest.contains(token)) {
+                    failures << 'Test-only replay manifest is missing: ' + token
+                }
+            }
+
+            def runtimeTypeRoot = file(
+                    'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types')
+            def runtimeTypeCount = fileTree(runtimeTypeRoot) {
+                include '**/*.java'
+            }.files.size()
+            if (runtimeTypeCount != 104) {
+                failures << 'Expected 104 runtime store/type contracts after removing the test-only manifest; found '
+                        + runtimeTypeCount
+            }
+
+            def countToken = { String source, String token ->
+                int count = 0
+                int offset = 0
+                while ((offset = source.indexOf(token, offset)) >= 0) {
+                    count++
+                    offset += token.length()
+                }
+                count
+            }
+            if (countToken(text.directoryFile, 'channel.read(') != 1) {
+                failures << 'DirRandomAccessFile must have one shared complete-read loop'
+            }
+            if (countToken(text.directoryFile, 'channel.write(') != 1) {
+                failures << 'DirRandomAccessFile must have one shared complete-write loop'
+            }
+            ['private void readFully(ByteBuffer target, long position)',
+             'private void writeFully(ByteBuffer source, long position)'].each { token ->
+                if (!text.directoryFile.contains(token)) {
+                    failures << 'Shared positional transfer helper is missing: ' + token
+                }
+            }
+
+            if (text.nativeMemory.contains('synchronized boolean enabled()')) {
+                failures << 'Unused native-memory enabled() method remains'
+            }
+
+            ['testDuplicateActiveRegistrationIsRejectedWithoutReplacement',
+             'Expected duplicate active diagnostics registration to fail'].each { token ->
+                if (!text.diagnosticsTest.contains(token)) {
+                    failures << 'Duplicate-registration executable proof is missing: ' + token
+                }
+            }
+
+            ['prepareRawStoreInternalTestSupportSources',
+             'compileRawStoreInternalTestSupport',
+             'generated/sources/raw-store-internal-test-support'].each { token ->
+                if (!text.testBuild.contains(token)) {
+                    failures << 'Neutral Stage 8 internal test-support wiring is missing: ' + token
+                }
+            }
+            ['prepareRawStoreIoFaultInjectionTestSupportSource',
+             'compileRawStoreIoFaultInjectionTestSupport',
+             'generated/sources/raw-store-io-fault-injection-test-support'].each { stale ->
+                if (text.testBuild.contains(stale)) {
+                    failures << 'Stale fault-only test-support name remains: ' + stale
+                }
+            }
+
+            ['104 current shared contracts',
+             'three post-retirement runtime diagnostics contracts',
+             'replay manifest is test-only evidence'].each { token ->
+                if (!text.storageApiDesign.toLowerCase(java.util.Locale.ROOT)
+                        .contains(token.toLowerCase(java.util.Locale.ROOT))) {
+                    failures << 'Storage API inventory design is missing: ' + token
+                }
+            }
+
+            ['Status: Stage 8.7.1 implemented; user verification pending.',
+             'duplicate active registration',
+             'test-only replay manifest',
+             'Shared complete-transfer loops',
+             'not the final heap/native performance decision'].each { token ->
+                if (!text.design.contains(token)) {
+                    failures << 'Stage 8.7.1 design is missing: ' + token
+                }
+            }
+
+            ['Stage 8.6 — segmented mapped-region experiment and production decision',
+             'Stage 8.7.1 — production closeout lifecycle and API simplification',
+             'IMPLEMENTED / PENDING USER VERIFICATION'].each { token ->
+                if (!text.roadmap.contains(token)) {
+                    failures << 'Roadmap is missing Stage 8.7.1 token: ' + token
+                }
+            }
+            if (!text.handoff.contains(
+                    'Stage 8.7.1 production closeout lifecycle and API simplification:')) {
+                failures << 'Session handoff is missing the Stage 8.7.1 status line'
+            }
+
+            if (!sharedStatic.contains(
+                    "apply from: file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle')")) {
+                failures << 'Shared storage analysis must apply the dedicated Stage 8 closeout script'
+            }
+            def s0 = sharedStatic.substring(
+                    sharedStatic.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+            if (!s0.contains("'delosSharedRawStoreProductionCloseoutStaticAnalysis'")) {
+                failures << 'S0 must include the Stage 8 production-closeout gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-rawstore-production-closeout-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared RawStore production closeout static analysis')
+            writer.println('==========================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Shared RawStore production closeout static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Shared RawStore production closeout static analysis passed. Report: {}',
+                reportFile)
+    }
+}

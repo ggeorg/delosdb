@@ -60,9 +60,9 @@ def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def rawStoreNativeMemoryTestSupportSource = file(
         'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java')
-def rawStoreIoFaultInjectionTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
-        'generated/sources/raw-store-io-fault-injection-test-support')
-def rawStoreIoFaultInjectionTestSupportClassDir = layout.buildDirectory.dir(
+def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
+        'generated/sources/raw-store-internal-test-support')
+def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
         'classes/test-support/org.apache.derby.engine')
 def generatedNativeAuthResourceDir = layout.buildDirectory.dir('generated/test-resources/native-auth')
 def generatedNativeAuthWorkDir = layout.buildDirectory.dir('generated/native-auth-test-db')
@@ -164,7 +164,7 @@ def testModulePath = {
 def testRuntimeClasspath = {
     rootProject.files(
             derbyTestsClassDir,
-            rawStoreIoFaultInjectionTestSupportClassDir,
+            rawStoreInternalTestSupportClassDir,
             derbyRuntimeJars,
             generatedNativeAuthResourceDir,
             testSourceRoot,
@@ -259,27 +259,27 @@ artifacts {
     }
 }
 
-// The Stage 8.3 and Stage 8.5 bridges must share org.apache.derby.engine's runtime package in
+// The Stage 8 internal proof bridges must share org.apache.derby.engine's runtime package in
 // order to reach their package-private proof seams. Compile only those
 // sources as a test patch of the engine module. The resulting classes are test
 // runtime inputs only and are never packaged into a production artifact.
-tasks.register('prepareRawStoreIoFaultInjectionTestSupportSource', Sync) {
+tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(rawStoreNativeMemoryTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
-    into rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
+    into rawStoreInternalTestSupportGeneratedSourceDir
 }
 
-tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile) {
+tasks.register('compileRawStoreInternalTestSupport', JavaCompile) {
     group = 'build'
-    description = 'Compiles the package-private Stage 8.3 and Stage 8.5 test bridges as an org.apache.derby.engine test patch.'
-    dependsOn tasks.named('prepareRawStoreIoFaultInjectionTestSupportSource'), ':jars'
+    description = 'Compiles package-private Stage 8 internal proof bridges as an org.apache.derby.engine test patch.'
+    dependsOn tasks.named('prepareRawStoreInternalTestSupportSources'), ':jars'
 
-    source rawStoreIoFaultInjectionTestSupportGeneratedSourceDir
-    destinationDirectory.set(rawStoreIoFaultInjectionTestSupportClassDir)
+    source rawStoreInternalTestSupportGeneratedSourceDir
+    destinationDirectory.set(rawStoreInternalTestSupportClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
@@ -291,14 +291,14 @@ tasks.register('compileRawStoreIoFaultInjectionTestSupport', JavaCompile) {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
                 '--patch-module',
-                "org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportGeneratedSourceDir.get().asFile.absolutePath}",
+                "org.apache.derby.engine=${rawStoreInternalTestSupportGeneratedSourceDir.get().asFile.absolutePath}",
                 '-proc:none'
         ]
     }
 }
 
 tasks.named('compileTestJava', JavaCompile) {
-    dependsOn ':jars', tasks.named('compileRawStoreIoFaultInjectionTestSupport')
+    dependsOn ':jars', tasks.named('compileRawStoreInternalTestSupport')
     destinationDirectory.set(derbyTestsClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -311,7 +311,7 @@ tasks.named('compileTestJava', JavaCompile) {
         options.compilerArgs = [
                 '--module-path', testModulePath().asPath,
                 '--patch-module',
-                "org.apache.derby.engine=${rawStoreIoFaultInjectionTestSupportClassDir.get().asFile.absolutePath}",
+                "org.apache.derby.engine=${rawStoreInternalTestSupportClassDir.get().asFile.absolutePath}",
                 '-proc:none'
         ] + inheritedStoreImplementationExports + securityTruthTestExports
     }

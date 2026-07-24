@@ -35,20 +35,41 @@ final class DelosRawStoreIoFaultInjectionDirectory {
                 injector, "injector");
         WeakReference<DelosRawStoreIoFaultInjector> replacement =
                 new WeakReference<>(required);
-        WeakReference<DelosRawStoreIoFaultInjector> previous =
-                ACTIVE.putIfAbsent(identity, replacement);
-        DelosRawStoreIoFaultInjector existing =
-                previous == null ? null : previous.get();
-        if (existing != null && existing != required) {
-            throw new IllegalStateException(
-                    "RawStore I/O fault injector already registered for " + identity);
+
+        while (true) {
+            WeakReference<DelosRawStoreIoFaultInjector> previous =
+                    ACTIVE.putIfAbsent(identity, replacement);
+            if (previous == null) {
+                removeTerminalSnapshot(identity);
+                return;
+            }
+
+            DelosRawStoreIoFaultInjector active = previous.get();
+            if (active == required) {
+                removeTerminalSnapshot(identity);
+                return;
+            }
+            if (active != null) {
+                throw new IllegalStateException(
+                        "RawStore I/O fault injector already registered for "
+                                + identity);
+            }
+            if (ACTIVE.replace(identity, previous, replacement)) {
+                removeTerminalSnapshot(identity);
+                return;
+            }
         }
-        if (previous != null && existing == null) {
-            ACTIVE.replace(identity, previous, replacement);
-        }
-        synchronized (TERMINAL) {
-            TERMINAL.remove(identity);
-        }
+    }
+
+    static void discard(
+            String databaseIdentity,
+            DelosRawStoreIoFaultInjector injector) {
+        String identity = requireIdentity(databaseIdentity);
+        DelosRawStoreIoFaultInjector required = Objects.requireNonNull(
+                injector, "injector");
+        ACTIVE.computeIfPresent(identity, (ignored, reference) ->
+                reference.get() == required ? null : reference);
+        removeTerminalSnapshot(identity);
     }
 
     static void unregister(
@@ -135,6 +156,12 @@ final class DelosRawStoreIoFaultInjectionDirectory {
                             + identity);
         }
         return injector;
+    }
+
+    private static void removeTerminalSnapshot(String identity) {
+        synchronized (TERMINAL) {
+            TERMINAL.remove(identity);
+        }
     }
 
     private static String requireIdentity(String value) {

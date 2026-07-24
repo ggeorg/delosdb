@@ -28,18 +28,18 @@ The moved 101 shared contracts retain the package `org.apache.derby.iapi.store.t
 of the inherited store/API patch seam consumed by engine, RawStore, MVCC, tests, and optional tools.
 The move changes Gradle ownership, not Java semantics.
 
-Stages 8.2 and 8.3 subsequently add 4 post-retirement shared contracts to the same final owner:
+Stages 8.2 and 8.3 subsequently added three runtime diagnostics contracts to the same final owner:
 
 ```text
 DelosRawStoreIoDiagnosticsDirectory
 DelosRawStoreIoMetrics
 DelosRawStoreIoSnapshot
-DelosRawStoreIoFailureReplayManifest
 ```
 
-The current shared-contract inventory is therefore 105: the original 101 Stage 7.3 migrations plus
-4 post-retirement shared diagnostics and replay contracts. This growth does not recreate the retired
-module or a parallel provider API.
+The current shared-contract inventory is therefore 104: the original 101 Stage 7.3 migrations plus
+three post-retirement runtime diagnostics contracts. The replay manifest is test-only evidence under
+`delosdb-tests`; it is not a supported runtime API. This growth does not recreate the retired module
+or a parallel provider API.
 
 ## Deleted parallel facade
 
@@ -57,9 +57,9 @@ lifecycle remain authoritative. No `DelosStorageProviderFactory` service registr
 ```text
 delosdb-storage-api project                 -> removed
 delosdb-storage-api.jar                     -> removed
-delosdb-derby-store-api                     -> owns 105 current shared contracts
+delosdb-derby-store-api                     -> owns 104 current shared contracts
                                                  101 migrated during Stage 7.3
-                                                 4 post-retirement shared contracts from Stages 8.2-8.3
+                                                 3 post-retirement runtime contracts from Stage 8.2
 engine/optional-tools patch wiring          -> derby-store-api only
 production runtime provider discovery       -> unchanged
 module count before future Lucene module    -> 20
