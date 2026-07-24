@@ -172,12 +172,6 @@ public class DirStorageFactory extends BaseStorageFactory
         return true;
     }
 
-    @Override
-    public boolean supportsNativeRandomAccessMemorySegments()
-    {
-        return true;
-    }
-
     void doInit() throws IOException
     {
         if( dataDirectory != null)

@@ -9,8 +9,8 @@ NO_GO_FOR_V1_RAWSTORE
 ```
 
 DelosDB v1 does not promote mapped `MemorySegment` regions into the production RawStore page path.
-The Stage 8.1 positional `FileChannel` contract, Stage 8.4 heap segment aliases, and optional Stage 8.5
-bounded native physical-I/O mirrors remain the production design.
+The Stage 8.1 positional byte-array `FileChannel` contract remains the production design. Stage 8.7.2
+removes the verified Stage 8.4 heap-segment and Stage 8.5 native-mirror experiments from runtime.
 
 The experiment is retained as executable evidence. It is not a dormant backend selector and is not
 packaged into a runtime artifact.
@@ -95,14 +95,14 @@ would require replacing inherited page ownership and is outside v1.
 ### Duplicate residency
 
 The inherited page cache remains required. Mapped regions add operating-system virtual-memory residency
-and address-space pressure beside it. Stage 8.5 already provides a bounded, explicitly accounted native
-experiment without changing the file write-back model.
+and address-space pressure beside it. Stage 8.7.2 also removes the bounded native experiment after
+it failed to justify its additional copy and lifecycle cost.
 
 ## Production invariants
 
 ```text
 no FileChannel.map call in production RawStore code
-no mapped segment in CachedPage or DelosHeapPageBuffer
+no mapped or foreign-memory page representation in CachedPage
 no mapped-region registry or eviction policy
 no mapped diagnostics schema
 no mapped fault schedule

@@ -58,10 +58,6 @@ public abstract class CachedPage extends BasePage implements Cacheable
 	protected byte[]    pageData;		    // the actual page data - this is
 											// the 'buffer' in the buffer cache
 
-    // DelosDB-owned JDK 25 alias over pageData. The byte array remains the
-    // inherited cache owner and on-disk format authority.
-    private DelosHeapPageBuffer heapPageBuffer;
-
 	// The isDirty flag indicates if the pageData or pageHeader has been
 	// modified.  The preDirty flag indicates that the pageData or the
 	// pageHeader is about to be modified.  The reason for these 2 flags
@@ -380,15 +376,7 @@ public abstract class CachedPage extends BasePage implements Cacheable
 		if (this.pageData != null) 
         {
 			realPage.alreadyReadPage = true;
-            if (this.heapPageBuffer != null)
-            {
-                realPage.adoptPageBuffer(this.heapPageBuffer);
-                this.heapPageBuffer = null;
-            }
-            else
-            {
-                realPage.installPageBuffer(this.pageData);
-            }
+			realPage.usePageBuffer(this.pageData);
 		}
 
         // RESOLVE (12/15/06) - the following code is commented out, but
@@ -652,7 +640,6 @@ public abstract class CachedPage extends BasePage implements Cacheable
 	public void clearIdentity() 
     {
 		alreadyReadPage = false;
-        releasePageBuffer();
 		super.clearIdentity();
 	}
 
@@ -683,8 +670,7 @@ public abstract class CachedPage extends BasePage implements Cacheable
         {
 			try 
             {
-                myContainer.readPage(
-                        newIdentity.getPageNumber(), heapPageBuffer);
+				myContainer.readPage(newIdentity.getPageNumber(), pageData);
 				break;
 			} 
             catch (IOException ioe) 
@@ -800,8 +786,8 @@ public abstract class CachedPage extends BasePage implements Cacheable
 
 		try
 		{
-            myContainer.writePage(
-                    identity.getPageNumber(), heapPageBuffer, syncMe);
+			myContainer.writePage(
+				identity.getPageNumber(), pageData, syncMe);
 
 			//
 			// Do some in memory unlogged bookkeeping tasks while we have
@@ -876,58 +862,14 @@ public abstract class CachedPage extends BasePage implements Cacheable
             // Give a chance for garbage collection to free
             // the old array before the new array is allocated.
             // Just in case memory is low.
-            releasePageBuffer();
             pageData = null;
-            installPageBuffer(new byte[pageSize]);
+			pageData = new byte[pageSize];
 		}
-        else
-        {
-            if (heapPageBuffer == null || !heapPageBuffer.wraps(pageData))
-            {
-                heapPageBuffer = DelosHeapPageBuffer.wrap(
-                        pageData, dataFactory.rawStoreNativeMemory());
-            }
 
-            // Always call usePageBuffer(), even when we reuse the buffer, so that
-            // totalSpace and friends are recalculated (DERBY-3116).
-            usePageBuffer(pageData);
-        }
+        // Always call usePageBuffer(), even when we reuse the buffer, so that
+        // totalSpace and friends are recalculated (DERBY-3116).
+        usePageBuffer(pageData);
 	}
-
-    private void installPageBuffer(byte[] buffer)
-    {
-        releasePageBuffer();
-        heapPageBuffer = DelosHeapPageBuffer.wrap(
-                buffer, dataFactory.rawStoreNativeMemory());
-        usePageBuffer(buffer);
-        if (SanityManager.DEBUG)
-        {
-            SanityManager.ASSERT(pageData == buffer,
-                    "CachedPage subclass did not retain the installed page array");
-        }
-    }
-
-    private void adoptPageBuffer(DelosHeapPageBuffer buffer)
-    {
-        releasePageBuffer();
-        heapPageBuffer = buffer;
-        usePageBuffer(buffer.array());
-        if (SanityManager.DEBUG)
-        {
-            SanityManager.ASSERT(pageData == buffer.array(),
-                    "CachedPage subtype did not retain the adopted page array");
-        }
-    }
-
-    private void releasePageBuffer()
-    {
-        DelosHeapPageBuffer buffer = heapPageBuffer;
-        heapPageBuffer = null;
-        if (buffer != null)
-        {
-            buffer.close();
-        }
-    }
 
 
     /**

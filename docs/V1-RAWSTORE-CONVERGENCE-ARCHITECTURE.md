@@ -476,33 +476,32 @@ arm the seam. The test bridge exists only in test sources. See
 `design/V1-JDK25-SHARED-RAWSTORE-IO-FAULT-INJECTION.md`.
 
 
-## Stage 8.4 shared heap-backed MemorySegment page buffers
+## Stage 8.4 and 8.5 foreign-memory experiments
 
-`CachedPage` now retains a stable heap `MemorySegment` alias over its inherited byte-array page image.
-The array remains the page-cache owner and the page-format authority. `FileContainer` carries a
-compatibility bridge for alternate containers, while `RAFContainer` and `RAFContainer4` route ordinary
-page transfers through the segment-aware positional contract.
+Stages 8.4 and 8.5 verified that heap-backed and bounded native `MemorySegment` representations
+could preserve the inherited RawStore page format, heap/MVCC state, diagnostics, fault boundaries,
+and shutdown behavior. Those experiments did not replace the authoritative byte array.
+
+Stage 8.7.2 removes both representations from the v1 runtime:
+
+```text
+KEEP_POSITIONAL_BYTE_ARRAY
+REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE
+REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE
+```
+
+The production page path is therefore:
 
 ```text
 CachedPage byte[]
-    -> DelosHeapPageBuffer / MemorySegment.ofArray
-    -> StorageRandomAccessFile segment positional API
-    -> directory FileChannel or virtual-memory array bridge
-    -> unchanged heap and RawStore-backed MVCC page format
+    -> StorageRandomAccessFile byte[] positional contract
+    -> ByteBuffer.wrap(pageData)
+    -> one complete FileChannel read loop
+    -> one complete FileChannel write loop
 ```
 
-Stage 8.4 rejects native and mapped segments. It adds no arena, off-heap limit, mapped region, or new
-cache ownership. See
-`design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md`.
-
-## Stage 8.5 bounded native RawStore page-I/O mirrors
-
-Stage 8.5 adds an optional database-owned native segment only as a physical directory-I/O mirror.
-`CachedPage.pageData` remains the cache and page-format authority. The default limit is zero; directory
-storage explicitly opts into native positional segments, while memory and alternate storage remain
-heap-only. Each admitted page mirror has an explicit shared-arena lease, a hard database byte limit,
-heap fallback, exact diagnostics, and shutdown leak evidence. No mapped region or second page cache is
-introduced.
+The experiments remain test-only decision evidence. See
+`design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md`.
 
 ## Stage 8.6 segmented mapped-region experiment and v1 decision
 
@@ -535,6 +534,21 @@ Permanent evidence:
 
 ```text
 docs/design/V1-JDK25-RAWSTORE-PRODUCTION-CLOSEOUT.md
+delosSharedRawStoreProductionCloseoutStaticAnalysis
+```
+
+## Stage 8.7.2 page-I/O representation closeout
+
+The second closeout slice removes the per-page segment wrapper, native allocator, storage capability,
+native diagnostics schema, and old experiment-specific runtime tests. `DelosRawStoreIoSnapshot`
+advances to schema version 3 and exposes only production page-I/O, force, recovery, and handle
+evidence.
+
+Permanent evidence:
+
+```text
+docs/design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md
+:delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest
 delosSharedRawStoreProductionCloseoutStaticAnalysis
 ```
 

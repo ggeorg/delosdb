@@ -257,19 +257,8 @@ class RAFContainer extends FileContainer
 	protected void readPage(long pageNumber, byte[] pageData)
 		 throws IOException, StandardException
 	{
-        readPage(pageNumber, DelosHeapPageBuffer.wrap(pageData));
-    }
-
-    @Override
-    protected void readPage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer)
-            throws IOException, StandardException
-    {
-        byte[] pageData = pageBuffer.array();
 		if (SanityManager.DEBUG) {
 			SanityManager.ASSERT(!getCommittedDropState());
-            SanityManager.ASSERT(pageBuffer.length() == pageSize);
 		}
 
 		long pageOffset = pageNumber * pageSize;
@@ -281,17 +270,14 @@ class RAFContainer extends FileContainer
             DelosRawStoreIoFaultInjector.Context context = null;
             if (injector.enabled())
             {
-                context = pageIoFaultContext(
-                        pageNumber, pageOffset, pageSize);
+                context = pageIoFaultContext(pageNumber, pageOffset, pageSize);
                 injector.hit(
                         DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_READ,
                         context);
             }
 			synchronized (this) {
-                fileData.readFullyAt(
-                        pageOffset, pageBuffer.readSegment(), 0L, pageSize);
+				fileData.readFullyAt(pageOffset, pageData, 0, pageSize);
 			}
-            pageBuffer.completeRead();
             if (context != null)
             {
                 injector.hit(
@@ -299,10 +285,6 @@ class RAFContainer extends FileContainer
                         context);
             }
             ioMetrics.pageReadSucceeded(pageSize);
-            if (pageBuffer.nativeIo())
-            {
-                ioMetrics.nativePageReadSucceeded(pageSize);
-            }
         }
         catch (IOException ioe)
         {
@@ -332,16 +314,6 @@ class RAFContainer extends FileContainer
 	protected void writePage(long pageNumber, byte[] pageData, boolean syncPage)
 		 throws IOException, StandardException
 	{
-        writePage(pageNumber, DelosHeapPageBuffer.wrap(pageData), syncPage);
-    }
-
-    @Override
-    protected void writePage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            boolean syncPage) throws IOException, StandardException
-    {
-        byte[] pageData = pageBuffer.array();
 		synchronized(this)
 		{
 			if (getCommittedDropState())
@@ -366,14 +338,10 @@ class RAFContainer extends FileContainer
 
             byte[] dataToWrite =
                 updatePageArray(pageNumber, pageData, encryptionBuf, false);
-            DelosHeapPageBuffer bufferToWrite =
-                    dataToWrite == pageData
-                            ? pageBuffer
-                            : DelosHeapPageBuffer.wrap(dataToWrite);
 
 			try
 			{
-                writePageAt(pageNumber, pageOffset, bufferToWrite);
+                writePageAt(pageNumber, pageOffset, dataToWrite);
 			}
 			catch (IOException ioe)
 			{
@@ -388,7 +356,7 @@ class RAFContainer extends FileContainer
 				if (!padFile(fileData, pageOffset))
 					throw ioe;
 
-                writePageAt(pageNumber, pageOffset, bufferToWrite);
+                writePageAt(pageNumber, pageOffset, dataToWrite);
 			}
 
 			if (syncPage)
@@ -425,10 +393,9 @@ class RAFContainer extends FileContainer
     private void writePageAt(
             long pageNumber,
             long pageOffset,
-            DelosHeapPageBuffer pageBuffer)
+            byte[] pageData)
             throws IOException, StandardException
     {
-        int pageLength = pageBuffer.length();
         DelosRawStoreIoMetrics ioMetrics = rawStoreIoMetrics();
         ioMetrics.pageIoStarted();
         dataFactory.writeInProgress();
@@ -438,14 +405,12 @@ class RAFContainer extends FileContainer
             DelosRawStoreIoFaultInjector.Context context = null;
             if (injector.enabled())
             {
-                context = pageIoFaultContext(
-                        pageNumber, pageOffset, pageLength);
+                context = pageIoFaultContext(pageNumber, pageOffset, pageSize);
                 injector.hit(
                         DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_WRITE,
                         context);
             }
-            fileData.writeAt(
-                    pageOffset, pageBuffer.writeSegment(), 0L, pageLength);
+            fileData.writeAt(pageOffset, pageData, 0, pageSize);
             if (context != null)
             {
                 injector.hit(
@@ -453,10 +418,6 @@ class RAFContainer extends FileContainer
                         context);
             }
             ioMetrics.pageWriteSucceeded(pageSize);
-            if (pageBuffer.nativeIo())
-            {
-                ioMetrics.nativePageWriteSucceeded(pageSize);
-            }
         }
         catch (IOException ioe)
         {

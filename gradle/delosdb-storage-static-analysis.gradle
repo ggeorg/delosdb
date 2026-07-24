@@ -283,9 +283,6 @@ class DelosDbStaticAnalysisSupport {
         def findings = []
         javaSources(repositoryRoot, sourceRoots).each { sourceFile ->
             def lines = sourceFile.readLines('UTF-8')
-            def approvedHeapSegmentAdapter =
-                    sourceFile.name in ['DelosHeapPageBuffer.java',
-                                        'DelosRawStoreNativeMemory.java']
             lines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
                 def importedType = importTarget(line)
@@ -302,16 +299,14 @@ class DelosDbStaticAnalysisSupport {
                             || importedType.startsWith('jakarta.servlet.')) {
                         findings << finding(repositoryRoot, 'HEAP_SERVER_OR_DRDA_DEPENDENCY', sourceFile, lineNumber, line)
                     }
-                    if (importedType.startsWith('java.lang.foreign.')
-                            && !approvedHeapSegmentAdapter) {
+                    if (importedType.startsWith('java.lang.foreign.')) {
                         findings << finding(repositoryRoot, 'HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
                     }
                 }
                 if (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream')) {
                     findings << finding(repositoryRoot, 'HEAP_OBJECT_STREAM_SITE', sourceFile, lineNumber, line)
                 }
-                if (line.contains('java.lang.foreign.')
-                        && !approvedHeapSegmentAdapter) {
+                if (line.contains('java.lang.foreign.')) {
                     findings << finding(repositoryRoot, 'HEAP_FOREIGN_MEMORY_API', sourceFile, lineNumber, line)
                 }
             }
@@ -9056,7 +9051,7 @@ tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
 
             [
                     'public record DelosRawStoreIoSnapshot(',
-                    'CURRENT_SCHEMA_VERSION = 2',
+                    'CURRENT_SCHEMA_VERSION = 3',
                     'pageReadOperations',
                     'pageReadBytes',
                     'pageWriteOperations',
@@ -9437,7 +9432,8 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
                     "dependsOn ':jars', tasks.named('compileRawStoreInternalTestSupport')",
                     'org.apache.derby.engine=${rawStoreInternalTestSupportClassDir.get().asFile.absolutePath}',
                     'rawStoreInternalTestSupportClassDir,',
-                    'never packaged into a production artifact'
+                    'test runtime input',
+                    'production artifact'
             ].each { token ->
                 if (!text.testBuild.contains(token)) {
                     failures << 'Stage 8.3 JPMS test-patch wiring is missing: ' + token
@@ -9514,374 +9510,285 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
 
 tasks.register('delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis') {
     group = 'verification'
-    description = 'Protects the verified Stage 8.4 heap-backed MemorySegment page authority and compatibility path.'
+    description = 'Protects the verified Stage 8.4 experiment and final removal of heap MemorySegment page ownership from v1 RawStore.'
 
-    def stage84Files = [
+    def files = [
             runtimeContract: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
-            pageBuffer     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
-            cachedPage     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
-            fileContainer  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java'),
-            rafContainer   : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
-            rafContainer4  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
-            focusedTest    : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.java'),
-            testBuild      : file('delosdb-tests/build.gradle'),
-            design         : file('docs/design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md'),
-            roadmap        : file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
-            handoff        : file('.delosdb-v1/NEW-SESSION-README.md')
+            directoryFile : file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            cachedPage    : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
+            fileContainer : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java'),
+            rafContainer  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            rafContainer4 : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            decisionTest  : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.java'),
+            testBuild     : file('delosdb-tests/build.gradle'),
+            design        : file('docs/design/V1-JDK25-SHARED-RAWSTORE-HEAP-MEMORY-SEGMENT-PAGE-BUFFER.md'),
+            decision      : file('docs/design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md'),
+            roadmap       : file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            handoff       : file('.delosdb-v1/NEW-SESSION-README.md')
     ]
-    inputs.files(stage84Files.values())
+    def removedFiles = [
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.java')
+    ]
+    inputs.files(files.values())
+    inputs.files(removedFiles)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file(
             'reports/delosdb/shared-rawstore-heap-memory-segment-page-buffer-static-analysis.txt'))
 
     doLast {
         def failures = []
-        def text = stage84Files.collectEntries { key, sourceFile ->
-            if (!sourceFile.exists()) {
-                failures << 'Stage 8.4 file is missing: ' + sourceFile
+        def text = files.collectEntries { key, sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Required Stage 8.4/8.7.2 file is missing: ' + sourceFile
                 [(key): '']
             } else {
                 [(key): sourceFile.getText('UTF-8')]
             }
         }
+        removedFiles.findAll { it.exists() }.each {
+            failures << 'Removed heap-segment experiment file still exists: ' + it
+        }
         def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
 
-        [
-                'import java.lang.foreign.MemorySegment;',
-                'default void readFullyAt(long position,',
-                'MemorySegment buffer,',
-                'default void writeAt(long position,',
-                'Stage 8.4 accepts heap-backed memory segments only',
-                'buffer.isNative()',
-                'buffer.isReadOnly()',
-                'buffer.asSlice(offset, length).asByteBuffer()',
-                'readFullyAt(position, target.array()',
-                'writeAt(position, source.array()'
-        ].each { token ->
+        def productionText = [text.runtimeContract, text.directoryFile, text.cachedPage,
+                              text.fileContainer, text.rafContainer, text.rafContainer4].join('\n')
+        ['java.lang.foreign.MemorySegment', 'DelosHeapPageBuffer', 'readSegment()',
+         'completeRead()', 'writeSegment()'].each { forbidden ->
+            if (productionText.contains(forbidden)) {
+                failures << 'Heap-segment representation remains in production RawStore: ' + forbidden
+            }
+        }
+        ['readFullyAt(long position,', 'byte[] buffer,',
+         'writeAt(long position,', 'int offset,', 'int length'].each { token ->
             if (!text.runtimeContract.contains(token)) {
-                failures << 'Shared heap-segment compatibility contract is missing: ' + token
+                failures << 'Direct byte-array positional contract is missing: ' + token
             }
         }
-
-        [
-                'final class DelosHeapPageBuffer',
-                'private final byte[] array;',
-                'private final MemorySegment heapSegment;',
-                'MemorySegment.ofArray(array)',
-                'boolean wraps(byte[] candidate)',
-                'return array == candidate;',
-                'byte[] array()',
-                'MemorySegment segment()'
-        ].each { token ->
-            if (!text.pageBuffer.contains(token)) {
-                failures << 'Stable heap page-buffer authority is missing: ' + token
+        ['private void readFully(ByteBuffer target, long position)',
+         'private void writeFully(ByteBuffer source, long position)',
+         'ByteBuffer.wrap(buffer, offset, length)'].each { token ->
+            if (!text.directoryFile.contains(token)) {
+                failures << 'Shared direct byte-array channel path is missing: ' + token
             }
         }
-        [
-                'private DelosHeapPageBuffer heapPageBuffer;',
-                'installPageBuffer(new byte[pageSize])',
-                'heapPageBuffer.wraps(pageData)',
-                'realPage.adoptPageBuffer(this.heapPageBuffer)',
-                'usePageBuffer(buffer.array())',
-                'myContainer.readPage(',
-                'newIdentity.getPageNumber(), heapPageBuffer)',
-                'identity.getPageNumber(), heapPageBuffer, syncMe)'
-        ].each { token ->
-            if (!text.cachedPage.contains(token)) {
-                failures << 'CachedPage stable heap authority is missing: ' + token
-            }
-        }
-        [
-                'protected void readPage(long pageNumber, DelosHeapPageBuffer pageBuffer)',
-                'readPage(pageNumber, pageBuffer.array())',
-                'DelosHeapPageBuffer pageBuffer,',
-                'writePage(pageNumber, pageBuffer.array(), syncPage)'
-        ].each { token ->
-            if (!text.fileContainer.contains(token)) {
-                failures << 'Alternate-container heap page-buffer bridge is missing: ' + token
-            }
-        }
-        ['readSegment()', 'completeRead()', 'writeSegment()', 'readFullyAt(', 'writeAt('].each { token ->
+        ['fileData.readFullyAt(pageOffset, pageData, 0, pageSize)',
+         'fileData.writeAt(pageOffset, pageData, 0, pageSize)'].each { token ->
             if (!text.rafContainer.contains(token)) {
-                failures << 'Fallback RawStore segment page path is missing: ' + token
+                failures << 'Fallback RawStore direct byte-array path is missing: ' + token
             }
+        }
+        ['pageFile.readFullyAt(readOffset, pageData, 0, pageData.length)',
+         'pageFile.writeAt(pageOffset, dataToWrite, 0, dataToWrite.length)'].each { token ->
             if (!text.rafContainer4.contains(token)) {
-                failures << 'Concurrent RawStore segment page path is missing: ' + token
+                failures << 'Concurrent RawStore direct byte-array path is missing: ' + token
             }
         }
 
-        def pageAuthorityFiles = [
-                text.pageBuffer,
-                text.cachedPage,
-                text.fileContainer,
-                text.rafContainer,
-                text.rafContainer4
-        ].join('\n')
-        [
-                'FileChannel.MapMode',
-                'MemorySegment.mapFile',
-                'MappedMemorySegment',
-                'class NativePageCache',
-                'class MappedPageCache'
-        ].each { forbidden ->
-            if (pageAuthorityFiles.contains(forbidden)) {
-                failures << 'Stage 8.4/8.5 must not introduce mapped or second page authority: ' + forbidden
+        ['HEAP_MEMORY_SEGMENT', 'REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE',
+         'State SHA-256', 'Timing is diagnostic only; no pass/fail threshold is used.'].each { token ->
+            if (!text.decisionTest.contains(token)) {
+                failures << 'Stage 8.7.2 heap representation evidence is missing: ' + token
+            }
+        }
+        ["'runDelosSharedRawStorePageIoRepresentationDecisionTest'",
+         'SharedRawStorePageIoRepresentationDecisionTest.class',
+         'delosdb.stage872.report',
+         'stage8.7.2-page-io-representation-decision.txt',
+         "dependsOn tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest')"].each { token ->
+            if (!text.testBuild.contains(token)) {
+                failures << 'Stage 8.7.2 decision test wiring is missing: ' + token
+            }
+        }
+        ['runDelosSharedRawStoreHeapMemorySegmentPageBufferTest',
+         'SharedRawStoreHeapMemorySegmentPageBufferTest.class'].each { stale ->
+            if (text.testBuild.contains(stale)) {
+                failures << 'Stale Stage 8.4 runtime test wiring remains: ' + stale
             }
         }
 
-        [
-                'testDirectoryStorageUsesHeapSegmentPositionalIo',
-                'testMemoryStorageUsesTheSameHeapSegmentContract',
-                'testFileDatabasePreservesHeapAndMvccStateAcrossReopen',
-                'testMemoryDatabaseKeepsInheritedHeapPageOwnership',
-                'MemorySegment.ofArray',
-                'source.isNative()',
-                'target.asReadOnly()',
-                'using delos_mvcc',
-                'syscs_checkpoint_database',
-                'shutdownDatabase(database)'
-        ].each { token ->
-            if (!text.focusedTest.contains(token)) {
-                failures << 'Focused Stage 8.4 proof is missing: ' + token
+        ['removed from the v1 runtime by Stage 8.7.2',
+         'REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE'].each { token ->
+            if (!text.design.contains(token)) {
+                failures << 'Stage 8.4 final decision design is missing: ' + token
             }
         }
-        if (!text.testBuild.contains("'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest'")) {
-            failures << 'Tests build must register the Stage 8.4 focused task'
+        ['KEEP_POSITIONAL_BYTE_ARRAY',
+         'REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE'].each { token ->
+            if (!text.decision.contains(token)) {
+                failures << 'Page-I/O representation decision is missing: ' + token
+            }
         }
-        if (!text.testBuild.contains("dependsOn tasks.named('runDelosSharedRawStoreHeapMemorySegmentPageBufferTest')")) {
-            failures << 'Normal delosdb-tests:check must include the Stage 8.4 focused task'
+        if (!text.roadmap.contains('VERIFIED EXPERIMENT / REMOVED FROM V1 RUNTIME')) {
+            failures << 'Roadmap does not record the Stage 8.4 experiment removal'
         }
-
-        ['Status: Stage 8.4 verified.', 'heap-backed `MemorySegment`',
-         'byte array remains', 'no page-format change', '## Stage 8.5 follow-on'].each { token ->
-            if (!text.design.contains(token)) failures << 'Stage 8.4 design is missing: ' + token
-        }
-        ['Stage 8.4 — heap-backed MemorySegment page-buffer proof', 'VERIFIED',
-         'Stage 8.5 — bounded native RawStore page-I/O mirrors'].each { token ->
-            if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.4/8.5 token: ' + token
-        }
-        if (!text.handoff.contains('Stage 8.4 heap-backed MemorySegment page-buffer proof:')) {
-            failures << 'Session handoff is missing the Stage 8.4 status line'
+        if (!text.handoff.contains(
+                'Stage 8.4 heap-backed MemorySegment page-buffer proof:                 VERIFIED / REMOVED FROM V1 RUNTIME')) {
+            failures << 'Session handoff does not record the Stage 8.4 removal'
         }
 
         def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
         if (!s0.contains("'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis'")) {
-            failures << 'S0 must include the Stage 8.4 heap MemorySegment page-buffer gate'
+            failures << 'S0 must include the Stage 8.4 final-decision gate'
         }
 
         def reportFile = layout.buildDirectory.file(
                 'reports/delosdb/shared-rawstore-heap-memory-segment-page-buffer-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB shared RawStore heap MemorySegment page-buffer static analysis')
-            writer.println('====================================================================')
+            writer.println('DelosDB shared RawStore heap MemorySegment final-decision static analysis')
+            writer.println('========================================================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) throw new GradleException(
-                'Shared RawStore heap MemorySegment page-buffer static analysis failed. Report: ' + reportFile)
-        logger.lifecycle('Shared RawStore heap MemorySegment page-buffer static analysis passed. Report: {}', reportFile)
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Shared RawStore heap MemorySegment final-decision static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Shared RawStore heap MemorySegment final-decision static analysis passed. Report: {}',
+                reportFile)
     }
 }
 
 tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
     group = 'verification'
-    description = 'Protects Stage 8.5 bounded database-scoped native RawStore page-I/O mirrors and lifecycle accounting.'
+    description = 'Protects the verified Stage 8.5 experiment and final removal of native page-I/O mirrors from v1 RawStore.'
 
-    def stage85Files = [
+    def files = [
             storageFactory : file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageFactory.java'),
             directoryFactory: file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirStorageFactory.java'),
-            directoryFile  : file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
-            nativeMemory   : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
-            nativeDirectory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemoryDirectory.java'),
-            pageBuffer     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
             baseFactory    : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
             cachedPage     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
             rafContainer   : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
             rafContainer4  : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
-            snapshot       : file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java'),
             metrics        : file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoMetrics.java'),
-            testSupport    : file('delosdb-tests/src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'),
-            focusedTest    : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.java'),
+            snapshot       : file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java'),
+            decisionTest   : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.java'),
             testBuild      : file('delosdb-tests/build.gradle'),
             design         : file('docs/design/V1-JDK25-SHARED-RAWSTORE-NATIVE-MEMORY-PAGE-BUFFER.md'),
+            decision       : file('docs/design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md'),
             roadmap        : file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
             handoff        : file('.delosdb-v1/NEW-SESSION-README.md')
     ]
-    inputs.files(stage85Files.values())
+    def removedFiles = [
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemoryDirectory.java'),
+            file('delosdb-tests/src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.java')
+    ]
+    inputs.files(files.values())
+    inputs.files(removedFiles)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file(
             'reports/delosdb/shared-rawstore-native-memory-page-buffer-static-analysis.txt'))
 
     doLast {
         def failures = []
-        def text = stage85Files.collectEntries { key, sourceFile ->
-            if (!sourceFile.exists()) {
-                failures << 'Stage 8.5 file is missing: ' + sourceFile
+        def text = files.collectEntries { key, sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Required Stage 8.5/8.7.2 file is missing: ' + sourceFile
                 [(key): '']
             } else {
                 [(key): sourceFile.getText('UTF-8')]
             }
         }
+        removedFiles.findAll { it.exists() }.each {
+            failures << 'Removed native-mirror experiment file still exists: ' + it
+        }
         def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
 
-        ['default boolean supportsNativeRandomAccessMemorySegments()', 'return false;'].each { token ->
-            if (!text.storageFactory.contains(token)) failures << 'Default native-segment capability is missing: ' + token
+        def productionText = [text.storageFactory, text.directoryFactory, text.baseFactory,
+                              text.cachedPage, text.rafContainer, text.rafContainer4,
+                              text.metrics, text.snapshot].join('\n')
+        ['supportsNativeRandomAccessMemorySegments', 'DelosRawStoreNativeMemory',
+         'nativeMemoryEnabled', 'nativeMemoryLimitBytes', 'nativeBufferAllocations',
+         'nativePageReadOperations', 'unclosedNativeBuffersAtShutdown'].each { forbidden ->
+            if (productionText.contains(forbidden)) {
+                failures << 'Native page-I/O representation remains in production: ' + forbidden
+            }
         }
-        ['public boolean supportsNativeRandomAccessMemorySegments()', 'return true;'].each { token ->
-            if (!text.directoryFactory.contains(token)) failures << 'Directory native-segment capability is missing: ' + token
+        if (!text.snapshot.contains('CURRENT_SCHEMA_VERSION = 3')) {
+            failures << 'RawStore I/O diagnostics must use schema version 3 after native-field removal'
         }
-        ['MemorySegment buffer,', 'buffer.asSlice(offset, length).asByteBuffer()',
-         'channel.read(target, readPosition)', 'channel.write(source, writePosition)',
-         'detectClosedByInterrupt()'].each { token ->
-            if (!text.directoryFile.contains(token)) failures << 'Directory native positional implementation is missing: ' + token
-        }
-
-        ['final class DelosRawStoreNativeMemory', 'DEFAULT_LIMIT_BYTES = 0L',
-         'Arena.ofShared()', 'arena.allocate(byteSize, 8L)',
-         'byteSize > hardLimitBytes - reservedBytes', 'metrics.nativeBufferFallback()',
-         'activeLeases.put(lease, Boolean.TRUE)', 'implements AutoCloseable',
-         'lease.close()', 'metrics.nativeMemoryShutdown(leaked.size(), leakedBytes)'].each { token ->
-            if (!text.nativeMemory.contains(token)) failures << 'Bounded native allocator is missing: ' + token
-        }
-        ['public class', 'public static', 'System.getProperty', 'Boolean.getBoolean',
-         'ServiceLoader', 'DriverManager', 'java.sql.'].each { forbidden ->
-            if (text.nativeMemory.contains(forbidden)) failures << 'Native allocator exposed an application control or public type: ' + forbidden
-        }
-        ['final class DelosRawStoreNativeMemoryDirectory', 'MAX_PLANNED_DATABASES = 64',
-         'removeEldestEntry', 'installLimitForTesting(', 'consumeLimit(',
-         'PLANNED_LIMITS.remove'].each { token ->
-            if (!text.nativeDirectory.contains(token)) failures << 'Bounded test planning directory is missing: ' + token
-        }
-        ['public class', 'System.getProperty', 'ServiceLoader'].each { forbidden ->
-            if (text.nativeDirectory.contains(forbidden)) failures << 'Native planning seam escaped package-private test control: ' + forbidden
+        ['pageReadOperations', 'pageWriteOperations', 'metadataForceOperations',
+         'channelRecoveryAttempts', 'currentOpenContainerHandles'].each { token ->
+            if (!text.snapshot.contains(token)) {
+                failures << 'Production diagnostics field is missing after schema simplification: ' + token
+            }
         }
 
-        ['private final byte[] array;', 'private final MemorySegment heapSegment;',
-         'private final DelosRawStoreNativeMemory.Lease nativeLease;',
-         'MemorySegment.ofArray(array)', 'MemorySegment readSegment()',
-         'void completeRead()', 'MemorySegment writeSegment()',
-         'MemorySegment.copy(', 'boolean nativeIo()', 'nativeLease.close()'].each { token ->
-            if (!text.pageBuffer.contains(token)) failures << 'Heap-authoritative native mirror wrapper is missing: ' + token
-        }
-        ['private final DelosRawStoreNativeMemory rawStoreNativeMemory',
-         'storageFactory.supportsNativeRandomAccessMemorySegments()',
-         'DelosRawStoreNativeMemoryDirectory.consumeLimit(',
-         'rawStoreNativeMemory.shutdown()'].each { token ->
-            if (!text.baseFactory.contains(token)) failures << 'Database native-memory ownership is missing: ' + token
-        }
-        ['dataFactory.rawStoreNativeMemory()', 'realPage.adoptPageBuffer(this.heapPageBuffer)',
-         'private void releasePageBuffer()', 'buffer.close()'].each { token ->
-            if (!text.cachedPage.contains(token)) failures << 'Cached-page native lease lifecycle is missing: ' + token
-        }
-        ['pageBuffer.readSegment()', 'pageBuffer.completeRead()', 'pageBuffer.writeSegment()',
-         'pageBuffer.nativeIo()', 'nativePageReadSucceeded', 'nativePageWriteSucceeded'].each { token ->
-            if (!text.rafContainer.contains(token)) failures << 'Fallback native page I/O path is missing: ' + token
-        }
-        ['pageBuffer.readSegment()', 'pageBuffer.completeRead()', 'bufferToWrite.writeSegment()',
-         'nativeIo()', 'nativePageReadSucceeded', 'nativePageWriteSucceeded'].each { token ->
-            if (!text.rafContainer4.contains(token)) failures << 'Concurrent native page I/O path is missing: ' + token
-        }
-
-        ['CURRENT_SCHEMA_VERSION = 2', 'nativeMemoryEnabled', 'nativeMemoryLimitBytes',
-         'currentNativeMemoryBytes', 'peakNativeMemoryBytes', 'nativeBufferAllocations',
-         'nativeBufferReleases', 'nativeBufferFallbacks', 'nativeBufferReleaseFailures',
-         'nativePageReadOperations', 'nativePageReadBytes', 'nativePageWriteOperations',
-         'nativePageWriteBytes', 'currentNativeBuffers', 'peakNativeBuffers',
-         'unclosedNativeBuffersAtShutdown', 'unreleasedNativeMemoryBytesAtShutdown'].each { token ->
-            if (!text.snapshot.contains(token)) failures << 'Diagnostics schema v2 is missing: ' + token
-        }
-        ['nativeMemoryBound(long hardLimitBytes)', 'nativeBufferAllocated(long bytes)',
-         'nativeBufferReleased(long bytes)', 'nativeBufferFallback()',
-         'nativeBufferReleaseFailed()', 'nativePageReadSucceeded(long bytes)',
-         'nativePageWriteSucceeded(long bytes)', 'nativeMemoryShutdown('].each { token ->
-            if (!text.metrics.contains(token)) failures << 'Native resource accounting is missing: ' + token
-        }
-
-        ['installLimit(', 'clear(', 'exerciseController()', 'ControllerProof'].each { token ->
-            if (!text.testSupport.contains(token)) failures << 'Stage 8.5 test bridge is missing: ' + token
-        }
-        ['testDirectoryStorageUsesNativeSegmentPositionalIo',
-         'testControllerEnforcesLimitFallbackReleaseAndLeakEvidence',
-         'testFileDatabaseUsesBoundedNativeMirrorsForHeapAndMvcc',
-         'testIndependentDatabasesKeepSeparateNativeBudgets',
-         'testMemoryDatabaseRetainsHeapOwnership', 'Arena.ofConfined()',
-         'supportsNativeRandomAccessMemorySegments()', 'using delos_mvcc',
-         'nativeBufferFallbacks()', 'unclosedNativeBuffersAtShutdown()',
-         'shutdownDatabase(database)', 'shutdownNamedMemoryDatabase(database)'].each { token ->
-            if (!text.focusedTest.contains(token)) failures << 'Focused Stage 8.5 proof is missing: ' + token
+        ['NATIVE_MEMORY_MIRROR', 'REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE',
+         'MemorySegment.copy(', 'State SHA-256'].each { token ->
+            if (!text.decisionTest.contains(token)) {
+                failures << 'Stage 8.7.2 native representation evidence is missing: ' + token
+            }
         }
         ['RawStoreNativeMemoryTestSupport.java',
-         "exclude 'org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'",
-         'compileRawStoreInternalTestSupport', '--patch-module',
-         "'runDelosSharedRawStoreNativeMemoryPageBufferTest'",
-         "dependsOn tasks.named('runDelosSharedRawStoreNativeMemoryPageBufferTest')"].each { token ->
-            if (!text.testBuild.contains(token)) failures << 'Stage 8.5 test-only wiring is missing: ' + token
-        }
-
-        def allProduction = [text.storageFactory, text.directoryFactory, text.directoryFile,
-                             text.nativeMemory, text.nativeDirectory, text.pageBuffer, text.baseFactory,
-                             text.cachedPage, text.rafContainer, text.rafContainer4].join('\n')
-        ['FileChannel.MapMode', 'MemorySegment.mapFile', 'MappedMemorySegment',
-         'Arena.global()', 'delosdb.native', 'nativeMemory.enabled',
-         'jdbc:delos:native', 'CREATE NATIVE', 'SYSCS_SET_NATIVE'].each { forbidden ->
-            if (allProduction.contains(forbidden)) failures << 'Stage 8.5 contains forbidden mapped/application control: ' + forbidden
-        }
-
-        ['Status: Stage 8.5 verified.',
-         'DEFAULT_LIMIT_BYTES = 0', 'byte array remains', 'hard byte limit',
-         'memory-database rejection', 'mapped files or mapped regions',
          'runDelosSharedRawStoreNativeMemoryPageBufferTest',
-         'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis'].each { token ->
-            if (!text.design.contains(token)) failures << 'Stage 8.5 design is missing: ' + token
+         'SharedRawStoreNativeMemoryPageBufferTest.class'].each { stale ->
+            if (text.testBuild.contains(stale)) {
+                failures << 'Stale Stage 8.5 runtime test wiring remains: ' + stale
+            }
         }
-        ['Stage 8.4 — heap-backed MemorySegment page-buffer proof', 'VERIFIED',
-         'Stage 8.5 — bounded native RawStore page-I/O mirrors',
-         'VERIFIED', 'Stage 8.6 — segmented mapped-region experiment and production decision'].each { token ->
-            if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.5 token: ' + token
+
+        ['removed from the v1 runtime by Stage 8.7.2',
+         'REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE'].each { token ->
+            if (!text.design.contains(token)) {
+                failures << 'Stage 8.5 final decision design is missing: ' + token
+            }
         }
-        if (!text.handoff.contains('Stage 8.5 bounded native RawStore page-I/O mirrors:')) {
-            failures << 'Session handoff is missing the Stage 8.5 status line'
+        ['KEEP_POSITIONAL_BYTE_ARRAY',
+         'REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE',
+         'schema version 3'].each { token ->
+            if (!text.decision.contains(token)) {
+                failures << 'Page-I/O representation decision is missing: ' + token
+            }
+        }
+        if (!text.handoff.contains(
+                'Stage 8.5 bounded native RawStore page-I/O mirror proof:               VERIFIED / REMOVED FROM V1 RUNTIME')) {
+            failures << 'Session handoff does not record the Stage 8.5 removal'
         }
 
         def foreignMemorySites = []
-        DelosDbStaticAnalysisSupport.javaSources(delosRepositoryRoot, delosHeapCompatibilityStaticSourceRoots).each { sourceFile ->
+        DelosDbStaticAnalysisSupport.javaSources(
+                delosRepositoryRoot, delosHeapCompatibilityStaticSourceRoots).each { sourceFile ->
             sourceFile.readLines('UTF-8').eachWithIndex { line, index ->
                 if (line.contains('java.lang.foreign.')) {
                     foreignMemorySites << sourceFile.name + ':' + (index + 1)
                 }
             }
         }
-        def allowedForeignFiles = ['DelosHeapPageBuffer.java', 'DelosRawStoreNativeMemory.java'] as Set
-        if (foreignMemorySites.any { !allowedForeignFiles.contains(it.substring(0, it.indexOf(':'))) }) {
-            failures << 'Foreign-memory ownership escaped the approved RawStore adapters: ' + foreignMemorySites
-        }
-        allowedForeignFiles.each { fileName ->
-            if (!foreignMemorySites.any { it.startsWith(fileName + ':') }) {
-                failures << 'Approved foreign-memory adapter is not visible: ' + fileName
-            }
+        if (!foreignMemorySites.isEmpty()) {
+            failures << 'Foreign-memory API remains in production inherited RawStore sources: '
+                    + foreignMemorySites
         }
 
         def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
         if (!s0.contains("'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis'")) {
-            failures << 'S0 must include the Stage 8.5 native page-buffer gate'
+            failures << 'S0 must include the Stage 8.5 final-decision gate'
         }
 
         def reportFile = layout.buildDirectory.file(
                 'reports/delosdb/shared-rawstore-native-memory-page-buffer-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB shared RawStore native-memory page-buffer static analysis')
-            writer.println('=====================================================================')
+            writer.println('DelosDB shared RawStore native-memory final-decision static analysis')
+            writer.println('===================================================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) throw new GradleException(
-                'Shared RawStore native-memory page-buffer static analysis failed. Report: ' + reportFile)
-        logger.lifecycle('Shared RawStore native-memory page-buffer static analysis passed. Report: {}', reportFile)
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Shared RawStore native-memory final-decision static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Shared RawStore native-memory final-decision static analysis passed. Report: {}',
+                reportFile)
     }
 }
-
 
 tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
     group = 'verification'
@@ -9890,7 +9797,6 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
     def stage86Files = [
             storageRandomAccess: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
             directoryFile     : file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
-            pageBuffer        : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
             cachedPage        : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
             rafContainer      : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
             rafContainer4     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
@@ -9977,8 +9883,14 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
                 '## Stage 8.6 — segmented mapped-region experiment and production decision')
         def stage871RoadmapStart = text.roadmap.indexOf(
                 '## Stage 8.7.1 — production closeout lifecycle and API simplification')
-        if (stage86RoadmapStart < 0 || stage871RoadmapStart <= stage86RoadmapStart) {
-            failures << 'Roadmap does not preserve the Stage 8.6 to Stage 8.7.1 ordering'
+        def stage872RoadmapStart = text.roadmap.indexOf(
+                '## Stage 8.7.2 — page-I/O representation closeout')
+        def stage9RoadmapStart = text.roadmap.indexOf('# Stage 9 — Lucene 10 foundation')
+        if (stage86RoadmapStart < 0
+                || stage871RoadmapStart <= stage86RoadmapStart
+                || stage872RoadmapStart <= stage871RoadmapStart
+                || stage9RoadmapStart <= stage872RoadmapStart) {
+            failures << 'Roadmap does not preserve the Stage 8.6, 8.7.1, 8.7.2, and Stage 9 ordering'
         } else {
             def stage86Roadmap = text.roadmap.substring(stage86RoadmapStart, stage871RoadmapStart)
             ['Stage 8.6 is verified together with every Stage 8.1–8.5 focused and normal gate.',
@@ -9993,9 +9905,15 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
                 failures << 'Verified Stage 8.6 roadmap section still contains a pending status'
             }
 
-            def stage871Roadmap = text.roadmap.substring(stage871RoadmapStart)
-            if (!stage871Roadmap.contains('IMPLEMENTED / PENDING USER VERIFICATION')) {
-                failures << 'Stage 8.7.1 roadmap section must remain pending until closeout verification completes'
+            def stage871Roadmap = text.roadmap.substring(stage871RoadmapStart, stage872RoadmapStart)
+            if (!stage871Roadmap.contains('VERIFIED')
+                    || stage871Roadmap.contains('PENDING USER VERIFICATION')) {
+                failures << 'Stage 8.7.1 roadmap section must be verified'
+            }
+
+            def stage872Roadmap = text.roadmap.substring(stage872RoadmapStart, stage9RoadmapStart)
+            if (!stage872Roadmap.contains('IMPLEMENTED / PENDING USER VERIFICATION')) {
+                failures << 'Stage 8.7.2 roadmap section must remain pending until representation closeout verification completes'
             }
         }
 
@@ -10005,10 +9923,9 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
         if (stage86HandoffLine == null || !stage86HandoffLine.endsWith('VERIFIED')) {
             failures << 'Session handoff does not mark Stage 8.6 verified'
         }
-        def handoffLower = text.handoff.toLowerCase()
-        if (!text.handoff.contains('NO_GO_FOR_V1_RAWSTORE')
-                || !handoffLower.contains('do not add mapped production rawstore code')) {
-            failures << 'Session handoff does not preserve the frozen mapped RawStore prohibition'
+        if (!text.handoff.contains('Frozen final page-I/O decisions:')
+                || !text.handoff.contains('NO_GO_FOR_V1_RAWSTORE')) {
+            failures << 'Session handoff does not preserve the frozen mapped RawStore no-go decision'
         }
 
         def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))

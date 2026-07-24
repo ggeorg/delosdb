@@ -1,18 +1,17 @@
 # DelosDB v1 RawStore production closeout
 
-Status: Stage 8.7.1 implemented; user verification pending.
+Status: Stage 8.7.1 verified; Stage 8.7.2 implemented and pending user verification.
 
 ## Purpose
 
 Stages 8.1 through 8.6 established and verified the shared positional I/O, diagnostics, deterministic
-failure, heap-segment, bounded native-mirror, and mapped-region decision boundaries. Stage 8.7 begins
+failure, heap-segment, bounded native-mirror, and mapped-region experiment boundaries. Stage 8.7 begins
 the production closeout before Lucene work. It removes concrete lifecycle, runtime-surface, code
 duplication, stale naming, and documentation debt without changing page, WAL, recovery, locking, or
 transaction semantics.
 
-This slice is deliberately narrower than the final performance decision. It closes defects that can
-be proven from the current code and leaves the heap/native keep-or-remove decision to a separate
-benchmark-backed closeout slice.
+Stage 8.7.1 closed lifecycle and API defects. Stage 8.7.2 completes the benchmark-backed page-I/O
+representation decision and removes both foreign-memory experiments from the v1 runtime.
 
 ## Duplicate active registration
 
@@ -40,8 +39,7 @@ or active evidence.
 
 ## Partial-registration rollback
 
-`BaseDataFileFactory` binds database-owned metrics, native-memory accounting, and the disabled fault
-injector before publishing weak directory registrations. If canonical-name resolution or either
+`BaseDataFileFactory` binds database-owned metrics and the disabled fault injector before publishing weak directory registrations. If canonical-name resolution or either
 registration fails, the partially bound objects are shut down and any registration owned by that
 factory is discarded without publishing a misleading terminal runtime snapshot.
 
@@ -76,8 +74,7 @@ human-readable implementation per direction.
 
 ## Test-support naming
 
-The engine test patch originally used fault-injection-specific Gradle task and directory names. It
-now contains both fault and native-memory proof bridges, so Stage 8.7.1 renames the lifecycle to:
+The engine test patch uses neutral Gradle task and directory names for its package-private RawStore proof bridge:
 
 ```text
 prepareRawStoreInternalTestSupportSources
@@ -92,28 +89,39 @@ The patch remains test-only and is never packaged into a production artifact.
 The unused `DelosRawStoreNativeMemory.enabled()` method is removed. Native allocation behavior is
 already expressed by `allocate(...)` returning a lease or deterministic heap fallback.
 
-## Non-goals
+## Stage 8.7.2 page-I/O representation decision
 
-Stage 8.7.1 is not the final heap/native performance decision. It does not yet:
+Stage 8.7.2 keeps the direct positional `byte[]` path and removes the heap `MemorySegment` alias and
+bounded native mirror from production. The decision is supported by state-equivalent repeated
+FileChannel workloads, code-size review, lifecycle review, and the absence of a copy or ownership
+benefit.
 
 ```text
-remove or retain the heap MemorySegment page alias based on a production benchmark
-remove or promote the bounded native mirror
+KEEP_POSITIONAL_BYTE_ARRAY
+REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE
+REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE
+```
+
+The diagnostics snapshot advances to schema version 3 and removes native-memory fields. The old
+Stage 8.4/8.5 runtime-focused tests are replaced by one test-only representation decision benchmark.
+
+## Remaining non-goals
+
+Stage 8.7.2 does not yet:
+
+```text
 remove the quarantined Phase 8 retained oracle
-reshape the flat diagnostics snapshot schema
+reshape the remaining diagnostics snapshot beyond the native-field removal
 extract all historical Stage 8 gates from the shared analysis script
 begin Lucene DP-5 through DP-8
 ```
-
-Those decisions require separate size, allocation, latency, throughput, and removal evidence. This
-slice ensures that the code being benchmarked has safe lifecycle ownership, no proof-only runtime
-manifest, no duplicated complete-transfer loop, and no stale test-support naming.
 
 ## Permanent evidence
 
 ```text
 :delosdb-tests:runDelosSharedRawStoreIoDiagnosticsTest
 :delosdb-tests:runDelosSharedRawStoreIoFaultInjectionTest
+:delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest
 delosStorageApiModuleRetirementStaticAnalysis
 delosSharedRawStoreProductionCloseoutStaticAnalysis
 ```

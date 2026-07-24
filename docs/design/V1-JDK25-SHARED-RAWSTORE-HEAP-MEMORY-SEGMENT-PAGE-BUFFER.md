@@ -1,159 +1,53 @@
-# DelosDB v1 JDK 25 shared RawStore heap MemorySegment page buffer
+# DelosDB v1 JDK 25 heap MemorySegment page-buffer experiment
 
-Status: Stage 8.4 verified.
+Status: Stage 8.4 verified experiment; removed from the v1 runtime by Stage 8.7.2.
 
-## Purpose
+## Experiment result
 
-Stage 8.4 introduces a heap-backed `MemorySegment` view over the existing inherited RawStore page
-buffer. The byte array remains the page-cache owner, the page format remains byte-for-byte unchanged,
-and the segment is only a JDK 25 alias over that array.
+Stage 8.4 proved that a stable `MemorySegment.ofArray(pageData)` alias could preserve the inherited
+RawStore page format, file-pointer semantics, memory-database behavior, heap/MVCC state, diagnostics,
+and fault boundaries.
 
-This is a compatibility proof with no page-format change, not a native-memory cutover. It establishes
-the shared page-buffer boundary required before DelosDB can evaluate off-heap or mapped ownership in
-later stages.
-
-## Frozen ownership model
+The proof was correct, but the alias did not improve the production ownership model:
 
 ```text
-CachedPage
-    owns byte[] pageData
-    owns one stable DelosHeapPageBuffer wrapper
-        -> same byte[]
-        -> MemorySegment.ofArray(pageData)
-
-FileContainer
-    accepts the stable page-buffer view
-    retains a byte[] compatibility bridge for alternate containers
-
-RAFContainer / RAFContainer4
-    use the segment positional overloads
-    preserve encryption, checksum, fault, metric, and recovery behavior
+byte[] pageData remained authoritative
+ByteBuffer.wrap(pageData) was already zero-copy
+channel operations still required a ByteBuffer view
+one wrapper and one segment object were added per cached page
+RawStore gained another dispatch layer
 ```
 
-The byte array remains:
+## Final decision
 
 ```text
-page-cache ownership authority
-inherited page-codec input
-inherited encryption/decryption input
-on-disk page-format authority
+REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE
 ```
 
-The segment owns no memory. It has no arena, no close lifecycle, and no independent page identity.
-
-## Shared positional contract
-
-`StorageRandomAccessFile` now provides heap-segment overloads for:
+Stage 8.7.2 restores the direct positional byte-array path and removes:
 
 ```text
-readFullyAt(long position, MemorySegment buffer, long offset, long length)
-writeAt(long position, MemorySegment buffer, long offset, long length)
+MemorySegment methods from StorageRandomAccessFile and DirRandomAccessFile
+DelosHeapPageBuffer
+CachedPage segment ownership
+FileContainer segment bridges
+RAFContainer and RAFContainer4 segment dispatch
+old Stage 8.4 runtime-focused test and task
 ```
 
-The compatibility defaults require a heap-backed segment, obtain the underlying byte-array view, and
-delegate to the existing pointer-preserving byte-array methods. This gives virtual memory and alternate
-storage wrappers the same contract without creating another backend.
+The Stage 8.7.1 shared complete-transfer helpers remain, so directory storage still has one readable
+channel-read loop and one readable channel-write loop.
 
-`DirRandomAccessFile` overrides the segment methods and performs complete positional transfers through
-`FileChannel` and the segment's `ByteBuffer` view. The inherited `RandomAccessFile` pointer is not
-mutated.
+## Retained evidence
 
-## RawStore integration
-
-`CachedPage` creates one stable segment alias whenever it installs or replaces its page array. Reusing
-the same page array reuses the same alias. Page-format subtype replacement transfers the array through
-the same installation method so the new cached-page instance receives a matching alias.
-
-`RAFContainer` and `RAFContainer4` consume the stable alias for ordinary page reads and writes.
-Encrypted writes wrap the existing temporary encryption array for the duration of that write only;
-the clear-text cached page keeps its stable alias.
-
-The following remain unchanged:
+The experiment remains documented and reproducible through the test-only representation benchmark:
 
 ```text
-page number to byte-offset calculation
-page size and page format
-allocation and padding compatibility
-checksums and encryption
-WAL ordering and recovery
-closed-on-interrupt reopen coordination
-fault-injection points and occurrence counting
-I/O diagnostics and exact byte accounting
-heap and MVCC transaction semantics
-```
-
-## Safety boundary
-
-The Stage 8.4 default compatibility overload accepts heap-backed segments only. It continues to reject:
-
-```text
-native segments on storage implementations without an explicit override
-mapped segments
-read-only destination segments
-out-of-range slices
-transfers larger than ByteBuffer capacity
-```
-
-The Stage 8.4 slice itself introduced no `Arena`, native allocation, mapped region, or explicit segment
-lifetime. Stage 8.5 now gives directory storage an explicit native-segment override backed by a bounded
-database-owned physical-I/O mirror. Mapped memory remains out of scope until Stage 8.6 defines its
-ownership and production decision.
-
-## Executable proof
-
-The focused lane is:
-
-```text
-:delosdb-tests:runDelosSharedRawStoreHeapMemorySegmentPageBufferTest
-```
-
-It proves:
-
-```text
-heap segment and byte array are zero-copy aliases
-directory positional segment reads and writes preserve the file pointer
-virtual-memory storage uses the same segment contract
-partial segment ranges transfer exactly
-read-only destinations are rejected
-native segment ownership is rejected
-EOF failure preserves the file pointer
-file data survives close and reopen
-heap and RawStore-backed MVCC tables survive checkpoint, shutdown, and reopen
-named memory databases preserve inherited heap ownership and shared MVCC behavior
-```
-
-Permanent structural evidence is:
-
-```text
+:delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest
 delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis
 ```
 
-## No page-format change
+The gate now protects the final removal decision and absence of heap-segment ownership in production
+RawStore code.
 
-The segment never defines a new binary layout. Existing inherited page codecs continue reading and
-writing the same byte array. Stage 8.4 therefore requires no format version, migration, compatibility
-reader, or recovery branch.
-
-## Non-goals
-
-Stage 8.4 does not add:
-
-```text
-native or off-heap page ownership
-mapped files or mapped page regions
-Arena lifetime management
-database memory budgets
-page pinning or replacement-policy changes
-new page headers or checksums
-VarHandle page-codec replacement
-asynchronous I/O or io_uring
-a second page cache or storage backend
-Lucene work
-```
-
-## Stage 8.5 follow-on
-
-Stage 8.5 preserves every Stage 8.4 heap-ownership invariant while permitting one bounded native
-physical-I/O mirror for directory storage. The stable heap segment remains the fallback and the
-`byte[]` remains authoritative. Native enablement, limits, copies, lease closure, and diagnostics are
-defined separately in `V1-JDK25-SHARED-RAWSTORE-NATIVE-MEMORY-PAGE-BUFFER.md`.
+See `V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md` for the complete Stage 8.7.2 decision.

@@ -189,16 +189,19 @@ bounded native mirror, and Stage 8.6 rejects mapped RawStore I/O for v1. All rem
 inherited RawStore authority.
 
 
-## Stage 8.4 follow-on
+## Stage 8.7.2 final representation decision
 
-Stage 8.4 adds heap-backed `MemorySegment` overloads to this positional contract. The directory
-implementation performs complete `FileChannel` transfers through the segment view, while compatible
-storage wrappers delegate to the existing byte-array methods without copying. The page cache retains
-byte-array ownership; native and mapped segment ownership remain rejected.
+Stages 8.4 and 8.5 verified heap-segment and bounded native-mirror experiments. Stage 8.7.2
+removes both from the v1 runtime after benchmark and code-size review. The production contract is
+again the direct byte-array positional path:
 
-## Stage 8.5 follow-on
+```text
+StorageRandomAccessFile byte[] positional methods
+    -> ByteBuffer.wrap(byte[])
+    -> one complete FileChannel read loop
+    -> one complete FileChannel write loop
+```
 
-Directory storage now explicitly advertises native positional-segment support and uses the same
-complete absolute `FileChannel` loops for heap and native segments. Other storage factories retain a
-default false capability. The inherited file pointer, force semantics, and closed-on-interrupt reopen
-protocol are unchanged.
+This keeps the inherited page array authoritative, avoids a second page wrapper and native copies,
+and preserves the explicit force, interrupt-recovery, file, and memory-storage behavior proved by
+Stage 8.1. The experiments remain in test-only decision evidence.

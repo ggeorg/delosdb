@@ -442,14 +442,16 @@ Current owner: DelosDB storage I/O module.
 
 Classification: `JDK25_MODERNIZATION_CANDIDATE`, `DELOSDB_OWNED_ALGORITHM`.
 
-Current anchor: Stage 8.4 gives inherited RawStore cached pages a stable heap-backed
-`MemorySegment` alias while preserving the byte-array page owner and on-disk format. The older
-`DelosPage` use remains only in the quarantined retained oracle.
+Current anchor: Stages 8.4 and 8.5 are verified experiments. Stage 8.7.2 removes their heap-segment
+and native-mirror adapters from production because the direct byte-array positional path is smaller,
+copy-free, and faster in the representative diagnostic workload. The older `DelosPage` use remains
+only in the quarantined retained oracle.
 
 Algorithmic goal:
 
-* Prove JDK 25 memory APIs first through heap aliases and unchanged formats.
-* Require explicit database ownership and limits before native or mapped memory is allowed.
+* Keep production RawStore on the direct byte-array positional path.
+* Retain Foreign Function & Memory API work only in explicit research or derived-state experiments
+  until a new benchmark-backed production decision exists.
 
 ### Raw log boundary
 
@@ -741,10 +743,9 @@ Rules:
 * A passing differential harness does not authorize heap/MVCC shared-service
   extraction or provider authority changes.
 
-Stage 8.5 current anchor: directory RawStore I/O may use a database-bounded native segment mirror,
-while the inherited byte array remains authoritative. Admission, fallback, copies, lease closure, and
-current/peak/leak accounting are explicit. Memory databases remain heap-only and mapped regions remain
-a separate Stage 8.6 decision.
+Stage 8.7.2 current anchor: the native page-I/O mirror is removed from production. Its copy, lease,
+limit, and accounting behavior remains documented and reproducible only in the representation decision
+test.
 
 ## Stage 8.6 segmented mapped-region experiment
 

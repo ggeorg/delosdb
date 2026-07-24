@@ -246,16 +246,7 @@ class RAFContainer4 extends RAFContainer {
     protected void readPage(long pageNumber, byte[] pageData)
          throws IOException, StandardException
     {
-        readPage(pageNumber, DelosHeapPageBuffer.wrap(pageData));
-    }
-
-    @Override
-    protected void readPage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer)
-            throws IOException, StandardException
-    {
-        readPage(pageNumber, pageBuffer, -1L);
+        readPage(pageNumber, pageData, -1L);
     }
 
 
@@ -268,17 +259,15 @@ class RAFContainer4 extends RAFContainer {
 
      *  @param pageNumber the page number to read data from, or -1 (called from
      *                    getEmbryonicPage)
-     *  @param pageBuffer the buffer to read data into
+     *  @param pageData  the buffer to read data into
      *  @param offset -1 normally (not used since offset is computed from
      *                   pageNumber), but used if pageNumber == -1
      *                   (getEmbryonicPage)
      *  @exception IOException exception reading page
      *  @exception StandardException Standard Derby error policy
      */
-    private void readPage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            long offset) throws IOException, StandardException
+    private void readPage(long pageNumber, byte[] pageData, long offset)
+         throws IOException, StandardException
     {
         // Interrupt recovery "stealthMode": If this thread holds a monitor on
         //
@@ -364,11 +353,11 @@ class RAFContainer4 extends RAFContainer {
                     // different pages and therefore don't interfere with each
                     // other:
                     synchronized (this) {
-                        readPage0(pageNumber, pageBuffer, offset);
+                        readPage0(pageNumber, pageData, offset);
                     }
                 } else {
                     // Normal case.
-                    readPage0(pageNumber, pageBuffer, offset);
+                    readPage0(pageNumber, pageData, offset);
                 }
 
                 success = true;
@@ -388,12 +377,9 @@ class RAFContainer4 extends RAFContainer {
       }
     }
 
-    private void readPage0(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            long offset) throws IOException, StandardException
+    private void readPage0(long pageNumber, byte[] pageData, long offset)
+         throws IOException, StandardException
     {
-        byte[] pageData = pageBuffer.array();
         FileChannel ioChannel;
         StorageRandomAccessFile pageFile;
         synchronized (this) {
@@ -439,18 +425,13 @@ class RAFContainer4 extends RAFContainer {
                             DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_READ,
                             context);
                 }
-                pageFile.readFullyAt(
-                        readOffset, pageBuffer.readSegment(), 0L, pageBuffer.length());
-                pageBuffer.completeRead();
+                pageFile.readFullyAt(readOffset, pageData, 0, pageData.length);
                 if (context != null) {
                     injector.hit(
                             DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_READ,
                             context);
                 }
                 ioMetrics.pageReadSucceeded(pageData.length);
-                if (pageBuffer.nativeIo()) {
-                    ioMetrics.nativePageReadSucceeded(pageData.length);
-                }
             }
             catch (IOException ioe) {
                 ioMetrics.pageReadFailed();
@@ -474,7 +455,7 @@ class RAFContainer4 extends RAFContainer {
         }
         else
         { // iochannel was not initialized, fall back to original method.
-            super.readPage(pageNumber, pageBuffer);
+            super.readPage(pageNumber, pageData);
         }
     }
 
@@ -491,15 +472,6 @@ class RAFContainer4 extends RAFContainer {
      */
     protected void writePage(long pageNumber, byte[] pageData, boolean syncPage)
          throws IOException, StandardException
-    {
-        writePage(pageNumber, DelosHeapPageBuffer.wrap(pageData), syncPage);
-    }
-
-    @Override
-    protected void writePage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            boolean syncPage) throws IOException, StandardException
     {
         // Interrupt recovery "stealthMode": If this thread holds a monitor on
         //
@@ -565,10 +537,10 @@ class RAFContainer4 extends RAFContainer {
                     // will access different pages and therefore don't
                     // interfere with each other.
                     synchronized (this) {
-                        writePage0(pageNumber, pageBuffer, syncPage);
+                        writePage0(pageNumber, pageData, syncPage);
                     }
                 } else {
-                    writePage0(pageNumber, pageBuffer, syncPage);
+                    writePage0(pageNumber, pageData, syncPage);
                 }
 
                 success = true;
@@ -995,12 +967,9 @@ class RAFContainer4 extends RAFContainer {
         return true;
     }
 
-    private void writePage0(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            boolean syncPage) throws IOException, StandardException
+    private void writePage0(long pageNumber, byte[] pageData, boolean syncPage)
+         throws IOException, StandardException
     {
-        byte[] pageData = pageBuffer.array();
         FileChannel ioChannel;
         StorageRandomAccessFile pageFile;
         synchronized (this) {
@@ -1044,10 +1013,6 @@ class RAFContainer4 extends RAFContainer {
                                                  pageData,
                                                  encryptionBuf,
                                                  false);
-            DelosHeapPageBuffer bufferToWrite =
-                    dataToWrite == pageData
-                            ? pageBuffer
-                            : DelosHeapPageBuffer.wrap(dataToWrite);
 
             if (SanityManager.DEBUG) {
                 SanityManager.ASSERT(dataToWrite != null,
@@ -1073,18 +1038,13 @@ class RAFContainer4 extends RAFContainer {
                             DelosRawStoreIoFaultInjector.Point.BEFORE_PAGE_WRITE,
                             context);
                 }
-                pageFile.writeAt(
-                        pageOffset, bufferToWrite.writeSegment(),
-                        0L, bufferToWrite.length());
+                pageFile.writeAt(pageOffset, dataToWrite, 0, dataToWrite.length);
                 if (context != null) {
                     injector.hit(
                             DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_WRITE,
                             context);
                 }
                 ioMetrics.pageWriteSucceeded(dataToWrite.length);
-                if (bufferToWrite.nativeIo()) {
-                    ioMetrics.nativePageWriteSucceeded(dataToWrite.length);
-                }
             } catch (ClosedChannelException ioe) {
                 ioMetrics.pageWriteFailed();
                 synchronized(this) {
@@ -1165,7 +1125,7 @@ class RAFContainer4 extends RAFContainer {
 
         } else {
             // iochannel was not initialized, fall back to original method.
-            super.writePage(pageNumber, pageBuffer, syncPage);
+            super.writePage(pageNumber, pageData, syncPage);
         }
     }
 
@@ -1235,7 +1195,7 @@ class RAFContainer4 extends RAFContainer {
         FileChannel ioChannel = getChannel(file);
         if (ioChannel != null) {
             byte[] buffer = new byte[AllocPage.MAX_BORROWED_SPACE];
-            readPage(-1L, DelosHeapPageBuffer.wrap(buffer), offset);
+            readPage(-1L, buffer, offset);
             return buffer;
         } else {
             return super.getEmbryonicPage(file, offset);

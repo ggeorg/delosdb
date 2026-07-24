@@ -58,8 +58,6 @@ def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/dem
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
-def rawStoreNativeMemoryTestSupportSource = file(
-        'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -246,7 +244,6 @@ sourceSets {
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
-            exclude 'org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -259,15 +256,12 @@ artifacts {
     }
 }
 
-// The Stage 8 internal proof bridges must share org.apache.derby.engine's runtime package in
-// order to reach their package-private proof seams. Compile only those
-// sources as a test patch of the engine module. The resulting classes are test
-// runtime inputs only and are never packaged into a production artifact.
+// The RawStore fault-injection proof bridge must share org.apache.derby.engine's runtime package
+// in order to reach its package-private control seam. Compile only that source as a test patch of
+// the engine module. The resulting class is a test runtime input and is never packaged into a
+// production artifact.
 tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
-        into 'org/apache/derby/impl/store/raw/data'
-    }
-    from(rawStoreNativeMemoryTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     into rawStoreInternalTestSupportGeneratedSourceDir
@@ -275,7 +269,7 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
 
 tasks.register('compileRawStoreInternalTestSupport', JavaCompile) {
     group = 'build'
-    description = 'Compiles package-private Stage 8 internal proof bridges as an org.apache.derby.engine test patch.'
+    description = 'Compiles the package-private RawStore fault-injection proof bridge as an org.apache.derby.engine test patch.'
     dependsOn tasks.named('prepareRawStoreInternalTestSupportSources'), ':jars'
 
     source rawStoreInternalTestSupportGeneratedSourceDir
@@ -766,21 +760,21 @@ tasks.named('check') {
 }
 
 registerDelosFocusedTest(
-        'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest',
-        'Runs Stage 8.4 heap-backed MemorySegment page-buffer proofs for file, memory, heap, and MVCC RawStore paths.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.class'])
+        'runDelosSharedRawStorePageIoRepresentationDecisionTest',
+        'Runs the Stage 8.7.2 byte-array, heap-segment, and native-mirror state-equivalence and diagnostic benchmark decision proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.class'])
 
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStoreHeapMemorySegmentPageBufferTest')
+tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest') {
+    systemProperty 'delosdb.stage872.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/stage8.7.2-page-io-representation-decision.txt')
+                    .get().asFile.absolutePath
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/stage8.7.2-page-io-representation-decision.txt')
 }
 
-registerDelosFocusedTest(
-        'runDelosSharedRawStoreNativeMemoryPageBufferTest',
-        'Runs Stage 8.5 bounded database-scoped native page-I/O ownership, fallback, isolation, and shutdown proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.class'])
-
 tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStoreNativeMemoryPageBufferTest')
+    dependsOn tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest')
 }
 
 registerDelosFocusedTest(

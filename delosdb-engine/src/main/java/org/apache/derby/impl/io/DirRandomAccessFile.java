@@ -28,7 +28,6 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.lang.foreign.MemorySegment;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.FileChannel;
@@ -101,28 +100,6 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
     }
 
 
-    /** Read a complete range from a heap or native JDK 25 memory segment. */
-    @Override
-    public void readFullyAt(long position,
-                            MemorySegment buffer,
-                            long offset,
-                            long length) throws IOException
-    {
-        checkPosition(position);
-        readFully(segmentView(buffer, offset, length, true), position);
-    }
-
-    /** Write a complete range from a heap or native JDK 25 memory segment. */
-    @Override
-    public void writeAt(long position,
-                        MemorySegment buffer,
-                        long offset,
-                        long length) throws IOException
-    {
-        checkPosition(position);
-        writeFully(segmentView(buffer, offset, length, false), position);
-    }
-
     /** Force file contents and, when requested, file metadata. */
     @Override
     public void force(boolean metadata) throws IOException
@@ -135,7 +112,6 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
     {
         force(true);
     }
-
 
     private void readFully(ByteBuffer target, long position)
             throws IOException
@@ -181,37 +157,6 @@ class DirRandomAccessFile extends RandomAccessFile implements StorageRandomAcces
             throw new IOException("Random-access file is read-only: " + name,
                     notWritable);
         }
-    }
-
-    private static ByteBuffer segmentView(
-            MemorySegment buffer,
-            long offset,
-            long length,
-            boolean writable)
-    {
-        if (buffer == null)
-        {
-            throw new NullPointerException("buffer");
-        }
-        if (writable && buffer.isReadOnly())
-        {
-            throw new IllegalArgumentException(
-                    "Destination memory segment is read-only");
-        }
-        if (offset < 0L || length < 0L
-                || offset > buffer.byteSize() - length)
-        {
-            throw new IndexOutOfBoundsException(
-                    "offset=" + offset + ", length=" + length
-                            + ", buffer.byteSize=" + buffer.byteSize());
-        }
-        if (length > Integer.MAX_VALUE)
-        {
-            throw new IllegalArgumentException(
-                    "Memory-segment transfer exceeds ByteBuffer capacity: "
-                            + length);
-        }
-        return buffer.asSlice(offset, length).asByteBuffer();
     }
 
     private void detectClosedByInterrupt() throws ClosedByInterruptException

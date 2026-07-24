@@ -213,19 +213,6 @@ public interface StorageFactory
     public boolean supportsRandomAccess();
 
     /**
-     * Return whether random-access files created by this factory accept native
-     * {@link java.lang.foreign.MemorySegment} positional transfers without a
-     * heap-copy compatibility bridge.
-     *
-     * <p>The default is false. Directory storage overrides this capability;
-     * virtual-memory and alternate storage implementations retain the shared
-     * heap-segment contract.</p>
-     */
-    default boolean supportsNativeRandomAccessMemorySegments() {
-        return false;
-    }
-
-    /**
      * The version number of this version of the StorageFactory interface and its subsidiary interfaces.
      */
     int VERSION_NUMBER = 1;

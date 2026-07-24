@@ -37,24 +37,6 @@ public final class DelosRawStoreIoMetrics {
     private final AtomicLong peakOpenContainerHandles = new AtomicLong();
     private final AtomicLong unclosedContainerHandlesAtShutdown = new AtomicLong();
 
-    private final Object nativeMemoryMonitor = new Object();
-    private boolean nativeMemoryEnabled;
-    private long nativeMemoryLimitBytes;
-    private long currentNativeMemoryBytes;
-    private long peakNativeMemoryBytes;
-    private long nativeBufferAllocations;
-    private long nativeBufferReleases;
-    private long nativeBufferFallbacks;
-    private long nativeBufferReleaseFailures;
-    private long nativePageReadOperations;
-    private long nativePageReadBytes;
-    private long nativePageWriteOperations;
-    private long nativePageWriteBytes;
-    private long currentNativeBuffers;
-    private long peakNativeBuffers;
-    private long unclosedNativeBuffersAtShutdown;
-    private long unreleasedNativeMemoryBytesAtShutdown;
-
     private volatile String databaseIdentity = "<unbound>";
     private volatile boolean memoryDatabase;
 
@@ -139,100 +121,6 @@ public final class DelosRawStoreIoMetrics {
         decrementNonNegative(currentOpenContainerHandles, "open container handles");
     }
 
-    public void nativeMemoryBound(long hardLimitBytes) {
-        if (hardLimitBytes < 0L) {
-            throw new IllegalArgumentException(
-                    "native-memory hard limit must not be negative");
-        }
-        synchronized (nativeMemoryMonitor) {
-            if (nativeMemoryLimitBytes != 0L || nativeMemoryEnabled
-                    || nativeBufferAllocations != 0L) {
-                throw new IllegalStateException(
-                        "native-memory accounting is already bound");
-            }
-            nativeMemoryLimitBytes = hardLimitBytes;
-            nativeMemoryEnabled = hardLimitBytes > 0L;
-        }
-    }
-
-    public void nativeBufferAllocated(long bytes) {
-        long allocatedBytes = requirePositive(bytes, "native buffer bytes");
-        synchronized (nativeMemoryMonitor) {
-            if (!nativeMemoryEnabled) {
-                throw new IllegalStateException(
-                        "native buffer allocated while native memory is disabled");
-            }
-            long updatedBytes = Math.addExact(
-                    currentNativeMemoryBytes, allocatedBytes);
-            if (updatedBytes > nativeMemoryLimitBytes) {
-                throw new IllegalStateException(
-                        "native buffer allocation exceeds the database hard limit");
-            }
-            currentNativeMemoryBytes = updatedBytes;
-            peakNativeMemoryBytes = Math.max(
-                    peakNativeMemoryBytes, currentNativeMemoryBytes);
-            nativeBufferAllocations++;
-            currentNativeBuffers++;
-            peakNativeBuffers = Math.max(
-                    peakNativeBuffers, currentNativeBuffers);
-        }
-    }
-
-    public void nativeBufferReleased(long bytes) {
-        long releasedBytes = requirePositive(bytes, "released native buffer bytes");
-        synchronized (nativeMemoryMonitor) {
-            if (releasedBytes > currentNativeMemoryBytes
-                    || currentNativeBuffers == 0L) {
-                throw new IllegalStateException(
-                        "Unbalanced native page-buffer release accounting");
-            }
-            currentNativeMemoryBytes -= releasedBytes;
-            currentNativeBuffers--;
-            nativeBufferReleases++;
-        }
-    }
-
-    public void nativeBufferFallback() {
-        synchronized (nativeMemoryMonitor) {
-            nativeBufferFallbacks++;
-        }
-    }
-
-    public void nativeBufferReleaseFailed() {
-        synchronized (nativeMemoryMonitor) {
-            nativeBufferReleaseFailures++;
-        }
-    }
-
-    public void nativePageReadSucceeded(long bytes) {
-        long completedBytes = requirePositive(bytes, "native page read bytes");
-        synchronized (nativeMemoryMonitor) {
-            nativePageReadOperations++;
-            nativePageReadBytes = Math.addExact(nativePageReadBytes, completedBytes);
-        }
-    }
-
-    public void nativePageWriteSucceeded(long bytes) {
-        long completedBytes = requirePositive(bytes, "native page write bytes");
-        synchronized (nativeMemoryMonitor) {
-            nativePageWriteOperations++;
-            nativePageWriteBytes = Math.addExact(nativePageWriteBytes, completedBytes);
-        }
-    }
-
-    public void nativeMemoryShutdown(
-            long unclosedBuffers,
-            long unreleasedBytes) {
-        if (unclosedBuffers < 0L || unreleasedBytes < 0L) {
-            throw new IllegalArgumentException(
-                    "native shutdown leak values must not be negative");
-        }
-        synchronized (nativeMemoryMonitor) {
-            unclosedNativeBuffersAtShutdown = unclosedBuffers;
-            unreleasedNativeMemoryBytesAtShutdown = unreleasedBytes;
-        }
-    }
-
     public void shutdown() {
         if (!runtimeActive.compareAndSet(true, false)) {
             return;
@@ -247,44 +135,6 @@ public final class DelosRawStoreIoMetrics {
         long openContainerHandles = currentOpenContainerHandles.get();
         long observedPeakOpenContainerHandles = Math.max(
                 peakOpenContainerHandles.get(), openContainerHandles);
-        boolean observedNativeMemoryEnabled;
-        long observedNativeMemoryLimitBytes;
-        long observedCurrentNativeMemoryBytes;
-        long observedPeakNativeMemoryBytes;
-        long observedNativeBufferAllocations;
-        long observedNativeBufferReleases;
-        long observedNativeBufferFallbacks;
-        long observedNativeBufferReleaseFailures;
-        long observedNativePageReadOperations;
-        long observedNativePageReadBytes;
-        long observedNativePageWriteOperations;
-        long observedNativePageWriteBytes;
-        long observedCurrentNativeBuffers;
-        long observedPeakNativeBuffers;
-        long observedUnclosedNativeBuffersAtShutdown;
-        long observedUnreleasedNativeMemoryBytesAtShutdown;
-        synchronized (nativeMemoryMonitor) {
-            observedNativeMemoryEnabled = nativeMemoryEnabled;
-            observedNativeMemoryLimitBytes = nativeMemoryLimitBytes;
-            observedCurrentNativeMemoryBytes = currentNativeMemoryBytes;
-            observedPeakNativeMemoryBytes = Math.max(
-                    peakNativeMemoryBytes, currentNativeMemoryBytes);
-            observedNativeBufferAllocations = nativeBufferAllocations;
-            observedNativeBufferReleases = nativeBufferReleases;
-            observedNativeBufferFallbacks = nativeBufferFallbacks;
-            observedNativeBufferReleaseFailures = nativeBufferReleaseFailures;
-            observedNativePageReadOperations = nativePageReadOperations;
-            observedNativePageReadBytes = nativePageReadBytes;
-            observedNativePageWriteOperations = nativePageWriteOperations;
-            observedNativePageWriteBytes = nativePageWriteBytes;
-            observedCurrentNativeBuffers = currentNativeBuffers;
-            observedPeakNativeBuffers = Math.max(
-                    peakNativeBuffers, currentNativeBuffers);
-            observedUnclosedNativeBuffersAtShutdown =
-                    unclosedNativeBuffersAtShutdown;
-            observedUnreleasedNativeMemoryBytesAtShutdown =
-                    unreleasedNativeMemoryBytesAtShutdown;
-        }
         return new DelosRawStoreIoSnapshot(
                 DelosRawStoreIoSnapshot.CURRENT_SCHEMA_VERSION,
                 databaseIdentity,
@@ -307,23 +157,7 @@ public final class DelosRawStoreIoMetrics {
                 observedPeakInFlightPageIo,
                 openContainerHandles,
                 observedPeakOpenContainerHandles,
-                unclosedContainerHandlesAtShutdown.get(),
-                observedNativeMemoryEnabled,
-                observedNativeMemoryLimitBytes,
-                observedCurrentNativeMemoryBytes,
-                observedPeakNativeMemoryBytes,
-                observedNativeBufferAllocations,
-                observedNativeBufferReleases,
-                observedNativeBufferFallbacks,
-                observedNativeBufferReleaseFailures,
-                observedNativePageReadOperations,
-                observedNativePageReadBytes,
-                observedNativePageWriteOperations,
-                observedNativePageWriteBytes,
-                observedCurrentNativeBuffers,
-                observedPeakNativeBuffers,
-                observedUnclosedNativeBuffersAtShutdown,
-                observedUnreleasedNativeMemoryBytesAtShutdown);
+                unclosedContainerHandlesAtShutdown.get());
     }
 
     public String databaseIdentity() {

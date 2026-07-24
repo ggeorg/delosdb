@@ -128,8 +128,6 @@ public class BaseDataFileFactory
             new DelosRawStoreIoMetrics();
     private final DelosRawStoreIoFaultInjector rawStoreIoFaultInjector =
             new DelosRawStoreIoFaultInjector();
-    private final DelosRawStoreNativeMemory rawStoreNativeMemory =
-            new DelosRawStoreNativeMemory(rawStoreIoMetrics);
     private String rawStoreIoIdentity;
 
     /* writableStorageFactory == (WritableStorageFactory) storageFactory if 
@@ -2767,10 +2765,6 @@ public class BaseDataFileFactory
         return rawStoreIoFaultInjector;
     }
 
-    DelosRawStoreNativeMemory rawStoreNativeMemory()
-    {
-        return rawStoreNativeMemory;
-    }
 
     private void registerRawStoreIoMetrics() throws StandardException
     {
@@ -2784,12 +2778,6 @@ public class BaseDataFileFactory
                     : DelosRawStoreIoDiagnosticsDirectory.fileIdentity(
                             Path.of(storageFactory.getCanonicalName()));
             rawStoreIoMetrics.bind(rawStoreIoIdentity, memoryDatabase);
-            rawStoreNativeMemory.bind(
-                    rawStoreIoIdentity,
-                    memoryDatabase,
-                    storageFactory.supportsNativeRandomAccessMemorySegments(),
-                    DelosRawStoreNativeMemoryDirectory.consumeLimit(
-                            rawStoreIoIdentity));
             rawStoreIoFaultInjector.bind(rawStoreIoIdentity);
             DelosRawStoreIoDiagnosticsDirectory.register(
                     rawStoreIoIdentity, rawStoreIoMetrics);
@@ -2810,7 +2798,6 @@ public class BaseDataFileFactory
 
     private void discardRawStoreIoMetrics()
     {
-        rawStoreNativeMemory.shutdown();
         rawStoreIoFaultInjector.shutdown();
         rawStoreIoMetrics.shutdown();
         if (rawStoreIoIdentity != null)
@@ -2825,7 +2812,6 @@ public class BaseDataFileFactory
 
     private void shutdownRawStoreIoMetrics()
     {
-        rawStoreNativeMemory.shutdown();
         rawStoreIoFaultInjector.shutdown();
         rawStoreIoMetrics.shutdown();
         if (rawStoreIoIdentity != null)

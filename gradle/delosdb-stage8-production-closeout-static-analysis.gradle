@@ -5,23 +5,41 @@
 
 tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies Stage 8.7.1 RawStore lifecycle, runtime-surface, and maintainability closeout.'
+    description = 'Verifies Stage 8.7 RawStore lifecycle, runtime-surface, page-I/O representation, and maintainability closeout.'
 
     def required = [
             diagnosticsDirectory: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java'),
             faultDirectory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java'),
             baseFactory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java'),
-            nativeMemory: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
+            runtimeContract: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
+            storageFactory: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageFactory.java'),
             directoryFile: file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            cachedPage: file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
+            metrics: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoMetrics.java'),
+            snapshot: file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java'),
             replayManifest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/DelosRawStoreIoFailureReplayManifest.java'),
             diagnosticsTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.java'),
+            decisionTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.java'),
             testBuild: file('delosdb-tests/build.gradle'),
             storageApiDesign: file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
             design: file('docs/design/V1-JDK25-RAWSTORE-PRODUCTION-CLOSEOUT.md'),
+            decisionDesign: file('docs/design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md'),
+            decisionChapter: file('.delosdb-v1/04-book/phase8-executable-draft/chapters/37-page-io-representation-production-decision.md'),
+            reproducibility: file('.delosdb-v1/05-research/02-REPRODUCIBILITY.md'),
             roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
             handoff: file('.delosdb-v1/NEW-SESSION-README.md')
     ]
+    def removed = [
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
+            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemoryDirectory.java'),
+            file('delosdb-tests/src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.java')
+    ]
     inputs.files(required.values())
+    inputs.files(removed)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     inputs.file(file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file(
@@ -31,8 +49,11 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
         def failures = []
         required.each { name, source ->
             if (!source.isFile()) {
-                failures << 'Missing required Stage 8.7.1 source: ' + name + ' -> ' + source
+                failures << 'Missing required Stage 8.7 source: ' + name + ' -> ' + source
             }
+        }
+        removed.findAll { it.exists() }.each {
+            failures << 'Removed Stage 8 closeout file still exists: ' + it
         }
 
         if (failures.isEmpty()) {
@@ -71,11 +92,6 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 }
             }
 
-            def productionManifest = file(
-                    'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java')
-            if (productionManifest.exists()) {
-                failures << 'Replay manifest must not remain in the production runtime API'
-            }
             ['package org.apache.derbyTesting.functionTests.tests.delos;',
              'Test-only immutable evidence',
              'public record DelosRawStoreIoFailureReplayManifest('].each { token ->
@@ -90,7 +106,7 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 include '**/*.java'
             }.files.size()
             if (runtimeTypeCount != 104) {
-                failures << 'Expected 104 runtime store/type contracts after removing the test-only manifest; found '
+                failures << 'Expected 104 runtime store/type contracts after closeout; found '
                         + runtimeTypeCount
             }
 
@@ -110,14 +126,35 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 failures << 'DirRandomAccessFile must have one shared complete-write loop'
             }
             ['private void readFully(ByteBuffer target, long position)',
-             'private void writeFully(ByteBuffer source, long position)'].each { token ->
+             'private void writeFully(ByteBuffer source, long position)',
+             'ByteBuffer.wrap(buffer, offset, length)'].each { token ->
                 if (!text.directoryFile.contains(token)) {
-                    failures << 'Shared positional transfer helper is missing: ' + token
+                    failures << 'Shared direct positional transfer helper is missing: ' + token
                 }
             }
 
-            if (text.nativeMemory.contains('synchronized boolean enabled()')) {
-                failures << 'Unused native-memory enabled() method remains'
+            def productionRepresentationText = [
+                    text.runtimeContract,
+                    text.storageFactory,
+                    text.directoryFile,
+                    text.cachedPage,
+                    text.baseFactory,
+                    text.metrics,
+                    text.snapshot
+            ].join('\n')
+            ['java.lang.foreign.MemorySegment',
+             'supportsNativeRandomAccessMemorySegments',
+             'DelosHeapPageBuffer',
+             'DelosRawStoreNativeMemory',
+             'nativeMemoryEnabled',
+             'nativeBufferAllocations',
+             'nativePageReadOperations'].each { forbidden ->
+                if (productionRepresentationText.contains(forbidden)) {
+                    failures << 'Proof-only page representation remains in production: ' + forbidden
+                }
+            }
+            if (!text.snapshot.contains('CURRENT_SCHEMA_VERSION = 3')) {
+                failures << 'RawStore I/O snapshot must use schema version 3 after native-field removal'
             }
 
             ['testDuplicateActiveRegistrationIsRejectedWithoutReplacement',
@@ -126,19 +163,35 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                     failures << 'Duplicate-registration executable proof is missing: ' + token
                 }
             }
+            ['KEEP_POSITIONAL_BYTE_ARRAY',
+             'REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE',
+             'REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE',
+             'State SHA-256',
+             'Timing is diagnostic only; no pass/fail threshold is used.'].each { token ->
+                if (!text.decisionTest.contains(token)) {
+                    failures << 'Page-I/O representation decision proof is missing: ' + token
+                }
+            }
 
             ['prepareRawStoreInternalTestSupportSources',
              'compileRawStoreInternalTestSupport',
              'generated/sources/raw-store-internal-test-support'].each { token ->
                 if (!text.testBuild.contains(token)) {
-                    failures << 'Neutral Stage 8 internal test-support wiring is missing: ' + token
+                    failures << 'Neutral RawStore internal test-support wiring is missing: ' + token
                 }
             }
-            ['prepareRawStoreIoFaultInjectionTestSupportSource',
-             'compileRawStoreIoFaultInjectionTestSupport',
-             'generated/sources/raw-store-io-fault-injection-test-support'].each { stale ->
+            ['RawStoreNativeMemoryTestSupport.java',
+             'runDelosSharedRawStoreHeapMemorySegmentPageBufferTest',
+             'runDelosSharedRawStoreNativeMemoryPageBufferTest'].each { stale ->
                 if (text.testBuild.contains(stale)) {
-                    failures << 'Stale fault-only test-support name remains: ' + stale
+                    failures << 'Stale experiment-specific test wiring remains: ' + stale
+                }
+            }
+            ["'runDelosSharedRawStorePageIoRepresentationDecisionTest'",
+             'delosdb.stage872.report',
+             'stage8.7.2-page-io-representation-decision.txt'].each { token ->
+                if (!text.testBuild.contains(token)) {
+                    failures << 'Page-I/O decision test wiring is missing: ' + token
                 }
             }
 
@@ -151,26 +204,56 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 }
             }
 
-            ['Status: Stage 8.7.1 implemented; user verification pending.',
-             'duplicate active registration',
-             'test-only replay manifest',
-             'Shared complete-transfer loops',
-             'not the final heap/native performance decision'].each { token ->
-                if (!text.design.contains(token)) {
-                    failures << 'Stage 8.7.1 design is missing: ' + token
+            ['Stage 8.7.1 verified',
+             'Stage 8.7.2 implemented and pending user verification',
+             'KEEP_POSITIONAL_BYTE_ARRAY',
+             'REMOVE_HEAP_MEMORY_SEGMENT_FROM_V1_RAWSTORE',
+             'REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE'].each { token ->
+                if (!text.design.contains(token)
+                        && !text.decisionDesign.contains(token)) {
+                    failures << 'Stage 8.7 closeout design is missing: ' + token
                 }
             }
 
-            ['Stage 8.6 — segmented mapped-region experiment and production decision',
-             'Stage 8.7.1 — production closeout lifecycle and API simplification',
-             'IMPLEMENTED / PENDING USER VERIFICATION'].each { token ->
-                if (!text.roadmap.contains(token)) {
-                    failures << 'Roadmap is missing Stage 8.7.1 token: ' + token
+            ['KEEP_POSITIONAL_BYTE_ARRAY',
+             'one complete read loop and one complete write loop',
+             'Removing successful experiments is part of production engineering'].each { token ->
+                if (!text.decisionChapter.contains(token)) {
+                    failures << 'Stage 8.7.2 book decision is missing: ' + token
                 }
             }
-            if (!text.handoff.contains(
-                    'Stage 8.7.1 production closeout lifecycle and API simplification:')) {
-                failures << 'Session handoff is missing the Stage 8.7.1 status line'
+            ['Stage 8.7.2 page-I/O representation decision records',
+             'build/reports/delosdb/stage8.7.2-page-io-representation-decision.txt',
+             'Timing is diagnostic only and has no pass/fail threshold'].each { token ->
+                if (!text.reproducibility.contains(token)) {
+                    failures << 'Stage 8.7.2 reproducibility record is missing: ' + token
+                }
+            }
+
+            def stage871Start = text.roadmap.indexOf(
+                    '## Stage 8.7.1 — production closeout lifecycle and API simplification')
+            def stage872Start = text.roadmap.indexOf(
+                    '## Stage 8.7.2 — page-I/O representation closeout')
+            def stage9Start = text.roadmap.indexOf('# Stage 9 — Lucene 10 foundation')
+            if (stage871Start < 0 || stage872Start <= stage871Start
+                    || stage9Start <= stage872Start) {
+                failures << 'Roadmap does not preserve Stage 8.7.1, Stage 8.7.2, and Stage 9 ordering'
+            } else {
+                def stage871 = text.roadmap.substring(stage871Start, stage872Start)
+                def stage872 = text.roadmap.substring(stage872Start, stage9Start)
+                if (!stage871.contains('VERIFIED')
+                        || stage871.contains('PENDING USER VERIFICATION')) {
+                    failures << 'Stage 8.7.1 roadmap section must be verified'
+                }
+                if (!stage872.contains('IMPLEMENTED / PENDING USER VERIFICATION')) {
+                    failures << 'Stage 8.7.2 roadmap section must remain pending until user verification'
+                }
+            }
+            ['Stage 8.7.1 production closeout lifecycle and API simplification:       VERIFIED',
+             'Stage 8.7.2 page-I/O representation closeout:'].each { token ->
+                if (!text.handoff.contains(token)) {
+                    failures << 'Session handoff is missing Stage 8.7 status: ' + token
+                }
             }
 
             if (!sharedStatic.contains(

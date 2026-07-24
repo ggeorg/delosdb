@@ -3236,17 +3236,6 @@ abstract class FileContainer
 	*/
 	protected abstract void readPage(long pageNumber, byte[] pageData)
 		 throws IOException, StandardException;
-
-    /**
-     * Read a page into the stable heap-backed page-buffer view. Subclasses that have a JDK 25
-     * positional segment path override this method; inherited alternate containers retain the
-     * byte-array contract through this compatibility bridge.
-     */
-    protected void readPage(long pageNumber, DelosHeapPageBuffer pageBuffer)
-            throws IOException, StandardException
-    {
-        readPage(pageNumber, pageBuffer.array());
-    }
 	
 
 	/**
@@ -3258,19 +3247,6 @@ abstract class FileContainer
 	*/
 	protected abstract void writePage(long pageNumber, byte[] pageData, boolean syncPage) 
 		throws IOException, StandardException;
-
-    /**
-     * Write a page from the stable heap-backed page-buffer view. Subclasses that have a JDK 25
-     * positional segment path override this method; inherited alternate containers retain the
-     * byte-array contract through this compatibility bridge.
-     */
-    protected void writePage(
-            long pageNumber,
-            DelosHeapPageBuffer pageBuffer,
-            boolean syncPage) throws IOException, StandardException
-    {
-        writePage(pageNumber, pageBuffer.array(), syncPage);
-    }
 
 	/*
 	 * Encryption/decryption

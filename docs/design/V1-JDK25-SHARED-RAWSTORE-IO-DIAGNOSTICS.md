@@ -178,15 +178,23 @@ Lucene work
 Stage 8.3 adds deterministic database-scoped fault injection and replay over this observable shared boundary.
 
 
-## Stage 8.4 follow-on
+## Stage 8.7.2 schema version 3
 
-Stage 8.4 routes the same counted page operations through heap-backed `MemorySegment` aliases. The
-diagnostics schema and success/failure accounting do not change: completed bytes are still counted
-exactly once after the same physical transfer, and heap/MVCC observations remain identical.
+Stages 8.4 and 8.5 temporarily extended the page path and diagnostics for heap-segment and native
+mirror experiments. Stage 8.7.2 removes those production representations and advances
+`DelosRawStoreIoSnapshot` to schema version 3.
 
-## Stage 8.5 schema version 2
+Schema version 3 contains only production operational evidence:
 
-Stage 8.5 advances `DelosRawStoreIoSnapshot` to schema version 2. It adds the database native-memory
-limit, current/peak bytes and buffers, allocation/release/fallback/release-failure counts, native page
-read/write operations and bytes, and terminal unreleased-buffer evidence. Native operation counts are
-subsets of the unchanged total physical page counters.
+```text
+page read/write operations and bytes
+content-only and metadata force operations
+read/write/force failures
+closed-channel and reopen evidence
+in-flight page I/O
+open container handles
+terminal handle-leak evidence
+```
+
+Native-memory limits, leases, fallback counts, native page counters, and native shutdown fields are
+removed because no native page-I/O feature remains in the v1 runtime.
