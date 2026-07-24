@@ -745,3 +745,18 @@ Stage 8.5 current anchor: directory RawStore I/O may use a database-bounded nati
 while the inherited byte array remains authoritative. Admission, fallback, copies, lease closure, and
 current/peak/leak accounting are explicit. Memory databases remain heap-only and mapped regions remain
 a separate Stage 8.6 decision.
+
+## Stage 8.6 segmented mapped-region experiment
+
+Classification: `VALIDATION_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, and
+`DIAGNOSTIC_ONLY_ALGORITHM`.
+
+Current code: `SharedRawStoreMappedRegionExperimentTest` and the focused
+`runDelosSharedRawStoreMappedRegionExperimentTest` lane.
+
+Decision: `NO_GO_FOR_V1_RAWSTORE`.
+
+The experiment may map aligned fixed-size regions, compare exact final state with positional writes,
+and record diagnostic timing. It must not enter production RawStore source sets, authorize a mapped
+backend, replace byte-array page authority, or create a timing threshold. A future read-only derived
+subsystem requires a separate ownership and recovery decision.

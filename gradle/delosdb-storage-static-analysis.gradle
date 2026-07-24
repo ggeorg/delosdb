@@ -9829,7 +9829,7 @@ tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
             if (allProduction.contains(forbidden)) failures << 'Stage 8.5 contains forbidden mapped/application control: ' + forbidden
         }
 
-        ['Status: Stage 8.5 implemented; user verification pending.',
+        ['Status: Stage 8.5 verified.',
          'DEFAULT_LIMIT_BYTES = 0', 'byte array remains', 'hard byte limit',
          'memory-database rejection', 'mapped files or mapped regions',
          'runDelosSharedRawStoreNativeMemoryPageBufferTest',
@@ -9838,7 +9838,7 @@ tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
         }
         ['Stage 8.4 — heap-backed MemorySegment page-buffer proof', 'VERIFIED',
          'Stage 8.5 — bounded native RawStore page-I/O mirrors',
-         'IMPLEMENTED / PENDING USER VERIFICATION', 'Stage 8.6'].each { token ->
+         'VERIFIED', 'Stage 8.6 — segmented mapped-region experiment and production decision'].each { token ->
             if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.5 token: ' + token
         }
         if (!text.handoff.contains('Stage 8.5 bounded native RawStore page-I/O mirrors:')) {
@@ -9880,6 +9880,130 @@ tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
         if (!failures.isEmpty()) throw new GradleException(
                 'Shared RawStore native-memory page-buffer static analysis failed. Report: ' + reportFile)
         logger.lifecycle('Shared RawStore native-memory page-buffer static analysis passed. Report: {}', reportFile)
+    }
+}
+
+
+tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
+    group = 'verification'
+    description = 'Protects the Stage 8.6 segmented mapped-region experiment and NO_GO_FOR_V1_RAWSTORE production decision.'
+
+    def stage86Files = [
+            storageRandomAccess: file('delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java'),
+            directoryFile     : file('delosdb-engine/src/main/java/org/apache/derby/impl/io/DirRandomAccessFile.java'),
+            pageBuffer        : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
+            cachedPage        : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java'),
+            rafContainer      : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java'),
+            rafContainer4     : file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java'),
+            focusedTest       : file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreMappedRegionExperimentTest.java'),
+            testBuild         : file('delosdb-tests/build.gradle'),
+            design            : file('docs/design/V1-JDK25-SEGMENTED-MAPPED-REGION-DECISION.md'),
+            roadmap           : file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            handoff           : file('.delosdb-v1/NEW-SESSION-README.md')
+    ]
+    def stage86ProductionSources = files(
+            fileTree('delosdb-runtime-api/src/main/java/org/apache/derby/io') {
+                include '**/*.java'
+            },
+            fileTree('delosdb-engine/src/main/java/org/apache/derby/impl/io') {
+                include '**/*.java'
+            },
+            fileTree('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw') {
+                include '**/*.java'
+            })
+    inputs.files(stage86Files.values())
+    inputs.files(stage86ProductionSources)
+    inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/shared-rawstore-mapped-region-decision-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        def text = stage86Files.collectEntries { key, sourceFile ->
+            if (!sourceFile.exists()) {
+                failures << 'Stage 8.6 file is missing: ' + sourceFile
+                [(key): '']
+            } else {
+                [(key): sourceFile.getText('UTF-8')]
+            }
+        }
+        def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+
+        ['SharedRawStoreMappedRegionExperimentTest',
+         'FileChannel.MapMode', 'channel.map(', 'MapMode.READ_WRITE',
+         'Arena.ofShared()', 'region.isMapped()', 'region.force()',
+         'an existing mapping has fixed spatial bounds',
+         'closing the arena must end mapped-segment access',
+         'MemorySegment.class.getMethod("force", boolean.class)',
+         'NO_GO_FOR_V1_RAWSTORE', 'sha256(',
+         'Timing is diagnostic only; no pass/fail threshold is used.'].each { token ->
+            if (!text.focusedTest.contains(token)) failures << 'Stage 8.6 mapped experiment is missing: ' + token
+        }
+        ['testSegmentedMappingsPreserveAbsolutePageImagesAndChannelPosition',
+         'testFileGrowthRequiresAnotherMappingAndClosedArenasEndAccess',
+         'testMappedForceCannotExpressTheRawStoreMetadataChoice',
+         'testRepresentativePageWorkloadProducesEquivalentStateEvidence'].each { token ->
+            if (!text.focusedTest.contains(token)) failures << 'Stage 8.6 focused proof is missing: ' + token
+        }
+        ["'runDelosSharedRawStoreMappedRegionExperimentTest'",
+         'SharedRawStoreMappedRegionExperimentTest.class',
+         'delosdb.stage86.report',
+         'stage8.6-mapped-region-experiment.txt',
+         "dependsOn tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest')"].each { token ->
+            if (!text.testBuild.contains(token)) failures << 'Stage 8.6 test wiring is missing: ' + token
+        }
+
+        stage86ProductionSources.files.sort { it.path }.each { sourceFile ->
+            def productionText = sourceFile.getText('UTF-8')
+            ['FileChannel.MapMode', 'MapMode.READ_WRITE', 'MapMode.READ_ONLY',
+             'channel.map(', 'MappedRegionTable', 'isMapped()'].each { forbidden ->
+                if (productionText.contains(forbidden)) {
+                    failures << 'Mapped-region code entered production RawStore source '
+                            + sourceFile + ': ' + forbidden
+                }
+            }
+        }
+
+        ['Status: Stage 8.6 implemented; user verification pending.',
+         'NO_GO_FOR_V1_RAWSTORE', 'Durability contract mismatch',
+         'Fault and diagnostics boundary mismatch',
+         'File-growth and region lifecycle cost',
+         'No page-authority simplification',
+         'no FileChannel.map call in production RawStore code',
+         'runDelosSharedRawStoreMappedRegionExperimentTest',
+         'delosSharedRawStoreMappedRegionDecisionStaticAnalysis'].each { token ->
+            if (!text.design.contains(token)) failures << 'Stage 8.6 design is missing: ' + token
+        }
+        ['Stage 8.5 — bounded native RawStore page-I/O mirrors', 'VERIFIED',
+         'Stage 8.6 — segmented mapped-region experiment and production decision',
+         'IMPLEMENTED / PENDING USER VERIFICATION',
+         'NO_GO_FOR_V1_RAWSTORE', '# Stage 9 — Lucene 10 foundation'].each { token ->
+            if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.6 token: ' + token
+        }
+        if (!text.handoff.contains('Stage 8.6 segmented mapped-region experiment and v1 no-go decision:')) {
+            failures << 'Session handoff is missing the Stage 8.6 status line'
+        }
+        if (!text.handoff.contains('Do not add mapped production RawStore code.')) {
+            failures << 'Session handoff does not preserve the mapped RawStore prohibition'
+        }
+
+        def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
+        if (!s0.contains("'delosSharedRawStoreMappedRegionDecisionStaticAnalysis'")) {
+            failures << 'S0 must include the Stage 8.6 mapped-region decision gate'
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/shared-rawstore-mapped-region-decision-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB shared RawStore mapped-region decision static analysis')
+            writer.println('================================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) throw new GradleException(
+                'Shared RawStore mapped-region decision static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Shared RawStore mapped-region decision static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -9930,6 +10054,7 @@ tasks.register('s0CloseoutVerification') {
             'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
             'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
             'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis',
+            'delosSharedRawStoreMappedRegionDecisionStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
             'delosMvccTransactionalDdlStaticAnalysis'
 }

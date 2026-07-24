@@ -783,6 +783,24 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosSharedRawStoreNativeMemoryPageBufferTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosSharedRawStoreMappedRegionExperimentTest',
+        'Runs the Stage 8.6 segmented mapped-region correctness, lifecycle, force-contract, and diagnostic workload experiment.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreMappedRegionExperimentTest.class'])
+
+tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest') {
+    systemProperty 'delosdb.stage86.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/stage8.6-mapped-region-experiment.txt')
+                    .get().asFile.absolutePath
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/stage8.6-mapped-region-experiment.txt')
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

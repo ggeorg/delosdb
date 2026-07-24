@@ -96,3 +96,11 @@ This audit permits only bounded follow-up slices:
 It does not permit heap page-format rewrite, raw-log rewrite, allocation algorithm replacement, or
 shared page/cache/allocation service extraction.
 
+
+## Stage 8.6 mapped-region boundary
+
+The v1 heap/RawStore compatibility boundary rejects mapped regions in production. The test-only Stage
+8.6 experiment demonstrates JDK 25 mapping behavior but concludes `NO_GO_FOR_V1_RAWSTORE`.
+`CachedPage`, `StoredPage`, container allocation, page codec, logging, and recovery remain on the
+verified byte-array plus positional heap/native I/O path. No inherited heap implementation class may
+call `FileChannel.map` without a new format, recovery, lifecycle, and cross-platform proof.

@@ -503,3 +503,23 @@ storage explicitly opts into native positional segments, while memory and altern
 heap-only. Each admitted page mirror has an explicit shared-arena lease, a hard database byte limit,
 heap fallback, exact diagnostics, and shutdown leak evidence. No mapped region or second page cache is
 introduced.
+
+## Stage 8.6 segmented mapped-region experiment and v1 decision
+
+A focused JDK 25 test maps fixed-size file regions into arena-scoped `MemorySegment` instances and
+proves absolute page access, fixed spatial bounds, explicit lifetime, force persistence, file
+replacement after close, and state equivalence with the positional path.
+
+Production decision:
+
+```text
+NO_GO_FOR_V1_RAWSTORE
+```
+
+Mapped regions are not wired into `StorageRandomAccessFile`, `CachedPage`, `RAFContainer`, or
+`RAFContainer4`. RawStore keeps the explicit content/metadata force choice, exact I/O diagnostics and
+fault points, inherited byte-array page ownership, and channel-reopen coordination of the positional
+path. The experiment adds no backend selector, mapped-region registry, page-format change, or second
+cache.
+
+See `design/V1-JDK25-SEGMENTED-MAPPED-REGION-DECISION.md`.

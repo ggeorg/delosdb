@@ -1,6 +1,6 @@
 # DelosDB v1 JDK 25 bounded native RawStore page-I/O mirrors
 
-Status: Stage 8.5 implemented; user verification pending.
+Status: Stage 8.5 verified.
 
 ## Decision
 
@@ -169,5 +169,6 @@ page-format, WAL, recovery, locking, or transaction changes
 Lucene work
 ```
 
-Stage 8.6 may evaluate segmented mapped regions only after Stage 8.5 is verified and only through a
-separate production decision backed by recovery, lifecycle, address-space, and benchmark evidence.
+Stage 8.6 completed that separate experiment and recorded `NO_GO_FOR_V1_RAWSTORE`. Mapped regions
+remain outside the production page path; the bounded native positional mirror is the final v1
+foreign-memory production boundary.

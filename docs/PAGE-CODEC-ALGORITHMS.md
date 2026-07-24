@@ -83,3 +83,11 @@ Stage 8.5 does not change the codec. A native segment may mirror the complete in
 for a physical directory read or write. Heap-to-native copying occurs after encoding and before write;
 native-to-heap copying occurs after read and before decoding. No native buffer becomes a page-format
 authority.
+
+## Stage 8.6 mapped-region decision
+
+Mapped regions are not page codecs and are not adopted as page-format authority. The Stage 8.6
+experiment writes complete encoded page images into test-only mappings and verifies byte-for-byte
+state equivalence, but the v1 decision is `NO_GO_FOR_V1_RAWSTORE`. Encoding and decoding continue to
+use the inherited byte array; no mapped segment may become a checksum, encryption, recovery, or cache
+owner.
