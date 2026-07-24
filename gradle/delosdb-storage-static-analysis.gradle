@@ -9973,18 +9973,42 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
          'delosSharedRawStoreMappedRegionDecisionStaticAnalysis'].each { token ->
             if (!text.design.contains(token)) failures << 'Stage 8.6 design is missing: ' + token
         }
-        ['Stage 8.5 — bounded native RawStore page-I/O mirrors', 'VERIFIED',
-         'Stage 8.6 — segmented mapped-region experiment and production decision',
-         'VERIFIED',
-         'NO_GO_FOR_V1_RAWSTORE',
-         'Stage 8.7.1 — production closeout lifecycle and API simplification'].each { token ->
-            if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.6 token: ' + token
+        def stage86RoadmapStart = text.roadmap.indexOf(
+                '## Stage 8.6 — segmented mapped-region experiment and production decision')
+        def stage871RoadmapStart = text.roadmap.indexOf(
+                '## Stage 8.7.1 — production closeout lifecycle and API simplification')
+        if (stage86RoadmapStart < 0 || stage871RoadmapStart <= stage86RoadmapStart) {
+            failures << 'Roadmap does not preserve the Stage 8.6 to Stage 8.7.1 ordering'
+        } else {
+            def stage86Roadmap = text.roadmap.substring(stage86RoadmapStart, stage871RoadmapStart)
+            ['Stage 8.6 is verified together with every Stage 8.1–8.5 focused and normal gate.',
+             'NO_GO_FOR_V1_RAWSTORE',
+             'delosSharedRawStoreMappedRegionDecisionStaticAnalysis'].each { token ->
+                if (!stage86Roadmap.contains(token)) {
+                    failures << 'Verified Stage 8.6 roadmap section is missing: ' + token
+                }
+            }
+            if (stage86Roadmap.contains('PENDING USER VERIFICATION')
+                    || stage86Roadmap.contains('IMPLEMENTED / VERIFY')) {
+                failures << 'Verified Stage 8.6 roadmap section still contains a pending status'
+            }
+
+            def stage871Roadmap = text.roadmap.substring(stage871RoadmapStart)
+            if (!stage871Roadmap.contains('IMPLEMENTED / PENDING USER VERIFICATION')) {
+                failures << 'Stage 8.7.1 roadmap section must remain pending until closeout verification completes'
+            }
         }
-        if (!text.handoff.contains('Stage 8.6 segmented mapped-region experiment and v1 no-go decision:')) {
-            failures << 'Session handoff is missing the Stage 8.6 status line'
+
+        def stage86HandoffLine = text.handoff.readLines().find {
+            it.startsWith('Stage 8.6 segmented mapped-region experiment and v1 no-go decision:')
         }
-        if (!text.handoff.contains('Do not add mapped production RawStore code.')) {
-            failures << 'Session handoff does not preserve the mapped RawStore prohibition'
+        if (stage86HandoffLine == null || !stage86HandoffLine.endsWith('VERIFIED')) {
+            failures << 'Session handoff does not mark Stage 8.6 verified'
+        }
+        def handoffLower = text.handoff.toLowerCase()
+        if (!text.handoff.contains('NO_GO_FOR_V1_RAWSTORE')
+                || !handoffLower.contains('do not add mapped production rawstore code')) {
+            failures << 'Session handoff does not preserve the frozen mapped RawStore prohibition'
         }
 
         def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
