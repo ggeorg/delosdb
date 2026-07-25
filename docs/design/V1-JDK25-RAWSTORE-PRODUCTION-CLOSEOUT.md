@@ -1,6 +1,6 @@
 # DelosDB v1 RawStore production closeout
 
-Status: Stage 8.7.1 verified; Stage 8.7.2 implemented and pending user verification.
+Status: Stage 8.7.1 and Stage 8.7.2 verified; superseded by the verified Stage 8.7.3 final production closeout.
 
 ## Purpose
 

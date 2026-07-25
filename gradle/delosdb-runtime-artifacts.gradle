@@ -24,8 +24,8 @@ ext.delosdbRuntimeJarArtifacts = [
 // Derby-compatible runtime classpath. derby-store-api is patched into
 // derby.jar. The production MVCC provider is also published independently,
 // while its org.apache.derby implementation package is patched into derby.jar
-// until the final distribution/module-path packaging step. The retained Phase 8
-// oracle is compiled only by explicit legacy source-set tasks.
+// until the final distribution/module-path packaging step. No retained Phase 8
+// implementation remains in the active source tree.
 ext.delosdbAssembledSupportJarArtifacts = [
         [key: 'storeApi',    gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar'],
         [key: 'mvcc',        gradleProject: 'delosdb-storage-mvcc',     jarTask: 'jar', jarName: 'delosdb-storage-mvcc.jar']
@@ -41,7 +41,7 @@ ext.delosdbRuntimeJarFiles = {
 
 
 ext.delosdbRuntimeJars = {
-    // derby.jar contains the permanent ASM bytecode backend. Keep ASM on the
+    // derby.jar contains the transitional ASM bytecode backend. Keep ASM on the
     // runtime classpath for jar-based smokes instead of relying on the old
     // optional/static module edge.
     project.files(project.ext.delosdbRuntimeJarFiles.call(), project.configurations.delosdbAsm)
@@ -138,7 +138,7 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
             def entries = zip.entries()
             while (entries.hasMoreElements()) {
                 if (entries.nextElement().name.startsWith('io/github/ggeorg/delosdb/storage/mvcc/')) {
-                    throw new GradleException('Retained Phase 8 classes remain in production MVCC provider jar')
+                    throw new GradleException('Retired io.github storage classes remain in production MVCC provider jar')
                 }
             }
         }

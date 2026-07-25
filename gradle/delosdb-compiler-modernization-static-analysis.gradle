@@ -1,0 +1,294 @@
+// DelosDB generated-class compiler modernisation inventory and static gates.
+//
+// Keep this domain separate from the storage-analysis script. Compiler
+// generation has independent ownership, evidence, and removal criteria.
+
+def delosCompilerRepositoryRoot = rootProject.projectDir
+def delosCompilerBuildRoot = rootProject.layout.buildDirectory.get().asFile
+
+def delosCompilerProductionJavaFiles = {
+    rootProject.fileTree(delosCompilerRepositoryRoot) {
+        include 'delosdb-*/src/main/java/**/*.java'
+        exclude 'delosdb-buildtools/**'
+        exclude 'delosdb-tests/**'
+    }.files.sort { left, right -> left.path <=> right.path }
+}
+
+def delosCompilerManifestRows = {
+    File manifest = new File(
+            delosCompilerRepositoryRoot,
+            'gradle/static-analysis/delosdb-generated-class-modernization.txt')
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException(
+                            'Invalid generated-class modernisation manifest row: '
+                                    + line)
+                }
+                [id: parts[0], category: parts[1], path: parts[2],
+                 marker: parts[3], reason: parts[4]]
+            }
+}
+
+def delosCompilerRelative = { File file ->
+    delosCompilerRepositoryRoot.toPath()
+            .relativize(file.toPath())
+            .toString()
+            .replace('\\', '/')
+}
+
+tasks.register('delosGeneratedClassModernizationInventory') {
+    group = 'verification'
+    description = 'Reports the current generated-class contract, ASM ownership, dependency surface, and Class-File API evidence.'
+
+    File reportFile = new File(
+            delosCompilerBuildRoot,
+            'reports/delosdb/compiler/generated-class-modernization-inventory.txt')
+    outputs.file(reportFile)
+
+    doLast {
+        List<File> productionJava = delosCompilerProductionJavaFiles()
+        List<File> asmImportFiles = productionJava.findAll { file ->
+            file.getText('UTF-8').contains('import org.objectweb.asm.')
+        }
+        List<File> classFileImportFiles = productionJava.findAll { file ->
+            file.getText('UTF-8').contains('import java.lang.classfile.')
+        }
+        List<File> buildToolClassFileImportFiles = rootProject.fileTree(
+                new File(delosCompilerRepositoryRoot,
+                        'delosdb-buildtools/src/main/java')) {
+            include '**/*.java'
+        }.files.findAll { file ->
+            file.getText('UTF-8').contains('import java.lang.classfile.')
+        }.sort { left, right -> left.path <=> right.path }
+        File compilerRoot = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile')
+        List<File> compilerJava = compilerRoot.exists()
+                ? rootProject.fileTree(compilerRoot) {
+                    include '**/*.java'
+                }.files.sort { left, right -> left.path <=> right.path }
+                : []
+        List<File> generationContractConsumers = compilerJava.findAll { file ->
+            String text = file.getText('UTF-8')
+            text.contains('org.apache.derby.iapi.services.compiler.')
+                    || text.contains('MethodBuilder')
+                    || text.contains('ClassBuilder')
+        }
+        List<File> directBackendCompilerFiles = compilerJava.findAll { file ->
+            String text = file.getText('UTF-8')
+            text.contains('org.objectweb.asm')
+                    || text.contains('java.lang.classfile')
+        }
+
+        List<String> asmDependencyRows = []
+        rootProject.fileTree(delosCompilerRepositoryRoot) {
+            include 'build.gradle'
+            include '**/build.gradle'
+            include '**/module-info.java'
+            exclude '**/build/**'
+            exclude '**/.gradle/**'
+        }.files.sort { left, right -> left.path <=> right.path }.each { file ->
+            file.readLines('UTF-8').eachWithIndex { String line, int index ->
+                if (line.contains('org.ow2.asm:asm')
+                        || line.contains('requires org.objectweb.asm')) {
+                    asmDependencyRows << delosCompilerRelative(file)
+                            + ':' + (index + 1) + ':' + line.trim()
+                }
+            }
+        }
+
+        File asmJava = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/asm/AsmJava.java')
+        File methodBuilder = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/MethodBuilder.java')
+        String methodBuilderSource = methodBuilder.getText('UTF-8')
+                .replaceAll('(?s)/\\*.*?\\*/', '')
+                .replaceAll('(?m)//.*$', '')
+        int methodBuilderOperations = 0
+        def operationMatcher = java.util.regex.Pattern.compile(
+                '(?m)^\\s*(?:public\\s+)?[A-Za-z0-9_<>?,.\\[\\] ]+\\s+'
+                        + '[A-Za-z0-9_]+\\s*\\([^;{}]*\\)\\s*;')
+                .matcher(methodBuilderSource)
+        while (operationMatcher.find()) {
+            methodBuilderOperations++
+        }
+
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB generated-class modernisation inventory')
+            writer.println('================================================')
+            writer.println()
+            writer.println('Phase: COMPILER_PHASE_1_INVENTORY_AND_EVIDENCE')
+            writer.println('Current authority: ASM_TRANSITIONAL_PRODUCTION_BACKEND')
+            writer.println('Existing abstraction: JavaFactory/ClassBuilder/MethodBuilder/LocalField')
+            writer.println('Normal runtime backend selector: none')
+            writer.println()
+            writer.println('Production Java files scanned: ' + productionJava.size())
+            writer.println('ASM production import files: ' + asmImportFiles.size())
+            asmImportFiles.each { writer.println('- ' + delosCompilerRelative(it)) }
+            writer.println('Class-File API runtime production import files: ' + classFileImportFiles.size())
+            classFileImportFiles.each { writer.println('- ' + delosCompilerRelative(it)) }
+            writer.println('Class-File API build-tool import files: ' + buildToolClassFileImportFiles.size())
+            buildToolClassFileImportFiles.each { writer.println('- ' + delosCompilerRelative(it)) }
+            writer.println('Compiler generation-contract consumer files: ' + generationContractConsumers.size())
+            writer.println('Compiler direct backend-library files: ' + directBackendCompilerFiles.size())
+            directBackendCompilerFiles.each { writer.println('- ' + delosCompilerRelative(it)) }
+            writer.println('MethodBuilder declared operations: ' + methodBuilderOperations)
+            writer.println('AsmJava lines: ' + asmJava.readLines('UTF-8').size())
+            writer.println()
+            writer.println('Direct ASM build/JPMS dependency rows: ' + asmDependencyRows.size())
+            asmDependencyRows.each { writer.println('- ' + it) }
+            writer.println()
+            writer.println('Generated artifact classification:')
+            writer.println('- SQL statement activation classes')
+            writer.println('- generated expressions and predicates inside activations')
+            writer.println('- generated constraint and trigger expressions inside activations')
+            writer.println('- generated Java routine and user-defined function calls inside activations')
+            writer.println('- generated aggregate and subquery methods inside activations')
+            writer.println('- no independent serialization-helper generator found')
+            writer.println('- no second runtime bytecode backend found')
+        }
+        logger.lifecycle(
+                'Generated-class modernisation inventory written: {}',
+                reportFile)
+    }
+}
+
+tasks.register('delosGeneratedClassModernizationStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates Compiler Phase 1 backend isolation, ASM baseline evidence, and no-duplicate-layer policy.'
+    dependsOn tasks.named('delosGeneratedClassModernizationInventory')
+
+    doLast {
+        List<String> failures = []
+        List<Map<String, String>> rows = delosCompilerManifestRows()
+        Set<String> ids = [] as Set
+        Set<String> categories = [] as Set
+
+        if (rows.size() < 20) {
+            failures << 'Generated-class modernisation manifest must contain at least 20 rows; found ' + rows.size()
+        }
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate generated-class manifest id: ' + row.id
+            }
+            categories.add(row.category)
+            File proof = new File(delosCompilerRepositoryRoot, row.path)
+            if (!proof.isFile()) {
+                failures << 'Generated-class proof path is missing for ' + row.id + ': ' + row.path
+            } else if (!proof.getText('UTF-8').contains(row.marker)) {
+                failures << 'Generated-class proof marker is missing for ' + row.id + ': ' + row.marker
+            }
+            if (row.reason.length() < 90) {
+                failures << 'Generated-class manifest reason is too thin for ' + row.id
+            }
+        }
+
+        ['CONTRACT', 'ASM_BACKEND', 'BACKEND_REGISTRATION', 'BASELINE_TEST',
+         'BASELINE_WIRING', 'DESIGN', 'PERFORMANCE_PLAN', 'POLICY', 'ROADMAP',
+         'STATIC_GATE', 'ROOT_WIRING', 'CLASSFILE_EVIDENCE'].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Generated-class manifest is missing category: ' + category
+            }
+        }
+
+        List<File> productionJava = delosCompilerProductionJavaFiles()
+        List<File> asmImportFiles = productionJava.findAll { file ->
+            file.getText('UTF-8').contains('import org.objectweb.asm.')
+        }
+        List<String> asmPaths = asmImportFiles.collect { file ->
+            delosCompilerRelative(file)
+        }
+        if (asmPaths != [
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/asm/AsmJava.java']) {
+            failures << 'Production ASM imports must remain isolated to AsmJava during Compiler Phase 1; found ' + asmPaths
+        }
+
+        File compilerRoot = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile')
+        rootProject.fileTree(compilerRoot) { include '**/*.java' }.files.each { file ->
+            String text = file.getText('UTF-8')
+            if (text.contains('org.objectweb.asm')) {
+                failures << 'SQL compiler node imports ASM directly: ' + delosCompilerRelative(file)
+            }
+            if (text.contains('java.lang.classfile')) {
+                failures << 'SQL compiler node imports the Class-File API directly: ' + delosCompilerRelative(file)
+            }
+        }
+
+        productionJava.each { file ->
+            String text = file.getText('UTF-8')
+            ['GeneratedClassBackend', 'GeneratedClassPlan', 'GeneratedClassBytes'].each { forbidden ->
+                if (text.contains(forbidden)) {
+                    failures << 'Compiler Phase 1 must not introduce duplicate generation abstraction '
+                            + forbidden + ' in ' + delosCompilerRelative(file)
+                }
+            }
+            if (text.contains('delosdb.compiler.backend')) {
+                failures << 'Compiler Phase 1 must not add a normal runtime backend selector in '
+                        + delosCompilerRelative(file)
+            }
+        }
+
+        File modules = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+        String modulesText = modules.getText('UTF-8')
+        if (!modulesText.contains(
+                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
+            failures << 'ASM must remain the single fixed production backend during Compiler Phase 1'
+        }
+
+        File testBuild = new File(
+                delosCompilerRepositoryRoot,
+                'delosdb-tests/build.gradle')
+        String testBuildText = testBuild.getText('UTF-8')
+        ['runDelosGeneratedClassAsmBaselineTest',
+         'asm-generated-class-baseline.txt',
+         "dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest')"].each { marker ->
+            if (!testBuildText.contains(marker)) {
+                failures << 'Generated-class baseline test wiring is missing: ' + marker
+            }
+        }
+
+        File rootBuild = new File(delosCompilerRepositoryRoot, 'build.gradle')
+        String rootBuildText = rootBuild.getText('UTF-8')
+        if (!rootBuildText.contains(
+                "apply from: 'gradle/delosdb-compiler-modernization-static-analysis.gradle'")) {
+            failures << 'Root build must apply the dedicated compiler-modernisation analysis script'
+        }
+        if (!rootBuildText.contains(
+                "dependsOn 'delosGeneratedClassModernizationStaticAnalysis'")) {
+            failures << 'S0 must include the generated-class modernisation static gate'
+        }
+
+        File reportFile = new File(
+                delosCompilerBuildRoot,
+                'reports/delosdb/compiler/generated-class-modernization-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB generated-class modernisation static analysis')
+            writer.println('=====================================================')
+            writer.println('Manifest rows: ' + rows.size())
+            writer.println('Categories: ' + categories.sort().join(', '))
+            writer.println('ASM production import files: ' + asmPaths.size())
+            asmPaths.each { writer.println('- ' + it) }
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'Generated-class modernisation static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'Generated-class modernisation static analysis passed. Report: {}',
+                reportFile)
+    }
+}

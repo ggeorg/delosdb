@@ -1,6 +1,6 @@
 # DelosDB v1 RawStore page-I/O representation decision
 
-Status: Stage 8.7.2 implemented; user verification pending.
+Status: Stage 8.7.2 verified; final v1 page-I/O representation decisions are frozen.
 
 ## Decision
 

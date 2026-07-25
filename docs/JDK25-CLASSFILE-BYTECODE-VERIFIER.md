@@ -7,7 +7,7 @@ This is a verifier artifact, not a bytecode-generation rewrite.
 ## Purpose
 
 DelosDB currently keeps Derby's ASM-backed execution-bytecode generator as the
-production backend. The JDK 25 Class-File API is used here only as a verifier
+transitional production backend during Compiler Phase 1. The JDK 25 Class-File API is used here only as a verifier
 around compiled DelosDB runtime class files.
 
 The verifier gives DelosDB a JDK-owned bytecode inspection lane before any future
@@ -59,7 +59,7 @@ org.apache.derby.runner
 
 ## Non-goals
 
-No ASM removal.
+No ASM removal. Compiler Phase 1 records the baseline before any backend change.
 
 No replacement of Derby's bytecode-generation backend.
 
@@ -83,14 +83,15 @@ first step than replacing ASM generation immediately.
 
 ## Relationship to ASM
 
-ASM remains the production generator.
+ASM remains the production generator. It is transitional rather than a final v1 dependency.
 
 The verifier is a second opinion over compiled output. It does not emit classes,
 transform classes, or alter class loading.
 
-Future work may add a small runtime fixture that captures an ASM-generated Derby
-execution class and verifies that generated class with the same JDK API. That is
-not part of this slice.
+Compiler Phase 1 now adds a focused runtime fixture that generates a deterministic
+class through the existing JavaFactory/ClassBuilder/MethodBuilder contract, parses it
+with the same JDK API, loads it, executes it, and records generation, allocation,
+class-size, loading, and steady-execution evidence.
 
 ## Report
 
@@ -125,3 +126,21 @@ It must not change Java behavior.
 It must not create a new dependency.
 
 It must not use internal JDK APIs.
+
+## Generated-class baseline
+
+The focused task is:
+
+```text
+./gradlew :delosdb-tests:runDelosGeneratedClassAsmBaselineTest
+```
+
+It writes:
+
+```text
+build/reports/delosdb/compiler/asm-generated-class-baseline.txt
+```
+
+This fixture does not introduce another generation abstraction. It exercises the
+existing Derby generation contract and freezes the evidence required for the later
+Class-File API differential backend.

@@ -134,7 +134,7 @@ configurations {
 dependencies {
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
-    // Runtime dependency for the permanent ASM generated-bytecode backend.
+    // Runtime dependency for the transitional ASM generated-bytecode backend.
     delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
@@ -579,7 +579,7 @@ tasks.named('build') {
 
 // JDK 25 bytecode verification lane. This uses the standard Class-File API as
 // a verifier around compiled Derby/DelosDB runtime outputs; ASM remains the
-// production generated-bytecode backend.
+// transitional production backend during Compiler Phase 1.
 def delosJdk25ClassFileBytecodeVerifierReport = layout.buildDirectory.file('reports/delosdb/jdk25-classfile-bytecode-verifier.txt')
 
 tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaExec) {
@@ -616,6 +616,11 @@ tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaE
 // DelosDB storage/static-analysis closeout gates.
 apply from: 'gradle/delosdb-storage-static-analysis.gradle'
 
+// Generated-class compiler modernisation has independent ownership from
+// storage analysis and therefore uses a dedicated inventory and gate script.
+apply from: 'gradle/delosdb-compiler-modernization-static-analysis.gradle'
+
 tasks.named('s0CloseoutVerification') {
     dependsOn 'verifyDelosRuntimeStorageProviders'
+    dependsOn 'delosGeneratedClassModernizationStaticAnalysis'
 }

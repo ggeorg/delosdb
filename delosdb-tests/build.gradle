@@ -239,7 +239,6 @@ sourceSets {
             setSrcDirs([testSourceRoot, toursDbSourceRoot])
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
-            exclude 'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java'
             // This bridge belongs to org.apache.derby.engine so it is compiled
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
@@ -708,8 +707,6 @@ tasks.register('runPostgresClassArchitectureProofTests') {
     dependsOn 'runBTreeSearchRefactorProofTests'
     dependsOn 'runBTreeIndexConcurrencyArchitectureProofTest'
     dependsOn 'runVersionCleanupArchitectureProofTest'
-    dependsOn ':delosdb-storage-mvcc:runMvccCoreModelTest'
-    dependsOn ':delosdb-storage-mvcc:runMvccTableScanModelTest'
     dependsOn 'runExternalSortJvmPolicyProofTest'
 }
 
@@ -793,6 +790,25 @@ tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest') {
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest')
+}
+
+registerDelosFocusedTest(
+        'runDelosGeneratedClassAsmBaselineTest',
+        'Runs Compiler Phase 1 ASM generated-class size, generation, loading, allocation, and execution baseline evidence.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassAsmBaselineTest.class'])
+
+tasks.named('runDelosGeneratedClassAsmBaselineTest') {
+    systemProperty 'delosdb.compiler.asmBaseline.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/compiler/asm-generated-class-baseline.txt')
+                    .get().asFile.absolutePath
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/asm-generated-class-baseline.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest')
 }
 
 
@@ -1371,13 +1387,6 @@ def delosV1Sha256 = { File input ->
     java.util.HexFormat.of().formatHex(digest.digest())
 }
 
-def delosV1FailureReplayResultsDirectory = project(':delosdb-storage-mvcc')
-        .tasks.named('runMvccFailureInjectionReplayTest', Test)
-        .flatMap { task -> task.reports.junitXml.outputLocation }
-def delosV1LowLevelFailureReplayResultsDirectory = project(':delosdb-storage-mvcc')
-        .tasks.named('runMvccLowLevelFailureReplayTest', Test)
-        .flatMap { task -> task.reports.junitXml.outputLocation }
-
 def delosV1GitOutput = { List<String> command ->
     try {
         def process = new ProcessBuilder(command)
@@ -1473,10 +1482,9 @@ tasks.register('captureDelosV1Baseline') {
             tasks.named('runDelosDrdaConcurrentClientStressTest'),
             tasks.named('runDelosV1ModularImageDrdaTest'),
             rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
-            project(':delosdb-storage-mvcc').tasks.named('runDelosMvccBufferCacheBenchmark'),
-            project(':delosdb-storage-mvcc').tasks.named('runDelosMvccPageCodecBenchmark'),
-            project(':delosdb-storage-mvcc').tasks.named('runMvccFailureInjectionReplayTest'),
-            project(':delosdb-storage-mvcc').tasks.named('runMvccLowLevelFailureReplayTest')
+            tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest'),
+            tasks.named('runDelosSharedRawStoreIoFaultInjectionTest'),
+            tasks.named('runDelosMvccRawStoreDecisionWalCrashTest')
 
     outputs.upToDateWhen { false }
     outputs.dir(delosV1BaselineCaptureDirectory)
@@ -1498,15 +1506,15 @@ tasks.register('captureDelosV1Baseline') {
                         .dir('reports/delosdb/benchmarks/transactions').get().asFile],
                 [id: 'jdbc-row-scaling', source: rootProject.layout.buildDirectory
                         .dir('reports/delosdb/benchmarks/row-scaling').get().asFile],
-                [id: 'mvcc-buffer-cache', source: rootProject.layout.buildDirectory
-                        .dir('reports/delosdb/benchmarks/buffer-cache').get().asFile],
-                [id: 'mvcc-page-codec', source: rootProject.layout.buildDirectory
-                        .dir('reports/delosdb/benchmarks/page-codec').get().asFile],
+                [id: 'page-io-representation', source: layout.buildDirectory
+                        .dir('test-results/runDelosSharedRawStorePageIoRepresentationDecisionTest').get().asFile],
+                [id: 'rawstore-fault-injection', source: layout.buildDirectory
+                        .dir('test-results/runDelosSharedRawStoreIoFaultInjectionTest').get().asFile],
+                [id: 'rawstore-decision-wal-crash', source: layout.buildDirectory
+                        .dir('test-results/runDelosMvccRawStoreDecisionWalCrashTest').get().asFile],
                 [id: 'drda-stress', source: layout.buildDirectory
                         .dir('test-results/runDelosDrdaConcurrentClientStressTest').get().asFile],
-                [id: 'modular-image-drda', source: delosV1ModularImageReportDirectory.get().asFile],
-                [id: 'failure-replay', source: delosV1FailureReplayResultsDirectory.get().asFile],
-                [id: 'low-level-failure-replay', source: delosV1LowLevelFailureReplayResultsDirectory.get().asFile]
+                [id: 'modular-image-drda', source: delosV1ModularImageReportDirectory.get().asFile]
         ]
 
         def missing = []

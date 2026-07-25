@@ -82,7 +82,7 @@ Current owner: Derby compatibility with a DelosDB ASM backend.
 
 Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
 
-Current anchor: `AsmJava` generates Derby execution bytecode through ASM. The right JDK 25 move is a Class-File API verifier first, not an immediate generator rewrite.
+Current anchor: `AsmJava` is the only production source importing ASM and implements the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. Compiler nodes already depend on that contract rather than on ASM. The Class-File API migration must reuse this boundary rather than add another generated-code IR.
 
 Risks:
 
@@ -92,7 +92,8 @@ Risks:
 
 Next proof idea:
 
-* Verify generated class-file version, method shape, and forbidden references with JDK 25 Class-File API while keeping ASM as production generator.
+* Capture deterministic ASM generation, class-size, allocation, class-loading, and execution evidence through the existing generation contract.
+* Add a test-only Class-File API backend only after the contract operation inventory is complete.
 
 ### Optimizer/costing
 
@@ -512,7 +513,9 @@ Current rule:
 
 ```text
 ASM remains the production generator.
-The Class-File API is used as a verifier around compiled runtime class files.
+During Compiler Phase 1 it is transitional and isolated in AsmJava.
+The Class-File API verifies compiled runtime classes and the generated-class baseline.
+Compiler nodes call only JavaFactory/ClassBuilder/MethodBuilder.
 ```
 
 Verification task:
@@ -527,30 +530,24 @@ Static audit task:
 ./gradlew delosJdk25ClassFileBytecodeVerifierStaticAnalysis
 ```
 
-Next possible follow-up:
+Generated-class baseline:
 
 ```text
-delosdb-jdk25-asm-generated-class-fixture-overlay.zip
+./gradlew :delosdb-tests:runDelosGeneratedClassAsmBaselineTest
 ```
 
-That future slice may capture a small ASM-generated Derby execution class and
-verify that generated class through the same JDK API. It must not replace ASM or
-change generated SQL execution behavior.
+The next slice freezes the operations actually used through the inherited generation
+contract. It must not add a second general backend abstraction or a normal runtime
+backend selector.
 
 ## JDK 25 JFR storage lifecycle events update
 
-DelosDB now has an observability-only JFR event surface for storage lifecycle
-algorithms:
+DelosDB retains one observability-only JFR event for the live RawStore-backed MVCC
+analyze/statistics lifecycle:
 
 * `org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr`
 * `org.apache.derby.delosdb.mvcc.AnalyzeStatistics`
-* `org.apache.derby.delosdb.mvcc.Checkpoint`
-* `org.apache.derby.delosdb.mvcc.Purge`
-* `org.apache.derby.delosdb.mvcc.RecoveryReplay`
-* `org.apache.derby.delosdb.mvcc.BackupSidecar`
-* `org.apache.derby.delosdb.mvcc.BufferEviction`
-* `org.apache.derby.delosdb.heap.SanityCheck`
-* `org.apache.derby.delosdb.storage.PathDecision`
+* `DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics(...)`
 
 Classification:
 
@@ -561,9 +558,9 @@ VALIDATION_ALGORITHM
 NO_BEHAVIOR_CHANGE
 ```
 
-The first wiring points are MVCC analyze/statistics lifecycle and MVCC checkpoint
-rewrite lifecycle. JFR events remain inert unless JFR is recording. ASM remains
-the production generator, and Derby optimizer authority remains unchanged.
+The event is inert unless JFR recording enables it. It does not change Derby optimizer
+authority or storage behavior. Stage 8.7.3 removes the unwired Phase 8 event sketches
+instead of keeping dead production APIs.
 
 Verification:
 
@@ -626,24 +623,17 @@ Verification:
 
 ## MVCC ordered-index NULL key proof update
 
-The first semantic proof after the ordered-index key semantics audit is the
-MVCC ordered-index NULL key proof.  It keeps Derby SQL NULL semantics and the
-MVCC durable typed row codec unchanged while proving that typed NULL envelopes
-are durable ordered-index keys.
+The live proof is the RawStore-backed SQL/MVCC integration test. It preserves Derby SQL NULL
+semantics and the typed key boundary while proving that NULL-key rows survive commit, shutdown,
+reopen, ordered-index summary inspection, and consistency checks.
 
 | Layer | Algorithm | Owner | Classification | Reference model | Proof gate |
 |---|---|---|---|---|---|
-| MVCC durable ordered-index page store | Typed NULL key equality/range lookup | DelosDB MVCC | VALIDATION_ALGORITHM | MapDB typed serializers; PostgreSQL NULL-index semantics | `MvccOrderedIndexPageStoreTest#typedNullEnvelopeSortsBeforeTypedValuesAndSupportsLookup` |
-| Derby SQL to MVCC bridge | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedOrderedIndexKeyTest#testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen` |
-| Storage API typed key boundary | `DOK1|N|` NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
+| Derby SQL to RawStore-backed MVCC | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedOrderedIndexKeyTest#testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen` |
+| Storage API typed key boundary | stable typed NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
 
-Rules for this proof:
-
-* Do not make `IS NULL` depend on a new optimizer shortcut in this slice.
-* Do not change Derby NULL comparison semantics.
-* Do not resurrect candidate indexes as SQL authority.
-* Do not weaken `MvccInheritedRowCodec` or allow arbitrary Java object storage.
-
+The retired Phase 8 ordered-index page-store test is not a second authority and is no longer in the
+working tree.
 
 ## Shared lifecycle consistency report
 
@@ -678,7 +668,7 @@ Classification: VALIDATION_ALGORITHM and JDK25_MODERNIZATION_CANDIDATE.
 
 Current code: the independent `benchmarks/jmh` build, plus the stable
 `delosJmhMicrobenchmarks` root adapter and the deterministic
-`:delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest` baseline.
+`:delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest` baseline.
 
 Rules:
 
@@ -690,20 +680,13 @@ Rules:
 * External command execution remains opt-in through `-Pdelosdb.jmh.command`.
 * Benchmark results do not authorize behavior changes without a separate correctness and compatibility proof.
 
-## External validation algorithm lane: jcstress MVCC visibility probes
+## External validation algorithm lane: jcstress concurrency
 
-The `delosJcstressMvccVisibilityProbes` adapter adds external jcstress probe
-sources for MVCC commit visibility, snapshot isolation, retained snapshot
-horizon publication, and buffer pin/dirty publication. The probes live outside
-normal source sets under `benchmarks/jcstress/delosdb-storage-mvcc` and are
-validated by an opt-in Gradle task. They are classified as
-`VALIDATION_ALGORITHM` and `REFERENCE_MODEL_ONLY` until a CI/release job supplies
-a concrete jcstress command.
-
-The built-in deterministic baseline remains
-`:delosdb-storage-mvcc:runDelosMvccConcurrencyValidation`. The jcstress lane is
-not an S0 dependency and must not be used to change production semantics without
-a separate proof and compatibility gate.
+The stable `delosJcstressConcurrencyValidation` adapter uses the live
+`:delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest` proof as its built-in baseline and may
+run a caller-supplied external jcstress command. The retired Phase 8 in-tree probes and their
+page-volume dependencies are absent. This lane remains `VALIDATION_ALGORITHM` and is not an S0
+dependency.
 
 ## DRDA concurrent client stress
 

@@ -222,9 +222,9 @@ dependencies {
     jmh files(runtimeJarFiles)
     jmh 'org.ow2.asm:asm:9.9'
     concurrentCommitImplementation files(runtimeJarFiles)
-    // derby.jar keeps Derby's ASM bytecode generator. DML compilation in the
-    // public-JDBC benchmark therefore needs the same runtime support as the
-    // root DelosDB runtime classpath.
+    // derby.jar currently keeps Derby's transitional ASM bytecode generator.
+    // DML compilation in the public-JDBC benchmark therefore needs the same
+    // runtime support as the root DelosDB runtime classpath.
     concurrentCommitRuntimeOnly 'org.ow2.asm:asm:9.9'
 }
 
