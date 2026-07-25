@@ -42,6 +42,7 @@ def delosCompilerRelative = { File file ->
 tasks.register('delosGeneratedClassModernizationInventory') {
     group = 'verification'
     description = 'Reports the current generated-class contract, ASM ownership, dependency surface, and Class-File API evidence.'
+    dependsOn tasks.named('delosSharedRawStoreProductionCloseoutStaticAnalysis')
 
     File reportFile = new File(
             delosCompilerBuildRoot,
@@ -94,8 +95,11 @@ tasks.register('delosGeneratedClassModernizationInventory') {
             file.readLines('UTF-8').eachWithIndex { String line, int index ->
                 if (line.contains('org.ow2.asm:asm')
                         || line.contains('requires org.objectweb.asm')) {
-                    asmDependencyRows << delosCompilerRelative(file)
-                            + ':' + (index + 1) + ':' + line.trim()
+                    asmDependencyRows << [
+                            delosCompilerRelative(file),
+                            Integer.toString(index + 1),
+                            line.trim()
+                    ].join(':')
                 }
             }
         }
@@ -226,13 +230,15 @@ tasks.register('delosGeneratedClassModernizationStaticAnalysis') {
             String text = file.getText('UTF-8')
             ['GeneratedClassBackend', 'GeneratedClassPlan', 'GeneratedClassBytes'].each { forbidden ->
                 if (text.contains(forbidden)) {
-                    failures << 'Compiler Phase 1 must not introduce duplicate generation abstraction '
-                            + forbidden + ' in ' + delosCompilerRelative(file)
+                    failures << (
+                            'Compiler Phase 1 must not introduce duplicate generation abstraction '
+                                    + forbidden + ' in ' + delosCompilerRelative(file))
                 }
             }
             if (text.contains('delosdb.compiler.backend')) {
-                failures << 'Compiler Phase 1 must not add a normal runtime backend selector in '
-                        + delosCompilerRelative(file)
+                failures << (
+                        'Compiler Phase 1 must not add a normal runtime backend selector in '
+                                + delosCompilerRelative(file))
             }
         }
 
