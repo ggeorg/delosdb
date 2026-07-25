@@ -53,6 +53,7 @@ public final class MvccSqlBackupRestoreTest extends MvccSqlTestSupport {
                     "insert into mvcc_backup_restore_t values "
                             + "(2, 'beta', '" + repeated('b', 2048) + "')");
             connection.commit();
+            connection.setAutoCommit(true);
 
             assertRows(connection,
                     "select id, name from mvcc_backup_restore_t order by id",
@@ -108,6 +109,7 @@ public final class MvccSqlBackupRestoreTest extends MvccSqlTestSupport {
             executeUpdate(connection, "create table heap_backup_restore_t (id int primary key, name varchar(64))");
             executeUpdate(connection, "insert into heap_backup_restore_t values (1, 'heap')");
             connection.commit();
+            connection.setAutoCommit(true);
 
             backupDatabase(connection, backupRoot);
         }

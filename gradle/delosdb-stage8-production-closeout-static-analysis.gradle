@@ -357,6 +357,35 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             if (file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java').exists()) {
                 failures << 'Retired sidecar-named backup/restore test still exists'
             }
+
+            // Manual-commit tests must switch readback/backup phases to auto-commit.
+            // Derby rejects Connection.close() while a read or CALL transaction is active.
+            def requireMinimumOccurrences = { String label, String source, String token, int minimum ->
+                int occurrences = source.split(java.util.regex.Pattern.quote(token), -1).length - 1
+                if (occurrences < minimum) {
+                    failures << label + ' must contain at least ' + minimum + ' occurrence(s) of: ' + token
+                }
+            }
+            requireMinimumOccurrences(
+                    'Transactional DDL readback transaction hygiene',
+                    text.transactionalDdlTest,
+                    'connection.setAutoCommit(true);',
+                    3)
+            requireMinimumOccurrences(
+                    'MVCC lifecycle readback transaction hygiene',
+                    text.lifecycleTest,
+                    '.setAutoCommit(true);',
+                    2)
+            requireMinimumOccurrences(
+                    'MVCC backup transaction hygiene',
+                    text.backupRestoreTest,
+                    'connection.setAutoCommit(true);',
+                    2)
+            requireMinimumOccurrences(
+                    'Mixed backup transaction hygiene',
+                    text.mixedBackupRestoreTest,
+                    '.setAutoCommit(true);',
+                    2)
             ['runDelosMvccLifecycleTest',
              'MvccSqlLifecycleTest.class',
              'runDelosMvccBackupRestoreTest',

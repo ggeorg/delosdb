@@ -54,6 +54,7 @@ public final class MvccSqlLifecycleTest extends MvccSqlTestSupport {
 
             executeUpdate(reopened, "insert into mvcc_drop_recreate_t values (2, 'fresh')");
             reopened.commit();
+            reopened.setAutoCommit(true);
 
             assertRows(reopened,
                     "select id, name from mvcc_drop_recreate_t order by id",
@@ -88,6 +89,7 @@ public final class MvccSqlLifecycleTest extends MvccSqlTestSupport {
 
             executeUpdate(connection, "drop table mvcc_drop_cleanup_t");
             connection.commit();
+            connection.setAutoCommit(true);
             assertConglomerateMissing(connection, containerId);
         }
 

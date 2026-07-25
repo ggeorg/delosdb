@@ -115,3 +115,13 @@ generation is dropped in the same RawStore transaction. Rollback to a savepoint
 restores the RawStore containers and retains the transaction-local generation,
 so DML performed before the savepoint still commits correctly after the DROP is
 rolled back.
+
+## Transactional test readback boundaries
+
+Focused JDBC tests that disable auto-commit must end the explicit mutation
+transaction before performing catalog/readback assertions or invoking the
+backup procedure. The readback/backup phase switches back to auto-commit so
+try-with-resources never closes an embedded Derby connection with an active
+read or CALL transaction. This is test transaction hygiene only; it does not
+change production commit, rollback, DDL, or backup semantics.
+

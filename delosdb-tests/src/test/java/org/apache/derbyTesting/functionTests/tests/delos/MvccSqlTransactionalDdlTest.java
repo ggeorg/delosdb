@@ -37,6 +37,7 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
                     "create table create_rollback_t (id int primary key, value int) using delos_mvcc");
             containerId = mvccContainerId(connection, "CREATE_ROLLBACK_T");
             connection.rollback();
+            connection.setAutoCommit(true);
             assertTableMissing(connection, "create_rollback_t");
             assertConglomerateMissing(connection, containerId);
         }
@@ -90,6 +91,7 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             connection.setAutoCommit(false);
             executeUpdate(connection, "drop table drop_commit_t");
             connection.commit();
+            connection.setAutoCommit(true);
             assertTableMissing(connection, "drop_commit_t");
             assertConglomerateMissing(connection, containerId);
         }
@@ -184,6 +186,7 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             executeUpdate(connection, "insert into lifecycle_dml_t values (2, 20)");
             executeUpdate(connection, "drop table lifecycle_dml_t");
             connection.commit();
+            connection.setAutoCommit(true);
             assertTableMissing(connection, "lifecycle_dml_t");
             assertConglomerateMissing(connection, containerId);
         }

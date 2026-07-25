@@ -70,6 +70,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
             executeUpdate(connection,
                     "update mvcc_mixed_backup_t set payload = '" + repeated('u', 1536) + "' where id = 20");
             connection.commit();
+            connection.setAutoCommit(true);
 
             assertRows(connection,
                     "select id, name from heap_mixed_backup_t order by id",
@@ -87,7 +88,6 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
                     "20");
             sourceMvccContainerId = mvccContainerId(connection, "MVCC_MIXED_BACKUP_T");
             assertConglomeratePresent(connection, sourceMvccContainerId);
-            connection.commit();
 
             backupDatabase(connection, backupRoot);
         }
@@ -132,6 +132,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
             executeUpdate(restored,
                     "update mvcc_mixed_backup_t set name = 'mvcc-beta-restored' where id = 20");
             restored.commit();
+            restored.setAutoCommit(true);
 
             assertRows(restored,
                     "select id, name from heap_mixed_backup_t order by id",
@@ -143,7 +144,6 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
                     "10|mvcc-alpha",
                     "20|mvcc-beta-restored",
                     "30|mvcc-gamma");
-            restored.commit();
         }
 
         shutdownDatabase(restoredDatabase);
