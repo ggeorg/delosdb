@@ -253,12 +253,16 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                     failures << 'Storage API inventory design is missing: ' + token
                 }
             }
-            ['Stage 8.7.1 verified',
-             'KEEP_POSITIONAL_BYTE_ARRAY'].each { token ->
-                if (!text.lifecycleDesign.contains(token)
-                        && !text.representationDesign.contains(token)) {
-                    failures << 'Earlier Stage 8.7 decision evidence is missing: ' + token
-                }
+            def lifecycleStatus = text.lifecycleDesign.readLines().find {
+                it.startsWith('Status:')
+            } ?: ''
+            if (!lifecycleStatus.contains('Stage 8.7.1')
+                    || !lifecycleStatus.toLowerCase(java.util.Locale.ROOT)
+                            .contains('verified')) {
+                failures << 'Stage 8.7.1 lifecycle/API closeout status must remain verified'
+            }
+            if (!text.representationDesign.contains('KEEP_POSITIONAL_BYTE_ARRAY')) {
+                failures << 'Page-I/O representation decision must remain KEEP_POSITIONAL_BYTE_ARRAY'
             }
             ['REMOVE_RETAINED_PHASE8_ORACLE',
              'KEEP_RAWSTORE_IO_SNAPSHOT_SCHEMA_3',
