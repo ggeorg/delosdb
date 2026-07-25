@@ -100,3 +100,18 @@ This closes both forms of residue:
 retired files or empty source roots in the working tree
 active code that still names a retired implementation
 ```
+
+## Transactional DDL and RawStore state correction
+
+The final RawStore-backed provider does not publish table state below the retired
+`delos_mvcc/inherited-store` sidecar. Transactional DDL proofs therefore inspect
+catalog conglomerate identity, SQL visibility, reopen behaviour, and the absence
+of retired backup artefacts.
+
+When a transaction performs DML and then drops that MVCC table, transaction-local
+versions, allocator reservations, and private ordered-index generations for the
+dropped table are excluded from commit publication. A private ordered-index
+generation is dropped in the same RawStore transaction. Rollback to a savepoint
+restores the RawStore containers and retains the transaction-local generation,
+so DML performed before the savepoint still commits correctly after the DROP is
+rolled back.

@@ -20,8 +20,6 @@
  */
 package org.apache.derbyTesting.functionTests.tests.delos;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,7 +28,7 @@ import java.sql.Statement;
 
 /** Transactional CREATE/DROP ownership and DDL-plus-MVCC decision proofs. */
 public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
-    public void testCreateMvccRollbackRemovesProviderStateAcrossReopen() throws Exception {
+    public void testCreateMvccRollbackRemovesRawStoreConglomerateAcrossReopen() throws Exception {
         String databaseName = databaseName("mvcc-transactional-create-rollback-db");
         long containerId;
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -40,14 +38,14 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             containerId = mvccContainerId(connection, "CREATE_ROLLBACK_T");
             connection.rollback();
             assertTableMissing(connection, "create_rollback_t");
+            assertConglomerateMissing(connection, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
 
         shutdownDatabase(databaseName);
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertTableMissing(reopened, "create_rollback_t");
+            assertConglomerateMissing(reopened, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
     }
 
     public void testDropMvccRollbackPreservesRowsAcrossReopen() throws Exception {
@@ -65,20 +63,22 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             assertRows(connection,
                     "select id, value from drop_rollback_t order by id",
                     "1|10", "2|20");
+            assertEquals(containerId, mvccContainerId(connection, "DROP_ROLLBACK_T"));
+            assertConglomeratePresent(connection, containerId);
             connection.rollback();
         }
-        assertProviderStateExists(databaseName, containerId);
 
         shutdownDatabase(databaseName);
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertRows(reopened,
                     "select id, value from drop_rollback_t order by id",
                     "1|10", "2|20");
+            assertEquals(containerId, mvccContainerId(reopened, "DROP_ROLLBACK_T"));
+            assertConglomeratePresent(reopened, containerId);
         }
-        assertProviderStateExists(databaseName, containerId);
     }
 
-    public void testDropMvccCommitRetiresProviderStateAcrossReopen() throws Exception {
+    public void testDropMvccCommitRetiresRawStoreConglomerateAcrossReopen() throws Exception {
         String databaseName = databaseName("mvcc-transactional-drop-commit-db");
         long containerId;
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -91,14 +91,14 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             executeUpdate(connection, "drop table drop_commit_t");
             connection.commit();
             assertTableMissing(connection, "drop_commit_t");
+            assertConglomerateMissing(connection, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
 
         shutdownDatabase(databaseName);
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertTableMissing(reopened, "drop_commit_t");
+            assertConglomerateMissing(reopened, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
     }
 
     public void testMvccIndexCreateAndDropRollbackAcrossReopen() throws Exception {
@@ -185,14 +185,46 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             executeUpdate(connection, "drop table lifecycle_dml_t");
             connection.commit();
             assertTableMissing(connection, "lifecycle_dml_t");
+            assertConglomerateMissing(connection, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
 
         shutdownDatabase(databaseName);
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertTableMissing(reopened, "lifecycle_dml_t");
+            assertConglomerateMissing(reopened, containerId);
         }
-        assertNoProviderState(databaseName, containerId);
+    }
+
+    public void testDropWithPendingDmlDoesNotBlockOtherTableCommit() throws Exception {
+        String databaseName = databaseName("mvcc-transactional-ddl-drop-with-live-table-db");
+        try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection,
+                    "create table dropped_with_dml_t "
+                            + "(id int primary key, value int) using delos_mvcc");
+            executeUpdate(connection,
+                    "create table retained_with_dml_t "
+                            + "(id int primary key, value int) using delos_mvcc");
+
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "insert into dropped_with_dml_t values (1, 10)");
+            executeUpdate(connection, "insert into retained_with_dml_t values (2, 20)");
+            executeUpdate(connection, "drop table dropped_with_dml_t");
+            connection.commit();
+
+            assertTableMissing(connection, "dropped_with_dml_t");
+            assertRows(connection,
+                    "select id, value from retained_with_dml_t order by id",
+                    "2|20");
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertTableMissing(reopened, "dropped_with_dml_t");
+            assertRows(reopened,
+                    "select id, value from retained_with_dml_t order by id",
+                    "2|20");
+        }
     }
 
     public void testCreateAndDropLifecycleRollBackToSavepoint() throws Exception {
@@ -211,15 +243,16 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             connection.rollback(createSavepoint);
             connection.commit();
             assertTableMissing(connection, "savepoint_created_t");
-            assertNoProviderState(databaseName, createdContainerId);
+            assertConglomerateMissing(connection, createdContainerId);
 
+            executeUpdate(connection, "insert into savepoint_existing_t values (2, 20)");
             Savepoint dropSavepoint = connection.setSavepoint("before_drop");
             executeUpdate(connection, "drop table savepoint_existing_t");
             connection.rollback(dropSavepoint);
             connection.commit();
             assertRows(connection,
                     "select id, value from savepoint_existing_t order by id",
-                    "1|10");
+                    "1|10", "2|20");
             connection.rollback();
         }
 
@@ -228,9 +261,9 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
             assertTableMissing(reopened, "savepoint_created_t");
             assertRows(reopened,
                     "select id, value from savepoint_existing_t order by id",
-                    "1|10");
+                    "1|10", "2|20");
+            assertConglomerateMissing(reopened, createdContainerId);
         }
-        assertNoProviderState(databaseName, createdContainerId);
     }
 
     private static void assertIndexCount(
@@ -267,38 +300,4 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
         return false;
     }
 
-    private static void assertProviderStateExists(String databaseName, long containerId)
-            throws Exception {
-        Path directory = providerDirectory(databaseName);
-        String prefix = "conglomerate-0-" + containerId + ".";
-        try (var files = Files.list(directory)) {
-            assertTrue("expected provider state for " + prefix,
-                    files.anyMatch(path -> path.getFileName().toString().startsWith(prefix)));
-        }
-    }
-
-    private static void assertNoProviderState(String databaseName, long containerId)
-            throws Exception {
-        Path directory = providerDirectory(databaseName);
-        String prefix = "conglomerate-0-" + containerId + ".";
-        if (Files.isDirectory(directory)) {
-            try (var files = Files.list(directory)) {
-                assertFalse("unexpected provider state for " + prefix,
-                        files.anyMatch(path -> path.getFileName().toString().startsWith(prefix)));
-            }
-        }
-        Path lifecycleDirectory = databasePath(databaseName)
-                .resolve("delos_mvcc/ddl-lifecycle");
-        if (Files.isDirectory(lifecycleDirectory)) {
-            String markerPrefix = "create-0-" + containerId + ".";
-            try (var files = Files.list(lifecycleDirectory)) {
-                assertFalse("unexpected lifecycle marker for " + markerPrefix,
-                        files.anyMatch(path -> path.getFileName().toString().startsWith(markerPrefix)));
-            }
-        }
-    }
-
-    private static Path providerDirectory(String databaseName) {
-        return databasePath(databaseName).resolve("delos_mvcc/inherited-store");
-    }
 }

@@ -266,6 +266,33 @@ abstract class MvccSqlTestSupport extends TestCase {
         return baseContainerId(connection, tableName, "MVCC");
     }
 
+    protected static void assertConglomeratePresent(
+            Connection connection,
+            long containerId) throws SQLException {
+        assertConglomerateCount(connection, containerId, 1);
+    }
+
+    protected static void assertConglomerateMissing(
+            Connection connection,
+            long containerId) throws SQLException {
+        assertConglomerateCount(connection, containerId, 0);
+    }
+
+    private static void assertConglomerateCount(
+            Connection connection,
+            long containerId,
+            int expected) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select count(*) from sys.sysconglomerates where conglomeratenumber = ?")) {
+            statement.setLong(1, containerId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(expected, result.getInt(1));
+                assertFalse(result.next());
+            }
+        }
+    }
+
     protected static void assertMvccStorageProvider(Connection connection, String tableName)
             throws SQLException {
         String sql = "select t.storageprovider "

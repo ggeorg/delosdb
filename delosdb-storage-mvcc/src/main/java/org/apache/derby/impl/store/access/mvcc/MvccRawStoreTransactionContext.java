@@ -109,6 +109,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     void beforeDrop(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeSchemaChange(table);
         droppedTables.put(table.metadataContainer(), table);
+
+        OrderedIndexGeneration generation = orderedIndexGenerations.get(
+                table.metadataContainer().getContainerId());
+        if (generation != null) {
+            rawTransaction.dropContainer(generation.privateContainer());
+        }
     }
 
     void beforeVacuum(MvccRawStoreTable.Descriptor table) throws StandardException {
@@ -256,14 +262,18 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
-        boolean hasPendingVersions = !pending.isEmpty();
-        boolean hasPrivateIndexes = !orderedIndexGenerations.isEmpty();
+        List<MvccRawStoreTable.PendingVersion> committableVersions =
+                committablePendingVersions();
+        List<OrderedIndexGeneration> committableIndexes =
+                committableOrderedIndexes();
+        boolean hasPendingVersions = !committableVersions.isEmpty();
+        boolean hasPrivateIndexes = !committableIndexes.isEmpty();
         if (!hasPendingVersions && !hasPrivateIndexes && !vacuumMutation) {
             return;
         }
 
         if (!hasPendingVersions) {
-            publishVacuumOrderedIndexes();
+            publishVacuumOrderedIndexes(committableIndexes);
             if (vacuumMutation) {
                 MvccRawStoreRuntime.haltAtFailurePoint(
                         MvccRawStoreRuntime.AFTER_VACUUM_BEFORE_RAW_COMMIT,
@@ -278,9 +288,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             stageAllocatorHighWaters();
             MvccRawStoreTable.stampPendingVersions(
                     rawTransaction,
-                    List.copyOf(pending),
+                    committableVersions,
                     reservedCommitSequence);
-            publishOrderedIndexes();
+            publishOrderedIndexes(committableIndexes);
             runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
@@ -300,9 +310,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterCommit(CommitMode mode, DatabaseInstant instant) {
-        List<MvccRawStoreTable.PendingVersion> committedVersions = List.copyOf(pending);
+        List<MvccRawStoreTable.PendingVersion> committedVersions =
+                committablePendingVersions();
         List<MvccRawStoreTable.Descriptor> committedCreates =
-                List.copyOf(createdTables.values());
+                committableCreatedTables();
         List<MvccRawStoreTable.Descriptor> committedDrops =
                 List.copyOf(droppedTables.values());
         if (vacuumMutation) {
@@ -315,7 +326,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
         }
-        for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
+        for (OrderedIndexGeneration generation : committableOrderedIndexes()) {
             generation.table().observeOrderedIndexContainer(generation.privateContainer());
         }
         if (publicationLockHeld) {
@@ -451,12 +462,14 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
 
-    private void publishVacuumOrderedIndexes() throws StandardException {
-        publishOrderedIndexes();
+    private void publishVacuumOrderedIndexes(List<OrderedIndexGeneration> generations)
+            throws StandardException {
+        publishOrderedIndexes(generations);
     }
 
-    private void publishOrderedIndexes() throws StandardException {
-        List<OrderedIndexGeneration> ordered = new ArrayList<>(orderedIndexGenerations.values());
+    private void publishOrderedIndexes(List<OrderedIndexGeneration> generations)
+            throws StandardException {
+        List<OrderedIndexGeneration> ordered = new ArrayList<>(generations);
         ordered.sort(java.util.Comparator.comparingLong(
                 generation -> generation.table().metadataContainer().getContainerId()));
         for (OrderedIndexGeneration generation : ordered) {
@@ -481,12 +494,51 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         ordered.sort(java.util.Comparator.comparingLong(
                 reservation -> reservation.table().metadataContainer().getContainerId()));
         for (AllocatorReservation reservation : ordered) {
+            if (isDropped(reservation.table())) {
+                continue;
+            }
             MvccRawStoreTable.stageAllocatorHighWater(
                     rawTransaction,
                     reservation.table(),
                     reservation.nextRowId(),
                     reservation.nextVersionId());
         }
+    }
+
+
+    private List<MvccRawStoreTable.Descriptor> committableCreatedTables() {
+        List<MvccRawStoreTable.Descriptor> committable =
+                new ArrayList<>(createdTables.size());
+        for (MvccRawStoreTable.Descriptor table : createdTables.values()) {
+            if (!isDropped(table)) {
+                committable.add(table);
+            }
+        }
+        return List.copyOf(committable);
+    }
+
+    private List<MvccRawStoreTable.PendingVersion> committablePendingVersions() {
+        List<MvccRawStoreTable.PendingVersion> committable = new ArrayList<>(pending.size());
+        for (MvccRawStoreTable.PendingVersion version : pending) {
+            if (!isDropped(version.table())) {
+                committable.add(version);
+            }
+        }
+        return List.copyOf(committable);
+    }
+
+    private List<OrderedIndexGeneration> committableOrderedIndexes() {
+        List<OrderedIndexGeneration> committable = new ArrayList<>(orderedIndexGenerations.size());
+        for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
+            if (!isDropped(generation.table())) {
+                committable.add(generation);
+            }
+        }
+        return List.copyOf(committable);
+    }
+
+    private boolean isDropped(MvccRawStoreTable.Descriptor table) {
+        return droppedTables.containsKey(table.metadataContainer());
     }
 
     private void acquireShared(MvccRawStoreLogicalLock lock) throws StandardException {

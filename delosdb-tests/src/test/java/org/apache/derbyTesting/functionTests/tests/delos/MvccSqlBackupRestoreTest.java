@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.MvccSqlBackupRestoreSidecarTest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.MvccSqlBackupRestoreTest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -28,19 +28,19 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.List;
 
-/** SQL backup/restore regression tests for delos_mvcc provider sidecar state. */
-public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
-    public void testBackupAndCreateFromRestoreIncludesMvccSidecars() throws Exception {
-        String sourceDatabase = databaseName("mvcc-backup-sidecar-source-db");
-        String restoredDatabase = databaseName("mvcc-backup-sidecar-restored-db");
-        Path backupRoot = Path.of(databaseName("mvcc-backup-sidecar-copy-root"));
+/** SQL backup/restore regression tests for RawStore-backed delos_mvcc tables. */
+public final class MvccSqlBackupRestoreTest extends MvccSqlTestSupport {
+    public void testBackupAndCreateFromRestorePreservesMvccRawStoreState() throws Exception {
+        String sourceDatabase = databaseName("mvcc-backup-rawstore-source-db");
+        String restoredDatabase = databaseName("mvcc-backup-rawstore-restored-db");
+        Path backupRoot = Path.of(databaseName("mvcc-backup-rawstore-copy-root"));
 
         deleteRecursively(Path.of(sourceDatabase));
         deleteRecursively(Path.of(restoredDatabase));
         deleteRecursively(backupRoot);
 
+        long sourceContainerId;
         try (Connection connection = openDatabase(sourceDatabase, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -58,30 +58,16 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
                     "select id, name from mvcc_backup_restore_t order by id",
                     "1|alpha",
                     "2|beta");
-            assertTrue("expected source delos_mvcc sidecar files before backup",
-                    inheritedMvccStateFileCount(sourceDatabase) > 0L);
+            sourceContainerId = mvccContainerId(connection, "MVCC_BACKUP_RESTORE_T");
+            assertConglomeratePresent(connection, sourceContainerId);
 
             backupDatabase(connection, backupRoot);
         }
 
         Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
-        Path backupSidecars = backupDatabase.resolve("delos_mvcc").resolve("inherited-store");
-        assertTrue("backup must include delos_mvcc inherited-store sidecar directory: " + backupSidecars,
-                Files.isDirectory(backupSidecars));
-        long backupSidecarFileCount = regularFileCount(backupSidecars);
-        assertTrue("backup must include delos_mvcc inherited-store sidecar files",
-                backupSidecarFileCount > 0L);
-        Path backupManifest = backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST");
-        assertTrue("backup must include delos_mvcc sidecar manifest proof: " + backupManifest,
-                Files.isRegularFile(backupManifest));
-        List<String> manifestLines = Files.readAllLines(backupManifest);
-        long manifestFileCount = regularFileCount(backupDatabase.resolve("delos_mvcc"));
-        assertTrue("backup sidecar manifest must record file count",
-                manifestLines.stream().anyMatch(line -> line.equals("fileCount=" + manifestFileCount)));
-        assertTrue("backup sidecar manifest must record total bytes",
-                manifestLines.stream().anyMatch(line -> line.startsWith("totalBytes=")));
-        assertTrue("backup sidecar manifest must record stable content digest",
-                manifestLines.stream().anyMatch(line -> line.matches("digest=[0-9a-f]{64}")));
+        assertTrue("backup must include RawStore segment files",
+                regularFileCount(backupDatabase.resolve("seg0")) > 0L);
+        assertNoRetiredMvccSidecars(backupDatabase);
 
         shutdownDatabase(sourceDatabase);
 
@@ -91,8 +77,9 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
                     "select id, name from mvcc_backup_restore_t order by id",
                     "1|alpha",
                     "2|beta");
-            assertTrue("restored database must include delos_mvcc inherited-store files",
-                    inheritedMvccStateFileCount(restoredDatabase) > 0L);
+            assertEquals(sourceContainerId,
+                    mvccContainerId(restored, "MVCC_BACKUP_RESTORE_T"));
+            assertConglomeratePresent(restored, sourceContainerId);
         }
 
         shutdownDatabase(restoredDatabase);
@@ -107,10 +94,10 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
         shutdownDatabase(restoredDatabase);
     }
 
-    public void testHeapOnlyBackupDoesNotCreateMvccSidecars() throws Exception {
-        String sourceDatabase = databaseName("heap-backup-no-sidecar-source-db");
-        String restoredDatabase = databaseName("heap-backup-no-sidecar-restored-db");
-        Path backupRoot = Path.of(databaseName("heap-backup-no-sidecar-copy-root"));
+    public void testHeapOnlyBackupDoesNotCreateRetiredMvccArtifacts() throws Exception {
+        String sourceDatabase = databaseName("heap-backup-rawstore-source-db");
+        String restoredDatabase = databaseName("heap-backup-rawstore-restored-db");
+        Path backupRoot = Path.of(databaseName("heap-backup-rawstore-copy-root"));
 
         deleteRecursively(Path.of(sourceDatabase));
         deleteRecursively(Path.of(restoredDatabase));
@@ -122,18 +109,11 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
             executeUpdate(connection, "insert into heap_backup_restore_t values (1, 'heap')");
             connection.commit();
 
-            assertEquals("heap-only database should not have delos_mvcc sidecar files before backup",
-                    0L,
-                    inheritedMvccStateFileCount(sourceDatabase));
-
             backupDatabase(connection, backupRoot);
         }
 
         Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
-        assertFalse("heap-only backup should not synthesize a delos_mvcc directory",
-                Files.exists(backupDatabase.resolve("delos_mvcc")));
-        assertFalse("heap-only backup should not synthesize a delos_mvcc sidecar manifest",
-                Files.exists(backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST")));
+        assertNoRetiredMvccSidecars(backupDatabase);
 
         shutdownDatabase(sourceDatabase);
 
@@ -142,12 +122,16 @@ public final class MvccSqlBackupRestoreSidecarTest extends MvccSqlTestSupport {
             assertRows(restored,
                     "select id, name from heap_backup_restore_t order by id",
                     "1|heap");
-            assertEquals("heap-only restore should not synthesize delos_mvcc sidecar files",
-                    0L,
-                    inheritedMvccStateFileCount(restoredDatabase));
         }
 
         shutdownDatabase(restoredDatabase);
+    }
+
+    private static void assertNoRetiredMvccSidecars(Path databaseDirectory) {
+        assertFalse("backup must not contain the retired MVCC sidecar directory",
+                Files.exists(databaseDirectory.resolve("delos_mvcc").resolve("inherited-store")));
+        assertFalse("backup must not contain the retired MVCC sidecar manifest",
+                Files.exists(databaseDirectory.resolve("delos_mvcc.BACKUP-MANIFEST")));
     }
 
     private static void backupDatabase(Connection connection, Path backupRoot) throws SQLException {

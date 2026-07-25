@@ -70,32 +70,32 @@ public final class MvccSqlLifecycleTest extends MvccSqlTestSupport {
     }
 
 
-    public void testDroppedMvccTableRemovesInheritedStateFiles() throws Exception {
+    public void testDroppedMvccTableRemovesRawStoreConglomerateAcrossReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-drop-cleanup-db");
+        long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
-            executeUpdate(connection, "create table mvcc_drop_cleanup_t (id int, name varchar(32)) using delos_mvcc");
+            executeUpdate(connection,
+                    "create table mvcc_drop_cleanup_t "
+                            + "(id int, name varchar(32)) using delos_mvcc");
             executeUpdate(connection, "insert into mvcc_drop_cleanup_t values (1, 'alpha')");
             executeUpdate(connection, "insert into mvcc_drop_cleanup_t values (2, 'beta')");
             connection.commit();
 
-            assertTrue("expected delos_mvcc inherited-store files before DROP TABLE",
-                    inheritedMvccStateFileCount(databaseName) > 0L);
+            containerId = mvccContainerId(connection, "MVCC_DROP_CLEANUP_T");
+            assertConglomeratePresent(connection, containerId);
 
             executeUpdate(connection, "drop table mvcc_drop_cleanup_t");
             connection.commit();
+            assertConglomerateMissing(connection, containerId);
         }
-
-        assertEquals("DROP TABLE should remove delos_mvcc inherited-store files",
-                0L,
-                inheritedMvccStateFileCount(databaseName));
 
         shutdownDatabase(databaseName);
 
-        assertEquals("dropped delos_mvcc inherited-store files should not reappear after reopen",
-                0L,
-                inheritedMvccStateFileCount(databaseName));
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertConglomerateMissing(reopened, containerId);
+        }
     }
 
 

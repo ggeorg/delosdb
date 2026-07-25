@@ -1009,6 +1009,16 @@ registerDelosFocusedTest(
 
 
 registerDelosFocusedTest(
+        'runDelosMvccLifecycleTest',
+        'Runs MVCC drop, recreate, and RawStore conglomerate-retirement proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class'])
+
+registerDelosFocusedTest(
+        'runDelosMvccBackupRestoreTest',
+        'Runs the RawStore-backed MVCC and heap-only backup/restore proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMixedEngineBackupRestoreMatrixTest',
         'Runs the mixed heap plus delos_mvcc backup/restore matrix proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class'])

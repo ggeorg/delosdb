@@ -28,7 +28,6 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.util.List;
 
 /** Mixed Derby heap plus delos_mvcc backup/restore matrix proof. */
 public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport {
@@ -41,6 +40,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
         deleteRecursively(Path.of(restoredDatabase));
         deleteRecursively(backupRoot);
 
+        long sourceMvccContainerId;
         try (Connection connection = openDatabase(sourceDatabase, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -85,8 +85,8 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
             assertRows(connection,
                     "select id from mvcc_mixed_backup_t where name = 'mvcc-beta'",
                     "20");
-            assertTrue("mixed source database should have delos_mvcc sidecar files before backup",
-                    inheritedMvccStateFileCount(sourceDatabase) > 0L);
+            sourceMvccContainerId = mvccContainerId(connection, "MVCC_MIXED_BACKUP_T");
+            assertConglomeratePresent(connection, sourceMvccContainerId);
             connection.commit();
 
             backupDatabase(connection, backupRoot);
@@ -95,7 +95,7 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
         Path backupDatabase = backupRoot.resolve(Path.of(sourceDatabase).getFileName());
         assertTrue("mixed backup should include inherited Derby heap/raw-store files",
                 regularFileCount(backupDatabase.resolve("seg0")) > 0L);
-        assertMixedBackupSidecarManifest(backupDatabase);
+        assertNoRetiredMvccSidecars(backupDatabase);
 
         shutdownDatabase(sourceDatabase);
 
@@ -115,8 +115,9 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
             assertRows(restored,
                     "select id from mvcc_mixed_backup_t where name = 'mvcc-beta'",
                     "20");
-            assertTrue("mixed restored database should include delos_mvcc sidecar files",
-                    inheritedMvccStateFileCount(restoredDatabase) > 0L);
+            assertEquals(sourceMvccContainerId,
+                    mvccContainerId(restored, "MVCC_MIXED_BACKUP_T"));
+            assertConglomeratePresent(restored, sourceMvccContainerId);
 
             restored.setAutoCommit(false);
             executeUpdate(restored,
@@ -169,24 +170,11 @@ public final class MixedEngineBackupRestoreMatrixTest extends MvccSqlTestSupport
         shutdownDatabase(restoredDatabase);
     }
 
-    private static void assertMixedBackupSidecarManifest(Path backupDatabase) throws IOException {
-        Path backupSidecars = backupDatabase.resolve("delos_mvcc").resolve("inherited-store");
-        assertTrue("mixed backup must include delos_mvcc inherited-store sidecar directory: " + backupSidecars,
-                Files.isDirectory(backupSidecars));
-        assertTrue("mixed backup must include delos_mvcc inherited-store sidecar files",
-                regularFileCount(backupSidecars) > 0L);
-
-        Path backupManifest = backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST");
-        assertTrue("mixed backup must include delos_mvcc sidecar manifest proof: " + backupManifest,
-                Files.isRegularFile(backupManifest));
-        List<String> manifestLines = Files.readAllLines(backupManifest);
-        long manifestFileCount = regularFileCount(backupDatabase.resolve("delos_mvcc"));
-        assertTrue("mixed backup sidecar manifest must record file count",
-                manifestLines.stream().anyMatch(line -> line.equals("fileCount=" + manifestFileCount)));
-        assertTrue("mixed backup sidecar manifest must record total bytes",
-                manifestLines.stream().anyMatch(line -> line.startsWith("totalBytes=")));
-        assertTrue("mixed backup sidecar manifest must record stable content digest",
-                manifestLines.stream().anyMatch(line -> line.matches("digest=[0-9a-f]{64}")));
+    private static void assertNoRetiredMvccSidecars(Path backupDatabase) {
+        assertFalse("RawStore-backed MVCC backup must not contain the retired sidecar directory",
+                Files.exists(backupDatabase.resolve("delos_mvcc").resolve("inherited-store")));
+        assertFalse("RawStore-backed MVCC backup must not contain the retired sidecar manifest",
+                Files.exists(backupDatabase.resolve("delos_mvcc.BACKUP-MANIFEST")));
     }
 
     private static void backupDatabase(Connection connection, Path backupRoot) throws SQLException {

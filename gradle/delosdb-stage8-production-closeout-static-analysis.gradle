@@ -21,6 +21,11 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             diagnosticsTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.java'),
             decisionTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.java'),
             decisionWalCrashTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.java'),
+            transactionContext: file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java'),
+            transactionalDdlTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.java'),
+            lifecycleTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.java'),
+            backupRestoreTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreTest.java'),
+            mixedBackupRestoreTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.java'),
             testBuild: file('delosdb-tests/build.gradle'),
             mvccBuild: file('delosdb-storage-mvcc/build.gradle'),
             storageApiDesign: file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
@@ -299,6 +304,65 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
              'process-halt recovery proofs'].each { stale ->
                 if (text.testBuild.contains(stale)) {
                     failures << 'Stale experiment/oracle test wiring remains: ' + stale
+                }
+            }
+
+
+            // Transactional DDL must treat a dropped table as removed from the
+            // transaction's publication set while preserving rollback-to-savepoint.
+            ['rawTransaction.dropContainer(generation.privateContainer())',
+             'committablePendingVersions()',
+             'committableOrderedIndexes()',
+             'committableCreatedTables()',
+             'if (isDropped(reservation.table()))',
+             'droppedTables.containsKey(table.metadataContainer())'].each { token ->
+                if (!text.transactionContext.contains(token)) {
+                    failures << 'Dropped-table transaction filtering is missing: ' + token
+                }
+            }
+            ['testCreateAndDropOrderWithSameTableDml',
+             'testDropWithPendingDmlDoesNotBlockOtherTableCommit',
+             'insert into savepoint_existing_t values (2, 20)',
+             'assertConglomerateMissing(connection, containerId)',
+             'assertConglomeratePresent(connection, containerId)'].each { token ->
+                if (!text.transactionalDdlTest.contains(token)) {
+                    failures << 'Transactional DDL executable proof is missing: ' + token
+                }
+            }
+            ['assertProviderStateExists(',
+             'assertNoProviderState(',
+             'delos_mvcc/inherited-store',
+             'delos_mvcc/ddl-lifecycle'].each { stale ->
+                if (text.transactionalDdlTest.contains(stale)) {
+                    failures << 'Transactional DDL test retains retired sidecar assertion: ' + stale
+                }
+            }
+            if (!text.lifecycleTest.contains(
+                    'testDroppedMvccTableRemovesRawStoreConglomerateAcrossReopen')) {
+                failures << 'MVCC lifecycle test must prove RawStore conglomerate removal'
+            }
+            ['testBackupAndCreateFromRestorePreservesMvccRawStoreState',
+             'assertNoRetiredMvccSidecars(backupDatabase)',
+             'mvccContainerId(restored, "MVCC_BACKUP_RESTORE_T")'].each { token ->
+                if (!text.backupRestoreTest.contains(token)) {
+                    failures << 'RawStore MVCC backup/restore proof is missing: ' + token
+                }
+            }
+            ['assertNoRetiredMvccSidecars(backupDatabase)',
+             'mvccContainerId(restored, "MVCC_MIXED_BACKUP_T")'].each { token ->
+                if (!text.mixedBackupRestoreTest.contains(token)) {
+                    failures << 'Mixed heap/MVCC backup proof is missing: ' + token
+                }
+            }
+            if (file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreSidecarTest.java').exists()) {
+                failures << 'Retired sidecar-named backup/restore test still exists'
+            }
+            ['runDelosMvccLifecycleTest',
+             'MvccSqlLifecycleTest.class',
+             'runDelosMvccBackupRestoreTest',
+             'MvccSqlBackupRestoreTest.class'].each { token ->
+                if (!text.testBuild.contains(token)) {
+                    failures << 'Current RawStore backup/restore task wiring is missing: ' + token
                 }
             }
 
