@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTED / PENDING USER VERIFICATION
+VERIFIED
 ```
 
 ## Decision
@@ -32,15 +32,13 @@ inherited heap provider and MVCC provider exactly once. The engine continues to 
 method through the neutral `ExternalAccessMethodProvider` contract and does not compile against the
 implementation package.
 
-## legacyRetained source set
+## Retained oracle source deletion
 
-The Phase 8 implementation remains an explicit differential oracle under `io.github.ggeorg.*`.
-It is compiled only by the `legacyRetained` source set and reached only through
-`:delosdb-storage-mvcc:legacyRetainedCheck`.
+The Phase 8 implementation and its tests were removed after RawStore convergence. Git history and
+accepted evidence preserve the experiment; the working tree has no retained source set, no dormant
+provider implementation, and no archived page-volume authority.
 
-The source set has no service resources. The retired provider factory and its service descriptor are
-removed from the repository, normal `check` compiles only production classes, and the production jar
-rejects all retained Phase 8 classes.
+The production source set therefore contains only the live provider and its two service descriptors.
 
 ## derbyRuntimePatchElements
 

@@ -41,18 +41,17 @@ jdbc-lifecycle/
 jdbc-batch-scaling/
 jdbc-transactions/
 jdbc-row-scaling/
-mvcc-buffer-cache/
-mvcc-page-codec/
+page-io-representation/
+rawstore-fault-injection/
+rawstore-decision-wal-crash/
 drda-stress/
 modular-image-drda/
-recovery-differential/
-failure-replay/
-low-level-failure-replay/
 ```
 
-The operational lane now reports raw-store decision-force and MVCC participant-publication timing
-separately. The modular-image lane builds a `jlink` runtime and launches a real DRDA server and
-network client from its JPMS module path.
+The operational lane reports raw-store decision-force and MVCC participant-publication timing
+separately. The three Stage 8 storage lanes use the live page-representation decision, deterministic
+fault-injection, and decision/WAL crash proofs. The modular-image lane builds a `jlink` runtime and
+launches a real DRDA server and network client from its JPMS module path.
 
 The manifest records source state, environment, runtime-artifact hashes, fixed matrix, lane
 inventory, per-file hashes, and an aggregate semantic checksum. Its status remains

@@ -89,14 +89,6 @@ class DelosDbStaticAnalysisSupport {
         matcher.find() ? matcher.group(1) : null
     }
 
-    static boolean isMvccPath(String relativePath, String layer) {
-        relativePath.startsWith('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/' + layer + '/')
-    }
-
-    static boolean isMvccImport(String importTarget, String layer) {
-        importTarget != null && importTarget.startsWith('io.github.ggeorg.delosdb.storage.mvcc.' + layer + '.')
-    }
-
     static Map finding(File repositoryRoot, String rule, File sourceFile, int lineNumber, String line) {
         def relative = relativePath(repositoryRoot, sourceFile)
         [
@@ -149,24 +141,6 @@ class DelosDbStaticAnalysisSupport {
                 if (relative.startsWith('delosdb-storage-mvcc/')
                         && (line.contains('ObjectInputStream') || line.contains('ObjectOutputStream'))) {
                     findings << finding(repositoryRoot, 'MVCC_JAVA_OBJECT_STREAM', sourceFile, lineNumber, line)
-                }
-
-                def importedType = importTarget(line)
-                if (importedType != null) {
-                    if (isMvccPath(relative, 'format')
-                            && (importedType.startsWith('org.apache.derby.')
-                            || importedType.startsWith('java.sql.')
-                            || isMvccImport(importedType, 'bridge')
-                            || isMvccImport(importedType, 'durable')
-                            || isMvccImport(importedType, 'store'))) {
-                        findings << finding(repositoryRoot, 'MVCC_FORMAT_LAYER_DEPENDENCY', sourceFile, lineNumber, line)
-                    }
-                    if ((isMvccPath(relative, 'durable') || isMvccPath(relative, 'store'))
-                            && (importedType.startsWith('org.apache.derby.')
-                            || importedType.startsWith('java.sql.')
-                            || isMvccImport(importedType, 'bridge'))) {
-                        findings << finding(repositoryRoot, 'MVCC_DURABLE_LAYER_DEPENDENCY', sourceFile, lineNumber, line)
-                    }
                 }
 
                 if (line.contains('Thread.sleep(')) {
@@ -1271,7 +1245,7 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
                 runtimeText.contains("it.name == 'delosdb-storage-io.jar'"),
                 'verifyDelosRuntimeStorageProviders must reject the retained page-volume archive from runtime classpaths')
         DelosDbStaticAnalysisSupport.require(failures,
-                runtimeText.contains('Retained Phase 8 classes remain in production MVCC provider jar'),
+                runtimeText.contains('Retired io.github storage classes remain in production MVCC provider jar'),
                 'verifyDelosRuntimeStorageProviders must reject retained Phase 8 classes from the production MVCC jar')
         DelosDbStaticAnalysisSupport.require(failures, !runtimeText.contains('doLast {\n        def runtimeFiles = project.'),
                 'Runtime provider verification must not resolve Project state from its task action')
@@ -2347,8 +2321,8 @@ def delosRunExternalValidationCommand = { String propertyName, String displayNam
 
 tasks.register('delosJmhMicrobenchmarks') {
     group = 'verification'
-    description = 'Runs deterministic MVCC buffer-workload invariants, then an optional external JMH command supplied with -Pdelosdb.jmh.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest'
+    description = 'Runs the current page-I/O representation benchmark, then an optional external JMH command supplied with -Pdelosdb.jmh.command.'
+    dependsOn ':delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest'
     doLast {
         if (providers.gradleProperty('delosdb.jmh.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.jmh.command', 'delosJmhMicrobenchmarks')
@@ -2358,8 +2332,8 @@ tasks.register('delosJmhMicrobenchmarks') {
 
 tasks.register('delosJcstressConcurrencyValidation') {
     group = 'verification'
-    description = 'Runs built-in MVCC concurrency validation, or an external jcstress command with -Pdelosdb.jcstress.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation'
+    description = 'Runs the live MVCC network-concurrency baseline, or an external jcstress command with -Pdelosdb.jcstress.command.'
+    dependsOn ':delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest'
     doLast {
         if (providers.gradleProperty('delosdb.jcstress.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.jcstress.command', 'delosJcstressConcurrencyValidation')
@@ -2369,8 +2343,8 @@ tasks.register('delosJcstressConcurrencyValidation') {
 
 tasks.register('delosTwoSidedMvccWorkloadBenchmark') {
     group = 'verification'
-    description = 'Runs deterministic two-sided MVCC buffer-workload invariants, then an optional command supplied with -Pdelosdb.twoSided.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest'
+    description = 'Runs the heap/MVCC differential SQL baseline, then an optional command supplied with -Pdelosdb.twoSided.command.'
+    dependsOn ':delosdb-tests:runDelosHeapMvccDifferentialSqlHarnessTest'
     doLast {
         if (providers.gradleProperty('delosdb.twoSided.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.twoSided.command', 'delosTwoSidedMvccWorkloadBenchmark')
@@ -2380,8 +2354,8 @@ tasks.register('delosTwoSidedMvccWorkloadBenchmark') {
 
 tasks.register('delosLongReaderVacuumSoak') {
     group = 'verification'
-    description = 'Runs built-in long-reader validation, or an external soak command with -Pdelosdb.longReaderSoak.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation'
+    description = 'Runs the live long-reader purge-stress baseline, or an external soak command with -Pdelosdb.longReaderSoak.command.'
+    dependsOn ':delosdb-tests:runDelosMvccLongReaderPurgeStressTest'
     doLast {
         if (providers.gradleProperty('delosdb.longReaderSoak.command').orNull != null) {
             delosRunExternalValidationCommand('delosdb.longReaderSoak.command', 'delosLongReaderVacuumSoak')
@@ -2470,24 +2444,22 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
                 failures << 'Phase P long-running/external validation task must not be wired into S0: ' + taskName
             }
         }
-        def storageMvccBuildText = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/build.gradle').getText('UTF-8')
+        def delosTestsBuildText = new File(delosRepositoryRoot, 'delosdb-tests/build.gradle').getText('UTF-8')
         [
-                'runDelosMvccBufferWorkloadInvariantTest',
-                'runDelosMvccConcurrencyValidation',
-                'runDelosMvccLongReaderValidation'
+                'runDelosSharedRawStorePageIoRepresentationDecisionTest',
+                'runDelosMvccDrdaConcurrentNetworkClientTest',
+                'runDelosMvccLongReaderPurgeStressTest',
+                'runDelosHeapMvccDifferentialSqlHarnessTest'
         ].each { taskName ->
-            if (!storageMvccBuildText.contains(taskName)) {
-                failures << 'Phase P MVCC validation task missing from delosdb-storage-mvcc/build.gradle: ' + taskName
+            if (!delosTestsBuildText.contains(taskName)) {
+                failures << 'Current RawStore/MVCC validation task missing from delosdb-tests/build.gradle: ' + taskName
             }
         }
-        def checkSection = storageMvccBuildText.substring(storageMvccBuildText.indexOf("tasks.named('check')"))
-        [
-                'runDelosMvccBufferWorkloadInvariantTest',
-                'runDelosMvccConcurrencyValidation',
-                'runDelosMvccLongReaderValidation'
-        ].each { taskName ->
-            if (checkSection.contains(taskName)) {
-                failures << 'Phase P validation task must not be wired into :delosdb-storage-mvcc:check: ' + taskName
+        def storageMvccBuildText = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/build.gradle').getText('UTF-8')
+        ['legacyRetained', 'runDelosMvccBufferWorkloadInvariantTest',
+         'runDelosMvccConcurrencyValidation', 'runDelosMvccLongReaderValidation'].each { stale ->
+            if (storageMvccBuildText.contains(stale)) {
+                failures << 'Retired oracle validation wiring remains in delosdb-storage-mvcc/build.gradle: ' + stale
             }
         }
 
@@ -2526,16 +2498,16 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
 
 def delosExternalValidationSpecs = [
         [id: 'R6-JMH', taskName: 'delosJmhMicrobenchmarks', propertyName: 'delosdb.jmh.command',
-         category: 'microbenchmark', builtInTask: ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest',
+         category: 'microbenchmark', builtInTask: ':delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest',
          reason: 'JMH remains an opt-in timing lane and must complement rather than replace deterministic MVCC buffer-workload invariants.'],
         [id: 'R6-JCSTRESS', taskName: 'delosJcstressConcurrencyValidation', propertyName: 'delosdb.jcstress.command',
-         category: 'concurrency', builtInTask: ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation',
+         category: 'concurrency', builtInTask: ':delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest',
          reason: 'Jcstress-style checks must remain opt-in because JMM stress runs are long-running and environment-sensitive.'],
         [id: 'R6-TWO-SIDED', taskName: 'delosTwoSidedMvccWorkloadBenchmark', propertyName: 'delosdb.twoSided.command',
-         category: 'workload', builtInTask: ':delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest',
+         category: 'workload', builtInTask: ':delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest',
          reason: 'Two-sided read/write workload validation must be externally configurable while keeping the built-in no-dependency baseline available.'],
         [id: 'R6-LONG-READER', taskName: 'delosLongReaderVacuumSoak', propertyName: 'delosdb.longReaderSoak.command',
-         category: 'soak', builtInTask: ':delosdb-storage-mvcc:runDelosMvccLongReaderValidation',
+         category: 'soak', builtInTask: ':delosdb-tests:runDelosMvccLongReaderPurgeStressTest',
          reason: 'Long-reader versus vacuum/buffer-pressure soaks must be explicit because they are intentionally slower than S0 and module checks.'],
         [id: 'R6-SQLANCER', taskName: 'delosSqlancerMvccValidation', propertyName: 'delosdb.sqlancer.command',
          category: 'sqlancer', builtInTask: 'none',
@@ -2806,86 +2778,66 @@ def delosLoadJfrStorageLifecycleRows = {
 
 tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the DelosDB JDK 25 JFR storage lifecycle event surface and first safe hooks.'
+    description = 'Validates the live JDK 25 JFR MVCC analyze/statistics event and wiring.'
+    inputs.files(
+            file('gradle/static-analysis/delosdb-jfr-storage-lifecycle-events.txt'),
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java'),
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java'),
+            file('docs/JFR-STORAGE-LIFECYCLE-EVENTS.md'),
+            file('docs/ALGORITHM-INVENTORY.md'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/jfr-storage-lifecycle-events-static-analysis.txt'))
     doLast {
         def rows = delosLoadJfrStorageLifecycleRows()
         def failures = []
         def ids = [] as Set
         def categories = [] as Set
 
-        if (rows.size() < 16) {
-            failures << 'JFR storage lifecycle manifest must contain at least 16 rows; found ' + rows.size()
+        if (rows.size() < 8) {
+            failures << 'JFR storage lifecycle manifest must contain at least 8 live rows; found ' + rows.size()
         }
-
         rows.each { row ->
             if (!ids.add(row.id)) {
                 failures << 'Duplicate JFR storage lifecycle manifest id: ' + row.id
             }
             categories.add(row.category)
             def proofFile = new File(delosRepositoryRoot, row.path)
-            if (!proofFile.exists()) {
-                failures << 'JFR storage lifecycle proof path does not exist for ' + row.id + ': ' + row.path
+            if (!proofFile.isFile()) {
+                failures << 'JFR proof path does not exist for ' + row.id + ': ' + row.path
                 return
             }
             def body = proofFile.getText('UTF-8')
             if (!body.contains(row.marker)) {
-                failures << 'JFR storage lifecycle marker missing for ' + row.id + ': ' + row.marker
+                failures << 'JFR proof marker missing for ' + row.id + ': ' + row.marker
             }
             if (row.risk.length() < 85) {
-                failures << 'JFR storage lifecycle risk is too thin for ' + row.id
+                failures << 'JFR proof risk is too thin for ' + row.id
             }
         }
-
-        [
-                'STORAGE_API_EVENT_SURFACE',
-                'JDK25_JFR_API',
-                'MVCC_ANALYZE_EVENT',
-                'MVCC_CHECKPOINT_EVENT',
-                'MVCC_PURGE_EVENT',
-                'MVCC_RECOVERY_EVENT',
-                'MVCC_BACKUP_EVENT',
-                'MVCC_BUFFER_EVENT',
-                'HEAP_DIAGNOSTIC_EVENT',
-                'STORAGE_PATH_EVENT',
-                'MVCC_ANALYZE_WIRING',
-                'MVCC_CHECKPOINT_WIRING',
-                'DOCUMENTATION',
-                'NO_BEHAVIOR_CHANGE',
-                'ALGORITHM_INVENTORY_LINK',
-                'STATIC_GATE'
-        ].each { category ->
+        ['JDK25_JFR_API', 'MVCC_ANALYZE_EVENT', 'MVCC_ANALYZE_WIRING',
+         'DOCUMENTATION', 'ALGORITHM_INVENTORY_LINK', 'STATIC_GATE'].each { category ->
             if (!categories.contains(category)) {
-                failures << 'JFR storage lifecycle manifest missing category: ' + category
+                failures << 'JFR manifest missing live category: ' + category
             }
         }
 
-        def sourceText = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java').getText('UTF-8')
-        [
-                'import jdk.jfr.Category;',
-                'import jdk.jfr.Event;',
-                'import jdk.jfr.Label;',
-                'import jdk.jfr.Name;',
-                'event.isEnabled()',
-                'event.commit()',
-                'recordMvccAnalyzeStatistics',
-                'recordMvccCheckpoint',
-                'recordMvccPurge',
-                'recordMvccRecoveryReplay',
-                'recordMvccBackupSidecar',
-                'recordMvccBufferEviction',
-                'recordHeapSanityCheck',
-                'recordStoragePathDecision',
-                'org.apache.derby.delosdb.mvcc.AnalyzeStatistics',
-                'org.apache.derby.delosdb.mvcc.Checkpoint',
-                'org.apache.derby.delosdb.mvcc.Purge',
-                'org.apache.derby.delosdb.mvcc.RecoveryReplay',
-                'org.apache.derby.delosdb.mvcc.BackupSidecar',
-                'org.apache.derby.delosdb.mvcc.BufferEviction',
-                'org.apache.derby.delosdb.heap.SanityCheck',
-                'org.apache.derby.delosdb.storage.PathDecision'
-        ].each { markerText ->
-            if (!sourceText.contains(markerText)) {
-                failures << 'JFR event source missing marker: ' + markerText
+        def sourceText = new File(delosRepositoryRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java')
+                .getText('UTF-8')
+        ['import jdk.jfr.Event;',
+         'event.isEnabled()',
+         'event.commit()',
+         'recordMvccAnalyzeStatistics',
+         'org.apache.derby.delosdb.mvcc.AnalyzeStatistics'].each { marker ->
+            if (!sourceText.contains(marker)) {
+                failures << 'Live JFR event source missing marker: ' + marker
+            }
+        }
+        ['recordMvccCheckpoint', 'recordMvccPurge', 'recordMvccRecoveryReplay',
+         'recordMvccBackupSidecar', 'recordMvccBufferEviction',
+         'recordHeapSanityCheck', 'recordStoragePathDecision'].each { stale ->
+            if (sourceText.contains(stale)) {
+                failures << 'Unwired JFR event surface remains in production: ' + stale
             }
         }
         ['org.objectweb.asm', 'sun.misc.Unsafe', 'jdk.internal'].each { forbidden ->
@@ -2894,104 +2846,56 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
             }
         }
 
-        def analyzeText = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java').getText('UTF-8')
+        def analyzeText = new File(delosRepositoryRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java')
+                .getText('UTF-8')
         if (!analyzeText.contains('DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics')) {
-            failures << 'MVCC analyze/statistics lifecycle must record a JFR event at the proven diagnostic checkpoint'
+            failures << 'MVCC analyze/statistics lifecycle must record the live JFR event'
         }
         if (!analyzeText.contains('optimizerAuthority=derby')) {
-            failures << 'MVCC analyze/statistics diagnostics must preserve Derby optimizer authority marker'
+            failures << 'MVCC analyze/statistics diagnostics must preserve Derby optimizer authority'
         }
 
-        def checkpointText = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/store/PageVolumeMvccStateStore.java').getText('UTF-8')
-        if (!checkpointText.contains('DelosStorageLifecycleJfr.recordMvccCheckpoint')) {
-            failures << 'MVCC checkpoint rewrite must record a JFR event after the proven checkpoint lifecycle point'
+        def docsText = new File(delosRepositoryRoot,
+                'docs/JFR-STORAGE-LIFECYCLE-EVENTS.md').getText('UTF-8')
+        ['one live production event',
+         'observability only',
+         'No unwired event method remains',
+         './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'].each { marker ->
+            if (!docsText.contains(marker)) {
+                failures << 'JFR documentation missing marker: ' + marker
+            }
         }
-        def appendIndex = checkpointText.indexOf('recoveryRecordStore.appendCheckpoint')
-        def eventIndex = checkpointText.indexOf('DelosStorageLifecycleJfr.recordMvccCheckpoint')
-        if (appendIndex < 0 || eventIndex < 0 || eventIndex < appendIndex) {
-            failures << 'MVCC checkpoint JFR event must be recorded after the subsystem checkpoint recovery record append'
-        }
-
-        def docsText = new File(delosRepositoryRoot, 'docs/JFR-STORAGE-LIFECYCLE-EVENTS.md').getText('UTF-8')
-        [
-                'This is an observability artifact, not a storage algorithm rewrite.',
-                'JFR events are observability only.',
-                'Events must be inert unless JFR is recording.',
-                'No JFR event currently decides whether a storage path is legal',
-                'The JFR gate is intentionally not wired into S0 yet.',
-                './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'
-        ].each { markerText ->
-            if (!docsText.contains(markerText)) {
-                failures << 'JFR documentation missing marker: ' + markerText
+        def inventoryText = new File(delosRepositoryRoot,
+                'docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
+        ['JDK 25 JFR storage lifecycle events update',
+         'DelosStorageLifecycleJfr',
+         'recordMvccAnalyzeStatistics',
+         './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'].each { marker ->
+            if (!inventoryText.contains(marker)) {
+                failures << 'Algorithm inventory missing JFR marker: ' + marker
             }
         }
 
-        def inventoryText = new File(delosRepositoryRoot, 'docs/ALGORITHM-INVENTORY.md').getText('UTF-8')
-        [
-                'JDK 25 JFR storage lifecycle events update',
-                'DelosStorageLifecycleJfr',
-                'DIAGNOSTIC_ONLY_ALGORITHM',
-                'VALIDATION_ALGORITHM',
-                './gradlew delosJfrStorageLifecycleEventsStaticAnalysis'
-        ].each { markerText ->
-            if (!inventoryText.contains(markerText)) {
-                failures << 'Algorithm inventory missing JFR marker: ' + markerText
-            }
-        }
-
-        def staticText = new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index >= 0) {
-            def s0Section = staticText.substring(s0Index)
-            if (s0Section.contains('delosJfrStorageLifecycleEventsStaticAnalysis')) {
-                failures << 'JFR storage lifecycle static gate must remain outside S0 until the event lane is proven stable'
-            }
-        }
-
-        def reportFile = new File(delosBuildRoot, 'reports/delosdb/jfr-storage-lifecycle-events-static-analysis.txt')
+        def reportFile = new File(delosBuildRoot,
+                'reports/delosdb/jfr-storage-lifecycle-events-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB JFR storage lifecycle events static analysis')
-            writer.println('============================================================')
-            writer.println()
+            writer.println('DelosDB live JFR storage lifecycle static analysis')
+            writer.println('================================================')
             writer.println('Rows: ' + rows.size())
-            writer.println('Categories: ' + categories.sort().join(', '))
-            writer.println()
-            rows.each { row ->
-                writer.println(row.id + ' [' + row.category + '] ' + row.path)
-                writer.println('  marker: ' + row.marker)
-                writer.println('  risk: ' + row.risk)
-                writer.println()
-            }
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { writer.println('- ' + it) }
-            }
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
         }
-
         if (!failures.isEmpty()) {
-            throw new GradleException('DelosDB JFR storage lifecycle events static analysis failed. Report: ' + reportFile)
+            throw new GradleException(
+                    'DelosDB JFR storage lifecycle static analysis failed. Report: ' + reportFile)
         }
-        println 'DelosDB JFR storage lifecycle events static analysis passed. Report: ' + reportFile
+        logger.lifecycle(
+                'DelosDB JFR storage lifecycle static analysis passed. Report: {}', reportFile)
     }
 }
 
-
-
-def delosLoadOptimizerCostAuthorityRows = {
-    def manifest = new File(delosRepositoryRoot, 'gradle/static-analysis/delosdb-optimizer-cost-authority.txt')
-    manifest.readLines('UTF-8')
-            .findAll { line -> line.trim() && !line.startsWith('#') }
-            .collect { line ->
-                def parts = line.split('\\|', -1)
-                if (parts.length != 5) {
-                    throw new GradleException('Invalid optimizer cost authority manifest row: ' + line)
-                }
-                [id: parts[0], category: parts[1], path: parts[2], marker: parts[3], authority: parts[4]]
-            }
-}
 
 tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
     group = 'verification'
@@ -3145,220 +3049,127 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
 }
 
 
-tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
-    group = 'verification'
-    description = 'Validates the MVCC ordered-index NULL key proof manifest and proof hooks.'
-
-    inputs.file('gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt')
-    inputs.file('docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md')
-    inputs.file('docs/MVCC-ORDERED-INDEX-KEY-SEMANTICS.md')
-    inputs.file('docs/ALGORITHM-INVENTORY.md')
-    inputs.file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
-    inputs.file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStoreTest.java')
-    inputs.file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java')
-    outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt'))
-
-    doLast {
-        def manifest = new File(delosRepositoryRoot, 'gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt')
-        if (!manifest.exists()) {
-            throw new GradleException('Missing MVCC ordered-index NULL key proof manifest: ' + manifest)
-        }
-        def rows = manifest.readLines('UTF-8')
-                .findAll { line -> line.trim() && !line.trim().startsWith('#') }
-                .collect { line ->
-                    def parts = line.split('\\|', -1)
-                    if (parts.length < 6) {
-                        throw new GradleException('Malformed MVCC ordered-index NULL key proof row: ' + line)
-                    }
-                    [id: parts[0], path: parts[1], marker: parts[2], category: parts[3], reference: parts[4], rationale: parts[5]]
-                }
-        def failures = []
-        def ids = new LinkedHashSet<String>()
-        def requiredCategories = [
-                'VALIDATION_ALGORITHM',
-                'MVCC_AUTHORITY_ALGORITHM',
-                'JDK25_MODERNIZATION_CANDIDATE',
-                'DO_NOT_TOUCH_WITHOUT_COMPAT_GATE'
-        ] as Set
-        def categories = new LinkedHashSet<String>()
-        rows.each { row ->
-            if (!ids.add(row.id)) {
-                failures << 'Duplicate NULL key proof row id: ' + row.id
-            }
-            categories << row.category
-            def target = new File(delosRepositoryRoot, row.path)
-            if (!target.exists()) {
-                failures << 'NULL key proof target missing: ' + row.path
-            } else {
-                def text = target.getText('UTF-8')
-                if (!text.contains(row.marker)) {
-                    failures << row.id + ' marker not found in ' + row.path + ': ' + row.marker
-                }
-            }
-        }
-        requiredCategories.each { category ->
-            if (!categories.contains(category)) {
-                failures << 'Missing NULL key proof category: ' + category
-            }
-        }
-
-        def proofDoc = new File(delosRepositoryRoot, 'docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md').getText('UTF-8')
-        [
-                'SQL NULL values are encoded as the typed `DOK1|N|` ordered-index envelope.',
-                'Do not make `IS NULL` rely on a new optimizer path in this slice.',
-                'Do not weaken `MvccInheritedRowCodec` or allow arbitrary Java object storage.',
-                './gradlew delosMvccOrderedIndexNullKeyProofStaticAnalysis'
-        ].each { markerText ->
-            if (!proofDoc.contains(markerText)) {
-                failures << 'NULL key proof documentation missing marker: ' + markerText
-            }
-        }
-
-        def durableTest = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccOrderedIndexPageStoreTest.java').getText('UTF-8')
-        [
-                'typedNullEnvelopeSortsBeforeTypedValuesAndSupportsLookup',
-                'DOK1|N|',
-                'rowIdsFor(1, "DOK1|N|")',
-                'rowIdsInRangeFor(1, "DOK1|N|", true, "DOK1|I|5", true)'
-        ].each { markerText ->
-            if (!durableTest.contains(markerText)) {
-                failures << 'Durable ordered-index NULL proof missing marker: ' + markerText
-            }
-        }
-
-        def sqlTest = new File(delosRepositoryRoot, 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java').getText('UTF-8')
-        [
-                'testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen',
-                'where n is null order by id',
-                'containsOrderedIndexSummary',
-                'non-null typed range should still use ordered pages after NULL-key rebuild',
-                'NULL-key rebuild must not force ordered-index fallback for supported typed ranges'
-        ].each { markerText ->
-            if (!sqlTest.contains(markerText)) {
-                failures << 'SQL ordered-index NULL proof missing marker: ' + markerText
-            }
-        }
-        if (sqlTest.contains('java.io.Serializable') || sqlTest.contains('ObjectInputStream')) {
-            failures << 'SQL NULL key proof must not introduce generic Java object serialization'
-        }
-
-        def typedKey = new File(delosRepositoryRoot, 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java').getText('UTF-8')
-        if (!typedKey.contains('return encodeNull();') || !typedKey.contains("NULL('N', 0)")) {
-            failures << 'Typed ordered-index key API must keep stable NULL envelope markers'
-        }
-
-        def staticText = new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index >= 0) {
-            def s0Section = staticText.substring(s0Index)
-            if (s0Section.contains('delosMvccOrderedIndexNullKeyProofStaticAnalysis')) {
-                failures << 'MVCC ordered-index NULL key proof gate must remain outside S0 until the proof is stable'
-            }
-        }
-
-        def reportFile = new File(delosBuildRoot, 'reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB MVCC ordered-index NULL key proof static analysis')
-            writer.println('============================================================')
-            writer.println()
-            writer.println('Rows: ' + rows.size())
-            writer.println('Categories: ' + categories.sort().join(', '))
-            writer.println()
-            rows.each { row ->
-                writer.println(row.id + ' [' + row.category + '] ' + row.path)
-                writer.println('  marker: ' + row.marker)
-                writer.println('  reference: ' + row.reference)
-                writer.println()
-            }
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { writer.println('- ' + it) }
-            }
-        }
-
-        if (!failures.isEmpty()) {
-            throw new GradleException('DelosDB MVCC ordered-index NULL key proof static analysis failed. Report: ' + reportFile)
-        }
-        println 'DelosDB MVCC ordered-index NULL key proof static analysis passed. Report: ' + reportFile
+def delosLoadMvccOrderedIndexNullKeyRows = {
+    def manifest = new File(delosRepositoryRoot,
+            'gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt')
+    if (!manifest.isFile()) {
+        throw new GradleException(
+                'Missing MVCC ordered-index NULL-key proof manifest: ' + manifest)
     }
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.trim().startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 6) {
+                    throw new GradleException(
+                            'Malformed MVCC ordered-index NULL-key proof row: ' + line)
+                }
+                [id: parts[0], path: parts[1], marker: parts[2],
+                 category: parts[3], reference: parts[4], rationale: parts[5]]
+            }
 }
 
-tasks.register('delosJcstressMvccVisibilityProbes') {
+
+tasks.register('delosMvccOrderedIndexNullKeyProofStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the opt-in jcstress MVCC visibility probes and optionally runs -Pdelosdb.jcstress.visibility.command.'
-    dependsOn ':delosdb-storage-mvcc:runDelosMvccConcurrencyValidation'
+    description = 'Validates live RawStore-backed MVCC typed NULL ordered-index semantics.'
+    inputs.files(
+            file('gradle/static-analysis/delosdb-mvcc-ordered-index-null-key-proof.txt'),
+            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java'),
+            file('delosdb-storage-mvcc/build.gradle'),
+            file('docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt'))
     doLast {
-        def probeRoot = new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc')
-        def probeSourceRoot = new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/src/main/java')
-        def probeFiles = [
-                new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSnapshotIsolationJcstressProbe.java'),
-                new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccCommitVisibilityJcstressProbe.java'),
-                new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/DelosMvccSnapshotLeaseHorizonJcstressProbe.java'),
-                new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/DelosMvccBufferPinDirtyJcstressProbe.java')
-        ]
+        def rows = delosLoadMvccOrderedIndexNullKeyRows()
         def failures = []
-        if (!probeRoot.isDirectory()) {
-            failures << 'Missing jcstress probe root: ' + probeRoot
+        def ids = [] as Set
+        def categories = [] as Set
+
+        if (rows.size() < 3) {
+            failures << 'Ordered-index NULL-key manifest must contain at least 3 live rows; found ' + rows.size()
         }
-        if (!probeSourceRoot.isDirectory()) {
-            failures << 'Missing jcstress probe source root: ' + probeSourceRoot
-        }
-        probeFiles.each { sourceFile ->
-            if (!sourceFile.exists()) {
-                failures << 'Missing jcstress probe source: ' + sourceFile
+        rows.each { row ->
+            if (!ids.add(row.id)) {
+                failures << 'Duplicate ordered-index NULL-key manifest id: ' + row.id
+            }
+            categories.add(row.category)
+            def proofFile = new File(delosRepositoryRoot, row.path)
+            if (!proofFile.isFile()) {
+                failures << 'Ordered-index NULL-key proof path does not exist for ' + row.id + ': ' + row.path
                 return
             }
-            def text = sourceFile.getText('UTF-8')
-            ['org.openjdk.jcstress.annotations.JCStressTest', '@JCStressTest', '@Outcome', '@Actor', '@State'].each { marker ->
-                if (!text.contains(marker)) {
-                    failures << 'jcstress probe source ' + sourceFile + ' missing marker: ' + marker
-                }
+            def body = proofFile.getText('UTF-8')
+            if (!body.contains(row.marker)) {
+                failures << 'Ordered-index NULL-key marker missing for ' + row.id + ': ' + row.marker
+            }
+        }
+        ['MVCC_AUTHORITY_ALGORITHM', 'JDK25_MODERNIZATION_CANDIDATE',
+         'DO_NOT_TOUCH_WITHOUT_COMPAT_GATE'].each { category ->
+            if (!categories.contains(category)) {
+                failures << 'Ordered-index NULL-key manifest missing category: ' + category
             }
         }
 
-        def docsText = new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/README.md').exists()
-                ? new File(delosRepositoryRoot, 'benchmarks/jcstress/delosdb-storage-mvcc/README.md').getText('UTF-8')
-                : ''
-        ['delosJcstressMvccVisibilityProbes', 'delosdb.jcstress.visibility.command',
-         'DelosMvccSnapshotIsolationJcstressProbe', 'DelosMvccCommitVisibilityJcstressProbe',
-         'DelosMvccSnapshotLeaseHorizonJcstressProbe', 'DelosMvccBufferPinDirtyJcstressProbe'].each { marker ->
+        def sqlTest = new File(delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedOrderedIndexKeyTest.java')
+                .getText('UTF-8')
+        ['testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen',
+         'where n is null order by id',
+         'orderedIndexEntrySummariesForTesting',
+         'diagnostics.assertConsistentForTesting'].each { marker ->
+            if (!sqlTest.contains(marker)) {
+                failures << 'Live SQL NULL-key proof missing marker: ' + marker
+            }
+        }
+        ['ObjectOutputStream', 'ObjectInputStream'].each { forbidden ->
+            if (sqlTest.contains(forbidden)) {
+                failures << 'SQL NULL-key proof must not introduce Java object serialization'
+            }
+        }
+
+        def typedKey = new File(delosRepositoryRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexKey.java')
+                .getText('UTF-8')
+        if (!typedKey.contains('return encodeNull();') || !typedKey.contains("NULL('N', 0)")) {
+            failures << 'Typed ordered-index key API must preserve stable NULL envelope markers'
+        }
+        def mvccBuild = new File(delosRepositoryRoot,
+                'delosdb-storage-mvcc/build.gradle').getText('UTF-8')
+        if (mvccBuild.contains('MvccOrderedIndexPageStoreTest')
+                || mvccBuild.contains('runMvccOrderedIndexPageStoreTest')) {
+            failures << 'Retired oracle ordered-index test wiring remains in the MVCC module'
+        }
+
+        def docsText = new File(delosRepositoryRoot,
+                'docs/MVCC-ORDERED-INDEX-NULL-KEY-PROOF.md').getText('UTF-8')
+        ['RawStore-backed SQL proof',
+         'testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen',
+         ':delosdb-tests:runDelosMvccSqlIntegrationTest'].each { marker ->
             if (!docsText.contains(marker)) {
-                failures << 'jcstress MVCC visibility README missing marker: ' + marker
+                failures << 'Ordered-index NULL-key documentation missing marker: ' + marker
             }
         }
 
-        def reportFile = new File(delosBuildRoot, 'reports/delosdb/jcstress-mvcc-visibility-probes.txt')
+        def reportFile = new File(delosBuildRoot,
+                'reports/delosdb/mvcc-ordered-index-null-key-proof-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB jcstress MVCC visibility probes')
-            writer.println('======================================')
-            writer.println()
-            writer.println('Probe root: ' + probeRoot)
-            writer.println('Probe sources:')
-            probeFiles.each { writer.println('  - ' + it) }
-            writer.println()
-            writer.println('Built-in baseline task: :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation')
-            writer.println('External command property: delosdb.jcstress.visibility.command')
-            writer.println('External command configured: ' + (providers.gradleProperty('delosdb.jcstress.visibility.command').orNull != null))
-            writer.println()
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { writer.println('- ' + it) }
-            }
+            writer.println('DelosDB live MVCC ordered-index NULL-key static analysis')
+            writer.println('==========================================================')
+            writer.println('Rows: ' + rows.size())
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
         }
-
         if (!failures.isEmpty()) {
-            throw new GradleException('DelosDB jcstress MVCC visibility probe validation failed. Report: ' + reportFile)
+            throw new GradleException(
+                    'DelosDB MVCC ordered-index NULL-key static analysis failed. Report: '
+                            + reportFile)
         }
-        if (providers.gradleProperty('delosdb.jcstress.visibility.command').orNull != null) {
-            delosRunExternalValidationCommand('delosdb.jcstress.visibility.command', 'delosJcstressMvccVisibilityProbes')
-        }
-        println 'DelosDB jcstress MVCC visibility probes passed. Report: ' + reportFile
+        logger.lifecycle(
+                'DelosDB MVCC ordered-index NULL-key static analysis passed. Report: {}',
+                reportFile)
     }
 }
 
@@ -3606,14 +3417,14 @@ tasks.register('delosMvccDatabaseRuntimeOwnershipStaticAnalysis') {
                 failures << 'MVCC diagnostics must resolve the RawStore runtime through explicit database context'
             }
             if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
-                    || !mvccBuild.contains('legacyRetained {')
-                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
-                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
-                    || !mvccBuild.contains('verifyRetainedOracleQuarantine')
-                    || !mvccBuild.contains("file('src/main/java/io/github/ggeorg/delosdb/storage')")
-                    || !mvccBuild.contains('retainedProductionSources = sourceSets.main.java.files.findAll')
-                    || !mvccBuild.contains("setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])")) {
-                failures << 'Production RawStore MVCC sources must remain isolated from the legacyRetained oracle source set'
+                    || mvccBuild.contains('legacyRetained')
+                    || mvccBuild.contains('io/github/ggeorg/delosdb/storage/mvcc')
+                    || mvccBuild.contains('io/github/ggeorg/delosdb/storage/io')
+                    || new File(delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/main/java/io').exists()
+                    || new File(delosRepositoryRoot,
+                    'delosdb-storage-mvcc/src/test').exists()) {
+                failures << 'The production RawStore MVCC module must contain only its live provider source set'
             }
             if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
                 failures << 'Derby runtime module must not discover the retired external MVCC provider'
@@ -3737,15 +3548,13 @@ tasks.register('delosMvccTableRebuildProviderTruthStaticAnalysis') {
 
 tasks.register('delosSecurityTruthStaticAnalysis') {
     group = 'verification'
-    description = 'Protects TLS, secure XML, fail-closed deserialization boundaries, and fatal group-commit truth.'
+    description = 'Protects TLS, secure XML, and fail-closed deserialization boundaries.'
 
     def requiredFiles = [
             'delosdb-commons/src/main/java/org/apache/derby/shared/common/drda/NaiveTrustManager.java',
             'delosdb-client/src/main/java/org/apache/derby/client/net/OpenSocketAction.java',
             'delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java',
             'delosdb-tools/src/main/java/org/apache/derby/impl/tools/planexporter/CreateHTMLFile.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccCommitCoordinator.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java',
             'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.java',
             'docs/SECURITY.md'
     ]
@@ -3769,10 +3578,8 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
         def clientText = read(requiredFiles[1])
         def serverText = read(requiredFiles[2])
         def planText = read(requiredFiles[3])
-        def coordinatorText = read(requiredFiles[4])
-        def groupTestText = read(requiredFiles[5])
-        def securityTestText = read(requiredFiles[6])
-        def securityDocText = read(requiredFiles[7])
+        def securityTestText = read(requiredFiles[4])
+        def securityDocText = read(requiredFiles[5])
 
         ['copyKeyStoreProperties',
          'keyStorePassword == null',
@@ -3801,25 +3608,6 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
                 planText.contains('try (InputStream styleSheet')
                         && planText.contains('try (FileOutputStream output'),
                 'PlanExporter stylesheet and output streams must close deterministically')
-
-        ['failure instanceof Error error',
-         'queueChanged.signalAll();', 'rethrowError(errorFailure);'].each { token ->
-            DelosDbStaticAnalysisSupport.require(failures, coordinatorText.contains(token),
-                    'Group-commit Error handling is missing token: ' + token)
-        }
-        DelosDbStaticAnalysisSupport.require(failures,
-                !coordinatorText.contains('ThreadDeath'),
-                'Group-commit Error propagation must not depend on removed ThreadDeath handling')
-        def signalIndex = coordinatorText.indexOf('queueChanged.signalAll();',
-                coordinatorText.indexOf('private void executeGroup'))
-        def rethrowIndex = coordinatorText.indexOf('rethrowError(errorFailure);')
-        DelosDbStaticAnalysisSupport.require(failures,
-                signalIndex >= 0 && rethrowIndex > signalIndex,
-                'Group waiters must be completed and signaled before the leader rethrows the original Error')
-        DelosDbStaticAnalysisSupport.require(failures,
-                groupTestText.contains('errorReleasesFollowerAndIsRethrownByLeader')
-                        && groupTestText.contains('assertSame(leaderFailure, follower.failure())'),
-                'Group-commit hardening must prove follower release and original Error rethrow')
 
         ['testPasswordlessTlsKeyStoreConfigurationIsNullSafeAndClosesInput',
          'testPlanExporterTransformsNormalXmlAndRejectsExternalDtd'].each { token ->
@@ -3858,10 +3646,9 @@ tasks.register('delosSecurityTruthStaticAnalysis') {
     }
 }
 
-
 tasks.register('delosV1BaselineCaptureStaticAnalysis') {
     group = 'verification'
-    description = 'Protects the Phase 8.6 v1 baseline capture contract while keeping wall-clock work outside S0.'
+    description = 'Protects the current v1 baseline capture contract while keeping wall-clock work outside S0.'
 
     def contractFile = new File(delosRepositoryRoot,
             'gradle/static-analysis/delosdb-v1-baseline-capture.txt')
@@ -4210,277 +3997,6 @@ tasks.register('delosV1AcceptedBaselineStaticAnalysis') {
     }
 }
 
-
-tasks.register('delosDatabaseDecisionRetentionStaticAnalysis') {
-    group = 'verification'
-    description = 'Verifies bounded mixed-decision marker retention and database status-journal compaction.'
-    inputs.files(
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseDecisionRetention.java'),
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseCommitCoordinator.java'),
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/MvccTransactionStatusStore.java'),
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/durable/MvccPageMutationLog.java'),
-            file('delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseDecisionRetentionTest.java'),
-            file('delosdb-storage-mvcc/build.gradle'))
-    doLast {
-        def failures = []
-        def requiredMarkers = [
-                'DEFAULT_COMPACTION_THRESHOLD_BYTES',
-                'reconcileOnOpen',
-                'decisionMirrored',
-                'pendingDatabaseTransactionIds',
-                'compactRetaining',
-                'dropDatabaseStateIfUnused',
-                'finalTableDropRemovesDatabaseDecisionJournalAndEmptyDirectories',
-                'greatest transaction id',
-                'greatest commit sequence',
-                'runMvccDatabaseDecisionRetentionTest'
-        ]
-        def sourceText = inputs.files.files
-                .findAll { it.isFile() }
-                .collect { it.getText('UTF-8') }
-                .join('\n')
-        requiredMarkers.each { marker ->
-            if (!sourceText.contains(marker)) {
-                failures << 'Missing database decision retention marker: ' + marker
-            }
-        }
-        if (sourceText.contains('deleteIfExists(marker)')
-                && !sourceText.contains('forceParentDirectoryIfSupported(marker)')) {
-            failures << 'Decision marker deletion is not followed by a durable directory boundary'
-        }
-
-        def reportFile = new File(delosBuildRoot,
-                'reports/delosdb/database-decision-retention-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB database decision retention static analysis')
-            writer.println('=================================================')
-            writer.println()
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { failure -> writer.println('- ' + failure) }
-            }
-        }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'DelosDB database decision retention static analysis failed. Report: '
-                            + reportFile)
-        }
-        logger.lifecycle(
-                'DelosDB database decision retention static analysis passed. Report: {}',
-                reportFile)
-    }
-}
-
-tasks.register('delosPhase8EntropyStaticAnalysis') {
-    group = 'verification'
-    description = 'Protects the Phase 8 entropy cleanup and inherited-table lifecycle responsibility split.'
-
-    def requiredFiles = [
-            'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java',
-            'delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DMLWriteResultSet.java',
-            'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailureReplayTestSupport.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccFailureInjectionReplayTest.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccLowLevelFailureReplayTest.java',
-            'delosdb-tests/build.gradle',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccCommitCoordinator.java',
-            'delosdb-storage-mvcc/src/test/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccTransactionGroupCommitHardeningTest.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTable.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedCommitLifecycle.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedMaintenanceLifecycle.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedTableAccess.java',
-            'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedWriteConflictPolicy.java'
-    ]
-    inputs.files(requiredFiles.collect { new File(delosRepositoryRoot, it) })
-    outputs.file(layout.buildDirectory.file('reports/delosdb/phase8-entropy-static-analysis.txt'))
-
-    doLast {
-        def failures = []
-        def read = { String relativePath ->
-            def source = new File(delosRepositoryRoot, relativePath)
-            DelosDbStaticAnalysisSupport.require(
-                    failures, source.isFile(), 'Missing Phase 8 entropy source: ' + relativePath)
-            source.isFile() ? source.getText('UTF-8') : ''
-        }
-
-        def registryText = read(requiredFiles[0])
-        def dmlText = read(requiredFiles[1])
-        def unsupportedTypeTestText = read(requiredFiles[2])
-        def replaySupportText = read(requiredFiles[3])
-        def transactionReplayText = read(requiredFiles[4])
-        def lowLevelReplayText = read(requiredFiles[5])
-        def testBuildText = read(requiredFiles[6])
-        def coordinatorText = read(requiredFiles[7])
-        def groupTestText = read(requiredFiles[8])
-        def inheritedTableText = read(requiredFiles[9])
-        def commitLifecycleText = read(requiredFiles[10])
-        def maintenanceLifecycleText = read(requiredFiles[11])
-        def tableAccessText = read(requiredFiles[12])
-        def writeConflictPolicyText = read(requiredFiles[13])
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                !registryText.contains('logicalTableId')
-                        && registryText.contains('Object ownerTransaction,\n            boolean mvcc,'),
-                'registerWriteIntent must not retain the unused logical table identifier')
-        DelosDbStaticAnalysisSupport.require(failures,
-                dmlText.contains('DelosStorageTransactionRegistry.registerWriteIntent(\n                            tc,\n                            mvcc,\n                            tc.isGlobal())'),
-                'The SQL write boundary must use the reduced registerWriteIntent contract')
-        DelosDbStaticAnalysisSupport.require(failures,
-                !unsupportedTypeTestText.contains('closeQuietly(Connection connection)'),
-                'MvccSqlUnsupportedObjectTypeBoundaryTest must not retain its dead close helper')
-
-        ['writeTwoTables', 'reopenedDigest', 'committedDigest'].each { helper ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    replaySupportText.contains(helper + '('),
-                    'Shared replay support is missing helper: ' + helper)
-        }
-        [transactionReplayText, lowLevelReplayText].eachWithIndex { replayText, index ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    replayText.contains('MvccFailureReplayTestSupport.'),
-                    'Replay test ' + index + ' must use shared replay support')
-            ['private Object writeTwoTables(',
-             'private static Object writeTwoTables(',
-             'private String reopenedDigest(',
-             'private static String reopenedDigest(',
-             'private static String committedDigest('].each { duplicate ->
-                DelosDbStaticAnalysisSupport.require(failures,
-                        !replayText.contains(duplicate),
-                        'Replay test ' + index + ' retains duplicate helper: ' + duplicate)
-            }
-        }
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                testBuildText.contains('List<String> testPatterns = []')
-                        && testBuildText.contains('includeTestsMatching pattern'),
-                'Focused test registration must support method-level proof splits')
-        def participationStart = testBuildText.indexOf("'runDelosMvccTransactionParticipationTest'")
-        def rawStoreTransactionStart = testBuildText.indexOf(
-                "'runDelosMvccRawStoreSqlTransactionCutoverTest'")
-        def compatibilityAliasStart = testBuildText.indexOf(
-                "'runDelosMvccDatabaseCommitDecisionTest'")
-        def crashStart = testBuildText.indexOf("'runDelosMvccRawStoreDecisionWalCrashTest'")
-        def participationText = participationStart >= 0
-                        && rawStoreTransactionStart > participationStart
-                ? testBuildText.substring(participationStart, rawStoreTransactionStart) : ''
-        def transactionCutoverText = rawStoreTransactionStart >= 0
-                        && compatibilityAliasStart > rawStoreTransactionStart
-                ? testBuildText.substring(rawStoreTransactionStart, compatibilityAliasStart) : ''
-        def compatibilityAliasText = compatibilityAliasStart >= 0
-                        && crashStart > compatibilityAliasStart
-                ? testBuildText.substring(compatibilityAliasStart, crashStart) : ''
-        ['testSingleMvccTableAndHeapOnlyWritesRemainSupported',
-         'testReadOnlyCrossTableAndMixedAccessRemainsSupported',
-         'testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported'].each { methodName ->
-            DelosDbStaticAnalysisSupport.require(failures, participationText.contains(methodName),
-                    'Transaction-participation task is missing method: ' + methodName)
-            DelosDbStaticAnalysisSupport.require(failures,
-                    !transactionCutoverText.contains(methodName),
-                    'RawStore transaction-cutover task must not rerun participation method: ' + methodName)
-        }
-        ['testTwoMvccTablesCommitThroughOneRawStoreTransaction',
-         'testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
-         'testMixedHeapAndMvccWritesShareOneRawStoreTransaction'].each { methodName ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    transactionCutoverText.contains(methodName),
-                    'RawStore transaction-cutover task is missing method: ' + methodName)
-            DelosDbStaticAnalysisSupport.require(failures, !participationText.contains(methodName),
-                    'Transaction-participation task must not rerun cutover method: ' + methodName)
-        }
-        DelosDbStaticAnalysisSupport.require(failures,
-                compatibilityAliasText.contains(
-                        "dependsOn tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest')"),
-                'The Phase 8 database-decision task name must remain only as a compatibility alias')
-
-        DelosDbStaticAnalysisSupport.require(failures,
-                !coordinatorText.contains('ThreadDeath')
-                        && coordinatorText.contains('failure instanceof Error error')
-                        && coordinatorText.contains('rethrowError(errorFailure);'),
-                'MvccCommitCoordinator must signal waiters and rethrow every original Error')
-        DelosDbStaticAnalysisSupport.require(failures,
-                groupTestText.contains('errorReleasesFollowerAndIsRethrownByLeader')
-                        && groupTestText.contains('assertSame(leaderFailure, follower.failure())'),
-                'Group-commit proof must verify original Error identity for leader and follower')
-
-        def inheritedTableLineCount = inheritedTableText.readLines().size()
-        DelosDbStaticAnalysisSupport.require(failures,
-                inheritedTableLineCount <= 1800,
-                'MvccInheritedTable must remain within the 1,800-line responsibility budget; found '
-                        + inheritedTableLineCount)
-        DelosDbStaticAnalysisSupport.require(failures,
-                inheritedTableText.contains('private final MvccInheritedCommitLifecycle commitLifecycle;')
-                        && inheritedTableText.contains(
-                                'private final MvccInheritedMaintenanceLifecycle maintenanceLifecycle;')
-                        && inheritedTableText.contains('commitLifecycle.commit(transaction);')
-                        && inheritedTableText.contains('maintenanceLifecycle.vacuumSafely();'),
-                'MvccInheritedTable must delegate commit and maintenance lifecycle ownership')
-        ['publishPreparedGroupLocked(',
-         'new MvccCommitCoordinator<>(',
-         'new MvccPurgeDaemon()',
-         'runScheduledMaintenance('].each { leakedResponsibility ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    !inheritedTableText.contains(leakedResponsibility),
-                    'MvccInheritedTable regained extracted responsibility: ' + leakedResponsibility)
-        }
-        ['final class MvccInheritedCommitLifecycle',
-         'prepareDatabaseCommit(',
-         'publishPreparedGroupLocked(',
-         'commitSingleParticipant(',
-         'MvccCommitCoordinator<MvccPreparedCommit, CommitPublication>'].each { requiredToken ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    commitLifecycleText.contains(requiredToken),
-                    'Commit lifecycle extraction is missing: ' + requiredToken)
-        }
-        ['final class MvccInheritedMaintenanceLifecycle',
-         'runPurgeDaemonAfterCommit(',
-         'periodicMaintenancePriority(',
-         'runScheduledMaintenance(',
-         'DelosVacuumOutcome vacuumSafely()'].each { requiredToken ->
-            DelosDbStaticAnalysisSupport.require(failures,
-                    maintenanceLifecycleText.contains(requiredToken),
-                    'Maintenance lifecycle extraction is missing: ' + requiredToken)
-        }
-        DelosDbStaticAnalysisSupport.require(failures,
-                tableAccessText.contains('final class MvccInheritedTableAccess')
-                        && tableAccessText.contains('backupCoordinator.enterDurableMutation(mutation)')
-                        && tableAccessText.contains('requireOperational.run();'),
-                'Table access must remain the single lock and backup-boundary implementation')
-        DelosDbStaticAnalysisSupport.require(failures,
-                commitLifecycleText.contains('tableAccess.durable(')
-                        && maintenanceLifecycleText.contains('tableAccess.durable(')
-                        && inheritedTableText.contains('return tableAccess.read(operation);'),
-                'Extracted lifecycles and table facade must share MvccInheritedTableAccess')
-        DelosDbStaticAnalysisSupport.require(failures,
-                writeConflictPolicyText.contains('final class MvccInheritedWriteConflictPolicy')
-                        && commitLifecycleText.contains(
-                                'MvccInheritedWriteConflictPolicy.requireNoOtherActiveProviderWriter(')
-                        && inheritedTableText.contains(
-                                'MvccInheritedWriteConflictPolicy.requireNoOtherActiveProviderWriter('),
-                'Active-writer conflict policy must remain shared rather than duplicated')
-
-        def reportFile = new File(delosBuildRoot, 'reports/delosdb/phase8-entropy-static-analysis.txt')
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB Phase 8 entropy static analysis')
-            writer.println('========================================')
-            if (failures.isEmpty()) {
-                writer.println('Status: PASS')
-                writer.println('Dead code removed, replay helpers shared, focused tasks split, Error propagation preserved, and inherited-table lifecycle responsibilities extracted.')
-            } else {
-                writer.println('Status: FAIL')
-                failures.each { failure -> writer.println('- ' + failure) }
-            }
-        }
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'DelosDB Phase 8 entropy static analysis failed. Report: ' + reportFile)
-        }
-        logger.lifecycle(
-                'DelosDB Phase 8 entropy static analysis passed. Report: {}', reportFile)
-    }
-}
 
 tasks.register('delosMvccTransactionalDdlStaticAnalysis') {
     group = 'verification'
@@ -8393,7 +7909,7 @@ tasks.register('delosMvccRawStoreSqlTransactionCutoverStaticAnalysis') {
 
 tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies that the retained Phase 8 MVCC system remains quarantined after Stage 7 module convergence.'
+    description = 'Verifies complete repository retirement of the Phase 8 MVCC oracle after RawStore convergence.'
 
     def required = [
             file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java'),
@@ -8408,13 +7924,22 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
             file('settings.gradle')
     ]
+    def removedRoots = [
+            file('delosdb-storage-mvcc/src/main/java/io'),
+            file('delosdb-storage-mvcc/src/test'),
+            file('benchmarks/jcstress/delosdb-storage-mvcc')
+    ]
     inputs.files(required)
+    inputs.files(removedRoots)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt'))
 
     doLast {
         def failures = []
         required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        removedRoots.findAll { it.exists() }.each {
+            failures << 'Retired Phase 8 oracle root remains in the repository: ' + it
+        }
         if (failures.isEmpty()) {
             def factory = required[0].getText('UTF-8')
             def conglomerate = required[1].getText('UTF-8')
@@ -8446,23 +7971,17 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
                 failures << 'Active diagnostics must observe only RawStore and reject retained database snapshots'
             }
             if (!mvccBuild.contains("include 'org/apache/derby/impl/store/access/mvcc/**/*.java'")
-                    || !mvccBuild.contains('legacyRetained {')
-                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/mvcc/**/*.java'")
-                    || !mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
-                    || !mvccBuild.contains('setSrcDirs([])')
-                    || !mvccBuild.contains("tasks.register('verifyRetainedOracleQuarantine')")
-                    || !mvccBuild.contains("tasks.register('legacyRetainedCheck')")
-                    || !mvccBuild.contains("setDependsOn([tasks.named('classes'), tasks.named('verifyRetainedOracleQuarantine')])")) {
-                failures << 'Production MVCC and the retained Phase 8 oracle must remain separated by explicit source sets'
-            }
-            if (new File(delosRepositoryRoot,
-                    'delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccInheritedStorageProviderFactory.java').exists()
-                    || new File(delosRepositoryRoot,
-                    'delosdb-storage-mvcc/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory').exists()) {
-                failures << 'Retired external MVCC provider source and service must be absent from the repository tree'
+                    || !mvccBuild.contains("tasks.register('compileStorageMvcc')")
+                    || mvccBuild.contains('legacyRetained')
+                    || mvccBuild.contains('compileLegacyRetained')
+                    || mvccBuild.contains('verifyRetainedOracleQuarantine')
+                    || mvccBuild.contains("tasks.register('runMvcc")
+                    || mvccBuild.contains('org.gradle.api.tasks.testing.Test')
+                    || mvccBuild.readLines().size() > 140) {
+                failures << 'MVCC build must describe one compact production source set and no retained proof machinery'
             }
             if (mvccBuild.contains("project(':delosdb-storage-io')")) {
-                failures << 'MVCC production, retained, and test source sets must not depend on the retired page-volume module'
+                failures << 'The production MVCC module must not depend on the retired page-volume module'
             }
             def runtimeSection = artifacts.substring(artifacts.indexOf('ext.delosdbRuntimeJarArtifacts = ['),
                     artifacts.indexOf('ext.delosdbAssembledSupportJarArtifacts = ['))
@@ -8471,9 +7990,8 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             if (runtimeSection.contains('delosdb-storage-mvcc.jar')
                     || runtimeSection.contains('delosdb-storage-io.jar')
                     || !supportSection.contains('delosdb-storage-mvcc.jar')
-                    || supportSection.contains('delosdb-storage-io.jar')
-                    || !artifacts.contains('Retained Phase 8 classes remain in production MVCC provider jar')) {
-                failures << 'Runtime artifact model must publish the production MVCC patch artifact without restoring retained jars'
+                    || supportSection.contains('delosdb-storage-io.jar')) {
+                failures << 'Runtime artifact model must publish only the production MVCC patch artifact'
             }
             if (!engineBuild.contains("project(path: ':delosdb-storage-mvcc', configuration: 'derbyRuntimePatchElements')")
                     || engineBuild.contains(':delosdb-storage-bridge:')) {
@@ -8486,33 +8004,42 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             if (moduleInfo.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
                 failures << 'module-info must not discover the retired external provider'
             }
-            if (testsBuild.contains("testImplementation project(':delosdb-storage-io')")
-                    || testsBuild.contains('delosdbLegacyOracleTestJarFiles')) {
-                failures << 'Normal SQL tests must not depend on the retained page-volume system'
+            [':delosdb-storage-mvcc:runMvcc', 'legacyRetainedCheck',
+             'runDelosMvccBufferCacheBenchmark', 'runDelosMvccPageCodecBenchmark'].each { stale ->
+                if (testsBuild.contains(stale)) {
+                    failures << 'Normal SQL and baseline tests retain an archived-oracle task reference: ' + stale
+                }
+            }
+            ['runDelosMvccRawStoreVerticalSliceTest',
+             'runDelosMvccRawStoreDecisionWalCrashTest',
+             'runDelosHeapMvccDifferentialSqlHarnessTest'].each { current ->
+                if (!testsBuild.contains(current)) {
+                    failures << 'Current RawStore MVCC proof wiring is missing: ' + current
+                }
             }
             def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
             if (!s0.contains("'delosMvccRetainedRuntimeRetirementStaticAnalysis'")) {
                 failures << 'S0 must include the retained-runtime retirement gate'
             }
-            ['factory branch removed', 'retained MVCC and page-volume jars removed from runtime classpaths',
-             ':delosdb-storage-mvcc:legacyRetainedCheck'].each { token ->
+            ['source archive deleted', 'Git history', '20 production Java classes',
+             'no retained source set'].each { token ->
                 if (!design.contains(token)) failures << 'Retirement design is missing: ' + token
             }
-            ['## Stage 5.4 — retained production runtime retirement', 'VERIFIED',
-             'one production MVCC runtime'].each { token ->
-                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 5.4 token: ' + token
+            ['## Stage 8.7.3 — retained-oracle and diagnostics maintainability closeout',
+             'REMOVE_RETAINED_PHASE8_ORACLE'].each { token ->
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.7.3 token: ' + token
             }
         }
         def reportFile = layout.buildDirectory.file('reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB retained MVCC production runtime retirement static analysis')
-            writer.println('===================================================================')
+            writer.println('DelosDB retained MVCC source-oracle retirement static analysis')
+            writer.println('===============================================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
-        if (!failures.isEmpty()) throw new GradleException('Retained MVCC runtime retirement static analysis failed. Report: ' + reportFile)
-        logger.lifecycle('Retained MVCC runtime retirement static analysis passed. Report: {}', reportFile)
+        if (!failures.isEmpty()) throw new GradleException('Retained MVCC source-oracle retirement static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Retained MVCC source-oracle retirement static analysis passed. Report: {}', reportFile)
     }
 }
 
@@ -8567,8 +8094,10 @@ tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
                     || mvccBuild.contains('srcDir resourceRoot')) {
                 failures << 'Production MVCC resources must use one explicit source root without duplicating Java plugin defaults'
             }
-            if (!mvccBuild.contains('legacyRetained {') || !mvccBuild.contains("tasks.register('legacyRetainedCheck')")) {
-                failures << 'The Phase 8 differential oracle must remain explicit and outside production classes'
+            if (mvccBuild.contains('legacyRetained')
+                    || new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/main/java/io').exists()
+                    || new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/test').exists()) {
+                failures << 'The retired Phase 8 oracle must be absent after production module convergence'
             }
             if (serviceProviders != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
                 failures << 'MVCC access-method service must publish exactly one production provider'
@@ -8593,12 +8122,12 @@ tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
                 failures << 'Engine patch wiring must consume the MVCC provider artifact directly'
             }
             if (!artifacts.contains("jarName: 'delosdb-storage-mvcc.jar'")
-                    || !artifacts.contains('Retained Phase 8 classes remain in production MVCC provider jar')) {
+                    || !artifacts.contains('Retired io.github storage classes remain in production MVCC provider jar')) {
                 failures << 'Root assembly must publish and inspect the production MVCC provider jar'
             }
             if (parity.contains(':delosdb-storage-bridge|')) failures << 'Derby module parity must not retain the removed bridge extension row'
             def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
-            ['provider implementation ownership', 'legacyretained source set',
+            ['provider implementation ownership', 'retained oracle source deletion',
              'derbyruntimepatchelements', 'no split-package runtime duplication'].each { token ->
                 if (!normalizedDesign.contains(token)) failures << 'Module-convergence design is missing: ' + token
             }
@@ -8622,24 +8151,29 @@ tasks.register('delosMvccStorageModuleConvergenceStaticAnalysis') {
 
 tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies Stage 7.2 retirement of the standalone Delos-native page-volume module.'
+    description = 'Verifies complete retirement of the standalone and archived Delos-native page-volume implementation.'
 
     def required = [
             file('settings.gradle'),
             file('delosdb-storage-mvcc/build.gradle'),
             file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
             file('docs/design/V1-RAWSTORE-STORAGE-IO-MODULE-RETIREMENT.md'),
-            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io/page/DelosPage.java'),
-            file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io/volume/FileChannelPageVolume.java')
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
     ]
+    def removedIoRoot = file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io')
     inputs.files(required)
+    inputs.dir(file('delosdb-engine/src/main/java'))
+    inputs.dir(file('delosdb-storage-derby/src/main/java'))
+    inputs.dir(file('delosdb-storage-mvcc/src/main/java/org/apache/derby'))
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file('reports/delosdb/storage-io-module-retirement-static-analysis.txt'))
 
     doLast {
         def failures = []
         required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
+        if (removedIoRoot.exists()) {
+            failures << 'Archived Delos-native page-volume sources remain: ' + removedIoRoot
+        }
         if (failures.isEmpty()) {
             def settings = required[0].getText('UTF-8')
             def mvccBuild = required[1].getText('UTF-8')
@@ -8652,15 +8186,10 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
                     || new File(delosRepositoryRoot, 'delosdb-storage-io').exists()) {
                 failures << 'delosdb-storage-io must be absent from settings and the repository tree'
             }
-            if (!mvccBuild.contains("include 'io/github/ggeorg/delosdb/storage/io/**/*.java'")
-                    || mvccBuild.contains("project(':delosdb-storage-io')")) {
-                failures << 'Retained page-volume support must compile only inside the MVCC legacyRetained source set'
-            }
-            def legacyIoSources = DelosDbStaticFileSupport.javaFiles([
-                    file('delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/io')
-            ])
-            if (legacyIoSources.size() != 13) {
-                failures << 'Expected 13 quarantined Delos-native page-volume sources; found ' + legacyIoSources.size()
+            if (mvccBuild.contains('io/github/ggeorg/delosdb/storage/io')
+                    || mvccBuild.contains("project(':delosdb-storage-io')")
+                    || mvccBuild.contains('legacyRetained')) {
+                failures << 'The production MVCC build must contain no page-volume or retained-source wiring'
             }
             def productionIoImports = []
             [file('delosdb-engine/src/main/java'), file('delosdb-storage-derby/src/main/java'),
@@ -8678,13 +8207,14 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
             if (parity.contains(':delosdb-storage-io|')) {
                 failures << 'Derby module parity must not retain the removed storage-io extension row'
             }
-            ['no active production consumer', 'legacyRetained source set',
-             'no second page-volume authority', '13 source files'].each { token ->
+            ['no active production consumer', 'source archive deleted',
+             'no second page-volume authority', 'Git history'].each { token ->
                 if (!design.contains(token)) failures << 'Storage-I/O retirement design is missing: ' + token
             }
             ['## Stage 7.2 — standalone page-volume module retirement',
+             '## Stage 8.7.3 — retained-oracle and diagnostics maintainability closeout',
              'delosStorageIoModuleRetirementStaticAnalysis'].each { token ->
-                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.2 token: ' + token
+                if (!roadmap.contains(token)) failures << 'Roadmap is missing storage-I/O retirement token: ' + token
             }
             def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
             if (!s0.contains("'delosStorageIoModuleRetirementStaticAnalysis'")) {
@@ -8696,17 +8226,16 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
                 'reports/delosdb/storage-io-module-retirement-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB storage-I/O module retirement static analysis')
-            writer.println('=====================================================')
+            writer.println('DelosDB storage-I/O implementation retirement static analysis')
+            writer.println('==============================================================')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }
         }
         if (!failures.isEmpty()) throw new GradleException(
-                'Storage-I/O module retirement static analysis failed. Report: ' + reportFile)
-        logger.lifecycle('Storage-I/O module retirement static analysis passed. Report: {}', reportFile)
+                'Storage-I/O implementation retirement static analysis failed. Report: ' + reportFile)
+        logger.lifecycle('Storage-I/O implementation retirement static analysis passed. Report: {}', reportFile)
     }
 }
-
 
 tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
     group = 'verification'

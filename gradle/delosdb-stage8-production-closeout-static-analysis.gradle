@@ -20,6 +20,7 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             replayManifest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/DelosRawStoreIoFailureReplayManifest.java'),
             diagnosticsTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.java'),
             decisionTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStorePageIoRepresentationDecisionTest.java'),
+            decisionWalCrashTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.java'),
             testBuild: file('delosdb-tests/build.gradle'),
             mvccBuild: file('delosdb-storage-mvcc/build.gradle'),
             storageApiDesign: file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
@@ -30,28 +31,40 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             finalChapter: file('.delosdb-v1/04-book/phase8-executable-draft/chapters/38-final-production-closeout.md'),
             reproducibility: file('.delosdb-v1/05-research/02-REPRODUCIBILITY.md'),
             roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
-            handoff: file('.delosdb-v1/NEW-SESSION-README.md')
+            handoff: file('.delosdb-v1/NEW-SESSION-README.md'),
+            residueManifest: file('gradle/static-analysis/delosdb-stage8-retired-files.txt')
     ]
-    def removed = [
-            file('delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoFailureReplayManifest.java'),
-            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosHeapPageBuffer.java'),
-            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemory.java'),
-            file('delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreNativeMemoryDirectory.java'),
-            file('delosdb-tests/src/test/java/org/apache/derby/impl/store/raw/data/RawStoreNativeMemoryTestSupport.java'),
-            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreHeapMemorySegmentPageBufferTest.java'),
-            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreNativeMemoryPageBufferTest.java'),
+    def retiredRoots = [
+            file('delosdb-storage-api'),
+            file('delosdb-storage-io'),
+            file('delosdb-storage-bridge'),
             file('delosdb-storage-mvcc/src/main/java/io'),
             file('delosdb-storage-mvcc/src/test'),
-            file('benchmarks/jcstress/delosdb-storage-mvcc'),
-            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlRecoveryTest.java')
+            file('benchmarks/jcstress/delosdb-storage-mvcc')
     ]
+    def activeResidueSources = files(
+            fileTree(projectDir) {
+                include 'delosdb-*/src/**/*.java'
+                include 'benchmarks/**/src/**/*.java'
+                exclude 'delosdb-storage-mvcc/src/main/java/io/**'
+                exclude 'delosdb-storage-mvcc/src/test/**'
+                exclude 'benchmarks/jcstress/delosdb-storage-mvcc/**'
+            },
+            file('build.gradle'),
+            file('settings.gradle'),
+            fileTree(projectDir) {
+                include 'delosdb-*/build.gradle'
+                include 'benchmarks/**/build.gradle'
+            })
 
     inputs.files(required.values())
-    inputs.files(removed)
+    inputs.files(retiredRoots)
+    inputs.files(activeResidueSources)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     inputs.file(file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file(
             'reports/delosdb/shared-rawstore-production-closeout-static-analysis.txt'))
+    outputs.upToDateWhen { false }
 
     doLast {
         def failures = []
@@ -60,8 +73,24 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 failures << 'Missing required Stage 8 closeout source: ' + name + ' -> ' + source
             }
         }
-        removed.findAll { it.exists() }.each {
-            failures << 'Retired Stage 8 source still exists: ' + it
+        retiredRoots.findAll { it.exists() }.each {
+            failures << 'Retired Stage 8 root still exists: ' + it
+        }
+        def retiredFiles = []
+        if (required.residueManifest.isFile()) {
+            retiredFiles = required.residueManifest.readLines('UTF-8')
+                    .collect { it.trim() }
+                    .findAll { it && !it.startsWith('#') }
+            retiredFiles.each { retiredPath ->
+                File retiredFile = file(retiredPath)
+                if (retiredFile.exists()) {
+                    failures << 'Retired Stage 8 file still exists: ' + retiredFile
+                }
+            }
+            if (retiredFiles.size() != 220) {
+                failures << 'Expected 220 retired Stage 8 file paths; found '
+                        + retiredFiles.size()
+            }
         }
 
         if (failures.isEmpty()) {
@@ -69,6 +98,29 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 [(name): source.getText('UTF-8')]
             }
             def sharedStatic = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
+            def normalizedContains = { String source, String token ->
+                source.replaceAll('\\s+', ' ')
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains(token.replaceAll('\\s+', ' ')
+                                .toLowerCase(java.util.Locale.ROOT))
+            }
+
+            def forbiddenActiveResidue = [
+                    'io.github.ggeorg.delosdb.storage.io.',
+                    'io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailurePointRegistry',
+                    'DelosPageIo',
+                    'MvccSqlRecoveryTest',
+                    'MvccTransactionalDdlCrashTest'
+            ]
+            activeResidueSources.files.sort().each { source ->
+                String sourceText = source.getText('UTF-8')
+                forbiddenActiveResidue.each { token ->
+                    if (sourceText.contains(token)) {
+                        failures << 'Active source/build file retains Stage 8 residue '
+                                + token + ': ' + source
+                    }
+                }
+            }
 
             // Stage 8.7.1: lifecycle and API closeout.
             ['putIfAbsent(normalized, replacement)',
@@ -229,7 +281,10 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             ['prepareRawStoreInternalTestSupportSources',
              'compileRawStoreInternalTestSupport',
              'generated/sources/raw-store-internal-test-support',
-             "'runDelosSharedRawStorePageIoRepresentationDecisionTest'"].each { token ->
+             "'runDelosSharedRawStorePageIoRepresentationDecisionTest'",
+             "'runDelosMvccRawStoreDecisionWalCrashTest'",
+             "'runDelosMvccTransactionalDdlTest'",
+             'Runs MVCC CREATE/DROP rollback, savepoint, and DDL-plus-DML proofs.'].each { token ->
                 if (!text.testBuild.contains(token)) {
                     failures << 'Current RawStore test wiring is missing: ' + token
                 }
@@ -239,17 +294,26 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
              'runDelosSharedRawStoreNativeMemoryPageBufferTest',
              'runMvccCoreModelTest',
              'runMvccTableScanModelTest',
-             'MvccSqlRecoveryTest.java'].each { stale ->
+             'MvccSqlRecoveryTest.java',
+             'MvccTransactionalDdlCrashTest.class',
+             'process-halt recovery proofs'].each { stale ->
                 if (text.testBuild.contains(stale)) {
                     failures << 'Stale experiment/oracle test wiring remains: ' + stale
+                }
+            }
+
+            ['after-stamp-before-raw-commit',
+             'after-raw-commit-before-publication',
+             'assertNoRetainedDecisionAuthority(database)'].each { token ->
+                if (!text.decisionWalCrashTest.contains(token)) {
+                    failures << 'Live RawStore decision-WAL crash proof is missing: ' + token
                 }
             }
 
             ['104 current shared contracts',
              'three post-retirement runtime diagnostics contracts',
              'replay manifest is test-only evidence'].each { token ->
-                if (!text.storageApiDesign.toLowerCase(java.util.Locale.ROOT)
-                        .contains(token.toLowerCase(java.util.Locale.ROOT))) {
+                if (!normalizedContains(text.storageApiDesign, token)) {
                     failures << 'Storage API inventory design is missing: ' + token
                 }
             }
@@ -269,49 +333,56 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
              'GROUP_INTERNAL_SNAPSHOT_CONSTRUCTION',
              '20 Java classes',
              'Git history'].each { token ->
-                if (!text.finalDesign.contains(token)) {
+                if (!normalizedContains(text.finalDesign, token)) {
                     failures << 'Final Stage 8 closeout design is missing: ' + token
                 }
             }
             ['one MVCC provider',
              'no retained oracle',
              'named groups instead of a long primitive argument list'].each { token ->
-                if (!text.finalChapter.contains(token)) {
+                if (!normalizedContains(text.finalChapter, token)) {
                     failures << 'Final Stage 8 closeout chapter is missing: ' + token
                 }
             }
 
-            def stage871Start = text.roadmap.indexOf(
-                    '## Stage 8.7.1 — production closeout lifecycle and API simplification')
-            def stage872Start = text.roadmap.indexOf(
-                    '## Stage 8.7.2 — page-I/O representation closeout')
-            def stage873Start = text.roadmap.indexOf(
-                    '## Stage 8.7.3 — retained-oracle and diagnostics maintainability closeout')
-            def stage9Start = text.roadmap.indexOf('# Stage 9 — Lucene 10 foundation')
-            if (stage871Start < 0 || stage872Start <= stage871Start
-                    || stage873Start <= stage872Start || stage9Start <= stage873Start) {
+            def roadmapLines = text.roadmap.readLines()
+            def stage871Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.1') }
+            def stage872Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.2') }
+            def stage873Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.3') }
+            def stage9Line = roadmapLines.findIndexOf { it.startsWith('# Stage 9') }
+            if (stage871Line < 0 || stage872Line <= stage871Line
+                    || stage873Line <= stage872Line || stage9Line <= stage873Line) {
                 failures << 'Roadmap does not preserve Stage 8.7.1, 8.7.2, 8.7.3, and Stage 9 ordering'
             } else {
-                def stage871 = text.roadmap.substring(stage871Start, stage872Start)
-                def stage872 = text.roadmap.substring(stage872Start, stage873Start)
-                def stage873 = text.roadmap.substring(stage873Start, stage9Start)
-                if (!stage871.contains('VERIFIED') || stage871.contains('PENDING USER VERIFICATION')) {
+                def stage871 = roadmapLines.subList(stage871Line, stage872Line).join('\n')
+                def stage872 = roadmapLines.subList(stage872Line, stage873Line).join('\n')
+                def stage873 = roadmapLines.subList(stage873Line, stage9Line).join('\n')
+                if (!stage871.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
+                        || stage871.toUpperCase(java.util.Locale.ROOT)
+                                .contains('PENDING USER VERIFICATION')) {
                     failures << 'Stage 8.7.1 roadmap section must be verified'
                 }
-                if (!stage872.contains('VERIFIED') || stage872.contains('PENDING USER VERIFICATION')) {
+                if (!stage872.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
+                        || stage872.toUpperCase(java.util.Locale.ROOT)
+                                .contains('PENDING USER VERIFICATION')) {
                     failures << 'Stage 8.7.2 roadmap section must be verified'
                 }
-                if (!stage873.contains('VERIFIED') || stage873.contains('PENDING USER VERIFICATION')) {
+                if (!stage873.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
+                        || stage873.toUpperCase(java.util.Locale.ROOT)
+                                .contains('PENDING USER VERIFICATION')) {
                     failures << 'Stage 8.7.3 roadmap section must be verified before compiler or Lucene work'
                 }
             }
-            ['Stage 8.7.1 production closeout lifecycle and API simplification:       VERIFIED',
-             'Stage 8.7.2 page-I/O representation closeout:                               VERIFIED',
-             'Stage 8.7.3 retained-oracle and diagnostics maintainability closeout:         VERIFIED',
-             'REMOVE_RETAINED_PHASE8_ORACLE'].each { token ->
-                if (!text.handoff.contains(token)) {
-                    failures << 'Session handoff is missing final Stage 8 status/decision: ' + token
+            ['Stage 8.7.1', 'Stage 8.7.2', 'Stage 8.7.3'].each { stage ->
+                def statusLine = text.handoff.readLines().find {
+                    it.contains(stage) && it.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
                 }
+                if (statusLine == null) {
+                    failures << 'Session handoff must mark ' + stage + ' verified'
+                }
+            }
+            if (!text.handoff.contains('REMOVE_RETAINED_PHASE8_ORACLE')) {
+                failures << 'Session handoff is missing REMOVE_RETAINED_PHASE8_ORACLE'
             }
 
             ['delosDatabaseDecisionRetentionStaticAnalysis',
@@ -342,6 +413,10 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             failures.each { writer.println('- ' + it) }
         }
         if (!failures.isEmpty()) {
+            logger.error('Shared RawStore production closeout failures ({}):', failures.size())
+            failures.each { failure ->
+                logger.error('  - {}', failure)
+            }
             throw new GradleException(
                     'Shared RawStore production closeout static analysis failed. Report: '
                             + reportFile)

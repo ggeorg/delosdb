@@ -387,7 +387,7 @@ The historical `runDelosMvccDatabaseCommitDecisionTest` task remains only as a c
 RawStore is now the unconditional `delos_mvcc` production authority. The retained runtime/controller
 classes are excluded from the active bridge artifact, the retained MVCC/page-volume jars are outside
 root assembly and normal runtime/test classpaths, and the archived suite is available only through
-`legacyRetainedCheck`. Existing retained files fail closed and require an external migration path;
+Git history. Existing retained-format files fail closed and require an external migration path;
 they are never dual-read or mutated.
 
 ## Stage 6 named memory databases and bounded accounting

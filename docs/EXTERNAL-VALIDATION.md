@@ -92,44 +92,29 @@ caller-owned CI commands:
   -Pdelosdb.jmh.command="<approved external JMH command>"
 ```
 
-The built-in baseline is the MVCC buffer-workload invariant proof, not a
+The built-in baseline is the current page-I/O representation decision proof, not a
 wall-clock substitute for JMH. The standalone JMH lane uses public JDBC, checks
 semantic fingerprints during measurement, writes JSON and human reports, and
 records SHA-256 fingerprints of all runtime jars and benchmark inputs.
 
-## Jcstress MVCC visibility probes
+## Jcstress concurrency adapter
 
-`delosJcstressMvccVisibilityProbes` validates the opt-in jcstress probe layout
-for MVCC visibility, transaction outcome publication, retained snapshot horizon,
-and buffer pin/dirty publication. It runs the existing deterministic baseline
-first:
-
-```bash
-./gradlew :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation
-```
-
-Then it validates the external probe sources under:
-
-```text
-benchmarks/jcstress/delosdb-storage-mvcc
-```
-
-Run the adapter without requiring jcstress:
+The retired in-tree Phase 8 jcstress probes were deleted with their implementation dependencies.
+The stable `delosJcstressConcurrencyValidation` adapter first runs the live RawStore-backed MVCC
+network-concurrency proof:
 
 ```bash
-./gradlew delosJcstressMvccVisibilityProbes
+./gradlew :delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest
 ```
 
-Run a CI-provided jcstress command explicitly:
+A CI or release job may then supply an approved external jcstress command:
 
 ```bash
-./gradlew delosJcstressMvccVisibilityProbes \
-  -Pdelosdb.jcstress.visibility.command="<compile-and-run jcstress command>"
+./gradlew delosJcstressConcurrencyValidation \
+  -Pdelosdb.jcstress.command="<approved external jcstress command>"
 ```
 
-This task is external validation only. It is not wired into S0 and does not
-change MVCC visibility, purge horizon, buffer, checkpoint, Derby heap, DRDA, or
-optimizer behavior.
+The adapter is opt-in and outside S0.
 
 ## SQLancer profile skeleton
 

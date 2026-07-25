@@ -1,5 +1,6 @@
 # DelosDB Shared Storage Service Extraction Audit
 
+> **Historical source-path inventory.** The listed `io.github.ggeorg.delosdb.storage.*` paths were removed in Stage 8.7.3 and remain available through Git history only.
 This audit belongs to Phase O of the engine-depth roadmap. It intentionally does
 not extract a new shared service yet. Its purpose is to decide which storage
 concerns have enough proof on both the Derby-compatible heap path and the MVCC

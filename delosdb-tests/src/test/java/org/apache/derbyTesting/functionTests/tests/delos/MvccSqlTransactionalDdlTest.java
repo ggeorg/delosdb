@@ -21,7 +21,6 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.nio.file.Files;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -196,44 +195,6 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
         assertNoProviderState(databaseName, containerId);
     }
 
-    public void testDdlPlusMvccRawStoreFailureRollsBackBoth() throws Exception {
-        String databaseName = databaseName("mvcc-transactional-ddl-raw-failure-db");
-        try (Connection connection = openDatabase(databaseName, true)) {
-            executeUpdate(connection,
-                    "create table raw_failure_witness_t "
-                            + "(id int primary key, value int) using delos_mvcc");
-        }
-        shutdownDatabase(databaseName);
-
-        installFailure(databasePath(databaseName), "BEFORE_DERBY_RAW_STORE_COMMIT");
-        try (Connection connection = openDatabase(databaseName, false)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection,
-                    "create table raw_failure_heap_ddl (id int primary key)");
-            executeUpdate(connection,
-                    "insert into raw_failure_witness_t values (1, 10)");
-            try {
-                connection.commit();
-                fail("Expected injected raw-store commit failure");
-            } catch (SQLException expected) {
-                assertTrue("expected injected raw-store failure, got " + expected,
-                        containsMessage(expected, "BEFORE_DERBY_RAW_STORE_COMMIT")
-                                || containsMessage(expected, "Injected MVCC failure"));
-            }
-            if (!connection.isClosed()) {
-                connection.rollback();
-            }
-        }
-
-        shutdownDatabase(databaseName);
-        try (Connection reopened = openDatabase(databaseName, false)) {
-            assertTableMissing(reopened, "raw_failure_heap_ddl");
-            assertRows(reopened,
-                    "select id, value from raw_failure_witness_t order by id",
-                    new String[0]);
-        }
-    }
-
     public void testCreateAndDropLifecycleRollBackToSavepoint() throws Exception {
         String databaseName = databaseName("mvcc-transactional-ddl-savepoint-db");
         long createdContainerId;
@@ -270,19 +231,6 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
                     "1|10");
         }
         assertNoProviderState(databaseName, createdContainerId);
-    }
-
-    private static void installFailure(Path database, String failurePoint)
-            throws Exception {
-        Class<?> registry = Class.forName(
-                "io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailurePointRegistry");
-        Method install = registry.getDeclaredMethod(
-                "installFailureForTesting",
-                Path.class,
-                String.class,
-                long.class);
-        install.setAccessible(true);
-        install.invoke(null, database.toAbsolutePath().normalize(), failurePoint, 1L);
     }
 
     private static void assertIndexCount(

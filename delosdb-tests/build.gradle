@@ -973,11 +973,8 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
-        'Runs MVCC CREATE/DROP rollback, savepoint, DDL-plus-DML, and process-halt recovery proofs.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccTransactionalDdlCrashTest.class'
-        ])
+        'Runs MVCC CREATE/DROP rollback, savepoint, and DDL-plus-DML proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMvccDatabaseRuntimeIsolationTest',

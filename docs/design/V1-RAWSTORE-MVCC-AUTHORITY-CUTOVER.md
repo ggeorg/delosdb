@@ -72,7 +72,7 @@ and SQL/DRDA test classpaths. The retired `DelosStorageProviderFactory` service 
 The archived implementation is built and tested only through:
 
 ```text
-:delosdb-storage-mvcc:legacyRetainedCheck
+delosMvccRetainedRuntimeRetirementStaticAnalysis
 ```
 
 Normal `check` and S0 use the RawStore-backed implementation.

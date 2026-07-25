@@ -79,9 +79,9 @@ tasks.register('reviewDelosV1ProductionCloseoutCapture') {
 
         def requiredLanes = [
                 'operational', 'jdbc-lifecycle', 'jdbc-batch-scaling',
-                'jdbc-transactions', 'jdbc-row-scaling', 'mvcc-buffer-cache',
-                'mvcc-page-codec', 'drda-stress', 'modular-image-drda',
-                'recovery-differential', 'failure-replay', 'low-level-failure-replay'
+                'jdbc-transactions', 'jdbc-row-scaling', 'page-io-representation',
+                'rawstore-fault-injection', 'rawstore-decision-wal-crash',
+                'drda-stress', 'modular-image-drda'
         ]
         def expectedMatrix = [
                 writers: [1, 2, 4, 8, 16],
@@ -251,16 +251,15 @@ tasks.register('reviewDelosV1ProductionCloseoutCapture') {
             [
                     'org.apache.derby.engine', 'org.apache.derby.server',
                     'org.apache.derby.tools', 'org.apache.derby.client',
-                    'io.github.ggeorg.delosdb.storage.mvcc',
-                    'io.github.ggeorg.delosdb.storage.io'
+                    'io.github.ggeorg.delosdb.storage.mvcc'
             ].each { String moduleName ->
                 require(modulesText.contains(moduleName),
                         'Modular resolution is missing ' + moduleName)
             }
         }
 
-        ['drda-stress', 'recovery-differential',
-         'failure-replay', 'low-level-failure-replay'].each { String lane ->
+        ['drda-stress', 'rawstore-fault-injection',
+         'rawstore-decision-wal-crash'].each { String lane ->
             File laneRoot = new File(captureRoot, 'raw/' + lane)
             def xmlFiles = []
             if (laneRoot.isDirectory()) {

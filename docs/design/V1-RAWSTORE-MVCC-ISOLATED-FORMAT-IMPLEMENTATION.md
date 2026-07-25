@@ -527,7 +527,7 @@ only a compatibility alias. See `V1-RAWSTORE-MVCC-SQL-TRANSACTION-CUTOVER.md`.
 
 The RawStore-backed implementation is now the unconditional production path. Retained bridge classes
 are excluded from the production artifact, the external provider is absent from runtime classpaths,
-and the Phase 8 suite is quarantined behind `legacyRetainedCheck`. See
+and the Phase 8 source suite was deleted after final convergence. See
 `V1-RAWSTORE-MVCC-RETAINED-RUNTIME-RETIREMENT.md`.
 
 ## Stage 6 complete named memory-database support

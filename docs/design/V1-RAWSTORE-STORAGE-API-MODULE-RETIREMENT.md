@@ -66,7 +66,7 @@ module count before future Lucene module    -> 20
 final module count after Lucene addition    -> 21
 ```
 
-The retained Phase 8 oracle remains quarantined in the `legacyRetained` source set. It compiles
+The Phase 8 source oracle was deleted after production closeout. Before deletion it compiled
 against the complete shared contract closure from `delosdb-derby-store-api`; it does not reactivate the
 retired provider facade.
 

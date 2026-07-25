@@ -3,8 +3,9 @@
 ## Purpose
 
 DelosDB keeps accepted machine-specific evidence separate from deterministic correctness gates.
-The tracked accepted bundle remains the reviewed Phase 8.6 reference. The production-closeout
-capture extends that evidence after the WAL, deserialization, and decision-retention corrections.
+The tracked accepted bundle remains the reviewed historical Phase 8.6 reference. New production-
+closeout captures use only live RawStore-backed Stage 8 lanes; they do not execute the deleted Phase 8
+oracle.
 
 Benchmark evidence does not replace correctness tests. Semantic checksums must remain stable, and
 material timing or resource changes require explanation against a comparable environment.
@@ -67,7 +68,7 @@ current runtime-artifact fingerprints
 fixed writer matrix and complete lane inventory
 32 raw decision-force and 32 participant-publication samples
 real jlink/JPMS DRDA server and client execution
-successful stress, recovery, failure-replay, and process-halt XML evidence
+successful DRDA stress, RawStore fault-injection, and decision/WAL crash XML evidence
 immutability and checksums of the historical accepted baseline
 ```
 
@@ -157,12 +158,11 @@ The production-closeout bundle includes:
 operational writer/lifecycle/backup/default-overhead evidence
 split raw decision-force and participant-publication evidence
 JDBC lifecycle, batch, transaction, and row scaling
-MVCC buffer/cache and page-codec measurements
+page-I/O representation decision evidence
+shared RawStore deterministic fault-injection evidence
+RawStore-backed MVCC decision/WAL crash evidence
 DRDA concurrent-client stress
 jlink modular-image DRDA execution
-heap/MVCC recovery differential
-transaction failure replay
-low-level storage and process-halt replay
 runtime artifact SHA-256 fingerprints
 ```
 

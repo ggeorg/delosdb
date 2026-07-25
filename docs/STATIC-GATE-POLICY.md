@@ -117,11 +117,10 @@ Run it directly with:
 
 ## Security truth
 
-`delosSecurityTruthStaticAnalysis` is a stable S0 gate. It verifies that TLS keystore properties
-are copied without nullable `Properties.setProperty` calls, keystore input streams close, the
-PlanExporter uses the centralized secure XML transformer factory, group-commit waiters are released
-before fatal JVM errors are rethrown, focused tests remain present, and tracked documentation keeps
-`basic` encryption-only TLS distinct from certificate-authenticated `peerAuthentication`.
+`delosSecurityTruthStaticAnalysis` is a stable S0 gate. It verifies null-safe TLS keystore
+properties, deterministic keystore stream closure, centralized secure XML transformer creation,
+focused security tests, fail-closed deserialization documentation, and the distinction between
+`basic` encryption-only TLS and certificate-authenticated `peerAuthentication`.
 
 Run it directly with:
 
@@ -129,12 +128,11 @@ Run it directly with:
 ./gradlew delosSecurityTruthStaticAnalysis
 ```
 
-### Database decision retention
+### Retired Phase 8 decision-retention proof
 
-`delosDatabaseDecisionRetentionStaticAnalysis` protects the bounded mixed-decision lifecycle. It
-requires marker-to-status mirroring, durable marker-directory retirement, pending prepared-mutation
-scanning, status-journal compaction, watermark retention, and the focused retention test task. The
-gate is part of `s0CloseoutVerification`.
+The former `delosDatabaseDecisionRetentionStaticAnalysis` gate protected the retired Phase 8 oracle.
+Stage 8.7.3 removes that source archive and its gate. Current database-decision durability is protected
+by the RawStore decision/WAL crash proof and the MVCC recovery/convergence gates in S0.
 
 ## V1 baseline capture contract
 

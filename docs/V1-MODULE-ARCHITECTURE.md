@@ -11,7 +11,7 @@ The current modules remain until their responsibilities have moved and replaceme
 The neutral boot and transaction-lifecycle seams live in `delosdb-derby-store-api`.
 `delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
 bracketing. Stage 7.1 moved the provider implementation into `delosdb-storage-mvcc` and removed the bridge.
-Stage 7.2 moved retained-only page-volume support into `legacyRetained` and removed storage-io.
+Stage 7.2 removed storage-io; Stage 8.7.3 deleted the retained-only page-volume source archive.
 Stage 7.3 moves 101 shared store/type contracts into `delosdb-derby-store-api`, deletes the unused
 parallel facade, and removes storage-api.
 
@@ -269,7 +269,7 @@ Removed in Stage 7.1 after its valid provider/registration glue moved into
 ### `delosdb-storage-io`
 
 Removed in Stage 7.2 after its 13 retained-only page/volume sources moved into the MVCC
-`legacyRetained` quarantine. `DelosPageVolume` does not survive as a production I/O authority.
+the final source-retirement gate. `DelosPageVolume` does not survive in the working tree or as a production I/O authority.
 
 ### `delosdb-storage-api`
 

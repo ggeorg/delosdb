@@ -89,30 +89,52 @@ public record DelosRawStoreIoSnapshot(
         }
     }
 
-    public static DelosRawStoreIoSnapshot unavailable() {
+    static DelosRawStoreIoSnapshot capture(
+            String databaseIdentity,
+            boolean runtimeActive,
+            boolean memoryDatabase,
+            PageIo pageIo,
+            ForceIo forceIo,
+            ChannelRecovery channelRecovery,
+            RuntimeState runtimeState) {
+        Objects.requireNonNull(pageIo, "pageIo");
+        Objects.requireNonNull(forceIo, "forceIo");
+        Objects.requireNonNull(channelRecovery, "channelRecovery");
+        Objects.requireNonNull(runtimeState, "runtimeState");
         return new DelosRawStoreIoSnapshot(
                 CURRENT_SCHEMA_VERSION,
+                databaseIdentity,
+                runtimeActive,
+                memoryDatabase,
+                pageIo.readOperations(),
+                pageIo.readBytes(),
+                pageIo.writeOperations(),
+                pageIo.writeBytes(),
+                forceIo.contentOnlyOperations(),
+                forceIo.metadataOperations(),
+                pageIo.readFailures(),
+                pageIo.writeFailures(),
+                forceIo.failures(),
+                channelRecovery.closedChannelDetections(),
+                channelRecovery.attempts(),
+                channelRecovery.successes(),
+                channelRecovery.failures(),
+                runtimeState.currentInFlightPageIo(),
+                runtimeState.peakInFlightPageIo(),
+                runtimeState.currentOpenContainerHandles(),
+                runtimeState.peakOpenContainerHandles(),
+                runtimeState.unclosedContainerHandlesAtShutdown());
+    }
+
+    public static DelosRawStoreIoSnapshot unavailable() {
+        return capture(
                 "<unbound>",
                 false,
                 false,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L,
-                0L);
+                PageIo.EMPTY,
+                ForceIo.EMPTY,
+                ChannelRecovery.EMPTY,
+                RuntimeState.EMPTY);
     }
 
     public long totalForceOperations() {
@@ -125,6 +147,42 @@ public record DelosRawStoreIoSnapshot(
 
     public long totalPageBytes() {
         return pageReadBytes + pageWriteBytes;
+    }
+
+    record PageIo(
+            long readOperations,
+            long readBytes,
+            long writeOperations,
+            long writeBytes,
+            long readFailures,
+            long writeFailures) {
+        private static final PageIo EMPTY = new PageIo(0L, 0L, 0L, 0L, 0L, 0L);
+    }
+
+    record ForceIo(
+            long contentOnlyOperations,
+            long metadataOperations,
+            long failures) {
+        private static final ForceIo EMPTY = new ForceIo(0L, 0L, 0L);
+    }
+
+    record ChannelRecovery(
+            long closedChannelDetections,
+            long attempts,
+            long successes,
+            long failures) {
+        private static final ChannelRecovery EMPTY =
+                new ChannelRecovery(0L, 0L, 0L, 0L);
+    }
+
+    record RuntimeState(
+            long currentInFlightPageIo,
+            long peakInFlightPageIo,
+            long currentOpenContainerHandles,
+            long peakOpenContainerHandles,
+            long unclosedContainerHandlesAtShutdown) {
+        private static final RuntimeState EMPTY =
+                new RuntimeState(0L, 0L, 0L, 0L, 0L);
     }
 
     private static String requireNonBlank(String value, String name) {

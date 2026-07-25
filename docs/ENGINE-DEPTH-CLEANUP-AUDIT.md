@@ -108,9 +108,10 @@ The extraction preserves:
 - the existing WAL, transaction-status, and publication protocol;
 - the public and test-facing `MvccInheritedTable` contracts.
 
-`delosPhase8EntropyStaticAnalysis` prevents the table facade from reclaiming
-group-publication or purge-scheduling implementations and enforces a 1,800-line
-responsibility budget.
+The classes described above were part of the Phase 8 reference implementation. Stage 8.7.3
+removes that archived source after the RawStore-backed provider became the sole runtime authority.
+Git history preserves the extraction evidence without keeping a second implementation in the
+working tree.
 
 ### 3. `RawStore` DelosDB sidecar backup helper
 
@@ -195,14 +196,15 @@ Each cleanup overlay should run:
 ./gradlew :delosdb-storage-derby:check :delosdb-storage-mvcc:check
 ```
 
-If the cleanup touches MVCC recovery, WAL, buffer, or purge code, also run:
+If the cleanup touches MVCC recovery, WAL, concurrency, or purge behavior, also run:
 
 ```bash
-./gradlew :delosdb-storage-mvcc:runMvccRecoveryReplayEngineTest
-./gradlew :delosdb-storage-mvcc:runPageVolumeMvccWriteAheadLogBatchTest
-./gradlew :delosdb-storage-mvcc:runDelosMvccBufferWorkloadInvariantTest
-./gradlew :delosdb-storage-mvcc:runDelosMvccConcurrencyValidation
-./gradlew :delosdb-storage-mvcc:runDelosMvccLongReaderValidation
+./gradlew \
+  :delosdb-tests:runDelosMvccRawStoreDecisionWalCrashTest \
+  :delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest \
+  :delosdb-tests:runDelosMvccLongReaderPurgeStressTest \
+  :delosdb-tests:runDelosHeapMvccDifferentialSqlHarnessTest \
+  --console=plain
 ```
 
 ## Not allowed during this cleanup phase

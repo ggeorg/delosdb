@@ -9,8 +9,9 @@ V1B-TOPOLOGY|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/t
 V1B-DECISION-PUBLICATION|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|rawDecisionForceAverageNanos|The operational evidence must report raw decision-force and participant-publication intervals separately.
 V1B-DECISION-READ-CLOSE|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1BaselineCaptureTest.java|connection.setAutoCommit(true);|The decision/publication validation read must complete its JDBC transaction before connection close.
 V1B-RAW-FORCE|delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java|synchronousCommitDecisionForceNanos|Derby must measure only the synchronous raw-log force that makes the commit decision durable.
-V1B-PUBLICATION|delosdb-storage-mvcc/src/main/java/io/github/ggeorg/delosdb/storage/mvcc/bridge/MvccDatabaseCommitCoordinator.java|recordParticipantPublication|MVCC must measure post-decision participant publication independently.
-V1B-TIMING-TEST|delosdb-storage-mvcc/build.gradle|runMvccDatabaseCommitTimingMetricsTest|The split database timing counters must have a focused permanent proof.
+V1B-PAGE-IO-LANE|delosdb-tests/build.gradle|id: 'page-io-representation'|The new capture must retain the benchmark-backed final RawStore page-I/O representation decision.
+V1B-FAULT-LANE|delosdb-tests/build.gradle|id: 'rawstore-fault-injection'|The new capture must retain deterministic shared RawStore fault-injection and replay evidence.
+V1B-WAL-CRASH-LANE|delosdb-tests/build.gradle|id: 'rawstore-decision-wal-crash'|The new capture must retain live RawStore decision and process-crash recovery evidence.
 V1B-MODULAR-ASSEMBLY|delosdb-tests/build.gradle|assembleDelosV1ModularRuntimeImage|The capture must construct a real jlink runtime image.
 V1B-MODULAR-EXECUTION|delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.java|--module-path|DRDA server and client execution must use the JPMS module path from the captured image.
 V1B-MODULAR-LANE|delosdb-tests/build.gradle|id: 'modular-image-drda'|The complete capture manifest must retain the modular-image DRDA evidence lane.

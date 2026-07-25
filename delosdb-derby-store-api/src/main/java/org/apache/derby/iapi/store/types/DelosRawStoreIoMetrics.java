@@ -135,29 +135,38 @@ public final class DelosRawStoreIoMetrics {
         long openContainerHandles = currentOpenContainerHandles.get();
         long observedPeakOpenContainerHandles = Math.max(
                 peakOpenContainerHandles.get(), openContainerHandles);
-        return new DelosRawStoreIoSnapshot(
-                DelosRawStoreIoSnapshot.CURRENT_SCHEMA_VERSION,
-                databaseIdentity,
-                runtimeActive.get(),
-                memoryDatabase,
+
+        var pageIo = new DelosRawStoreIoSnapshot.PageIo(
                 pageReadOperations.get(),
                 pageReadBytes.get(),
                 pageWriteOperations.get(),
                 pageWriteBytes.get(),
+                pageReadFailures.get(),
+                pageWriteFailures.get());
+        var forceIo = new DelosRawStoreIoSnapshot.ForceIo(
                 contentOnlyForceOperations.get(),
                 metadataForceOperations.get(),
-                pageReadFailures.get(),
-                pageWriteFailures.get(),
-                forceFailures.get(),
+                forceFailures.get());
+        var channelRecovery = new DelosRawStoreIoSnapshot.ChannelRecovery(
                 closedChannelDetections.get(),
                 channelRecoveryAttempts.get(),
                 successfulChannelReopens.get(),
-                failedChannelReopens.get(),
+                failedChannelReopens.get());
+        var runtimeState = new DelosRawStoreIoSnapshot.RuntimeState(
                 inFlightPageIo,
                 observedPeakInFlightPageIo,
                 openContainerHandles,
                 observedPeakOpenContainerHandles,
                 unclosedContainerHandlesAtShutdown.get());
+
+        return DelosRawStoreIoSnapshot.capture(
+                databaseIdentity,
+                runtimeActive.get(),
+                memoryDatabase,
+                pageIo,
+                forceIo,
+                channelRecovery,
+                runtimeState);
     }
 
     public String databaseIdentity() {

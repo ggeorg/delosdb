@@ -80,3 +80,23 @@ delosPerformanceConcurrencyValidationStaticAnalysis
 delosSharedRawStoreProductionCloseoutStaticAnalysis
 delosModuleDependencyBoundaryStaticAnalysis
 ```
+
+## Complete retired-surface enforcement
+
+The final closeout uses one authoritative manifest containing every retired Stage 8 file path. The
+cleanup script removes all listed files, the retired storage modules, the complete Phase 8 MVCC
+source/test roots, and the stale jcstress tree. It is idempotent and verifies that no path remains.
+
+The permanent closeout gate additionally scans active production, test, benchmark, and build files
+for retired package and class names. This identified two remaining references to the deleted
+`MvccFailurePointRegistry`: the superseded `MvccTransactionalDdlCrashTest` and one obsolete failure
+method in `MvccSqlTransactionalDdlTest`. Both are removed. The live
+`MvccRawStoreDecisionWalCrashTest` remains the sole process-halt proof around the inherited RawStore
+commit decision.
+
+This closes both forms of residue:
+
+```text
+retired files or empty source roots in the working tree
+active code that still names a retired implementation
+```
