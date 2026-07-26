@@ -52,12 +52,13 @@ final Closure<List<Map<String, Object>>> delosParseContractMethods = { File file
     String source = file.getText('UTF-8')
             .replaceAll('(?s)/\\*.*?\\*/', '')
             .replaceAll('(?m)//.*$', '')
-    Pattern declaration = Pattern.compile(
-            '(?m)^\\s*(?:public\\s+)?'
-                    + '([A-Za-z0-9_<>?,.\\[\\] ]+)\\s+'
-                    + '([A-Za-z0-9_]+)\\s*'
-                    + '\\(([^;{}]*)\\)\\s*'
-                    + '(?:throws\\s+([^;{}]+))?\\s*;')
+    Pattern declaration = Pattern.compile([
+            '(?m)^\\s*(?:public\\s+)?',
+            '([A-Za-z0-9_<>?,.\\[\\] ]+)\\s+',
+            '([A-Za-z0-9_]+)\\s*',
+            '\\(([^;{}]*)\\)\\s*',
+            '(?:throws\\s+([^;{}]+))?\\s*;'
+    ].join(''))
     def matcher = declaration.matcher(source)
     List<Map<String, Object>> methods = []
     while (matcher.find()) {
@@ -82,9 +83,14 @@ final Closure<List<Map<String, Object>>> delosParseContractMethods = { File file
             }
             exceptions.sort()
         }
-        String signature = delosCanonicalContractType(matcher.group(1))
-                + ' ' + matcher.group(2)
-                + '(' + parameterTypes.join(',') + ')'
+        String signature = [
+                delosCanonicalContractType(matcher.group(1)),
+                ' ',
+                matcher.group(2),
+                '(',
+                parameterTypes.join(','),
+                ')'
+        ].join('')
         if (!exceptions.isEmpty()) {
             signature += ' throws ' + exceptions.join(',')
         }
@@ -167,6 +173,7 @@ tasks.register('delosGeneratedClassContractInventory') {
                 !((List<?>) method.exceptions).isEmpty()
             }
         } as int
+        int operationNames = operationRows.collect { it.operation }.toSet().size()
         String digest = delosContractSha256(delosContractCanonicalText(snapshot))
 
         reportFile.parentFile.mkdirs()
@@ -187,8 +194,8 @@ tasks.register('delosGeneratedClassContractInventory') {
             writer.println('Total declared methods: ' + totalMethods)
             writer.println('Methods declaring checked exceptions: ' + exceptionMethods)
             writer.println('MethodBuilder inventory rows: ' + operationRows.size())
-            writer.println('MethodBuilder operation names: '
-                    + operationRows.collect { it.operation }.toSet().size())
+            writer.println(String.format(
+                    'MethodBuilder operation names: %d', operationNames))
             writer.println('Contract SHA-256: ' + digest)
         }
         logger.lifecycle(
@@ -205,8 +212,9 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
         List<String> failures = []
         delosContractInterfaces.each { String owner, File file ->
             if (!file.isFile()) {
-                failures.add('Missing generated-class contract source: '
-                        + owner + ' -> ' + file)
+                failures.add(String.format(
+                        'Missing generated-class contract source: %s -> %s',
+                        owner, file))
             }
         }
 
@@ -220,15 +228,17 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
         expectedCounts.each { String owner, Integer expected ->
             int actual = snapshot.getOrDefault(owner, []).size()
             if (actual != expected) {
-                failures.add(owner + ' contract method count changed: expected '
-                        + expected + ', found ' + actual)
+                failures.add(String.format(
+                        '%s contract method count changed: expected %d, found %d',
+                        owner, expected, actual))
             }
         }
 
         int totalMethods = snapshot.values().sum { List<?> methods -> methods.size() } as int
         if (totalMethods != 52) {
-            failures.add('Complete generation contract must contain 52 methods; found '
-                    + totalMethods)
+            failures.add(String.format(
+                    'Complete generation contract must contain 52 methods; found %d',
+                    totalMethods))
         }
 
         List<String> classBuilderSignatures = snapshot
@@ -248,29 +258,33 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
             }
         } as int
         if (exceptionMethods != 2) {
-            failures.add('Generation contract must retain two checked-exception methods; found '
-                    + exceptionMethods)
+            failures.add(String.format(
+                    'Generation contract must retain two checked-exception methods; found %d',
+                    exceptionMethods))
         }
 
         String canonical = delosContractCanonicalText(snapshot)
         String digest = delosContractSha256(canonical)
         if (digest != delosExpectedContractDigest) {
-            failures.add('Generated-class contract digest changed: expected '
-                    + delosExpectedContractDigest + ', found ' + digest)
+            failures.add(String.format(
+                    'Generated-class contract digest changed: expected %s, found %s',
+                    delosExpectedContractDigest, digest))
         }
 
         List<Map<String, String>> operationRows = delosMethodBuilderInventoryRows()
         if (operationRows.size() != 43) {
-            failures.add('MethodBuilder operation inventory must contain 43 signatures; found '
-                    + operationRows.size())
+            failures.add(String.format(
+                    'MethodBuilder operation inventory must contain 43 signatures; found %d',
+                    operationRows.size()))
         }
         if (operationRows.collect { it.id }.toSet().size() != operationRows.size()) {
             failures.add('MethodBuilder operation inventory contains duplicate ids')
         }
         int operationNames = operationRows.collect { it.operation }.toSet().size()
         if (operationNames != 32) {
-            failures.add('MethodBuilder operation inventory must contain 32 operation names; found '
-                    + operationNames)
+            failures.add(String.format(
+                    'MethodBuilder operation inventory must contain 32 operation names; found %d',
+                    operationNames))
         }
         operationRows.each { Map<String, String> row ->
             if (row.reason.length() < 90) {
@@ -317,14 +331,18 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
         reportFile.withPrintWriter('UTF-8') { writer ->
             writer.println('DelosDB generated-class contract static analysis')
             writer.println('================================================')
-            writer.println('JavaFactory methods: '
-                    + snapshot.getOrDefault('JavaFactory', []).size())
-            writer.println('ClassBuilder methods: '
-                    + snapshot.getOrDefault('ClassBuilder', []).size())
-            writer.println('MethodBuilder methods: '
-                    + snapshot.getOrDefault('MethodBuilder', []).size())
-            writer.println('LocalField methods: '
-                    + snapshot.getOrDefault('LocalField', []).size())
+            writer.println(String.format(
+                    'JavaFactory methods: %d',
+                    snapshot.getOrDefault('JavaFactory', []).size()))
+            writer.println(String.format(
+                    'ClassBuilder methods: %d',
+                    snapshot.getOrDefault('ClassBuilder', []).size()))
+            writer.println(String.format(
+                    'MethodBuilder methods: %d',
+                    snapshot.getOrDefault('MethodBuilder', []).size()))
+            writer.println(String.format(
+                    'LocalField methods: %d',
+                    snapshot.getOrDefault('LocalField', []).size()))
             writer.println('Total declared methods: ' + totalMethods)
             writer.println('Methods declaring checked exceptions: ' + exceptionMethods)
             writer.println('Contract SHA-256: ' + digest)
@@ -336,9 +354,9 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
         if (!failures.isEmpty()) {
             logger.error('Generated-class contract failures ({}):', failures.size())
             failures.each { String failure -> logger.error('  - {}', failure) }
-            throw new GradleException(
-                    'Generated-class contract static analysis failed. Report: '
-                            + reportFile)
+            throw new GradleException(String.format(
+                    'Generated-class contract static analysis failed. Report: %s',
+                    reportFile))
         }
         logger.lifecycle(
                 'Generated-class contract static analysis passed. Report: {}',
