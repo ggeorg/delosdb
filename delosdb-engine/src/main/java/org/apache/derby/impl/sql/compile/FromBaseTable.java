@@ -41,7 +41,6 @@ import org.apache.derby.shared.common.reference.ClassName;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.classfile.VMOpcode;
 import org.apache.derby.iapi.services.compiler.MethodBuilder;
-import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.io.FormatableArrayHolder;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -76,6 +75,7 @@ import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.iapi.store.types.DelosStoragePredicatePushdownRequest;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -2908,11 +2908,18 @@ class FromBaseTable extends FromTable
 				throw StandardException.newException(SQLState.LANG_TABLE_NOT_FOUND, tableName);
 		}
 
+        /*
+         * FromBaseTable still represents views and VTIs at this point in
+         * binding.  Classify the SERIALIZABLE boundary from the catalog's
+         * storage-provider metadata instead of dereferencing a physical heap
+         * conglomerate that those logical descriptors do not own.  A view's
+         * underlying base tables are bound separately and retain this same
+         * fail-closed delos_mvcc check.
+         */
         if (getLanguageConnectionContext().getCurrentIsolationLevel()
                 == TransactionControl.SERIALIZABLE_ISOLATION_LEVEL
-                && getLanguageConnectionContext().getTransactionCompile()
-                        .getStaticCompiledConglomInfo(tableDescriptor.getHeapConglomerateId())
-                        .getTypeFormatId() == StoredFormatIds.ACCESS_MVCC_V1_ID) {
+                && DelosStorageProviderIds.isMvcc(
+                        tableDescriptor.getStorageProviderName())) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "SERIALIZABLE isolation for delos_mvcc");

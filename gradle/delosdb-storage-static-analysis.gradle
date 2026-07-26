@@ -9724,6 +9724,114 @@ tasks.register('delosDrdaDisconnectCleanupStaticAnalysis') {
     }
 }
 
+
+tasks.register('delosMvccSerializableBindingBoundaryStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies that SERIALIZABLE MVCC binding classifies logical descriptors from provider metadata without dereferencing view/VTI conglomerates.'
+
+    def fromBaseTableFile = file('delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java')
+    def semanticsTestFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.java')
+    def testsBuildFile = file('delosdb-tests/build.gradle')
+    def staticAnalysisFile = file('gradle/delosdb-storage-static-analysis.gradle')
+
+    inputs.files(fromBaseTableFile, semanticsTestFile, testsBuildFile, staticAnalysisFile)
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/mvcc-serializable-binding-boundary-static-analysis.txt'))
+
+    doLast {
+        def failures = []
+        [fromBaseTableFile, semanticsTestFile, testsBuildFile, staticAnalysisFile].each { sourceFile ->
+            if (!sourceFile.isFile()) {
+                failures << 'Missing required file: ' + sourceFile
+            }
+        }
+
+        if (failures.isEmpty()) {
+            def fromBaseTableText = fromBaseTableFile.getText('UTF-8')
+            def semanticsTestText = semanticsTestFile.getText('UTF-8')
+            def testsBuildText = testsBuildFile.getText('UTF-8')
+            def staticAnalysisText = staticAnalysisFile.getText('UTF-8')
+
+            int bindingStart = fromBaseTableText.indexOf('private\tTableDescriptor\tbindTableDescriptor()')
+            int bindingEnd = bindingStart < 0
+                    ? -1
+                    : fromBaseTableText.indexOf('return\ttableDescriptor;', bindingStart)
+            if (bindingStart < 0 || bindingEnd < 0) {
+                failures << 'Could not isolate FromBaseTable.bindTableDescriptor()'
+            } else {
+                def bindingText = fromBaseTableText.substring(bindingStart, bindingEnd)
+                [
+                        'TransactionControl.SERIALIZABLE_ISOLATION_LEVEL',
+                        'DelosStorageProviderIds.isMvcc(',
+                        'tableDescriptor.getStorageProviderName()',
+                        'SERIALIZABLE isolation for delos_mvcc'
+                ].each { token ->
+                    if (!bindingText.contains(token)) {
+                        failures << 'SERIALIZABLE binding boundary is missing token: ' + token
+                    }
+                }
+                [
+                        'tableDescriptor.getHeapConglomerateId()',
+                        'getStaticCompiledConglomInfo(',
+                        'StoredFormatIds.ACCESS_MVCC_V1_ID'
+                ].each { token ->
+                    if (bindingText.contains(token)) {
+                        failures << 'Logical descriptor binding must not dereference physical conglomerate state: ' + token
+                    }
+                }
+            }
+
+            [
+                    'testHeapSerializableViewBindingRemainsSupported',
+                    'create view heap_serializable_v as',
+                    'union all select id, value from heap_serializable_right',
+                    'testMvccSerializableViewRejectsOnUnderlyingBaseTable',
+                    'create view mvcc_serializable_v as',
+                    'assertUnsupported(() -> assertRows(connection,'
+            ].each { token ->
+                if (!semanticsTestText.contains(token)) {
+                    failures << 'SERIALIZABLE view-binding proof is missing token: ' + token
+                }
+            }
+
+            [
+                    "'runDelosMvccSerializableSemanticsTest'",
+                    'MvccSqlSerializableSemanticsTest.class'
+            ].each { token ->
+                if (!testsBuildText.contains(token)) {
+                    failures << 'Focused SERIALIZABLE semantics task wiring is missing token: ' + token
+                }
+            }
+
+            int s0Index = staticAnalysisText.lastIndexOf(
+                    "tasks.register('s0CloseoutVerification')")
+            if (s0Index < 0
+                    || !staticAnalysisText.substring(s0Index).contains(
+                            "'delosMvccSerializableBindingBoundaryStaticAnalysis'")) {
+                failures << 'S0 must include the MVCC SERIALIZABLE binding-boundary static gate'
+            }
+        }
+
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/mvcc-serializable-binding-boundary-static-analysis.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB MVCC SERIALIZABLE binding boundary static analysis')
+            writer.println('===========================================================')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { writer.println('- ' + it) }
+        }
+        if (!failures.isEmpty()) {
+            throw new GradleException(
+                    'DelosDB MVCC SERIALIZABLE binding boundary static analysis failed. Report: '
+                            + reportFile)
+        }
+        logger.lifecycle(
+                'DelosDB MVCC SERIALIZABLE binding boundary static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
 apply from: file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle')
 
 tasks.register('s0CloseoutVerification') {
@@ -9777,5 +9885,6 @@ tasks.register('s0CloseoutVerification') {
             'delosSharedRawStoreMappedRegionDecisionStaticAnalysis',
             'delosSharedRawStoreProductionCloseoutStaticAnalysis',
             'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
-            'delosMvccTransactionalDdlStaticAnalysis'
+            'delosMvccTransactionalDdlStaticAnalysis',
+            'delosMvccSerializableBindingBoundaryStaticAnalysis'
 }

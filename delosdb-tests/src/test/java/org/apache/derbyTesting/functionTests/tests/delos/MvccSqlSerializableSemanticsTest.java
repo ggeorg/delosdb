@@ -55,6 +55,57 @@ public final class MvccSqlSerializableSemanticsTest extends MvccSqlTestSupport {
         shutdownDatabase(databaseName);
     }
 
+    public void testHeapSerializableViewBindingRemainsSupported() throws Exception {
+        String databaseName = databaseName("heap-serializable-view-binding-db");
+
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table heap_serializable_left "
+                    + "(id int primary key, value int not null)");
+            executeUpdate(setup, "create table heap_serializable_right "
+                    + "(id int primary key, value int not null)");
+            executeUpdate(setup, "insert into heap_serializable_left values (1, 10)");
+            executeUpdate(setup, "insert into heap_serializable_right values (2, 20)");
+            executeUpdate(setup, "create view heap_serializable_v as "
+                    + "select id, value from heap_serializable_left "
+                    + "union all select id, value from heap_serializable_right");
+            setup.commit();
+        }
+
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            connection.setAutoCommit(false);
+            assertRows(connection,
+                    "select id, value from heap_serializable_v order by id",
+                    "1|10", "2|20");
+            connection.commit();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
+    public void testMvccSerializableViewRejectsOnUnderlyingBaseTable() throws Exception {
+        String databaseName = databaseName("mvcc-serializable-view-rejection-db");
+        createMvccFixture(databaseName);
+
+        try (Connection setup = openDatabase(databaseName, false)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create view mvcc_serializable_v as "
+                    + "select id, value from mvcc_serializable_t");
+            setup.commit();
+        }
+
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            connection.setAutoCommit(false);
+            assertUnsupported(() -> assertRows(connection,
+                    "select id, value from mvcc_serializable_v", "1|10"));
+            connection.rollback();
+        }
+
+        shutdownDatabase(databaseName);
+    }
+
     public void testMvccSerializableReadRejectsBeforeOpeningUnsafeSnapshot() throws Exception {
         String databaseName = databaseName("mvcc-serializable-read-rejection-db");
         createMvccFixture(databaseName);
