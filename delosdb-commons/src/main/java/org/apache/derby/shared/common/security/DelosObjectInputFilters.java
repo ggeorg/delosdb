@@ -83,6 +83,20 @@ public final class DelosObjectInputFilters {
             RESOURCE_LIMIT_PATTERN + ";!*";
 
     /**
+     * Fixed allow-list for Derby-generated IMPORT metadata. This metadata is
+     * not an application UDT payload. ArrayList uses an Object[] backing array
+     * during deserialization and HashMap uses a Map.Entry[] backing array.
+     */
+    private static final String DEFAULT_IMPORT_METADATA_FILTER_PATTERN =
+            RESOURCE_LIMIT_PATTERN
+                    + ";java.base/java.util.ArrayList"
+                    + ";java.base/java.util.HashMap"
+                    + ";java.base/java.lang.String"
+                    + ";java.base/java.lang.Object"
+                    + ";java.base/java.util.Map$Entry"
+                    + ";!*";
+
+    /**
      * Replication protocol policy. Replication messages contain only the
      * envelope, Long handshake values, byte-array log payloads, Strings, and
      * String-array error payloads defined by ReplicationMessage.
@@ -115,6 +129,15 @@ public final class DelosObjectInputFilters {
                 IMPORT_FILTER_PROPERTY,
                 GENERAL_FILTER_PROPERTY,
                 DEFAULT_EXTERNAL_FILTER_PATTERN);
+    }
+
+    /**
+     * Install the fixed policy for Derby-generated IMPORT metadata.
+     * Configuration intended for application UDT payloads does not widen this
+     * internal metadata boundary.
+     */
+    public static void applyImportMetadataFilter(ObjectInputStream stream) {
+        install(stream, DEFAULT_IMPORT_METADATA_FILTER_PATTERN);
     }
 
     /** Install the narrow replication protocol allow-list. */

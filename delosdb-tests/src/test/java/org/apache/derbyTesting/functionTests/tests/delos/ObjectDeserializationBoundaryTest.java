@@ -26,6 +26,8 @@ import java.io.InvalidClassException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -74,6 +76,42 @@ public final class ObjectDeserializationBoundaryTest extends TestCase {
         assertRejected(
                 new UnexpectedPayload(20),
                 DelosObjectInputFilters::applyImportFilterIfConfigured);
+    }
+
+    public void testImportMetadataUsesFixedInternalAllowList() throws Exception {
+        ArrayList<String> columnTypes = new ArrayList<>();
+        columnTypes.add("INTEGER");
+        columnTypes.add("VARCHAR(20)");
+        assertEquals(
+                columnTypes,
+                read(columnTypes, DelosObjectInputFilters::applyImportMetadataFilter));
+
+        HashMap<String, String> udtClassNames = new HashMap<>();
+        udtClassNames.put("COLUMN1", "com.example.SafeValue");
+        assertEquals(
+                udtClassNames,
+                read(udtClassNames, DelosObjectInputFilters::applyImportMetadataFilter));
+
+        assertRejected(
+                columnTypes,
+                DelosObjectInputFilters::applyImportFilterIfConfigured);
+        assertRejected(
+                new LinkedHashMap<>(udtClassNames),
+                DelosObjectInputFilters::applyImportMetadataFilter);
+        assertRejected(
+                new UnexpectedPayload(25),
+                DelosObjectInputFilters::applyImportMetadataFilter);
+
+        System.setProperty(
+                DelosObjectInputFilters.IMPORT_FILTER_PROPERTY,
+                UnexpectedPayload.class.getName() + ";java.base/*;!*");
+        assertPayload(
+                read(new UnexpectedPayload(30),
+                        DelosObjectInputFilters::applyImportFilterIfConfigured),
+                30);
+        assertRejected(
+                new UnexpectedPayload(35),
+                DelosObjectInputFilters::applyImportMetadataFilter);
     }
 
     public void testExplicitBoundaryAllowListsOverrideFailClosedDefaults() throws Exception {

@@ -29,6 +29,7 @@ import java.sql.ResultSetMetaData;
 import org.apache.derby.vti.VTITemplate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.function.Consumer;
 import org.apache.derby.iapi.util.StringUtil;
 import org.apache.derby.shared.common.error.PublicAPI;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -286,22 +287,33 @@ abstract class ImportAbstract extends VTITemplate {
         catch (Exception e) { throw importError( e ); }
     }
 
-    /** Read a serializable from a set of bytes. */
+    /** Read an application UDT value from import-file bytes. */
     public static Object readObject( byte[] bytes ) throws Exception
     {
-        ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
-        ObjectInputStream ois = new ObjectInputStream( bais );
-        DelosObjectInputFilters.applyImportFilterIfConfigured(ois);
-
-        return ois.readObject();
+        return readObject(
+                bytes,
+                DelosObjectInputFilters::applyImportFilterIfConfigured);
     }
 
-    /** Read an object which was serialized to a string using StringUtil */
+    /** Read Derby-generated import metadata from a serialized string. */
     public static Object destringifyObject( String raw ) throws Exception
     {
         byte[] bytes = StringUtil.fromHexString( raw, 0, raw.length());
 
-        return readObject( bytes );
+        return readObject(
+                bytes,
+                DelosObjectInputFilters::applyImportMetadataFilter);
+    }
+
+    private static Object readObject(
+            byte[] bytes,
+            Consumer<ObjectInputStream> filterInstaller) throws Exception
+    {
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+             ObjectInputStream ois = new ObjectInputStream(bais)) {
+            filterInstaller.accept(ois);
+            return ois.readObject();
+        }
     }
 
 

@@ -24,7 +24,7 @@ Passwords and key material are not written to DelosDB diagnostics.
 
 DelosDB separates untrusted external object boundaries from trusted heap persistence.
 
-### DRDA and import boundaries
+### DRDA and import UDT boundaries
 
 Serialized UDT values received over DRDA or read from an import file reject every application class
 by default. The default policy is resource-bounded and ends in a reject-all rule:
@@ -48,6 +48,18 @@ For example:
 ```text
 delosdb.drda.objectDeserializationFilter=com.example.SafeValue;java.base/*;!*
 ```
+
+### Import metadata boundary
+
+The import implementation also serializes two engine-generated metadata shapes while constructing
+its internal VTI: an `ArrayList<String>` of SQL type names and a `HashMap<String,String>` of UDT
+class names. This is not application UDT data and therefore does not use the external import
+allow-list.
+
+It uses a fixed, resource-bounded allow-list containing only the two collection shapes, `String`,
+and the JDK backing-array component types needed to deserialize them. Application filter properties
+and external compatibility mode do not widen this internal metadata policy. Unexpected collection
+implementations and application classes remain rejected.
 
 ### Replication boundary
 
