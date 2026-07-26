@@ -31,6 +31,16 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.apache.derby.catalog.TypeDescriptor;
+import org.apache.derby.catalog.types.DefaultInfoImpl;
+import org.apache.derby.catalog.types.IndexDescriptorImpl;
+import org.apache.derby.catalog.types.ReferencedColumnsDescriptorImpl;
+import org.apache.derby.catalog.types.StatisticsImpl;
+import org.apache.derby.catalog.types.SynonymAliasInfo;
+import org.apache.derby.iapi.services.io.FormatableBitSet;
+import org.apache.derby.iapi.types.DataTypeDescriptor;
+import org.apache.derby.iapi.types.SQLInteger;
+import org.apache.derby.iapi.types.UserType;
 import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 
 import junit.framework.TestCase;
@@ -76,6 +86,84 @@ public final class ObjectDeserializationBoundaryTest extends TestCase {
         assertRejected(
                 new UnexpectedPayload(20),
                 DelosObjectInputFilters::applyImportFilterIfConfigured);
+    }
+
+    public void testDrdaSystemCatalogUsesFixedInternalAllowList() throws Exception {
+        FormatableBitSet columns = new FormatableBitSet(4);
+        columns.set(0);
+        columns.set(2);
+        assertEquals(
+                columns.toString(),
+                read(columns, DelosObjectInputFilters::applyDrdaSystemCatalogFilter).toString());
+
+        StatisticsImpl statistics = new StatisticsImpl(100L, 25L);
+        StatisticsImpl restoredStatistics = (StatisticsImpl) read(
+                statistics,
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
+        assertEquals(100L, restoredStatistics.getRowEstimate());
+
+        IndexDescriptorImpl index = new IndexDescriptorImpl(
+                "BTREE",
+                true,
+                false,
+                false,
+                false,
+                new int[] {1, 3},
+                new boolean[] {true, false},
+                2);
+        assertEquals(
+                index,
+                read(index, DelosObjectInputFilters::applyDrdaSystemCatalogFilter));
+
+        TypeDescriptor integerType =
+                DataTypeDescriptor.getBuiltInDataTypeDescriptor(java.sql.Types.INTEGER)
+                        .getCatalogType();
+        TypeDescriptor restoredType = (TypeDescriptor) read(
+                (Serializable) integerType,
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
+        assertEquals(integerType.getTypeName(), restoredType.getTypeName());
+
+        DefaultInfoImpl defaultInfo = new DefaultInfoImpl(
+                false,
+                "7",
+                new SQLInteger(7));
+        DefaultInfoImpl restoredDefault = (DefaultInfoImpl) read(
+                defaultInfo,
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
+        assertEquals("7", restoredDefault.getDefaultText());
+        assertEquals(7, restoredDefault.getDefaultValue().getInt());
+
+        DefaultInfoImpl applicationDefault = new DefaultInfoImpl(
+                false,
+                "APP_VALUE",
+                new UserType(new UnexpectedPayload(14)));
+        assertRejected(
+                applicationDefault,
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
+
+        SynonymAliasInfo synonym = new SynonymAliasInfo("APP", "T");
+        assertEquals(
+                synonym.toString(),
+                read(synonym, DelosObjectInputFilters::applyDrdaSystemCatalogFilter).toString());
+
+        ReferencedColumnsDescriptorImpl referencedColumns =
+                new ReferencedColumnsDescriptorImpl(new int[] {1, 3});
+        assertEquals(
+                referencedColumns.toString(),
+                read(referencedColumns,
+                        DelosObjectInputFilters::applyDrdaSystemCatalogFilter).toString());
+
+        assertRejected(
+                new UnexpectedPayload(15),
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
+
+        System.setProperty(DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY, "true");
+        System.setProperty(
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                UnexpectedPayload.class.getName() + ";java.base/*;!*");
+        assertRejected(
+                new UnexpectedPayload(16),
+                DelosObjectInputFilters::applyDrdaSystemCatalogFilter);
     }
 
     public void testImportMetadataUsesFixedInternalAllowList() throws Exception {

@@ -673,28 +673,38 @@ def delosHeapObjectDeserializationFilterStaticFiles = [
         'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java',
         'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/ApplicationObjectInputStream.java',
         'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java',
+        'delosdb-client/src/main/java/org/apache/derby/client/am/ClientStatement.java',
         'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java',
         'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java',
         'delosdb-engine/src/main/java/org/apache/derby/impl/load/ColumnInfo.java',
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/net/SocketConnection.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSDEPENDSRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSALIASESRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSSTATISTICSRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSCONGLOMERATESRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSCOLUMNSRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSSEQUENCESRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSCHECKSRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSCOLPERMSRowFactory.java',
+        'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTRIGGERSRowFactory.java',
         'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java',
         'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java'
 ]
 
 def delosObjectFilterLeafSites = [
         'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java':
-                ['client DRDA UDT materialization', 'DelosObjectInputFilters.applyDrdaFilterIfConfigured'],
+                ['client DRDA UDT materialization', 'applyDrdaFilterIfConfigured'],
         'delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java':
-                ['server DRDA UDT parameter materialization', 'DelosObjectInputFilters.applyDrdaFilterIfConfigured'],
+                ['server DRDA UDT parameter materialization', 'applyDrdaFilterIfConfigured'],
         'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java':
-                ['import UDT materialization', 'DelosObjectInputFilters.applyImportFilterIfConfigured'],
+                ['import UDT materialization', 'applyImportFilterIfConfigured'],
         'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/net/SocketConnection.java':
-                ['replication control-message stream', 'DelosObjectInputFilters.applyReplicationFilterIfConfigured']
+                ['replication control-message stream', 'applyReplicationFilterIfConfigured']
 ]
 
 tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
     group = 'verification'
-    description = 'Protects fail-closed external deserialization boundaries and the separate bounded heap policy.'
+    description = 'Protects external, SYS-catalog, import-metadata, replication, and heap deserialization boundaries.'
 
     inputs.files(delosHeapObjectDeserializationFilterStaticFiles.collect { new File(delosRepositoryRoot, it) }.findAll { it.exists() }).optional()
     outputs.file(layout.buildDirectory.file('reports/delosdb/heap-object-deserialization-filter-static-analysis.txt'))
@@ -709,6 +719,8 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def boundaryTestFile = new File(delosRepositoryRoot, 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java')
         def importFile = new File(delosRepositoryRoot, 'delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java')
         def columnInfoFile = new File(delosRepositoryRoot, 'delosdb-engine/src/main/java/org/apache/derby/impl/load/ColumnInfo.java')
+        def cursorFile = new File(delosRepositoryRoot, 'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java')
+        def clientStatementFile = new File(delosRepositoryRoot, 'delosdb-client/src/main/java/org/apache/derby/client/am/ClientStatement.java')
 
         delosHeapObjectDeserializationFilterStaticFiles.each { relativePath ->
             DelosDbStaticAnalysisSupport.require(failures, new File(delosRepositoryRoot, relativePath).exists(), 'Missing object deserialization filter file: ' + relativePath)
@@ -722,6 +734,8 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def boundaryTestText = boundaryTestFile.exists() ? boundaryTestFile.getText('UTF-8') : ''
         def importText = importFile.exists() ? importFile.getText('UTF-8') : ''
         def columnInfoText = columnInfoFile.exists() ? columnInfoFile.getText('UTF-8') : ''
+        def cursorText = cursorFile.exists() ? cursorFile.getText('UTF-8') : ''
+        def clientStatementText = clientStatementFile.exists() ? clientStatementFile.getText('UTF-8') : ''
 
         ['delosdb.objectDeserializationFilter',
          'delosdb.drda.objectDeserializationFilter',
@@ -731,6 +745,7 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
          'delosdb.objectDeserializationCompatibilityMode',
          'delosdb.heap.objectDeserializationCompatibilityMode',
          'DEFAULT_EXTERNAL_FILTER_PATTERN',
+         'DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN',
          'DEFAULT_IMPORT_METADATA_FILTER_PATTERN',
          'DEFAULT_REPLICATION_FILTER_PATTERN',
          'DEFAULT_HEAP_FILTER_PATTERN',
@@ -740,6 +755,14 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
          'maxarray=100000',
          'org.apache.derby.impl.store.replication.net.ReplicationMessage',
          'java.lang.Long',
+         'org.apache.derby.catalog.**',
+         'org.apache.derby.impl.sql.catalog.DDdependableFinder',
+         'org.apache.derby.impl.sql.catalog.DDColumnDependableFinder',
+         'org.apache.derby.iapi.services.io.FormatableBitSet',
+         'org.apache.derby.iapi.services.io.FormatableHashtable',
+         'org.apache.derby.iapi.services.io.FormatableIntHolder',
+         'org.apache.derby.iapi.services.io.FormatableLongHolder',
+         'org.apache.derby.iapi.types.**',
          'java.base/java.util.ArrayList',
          'java.base/java.util.HashMap',
          'java.base/java.lang.Object',
@@ -754,6 +777,14 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         DelosDbStaticAnalysisSupport.require(failures,
                 objectFilterText.contains('DEFAULT_EXTERNAL_FILTER_PATTERN =\n            RESOURCE_LIMIT_PATTERN + ";!*"'),
                 'DRDA and import defaults must reject every application class')
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.contains('applyDrdaSystemCatalogFilter(ObjectInputStream stream)')
+                        && objectFilterText.contains('install(stream, DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN)'),
+                'Engine-owned SYS catalog JAVA_OBJECT values must use the fixed internal DRDA allow-list')
+        DelosDbStaticAnalysisSupport.require(failures,
+                objectFilterText.contains('private static final String DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN')
+                        && !objectFilterText.contains('public static final String DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN'),
+                'The fixed DRDA system-catalog pattern must remain an internal implementation detail')
         DelosDbStaticAnalysisSupport.require(failures,
                 objectFilterText.contains('applyImportMetadataFilter(ObjectInputStream stream)')
                         && objectFilterText.contains('install(stream, DEFAULT_IMPORT_METADATA_FILTER_PATTERN)'),
@@ -809,13 +840,77 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
                 columnInfoText.count('ImportAbstract.destringifyObject') == 2,
                 'ColumnInfo must deserialize exactly the two engine metadata shapes')
 
+        DelosDbStaticAnalysisSupport.require(failures,
+                cursorText.contains('bindObjectInputMetadata(ColumnMetaData metadata)')
+                        && cursorText.contains('"SYS".equalsIgnoreCase(metadata.sqlxSchema_[index])')
+                        && cursorText.contains('int metadataColumns = Math.min(')
+                        && cursorText.contains('String baseTable = metadata.sqlxBasename_[index]')
+                        && cursorText.contains('baseTable != null')
+                        && cursorText.contains('!baseTable.isEmpty()')
+                        && cursorText.contains('systemCatalogJavaObjectColumns_ = null;'),
+                'Client cursor must classify and release engine-owned SYS catalog JAVA_OBJECT metadata')
+        DelosDbStaticAnalysisSupport.require(failures,
+                cursorText.contains('isSystemCatalogJavaObject(column)')
+                        && cursorText.contains('DelosObjectInputFilters.applyDrdaSystemCatalogFilter(ois)')
+                        && cursorText.contains('DelosObjectInputFilters.applyDrdaFilterIfConfigured(ois)')
+                        && cursorText.contains('try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);'),
+                'Client cursor must separate fixed SYS catalog materialization from application UDT materialization and close its streams')
+        DelosDbStaticAnalysisSupport.require(failures,
+                clientStatementText.count('cursor_.bindObjectInputMetadata(resultSet.resultSetMetaData_)') == 2,
+                'ClientStatement must bind result metadata to the cursor for both normal and CALL result sets')
+
+        def expectedCatalogJavaColumns = [
+                ['SYSDEPENDSRowFactory.java', 'DEPENDENTFINDER', 'org.apache.derby.catalog.DependableFinder'],
+                ['SYSDEPENDSRowFactory.java', 'PROVIDERFINDER', 'org.apache.derby.catalog.DependableFinder'],
+                ['SYSALIASESRowFactory.java', 'ALIASINFO', 'org.apache.derby.catalog.AliasInfo'],
+                ['SYSSTATISTICSRowFactory.java', 'STATISTICS', 'org.apache.derby.catalog.Statistics'],
+                ['SYSCONGLOMERATESRowFactory.java', 'DESCRIPTOR', 'org.apache.derby.catalog.IndexDescriptor'],
+                ['SYSCOLUMNSRowFactory.java', 'COLUMNDATATYPE', 'org.apache.derby.catalog.TypeDescriptor'],
+                ['SYSCOLUMNSRowFactory.java', 'COLUMNDEFAULT', 'java.io.Serializable'],
+                ['SYSSEQUENCESRowFactory.java', 'SEQUENCEDATATYPE', 'org.apache.derby.catalog.TypeDescriptor'],
+                ['SYSCHECKSRowFactory.java', 'REFERENCEDCOLUMNS', 'org.apache.derby.catalog.ReferencedColumns'],
+                ['SYSCOLPERMSRowFactory.java', 'COLUMNS', 'org.apache.derby.iapi.services.io.FormatableBitSet'],
+                ['SYSTRIGGERSRowFactory.java', 'REFERENCEDCOLUMNS', 'org.apache.derby.catalog.ReferencedColumns']
+        ]
+        int actualCatalogJavaColumnCount = 0
+        expectedCatalogJavaColumns.groupBy { row -> row[0] }.each { fileName, rows ->
+            def catalogFile = new File(
+                    delosRepositoryRoot,
+                    'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/' + fileName)
+            def catalogText = catalogFile.exists() ? catalogFile.getText('UTF-8') : ''
+            actualCatalogJavaColumnCount += catalogText.count('SystemColumnImpl.getJavaColumn')
+            rows.each { row ->
+                DelosDbStaticAnalysisSupport.require(failures,
+                        catalogText.contains('getJavaColumn("' + row[1] + '"')
+                                && catalogText.contains('"' + row[2] + '"'),
+                        String.format(
+                                'SYS catalog JAVA_OBJECT inventory mismatch: %s.%s -> %s',
+                                fileName,
+                                row[1],
+                                row[2]))
+            }
+        }
+        DelosDbStaticAnalysisSupport.require(failures,
+                expectedCatalogJavaColumns.size() == 11 && actualCatalogJavaColumnCount == 11,
+                String.format(
+                        'Expected exactly 11 exposed SYS catalog JAVA_OBJECT columns; inventory=%d source=%d',
+                        expectedCatalogJavaColumns.size(),
+                        actualCatalogJavaColumnCount))
+
         delosObjectFilterLeafSites.each { relativePath, specification ->
             def leafFile = new File(delosRepositoryRoot, relativePath)
             def leafText = leafFile.exists() ? leafFile.getText('UTF-8') : ''
             def description = specification[0]
-            def requiredCall = specification[1]
-            DelosDbStaticAnalysisSupport.require(failures, leafText.contains(requiredCall),
-                    'Leaf ObjectInputStream site must install its boundary-specific policy: ' + relativePath + ' (' + description + ')')
+            def requiredMethod = specification[1]
+            def directCall = 'DelosObjectInputFilters.' + requiredMethod
+            def methodReference = 'DelosObjectInputFilters::' + requiredMethod
+            DelosDbStaticAnalysisSupport.require(failures,
+                    leafText.contains(directCall) || leafText.contains(methodReference),
+                    String.format(
+                            'Leaf ObjectInputStream site must install its boundary-specific policy: %s (%s, method %s)',
+                            relativePath,
+                            description,
+                            requiredMethod))
             DelosDbStaticAnalysisSupport.require(failures, !leafText.contains('applyGeneralFilterIfConfigured'),
                     'Leaf ObjectInputStream site must not use the ambiguous general policy: ' + relativePath)
         }
@@ -854,6 +949,7 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
                 'Heap tests must use only the heap compatibility switch')
 
         ['testDrdaAndImportRejectUnexpectedClassesByDefault',
+         'testDrdaSystemCatalogUsesFixedInternalAllowList',
          'testImportMetadataUsesFixedInternalAllowList',
          'testExplicitBoundaryAllowListsOverrideFailClosedDefaults',
          'testReplicationDefaultAllowsOnlyProtocolShapes',
@@ -862,6 +958,15 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
                     'ObjectDeserializationBoundaryTest must keep coverage method: ' + testName)
         }
         ['applyDrdaFilterIfConfigured',
+         'applyDrdaSystemCatalogFilter',
+         'FormatableBitSet',
+         'StatisticsImpl',
+         'IndexDescriptorImpl',
+         'DataTypeDescriptor.getBuiltInDataTypeDescriptor',
+         'DefaultInfoImpl',
+         'new UserType(new UnexpectedPayload',
+         'SynonymAliasInfo',
+         'ReferencedColumnsDescriptorImpl',
          'applyImportFilterIfConfigured',
          'applyImportMetadataFilter',
          'ArrayList<String>',
@@ -881,7 +986,8 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
             writer.println('DelosDB object deserialization filter static analysis')
             writer.println('=========================================================')
             writer.println()
-            writer.println('External default: fail closed for DRDA/import UDT values; protocol allow-list for replication.')
+            writer.println('External default: fail closed for application DRDA/import UDT values; protocol allow-list for replication.')
+            writer.println('DRDA SYS catalog values: fixed resource-bounded allow-list for 11 catalog JAVA_OBJECT columns selected from base metadata.')
             writer.println('Import metadata: fixed resource-bounded allow-list for engine-generated ArrayList/HashMap shapes.')
             writer.println('Heap default: resource-bounded compatibility policy with a separate compatibility switch.')
             writer.println()
@@ -896,6 +1002,8 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         }
 
         if (!failures.isEmpty()) {
+            logger.error('DelosDB object deserialization filter failures ({}):', failures.size())
+            failures.each { failure -> logger.error('  - {}', failure) }
             throw new GradleException('DelosDB object deserialization filter static analysis failed. Report: ' + reportFile)
         }
 

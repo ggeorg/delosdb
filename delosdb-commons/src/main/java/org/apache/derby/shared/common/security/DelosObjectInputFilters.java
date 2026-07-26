@@ -83,6 +83,23 @@ public final class DelosObjectInputFilters {
             RESOURCE_LIMIT_PATTERN + ";!*";
 
     /**
+     * Fixed allow-list for engine-owned SYS catalog JAVA_OBJECT values returned
+     * to the client. Application UDT values never use this policy.
+     */
+    private static final String DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN =
+            RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derby.catalog.**"
+                    + ";org.apache.derby.impl.sql.catalog.DDdependableFinder"
+                    + ";org.apache.derby.impl.sql.catalog.DDColumnDependableFinder"
+                    + ";org.apache.derby.iapi.services.io.FormatableBitSet"
+                    + ";org.apache.derby.iapi.services.io.FormatableHashtable"
+                    + ";org.apache.derby.iapi.services.io.FormatableIntHolder"
+                    + ";org.apache.derby.iapi.services.io.FormatableLongHolder"
+                    + ";org.apache.derby.iapi.types.**"
+                    + ";java.base/*"
+                    + ";!*";
+
+    /**
      * Fixed allow-list for Derby-generated IMPORT metadata. This metadata is
      * not an application UDT payload. ArrayList uses an Object[] backing array
      * during deserialization and HashMap uses a Map.Entry[] backing array.
@@ -120,6 +137,14 @@ public final class DelosObjectInputFilters {
                 DRDA_FILTER_PROPERTY,
                 GENERAL_FILTER_PROPERTY,
                 DEFAULT_EXTERNAL_FILTER_PATTERN);
+    }
+
+    /**
+     * Install the fixed policy for engine-owned SYS catalog JAVA_OBJECT values.
+     * External filter properties and compatibility mode do not widen it.
+     */
+    public static void applyDrdaSystemCatalogFilter(ObjectInputStream stream) {
+        install(stream, DEFAULT_DRDA_SYSTEM_CATALOG_FILTER_PATTERN);
     }
 
     /** Install the fail-closed IMPORT UDT policy. */

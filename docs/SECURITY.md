@@ -49,6 +49,19 @@ For example:
 delosdb.drda.objectDeserializationFilter=com.example.SafeValue;java.base/*;!*
 ```
 
+### DRDA system-catalog boundary
+
+The current engine exposes eleven `JAVA_OBJECT` columns across nine `SYS` catalog tables. These
+values are not application UDT payloads. The client identifies them from the DRDA base-schema and
+base-table metadata and applies a fixed, resource-bounded allow-list for Derby catalog descriptors,
+catalog implementations, formatable bit sets and hashtable holders, built-in SQL value objects, and
+required JDK classes.
+
+Application UDT filter properties and external compatibility mode do not widen this internal
+catalog policy. An application class stored in a catalog `JAVA_OBJECT` column remains rejected.
+The server-side DRDA parameter boundary and normal application UDT result columns remain fail
+closed unless explicitly configured.
+
 ### Import metadata boundary
 
 The import implementation also serializes two engine-generated metadata shapes while constructing

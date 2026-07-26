@@ -1734,6 +1734,7 @@ public class ClientStatement implements Statement, StatementCallbackInterface{
             return;
         }
         resultSet.resultSetMetaData_ = resultSetMetaData_;
+        resultSet.cursor_.bindObjectInputMetadata(resultSet.resultSetMetaData_);
         resultSet.resultSetMetaData_.resultSetConcurrency_ = resultSet.resultSetConcurrency_;
         // Create tracker for LOB locator columns.
         resultSet.createLOBColumnTracker();
@@ -1772,6 +1773,7 @@ public class ClientStatement implements Statement, StatementCallbackInterface{
         resultSet.completeSqlca(sqlca);
         // For CallableStatements we can't just clobber the resultSet_ here, must use setResultSetEvent() separately
         resultSet.resultSetMetaData_ = resultSetMetaData;
+        resultSet.cursor_.bindObjectInputMetadata(resultSet.resultSetMetaData_);
         // Create tracker for LOB locator columns.
         resultSet.createLOBColumnTracker();
 

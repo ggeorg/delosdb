@@ -128,6 +128,7 @@ public abstract class Cursor {
 
     public int[] jdbcTypes_;
     public int columns_;
+    private boolean[] systemCatalogJavaObjectColumns_;
     public boolean[] nullable_;
     public Charset[] charset_;
     public boolean[] isNull_;
@@ -158,6 +159,44 @@ public abstract class Cursor {
 
         isNull_ = new boolean[numberOfColumns];
         jdbcTypes_ = new int[numberOfColumns];
+    }
+
+    /**
+     * Bind result metadata needed to distinguish engine-owned SYS catalog
+     * JAVA_OBJECT values from application UDT values.
+     */
+    final void bindObjectInputMetadata(ColumnMetaData metadata) {
+        if (metadata == null || metadata.columns_ <= 0) {
+            systemCatalogJavaObjectColumns_ = null;
+            return;
+        }
+
+        boolean[] catalogColumns = new boolean[metadata.columns_];
+        if (metadata.types_ != null
+                && metadata.sqlxSchema_ != null
+                && metadata.sqlxBasename_ != null) {
+            int metadataColumns = Math.min(
+                    metadata.columns_,
+                    Math.min(
+                            metadata.types_.length,
+                            Math.min(metadata.sqlxSchema_.length, metadata.sqlxBasename_.length)));
+            for (int index = 0; index < metadataColumns; index++) {
+                String baseTable = metadata.sqlxBasename_[index];
+                catalogColumns[index] = metadata.types_[index] == Types.JAVA_OBJECT
+                        && "SYS".equalsIgnoreCase(metadata.sqlxSchema_[index])
+                        && baseTable != null
+                        && !baseTable.isEmpty();
+            }
+        }
+        systemCatalogJavaObjectColumns_ = catalogColumns;
+    }
+
+    private boolean isSystemCatalogJavaObject(int column) {
+        int index = column - 1;
+        return systemCatalogJavaObjectColumns_ != null
+                && index >= 0
+                && index < systemCatalogJavaObjectColumns_.length
+                && systemCatalogJavaObjectColumns_[index];
     }
 
     /**
@@ -592,10 +631,13 @@ public abstract class Cursor {
         bytes = new byte[columnLength];
         System.arraycopy(dataBuffer_, columnDataPosition_[column - 1] + 2, bytes, 0, bytes.length);
 
-        try {
-            ByteArrayInputStream bais = new ByteArrayInputStream( bytes );
-            ObjectInputStream ois = new ObjectInputStream( bais );
-            DelosObjectInputFilters.applyDrdaFilterIfConfigured(ois);
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+             ObjectInputStream ois = new ObjectInputStream(bais)) {
+            if (isSystemCatalogJavaObject(column)) {
+                DelosObjectInputFilters.applyDrdaSystemCatalogFilter(ois);
+            } else {
+                DelosObjectInputFilters.applyDrdaFilterIfConfigured(ois);
+            }
 
             return ois.readObject();
         }
@@ -1261,6 +1303,7 @@ public abstract class Cursor {
         columnDataLengthCache_ = null;
         columnDataIsNullCache_ = null;
         jdbcTypes_ = null;
+        systemCatalogJavaObjectColumns_ = null;
         nullable_ = null;
         charset_ = null;
         this.ccsid_ = null;
