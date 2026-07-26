@@ -811,6 +811,25 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosGeneratedClassContractFreezeTest',
+        'Runs Compiler Phase 2 reflection-based generation-contract freeze and digest proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.class'])
+
+tasks.named('runDelosGeneratedClassContractFreezeTest') {
+    systemProperty 'delosdb.compiler.contractFreeze.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/compiler/generated-class-contract-freeze.txt')
+                    .get().asFile.absolutePath
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/generated-class-contract-freeze.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosGeneratedClassContractFreezeTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

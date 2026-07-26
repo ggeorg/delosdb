@@ -89,6 +89,28 @@ query results
 Byte-for-byte equality is not required. Semantic equivalence, verification, and
 performance acceptance are required.
 
+## Implementation status
+
+```text
+Compiler Phase 1 status: VERIFIED
+Compiler Phase 2 status: IMPLEMENTED — PENDING VERIFICATION
+Compiler Phase 3 status: NOT STARTED
+```
+
+Phase 2 freezes the exact inherited boundary before any second backend exists:
+
+```text
+1 JavaFactory method
+6 ClassBuilder methods
+43 MethodBuilder signatures
+32 MethodBuilder operation names
+0 LocalField methods
+```
+
+All 32 operation names have live SQL compiler-node use and an implementation in
+`AsmJava`. The reflection-based contract test records a deterministic contract
+digest so a later backend cannot silently reshape the compiler-facing API.
+
 ## Compiler Phase 1 — inventory and ASM evidence
 
 Phase 1 records:
@@ -152,15 +174,21 @@ a speculative feature list, determines completion.
 ## Compiler Phase 2 — freeze the existing backend boundary
 
 ASM is already isolated behind the inherited contract. Phase 2 therefore does
-not introduce another interface. It:
+not introduce another interface. The implemented contract-freeze increment:
 
 ```text
-freezes JavaFactory/ClassBuilder/MethodBuilder as the migration boundary
-classifies every contract operation used by compiler nodes
-adds focused contract tests for every supported operation
-removes stale or unused contract operations only with source evidence
+freezes JavaFactory/ClassBuilder/MethodBuilder/LocalField as the migration boundary
+inventories all 43 MethodBuilder signatures and 32 operation names
+proves every operation name has live compiler-node use
+proves AsmJava implements every inventoried operation name
+adds a deterministic reflection-based contract digest
 keeps AsmJava authoritative
+adds no production Java, public API, module, dependency edge, or runtime selector
 ```
+
+Contract-operation behaviour fixtures remain the next Phase 2 increment before
+the test-only JDK backend begins. An operation may be removed only when both
+compiler-node usage and compatibility evidence prove it obsolete.
 
 ## Compiler Phase 3 — JDK vertical slice
 

@@ -619,8 +619,10 @@ apply from: 'gradle/delosdb-storage-static-analysis.gradle'
 // Generated-class compiler modernisation has independent ownership from
 // storage analysis and therefore uses a dedicated inventory and gate script.
 apply from: 'gradle/delosdb-compiler-modernization-static-analysis.gradle'
+apply from: 'gradle/delosdb-generated-class-contract-static-analysis.gradle'
 
 tasks.named('s0CloseoutVerification') {
     dependsOn 'verifyDelosRuntimeStorageProviders'
     dependsOn 'delosGeneratedClassModernizationStaticAnalysis'
+    dependsOn 'delosGeneratedClassContractStaticAnalysis'
 }
