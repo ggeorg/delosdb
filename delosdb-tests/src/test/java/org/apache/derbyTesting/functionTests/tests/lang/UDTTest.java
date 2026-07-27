@@ -33,6 +33,8 @@ import java.sql.Statement;
 import java.util.HashMap;
 
 import junit.framework.Test;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 import org.apache.derbyTesting.junit.JDBC;
 
@@ -52,6 +54,14 @@ public class UDTTest  extends GeneratedColumnsHelper
     public static final String OBJECT_EXISTS = "X0Y68";
     public static final String VIEW_DEPENDS_ON_TYPE = "X0Y23";
     public static final String TRIGGER_DEPENDS_ON_TYPE = "X0Y24";
+
+    /** Explicit test-only allow-list for inherited application UDT fixtures. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derbyTesting.functionTests.tests.lang.**"
+                    + ";java.base/*"
+                    + ";java.sql/java.sql.Timestamp"
+                    + ";!*";
 
     ///////////////////////////////////////////////////////////////////////////////////
     //
@@ -87,7 +97,10 @@ public class UDTTest  extends GeneratedColumnsHelper
      */
     public static Test suite()
     {
-        return TestConfiguration.defaultSuite(UDTTest.class);
+        return SystemPropertyTestSetup.singleProperty(
+                TestConfiguration.defaultSuite(UDTTest.class),
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
 
     ///////////////////////////////////////////////////////////////////////////////////

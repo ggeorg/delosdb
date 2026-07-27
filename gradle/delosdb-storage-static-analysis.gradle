@@ -688,7 +688,9 @@ def delosHeapObjectDeserializationFilterStaticFiles = [
         'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSCOLPERMSRowFactory.java',
         'delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTRIGGERSRowFactory.java',
         'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.java',
-        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java'
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.java',
+        'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/lang/UDTTest.java'
 ]
 
 def delosObjectFilterLeafSites = [
@@ -721,6 +723,12 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def columnInfoFile = new File(delosRepositoryRoot, 'delosdb-engine/src/main/java/org/apache/derby/impl/load/ColumnInfo.java')
         def cursorFile = new File(delosRepositoryRoot, 'delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java')
         def clientStatementFile = new File(delosRepositoryRoot, 'delosdb-client/src/main/java/org/apache/derby/client/am/ClientStatement.java')
+        def userDefinedAggregatesTestFile = new File(
+                delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.java')
+        def udtTestFile = new File(
+                delosRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/lang/UDTTest.java')
 
         delosHeapObjectDeserializationFilterStaticFiles.each { relativePath ->
             DelosDbStaticAnalysisSupport.require(failures, new File(delosRepositoryRoot, relativePath).exists(), 'Missing object deserialization filter file: ' + relativePath)
@@ -736,6 +744,9 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
         def columnInfoText = columnInfoFile.exists() ? columnInfoFile.getText('UTF-8') : ''
         def cursorText = cursorFile.exists() ? cursorFile.getText('UTF-8') : ''
         def clientStatementText = clientStatementFile.exists() ? clientStatementFile.getText('UTF-8') : ''
+        def userDefinedAggregatesTestText = userDefinedAggregatesTestFile.exists()
+                ? userDefinedAggregatesTestFile.getText('UTF-8') : ''
+        def udtTestText = udtTestFile.exists() ? udtTestFile.getText('UTF-8') : ''
 
         ['delosdb.objectDeserializationFilter',
          'delosdb.drda.objectDeserializationFilter',
@@ -947,6 +958,28 @@ tasks.register('delosHeapObjectDeserializationFilterStaticAnalysis') {
                 heapTestText.contains('DelosObjectInputFilters.HEAP_COMPATIBILITY_MODE_PROPERTY')
                         && !heapTestText.contains('DelosObjectInputFilters.COMPATIBILITY_MODE_PROPERTY'),
                 'Heap tests must use only the heap compatibility switch')
+
+        [
+                'UserDefinedAggregatesTest': userDefinedAggregatesTestText,
+                'UDTTest': udtTestText
+        ].each { testName, testText ->
+            DelosDbStaticAnalysisSupport.require(failures,
+                    testText.contains('SystemPropertyTestSetup.singleProperty(')
+                            && testText.contains('DelosObjectInputFilters.DRDA_FILTER_PROPERTY')
+                            && testText.contains('DRDA_APPLICATION_UDT_TEST_FILTER'),
+                    testName + ' must opt into application UDT deserialization explicitly')
+            ['DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN',
+             'org.apache.derbyTesting.functionTests.tests.lang.**',
+             'java.base/*',
+             'java.sql/java.sql.Timestamp',
+             ';!*'].each { token ->
+                DelosDbStaticAnalysisSupport.require(failures, testText.contains(token),
+                        testName + ' DRDA application UDT test allow-list is missing token: ' + token)
+            }
+            DelosDbStaticAnalysisSupport.require(failures,
+                    !testText.contains('COMPATIBILITY_MODE_PROPERTY'),
+                    testName + ' must not bypass the fail-closed DRDA policy with compatibility mode')
+        }
 
         ['testDrdaAndImportRejectUnexpectedClassesByDefault',
          'testDrdaSystemCatalogUsesFixedInternalAllowList',

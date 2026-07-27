@@ -428,6 +428,14 @@ def registerDelosFocusedTest = { String taskName,
 
 
 registerDelosFocusedTest(
+        'runDelosDrdaApplicationUdtLanguageTests',
+        'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.class',
+                'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
+        ])
+
+registerDelosFocusedTest(
         'runDelosServerSchedulerTest',
         'Runs focused DRDA server scheduler, threading, fairness, and EXTDTA cleanup tests.',
         [

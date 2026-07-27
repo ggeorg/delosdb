@@ -28,8 +28,10 @@ import java.sql.ResultSet;
 import junit.framework.Test;
 import org.apache.derby.iapi.types.HarmonySerialBlob;
 import org.apache.derby.iapi.types.HarmonySerialClob;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.Decorator;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /**
@@ -66,6 +68,14 @@ public class UserDefinedAggregatesTest  extends GeneratedColumnsHelper
     public static final String AGG_IN_ON_CLAUSE = "42Z07";
     public static final String BAD_CONSTRAINT = "42Y01";
     public static final String DEPENDENCY_VIOLATION = "X0Y30";
+
+    /** Explicit test-only allow-list for inherited application UDT fixtures. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derbyTesting.functionTests.tests.lang.**"
+                    + ";java.base/*"
+                    + ";java.sql/java.sql.Timestamp"
+                    + ";!*";
 
     ///////////////////////////////////////////////////////////////////////////////////
     //
@@ -106,7 +116,10 @@ public class UserDefinedAggregatesTest  extends GeneratedColumnsHelper
         suite.addTest( TestConfiguration.defaultSuite(UserDefinedAggregatesTest.class) );
         suite.addTest( collatedSuite( "en" ) );
 
-        return suite;
+        return SystemPropertyTestSetup.singleProperty(
+                suite,
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
 
     /**
