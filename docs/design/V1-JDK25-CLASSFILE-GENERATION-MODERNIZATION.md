@@ -93,15 +93,16 @@ performance acceptance are required.
 
 ```text
 Compiler Phase 1 status: VERIFIED
-Compiler Phase 2 status: IMPLEMENTED — PENDING VERIFICATION
+Compiler Phase 2.1 status: VERIFIED
+Compiler Phase 2.2 status: IMPLEMENTED — PENDING VERIFICATION
 Compiler Phase 3 status: NOT STARTED
 ```
 
-Phase 2 freezes the exact inherited boundary before any second backend exists:
+Phase 2.1 freezes the exact inherited boundary before any second backend exists:
 
 ```text
 1 JavaFactory method
-6 ClassBuilder methods
+8 ClassBuilder methods
 43 MethodBuilder signatures
 32 MethodBuilder operation names
 0 LocalField methods
@@ -110,6 +111,14 @@ Phase 2 freezes the exact inherited boundary before any second backend exists:
 All 32 operation names have live SQL compiler-node use and an implementation in
 `AsmJava`. The reflection-based contract test records a deterministic contract
 digest so a later backend cannot silently reshape the compiler-facing API.
+
+Phase 2.2 adds the executable ASM behavior oracle. Every MethodBuilder signature
+is mapped to an executed behavior fixture covering lifecycle, constants and
+parameters, fields, objects and arrays, conversions, stack operations, control
+flow, invocation, constructor chaining, and statement splitting. Generated
+bytes are reproduced twice to prove deterministic fixture construction, then
+loaded and executed to freeze results, declared exceptions, and representative
+runtime failures before the Class-File API backend exists.
 
 ## Compiler Phase 1 — inventory and ASM evidence
 
@@ -186,9 +195,16 @@ keeps AsmJava authoritative
 adds no production Java, public API, module, dependency edge, or runtime selector
 ```
 
-Contract-operation behaviour fixtures remain the next Phase 2 increment before
-the test-only JDK backend begins. An operation may be removed only when both
-compiler-node usage and compatibility evidence prove it obsolete.
+The operation-behavior fixture increment maps all 43 MethodBuilder signatures to
+ten executed fixture groups and keeps the ASM backend as the sole authority.
+The focused test writes a stable oracle report for the later differential
+backend. An operation may be removed only when both compiler-node usage and
+compatibility evidence prove it obsolete.
+
+Compiler Phase 2 closes only after the Phase 2.2 focused test, the contract
+static gate, the generated-class baseline, language tests, and modular-image
+verification are green. The next implementation step is Compiler Phase 3's
+package-internal, test-only Class-File API vertical slice.
 
 ## Compiler Phase 3 — JDK vertical slice
 

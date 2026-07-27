@@ -821,7 +821,7 @@ tasks.named('check') {
 
 registerDelosFocusedTest(
         'runDelosGeneratedClassContractFreezeTest',
-        'Runs Compiler Phase 2 reflection-based generation-contract freeze and digest proof.',
+        'Runs Compiler Phase 2.1 reflection-based generation-contract freeze and digest proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.class'])
 
 tasks.named('runDelosGeneratedClassContractFreezeTest') {
@@ -836,6 +836,30 @@ tasks.named('runDelosGeneratedClassContractFreezeTest') {
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosGeneratedClassContractFreezeTest')
+}
+
+registerDelosFocusedTest(
+        'runDelosGeneratedClassContractBehaviorTest',
+        'Runs Compiler Phase 2.2 ASM operation-behavior fixtures for every MethodBuilder signature.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.class'])
+
+tasks.named('runDelosGeneratedClassContractBehaviorTest') {
+    def behaviorManifest = rootProject.layout.projectDirectory.file(
+            'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
+    systemProperty 'delosdb.compiler.contractBehavior.manifest',
+            behaviorManifest.asFile.absolutePath
+    systemProperty 'delosdb.compiler.contractBehavior.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/compiler/generated-class-contract-behavior.txt')
+                    .get().asFile.absolutePath
+    inputs.file behaviorManifest
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/generated-class-contract-behavior.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosGeneratedClassContractBehaviorTest')
 }
 
 

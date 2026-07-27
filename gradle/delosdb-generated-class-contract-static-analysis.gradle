@@ -1,4 +1,4 @@
-// DelosDB Compiler Phase 2.1 generation-contract inventory and static gates.
+// DelosDB Compiler Phase 2.1/2.2 contract and behavior-oracle static gates.
 //
 // This script freezes the complete inherited compiler-facing contract before
 // the JDK Class-File API backend is introduced. Interface methods declaring
@@ -154,9 +154,30 @@ final Closure<List<Map<String, String>>> delosMethodBuilderInventoryRows = {
             }
 }
 
+final Closure<List<Map<String, String>>> delosMethodBuilderBehaviorRows = {
+    File manifest = new File(delosContractRepositoryRoot,
+            'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
+    if (!manifest.isFile()) {
+        return []
+    }
+    manifest.readLines('UTF-8')
+            .findAll { String line ->
+                !line.trim().isEmpty() && !line.startsWith('#')
+            }
+            .collect { String line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException(
+                            'Invalid MethodBuilder behavior row: ' + line)
+                }
+                [id: parts[0], signature: parts[1], fixture: parts[2],
+                 proof: parts[3], reason: parts[4]]
+            }
+}
+
 tasks.register('delosGeneratedClassContractInventory') {
     group = 'verification'
-    description = 'Reports the complete inherited generated-class contract, including declared exceptions.'
+    description = 'Reports the complete generated-class contract and mapped ASM behavior fixtures.'
     dependsOn tasks.named('delosGeneratedClassModernizationStaticAnalysis')
 
     File reportFile = new File(delosContractBuildRoot,
@@ -167,6 +188,7 @@ tasks.register('delosGeneratedClassContractInventory') {
     doLast {
         Map<String, List<Map<String, Object>>> snapshot = delosContractSnapshot()
         List<Map<String, String>> operationRows = delosMethodBuilderInventoryRows()
+        List<Map<String, String>> behaviorRows = delosMethodBuilderBehaviorRows()
         int totalMethods = snapshot.values().sum { List<?> methods -> methods.size() } as int
         int exceptionMethods = snapshot.values().sum { List<Map<String, Object>> methods ->
             methods.count { Map<String, Object> method ->
@@ -180,7 +202,7 @@ tasks.register('delosGeneratedClassContractInventory') {
         reportFile.withPrintWriter('UTF-8') { writer ->
             writer.println('DelosDB generated-class contract inventory')
             writer.println('==========================================')
-            writer.println('Phase: COMPILER_PHASE_2_CONTRACT_FREEZE')
+            writer.println('Phase: COMPILER_PHASE_2_CONTRACT_AND_BEHAVIOR_FREEZE')
             writer.println('Production authority: ASM_TRANSITIONAL')
             writer.println('Normal runtime backend selector: none')
             writer.println()
@@ -196,6 +218,9 @@ tasks.register('delosGeneratedClassContractInventory') {
             writer.println('MethodBuilder inventory rows: ' + operationRows.size())
             writer.println(String.format(
                     'MethodBuilder operation names: %d', operationNames))
+            writer.println('MethodBuilder behavior rows: ' + behaviorRows.size())
+            writer.println('Behavior fixture groups: '
+                    + behaviorRows.collect { it.fixture }.toSet().size())
             writer.println('Contract SHA-256: ' + digest)
         }
         logger.lifecycle(
@@ -205,7 +230,7 @@ tasks.register('delosGeneratedClassContractInventory') {
 
 tasks.register('delosGeneratedClassContractStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the complete generated-class contract freeze before the JDK Class-File API backend.'
+    description = 'Validates the generated-class signature and behavior freeze before the JDK Class-File API backend.'
     dependsOn tasks.named('delosGeneratedClassContractInventory')
 
     doLast {
@@ -292,6 +317,82 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
             }
         }
 
+        List<Map<String, String>> behaviorRows = delosMethodBuilderBehaviorRows()
+        if (behaviorRows.size() != 43) {
+            failures.add(String.format(
+                    'MethodBuilder behavior manifest must contain 43 signatures; found %d',
+                    behaviorRows.size()))
+        }
+        if (behaviorRows.collect { it.id }.toSet().size() != behaviorRows.size()) {
+            failures.add('MethodBuilder behavior manifest contains duplicate ids')
+        }
+        if (behaviorRows.collect { it.signature }.toSet().size()
+                != behaviorRows.size()) {
+            failures.add('MethodBuilder behavior manifest contains duplicate signatures')
+        }
+        Set<String> inventorySignatures = operationRows
+                .collect { it.signature }.toSet()
+        Set<String> behaviorSignatures = behaviorRows
+                .collect { it.signature }.toSet()
+        if (behaviorSignatures != inventorySignatures) {
+            Set<String> missing = inventorySignatures - behaviorSignatures
+            Set<String> extra = behaviorSignatures - inventorySignatures
+            failures.add('MethodBuilder behavior signatures do not match the contract inventory; missing='
+                    + missing.sort() + ' extra=' + extra.sort())
+        }
+        Set<String> expectedFixtures = [
+                'method-lifecycle',
+                'parameter-constants',
+                'field-access',
+                'object-and-array',
+                'receiver-and-conversion',
+                'stack-and-statement',
+                'control-flow',
+                'invocation',
+                'constructor',
+                'statement-splitting'
+        ] as Set
+        Set<String> behaviorFixtures = behaviorRows
+                .collect { it.fixture }.toSet()
+        if (behaviorFixtures != expectedFixtures) {
+            failures.add('MethodBuilder behavior fixture groups changed: expected '
+                    + expectedFixtures.sort() + ', found ' + behaviorFixtures.sort())
+        }
+        behaviorRows.each { Map<String, String> row ->
+            if (row.proof.trim().isEmpty()) {
+                failures.add('MethodBuilder behavior proof marker is empty: ' + row.id)
+            }
+            if (row.reason.length() < 90) {
+                failures.add('MethodBuilder behavior reason is too thin: ' + row.id)
+            }
+        }
+
+        File behaviorTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
+        String behaviorText = behaviorTest.isFile()
+                ? behaviorTest.getText('UTF-8')
+                : ''
+        behaviorRows.collect { it.proof }.toSet().each { String marker ->
+            if (!behaviorText.contains(marker)) {
+                failures.add('Generated-class behavior test is missing proof marker: '
+                        + marker)
+            }
+        }
+        [
+            'COMPILER_PHASE_2_2_OPERATION_BEHAVIOR_FREEZE',
+            'assertEquals("complete MethodBuilder signature mapping"',
+            'Arrays.equals(first.classBytes(), second.classBytes())',
+            'manifest.fixtures(), executedFixtures',
+            'ClassCastException',
+            'statementNumHitLimit(0)',
+            'classBuilder.getGeneratedClass()',
+            'Normal runtime backend selector: none'
+        ].each { String marker ->
+            if (!behaviorText.contains(marker)) {
+                failures.add('Generated-class behavior oracle is missing: ' + marker)
+            }
+        }
+
         File freezeTest = new File(delosContractRepositoryRoot,
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.java')
         String freezeText = freezeTest.isFile()
@@ -318,10 +419,27 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
                 : ''
         [
             'runDelosGeneratedClassContractFreezeTest',
-            'generated-class-contract-freeze.txt'
+            'generated-class-contract-freeze.txt',
+            'runDelosGeneratedClassContractBehaviorTest',
+            'generated-class-contract-behavior.txt',
+            'delosdb-methodbuilder-behavior-fixtures.txt',
+            "dependsOn tasks.named('runDelosGeneratedClassContractBehaviorTest')"
         ].each { String marker ->
             if (!testBuildText.contains(marker)) {
                 failures.add('Generated-class contract test wiring is missing: ' + marker)
+            }
+        }
+
+        File design = new File(delosContractRepositoryRoot,
+                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md')
+        String designText = design.isFile() ? design.getText('UTF-8') : ''
+        [
+            'Compiler Phase 2.1 status: VERIFIED',
+            'Compiler Phase 2.2 status: IMPLEMENTED — PENDING VERIFICATION',
+            'Every MethodBuilder signature'
+        ].each { String marker ->
+            if (!designText.contains(marker)) {
+                failures.add('Compiler modernization design is missing: ' + marker)
             }
         }
 
@@ -348,6 +466,8 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
             writer.println('Contract SHA-256: ' + digest)
             writer.println('MethodBuilder inventory rows: ' + operationRows.size())
             writer.println('MethodBuilder operation names: ' + operationNames)
+            writer.println('MethodBuilder behavior rows: ' + behaviorRows.size())
+            writer.println('Behavior fixture groups: ' + behaviorFixtures.size())
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { String failure -> writer.println('- ' + failure) }
         }
