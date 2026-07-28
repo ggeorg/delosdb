@@ -4709,11 +4709,10 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
             def requireOrdered = { String description, String source, List<String> tokens ->
                 int previous = -1
                 tokens.each { token ->
-                    int current = source.indexOf(token)
+                    int current = source.indexOf(token, previous + 1)
                     if (current < 0) {
-                        failures << description + ' is missing token: ' + token
-                    } else if (current <= previous) {
-                        failures << description + ' has incorrect ordering at token: ' + token
+                        failures << description + ' is missing token after position '
+                                + previous + ': ' + token
                     }
                     previous = current
                 }
@@ -4736,8 +4735,10 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
                     'snapshotLease = runtime.openSnapshotLease()',
                     'snapshotSequence = snapshotLease.sequence()',
                     'return snapshotSequence',
+                    'List<MvccRawStoreTable.PendingVersion> committableVersions =',
+                    'committablePendingVersions()',
                     'MvccRawStoreTable.stampPendingVersions(',
-                    'List.copyOf(pending)',
+                    'committableVersions',
                     'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
                     'snapshotSequence = UNCAPTURED_SNAPSHOT'
             ])
@@ -4748,9 +4749,11 @@ tasks.register('delosMvccRawStoreMultiTableTransactionStaticAnalysis') {
             requireOrdered('One precommit sequence across all pending tables',
                     section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
                             'RawStore multi-table beforeCommit section'),
-                    ['runtime.reserveCommitSequence(rawTransaction)',
+                    ['List<MvccRawStoreTable.PendingVersion> committableVersions =',
+                            'committablePendingVersions()',
+                            'runtime.reserveCommitSequence(rawTransaction)',
                             'MvccRawStoreTable.stampPendingVersions(',
-                            'List.copyOf(pending)',
+                            'committableVersions',
                             'runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence)',
                             'AFTER_STAMP_BEFORE_RAW_COMMIT'])
             requireOrdered('One cached transaction snapshot',
@@ -6627,15 +6630,18 @@ tasks.register('delosMvccRawStorePhysicalLockingStaticAnalysis') {
             requireOrdered('Precommit physical publication ordering',
                     section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
                             'RawStore MVCC beforeCommit section'),
-                    ['stageAllocatorHighWaters()', 'stampPendingVersions(',
-                     'publishOrderedIndexes()', 'stageCommittedHighWater('])
+                    ['List<OrderedIndexGeneration> committableIndexes =',
+                     'committableOrderedIndexes()', 'stageAllocatorHighWaters()',
+                     'stampPendingVersions(', 'publishOrderedIndexes(committableIndexes)',
+                     'stageCommittedHighWater('])
             requireOrdered('Postcommit active-writer retirement and publication ordering',
                     section(contextText, 'public void afterCommit(', 'public void commitFailed(',
                             'RawStore MVCC afterCommit section'),
                     ['observeOrderedIndexContainer(', 'runtime.retireTransaction(transactionId)',
                      'runtime.publishAndUnlock(reservedCommitSequence)'])
             requireOrdered('Private ordered-index publication and old-generation retirement',
-                    section(contextText, 'private void publishOrderedIndexes()',
+                    section(contextText,
+                            'private void publishOrderedIndexes(List<OrderedIndexGeneration> generations)',
                             'private void stageAllocatorHighWaters()',
                             'RawStore MVCC private-index publication section'),
                     ['rebuildOrderedIndexForPublication(', 'publishOrderedIndexContainer(',
@@ -6856,7 +6862,10 @@ tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
                     'long vacuumHorizon()',
                     'return runtime.vacuumHorizon()',
                     'void markVacuumMutation()',
-                    'publishVacuumOrderedIndexes()',
+                    'List<OrderedIndexGeneration> committableIndexes =',
+                    'committableOrderedIndexes()',
+                    'publishVacuumOrderedIndexes(committableIndexes)',
+                    'private void publishVacuumOrderedIndexes(List<OrderedIndexGeneration> generations)',
                     'AFTER_VACUUM_BEFORE_RAW_COMMIT',
                     'AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION',
                     'snapshotLease.close()',
@@ -6869,7 +6878,10 @@ tasks.register('delosMvccRawStoreVacuumStaticAnalysis') {
             requireOrdered('Vacuum precommit publication before the inherited commit record',
                     section(contextText, 'public void beforeCommit(', 'public void afterCommit(',
                             'RawStore MVCC vacuum beforeCommit section'),
-                    ['publishVacuumOrderedIndexes()', 'AFTER_VACUUM_BEFORE_RAW_COMMIT'])
+                    ['List<OrderedIndexGeneration> committableIndexes =',
+                     'committableOrderedIndexes()',
+                     'publishVacuumOrderedIndexes(committableIndexes)',
+                     'AFTER_VACUUM_BEFORE_RAW_COMMIT'])
             requireOrdered('Vacuum postcommit failure boundary precedes local index publication',
                     section(contextText, 'public void afterCommit(', 'public void commitFailed(',
                             'RawStore MVCC vacuum afterCommit section'),
@@ -7690,14 +7702,19 @@ tasks.register('delosMvccRawStoreMemoryDatabaseStaticAnalysis') {
             ].each { token ->
                 if (!design.contains(token)) failures << 'Stage 6 design is missing token: ' + token
             }
+            def stage6Start = roadmap.indexOf('# Stage 6 — memory-database completion')
+            def stage6End = roadmap.indexOf('# Stage 7 — module convergence', stage6Start)
+            def stage6Roadmap = stage6Start >= 0 && stage6End > stage6Start
+                    ? roadmap.substring(stage6Start, stage6End) : ''
             [
                     '# Stage 6 — memory-database completion',
-                    'IMPLEMENTED / PENDING USER VERIFICATION',
+                    'Status:',
+                    'VERIFIED',
                     'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
                     ':delosdb-tests:runDelosMvccRawStoreMemoryDatabaseTest',
                     'per-database bounded accounted payload capacity'
             ].each { token ->
-                if (!roadmap.contains(token)) failures << 'Stage 6 roadmap is missing token: ' + token
+                if (!stage6Roadmap.contains(token)) failures << 'Stage 6 roadmap is missing token: ' + token
             }
         }
 
