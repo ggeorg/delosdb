@@ -864,6 +864,26 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
+        'runDelosGeneratedClassClassFileVerticalSliceTest',
+        'Runs Compiler Phase 3 ASM/JDK 25 Class-File API differential generation, verification, loading, execution, and exception comparison.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileVerticalSliceTest.class'])
+
+tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest') {
+    systemProperty 'delosdb.compiler.classFileVerticalSlice.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/compiler/generated-class-classfile-vertical-slice.txt')
+                    .get().asFile.absolutePath
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/generated-class-classfile-vertical-slice.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest')
+}
+
+
+registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',
         'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'],

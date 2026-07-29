@@ -483,3 +483,246 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
                 reportFile)
     }
 }
+
+// Compiler Phase 3 bounded JDK 25 Class-File API vertical-slice gate.
+tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the test-only ASM/JDK 25 Class-File API differential vertical slice.'
+    dependsOn tasks.named('delosGeneratedClassContractStaticAnalysis')
+
+    doLast {
+        List<String> failures = []
+        File manifest = new File(delosContractRepositoryRoot,
+                'gradle/static-analysis/delosdb-classfile-vertical-slice.txt')
+        File backend = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+        File differentialTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileVerticalSliceTest.java')
+        File testBuild = new File(delosContractRepositoryRoot,
+                'delosdb-tests/build.gradle')
+        File rootBuild = new File(delosContractRepositoryRoot, 'build.gradle')
+        File modules = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+        File design = new File(delosContractRepositoryRoot,
+                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md')
+
+        [manifest, backend, differentialTest, testBuild, rootBuild, modules, design]
+                .each { File file ->
+            if (!file.isFile()) {
+                failures.add('Missing Compiler Phase 3 proof file: ' + file)
+            }
+        }
+
+        List<Map<String, String>> rows = []
+        if (manifest.isFile()) {
+            manifest.readLines('UTF-8').eachWithIndex { String line, int index ->
+                String trimmed = line.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith('#')) {
+                    return
+                }
+                List<String> parts = trimmed.split('\\|', -1) as List<String>
+                if (parts.size() != 5) {
+                    failures.add(String.format(
+                            'Malformed Class-File API vertical-slice row %d: %s',
+                            index + 1, line))
+                    return
+                }
+                rows.add([
+                        id: parts[0],
+                        capability: parts[1],
+                        backend: parts[2],
+                        test: parts[3],
+                        reason: parts[4]
+                ])
+            }
+        }
+        if (rows.size() != 10) {
+            failures.add(String.format(
+                    'Class-File API vertical-slice manifest must contain 10 rows; found %d',
+                    rows.size()))
+        }
+        if (rows.collect { it.id }.toSet().size() != rows.size()) {
+            failures.add('Class-File API vertical-slice manifest contains duplicate ids')
+        }
+        Set<String> expectedCapabilities = [
+                'CLASS_CREATION',
+                'FIELD_CREATION',
+                'METHOD_PARAMETERS',
+                'CONSTANTS',
+                'FIELD_ACCESS',
+                'METHOD_INVOCATION',
+                'TYPE_CONVERSION',
+                'NULL_BRANCH',
+                'BOOLEAN_BRANCH',
+                'RETURN_AND_BOUNDARY'
+        ] as Set
+        Set<String> actualCapabilities = rows.collect { it.capability }.toSet()
+        if (actualCapabilities != expectedCapabilities) {
+            failures.add('Class-File API vertical-slice capabilities changed: expected '
+                    + expectedCapabilities.sort() + ', found '
+                    + actualCapabilities.sort())
+        }
+        rows.each { Map<String, String> row ->
+            if (row.reason.length() < 100) {
+                failures.add('Class-File API vertical-slice reason is too thin: '
+                        + row.id)
+            }
+        }
+
+        String backendText = backend.isFile() ? backend.getText('UTF-8') : ''
+        String testText = differentialTest.isFile()
+                ? differentialTest.getText('UTF-8') : ''
+        rows.each { Map<String, String> row ->
+            if (!backendText.contains(row.backend)) {
+                failures.add('Class-File API backend is missing marker '
+                        + row.id + ': ' + row.backend)
+            }
+            if (!testText.contains(row.test)) {
+                failures.add('Class-File API differential test is missing marker '
+                        + row.id + ': ' + row.test)
+            }
+        }
+
+        [
+            'final class ClassFileJava implements JavaFactory',
+            'COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE',
+            'CLASSFILE_TEST_ONLY',
+            'ClassFile.of()',
+            'builder.withMethodBody(',
+            'ClassFile.JAVA_25_VERSION',
+            'Compiler Phase 4 must add Class-File API support for',
+            'Class-File API test backend cannot load a generated class without a ClassFactory'
+        ].each { String marker ->
+            if (!backendText.contains(marker)) {
+                failures.add('Class-File API test backend is missing: ' + marker)
+            }
+        }
+        if (backendText.contains('public final class ClassFileJava')) {
+            failures.add('ClassFileJava must remain package-internal and test-only')
+        }
+
+        [
+            'new ClassFileJava()',
+            'Class.forName(ASM_BACKEND)',
+            'verifier.parse(asm.classBytes())',
+            'verifier.parse(classFile.classBytes())',
+            'verifier.verify(asmModel)',
+            'verifier.verify(classFileModel)',
+            'publicMethodSignatures(asmClass)',
+            'compareSemantics(',
+            'assertSameFailure(',
+            'ClassCastException',
+            'provePhase4Boundary(classFileFactory)',
+            'Normal runtime backend selector: none'
+        ].each { String marker ->
+            if (!testText.contains(marker)) {
+                failures.add('Class-File API differential test is missing: '
+                        + marker)
+            }
+        }
+
+        File[] productionRoots = [
+                new File(delosContractRepositoryRoot,
+                        'delosdb-engine/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-runtime-api/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-commons/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-client/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-server/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-tools/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-optionaltools/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-runner/src/main/java')
+        ] as File[]
+        productionRoots.findAll { it.isDirectory() }.each { File root ->
+            root.eachFileRecurse { File source ->
+                if (!source.name.endsWith('.java')) {
+                    return
+                }
+                String text = source.getText('UTF-8')
+                if (text.contains('ClassFileJava')
+                        || text.contains('COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE')) {
+                    failures.add('Phase 3 test backend leaked into production source: '
+                            + delosContractRepositoryRoot.toPath()
+                                    .relativize(source.toPath()))
+                }
+            }
+        }
+
+        String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
+        if (!modulesText.contains(
+                'org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
+            failures.add('ASM must remain the transitional production backend in Phase 3')
+        }
+        if (modulesText.contains('ClassFileJava')) {
+            failures.add('The test-only Class-File API backend must not be registered in modules.properties')
+        }
+
+        String testBuildText = testBuild.isFile()
+                ? testBuild.getText('UTF-8') : ''
+        [
+            'runDelosGeneratedClassClassFileVerticalSliceTest',
+            'GeneratedClassClassFileVerticalSliceTest.class',
+            'generated-class-classfile-vertical-slice.txt',
+            "dependsOn tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest')"
+        ].each { String marker ->
+            if (!testBuildText.contains(marker)) {
+                failures.add('Class-File API focused test wiring is missing: '
+                        + marker)
+            }
+        }
+
+        String rootBuildText = rootBuild.isFile()
+                ? rootBuild.getText('UTF-8') : ''
+        if (!rootBuildText.contains(
+                "dependsOn 'delosGeneratedClassClassFileVerticalSliceStaticAnalysis'")) {
+            failures.add('s0CloseoutVerification must include the Phase 3 static gate')
+        }
+
+        String designText = design.isFile() ? design.getText('UTF-8') : ''
+        String normalizedDesignText = designText.replaceAll('\\s+', ' ')
+        [
+            'Compiler Phase 3 status: IMPLEMENTED / PENDING VERIFICATION',
+            'Compiler Phase 4 status: NOT STARTED — NEXT',
+            'package-internal, test-only JDK 25 Class-File API backend',
+            'ASM remains the sole production authority during Phase 3'
+        ].each { String marker ->
+            if (!normalizedDesignText.contains(marker)) {
+                failures.add('Compiler modernization design is missing: '
+                        + marker)
+            }
+        }
+
+        File reportFile = new File(delosContractBuildRoot,
+                'reports/delosdb/compiler/generated-class-classfile-vertical-slice-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB JDK 25 Class-File API vertical-slice static analysis')
+            writer.println('============================================================')
+            writer.println('Manifest rows: ' + rows.size())
+            writer.println('Capabilities: ' + actualCapabilities.size())
+            writer.println('Backend location: delosdb-tests test source only')
+            writer.println('Production authority: ASM_TRANSITIONAL')
+            writer.println('Class-File API authority: TEST_ONLY')
+            writer.println('Normal runtime backend selector: none')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { String failure -> writer.println('- ' + failure) }
+        }
+        if (!failures.isEmpty()) {
+            logger.error('Class-File API vertical-slice failures ({}):',
+                    failures.size())
+            failures.each { String failure -> logger.error('  - {}', failure) }
+            throw new GradleException(String.format(
+                    'Class-File API vertical-slice static analysis failed. Report: %s',
+                    reportFile))
+        }
+        logger.lifecycle(
+                'JDK 25 Class-File API vertical-slice static analysis passed. Report: {}',
+                reportFile)
+    }
+}

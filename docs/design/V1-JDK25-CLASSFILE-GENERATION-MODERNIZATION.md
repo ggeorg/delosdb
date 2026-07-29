@@ -95,7 +95,8 @@ performance acceptance are required.
 Compiler Phase 1 status: VERIFIED
 Compiler Phase 2.1 status: VERIFIED
 Compiler Phase 2.2 status: VERIFIED
-Compiler Phase 3 status: NOT STARTED — NEXT
+Compiler Phase 3 status: IMPLEMENTED / PENDING VERIFICATION
+Compiler Phase 4 status: NOT STARTED — NEXT
 ```
 
 Phase 2.1 freezes the exact inherited boundary before any second backend exists:
@@ -203,8 +204,14 @@ compatibility evidence prove it obsolete.
 
 Compiler Phase 2 is closed. The Phase 2.2 focused test, contract static gate,
 generated-class baseline, complete language suite, JDK 25 verifier, and
-modular-image verification are green. The next implementation step is Compiler
-Phase 3's package-internal, test-only Class-File API vertical slice.
+modular-image verification are green.
+
+Compiler Phase 3 now provides a package-internal, test-only JDK 25 Class-File
+API backend and a differential fixture generated through the same inherited
+DelosDB abstraction as ASM. ASM remains the sole production authority during
+Phase 3. The Class-File API implementation is not registered in
+`modules.properties`, cannot be selected at normal runtime, and fails fast for
+constructs deferred to Phase 4.
 
 ## Compiler Phase 3 — JDK vertical slice
 
@@ -233,7 +240,18 @@ execute both
 compare result or exception
 ```
 
-The JDK backend is test-only during this phase.
+The JDK backend is test-only during this phase. The implemented bounded slice
+covers class and field creation, methods and parameters, primitive and typed-null
+constants, generated and external field access, static/virtual/interface and
+cached method invocation, primitive conversion, reference casts and upcasts,
+`instanceof`, null and Boolean branches, and typed returns. It parses, verifies,
+loads, and executes ASM and Class-File API classes and compares method
+signatures, results, and representative exceptions.
+
+Arrays, object construction, stack choreography, exception declarations, and
+statement splitting remain explicit fail-fast Phase 4 boundaries. This keeps the
+vertical slice narrow and prevents unsupported operations from silently emitting
+different bytecode.
 
 ## Compiler Phase 4 — complete differential backend
 
