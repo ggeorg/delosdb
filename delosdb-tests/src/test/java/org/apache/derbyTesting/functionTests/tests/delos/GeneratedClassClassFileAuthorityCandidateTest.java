@@ -153,8 +153,10 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
             }
 
             try (Statement statement = connection.createStatement()) {
-                try {
-                    statement.executeQuery("values 1 / 0");
+                try (ResultSet row = statement.executeQuery("values 1 / 0")) {
+                    // Derby evaluates this VALUES expression when the row is
+                    // fetched, not merely when the result set is opened.
+                    row.next();
                     fail("division by zero must preserve SQLState 22012");
                 } catch (SQLException expected) {
                     assertEquals("22012", expected.getSQLState());

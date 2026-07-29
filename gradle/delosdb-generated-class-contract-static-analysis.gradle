@@ -1106,6 +1106,8 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
             'Monitor.findSystemModule(Module.JavaFactory)',
             'Prepared statement families:',
             'Wide projection columns:',
+            'try (ResultSet row = statement.executeQuery("values 1 / 0"))',
+            'row.next();',
             'SQLState preservation: 22012',
             'FOCUSED_TEST_JVM_ONLY'
         ].each { String marker ->
