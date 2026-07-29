@@ -31,6 +31,8 @@ public final class V1ModularImageDrdaTest extends TestCase {
     private static final String CLIENT_ROOT_MODULES = String.join(",",
             "org.apache.derby.tools",
             "org.apache.derby.client");
+    private static final String JAVA_COMPILER_BACKEND_PROPERTY =
+            "delosdb.v1Baseline.modularImage.javaCompilerBackend";
 
     public void testJlinkRuntimeImageRunsModularDrdaAndClient() throws Exception {
         Path imageRoot = requiredPath("root");
@@ -149,15 +151,22 @@ public final class V1ModularImageDrdaTest extends TestCase {
             Path databaseRoot,
             int port,
             String action) {
-        return List.of(
-                javaExecutable.toString(),
-                "--module-path", modulePath,
-                "--add-modules", SERVER_ROOT_MODULES,
-                "-Dderby.system.home=" + databaseRoot.toAbsolutePath(),
-                "-m", "org.apache.derby.server/org.apache.derby.drda.NetworkServerControl",
-                action,
-                "-h", "127.0.0.1",
-                "-p", Integer.toString(port));
+        List<String> command = new ArrayList<>();
+        command.add(javaExecutable.toString());
+        command.add("--module-path");
+        command.add(modulePath);
+        command.add("--add-modules");
+        command.add(SERVER_ROOT_MODULES);
+        addJavaCompilerBackend(command);
+        command.add("-Dderby.system.home=" + databaseRoot.toAbsolutePath());
+        command.add("-m");
+        command.add("org.apache.derby.server/org.apache.derby.drda.NetworkServerControl");
+        command.add(action);
+        command.add("-h");
+        command.add("127.0.0.1");
+        command.add("-p");
+        command.add(Integer.toString(port));
+        return List.copyOf(command);
     }
 
     private static List<String> clientCommand(
@@ -165,13 +174,25 @@ public final class V1ModularImageDrdaTest extends TestCase {
             String modulePath,
             Path databaseRoot,
             Path script) {
-        return List.of(
-                javaExecutable.toString(),
-                "--module-path", modulePath,
-                "--add-modules", CLIENT_ROOT_MODULES,
-                "-Dderby.system.home=" + databaseRoot.toAbsolutePath(),
-                "-m", "org.apache.derby.tools/org.apache.derby.tools.ij",
-                script.toAbsolutePath().toString());
+        List<String> command = new ArrayList<>();
+        command.add(javaExecutable.toString());
+        command.add("--module-path");
+        command.add(modulePath);
+        command.add("--add-modules");
+        command.add(CLIENT_ROOT_MODULES);
+        addJavaCompilerBackend(command);
+        command.add("-Dderby.system.home=" + databaseRoot.toAbsolutePath());
+        command.add("-m");
+        command.add("org.apache.derby.tools/org.apache.derby.tools.ij");
+        command.add(script.toAbsolutePath().toString());
+        return List.copyOf(command);
+    }
+
+    private static void addJavaCompilerBackend(List<String> command) {
+        String backend = System.getProperty(JAVA_COMPILER_BACKEND_PROPERTY);
+        if (backend != null && !backend.isBlank()) {
+            command.add("-Dderby.module.javaCompiler=" + backend);
+        }
     }
 
     private static void waitForServer(
@@ -308,7 +329,10 @@ public final class V1ModularImageDrdaTest extends TestCase {
                 + "  \"serverStartNanos\": " + serverStartNanos + ",\n"
                 + "  \"clientRoundTripNanos\": " + clientRoundTripNanos + ",\n"
                 + "  \"javaVersion\": \"" + json(javaVersion.strip()) + "\",\n"
-                + "  \"semanticDigest\": \"" + semanticDigest + "\"\n"
+                + "  \"semanticDigest\": \"" + semanticDigest + "\",\n"
+                + "  \"javaCompilerBackend\": \""
+                + json(System.getProperty(JAVA_COMPILER_BACKEND_PROPERTY, "default"))
+                + "\"\n"
                 + "}\n";
         Files.writeString(reportDirectory.resolve("modular-image-drda-results.json"), json,
                 StandardCharsets.UTF_8);
@@ -321,7 +345,10 @@ public final class V1ModularImageDrdaTest extends TestCase {
                         + "image bytes: " + imageBytes + "\n"
                         + "server start nanos: " + serverStartNanos + "\n"
                         + "client round-trip nanos: " + clientRoundTripNanos + "\n"
-                        + "semantic digest: " + semanticDigest + "\n",
+                        + "semantic digest: " + semanticDigest + "\n"
+                        + "java compiler backend: "
+                        + System.getProperty(JAVA_COMPILER_BACKEND_PROPERTY, "default")
+                        + "\n",
                 StandardCharsets.UTF_8);
     }
 

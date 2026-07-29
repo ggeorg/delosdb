@@ -35,21 +35,21 @@ import org.apache.derby.iapi.util.ByteArray;
 
 /**
  * Compiler Phase 3 bounded differential proof between the transitional ASM
- * backend and the test-only JDK 25 Class-File API backend.
+ * backend and the production-packaged, unregistered JDK 25 Class-File API candidate.
  */
 public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
     private static final String ASM_BACKEND =
             "org.apache.derby.impl.services.bytecode.asm.AsmJava";
+    private static final String CLASSFILE_BACKEND =
+            "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String GENERATED_PACKAGE =
             "org.apache.derbyTesting.generated.";
     private static final String ASM_CLASS = "DelosPhase3Asm";
     private static final String CLASSFILE_CLASS = "DelosPhase3ClassFile";
 
     public void testClassFileApiVerticalSliceMatchesAsm() throws Exception {
-        JavaFactory asmFactory = (JavaFactory) Class.forName(ASM_BACKEND)
-                .getConstructor()
-                .newInstance();
-        JavaFactory classFileFactory = new ClassFileJava();
+        JavaFactory asmFactory = newFactory(ASM_BACKEND);
+        JavaFactory classFileFactory = newFactory(CLASSFILE_BACKEND);
 
         GeneratedFixture asm = generateFixture(asmFactory, ASM_CLASS);
         GeneratedFixture classFile = generateFixture(
@@ -96,7 +96,7 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 + "============================================%n"
                 + "Phase: COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE%n"
                 + "ASM authority: TRANSITIONAL_TEST_ORACLE%n"
-                + "Class-File API authority: TEST_ONLY%n"
+                + "Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "Generated public methods: %d%n"
                 + "Semantic result/exception comparisons: %d%n"
@@ -577,6 +577,12 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
     private static String sha256(byte[] bytes) throws Exception {
         return HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+
+    private static JavaFactory newFactory(String className) throws Exception {
+        return (JavaFactory) Class.forName(className)
+                .getConstructor()
+                .newInstance();
     }
 
     private record GeneratedFixture(byte[] classBytes) {

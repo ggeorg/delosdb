@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.ClassFileJava
+   Derby - Class org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -8,7 +8,7 @@
    The ASF licenses this file to You under the Apache License, Version 2.0.
 
  */
-package org.apache.derbyTesting.functionTests.tests.delos;
+package org.apache.derby.impl.services.bytecode.classfile;
 
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
@@ -36,17 +36,19 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Compiler Phase 4 package-internal, test-only JDK Class-File API backend.
+ * Compiler Phase 5 production-candidate JDK Class-File API backend.
  *
  * <p>This is a bounded implementation of the inherited DelosDB generation
- * abstraction. It records the complete inherited MethodBuilder operation
+ * abstraction. It implements the complete inherited MethodBuilder operation
  * surface because {@link CodeBuilder} is supplied inside the Class-File API's
- * method-body callback. It is not a second compiler IR and is never registered
- * as a production JavaFactory.</p>
+ * method-body callback. It is not a second compiler IR. During the Phase 5.1 acceptance
+ * campaign it is packaged in the engine but remains unregistered; focused test
+ * JVMs select it through Derby's inherited module override while normal runtime
+ * authority remains ASM.</p>
  */
-final class ClassFileJava implements JavaFactory {
-    static final String PHASE = "COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND";
-    static final String AUTHORITY = "CLASSFILE_DIFFERENTIAL_TEST_ONLY";
+public final class ClassFileJava implements JavaFactory {
+    static final String PHASE = "COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE";
+    static final String AUTHORITY = "CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED";
     private static final int STATEMENT_SPLIT_LIMIT = 128;
 
     @Override
@@ -107,7 +109,7 @@ final class ClassFileJava implements JavaFactory {
         public GeneratedClass getGeneratedClass() throws StandardException {
             if (classFactory == null) {
                 throw new IllegalStateException(
-                        "Class-File API test backend cannot load a generated class without a ClassFactory");
+                        "Class-File API backend cannot load a generated class without a ClassFactory");
             }
             return classFactory.loadGeneratedClass(fullName, getClassBytecode());
         }

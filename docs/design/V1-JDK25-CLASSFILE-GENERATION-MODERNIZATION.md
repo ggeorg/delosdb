@@ -54,7 +54,7 @@ During migration:
 Bound SQL tree
     -> existing JavaFactory/ClassBuilder/MethodBuilder contract
         -> AsmJava                 transitional production backend
-        -> ClassFileJava           test-only differential backend
+        -> ClassFileJava           production-packaged candidate, unregistered
 ```
 
 After cutover:
@@ -96,8 +96,10 @@ Compiler Phase 1 status: VERIFIED
 Compiler Phase 2.1 status: VERIFIED
 Compiler Phase 2.2 status: VERIFIED
 Compiler Phase 3 status: VERIFIED
-Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION
-Compiler Phase 5 status: NOT STARTED — NEXT
+Compiler Phase 4 status: VERIFIED
+Compiler Phase 5.1 status: IMPLEMENTED / PENDING VERIFICATION
+Compiler Phase 5.2 status: NOT STARTED — NEXT
+Compiler Phase 6 status: NOT STARTED
 ```
 
 Phase 2.1 freezes the exact inherited boundary before any second backend exists:
@@ -213,10 +215,13 @@ same inherited DelosDB abstraction as ASM. The focused differential task,
 complete language suite, JDK 25 verifier, modular-image DRDA lane, and normal
 closeout gates are green.
 
-Compiler Phase 4 extends that same backend to the complete inherited
-`MethodBuilder` operation surface. ASM remains the sole production authority
-through Phase 4. The Class-File API implementation is not registered in
-`modules.properties` and cannot be selected at normal runtime.
+Compiler Phase 4 is verified. It extends that same backend to the complete inherited
+`MethodBuilder` operation surface and proves all 43 signatures and ten behavior
+groups. Phase 5.1 promotes the exact verified implementation into engine
+production source as a production-packaged but unregistered Class-File API
+candidate. ASM remains the normal production authority through Phase 5.1. The
+candidate is selected only in focused acceptance JVMs through Derby's inherited
+module override and remains absent from `modules.properties`.
 
 ## Compiler Phase 3 — JDK vertical slice
 
@@ -256,7 +261,7 @@ signatures, results, and representative exceptions.
 The original Phase 3 fixture remains as a bounded regression proof. Phase 4
 removes its former unsupported-operation boundary by implementing arrays,
 object construction, stack choreography, checked-exception declarations, and
-statement splitting in the same package-internal test backend.
+statement splitting in the same implementation that later becomes the production-packaged Phase 5.1 candidate.
 
 ## Compiler Phase 4 — complete differential backend
 
@@ -278,9 +283,10 @@ Unsupported MethodBuilder operations: 0
 Normal runtime backend selector: none
 ```
 
-ASM remains the sole production authority through Phase 4. The complete JDK
-backend remains package-internal and test-only until the Phase 5 acceptance
-campaign explicitly switches authority.
+ASM remains the sole production authority through Phase 4. After Phase 4 is
+verified, the complete JDK backend is moved unchanged into engine production
+source as the Phase 5.1 candidate. Packaging does not switch authority: the
+candidate remains unregistered and selectable only by focused acceptance tasks.
 
 Compare:
 
@@ -299,7 +305,41 @@ allocation
 
 Normal production executes one backend only.
 
-## Compiler Phase 5 — switch authority
+## Compiler Phase 5.1 — production candidate acceptance
+
+The complete backend is compiled into the engine under:
+
+```text
+org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
+```
+
+Normal production registration remains:
+
+```text
+derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava
+```
+
+Focused acceptance tasks use Derby's inherited module override only inside
+isolated test JVMs. There is no user-facing backend selector and no normal
+runtime mode switch.
+
+The built-in campaign covers:
+
+```text
+real SQL compiler selection and execution
+complete 43-signature differential generation
+complete inherited language suite
+focused JDBC and DRDA integration
+security and application-UDT boundaries
+jlink modular-image DRDA execution
+class loading and shutdown diagnostics
+```
+
+SQLancer remains an explicit external command. The dedicated candidate task
+injects the internal module selection through `JAVA_TOOL_OPTIONS` without
+making SQLancer a normal build dependency.
+
+## Compiler Phase 5.2 — switch authority
 
 The Class-File API backend becomes authoritative only after:
 
@@ -314,7 +354,7 @@ no material execution regression exists
 no generated-class leak is observed
 ```
 
-ASM remains only as a test oracle for one bounded proof period.
+ASM remains only as a test oracle for one bounded proof period after the Phase 5.2 registration switch.
 
 ## Compiler Phase 6 — remove ASM
 

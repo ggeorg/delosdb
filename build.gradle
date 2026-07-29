@@ -627,4 +627,41 @@ tasks.named('s0CloseoutVerification') {
     dependsOn 'delosGeneratedClassContractStaticAnalysis'
     dependsOn 'delosGeneratedClassClassFileVerticalSliceStaticAnalysis'
     dependsOn 'delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis'
+    dependsOn 'delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis'
+}
+
+// Compiler Phase 5.1 external SQLancer lane. This is intentionally explicit
+// and is not an S0 dependency because SQLancer remains an external tool.
+tasks.register('delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation') {
+    group = 'verification'
+    description = 'Runs a caller-supplied SQLancer command with the Class-File API authority candidate selected through JAVA_TOOL_OPTIONS.'
+    doLast {
+        String propertyName = 'delosdb.compiler.classfile.sqlancer.command'
+        String commandText = providers.gradleProperty(propertyName).orNull
+        if (commandText == null || commandText.trim().isEmpty()) {
+            throw new GradleException(
+                    'delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation requires -P'
+                    + propertyName + '="<command>"')
+        }
+        String backend =
+                'org.apache.derby.impl.services.bytecode.classfile.ClassFileJava'
+        String inheritedOptions = providers.environmentVariable(
+                'JAVA_TOOL_OPTIONS').orNull ?: ''
+        String candidateOption =
+                '-Dderby.module.javaCompiler=' + backend
+        def execution = providers.exec {
+            environment 'JAVA_TOOL_OPTIONS',
+                    ([inheritedOptions.trim(), candidateOption]
+                            .findAll { !it.isEmpty() }
+                            .join(' '))
+            String osName = System.getProperty(
+                    'os.name', '').toLowerCase(java.util.Locale.ROOT)
+            if (osName.contains('windows')) {
+                commandLine 'cmd', '/c', commandText.trim()
+            } else {
+                commandLine 'sh', '-c', commandText.trim()
+            }
+        }
+        execution.result.get().assertNormalExitValue()
+    }
 }

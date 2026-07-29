@@ -487,7 +487,7 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
 // Compiler Phase 3 bounded JDK 25 Class-File API vertical-slice gate.
 tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the test-only ASM/JDK 25 Class-File API differential vertical slice.'
+    description = 'Validates the Phase 3 ASM/JDK 25 vertical slice against the promoted, unregistered production candidate.'
     dependsOn tasks.named('delosGeneratedClassContractStaticAnalysis')
 
     doLast {
@@ -495,7 +495,7 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
         File manifest = new File(delosContractRepositoryRoot,
                 'gradle/static-analysis/delosdb-classfile-vertical-slice.txt')
         File backend = new File(delosContractRepositoryRoot,
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java')
         File differentialTest = new File(delosContractRepositoryRoot,
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileVerticalSliceTest.java')
         File testBuild = new File(delosContractRepositoryRoot,
@@ -584,24 +584,20 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
         }
 
         [
-            'final class ClassFileJava implements JavaFactory',
-            'COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND',
-            'CLASSFILE_DIFFERENTIAL_TEST_ONLY',
+            'public final class ClassFileJava implements JavaFactory',
+            'COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE',
+            'CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED',
             'ClassFile.of()',
             'builder.withMethod(',
             'ClassFile.JAVA_25_VERSION',
-            'Class-File API test backend cannot load a generated class without a ClassFactory'
+            'Class-File API backend cannot load a generated class without a ClassFactory'
         ].each { String marker ->
             if (!backendText.contains(marker)) {
-                failures.add('Class-File API test backend is missing: ' + marker)
+                failures.add('Class-File API production candidate is missing: ' + marker)
             }
         }
-        if (backendText.contains('public final class ClassFileJava')) {
-            failures.add('ClassFileJava must remain package-internal and test-only')
-        }
-
         [
-            'new ClassFileJava()',
+            'newClassFileFactory()',
             'Class.forName(ASM_BACKEND)',
             'verifier.parse(asm.classBytes())',
             'verifier.parse(classFile.classBytes())',
@@ -612,6 +608,7 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             'assertSameFailure(',
             'ClassCastException',
             'Phase 4 operation boundary: covered by complete differential test',
+            'Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED',
             'Normal runtime backend selector: none'
         ].each { String marker ->
             if (!testText.contains(marker)) {
@@ -620,38 +617,24 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             }
         }
 
-        File[] productionRoots = [
-                new File(delosContractRepositoryRoot,
-                        'delosdb-engine/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-runtime-api/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-commons/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-client/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-server/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-tools/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-optionaltools/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-runner/src/main/java')
-        ] as File[]
-        productionRoots.findAll { it.isDirectory() }.each { File root ->
-            root.eachFileRecurse { File source ->
-                if (!source.name.endsWith('.java')) {
-                    return
-                }
-                String text = source.getText('UTF-8')
-                if (text.contains('ClassFileJava')
-                        || text.contains('COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE')
-                        || text.contains('COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND')) {
-                    failures.add('Phase 3 test backend leaked into production source: '
-                            + delosContractRepositoryRoot.toPath()
-                                    .relativize(source.toPath()))
+        File retiredTestBackend = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+        if (retiredTestBackend.exists()) {
+            failures.add('The retired test-source ClassFileJava copy must be removed after promotion to the production candidate')
+        }
+        List<File> productionBackends = []
+        File engineSourceRoot = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java')
+        if (engineSourceRoot.isDirectory()) {
+            engineSourceRoot.eachFileRecurse { File source ->
+                if (source.name == 'ClassFileJava.java') {
+                    productionBackends.add(source)
                 }
             }
+        }
+        if (productionBackends.size() != 1
+                || productionBackends[0].canonicalFile != backend.canonicalFile) {
+            failures.add('Exactly one production ClassFileJava candidate must exist at the reviewed engine path')
         }
 
         String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
@@ -660,7 +643,7 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             failures.add('ASM must remain the transitional production backend in Phase 3')
         }
         if (modulesText.contains('ClassFileJava')) {
-            failures.add('The test-only Class-File API backend must not be registered in modules.properties')
+            failures.add('The Class-File API production candidate must remain unregistered in modules.properties during Phase 5.1')
         }
 
         String testBuildText = testBuild.isFile()
@@ -688,10 +671,10 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
         String normalizedDesignText = designText.replaceAll('\\s+', ' ')
         [
             'Compiler Phase 3 status: VERIFIED',
-            'Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION',
-            'Compiler Phase 5 status: NOT STARTED — NEXT',
-            'package-internal, test-only JDK 25 Class-File API backend',
-            'ASM remains the sole production authority through Phase 4'
+            'Compiler Phase 4 status: VERIFIED',
+            'Compiler Phase 5.1 status: IMPLEMENTED / PENDING VERIFICATION',
+            'production-packaged but unregistered Class-File API candidate',
+            'ASM remains the normal production authority through Phase 5.1'
         ].each { String marker ->
             if (!normalizedDesignText.contains(marker)) {
                 failures.add('Compiler modernization design is missing: '
@@ -707,9 +690,9 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             writer.println('============================================================')
             writer.println('Manifest rows: ' + rows.size())
             writer.println('Capabilities: ' + actualCapabilities.size())
-            writer.println('Backend location: delosdb-tests test source only')
+            writer.println('Backend location: delosdb-engine production candidate')
             writer.println('Production authority: ASM_TRANSITIONAL')
-            writer.println('Class-File API authority: TEST_ONLY')
+            writer.println('Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED')
             writer.println('Normal runtime backend selector: none')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { String failure -> writer.println('- ' + failure) }
@@ -728,7 +711,7 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
     }
 }
 
-// Compiler Phase 4 complete test-only JDK 25 Class-File API differential gate.
+// Compiler Phase 4 complete JDK 25 Class-File API differential gate.
 tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis') {
     group = 'verification'
     description = 'Validates complete MethodBuilder differential coverage before any production authority switch.'
@@ -741,7 +724,7 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
         File behaviorManifest = new File(delosContractRepositoryRoot,
                 'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
         File backend = new File(delosContractRepositoryRoot,
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java')
         File behaviorTest = new File(delosContractRepositoryRoot,
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
         File differentialTest = new File(delosContractRepositoryRoot,
@@ -862,9 +845,9 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
         }
 
         [
-            'final class ClassFileJava implements JavaFactory',
-            'COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND',
-            'CLASSFILE_DIFFERENTIAL_TEST_ONLY',
+            'public final class ClassFileJava implements JavaFactory',
+            'COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE',
+            'CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED',
             'ExceptionsAttribute.ofSymbols(',
             'code.new_(classDesc(className))',
             'code.newarray(arrayTypeKind(className))',
@@ -884,14 +867,10 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
                 || backendText.contains('Compiler Phase 4 must add Class-File API support for')) {
             failures.add('Complete Class-File API backend retains a Phase 3 unsupported-operation boundary')
         }
-        if (backendText.contains('public final class ClassFileJava')) {
-            failures.add('ClassFileJava must remain package-internal and test-only')
-        }
-
         [
             'generateFixture(',
             'assertFixtureBehavior(',
-            'new ClassFileJava()',
+            'newClassFileFactory()',
             'newAsmFactory()',
             'ClassFile.of()',
             'verifier.verify(asmModel)',
@@ -923,37 +902,24 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
             }
         }
 
-        File[] productionRoots = [
-                new File(delosContractRepositoryRoot,
-                        'delosdb-engine/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-runtime-api/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-commons/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-client/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-server/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-tools/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-optionaltools/src/main/java'),
-                new File(delosContractRepositoryRoot,
-                        'delosdb-runner/src/main/java')
-        ] as File[]
-        productionRoots.findAll { it.isDirectory() }.each { File root ->
-            root.eachFileRecurse { File source ->
-                if (!source.name.endsWith('.java')) {
-                    return
-                }
-                String text = source.getText('UTF-8')
-                if (text.contains('ClassFileJava')
-                        || text.contains('COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND')) {
-                    failures.add('Phase 4 test backend leaked into production source: '
-                            + delosContractRepositoryRoot.toPath()
-                                    .relativize(source.toPath()))
+        File retiredTestBackend = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+        if (retiredTestBackend.exists()) {
+            failures.add('The retired test-source ClassFileJava copy must be removed after promotion to the production candidate')
+        }
+        File engineProductionRoot = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java')
+        List<File> classFileCandidates = []
+        if (engineProductionRoot.isDirectory()) {
+            engineProductionRoot.eachFileRecurse { File source ->
+                if (source.name == 'ClassFileJava.java') {
+                    classFileCandidates.add(source)
                 }
             }
+        }
+        if (classFileCandidates.size() != 1
+                || classFileCandidates[0].canonicalFile != backend.canonicalFile) {
+            failures.add('Exactly one production ClassFileJava candidate must exist at the reviewed engine path')
         }
 
         String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
@@ -961,8 +927,9 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
                 'org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
             failures.add('ASM must remain the transitional production backend in Phase 4')
         }
-        if (modulesText.contains('ClassFileJava')) {
-            failures.add('The test-only complete Class-File API backend must not be registered in modules.properties')
+        if (modulesText.contains(
+                'org.apache.derby.impl.services.bytecode.classfile.ClassFileJava')) {
+            failures.add('The Phase 5.1 Class-File API production candidate must remain unregistered in modules.properties')
         }
 
         String testBuildText = testBuild.isFile()
@@ -990,9 +957,9 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
         String normalizedDesignText = designText.replaceAll('\\s+', ' ')
         [
             'Compiler Phase 3 status: VERIFIED',
-            'Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION',
-            'Compiler Phase 5 status: NOT STARTED — NEXT',
-            'ASM remains the sole production authority through Phase 4',
+            'Compiler Phase 4 status: VERIFIED',
+            'Compiler Phase 5.1 status: IMPLEMENTED / PENDING VERIFICATION',
+            'ASM remains the normal production authority through Phase 5.1',
             'Unsupported MethodBuilder operations: 0'
         ].each { String marker ->
             if (!normalizedDesignText.contains(marker)) {
@@ -1010,9 +977,9 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
             writer.println('MethodBuilder signatures: ' + behaviorSignatures.size())
             writer.println('Behavior fixture groups: ' + actualFixtures.size())
             writer.println('Unsupported MethodBuilder operations: 0')
-            writer.println('Backend location: delosdb-tests test source only')
+            writer.println('Backend location: delosdb-engine production candidate')
             writer.println('Production authority: ASM_TRANSITIONAL')
-            writer.println('Class-File API authority: TEST_ONLY_COMPLETE')
+            writer.println('Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED')
             writer.println('Normal runtime backend selector: none')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { String failure -> writer.println('- ' + failure) }
@@ -1027,6 +994,204 @@ tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
         }
         logger.lifecycle(
                 'Complete JDK 25 Class-File API differential static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
+// Compiler Phase 5.1 production-candidate acceptance gate.
+tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the production-packaged, unregistered Class-File API authority candidate and its acceptance campaign.'
+    dependsOn tasks.named('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis')
+
+    doLast {
+        List<String> failures = []
+        File backend = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java')
+        File retiredTestBackend = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+        File candidateTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthorityCandidateTest.java')
+        File modularTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.java')
+        File manifest = new File(delosContractRepositoryRoot,
+                'gradle/static-analysis/delosdb-classfile-authority-candidate.txt')
+        File modules = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+        File testBuild = new File(delosContractRepositoryRoot,
+                'delosdb-tests/build.gradle')
+        File rootBuild = new File(delosContractRepositoryRoot, 'build.gradle')
+        File design = new File(delosContractRepositoryRoot,
+                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md')
+
+        [backend, candidateTest, modularTest, manifest, modules, testBuild,
+                rootBuild, design].each { File file ->
+            if (!file.isFile()) {
+                failures.add('Missing Compiler Phase 5.1 proof file: ' + file)
+            }
+        }
+        if (retiredTestBackend.exists()) {
+            failures.add('The retired test-source ClassFileJava copy still exists')
+        }
+
+        List<Map<String, String>> rows = []
+        if (manifest.isFile()) {
+            manifest.readLines('UTF-8').eachWithIndex { String line, int index ->
+                String trimmed = line.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith('#')) {
+                    return
+                }
+                List<String> parts = trimmed.split('\\|', -1) as List<String>
+                if (parts.size() != 5) {
+                    failures.add(String.format(
+                            'Malformed authority-candidate row %d: %s',
+                            index + 1, line))
+                    return
+                }
+                rows.add([id: parts[0], category: parts[1], file: parts[2],
+                          marker: parts[3], reason: parts[4]])
+            }
+        }
+        if (rows.size() != 12) {
+            failures.add(String.format(
+                    'Authority-candidate manifest must contain 12 rows; found %d',
+                    rows.size()))
+        }
+        if (rows.collect { it.id }.toSet().size() != rows.size()) {
+            failures.add('Authority-candidate manifest contains duplicate ids')
+        }
+        rows.each { Map<String, String> row ->
+            File evidence = new File(delosContractRepositoryRoot, row.file)
+            if (!evidence.isFile()) {
+                failures.add('Authority-candidate evidence file is missing: '
+                        + row.id + ' -> ' + row.file)
+            } else if (!evidence.getText('UTF-8').contains(row.marker)) {
+                failures.add('Authority-candidate evidence marker is missing: '
+                        + row.id + ' -> ' + row.marker)
+            }
+            if (row.reason.length() < 100) {
+                failures.add('Authority-candidate reason is too thin: ' + row.id)
+            }
+        }
+
+        String backendText = backend.isFile() ? backend.getText('UTF-8') : ''
+        [
+            'public final class ClassFileJava implements JavaFactory',
+            'COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE',
+            'CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED',
+            'ClassFile.of()',
+            'ExceptionsAttribute.ofSymbols(',
+            'STATEMENT_SPLIT_LIMIT = 128'
+        ].each { String marker ->
+            if (!backendText.contains(marker)) {
+                failures.add('Production Class-File API candidate is missing: '
+                        + marker)
+            }
+        }
+
+        String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
+        if (!modulesText.contains(
+                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
+            failures.add('ASM must remain the normal production authority during Phase 5.1')
+        }
+        if (modulesText.contains(
+                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava')) {
+            failures.add('The Class-File API candidate must not be the normal production registration before Phase 5.2')
+        }
+
+        String candidateText = candidateTest.isFile()
+                ? candidateTest.getText('UTF-8') : ''
+        [
+            'Monitor.findSystemModule(Module.JavaFactory)',
+            'Prepared statement families:',
+            'Wide projection columns:',
+            'SQLState preservation: 22012',
+            'FOCUSED_TEST_JVM_ONLY'
+        ].each { String marker ->
+            if (!candidateText.contains(marker)) {
+                failures.add('Authority-candidate SQL proof is missing: '
+                        + marker)
+            }
+        }
+
+        String modularText = modularTest.isFile()
+                ? modularTest.getText('UTF-8') : ''
+        [
+            'delosdb.v1Baseline.modularImage.javaCompilerBackend',
+            '-Dderby.module.javaCompiler=',
+            'javaCompilerBackend'
+        ].each { String marker ->
+            if (!modularText.contains(marker)) {
+                failures.add('Modular candidate proof is missing: ' + marker)
+            }
+        }
+
+        String testBuildText = testBuild.isFile()
+                ? testBuild.getText('UTF-8') : ''
+        [
+            'runDelosGeneratedClassClassFileAuthorityCandidateTest',
+            'runDelosGeneratedClassClassFileCandidateJdbcDrdaTest',
+            'runDerbyLangSuiteClassFileCandidate',
+            'runDelosV1ModularImageDrdaClassFileCandidateTest',
+            'runDelosGeneratedClassClassFileAuthorityCandidateBuiltInAcceptance',
+            "'derby.module.javaCompiler': delosClassFileAuthorityCandidateBackend"
+        ].each { String marker ->
+            if (!testBuildText.contains(marker)) {
+                failures.add('Authority-candidate Gradle wiring is missing: '
+                        + marker)
+            }
+        }
+
+        String rootBuildText = rootBuild.isFile()
+                ? rootBuild.getText('UTF-8') : ''
+        if (!rootBuildText.contains(
+                "dependsOn 'delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis'")) {
+            failures.add('s0CloseoutVerification must include the Phase 5.1 static gate')
+        }
+        if (!rootBuildText.contains(
+                'delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation')) {
+            failures.add('The explicit Class-File API candidate SQLancer task is missing')
+        }
+
+        String designText = design.isFile() ? design.getText('UTF-8') : ''
+        String normalizedDesign = designText.replaceAll('\\s+', ' ')
+        [
+            'Compiler Phase 4 status: VERIFIED',
+            'Compiler Phase 5.1 status: IMPLEMENTED / PENDING VERIFICATION',
+            'Compiler Phase 5.2 status: NOT STARTED — NEXT',
+            'ASM remains the normal production authority through Phase 5.1',
+            'production-packaged but unregistered Class-File API candidate'
+        ].each { String marker ->
+            if (!normalizedDesign.contains(marker)) {
+                failures.add('Compiler modernization design is missing: '
+                        + marker)
+            }
+        }
+
+        File reportFile = new File(delosContractBuildRoot,
+                'reports/delosdb/compiler/generated-class-classfile-authority-candidate-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB JDK 25 Class-File API authority-candidate static analysis')
+            writer.println('================================================================')
+            writer.println('Manifest rows: ' + rows.size())
+            writer.println('Candidate location: delosdb-engine production source')
+            writer.println('Normal production authority: ASM_TRANSITIONAL')
+            writer.println('Candidate registration: UNREGISTERED')
+            writer.println('Selection scope: FOCUSED_TEST_JVM_ONLY')
+            writer.println('External SQLancer: EXPLICIT_REQUIRED_LANE')
+            writer.println('Normal runtime backend selector: none')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { String failure -> writer.println('- ' + failure) }
+        }
+        if (!failures.isEmpty()) {
+            failures.each { String failure -> logger.error('  - {}', failure) }
+            throw new GradleException(String.format(
+                    'Class-File API authority-candidate static analysis failed. Report: %s',
+                    reportFile))
+        }
+        logger.lifecycle(
+                'JDK 25 Class-File API authority-candidate static analysis passed. Report: {}',
                 reportFile)
     }
 }

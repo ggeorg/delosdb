@@ -39,12 +39,14 @@ import org.apache.derby.iapi.services.compiler.JavaFactory;
 /**
  * Compiler Phase 4 differential proof for the complete inherited generated
  * activation operation surface. The JDK 25 Class-File API backend remains
- * package-internal and test-only while ASM remains the production authority.
+ * packaged as an unregistered production candidate while ASM remains the production authority.
  */
 public final class GeneratedClassClassFileCompleteDifferentialTest
         extends TestCase {
     private static final String ASM_BACKEND =
             "org.apache.derby.impl.services.bytecode.asm.AsmJava";
+    private static final String CLASSFILE_BACKEND =
+            "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String GENERATED_PACKAGE =
             "org.apache.derbyTesting.generated.";
     private static final String ASM_CLASS = "DelosPhase4Asm";
@@ -62,10 +64,10 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
                         newAsmFactory(), ASM_CLASS);
         GeneratedClassContractBehaviorTest.GeneratedFixture classFile =
                 GeneratedClassContractBehaviorTest.generateFixture(
-                        new ClassFileJava(), CLASSFILE_CLASS);
+                        newClassFileFactory(), CLASSFILE_CLASS);
         GeneratedClassContractBehaviorTest.GeneratedFixture classFileAgain =
                 GeneratedClassContractBehaviorTest.generateFixture(
-                        new ClassFileJava(), CLASSFILE_CLASS);
+                        newClassFileFactory(), CLASSFILE_CLASS);
 
         assertTrue("Class-File API generation must remain deterministic",
                 Arrays.equals(classFile.classBytes(),
@@ -130,7 +132,8 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
         for (int warmup = 0; warmup < WARMUP_RUNS; warmup++) {
             measureBackend(GeneratedClassClassFileCompleteDifferentialTest
                     ::newAsmFactory, ASM_CLASS);
-            measureBackend(ClassFileJava::new, CLASSFILE_CLASS);
+            measureBackend(GeneratedClassClassFileCompleteDifferentialTest
+                    ::newClassFileFactory, CLASSFILE_CLASS);
         }
         List<Measurement> asmMeasurements = new ArrayList<>();
         List<Measurement> classFileMeasurements = new ArrayList<>();
@@ -140,7 +143,8 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
                             ::newAsmFactory,
                     ASM_CLASS));
             classFileMeasurements.add(measureBackend(
-                    ClassFileJava::new,
+                    GeneratedClassClassFileCompleteDifferentialTest
+                            ::newClassFileFactory,
                     CLASSFILE_CLASS));
         }
 
@@ -152,7 +156,7 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
                 + "====================================================%n"
                 + "Phase: COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND%n"
                 + "ASM authority: TRANSITIONAL_PRODUCTION_AND_TEST_ORACLE%n"
-                + "Class-File API authority: TEST_ONLY_COMPLETE%n"
+                + "Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "MethodBuilder signatures covered: %d%n"
                 + "Behavior fixture groups executed: %d%n"
@@ -340,7 +344,15 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
     }
 
     private static JavaFactory newAsmFactory() throws Exception {
-        return (JavaFactory) Class.forName(ASM_BACKEND)
+        return newFactory(ASM_BACKEND);
+    }
+
+    private static JavaFactory newClassFileFactory() throws Exception {
+        return newFactory(CLASSFILE_BACKEND);
+    }
+
+    private static JavaFactory newFactory(String className) throws Exception {
+        return (JavaFactory) Class.forName(className)
                 .getConstructor()
                 .newInstance();
     }
