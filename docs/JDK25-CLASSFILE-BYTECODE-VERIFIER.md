@@ -59,9 +59,10 @@ org.apache.derby.runner
 
 ## Non-goals
 
-No ASM removal. Compiler Phase 1 records the baseline before any backend change.
+No ASM removal. Compiler Phase 5.2 retains ASM as a bounded test oracle until
+Compiler Phase 6 removes it and the external dependency.
 
-No replacement of Derby's bytecode-generation backend.
+No bytecode-generation logic is implemented in this verifier artifact.
 
 No generated SQL execution behavior change.
 
@@ -81,12 +82,13 @@ The standard `java.lang.classfile` API evolves with the JDK class-file format.
 That makes it a good guardrail for DelosDB's JDK 25 runtime baseline and a safer
 first step than replacing ASM generation immediately.
 
-## Relationship to ASM
+## Relationship to generated-class authority
 
-ASM remains the production generator. It is transitional rather than a final v1 dependency.
+ClassFileJava is the production generator. ASM remains only as a bounded test
+oracle during the Compiler Phase 5.2 proof period and is removed in Phase 6.
 
 The verifier is a second opinion over compiled output. It does not emit classes,
-transform classes, or alter class loading.
+transform classes, select the generator, or alter class loading.
 
 Compiler Phase 1 now adds a focused runtime fixture that generates a deterministic
 class through the existing JavaFactory/ClassBuilder/MethodBuilder contract, parses it

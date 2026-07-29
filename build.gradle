@@ -628,6 +628,7 @@ tasks.named('s0CloseoutVerification') {
     dependsOn 'delosGeneratedClassClassFileVerticalSliceStaticAnalysis'
     dependsOn 'delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis'
     dependsOn 'delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis'
+    dependsOn 'delosGeneratedClassClassFileAuthoritySwitchStaticAnalysis'
 }
 
 // Compiler Phase 5.1 external SQLancer lane. This is intentionally explicit
@@ -654,6 +655,39 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation
                     ([inheritedOptions.trim(), candidateOption]
                             .findAll { !it.isEmpty() }
                             .join(' '))
+            String osName = System.getProperty(
+                    'os.name', '').toLowerCase(java.util.Locale.ROOT)
+            if (osName.contains('windows')) {
+                commandLine 'cmd', '/c', commandText.trim()
+            } else {
+                commandLine 'sh', '-c', commandText.trim()
+            }
+        }
+        execution.result.get().assertNormalExitValue()
+    }
+}
+
+
+// Compiler Phase 5.2 external SQLancer lane. This executes through the normal
+// Class-File API registration and rejects hidden backend overrides.
+tasks.register('delosGeneratedClassClassFileAuthoritySqlancerValidation') {
+    group = 'verification'
+    description = 'Runs a caller-supplied SQLancer command through the default Class-File API production authority without a backend override.'
+    doLast {
+        String propertyName = 'delosdb.compiler.classfile.authority.sqlancer.command'
+        String commandText = providers.gradleProperty(propertyName).orNull
+        if (commandText == null || commandText.trim().isEmpty()) {
+            throw new GradleException(
+                    'delosGeneratedClassClassFileAuthoritySqlancerValidation requires -P'
+                    + propertyName + '="<command>"')
+        }
+        String inheritedOptions = providers.environmentVariable(
+                'JAVA_TOOL_OPTIONS').orNull ?: ''
+        if (inheritedOptions.contains('derby.module.javaCompiler')) {
+            throw new GradleException(
+                    'Phase 5.2 SQLancer validation must use the default modules.properties authority; remove derby.module.javaCompiler from JAVA_TOOL_OPTIONS')
+        }
+        def execution = providers.exec {
             String osName = System.getProperty(
                     'os.name', '').toLowerCase(java.util.Locale.ROOT)
             if (osName.contains('windows')) {

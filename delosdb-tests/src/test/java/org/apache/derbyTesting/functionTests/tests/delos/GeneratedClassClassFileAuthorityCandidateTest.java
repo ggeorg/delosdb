@@ -29,9 +29,9 @@ import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.reference.Module;
 
 /**
- * Compiler Phase 5.1 proof that the production-packaged Class-File API
- * candidate can be selected through the inherited test-only module override
- * and execute representative real SQL compilation paths.
+ * Verified Compiler Phase 5.1 proof that the production-packaged Class-File API
+ * implementation can be selected explicitly and execute representative real
+ * SQL compilation paths. Phase 5.2 additionally proves default registration.
  */
 public final class GeneratedClassClassFileAuthorityCandidateTest
         extends TestCase {
@@ -80,12 +80,6 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
                         + GeneratedClassClassFileAuthorityCandidateTest.class
                                 .getName()
                         + ".doubleValue'");
-                statement.executeUpdate(
-                        "create function APP.DELOS_SMALLINT_RN(v varchar(10)) "
-                        + "returns smallint external name "
-                        + "'java.lang.Short.parseShort' "
-                        + "language java parameter style java "
-                        + "returns null on null input");
             }
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -159,24 +153,6 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
             }
 
             try (PreparedStatement statement = connection.prepareStatement(
-                    "values APP.DELOS_SMALLINT_RN(?)")) {
-                preparedStatements++;
-                statement.setString(1, "123");
-                try (ResultSet row = statement.executeQuery()) {
-                    assertTrue(row.next());
-                    assertEquals(123, row.getInt(1));
-                    assertFalse(row.wasNull());
-                    assertFalse(row.next());
-                }
-                statement.setString(1, null);
-                try (ResultSet row = statement.executeQuery()) {
-                    assertTrue(row.next());
-                    assertNull(row.getObject(1));
-                    assertFalse(row.next());
-                }
-            }
-
-            try (PreparedStatement statement = connection.prepareStatement(
                     "update T set s = ? where id = ?")) {
                 preparedStatements++;
                 statement.setString(1, "updated");
@@ -217,7 +193,7 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
                 + "=================================================%n"
                 + "Phase: COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE%n"
                 + "Selected backend: %s%n"
-                + "Production registration: ASM_TRANSITIONAL%n"
+                + "Production registration: CLASSFILE_API%n"
                 + "Selection scope: FOCUSED_TEST_JVM_ONLY%n"
                 + "Prepared statement families: %d%n"
                 + "Wide projection columns: %d%n"

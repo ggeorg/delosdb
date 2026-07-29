@@ -35,7 +35,7 @@ import org.apache.derby.iapi.util.ByteArray;
 
 /**
  * Compiler Phase 3 bounded differential proof between the transitional ASM
- * backend and the production-packaged, unregistered JDK 25 Class-File API candidate.
+ * backend oracle and the JDK 25 Class-File API production authority.
  */
 public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
     private static final String ASM_BACKEND =
@@ -95,8 +95,8 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 "DelosDB JDK 25 Class-File API vertical slice%n"
                 + "============================================%n"
                 + "Phase: COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE%n"
-                + "ASM authority: TRANSITIONAL_TEST_ORACLE%n"
-                + "Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED%n"
+                + "ASM authority: BOUNDED_TEST_ORACLE%n"
+                + "Class-File API authority: PRODUCTION%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "Generated public methods: %d%n"
                 + "Semantic result/exception comparisons: %d%n"

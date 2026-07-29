@@ -100,7 +100,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 "DelosDB generated-class contract behavior oracle%n"
                 + "================================================%n"
                 + "Phase: COMPILER_PHASE_2_2_OPERATION_BEHAVIOR_FREEZE%n"
-                + "Authority: ASM_TRANSITIONAL%n"
+                + "Authority: ASM_BOUNDED_TEST_ORACLE%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "MethodBuilder signatures mapped: %d%n"
                 + "Behavior fixture groups executed: %d%n"
@@ -239,9 +239,8 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         finish(booleanConstant);
 
         MethodBuilder shortConstant = noArgMethod(
-                classBuilder, "int", "shortConstant");
+                classBuilder, "short", "shortConstant");
         shortConstant.push((short) 32_000);
-        shortConstant.upCast("int");
         finish(shortConstant);
 
         MethodBuilder intConstant = noArgMethod(
@@ -621,9 +620,8 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 ((Byte) invokeStatic(generatedClass, "byteConstant")).byteValue());
         assertEquals(Boolean.TRUE,
                 invokeStatic(generatedClass, "booleanConstant"));
-        assertEquals(32_000,
-                ((Integer) invokeStatic(
-                        generatedClass, "shortConstant")).intValue());
+        assertEquals((short) 32_000,
+                ((Short) invokeStatic(generatedClass, "shortConstant")).shortValue());
         assertEquals(INT_CONSTANT,
                 ((Integer) invokeStatic(generatedClass, "intConstant")).intValue());
         assertEquals(9_876_543_210L,

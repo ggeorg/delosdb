@@ -918,7 +918,7 @@ tasks.named('check') {
 
 registerDelosFocusedTest(
         'runDelosGeneratedClassClassFileAuthorityCandidateTest',
-        'Runs Compiler Phase 5.1 real SQL compilation through the production-packaged, unregistered JDK 25 Class-File API candidate.',
+        'Runs the verified Compiler Phase 5.1 real SQL candidate proof through an explicit Class-File API module override.',
         ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthorityCandidateTest.class'],
         [
                 'derby.module.javaCompiler': delosClassFileAuthorityCandidateBackend,
@@ -934,6 +934,27 @@ tasks.named('runDelosGeneratedClassClassFileAuthorityCandidateTest') {
 }
 
 registerDelosFocusedTest(
+        'runDelosGeneratedClassClassFileAuthoritySwitchTest',
+        'Runs Compiler Phase 5.2 real SQL compilation through the default JDK 25 Class-File API production registration without a backend override.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthoritySwitchTest.class'],
+        [
+                'delosdb.compiler.classFileAuthoritySwitch.report': layout.buildDirectory.file(
+                        'reports/delosdb/compiler/generated-class-classfile-authority-switch.txt')
+                        .get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosGeneratedClassClassFileAuthoritySwitchTest') {
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/generated-class-classfile-authority-switch.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named(
+            'runDelosGeneratedClassClassFileAuthoritySwitchTest')
+}
+
+registerDelosFocusedTest(
         'runDelosGeneratedClassClassFileCandidateJdbcDrdaTest',
         'Runs focused JDBC, DRDA, security, and application-UDT integration with the Class-File API authority candidate selected only in the test JVM.',
         [
@@ -944,6 +965,17 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
         ],
         ['derby.module.javaCompiler': delosClassFileAuthorityCandidateBackend])
+
+registerDelosFocusedTest(
+        'runDelosGeneratedClassClassFileAuthorityJdbcDrdaTest',
+        'Runs the Phase 5.2 focused JDBC, DRDA, security, and application-UDT lane through the default Class-File API production authority without a backend override.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.class',
+                'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
+        ])
 
 tasks.register('runDerbyLangSuiteClassFileCandidate', Test) {
     group = 'verification'
@@ -1689,6 +1721,26 @@ tasks.register('runDelosGeneratedClassClassFileAuthorityCandidateBuiltInAcceptan
             tasks.named('runDerbyLangSuiteClassFileCandidate'),
             tasks.named('runDelosGeneratedClassClassFileCandidateJdbcDrdaTest'),
             tasks.named('runDelosV1ModularImageDrdaClassFileCandidateTest')
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('runDelosGeneratedClassAsmOracleProof') {
+    group = 'verification'
+    description = 'Runs the bounded post-cutover ASM oracle evidence retained only for the Compiler Phase 5.2 proof period.'
+    dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest'),
+            tasks.named('runDelosGeneratedClassContractBehaviorTest'),
+            tasks.named('runDelosGeneratedClassClassFileCompleteDifferentialTest')
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('runDelosGeneratedClassClassFileAuthoritySwitchBuiltInAcceptance') {
+    group = 'verification'
+    description = 'Runs the complete built-in Compiler Phase 5.2 production-authority campaign through the default Class-File API registration; external SQLancer remains explicit.'
+    dependsOn tasks.named('runDelosGeneratedClassClassFileAuthoritySwitchTest'),
+            tasks.named('runDelosGeneratedClassAsmOracleProof'),
+            tasks.named('runDerbyLangSuite'),
+            tasks.named('runDelosGeneratedClassClassFileAuthorityJdbcDrdaTest'),
+            tasks.named('runDelosV1ModularImageDrdaTest')
     outputs.upToDateWhen { false }
 }
 

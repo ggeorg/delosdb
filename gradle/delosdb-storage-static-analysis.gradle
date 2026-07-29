@@ -2874,7 +2874,7 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
         def docsText = new File(delosRepositoryRoot, 'docs/JDK25-CLASSFILE-BYTECODE-VERIFIER.md').getText('UTF-8')
         [
                 'This is a verifier artifact, not a bytecode-generation rewrite.',
-                'ASM remains the production generator.',
+                'ClassFileJava is the production generator.',
                 'No ASM removal.',
                 'No generated SQL execution behavior change.',
                 'No S0 wiring yet.',
@@ -2893,7 +2893,7 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
                 'JDK 25 Class-File API verifier update',
                 'JDK 25 java.lang.classfile.ClassFile',
                 './gradlew delosJdk25ClassFileBytecodeVerifier',
-                'ASM remains the production generator.'
+                'ClassFileJava is the production generator.'
         ].each { markerText ->
             if (!inventoryText.contains(markerText)) {
                 failures << 'Algorithm inventory missing JDK 25 class-file verifier marker: ' + markerText

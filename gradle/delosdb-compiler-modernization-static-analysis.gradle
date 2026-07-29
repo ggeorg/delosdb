@@ -128,7 +128,7 @@ tasks.register('delosGeneratedClassModernizationInventory') {
             writer.println('================================================')
             writer.println()
             writer.println('Phase: COMPILER_PHASE_1_INVENTORY_AND_EVIDENCE')
-            writer.println('Current authority: ASM_TRANSITIONAL_PRODUCTION_BACKEND')
+            writer.println('Current authority: CLASSFILE_API_PRODUCTION')
             writer.println('Existing abstraction: JavaFactory/ClassBuilder/MethodBuilder/LocalField')
             writer.println('Normal runtime backend selector: none')
             writer.println()
@@ -195,7 +195,8 @@ tasks.register('delosGeneratedClassModernizationStaticAnalysis') {
 
         ['CONTRACT', 'ASM_BACKEND', 'BACKEND_REGISTRATION', 'BASELINE_TEST',
          'BASELINE_WIRING', 'DESIGN', 'PERFORMANCE_PLAN', 'POLICY', 'ROADMAP',
-         'STATIC_GATE', 'ROOT_WIRING', 'CLASSFILE_EVIDENCE'].each { category ->
+         'STATIC_GATE', 'ROOT_WIRING', 'CLASSFILE_EVIDENCE',
+         'AUTHORITY_SWITCH', 'AUTHORITY_SWITCH_TEST'].each { category ->
             if (!categories.contains(category)) {
                 failures << 'Generated-class manifest is missing category: ' + category
             }
@@ -246,9 +247,14 @@ tasks.register('delosGeneratedClassModernizationStaticAnalysis') {
                 delosCompilerRepositoryRoot,
                 'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
         String modulesText = modules.getText('UTF-8')
-        if (!modulesText.contains(
-                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
-            failures << 'ASM must remain the single fixed production backend during Compiler Phase 1'
+        List<String> compilerRegistrations = modulesText.readLines()
+                .findAll { String line ->
+                    line.startsWith('derby.module.javaCompiler=')
+                }
+        if (compilerRegistrations != [
+                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava']) {
+            failures << 'Phase 5.2 requires exactly one fixed Class-File API production registration; found '
+                    + compilerRegistrations
         }
 
         File testBuild = new File(
@@ -283,7 +289,7 @@ tasks.register('delosGeneratedClassModernizationStaticAnalysis') {
             writer.println('=====================================================')
             writer.println('Manifest rows: ' + rows.size())
             writer.println('Categories: ' + categories.sort().join(', '))
-            writer.println('ASM production import files: ' + asmPaths.size())
+            writer.println('ASM bounded-oracle import files: ' + asmPaths.size())
             asmPaths.each { writer.println('- ' + it) }
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { writer.println('- ' + it) }

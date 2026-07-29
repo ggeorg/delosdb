@@ -39,7 +39,7 @@ import org.apache.derby.iapi.services.compiler.JavaFactory;
 /**
  * Compiler Phase 4 differential proof for the complete inherited generated
  * activation operation surface. The JDK 25 Class-File API backend remains
- * packaged as an unregistered production candidate while ASM remains the production authority.
+ * used as the production authority while ASM remains only as a bounded test oracle.
  */
 public final class GeneratedClassClassFileCompleteDifferentialTest
         extends TestCase {
@@ -155,8 +155,8 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
                 "DelosDB complete generated-class differential backend%n"
                 + "====================================================%n"
                 + "Phase: COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND%n"
-                + "ASM authority: TRANSITIONAL_PRODUCTION_AND_TEST_ORACLE%n"
-                + "Class-File API authority: PRODUCTION_CANDIDATE_UNREGISTERED%n"
+                + "ASM authority: BOUNDED_TEST_ORACLE%n"
+                + "Class-File API authority: PRODUCTION%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "MethodBuilder signatures covered: %d%n"
                 + "Behavior fixture groups executed: %d%n"

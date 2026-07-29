@@ -135,7 +135,7 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
                 + "Total declared methods: %d%n"
                 + "Methods declaring checked exceptions: %d%n"
                 + "Contract SHA-256: %s%n"
-                + "Production authority: ASM_TRANSITIONAL%n"
+                + "Production authority: CLASSFILE_API%n"
                 + "Normal runtime backend selector: none%n",
                 JAVA_FACTORY.size(),
                 CLASS_BUILDER.size(),

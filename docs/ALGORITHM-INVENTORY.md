@@ -78,11 +78,11 @@ JDK 25 should be used first as a platform for verification, observability, and c
 
 ### SQL/codegen
 
-Current owner: Derby compatibility with a DelosDB ASM backend.
+Current owner: Derby compatibility with the DelosDB JDK 25 Class-File API backend.
 
 Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
 
-Current anchor: `AsmJava` is the only production source importing ASM and implements the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. Compiler nodes already depend on that contract rather than on ASM. The Class-File API migration must reuse this boundary rather than add another generated-code IR.
+Current anchor: `ClassFileJava` is the fixed production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. `AsmJava` remains the only production source importing ASM and is retained only as a bounded differential test oracle until Phase 6 removes it. Compiler nodes depend on the DelosDB generation contract rather than either bytecode implementation.
 
 Risks:
 
@@ -512,9 +512,9 @@ JDK 25 java.lang.classfile.ClassFile
 Current rule:
 
 ```text
-ASM remains the production generator.
-During Compiler Phase 1 it is transitional and isolated in AsmJava.
-The Class-File API verifies compiled runtime classes and the generated-class baseline.
+ClassFileJava is the production generator.
+ASM is isolated in AsmJava as a bounded test oracle until Compiler Phase 6.
+The Class-File API verifies compiled runtime classes and both generated-class baselines.
 Compiler nodes call only JavaFactory/ClassBuilder/MethodBuilder.
 ```
 

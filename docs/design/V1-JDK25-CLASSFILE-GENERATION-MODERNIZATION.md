@@ -39,8 +39,11 @@ Compiler nodes do not import ASM and do not import `java.lang.classfile`.
 The current production backend is isolated in one implementation:
 
 ```text
-org.apache.derby.impl.services.bytecode.asm.AsmJava
+org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
 ```
+
+`AsmJava` remains compiled only as a bounded post-cutover test oracle until
+Compiler Phase 6 removes it and the external ASM dependency.
 
 Therefore DelosDB will not add `GeneratedClassPlan`, `GeneratedClassBackend`, or
 another general bytecode IR. Such a layer would duplicate the existing contract
@@ -48,25 +51,26 @@ and increase code size without creating a new responsibility.
 
 ## Final compiler architecture
 
-During migration:
+During the Phase 5.2 proof period:
 
 ```text
 Bound SQL tree
     -> existing JavaFactory/ClassBuilder/MethodBuilder contract
-        -> AsmJava                 transitional production backend
-        -> ClassFileJava           production-packaged candidate, unregistered
+        -> ClassFileJava           sole normal production backend
+        -> AsmJava                 bounded test oracle only
 ```
 
-After cutover:
+After Phase 6:
 
 ```text
 Bound SQL tree
     -> existing JavaFactory/ClassBuilder/MethodBuilder contract
-        -> ClassFileJava           sole production backend
+        -> ClassFileJava           sole backend
 ```
 
-The final implementation name is provisional until the vertical slice proves
-that the class can remain small and readable.
+The final implementation name is fixed as `ClassFileJava`; the verified vertical
+slice and complete differential campaign proved the implementation remains
+bounded by the inherited DelosDB generation contract.
 
 There is no normal runtime backend selector. Differential selection exists only
 inside focused tests.
@@ -97,9 +101,9 @@ Compiler Phase 2.1 status: VERIFIED
 Compiler Phase 2.2 status: VERIFIED
 Compiler Phase 3 status: VERIFIED
 Compiler Phase 4 status: VERIFIED
-Compiler Phase 5.1 status: IMPLEMENTED / PENDING VERIFICATION
-Compiler Phase 5.2 status: NOT STARTED — NEXT
-Compiler Phase 6 status: NOT STARTED
+Compiler Phase 5.1 status: VERIFIED
+Compiler Phase 5.2 status: IMPLEMENTED / PENDING VERIFICATION
+Compiler Phase 6 status: NOT STARTED — NEXT
 ```
 
 Phase 2.1 freezes the exact inherited boundary before any second backend exists:
@@ -217,11 +221,11 @@ closeout gates are green.
 
 Compiler Phase 4 is verified. It extends that same backend to the complete inherited
 `MethodBuilder` operation surface and proves all 43 signatures and ten behavior
-groups. Phase 5.1 promotes the exact verified implementation into engine
-production source as a production-packaged but unregistered Class-File API
-candidate. ASM remains the normal production authority through Phase 5.1. The
-candidate is selected only in focused acceptance JVMs through Derby's inherited
-module override and remains absent from `modules.properties`.
+groups. Phase 5.1 promoted the exact verified implementation into engine
+production source and completed the focused language, JDBC/DRDA, modular-image,
+SQLancer, lifecycle, and performance acceptance campaign. Phase 5.2 switches
+`modules.properties` to the Class-File API backend. ASM remains compiled only
+as a bounded differential and baseline oracle until its Phase 6 removal.
 
 ## Compiler Phase 3 — JDK vertical slice
 
@@ -283,10 +287,10 @@ Unsupported MethodBuilder operations: 0
 Normal runtime backend selector: none
 ```
 
-ASM remains the sole production authority through Phase 4. After Phase 4 is
-verified, the complete JDK backend is moved unchanged into engine production
-source as the Phase 5.1 candidate. Packaging does not switch authority: the
-candidate remains unregistered and selectable only by focused acceptance tasks.
+ASM remained the sole production authority through Phase 4. Phase 5.1 moved
+the complete JDK backend unchanged into engine production source and verified
+it through focused acceptance tasks. Phase 5.2 now uses that exact accepted
+implementation as the fixed normal registration; ASM is no longer registered.
 
 Compare:
 
@@ -313,14 +317,9 @@ The complete backend is compiled into the engine under:
 org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
 ```
 
-Normal production registration remains:
-
-```text
-derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.asm.AsmJava
-```
-
-Focused acceptance tasks use Derby's inherited module override only inside
-isolated test JVMs. There is no user-facing backend selector and no normal
+The verified Phase 5.1 campaign used Derby's inherited module override only
+inside isolated test JVMs while normal production remained on ASM. That campaign
+is complete. There is still no user-facing backend selector and no normal
 runtime mode switch.
 
 The built-in campaign covers:
@@ -341,7 +340,7 @@ making SQLancer a normal build dependency.
 
 ## Compiler Phase 5.2 — switch authority
 
-The Class-File API backend becomes authoritative only after:
+The Phase 5.1 acceptance requirements are verified:
 
 ```text
 all language tests pass
@@ -354,7 +353,22 @@ no material execution regression exists
 no generated-class leak is observed
 ```
 
-ASM remains only as a test oracle for one bounded proof period after the Phase 5.2 registration switch.
+Phase 5.2 therefore changes the fixed normal registration to:
+
+```text
+derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
+```
+
+The Class-File API backend is now the fixed normal production authority.
+The production path now executes exactly one backend: the JDK 25 Class-File API
+implementation. A focused default-selection proof, the normal language suite,
+normal JDBC/DRDA lane, normal modular-image lane, and post-switch SQLancer task
+must all remain green without a backend override.
+
+ASM remains compiled only as a bounded test oracle for this proof period. Its
+retained evidence is limited to the deterministic ASM baseline, the frozen
+behavior oracle, and the complete differential test. It is not registered as a
+normal module and is removed completely in Phase 6.
 
 ## Compiler Phase 6 — remove ASM
 

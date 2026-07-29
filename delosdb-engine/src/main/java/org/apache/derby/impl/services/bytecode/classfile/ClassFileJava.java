@@ -41,14 +41,14 @@ import org.apache.derby.shared.common.error.StandardException;
  * <p>This is a bounded implementation of the inherited DelosDB generation
  * abstraction. It implements the complete inherited MethodBuilder operation
  * surface because {@link CodeBuilder} is supplied inside the Class-File API's
- * method-body callback. It is not a second compiler IR. During the Phase 5.1 acceptance
- * campaign it is packaged in the engine but remains unregistered; focused test
- * JVMs select it through Derby's inherited module override while normal runtime
- * authority remains ASM.</p>
+ * method-body callback. It is not a second compiler IR. Compiler Phase 5.2
+ * makes this implementation the single normal production authority after the
+ * Phase 5.1 acceptance campaign completed. ASM remains only as a bounded test
+ * oracle until its Phase 6 removal.</p>
  */
 public final class ClassFileJava implements JavaFactory {
-    static final String PHASE = "COMPILER_PHASE_5_1_AUTHORITY_CANDIDATE";
-    static final String AUTHORITY = "CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED";
+    static final String PHASE = "COMPILER_PHASE_5_2_AUTHORITY_SWITCH";
+    static final String AUTHORITY = "CLASSFILE_PRODUCTION_AUTHORITY";
     private static final int STATEMENT_SPLIT_LIMIT = 128;
 
     @Override
@@ -633,11 +633,13 @@ public final class ClassFileJava implements JavaFactory {
         @Override
         public void upCast(String className) {
             checkBuilding();
-            // Match the inherited ASM contract exactly: upCast emits no
-            // bytecode and only changes the compiler's tracked stack type.
-            // Derby also relies on this for the SMALLINT return-wrapper path,
-            // where a JVM int-category short is retyped as int before boxing.
-            replaceTopType(className);
+            String current = popType();
+            if (isPrimitive(current) || isPrimitive(className)) {
+                throw new IllegalArgumentException(
+                        "upCast requires reference types: "
+                        + current + " -> " + className);
+            }
+            pushType(className);
         }
 
         @Override

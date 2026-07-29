@@ -72,7 +72,7 @@ public final class GeneratedClassAsmBaselineTest extends TestCase {
                 "DelosDB generated-class ASM baseline%n"
                 + "====================================%n"
                 + "Phase: COMPILER_PHASE_1_INVENTORY_AND_EVIDENCE%n"
-                + "Authority: ASM_TRANSITIONAL_PRODUCTION_BACKEND%n"
+                + "Authority: ASM_BOUNDED_TEST_ORACLE%n"
                 + "Generation contract: JavaFactory/ClassBuilder/MethodBuilder%n"
                 + "Backend class: %s%n"
                 + "Generated class-file major: %d%n"
