@@ -597,8 +597,9 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             }
         }
         [
-            'newClassFileFactory()',
-            'Class.forName(ASM_BACKEND)',
+            'newFactory(ASM_BACKEND)',
+            'newFactory(CLASSFILE_BACKEND)',
+            'Class.forName(className)',
             'verifier.parse(asm.classBytes())',
             'verifier.parse(classFile.classBytes())',
             'verifier.verify(asmModel)',
