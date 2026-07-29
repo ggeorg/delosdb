@@ -468,9 +468,13 @@ public final class ClassFileJava implements JavaFactory {
                 String fieldName,
                 String fieldType) {
             checkBuilding();
-            popType();
+            String receiverType = popType();
+            String ownerType = fieldOwnerType(
+                    declaringClass,
+                    receiverType,
+                    fieldName);
             operations.add((code, state) -> code.getfield(
-                    classDesc(declaringClass),
+                    classDesc(ownerType),
                     fieldName,
                     classDesc(fieldType)));
             pushType(fieldType);
@@ -550,7 +554,11 @@ public final class ClassFileJava implements JavaFactory {
                 String fieldType) {
             checkBuilding();
             String valueType = popType();
-            popType();
+            String receiverType = popType();
+            String ownerType = fieldOwnerType(
+                    declaringClass,
+                    receiverType,
+                    fieldName);
             requireCompatible(fieldType, valueType, "field assignment");
             operations.add((code, state) -> {
                 TypeKind kind = typeKind(valueType);
@@ -558,7 +566,7 @@ public final class ClassFileJava implements JavaFactory {
                 code.storeLocal(kind, temporary);
                 code.loadLocal(kind, temporary);
                 code.putfield(
-                        classDesc(declaringClass),
+                        classDesc(ownerType),
                         fieldName,
                         classDesc(fieldType));
                 code.loadLocal(kind, temporary);
@@ -939,6 +947,22 @@ public final class ClassFileJava implements JavaFactory {
             }
             statementNum += noStatementsAdded;
             return false;
+        }
+
+        private String fieldOwnerType(
+                String declaringClass,
+                String receiverType,
+                String fieldName) {
+            if (declaringClass != null) {
+                return declaringClass;
+            }
+            if (receiverType == null) {
+                throw new IllegalStateException(
+                        "Field " + fieldName
+                        + " was generated without a declaring class and "
+                        + "without a receiver type in " + name);
+            }
+            return receiverType;
         }
 
         private ConditionalState requireConditional() {

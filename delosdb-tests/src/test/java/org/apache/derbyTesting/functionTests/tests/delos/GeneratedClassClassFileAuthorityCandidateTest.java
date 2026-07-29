@@ -152,6 +152,23 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
                 }
             }
 
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "update T set s = ? where id = ?")) {
+                preparedStatements++;
+                statement.setString(1, "updated");
+                statement.setInt(2, 2);
+                assertEquals(1, statement.executeUpdate());
+            }
+
+            try (Statement statement = connection.createStatement()) {
+                try (ResultSet row = statement.executeQuery(
+                        "select s from T where id = 2")) {
+                    assertTrue(row.next());
+                    assertEquals("updated", row.getString(1));
+                    assertFalse(row.next());
+                }
+            }
+
             try (Statement statement = connection.createStatement()) {
                 try (ResultSet row = statement.executeQuery("values 1 / 0")) {
                     // Derby evaluates this VALUES expression when the row is

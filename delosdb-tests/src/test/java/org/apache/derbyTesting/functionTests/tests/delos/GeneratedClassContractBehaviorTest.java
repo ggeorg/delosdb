@@ -337,7 +337,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 new String[] { PublicFieldHolder.class.getName() });
         getExternal.getParameter(0);
         getExternal.getField(
-                PublicFieldHolder.class.getName(), "value", "int");
+                (String) null, "value", "int");
         finish(getExternal);
 
         MethodBuilder putExternal = classBuilder.newMethodBuilder(
@@ -350,7 +350,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         putExternal.getParameter(0);
         putExternal.getParameter(1);
         putExternal.putField(
-                PublicFieldHolder.class.getName(), "value", "int");
+                (String) null, "value", "int");
         finish(putExternal);
 
         MethodBuilder getStatic = noArgMethod(

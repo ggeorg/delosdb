@@ -1015,6 +1015,8 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthorityCandidateTest.java')
         File modularTest = new File(delosContractRepositoryRoot,
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.java')
+        File currentRowLocationNode = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/CurrentRowLocationNode.java')
         File manifest = new File(delosContractRepositoryRoot,
                 'gradle/static-analysis/delosdb-classfile-authority-candidate.txt')
         File modules = new File(delosContractRepositoryRoot,
@@ -1025,8 +1027,8 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
         File design = new File(delosContractRepositoryRoot,
                 'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md')
 
-        [backend, candidateTest, modularTest, manifest, modules, testBuild,
-                rootBuild, design].each { File file ->
+        [backend, candidateTest, modularTest, currentRowLocationNode,
+                manifest, modules, testBuild, rootBuild, design].each { File file ->
             if (!file.isFile()) {
                 failures.add('Missing Compiler Phase 5.1 proof file: ' + file)
             }
@@ -1082,12 +1084,28 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
             'CLASSFILE_PRODUCTION_CANDIDATE_UNREGISTERED',
             'ClassFile.of()',
             'ExceptionsAttribute.ofSymbols(',
-            'STATEMENT_SPLIT_LIMIT = 128'
+            'STATEMENT_SPLIT_LIMIT = 128',
+            'fieldOwnerType(',
+            'String receiverType = popType();',
+            'without a declaring class and '
         ].each { String marker ->
             if (!backendText.contains(marker)) {
                 failures.add('Production Class-File API candidate is missing: '
                         + marker)
             }
+        }
+        if (backendText.count('String ownerType = fieldOwnerType(') != 2) {
+            failures.add('Class-File API candidate must infer field owners for both instance reads and writes')
+        }
+        if (backendText.count('classDesc(ownerType)') != 2) {
+            failures.add('Class-File API candidate must emit both inferred-owner field operations')
+        }
+
+        String currentRowLocationText = currentRowLocationNode.isFile()
+                ? currentRowLocationNode.getText('UTF-8') : ''
+        if (!currentRowLocationText.contains(
+                'mb.getField((String)null, acb.getRowLocationScanResultSetName()')) {
+            failures.add('CurrentRowLocationNode must retain the inherited null-owner field-access contract')
         }
 
         String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
@@ -1106,6 +1124,7 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
             'Monitor.findSystemModule(Module.JavaFactory)',
             'Prepared statement families:',
             'Wide projection columns:',
+            'update T set s = ? where id = ?',
             'try (ResultSet row = statement.executeQuery("values 1 / 0"))',
             'row.next();',
             'SQLState preservation: 22012',
@@ -1113,6 +1132,33 @@ tasks.register('delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis') {
         ].each { String marker ->
             if (!candidateText.contains(marker)) {
                 failures.add('Authority-candidate SQL proof is missing: '
+                        + marker)
+            }
+        }
+
+        File behaviorTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
+        File verticalSliceTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileVerticalSliceTest.java')
+        String normalizedBehaviorText = behaviorTest.isFile()
+                ? behaviorTest.getText('UTF-8').replaceAll('\\s+', ' ') : ''
+        String normalizedVerticalSliceText = verticalSliceTest.isFile()
+                ? verticalSliceTest.getText('UTF-8').replaceAll('\\s+', ' ') : ''
+        [
+            'getExternal.getField( (String) null, "value", "int")',
+            'putExternal.putField( (String) null, "value", "int")'
+        ].each { String marker ->
+            if (!normalizedBehaviorText.contains(marker)) {
+                failures.add('Complete differential owner-inference proof is missing: '
+                        + marker)
+            }
+        }
+        [
+            'readExternal.getField( (String) null, "value", "int")',
+            'writeExternal.putField( (String) null, "value", "int")'
+        ].each { String marker ->
+            if (!normalizedVerticalSliceText.contains(marker)) {
+                failures.add('Vertical-slice owner-inference proof is missing: '
                         + marker)
             }
         }

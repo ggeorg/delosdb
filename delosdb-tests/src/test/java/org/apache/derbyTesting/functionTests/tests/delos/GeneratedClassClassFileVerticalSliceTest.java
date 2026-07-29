@@ -322,7 +322,7 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 new String[] { PublicFieldHolder.class.getName() });
         readExternal.getParameter(0);
         readExternal.getField(
-                PublicFieldHolder.class.getName(),
+                (String) null,
                 "value",
                 "int");
         finish(readExternal);
@@ -335,7 +335,7 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
         writeExternal.getParameter(0);
         writeExternal.getParameter(1);
         writeExternal.putField(
-                PublicFieldHolder.class.getName(),
+                (String) null,
                 "value",
                 "int");
         finish(writeExternal);
