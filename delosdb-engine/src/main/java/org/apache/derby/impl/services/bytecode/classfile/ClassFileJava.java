@@ -633,13 +633,11 @@ public final class ClassFileJava implements JavaFactory {
         @Override
         public void upCast(String className) {
             checkBuilding();
-            String current = popType();
-            if (isPrimitive(current) || isPrimitive(className)) {
-                throw new IllegalArgumentException(
-                        "upCast requires reference types: "
-                        + current + " -> " + className);
-            }
-            pushType(className);
+            // Match the inherited ASM contract exactly: upCast emits no
+            // bytecode and only changes the compiler's tracked stack type.
+            // Derby also relies on this for the SMALLINT return-wrapper path,
+            // where a JVM int-category short is retyped as int before boxing.
+            replaceTopType(className);
         }
 
         @Override

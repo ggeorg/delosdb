@@ -285,12 +285,14 @@ public interface MethodBuilder {
 	public void pushThis();
 
 	/**
-		Upcast the top stack value. This is used for correct method resolution
-		by upcasting method parameters. It does not put any casting code into the
-		byte code stream. Can only be used for refrences.
+		Retype the top stack value for method and constructor resolution without
+		emitting a bytecode conversion. This is normally used for reference
+		upcasts. The inherited compiler also uses it for JVM int-category
+		primitive retyping, notably {@code short} to {@code int} before boxing a
+		SMALLINT routine result.
 		<PRE>
-		Stack ...,ref =&gt;
-		      ...,ref
+		Stack ...,value =&gt;
+		      ...,value
 		</PRE>
 	*/
 	public void upCast(String className);
