@@ -435,7 +435,7 @@ tasks.register('delosGeneratedClassContractStaticAnalysis') {
         String designText = design.isFile() ? design.getText('UTF-8') : ''
         [
             'Compiler Phase 2.1 status: VERIFIED',
-            'Compiler Phase 2.2 status: IMPLEMENTED — PENDING VERIFICATION',
+            'Compiler Phase 2.2 status: VERIFIED',
             'Every MethodBuilder signature'
         ].each { String marker ->
             if (!designText.contains(marker)) {

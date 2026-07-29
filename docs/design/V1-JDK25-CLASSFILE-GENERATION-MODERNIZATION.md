@@ -94,8 +94,8 @@ performance acceptance are required.
 ```text
 Compiler Phase 1 status: VERIFIED
 Compiler Phase 2.1 status: VERIFIED
-Compiler Phase 2.2 status: IMPLEMENTED — PENDING VERIFICATION
-Compiler Phase 3 status: NOT STARTED
+Compiler Phase 2.2 status: VERIFIED
+Compiler Phase 3 status: NOT STARTED — NEXT
 ```
 
 Phase 2.1 freezes the exact inherited boundary before any second backend exists:
@@ -201,10 +201,10 @@ The focused test writes a stable oracle report for the later differential
 backend. An operation may be removed only when both compiler-node usage and
 compatibility evidence prove it obsolete.
 
-Compiler Phase 2 closes only after the Phase 2.2 focused test, the contract
-static gate, the generated-class baseline, language tests, and modular-image
-verification are green. The next implementation step is Compiler Phase 3's
-package-internal, test-only Class-File API vertical slice.
+Compiler Phase 2 is closed. The Phase 2.2 focused test, contract static gate,
+generated-class baseline, complete language suite, JDK 25 verifier, and
+modular-image verification are green. The next implementation step is Compiler
+Phase 3's package-internal, test-only Class-File API vertical slice.
 
 ## Compiler Phase 3 — JDK vertical slice
 

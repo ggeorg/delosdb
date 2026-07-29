@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTED / PENDING USER VERIFICATION
+VERIFIED
 ```
 
 ## Final decision
@@ -13,7 +13,8 @@ REMOVE_RETAINED_PHASE8_ORACLE
 ```
 
 The Phase 8 MVCC implementation is no longer a runtime, build target, test source set, benchmark
-implementation, or repository source archive. The live `delos_mvcc` provider is the RawStore-backed
+implementation, or repository source archive. The source archive is deleted from the working tree.
+The live `delos_mvcc` provider is the RawStore-backed
 implementation under `org.apache.derby.impl.store.access.mvcc`.
 
 ## Why deletion is correct

@@ -1,5 +1,11 @@
 # RawStore storage-I/O implementation retirement
 
+## Status
+
+```text
+VERIFIED
+```
+
 ## Final decision
 
 Stage 7.2 removed the standalone `delosdb-storage-io` project. Stage 8.7.3 completes the work by
@@ -11,7 +17,7 @@ inherited Derby page, container, logging, recovery, and memory-storage implement
 
 ## Removed authority
 
-The deleted source archive included:
+The source archive is deleted. It included:
 
 ```text
 DelosPage

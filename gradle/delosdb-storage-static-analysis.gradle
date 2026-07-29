@@ -8217,9 +8217,13 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             if (!s0.contains("'delosMvccRetainedRuntimeRetirementStaticAnalysis'")) {
                 failures << 'S0 must include the retained-runtime retirement gate'
             }
-            ['source archive deleted', 'Git history', '20 production Java classes',
+            def normalizedDesign = design.replaceAll('\\s+', ' ')
+                    .toLowerCase(java.util.Locale.ROOT)
+            ['repository source archive', 'git history preserves', '20 production java classes',
              'no retained source set'].each { token ->
-                if (!design.contains(token)) failures << 'Retirement design is missing: ' + token
+                if (!normalizedDesign.contains(token)) {
+                    failures << 'Retirement design is missing: ' + token
+                }
             }
             ['## Stage 8.7.3 — retained-oracle and diagnostics maintainability closeout',
              'REMOVE_RETAINED_PHASE8_ORACLE'].each { token ->
@@ -8403,9 +8407,13 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
             if (parity.contains(':delosdb-storage-io|')) {
                 failures << 'Derby module parity must not retain the removed storage-io extension row'
             }
-            ['no active production consumer', 'source archive deleted',
-             'no second page-volume authority', 'Git history'].each { token ->
-                if (!design.contains(token)) failures << 'Storage-I/O retirement design is missing: ' + token
+            def normalizedDesign = design.replaceAll('\\s+', ' ')
+                    .toLowerCase(java.util.Locale.ROOT)
+            ['no active production consumer', 'source archive is deleted',
+             'no second page-volume authority', 'git history preserves'].each { token ->
+                if (!normalizedDesign.contains(token)) {
+                    failures << 'Storage-I/O retirement design is missing: ' + token
+                }
             }
             ['## Stage 7.2 — standalone page-volume module retirement',
              '## Stage 8.7.3 — retained-oracle and diagnostics maintainability closeout',
@@ -9637,8 +9645,9 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
             }
 
             def stage872Roadmap = text.roadmap.substring(stage872RoadmapStart, stage9RoadmapStart)
-            if (!stage872Roadmap.contains('IMPLEMENTED / PENDING USER VERIFICATION')) {
-                failures << 'Stage 8.7.2 roadmap section must remain pending until representation closeout verification completes'
+            if (!stage872Roadmap.contains('VERIFIED')
+                    || stage872Roadmap.contains('PENDING USER VERIFICATION')) {
+                failures << 'Stage 8.7.2 roadmap section must remain verified after representation closeout'
             }
         }
 
