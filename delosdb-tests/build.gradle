@@ -882,6 +882,31 @@ tasks.named('check') {
     dependsOn tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest')
 }
 
+registerDelosFocusedTest(
+        'runDelosGeneratedClassClassFileCompleteDifferentialTest',
+        'Runs Compiler Phase 4 complete ASM/JDK 25 Class-File API differential generation, verification, behavior, lifecycle, and diagnostic measurement.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileCompleteDifferentialTest.class'])
+
+tasks.named('runDelosGeneratedClassClassFileCompleteDifferentialTest') {
+    def behaviorManifest = rootProject.layout.projectDirectory.file(
+            'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
+    systemProperty 'delosdb.compiler.contractBehavior.manifest',
+            behaviorManifest.asFile.absolutePath
+    systemProperty 'delosdb.compiler.classFileCompleteDifferential.report',
+            layout.buildDirectory.file(
+                    'reports/delosdb/compiler/generated-class-classfile-complete-differential.txt')
+                    .get().asFile.absolutePath
+    inputs.file behaviorManifest
+    outputs.file layout.buildDirectory.file(
+            'reports/delosdb/compiler/generated-class-classfile-complete-differential.txt')
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named(
+            'runDelosGeneratedClassClassFileCompleteDifferentialTest')
+}
+
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',

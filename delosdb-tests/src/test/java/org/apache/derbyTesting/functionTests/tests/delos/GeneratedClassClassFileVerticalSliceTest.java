@@ -91,8 +91,6 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 asmInstance,
                 classFileClass,
                 classFileInstance);
-        int unsupportedProofs = provePhase4Boundary(classFileFactory);
-
         String report = String.format(Locale.ROOT,
                 "DelosDB JDK 25 Class-File API vertical slice%n"
                 + "============================================%n"
@@ -102,7 +100,7 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "Generated public methods: %d%n"
                 + "Semantic result/exception comparisons: %d%n"
-                + "Explicit Phase 4 unsupported proofs: %d%n"
+                + "Phase 4 operation boundary: covered by complete differential test%n"
                 + "ASM class bytes: %d%n"
                 + "ASM SHA-256: %s%n"
                 + "Class-File API class bytes: %d%n"
@@ -111,7 +109,6 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 + "Normal runtime backend selector: none%n",
                 publicMethodSignatures(asmClass).size(),
                 semanticComparisons,
-                unsupportedProofs,
                 asm.classBytes().length,
                 sha256(asm.classBytes()),
                 classFile.classBytes().length,
@@ -455,42 +452,6 @@ public final class GeneratedClassClassFileVerticalSliceTest extends TestCase {
                 asmHolder.value, classFileHolder.value);
         comparisons++;
         return comparisons;
-    }
-
-    private static int provePhase4Boundary(JavaFactory factory) {
-        ClassBuilder classBuilder = factory.newClassBuilder(
-                null,
-                GENERATED_PACKAGE,
-                Modifier.PUBLIC,
-                "DelosPhase3Unsupported",
-                "java.lang.Object");
-        MethodBuilder method = classBuilder.newMethodBuilder(
-                Modifier.PUBLIC | Modifier.STATIC,
-                "void",
-                "unsupported");
-        int proofs = 0;
-        expectPhase4(() -> method.addThrownException("java.io.IOException"));
-        proofs++;
-        expectPhase4(() -> method.pushNewStart("java.lang.StringBuilder"));
-        proofs++;
-        expectPhase4(() -> method.pushNewArray("int", 2));
-        proofs++;
-        expectPhase4(method::dup);
-        proofs++;
-        expectPhase4(() -> method.statementNumHitLimit(1));
-        proofs++;
-        return proofs;
-    }
-
-    private static void expectPhase4(ThrowingRunnable action) {
-        try {
-            action.run();
-            fail("unsupported Phase 4 operation must fail fast");
-        } catch (UnsupportedOperationException expected) {
-            assertTrue(expected.getMessage().contains("Compiler Phase 4"));
-        } catch (Exception unexpected) {
-            fail("unexpected failure type: " + unexpected);
-        }
     }
 
     private static MethodBuilder staticMethod(

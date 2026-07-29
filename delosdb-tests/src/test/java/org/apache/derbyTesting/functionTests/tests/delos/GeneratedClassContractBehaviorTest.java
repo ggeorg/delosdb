@@ -42,7 +42,8 @@ import org.apache.derby.iapi.util.ByteArray;
 /**
  * Compiler Phase 2.2 behavior oracle for the inherited generated-class
  * contract. Every MethodBuilder signature is mapped to one executed fixture
- * group before the JDK 25 Class-File API backend is introduced.
+ * group. Compiler Phase 4 reuses this exact fixture for ASM/Class-File API
+ * differential execution rather than creating a second behavior model.
  */
 public final class GeneratedClassContractBehaviorTest extends TestCase {
     private static final String BACKEND_CLASS =
@@ -73,8 +74,10 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         assertEquals("behavior fixture groups",
                 EXPECTED_FIXTURES, manifest.fixtures());
 
-        GeneratedFixture first = generateFixture();
-        GeneratedFixture second = generateFixture();
+        GeneratedFixture first = generateFixture(
+                newAsmFactory(), GENERATED_CLASS);
+        GeneratedFixture second = generateFixture(
+                newAsmFactory(), GENERATED_CLASS);
         assertTrue("ASM fixture bytes must remain deterministic",
                 Arrays.equals(first.classBytes(), second.classBytes()));
         assertEquals("ASM fixture digest must remain deterministic",
@@ -86,21 +89,8 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 GENERATED_PACKAGE + GENERATED_CLASS,
                 first.classBytes());
         Object instance = generatedClass.getConstructor().newInstance();
-        Set<String> executedFixtures = new LinkedHashSet<>();
-
-        constructorFixture(generatedClass, instance, executedFixtures);
-        methodLifecycleFixture(generatedClass, executedFixtures);
-        constantAndParameterFixtures(generatedClass, executedFixtures);
-        fieldAccessFixtures(generatedClass, instance, executedFixtures);
-        objectAndArrayFixtures(generatedClass, executedFixtures);
-        receiverAndConversionFixtures(
-                generatedClass, instance, executedFixtures);
-        stackAndStatementFixtures(generatedClass, executedFixtures);
-        controlFlowFixtures(generatedClass, executedFixtures);
-        invocationFixtures(generatedClass, instance, executedFixtures);
-        statementSplittingFixture(
-                generatedClass, first.statementSplitPoint(),
-                executedFixtures);
+        Set<String> executedFixtures = assertFixtureBehavior(
+                generatedClass, instance, first.statementSplitPoint());
 
         assertEquals("every mapped behavior fixture must execute",
                 manifest.fixtures(), executedFixtures);
@@ -135,18 +125,43 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         }
     }
 
-    private static GeneratedFixture generateFixture() throws Exception {
-        JavaFactory factory = (JavaFactory) Class.forName(BACKEND_CLASS)
+    private static JavaFactory newAsmFactory() throws Exception {
+        return (JavaFactory) Class.forName(BACKEND_CLASS)
                 .getConstructor()
                 .newInstance();
+    }
+
+    static Set<String> assertFixtureBehavior(
+            Class<?> generatedClass,
+            Object instance,
+            int statementSplitPoint) throws Exception {
+        Set<String> executedFixtures = new LinkedHashSet<>();
+        constructorFixture(generatedClass, instance, executedFixtures);
+        methodLifecycleFixture(generatedClass, executedFixtures);
+        constantAndParameterFixtures(generatedClass, executedFixtures);
+        fieldAccessFixtures(generatedClass, instance, executedFixtures);
+        objectAndArrayFixtures(generatedClass, executedFixtures);
+        receiverAndConversionFixtures(
+                generatedClass, instance, executedFixtures);
+        stackAndStatementFixtures(generatedClass, executedFixtures);
+        controlFlowFixtures(generatedClass, executedFixtures);
+        invocationFixtures(generatedClass, instance, executedFixtures);
+        statementSplittingFixture(
+                generatedClass, statementSplitPoint, executedFixtures);
+        return Set.copyOf(executedFixtures);
+    }
+
+    static GeneratedFixture generateFixture(
+            JavaFactory factory,
+            String generatedClassName) throws Exception {
         ClassBuilder classBuilder = factory.newClassBuilder(
                 null,
                 GENERATED_PACKAGE,
                 Modifier.PUBLIC | Modifier.FINAL,
-                GENERATED_CLASS,
+                generatedClassName,
                 BehaviorBase.class.getName());
-        assertEquals(GENERATED_CLASS, classBuilder.getName());
-        assertEquals(GENERATED_PACKAGE + GENERATED_CLASS,
+        assertEquals(generatedClassName, classBuilder.getName());
+        assertEquals(GENERATED_PACKAGE + generatedClassName,
                 classBuilder.getFullName());
 
         LocalField value = classBuilder.addField(
@@ -817,7 +832,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         return new FixtureManifest(List.copyOf(signatures), Set.copyOf(fixtures));
     }
 
-    private record GeneratedFixture(
+    record GeneratedFixture(
             byte[] classBytes,
             int statementSplitPoint) {
     }

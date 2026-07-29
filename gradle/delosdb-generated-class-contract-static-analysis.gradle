@@ -585,12 +585,11 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
 
         [
             'final class ClassFileJava implements JavaFactory',
-            'COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE',
-            'CLASSFILE_TEST_ONLY',
+            'COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND',
+            'CLASSFILE_DIFFERENTIAL_TEST_ONLY',
             'ClassFile.of()',
-            'builder.withMethodBody(',
+            'builder.withMethod(',
             'ClassFile.JAVA_25_VERSION',
-            'Compiler Phase 4 must add Class-File API support for',
             'Class-File API test backend cannot load a generated class without a ClassFactory'
         ].each { String marker ->
             if (!backendText.contains(marker)) {
@@ -612,7 +611,7 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
             'compareSemantics(',
             'assertSameFailure(',
             'ClassCastException',
-            'provePhase4Boundary(classFileFactory)',
+            'Phase 4 operation boundary: covered by complete differential test',
             'Normal runtime backend selector: none'
         ].each { String marker ->
             if (!testText.contains(marker)) {
@@ -646,7 +645,8 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
                 }
                 String text = source.getText('UTF-8')
                 if (text.contains('ClassFileJava')
-                        || text.contains('COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE')) {
+                        || text.contains('COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE')
+                        || text.contains('COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND')) {
                     failures.add('Phase 3 test backend leaked into production source: '
                             + delosContractRepositoryRoot.toPath()
                                     .relativize(source.toPath()))
@@ -687,10 +687,11 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
         String designText = design.isFile() ? design.getText('UTF-8') : ''
         String normalizedDesignText = designText.replaceAll('\\s+', ' ')
         [
-            'Compiler Phase 3 status: IMPLEMENTED / PENDING VERIFICATION',
-            'Compiler Phase 4 status: NOT STARTED — NEXT',
+            'Compiler Phase 3 status: VERIFIED',
+            'Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION',
+            'Compiler Phase 5 status: NOT STARTED — NEXT',
             'package-internal, test-only JDK 25 Class-File API backend',
-            'ASM remains the sole production authority during Phase 3'
+            'ASM remains the sole production authority through Phase 4'
         ].each { String marker ->
             if (!normalizedDesignText.contains(marker)) {
                 failures.add('Compiler modernization design is missing: '
@@ -723,6 +724,309 @@ tasks.register('delosGeneratedClassClassFileVerticalSliceStaticAnalysis') {
         }
         logger.lifecycle(
                 'JDK 25 Class-File API vertical-slice static analysis passed. Report: {}',
+                reportFile)
+    }
+}
+
+// Compiler Phase 4 complete test-only JDK 25 Class-File API differential gate.
+tasks.register('delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates complete MethodBuilder differential coverage before any production authority switch.'
+    dependsOn tasks.named('delosGeneratedClassClassFileVerticalSliceStaticAnalysis')
+
+    doLast {
+        List<String> failures = []
+        File manifest = new File(delosContractRepositoryRoot,
+                'gradle/static-analysis/delosdb-classfile-complete-differential.txt')
+        File behaviorManifest = new File(delosContractRepositoryRoot,
+                'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
+        File backend = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/ClassFileJava.java')
+        File behaviorTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
+        File differentialTest = new File(delosContractRepositoryRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileCompleteDifferentialTest.java')
+        File testBuild = new File(delosContractRepositoryRoot,
+                'delosdb-tests/build.gradle')
+        File rootBuild = new File(delosContractRepositoryRoot, 'build.gradle')
+        File modules = new File(delosContractRepositoryRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+        File design = new File(delosContractRepositoryRoot,
+                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md')
+
+        [manifest, behaviorManifest, backend, behaviorTest, differentialTest,
+                testBuild, rootBuild, modules, design].each { File file ->
+            if (!file.isFile()) {
+                failures.add('Missing Compiler Phase 4 proof file: ' + file)
+            }
+        }
+
+        List<Map<String, String>> rows = []
+        if (manifest.isFile()) {
+            manifest.readLines('UTF-8').eachWithIndex { String line, int index ->
+                String trimmed = line.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith('#')) {
+                    return
+                }
+                List<String> parts = trimmed.split('\\|', -1) as List<String>
+                if (parts.size() != 5) {
+                    failures.add(String.format(
+                            'Malformed complete differential row %d: %s',
+                            index + 1, line))
+                    return
+                }
+                rows.add([
+                        id: parts[0],
+                        fixture: parts[1],
+                        backend: parts[2],
+                        behavior: parts[3],
+                        reason: parts[4]
+                ])
+            }
+        }
+        if (rows.size() != 10) {
+            failures.add(String.format(
+                    'Complete differential manifest must contain 10 rows; found %d',
+                    rows.size()))
+        }
+        if (rows.collect { it.id }.toSet().size() != rows.size()) {
+            failures.add('Complete differential manifest contains duplicate ids')
+        }
+        Set<String> expectedFixtures = [
+                'method-lifecycle',
+                'parameter-constants',
+                'field-access',
+                'object-and-array',
+                'receiver-and-conversion',
+                'stack-and-statement',
+                'control-flow',
+                'invocation',
+                'constructor',
+                'statement-splitting'
+        ] as Set
+        Set<String> actualFixtures = rows.collect { it.fixture }.toSet()
+        if (actualFixtures != expectedFixtures) {
+            failures.add('Complete differential fixtures changed: expected '
+                    + expectedFixtures.sort() + ', found '
+                    + actualFixtures.sort())
+        }
+        rows.each { Map<String, String> row ->
+            if (row.reason.length() < 100) {
+                failures.add('Complete differential reason is too thin: '
+                        + row.id)
+            }
+        }
+
+        List<String> behaviorSignatures = []
+        Set<String> behaviorFixtures = [] as Set
+        if (behaviorManifest.isFile()) {
+            behaviorManifest.readLines('UTF-8').eachWithIndex {
+                    String line, int index ->
+                String trimmed = line.trim()
+                if (trimmed.isEmpty() || trimmed.startsWith('#')) {
+                    return
+                }
+                List<String> parts = trimmed.split('\\|', -1) as List<String>
+                if (parts.size() != 5) {
+                    failures.add(String.format(
+                            'Malformed MethodBuilder behavior row %d: %s',
+                            index + 1, line))
+                    return
+                }
+                behaviorSignatures.add(parts[1])
+                behaviorFixtures.add(parts[2])
+            }
+        }
+        if (behaviorSignatures.size() != 43
+                || behaviorSignatures.toSet().size() != 43) {
+            failures.add('Complete differential proof requires exactly 43 unique MethodBuilder signatures')
+        }
+        if (behaviorFixtures != expectedFixtures) {
+            failures.add('Complete differential proof must reuse all ten frozen behavior fixtures')
+        }
+
+        String backendText = backend.isFile() ? backend.getText('UTF-8') : ''
+        String behaviorText = behaviorTest.isFile()
+                ? behaviorTest.getText('UTF-8') : ''
+        String differentialText = differentialTest.isFile()
+                ? differentialTest.getText('UTF-8') : ''
+        rows.each { Map<String, String> row ->
+            if (!backendText.contains(row.backend)) {
+                failures.add('Complete Class-File API backend is missing marker '
+                        + row.id + ': ' + row.backend)
+            }
+            if (!behaviorText.contains(row.behavior)) {
+                failures.add('Shared behavior oracle is missing marker '
+                        + row.id + ': ' + row.behavior)
+            }
+        }
+
+        [
+            'final class ClassFileJava implements JavaFactory',
+            'COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND',
+            'CLASSFILE_DIFFERENTIAL_TEST_ONLY',
+            'ExceptionsAttribute.ofSymbols(',
+            'code.new_(classDesc(className))',
+            'code.newarray(arrayTypeKind(className))',
+            'code.anewarray(classDesc(className))',
+            'code.arrayLoad(arrayTypeKind(elementType))',
+            'code.arrayStore(arrayTypeKind(expectedType))',
+            'code.dup2()',
+            'STATEMENT_SPLIT_LIMIT = 128',
+            'Incomplete object construction in generated method'
+        ].each { String marker ->
+            if (!backendText.contains(marker)) {
+                failures.add('Complete Class-File API backend is missing: '
+                        + marker)
+            }
+        }
+        if (backendText.contains('phase4Unsupported(')
+                || backendText.contains('Compiler Phase 4 must add Class-File API support for')) {
+            failures.add('Complete Class-File API backend retains a Phase 3 unsupported-operation boundary')
+        }
+        if (backendText.contains('public final class ClassFileJava')) {
+            failures.add('ClassFileJava must remain package-internal and test-only')
+        }
+
+        [
+            'generateFixture(',
+            'assertFixtureBehavior(',
+            'new ClassFileJava()',
+            'newAsmFactory()',
+            'ClassFile.of()',
+            'verifier.verify(asmModel)',
+            'verifier.verify(classFileModel)',
+            'publicMethodContracts(asmClass)',
+            'compareRepresentativeFailure(asmClass, classFileClass)',
+            'EXPECTED_METHOD_BUILDER_SIGNATURES = 43',
+            'EXPECTED_FIXTURE_GROUPS = 10',
+            'EXPECTED_GENERATED_METHODS = 38',
+            'Unsupported MethodBuilder operations: 0',
+            'generation median allocated bytes',
+            'Class-File API class-load median nanos',
+            'Normal runtime backend selector: none'
+        ].each { String marker ->
+            if (!differentialText.contains(marker)) {
+                failures.add('Complete differential test is missing: '
+                        + marker)
+            }
+        }
+        [
+            'static Set<String> assertFixtureBehavior(',
+            'static GeneratedFixture generateFixture(',
+            'constructorFixture(',
+            'statementSplittingFixture('
+        ].each { String marker ->
+            if (!behaviorText.contains(marker)) {
+                failures.add('Shared complete behavior fixture is missing: '
+                        + marker)
+            }
+        }
+
+        File[] productionRoots = [
+                new File(delosContractRepositoryRoot,
+                        'delosdb-engine/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-runtime-api/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-commons/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-client/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-server/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-tools/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-optionaltools/src/main/java'),
+                new File(delosContractRepositoryRoot,
+                        'delosdb-runner/src/main/java')
+        ] as File[]
+        productionRoots.findAll { it.isDirectory() }.each { File root ->
+            root.eachFileRecurse { File source ->
+                if (!source.name.endsWith('.java')) {
+                    return
+                }
+                String text = source.getText('UTF-8')
+                if (text.contains('ClassFileJava')
+                        || text.contains('COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND')) {
+                    failures.add('Phase 4 test backend leaked into production source: '
+                            + delosContractRepositoryRoot.toPath()
+                                    .relativize(source.toPath()))
+                }
+            }
+        }
+
+        String modulesText = modules.isFile() ? modules.getText('UTF-8') : ''
+        if (!modulesText.contains(
+                'org.apache.derby.impl.services.bytecode.asm.AsmJava')) {
+            failures.add('ASM must remain the transitional production backend in Phase 4')
+        }
+        if (modulesText.contains('ClassFileJava')) {
+            failures.add('The test-only complete Class-File API backend must not be registered in modules.properties')
+        }
+
+        String testBuildText = testBuild.isFile()
+                ? testBuild.getText('UTF-8') : ''
+        [
+            'runDelosGeneratedClassClassFileCompleteDifferentialTest',
+            'GeneratedClassClassFileCompleteDifferentialTest.class',
+            'generated-class-classfile-complete-differential.txt',
+            "dependsOn tasks.named(\n            'runDelosGeneratedClassClassFileCompleteDifferentialTest')"
+        ].each { String marker ->
+            if (!testBuildText.contains(marker)) {
+                failures.add('Complete differential focused test wiring is missing: '
+                        + marker)
+            }
+        }
+
+        String rootBuildText = rootBuild.isFile()
+                ? rootBuild.getText('UTF-8') : ''
+        if (!rootBuildText.contains(
+                "dependsOn 'delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis'")) {
+            failures.add('s0CloseoutVerification must include the Phase 4 complete differential gate')
+        }
+
+        String designText = design.isFile() ? design.getText('UTF-8') : ''
+        String normalizedDesignText = designText.replaceAll('\\s+', ' ')
+        [
+            'Compiler Phase 3 status: VERIFIED',
+            'Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION',
+            'Compiler Phase 5 status: NOT STARTED — NEXT',
+            'ASM remains the sole production authority through Phase 4',
+            'Unsupported MethodBuilder operations: 0'
+        ].each { String marker ->
+            if (!normalizedDesignText.contains(marker)) {
+                failures.add('Compiler modernization design is missing: '
+                        + marker)
+            }
+        }
+
+        File reportFile = new File(delosContractBuildRoot,
+                'reports/delosdb/compiler/generated-class-classfile-complete-differential-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB complete JDK 25 Class-File API differential static analysis')
+            writer.println('=================================================================')
+            writer.println('MethodBuilder signatures: ' + behaviorSignatures.size())
+            writer.println('Behavior fixture groups: ' + actualFixtures.size())
+            writer.println('Unsupported MethodBuilder operations: 0')
+            writer.println('Backend location: delosdb-tests test source only')
+            writer.println('Production authority: ASM_TRANSITIONAL')
+            writer.println('Class-File API authority: TEST_ONLY_COMPLETE')
+            writer.println('Normal runtime backend selector: none')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { String failure -> writer.println('- ' + failure) }
+        }
+        if (!failures.isEmpty()) {
+            logger.error('Complete Class-File API differential failures ({}):',
+                    failures.size())
+            failures.each { String failure -> logger.error('  - {}', failure) }
+            throw new GradleException(String.format(
+                    'Complete Class-File API differential static analysis failed. Report: %s',
+                    reportFile))
+        }
+        logger.lifecycle(
+                'Complete JDK 25 Class-File API differential static analysis passed. Report: {}',
                 reportFile)
     }
 }

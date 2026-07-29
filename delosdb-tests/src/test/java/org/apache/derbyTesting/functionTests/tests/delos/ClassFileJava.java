@@ -14,6 +14,7 @@ import java.lang.classfile.ClassFile;
 import java.lang.classfile.CodeBuilder;
 import java.lang.classfile.Label;
 import java.lang.classfile.TypeKind;
+import java.lang.classfile.attribute.ExceptionsAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.reflect.Modifier;
@@ -35,17 +36,18 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Compiler Phase 3 package-internal, test-only JDK Class-File API backend.
+ * Compiler Phase 4 package-internal, test-only JDK Class-File API backend.
  *
  * <p>This is a bounded implementation of the inherited DelosDB generation
- * abstraction. It records only the operations needed by the Phase 3 vertical
- * slice because {@link CodeBuilder} is supplied inside the Class-File API's
+ * abstraction. It records the complete inherited MethodBuilder operation
+ * surface because {@link CodeBuilder} is supplied inside the Class-File API's
  * method-body callback. It is not a second compiler IR and is never registered
  * as a production JavaFactory.</p>
  */
 final class ClassFileJava implements JavaFactory {
-    static final String PHASE = "COMPILER_PHASE_3_CLASSFILE_VERTICAL_SLICE";
-    static final String AUTHORITY = "CLASSFILE_TEST_ONLY";
+    static final String PHASE = "COMPILER_PHASE_4_COMPLETE_DIFFERENTIAL_BACKEND";
+    static final String AUTHORITY = "CLASSFILE_DIFFERENTIAL_TEST_ONLY";
+    private static final int STATEMENT_SPLIT_LIMIT = 128;
 
     @Override
     public ClassBuilder newClassBuilder(
@@ -141,11 +143,20 @@ final class ClassFileJava implements JavaFactory {
                                 field.modifiers());
                     }
                     for (ClassFileMethodBuilder method : methods) {
-                        builder.withMethodBody(
+                        builder.withMethod(
                                 method.getName(),
                                 method.methodType(),
                                 method.modifiers(),
-                                method::emit);
+                                methodBuilder -> {
+                                    List<ClassDesc> exceptions =
+                                            method.thrownExceptionDescs();
+                                    if (!exceptions.isEmpty()) {
+                                        methodBuilder.with(
+                                                ExceptionsAttribute.ofSymbols(
+                                                        exceptions));
+                                    }
+                                    methodBuilder.withCode(method::emit);
+                                });
                     }
                 });
             }
@@ -272,8 +283,11 @@ final class ClassFileJava implements JavaFactory {
         private final String name;
         private final String[] parameterTypes;
         private final List<CodeOperation> operations = new ArrayList<>();
+        private final List<String> thrownExceptions = new ArrayList<>();
         private final List<String> stackTypes = new ArrayList<>();
+        private final Deque<String> pendingNewTypes = new ArrayDeque<>();
         private final Deque<ConditionalState> conditionals = new ArrayDeque<>();
+        private int statementNum;
         private boolean complete;
 
         private ClassFileMethodBuilder(
@@ -293,7 +307,13 @@ final class ClassFileJava implements JavaFactory {
 
         @Override
         public void addThrownException(String exceptionClass) {
-            throw phase4Unsupported("exception declarations");
+            checkBuilding();
+            if (!operations.isEmpty() || !stackTypes.isEmpty()) {
+                throw new IllegalStateException(
+                        "Thrown exceptions must be declared before bytecode "
+                        + "is emitted for " + name);
+            }
+            thrownExceptions.add(exceptionClass);
         }
 
         @Override
@@ -306,6 +326,11 @@ final class ClassFileJava implements JavaFactory {
             if (!conditionals.isEmpty()) {
                 throw new IllegalStateException(
                         "Incomplete conditional in generated method " + name);
+            }
+            if (!pendingNewTypes.isEmpty()) {
+                throw new IllegalStateException(
+                        "Incomplete object construction in generated method "
+                        + name);
             }
             complete = true;
         }
@@ -324,6 +349,15 @@ final class ClassFileJava implements JavaFactory {
                 parameters[i] = classDesc(parameterTypes[i]);
             }
             return MethodTypeDesc.of(classDesc(returnType), parameters);
+        }
+
+        private List<ClassDesc> thrownExceptionDescs() {
+            List<ClassDesc> exceptions = new ArrayList<>(
+                    thrownExceptions.size());
+            for (String exception : thrownExceptions) {
+                exceptions.add(classDesc(exception));
+            }
+            return List.copyOf(exceptions);
         }
 
         private void emit(CodeBuilder code) {
@@ -532,17 +566,45 @@ final class ClassFileJava implements JavaFactory {
 
         @Override
         public void pushNewStart(String className) {
-            throw phase4Unsupported("object construction");
+            checkBuilding();
+            operations.add((code, state) -> {
+                code.new_(classDesc(className));
+                code.dup();
+            });
+            pendingNewTypes.push(className);
         }
 
         @Override
         public void pushNewComplete(int numArgs) {
-            throw phase4Unsupported("object construction");
+            checkBuilding();
+            if (pendingNewTypes.isEmpty()) {
+                throw new IllegalStateException(
+                        "No generated object construction is pending in "
+                        + name);
+            }
+            String className = pendingNewTypes.pop();
+            String[] argumentTypes = popArgumentTypes(numArgs);
+            MethodTypeDesc constructorType = ClassFileJava.methodType(
+                    "void", argumentTypes);
+            operations.add((code, state) -> code.invokespecial(
+                    classDesc(className),
+                    "<init>",
+                    constructorType));
+            pushType(className);
         }
 
         @Override
         public void pushNewArray(String className, int size) {
-            throw phase4Unsupported("array construction");
+            checkBuilding();
+            operations.add((code, state) -> {
+                code.loadConstant(size);
+                if (isPrimitive(className)) {
+                    code.newarray(arrayTypeKind(className));
+                } else {
+                    code.anewarray(classDesc(className));
+                }
+            });
+            pushType(className + "[]");
         }
 
         @Override
@@ -806,27 +868,75 @@ final class ClassFileJava implements JavaFactory {
 
         @Override
         public void getArrayElement(int element) {
-            throw phase4Unsupported("array access");
+            checkBuilding();
+            String arrayType = popType();
+            String elementType = elementType(arrayType);
+            operations.add((code, state) -> {
+                code.loadConstant(element);
+                code.arrayLoad(arrayTypeKind(elementType));
+            });
+            pushType(elementType);
         }
 
         @Override
         public void setArrayElement(int element) {
-            throw phase4Unsupported("array access");
+            checkBuilding();
+            String valueType = popType();
+            String arrayType = popType();
+            String expectedType = elementType(arrayType);
+            requireCompatible(expectedType, valueType,
+                    "array element assignment");
+            operations.add((code, state) -> {
+                TypeKind kind = typeKind(valueType);
+                int temporary = code.allocateLocal(kind);
+                code.storeLocal(kind, temporary);
+                code.loadConstant(element);
+                code.loadLocal(kind, temporary);
+                code.arrayStore(arrayTypeKind(expectedType));
+            });
         }
 
         @Override
         public void swap() {
-            throw phase4Unsupported("stack choreography");
+            checkBuilding();
+            String valueB = popType();
+            String valueA = popType();
+            operations.add((code, state) -> {
+                TypeKind kindB = typeKind(valueB);
+                TypeKind kindA = typeKind(valueA);
+                int temporaryB = code.allocateLocal(kindB);
+                int temporaryA = code.allocateLocal(kindA);
+                code.storeLocal(kindB, temporaryB);
+                code.storeLocal(kindA, temporaryA);
+                code.loadLocal(kindB, temporaryB);
+                code.loadLocal(kindA, temporaryA);
+            });
+            pushType(valueB);
+            pushType(valueA);
         }
 
         @Override
         public void dup() {
-            throw phase4Unsupported("stack choreography");
+            checkBuilding();
+            String top = peekType();
+            operations.add((code, state) -> {
+                if (typeKind(top).slotSize() == 2) {
+                    code.dup2();
+                } else {
+                    code.dup();
+                }
+            });
+            pushType(top);
         }
 
         @Override
         public boolean statementNumHitLimit(int noStatementsAdded) {
-            throw phase4Unsupported("statement splitting");
+            checkBuilding();
+            if (statementNum >= STATEMENT_SPLIT_LIMIT) {
+                return true;
+            }
+            statementNum += noStatementsAdded;
+            return false;
         }
 
         private ConditionalState requireConditional() {
@@ -856,6 +966,15 @@ final class ClassFileJava implements JavaFactory {
                         + name);
             }
             return stackTypes.remove(stackTypes.size() - 1);
+        }
+
+        private String peekType() {
+            if (stackTypes.isEmpty()) {
+                throw new IllegalStateException(
+                        "Class-File API MethodBuilder stack underflow in "
+                        + name);
+            }
+            return stackTypes.get(stackTypes.size() - 1);
         }
 
         private void replaceTopType(String type) {
@@ -920,6 +1039,14 @@ final class ClassFileJava implements JavaFactory {
         return merged;
     }
 
+    private static String elementType(String arrayType) {
+        if (arrayType == null || !arrayType.endsWith("[]")) {
+            throw new IllegalStateException(
+                    "Expected generated array type, found " + arrayType);
+        }
+        return arrayType.substring(0, arrayType.length() - 2);
+    }
+
     private static void requireCompatible(
             String expected,
             String actual,
@@ -959,6 +1086,10 @@ final class ClassFileJava implements JavaFactory {
         return TypeKind.from(classDesc(type)).asLoadable();
     }
 
+    private static TypeKind arrayTypeKind(String componentType) {
+        return TypeKind.from(classDesc(componentType));
+    }
+
     private static MethodTypeDesc methodType(
             String returnType,
             String[] parameterTypes) {
@@ -994,10 +1125,4 @@ final class ClassFileJava implements JavaFactory {
         };
     }
 
-    private static UnsupportedOperationException phase4Unsupported(
-            String capability) {
-        return new UnsupportedOperationException(
-                "Compiler Phase 4 must add Class-File API support for "
-                + capability);
-    }
 }

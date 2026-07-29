@@ -626,4 +626,5 @@ tasks.named('s0CloseoutVerification') {
     dependsOn 'delosGeneratedClassModernizationStaticAnalysis'
     dependsOn 'delosGeneratedClassContractStaticAnalysis'
     dependsOn 'delosGeneratedClassClassFileVerticalSliceStaticAnalysis'
+    dependsOn 'delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis'
 }

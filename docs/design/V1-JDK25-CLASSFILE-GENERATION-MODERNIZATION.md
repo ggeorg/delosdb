@@ -95,8 +95,9 @@ performance acceptance are required.
 Compiler Phase 1 status: VERIFIED
 Compiler Phase 2.1 status: VERIFIED
 Compiler Phase 2.2 status: VERIFIED
-Compiler Phase 3 status: IMPLEMENTED / PENDING VERIFICATION
-Compiler Phase 4 status: NOT STARTED — NEXT
+Compiler Phase 3 status: VERIFIED
+Compiler Phase 4 status: IMPLEMENTED / PENDING VERIFICATION
+Compiler Phase 5 status: NOT STARTED — NEXT
 ```
 
 Phase 2.1 freezes the exact inherited boundary before any second backend exists:
@@ -206,12 +207,16 @@ Compiler Phase 2 is closed. The Phase 2.2 focused test, contract static gate,
 generated-class baseline, complete language suite, JDK 25 verifier, and
 modular-image verification are green.
 
-Compiler Phase 3 now provides a package-internal, test-only JDK 25 Class-File
-API backend and a differential fixture generated through the same inherited
-DelosDB abstraction as ASM. ASM remains the sole production authority during
-Phase 3. The Class-File API implementation is not registered in
-`modules.properties`, cannot be selected at normal runtime, and fails fast for
-constructs deferred to Phase 4.
+Compiler Phase 3 is verified. It introduced the package-internal, test-only
+JDK 25 Class-File API backend and proved the bounded vertical slice through the
+same inherited DelosDB abstraction as ASM. The focused differential task,
+complete language suite, JDK 25 verifier, modular-image DRDA lane, and normal
+closeout gates are green.
+
+Compiler Phase 4 extends that same backend to the complete inherited
+`MethodBuilder` operation surface. ASM remains the sole production authority
+through Phase 4. The Class-File API implementation is not registered in
+`modules.properties` and cannot be selected at normal runtime.
 
 ## Compiler Phase 3 — JDK vertical slice
 
@@ -248,16 +253,34 @@ cached method invocation, primitive conversion, reference casts and upcasts,
 loads, and executes ASM and Class-File API classes and compares method
 signatures, results, and representative exceptions.
 
-Arrays, object construction, stack choreography, exception declarations, and
-statement splitting remain explicit fail-fast Phase 4 boundaries. This keeps the
-vertical slice narrow and prevents unsupported operations from silently emitting
-different bytecode.
+The original Phase 3 fixture remains as a bounded regression proof. Phase 4
+removes its former unsupported-operation boundary by implementing arrays,
+object construction, stack choreography, checked-exception declarations, and
+statement splitting in the same package-internal test backend.
 
 ## Compiler Phase 4 — complete differential backend
 
 Extend the Class-File API backend to every operation that is actually used by
 DelosDB compiler nodes, including arrays, constructor calls, stack operations,
 casts, exception declarations, and statement splitting.
+
+The implemented Phase 4 increment reuses the frozen 43-signature ASM behavior
+oracle. Both backends generate the same 38-method fixture, execute all ten
+behavior groups, compare public method and checked-exception contracts, compare
+representative runtime failures, and record generation, allocation, class-size,
+class-loading, loaded-class, and reflective execution diagnostics.
+
+```text
+MethodBuilder signatures covered: 43
+Behavior fixture groups executed: 10
+Generated methods per backend: 38
+Unsupported MethodBuilder operations: 0
+Normal runtime backend selector: none
+```
+
+ASM remains the sole production authority through Phase 4. The complete JDK
+backend remains package-internal and test-only until the Phase 5 acceptance
+campaign explicitly switches authority.
 
 Compare:
 
