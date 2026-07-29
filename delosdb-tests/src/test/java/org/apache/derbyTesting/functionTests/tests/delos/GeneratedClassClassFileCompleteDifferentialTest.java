@@ -239,13 +239,16 @@ public final class GeneratedClassClassFileCompleteDifferentialTest
 
         Method intConstant = generatedClass.getMethod("intConstant");
         long executionStarted = System.nanoTime();
-        int checksum = 0;
+        long checksum = 0L;
         for (int iteration = 0; iteration < EXECUTION_ITERATIONS;
                 iteration++) {
             checksum += (Integer) intConstant.invoke(null);
         }
         long executionNanos = System.nanoTime() - executionStarted;
-        assertEquals(23 * EXECUTION_ITERATIONS, checksum);
+        assertEquals(
+                (long) GeneratedClassContractBehaviorTest.INT_CONSTANT
+                        * EXECUTION_ITERATIONS,
+                checksum);
 
         return new Measurement(
                 generationNanos,

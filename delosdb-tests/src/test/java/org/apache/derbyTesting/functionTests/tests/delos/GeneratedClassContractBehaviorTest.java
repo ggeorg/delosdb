@@ -52,6 +52,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
             "org.apache.derbyTesting.generated.";
     private static final String GENERATED_CLASS =
             "DelosAsmContractBehavior";
+    static final int INT_CONSTANT = 123_456;
 
     private static final Set<String> EXPECTED_FIXTURES = Set.of(
             "method-lifecycle",
@@ -244,7 +245,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
 
         MethodBuilder intConstant = noArgMethod(
                 classBuilder, "int", "intConstant");
-        intConstant.push(123_456);
+        intConstant.push(INT_CONSTANT);
         finish(intConstant);
 
         MethodBuilder longConstant = noArgMethod(
@@ -621,7 +622,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 invokeStatic(generatedClass, "booleanConstant"));
         assertEquals((short) 32_000,
                 ((Short) invokeStatic(generatedClass, "shortConstant")).shortValue());
-        assertEquals(123_456,
+        assertEquals(INT_CONSTANT,
                 ((Integer) invokeStatic(generatedClass, "intConstant")).intValue());
         assertEquals(9_876_543_210L,
                 ((Long) invokeStatic(generatedClass, "longConstant")).longValue());
