@@ -3033,7 +3033,6 @@ abstract class FileContainer
                     // most likely we could not get the latch NOWAIT, try again
                     // with a new page, and tell the system to switch to 
                     // multi-page mode.
-                    /* switchToMultiInsertPageMode(handle); */
 
                     localLastInsertedPage = getLastInsertedPage();
 
@@ -3430,26 +3429,6 @@ abstract class FileContainer
 	protected int getMinimumRecordSize() {
 		return minimumRecordSize;
 	}
-
-	private synchronized void switchToMultiInsertPageMode(
-    BaseContainerHandle handle)
-        throws StandardException
-    {
-        if (lastInsertedPage.length == 1)
-        {
-            long last = lastInsertedPage[0];
-
-            lastInsertedPage = new long[4];
-            lastInsertedPage[0] = last;
-
-            for (int i = 3; i > 0; i--)
-            {
-                Page page = addPage(handle, false);
-                lastInsertedPage[i] = page.getPageNumber();
-                page.unlatch();
-            }
-        }
-    }
 
 	/*
 	 * Setting and getting lastInserted Page and lastUnfilledPage in a thead

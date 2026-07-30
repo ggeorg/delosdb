@@ -2621,11 +2621,6 @@ public class EmbedConnection implements EngineConnection
 
 		info = filterProperties(info);
 
-		// check for create database privileges
-		// DERBY-3495: uncomment to enable system privileges checks
-		//final String user = IdUtil.getUserNameFromURLProps(info);
-		//checkDatabaseCreatePrivileges(user, dbname);
-
 		try {
 			if (createPersistentService(Property.DATABASE_MODULE, dbname, info) == null) 
 			{
@@ -2645,25 +2640,6 @@ public class EmbedConnection implements EngineConnection
 
 		return (Database) findService(Property.DATABASE_MODULE, dbname);
 	}
-
-    /**
-     * Checks that a user has the system privileges to create a database.
-     * <p>
-     * Derby 10.17 removed support for Java SecurityManager-based permission
-     * checks. DelosDB keeps this hook as a compatibility no-op so the create
-     * database path no longer calls the removed JVM security-manager
-     * inspection API deprecated for removal by JEP 411.
-     *
-     * @param user The user to be checked for database create privileges
-     * @param dbname the name of the database to create
-     * @throws SQLException retained for source compatibility with existing callers
-     */
-    private void checkDatabaseCreatePrivileges(String user,
-                                               String dbname)
-        throws SQLException {
-        // SecurityManager support has been removed. Authorization is handled by
-        // Derby/DelosDB authentication and SQL authorization, not JVM policy files.
-    }
 
     /**
      * Puts the current thread to sleep.

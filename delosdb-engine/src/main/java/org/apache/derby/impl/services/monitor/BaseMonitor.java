@@ -57,6 +57,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.context.Context;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
+import org.apache.derby.iapi.services.compiler.JavaFactory;
 import org.apache.derby.shared.common.i18n.BundleFinder;
 import org.apache.derby.shared.common.i18n.MessageService;
 import org.apache.derby.shared.common.info.JVMInfo;
@@ -1133,6 +1134,16 @@ nextModule:
 
 			try {
 				Class<?> possibleModule = Class.forName(className);
+
+                // The generated-class backend is an architectural constant,
+                // not an externally replaceable monitor module. Only the
+                // packaged modules.properties inventory may supply it.
+                if (!actualModuleList
+                        && JavaFactory.class.isAssignableFrom(possibleModule)) {
+                    report("Ignored external JavaFactory module " + className
+                            + "; DelosDB uses the packaged ClassFileJava backend");
+                    continue;
+                }
 
 				// Look for the monitors special modules, PersistentService ones.
 				if (getPersistentServiceImplementation(possibleModule))

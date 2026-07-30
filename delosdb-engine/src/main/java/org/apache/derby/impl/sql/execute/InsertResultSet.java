@@ -2369,55 +2369,6 @@ class InsertResultSet extends DMLWriteGeneratedColumnsResultSet implements Targe
         }
     }
 
-    /**
-     * Get me a table scan result set, preferably a bulk
-     * table scan, thank you.  If we already have one, reopen it.
-     */
-    private BulkTableScanResultSet getTableScanResultSet
-    (
-        long	conglomId
-	) throws StandardException {
-        if (tableScan == null)
-        {
-            tableScan = 
-                new BulkTableScanResultSet(
-                    new TableScanResultSetParameters(
-                        conglomId,
-                        tc.getStaticCompiledConglomInfo(conglomId),
-                        activation,
-                        fullTemplateId,
-                        0,                      // result set number
-                        (GeneratedMethod)null,  // start key getter
-                        0,                      // start search operator
-                        (GeneratedMethod)null,  // stop key getter
-                        0,                      // stop search operator
-                        false,
-                        (Qualifier[][])null,    // qualifiers
-                        "tableName",
-                        (String)null,
-                        (String)null,           // index name
-                        false,                  // is constraint
-                        false,                  // for update
-                        -1,                     // saved object for referenced bitImpl
-                        -1,
-                        TransactionController.MODE_TABLE,
-                        true,                   // table locked
-                        TransactionController.ISOLATION_READ_COMMITTED,
-                        LanguageProperties.BULK_FETCH_DEFAULT_INT,
-                        false,                  // not a 1 row per scan
-                        0d,                     // estimated rows
-                        0d),                    // estimated cost
-                    LanguageProperties.BULK_FETCH_DEFAULT_INT,
-                    false);                     // never disable bulk fetch
-            tableScan.openCore();
-        }
-        else
-        {	
-            tableScan.reopenCore();
-        }
-        return tableScan;
-    }
-
     private String[] getColumnNames(int[] baseColumnPositions)
 	{
             int length = baseColumnPositions.length;

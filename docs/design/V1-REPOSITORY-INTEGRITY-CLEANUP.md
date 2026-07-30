@@ -1,6 +1,6 @@
 # DelosDB repository integrity cleanup
 
-Status: STAGE 1 IMPLEMENTED / PENDING VERIFICATION
+Status: STAGE 2 IMPLEMENTED / PENDING VERIFICATION
 
 ## Purpose
 
@@ -10,11 +10,11 @@ duplication, complexity, exception-handling debt, and architecture drift
 without changing SQL, transaction, storage, generated-code, JDBC, or DRDA
 semantics.
 
-Repository Integrity Stage 1 is evidence-only. It parses the complete Java
-source tree with the public `com.sun.source` javac tree API and writes
-classification candidates. A candidate is not automatically dead or wrong:
-reflection hooks, serialization callbacks, generated parsers, JDBC overloads,
-protocol code, and compatibility surfaces require review before removal.
+The inventory parses the complete Java source tree with the public
+`com.sun.source` javac tree API. Findings are classification candidates: a
+private member or duplicate body is not removed until reflection, serialization,
+generated-code, protocol, SQL-routine, test-discovery, and compatibility use
+have been reviewed.
 
 ## Permanent tasks
 
@@ -23,7 +23,7 @@ delosRepositoryIntegrityInventory
 delosRepositoryIntegrityStaticAnalysis
 ```
 
-The inventory writes reports under:
+Evidence is written under:
 
 ```text
 build/reports/delosdb/repository-integrity/inventory/
@@ -35,8 +35,6 @@ Candidate debt may decrease without updating the baseline; increases fail.
 
 ## Stage 1 baseline
 
-The initial AST inventory reports:
-
 ```text
 Java files:                              3303
 Production Java files:                   2070
@@ -45,8 +43,8 @@ Declared methods:                       45713
 Declared fields:                        21329
 Java parse errors:                          0
 
-Dead private production methods:           16 candidates
-Dead private production fields:            71 candidates
+Dead private production methods:           16
+Dead private production fields:            71
 Exact production duplicate groups:         55
 Methods in duplicate groups:              137
 Estimated duplicate production lines:    1184
@@ -57,57 +55,90 @@ Production empty catches:                  250
 Production generic catches:                473
 Production @SuppressWarnings occurrences:   40
 Production quality markers:                816
+Compiler authority compromise candidates:    1
 ```
 
-These values are a monotonic baseline, not a target-state endorsement.
+## Stage 2 generated-class authority pin
 
-## Generated compiler no-compromise result
+The generic Derby monitor still supports inherited external module properties
+for modules that remain configurable. Generated-class authority is different:
+`ClassFileJava` is an architectural constant. `BaseMonitor` now rejects every
+externally supplied class implementing `JavaFactory` when processing boot, JVM,
+application, service, or database properties. Only the packaged
+`modules.properties` inventory may provide that interface.
 
-Stage 1 proves:
+The production SQL proof writes an application-level `derby.module.*` entry
+pointing at a deliberately rejecting `JavaFactory`. Boot must ignore it, select
+`ClassFileJava`, compile representative SQL, and retain SQLState behavior.
+
+Permanent invariants:
 
 ```text
-ClassFileJava is the sole modules.properties registration
-no external ASM import remains
-no external ASM dependency remains
-no ASM JPMS edge remains
+ClassFileJava is the sole packaged JavaFactory registration
+external JavaFactory module injection is rejected
+no external ASM source/build/module reference exists
 only ClassFileJava and DelosJdk25ClassFileVerifier import java.lang.classfile
 SQL compiler nodes do not import java.lang.classfile
+compiler authority violations: 0
+compiler authority compromise candidates: 0
 ```
 
-One high-priority classification item remains:
+## Stage 2 proven dead-code batch
+
+All 16 private production candidates from Stage 1 were removed after confirming:
 
 ```text
-COMPILER-AUTHORITY-001
+no source invocation
+no method reference
+no reflective string reference
+no serialization callback contract
+no generated parser or bytecode hook
+no SQL external-routine binding
+no compatibility or public API surface
 ```
 
-`BaseMonitor` still contains generic system/application `derby.module.*`
-override plumbing guarded by the inherited `true || SanityManager.DEBUG`
-condition. Stage 2 must prove that this path cannot replace `JavaFactory`, or
-pin generated-class authority outside generic override resolution. The Stage 1
-gate allows exactly one such candidate and rejects any increase.
-
-## Candidate reports
+Removed methods:
 
 ```text
-dead-private-method-candidates.tsv
-dead-private-field-candidates.tsv
-duplicate-production-method-groups.tsv
-production-method-outliers.tsv
-production-class-size-outliers.tsv
-catch-inventory.tsv
-quality-marker-inventory.tsv
-compiler-authority-integrity.txt
-repository-integrity-report.txt
+NetConnection.flowSimpleConnect
+DelosStorageTransactionRegistry.writeParticipationFor
+EmbedConnection.checkDatabaseCreatePrivileges
+DataDictionaryImpl.twoDigits
+BasicDependencyManager.dropDependency
+InsertResultSet.getTableScanResultSet
+SetOpResultSet.advanceRightPastDuplicates
+NetworkServerControl.hostnamesEqual
+NetworkServerControl.isIPV6Address
+DRDAConnThread.writeQRYPOPRM
+D_BTreeController.olddiag_tabulate
+B2I.traverseRight
+FileContainer.switchToMultiInsertPageMode
+StoredPage.logOverflowField
+sysinfo.Main.tryAsResource
+sysinfo.Main.lookForMainArg
 ```
 
-## Cleanup sequence
+Commented-out call sites belonging only to these methods were removed with the
+methods. No public or internal callable contract changed.
 
-### Stage 2 — high-confidence dead code
+## Stage 2 reduced baseline
 
-Classify private production candidates against reflection, serialization,
-generated-code, SQL routine, and compatibility use. Delete only proven dead
-members. Every implementation overlay must be net-negative in handwritten
-production Java.
+```text
+Dead private production methods:            0
+Dead private production fields:            71
+Exact production duplicate groups:         55
+Estimated duplicate production lines:    1184
+Production methods >= 100 lines:           447
+Production methods complexity >= 20:       169
+Production classes >= 1000 lines:          139
+Production empty catches:                  249
+Production generic catches:                469
+Production @SuppressWarnings occurrences:   40
+Production quality markers:                815
+Compiler authority compromise candidates:    0
+```
+
+## Remaining cleanup sequence
 
 ### Stage 3 — DelosDB-owned duplication
 
@@ -116,35 +147,32 @@ before modifying inherited JDBC, DRDA, parser, or compatibility boilerplate.
 
 ### Stage 4 — quality and structure
 
-Reduce empty/generic catches, oversized methods, deep nesting, suppressions,
-and stale markers where correctness and compatibility permit.
+Reduce dead private fields, empty/generic catches, oversized methods, deep
+nesting, suppressions, and stale markers where correctness permits.
 
 ### Stage 5 — compiler no-compromise closeout
 
-Resolve `COMPILER-AUTHORITY-001`, review all 43 `MethodBuilder` operations, and
-confirm primitive categories, category-two stack values, inferred field owners,
-arrays, branches, exception attributes, deterministic generation, and
-class-loading lifecycle.
+Review all 43 `MethodBuilder` operations and confirm primitive categories,
+category-two stack values, inferred field owners, arrays, branches, exception
+attributes, deterministic generation, and class-loading lifecycle. Authority
+injection is already closed by Stage 2.
 
 ### Stage 6 — final consolidation
 
-Replace the Stage 1 candidate baseline with reduced permanent budgets and keep
-new-debt prohibition in S0.
-
-Only after this campaign closes does DelosDB begin Phase 10.1 stable plan
+Replace campaign-specific evidence with reduced permanent budgets and retain
+new-debt prohibition in S0. Only then does DelosDB begin Phase 10.1 stable plan
 modelling.
 
 ## Non-goals
 
-Stage 1 does not:
+Stage 2 does not change:
 
 ```text
-delete source
-change public or internal APIs
-change SQL semantics or SQLStates
-change generated activation behavior
-change module ownership
-change storage or MVCC behavior
-add a third-party analysis dependency
-introduce a second compiler or planner abstraction
+SQL semantics or SQLStates
+generated activation interfaces or bytecode contracts
+class-loading lifecycle or statement caching
+JDBC or DRDA protocol behavior
+storage or MVCC behavior
+generic configurability of unrelated Derby modules
+module ownership or dependencies
 ```

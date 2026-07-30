@@ -587,48 +587,6 @@ public class NetworkServerControl{
     }
 
     // return true if the two hostnames are equivalent
-    private static  boolean hostnamesEqual( String left, String right )
-    {
-        try {
-            InetAddress leftAddress = InetAddress.getByName( left );
-            InetAddress rightAddress = InetAddress.getByName( right );
-
-            return leftAddress.equals( rightAddress );
-            
-        } catch (Exception e) { return false; }
-    }
     
     // return true if the host address is an IPV6 address
-    private static  boolean isIPV6Address( String hostname )
-    {
-        if ( hostname == null ) { return false; }
-
-        //
-        // First make sure that the address is composed entirely
-        // of hex digits and colons.
-        //
-        int         count = hostname.length();
-
-        for ( int i = 0; i < count; i++ )
-        {
-            char    currentChar = hostname.charAt( i );
-
-            if ( currentChar == ':' ) { continue; }
-            if ( Character.digit( currentChar, 16 ) >= 0 ) { continue; }
-
-            return false;
-        }
-
-        //
-        // OK, now see whether the address is parsed as an IPV6 address.
-        //
-        
-        try {
-            InetAddress address = InetAddress.getByName( hostname );
-
-            return (address instanceof Inet6Address);
-            
-        } catch (Exception e) { return false; }
-    }
-
 }

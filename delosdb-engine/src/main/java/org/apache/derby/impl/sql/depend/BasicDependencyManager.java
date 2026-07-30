@@ -226,30 +226,6 @@ public class BasicDependencyManager implements DependencyManager {
                          tcToUse);
     }
 
-	/**
-		drops a single dependency
-
-		@param d the dependent
-		@param p the provider
-
-		@exception StandardException thrown if something goes wrong
-	 */
-	private	void dropDependency(LanguageConnectionContext lcc, Dependent d, Provider p) throws StandardException
-	{
-		if (SanityManager.DEBUG) {
-			// right now, this routine isn't called for in-memory dependencies
-			if (! d.isPersistent() || ! p.isPersistent())
-			{
-				SanityManager.NOTREACHED();
-			}
-		}
-
-		DependencyDescriptor dependencyDescriptor = new DependencyDescriptor(d, p);
-
-		dd.dropStoredDependency( dependencyDescriptor, 
-								 lcc.getTransactionExecute() );
-	}
-
 
 	/**
 		mark all dependencies on the named provider as invalid.

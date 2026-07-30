@@ -225,18 +225,6 @@ class SetOpResultSet extends NoPutResultSetImpl
         return currentRow;
     } // end of getNextRowCore
 
-    private void advanceRightPastDuplicates( DataValueDescriptor[] leftColumns)
-        throws StandardException
-    {
-        while ((rightInputRow = rightSource.getNextRowCore()) != null)
-        {
-            rowsSeenRight++;
-
-            if (compare(leftColumns, rightInputRow.getRowArray()) == 0) 
-                continue;
-        }
-    } // end of advanceRightPastDuplicates
-        
     private int compare( DataValueDescriptor[] leftCols, DataValueDescriptor[] rightCols)
         throws StandardException
     {

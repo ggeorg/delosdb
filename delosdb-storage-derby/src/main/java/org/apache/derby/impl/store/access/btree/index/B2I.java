@@ -436,20 +436,6 @@ public class B2I extends BTree
         return(cc);
     }
     
-    /**************************************************************************
-	 *  Private methods of B2I, arranged alphabetically.
-     **************************************************************************
-     */
-
-
-    private void traverseRight()
-    {
-        // RESOLVE - Do I have to do this???????????????
-
-		if (SanityManager.DEBUG)
-			SanityManager.THROWASSERT("not implemented.");
-    }
-
 
 	/*
 	** Methods of B2I.

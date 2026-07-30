@@ -395,14 +395,17 @@ public final class DelosRepositoryIntegrityAudit {
         Path monitor = root.resolve(
                 "delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java");
         String monitorText = Files.readString(monitor, StandardCharsets.UTF_8);
-        if (monitorText.contains("getImplementations(systemProperties, false)")
-                && monitorText.contains(
-                        "getImplementations(applicationProperties, false)")
-                && monitorText.contains("true || SanityManager.DEBUG")) {
-            authorityCandidates.add(
-                    "COMPILER-AUTHORITY-001|HIGH|"
-                    + relative(monitor)
-                    + "|Generic system/application derby.module override plumbing remains active; verify that JavaFactory cannot be replaced or pin the generated-class module outside generic override resolution.");
+        List<String> authorityPinMarkers = List.of(
+                "!actualModuleList",
+                "JavaFactory.class.isAssignableFrom(possibleModule)",
+                "Ignored external JavaFactory module",
+                "packaged ClassFileJava backend");
+        for (String marker : authorityPinMarkers) {
+            if (!monitorText.contains(marker)) {
+                authorityViolations.add(
+                        "BaseMonitor is missing generated-class authority pin: "
+                                + marker);
+            }
         }
     }
 
@@ -678,6 +681,7 @@ public final class DelosRepositoryIntegrityAudit {
             writer.println("Direct java.lang.classfile production users: 2");
             writer.println("  - ClassFileJava");
             writer.println("  - DelosJdk25ClassFileVerifier");
+            writer.println("External JavaFactory override filtering: enforced");
             writer.println("Authority violations: "
                     + summary.compilerAuthorityViolations());
             authorityViolations.forEach(value -> writer.println("VIOLATION|" + value));
@@ -685,8 +689,8 @@ public final class DelosRepositoryIntegrityAudit {
                     + summary.compilerAuthorityCompromiseCandidates());
             authorityCandidates.forEach(writer::println);
             writer.println(summary.compilerAuthorityViolations() == 0
-                    ? "Status: PASS_WITH_CLASSIFICATION_CANDIDATES"
-                    : "Status: FAIL");
+                    && summary.compilerAuthorityCompromiseCandidates() == 0
+                    ? "Status: PASS" : "Status: FAIL");
         }
     }
 

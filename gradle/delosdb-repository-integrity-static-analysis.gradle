@@ -96,6 +96,9 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
         if (riInt(actual, 'compilerAuthorityViolations') != 0) {
             failures.add('Generated-class authority violations must remain zero')
         }
+        if (riInt(actual, 'compilerAuthorityCompromiseCandidates') != 0) {
+            failures.add('Generated-class authority compromise candidates must remain zero')
+        }
 
         List<String> monotonicMetrics = [
                 'deadPrivateProductionMethods',
@@ -145,16 +148,14 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
         [
                 'Fixed registration: ClassFileJava',
                 'External ASM source/build/module references: none',
-                'Authority violations: 0'
+                'External JavaFactory override filtering: enforced',
+                'Authority violations: 0',
+                'Compromise candidates: 0',
+                'Status: PASS'
         ].each { String marker ->
             if (!authorityText.contains(marker)) {
                 failures.add('Compiler-integrity report is missing: ' + marker)
             }
-        }
-        if (riInt(actual, 'compilerAuthorityCompromiseCandidates') > 0
-                && !authorityText.contains('COMPILER-AUTHORITY-001|HIGH|')) {
-            failures.add('Compiler-integrity report is missing the active ' +
-                    'COMPILER-AUTHORITY-001 classification')
         }
 
         File report = riStaticReport

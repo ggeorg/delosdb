@@ -862,10 +862,6 @@ public final class DelosStorageTransactionRegistry {
         }
     }
 
-    private static synchronized WriteParticipation writeParticipationFor(Object ownerTransaction) {
-        return WRITE_PARTICIPATION.get(ownerTransaction);
-    }
-
     private static synchronized void clearWriteParticipation(Object ownerTransaction) {
         WRITE_PARTICIPATION.remove(ownerTransaction);
         RAW_STORE_OWNED_MVCC.remove(ownerTransaction);

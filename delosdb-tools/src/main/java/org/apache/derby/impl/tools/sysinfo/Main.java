@@ -772,22 +772,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 
 	}
 
-	private static void tryAsResource(String cn, String library, StringBuffer successes, StringBuffer failures) {
-
-		try {
-			java.io.InputStream in = cn.getClass().getResourceAsStream(cn);
-			in.close();
-                        String loc = getFileWhichLoadedClass(cn.getClass());
-			successes.append(found(cn, library, loc));
-		}
-
-		catch (Throwable t) {
-			failures.append(notFound(cn, library));
-
-		}
-
-	}
-
 	private static String found(String cn, String library, String loc) {
 		StringBuffer temp = new StringBuffer(crLf());
 		temp.append("   " + library);
@@ -810,31 +794,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 
 	private static String crLf() {
 		return System.getProperty("line.separator");
-	}
-
-	private static String lookForMainArg(String[] args, java.io.PrintWriter localPW)
-	{
-		int length=args.length;
-		String[] legalargs = new String[1];
-		legalargs[0] = EMBEDDED;
-
-		int argsfound = 0;
-		String whichargument="";
-
-		for (int i = 0; i < length; i++) {
-
-			for (int j=0; j < legalargs.length; j++) {
-				if (args[i].toUpperCase(java.util.Locale.ENGLISH).equals(legalargs[j].toUpperCase(java.util.Locale.ENGLISH))) {
-					argsfound++;
-					whichargument=legalargs[j];
-				}
-			}
-		}
-		if (argsfound > 1 || argsfound < 1) {
-            localPW.println(Main.getTextMessage("SIF08.A", USAGESTRINGPARTA, USAGESTRINGPARTB));
-			return "";
-		}
-		return whichargument;
 	}
 
 	private static boolean argumentsContain(String[] args, String s) {

@@ -20,6 +20,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Locale;
 
+import org.apache.derby.iapi.services.compiler.ClassBuilder;
+import org.apache.derby.iapi.services.compiler.JavaFactory;
+import org.apache.derby.iapi.services.loader.ClassFactory;
+
 import junit.framework.TestCase;
 
 import org.apache.derby.iapi.services.monitor.Monitor;
@@ -37,10 +41,29 @@ public final class GeneratedClassProductionTest
             "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String DATABASE =
             "jdbc:derby:memory:delosClassFileProduction";
+    private static final String APPLICATION_OVERRIDE =
+            "derby.module.untrustedGeneratedClassBackend";
+
+    /** A deliberately invalid backend used to prove monitor override rejection. */
+    public static final class RejectingJavaFactory implements JavaFactory {
+        @Override
+        public ClassBuilder newClassBuilder(
+                ClassFactory classFactory,
+                String packageName,
+                int modifiers,
+                String className,
+                String superClass) {
+            throw new AssertionError(
+                    "external JavaFactory override must never be selected");
+        }
+    }
 
     public void testProductionBackendCompilesSql() throws Exception {
-        assertNull("production proof must not use a backend override",
+        assertNull("production proof must not use a system backend override",
                 System.getProperty(BACKEND_PROPERTY));
+        Files.writeString(Path.of("derby.properties"),
+                APPLICATION_OVERRIDE + "="
+                        + RejectingJavaFactory.class.getName() + System.lineSeparator());
 
         int preparedStatements = 0;
         long started = System.nanoTime();
@@ -109,7 +132,7 @@ public final class GeneratedClassProductionTest
                 + "Architecture: JDK25_CLASSFILE%n"
                 + "Selected backend: %s%n"
                 + "Selection source: MODULES_PROPERTIES_SOLE_BACKEND%n"
-                + "Backend override: none%n"
+                + "External override attempt: REJECTED%n"
                 + "Prepared statement families: %d%n"
                 + "Elapsed nanos: %d%n"
                 + "SQLState preservation: 22012%n"

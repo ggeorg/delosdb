@@ -6611,43 +6611,6 @@ public class StoredPage extends CachedPage
         return (-1);
     }
 
-    private int logOverflowField(
-    DynamicByteArrayOutputStream  out, 
-    int                     spaceAvailable,
-    long                    overflowPage, 
-    int                     overflowId)
-        throws StandardException, IOException
-    {
-        int fieldStatus = 
-            StoredFieldHeader.setOverflow(
-                StoredFieldHeader.setInitial(), true);
-
-        int fieldSizeOnPage = 
-            CompressedNumber.sizeLong(overflowPage) + 
-            CompressedNumber.sizeInt(overflowId);
-
-        int fieldDataLength = fieldSizeOnPage;
-
-        fieldSizeOnPage += 
-            StoredFieldHeader.size(fieldStatus, fieldDataLength, slotFieldSize);
-
-        // need to check that we have room on the page for this.
-        spaceAvailable -= fieldSizeOnPage;
-
-        // what if there is not enough room for the overflow pointer?
-        if (spaceAvailable < 0)
-            throw new NoSpaceOnPage(isOverflowPage());
-
-        // write the field to the page:
-        StoredFieldHeader.write(
-            logicalDataOut, fieldStatus, fieldDataLength, slotFieldSize);
-        CompressedNumber.writeLong(out, overflowPage);
-        CompressedNumber.writeInt(out, overflowId);
-
-        // return the available bytes
-        return(spaceAvailable);
-    }
-
     /**
      * Log a record to the ObjectOutput stream.
      * <p>

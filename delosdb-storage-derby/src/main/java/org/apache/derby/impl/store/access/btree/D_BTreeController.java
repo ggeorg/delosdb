@@ -299,54 +299,6 @@ public class D_BTreeController extends DiagnosticableGeneric
         return(ret_string);
     }
 
-    private static String olddiag_tabulate(
-    Properties  prop,
-    LevelInfo   level_info[])
-    {
-        String ret_string   = "";
-        long   total_pages  = 0;
-        long   total_res    = 0;
-
-        for (int level = 0; level < level_info.length; level++) 
-        {
-            total_pages += level_info[level].num_pages;
-        }
-
-
-        // Totals:
-        ret_string += 
-            "Btree conglom has:\n" + 
-            "\t" + prop.getProperty(Page.DIAG_PAGE_SIZE) + " bytes per page\n" +
-            "\t" + total_pages               + " total pages ("                +
-                (Integer.parseInt(prop.getProperty(Page.DIAG_PAGE_SIZE)) * 
-                     total_pages) + " bytes)\n"                                +
-            "\t" + level_info.length         + " total levels\n"               +
-            "\t" + level_info[0].num_entries + " total user records\n";
-
-        // Totals by level:
-        for (int level = 0; level < level_info.length; level++) 
-        {
-            LevelInfo   li = level_info[level];
-
-            ret_string += "level[" + level + "] stats:\n";
-
-            ret_string += 
-                "\t# of pages           = " + li.num_pages      + ".\n" +
-                "\t# of entries         = " + li.num_entries    + ".  " +
-                "(" + (li.num_entries / li.num_pages) + " entries/page).\n" +
-                "\t# of deleted entries = " + li.num_deleted    + ".  " +
-                "(" + (li.num_deleted / li.num_pages) + " deleted/page).\n" +
-                "\t# of free bytes      = " + li.num_res_bytes + ".  " +
-                "(" + (li.num_res_bytes / li.num_pages) + " reserved bytes/page).\n" +
-                "\t# of free bytes      = " + li.num_free_bytes + ".  " +
-                "(" + (li.num_free_bytes / li.num_pages) + " free bytes/page).\n" +
-                "\t# of slot table bytes= " + li.num_slottab_bytes + ".  " +
-                "(" + (li.num_slottab_bytes / li.num_pages) + " slot table bytes/page).\n";
-        }
-
-        return(ret_string);
-    }
-
 	/*
 	** Methods of Diagnosticable
 	*/

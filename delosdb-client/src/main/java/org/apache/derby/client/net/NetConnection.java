@@ -420,55 +420,6 @@ public class NetConnection extends ClientConnection {
         }
     }
     
-    private void flowSimpleConnect() throws SqlException {
-        netAgent_ = (NetAgent) super.agent_;
-        constructExtnam();
-        // these calls need to be after newing up the agent
-        // because they require the ccsid manager
-        constructPrddta();  // construct product data
-
-        netAgent_.typdef_ = new Typdef(netAgent_, 1208, NetConfiguration.SYSTEM_ASC, 1200, 1208);
-        netAgent_.targetTypdef_ = new Typdef(netAgent_);
-        netAgent_.originalTargetTypdef_ = netAgent_.targetTypdef_;
-
-        try {
-            flowServerAttributes();
-        } catch (Throwable e) {
-            // If *anything* goes wrong, make sure the connection is
-            // destroyed.
-            // Always mark the connection closed in case of an error.
-            // This prevents attempts to use this closed connection
-            // to retrieve error message text if an error SQLCA
-            // is returned in one of the connect flows.
-            open_ = false;
-
-            handleLoginTimeout( e );
-            
-            // logWriter may be closed in agent_.close(),
-            // so SqlException needs to be created before that
-            // but to be thrown after.
-            SqlException exceptionToBeThrown;
-            if (e instanceof SqlException) // rethrow original exception if it's an SqlException
-            {
-                exceptionToBeThrown = (SqlException) e;
-            } else // any other exceptions will be wrapped by an SqlException first
-            {
-                exceptionToBeThrown = new SqlException(agent_.logWriter_,
-                    new ClientMessageId(SQLState.JAVA_EXCEPTION),
-                    e, e.getClass().getName(), e.getMessage());
-            }
-
-            try {
-                if (agent_ != null) {
-                    agent_.close();
-                }
-            } catch (SqlException ignoreMe) {
-            }
-
-            throw exceptionToBeThrown;
-        }
-    }
-
     /** Handle socket timeouts during connection attempts */
     private void    handleLoginTimeout( Throwable original )
         throws SqlException

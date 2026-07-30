@@ -2229,7 +2229,6 @@ class DRDAConnThread extends Thread {
         // this check can't be done since the second executeQuery should work
         //if (stmt.state != DRDAStatement.NOT_OPENED)
         //{
-        //  writeQRYPOPRM();
         //  pkgnamcsn = null;
         //}
         //else
@@ -2389,24 +2388,6 @@ class DRDAConnThread extends Thread {
         return 0;
     }
 
-    /**
-     * Write a QRYPOPRM - Query Previously opened
-     * Instance Variables
-     *  SVRCOD - Severity Code - required - 8 ERROR
-     *  RDBNAM - Relational Database Name - required
-     *  PKGNAMCSN - RDB Package Name, Consistency Token, and Section Number - required
-     * 
-     * @exception DRDAProtocolException
-     */
-    private void writeQRYPOPRM() throws DRDAProtocolException
-    {
-        writer.createDssReply();
-        writer.startDdm(CodePoint.QRYPOPRM);
-        writer.writeScalar2Bytes(CodePoint.SVRCOD, CodePoint.SVRCOD_ERROR);
-        writeRDBNAM(database.getDatabaseName());
-        writePKGNAMCSN();
-        writer.endDdmAndDss();
-    }
     /**
      * Write a QRYNOPRM - Query Not Opened
      * Instance Variables

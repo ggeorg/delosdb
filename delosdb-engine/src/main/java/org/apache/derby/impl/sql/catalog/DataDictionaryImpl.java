@@ -10097,19 +10097,6 @@ public final class	DataDictionaryImpl
         return "SQL" + expandedSeed + "-" + uuidFactory.createUUID().toString();
 	}
 
-	private static String twoDigits(int val) {
-		String retval;
-
-		if (val < 10) {
-			retval = "0" + val;
-		} else {
-			int retvalLength = Integer.toString(val).length();
-			retval = Integer.toString(val).substring(retvalLength-2);
-		}
-
-		return retval;
-	}
-
 	/**
 	 * sets a new value in SYSCOLUMNS for a particular
 	 * autoincrement column.
