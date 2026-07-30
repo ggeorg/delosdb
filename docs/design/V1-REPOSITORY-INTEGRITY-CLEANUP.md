@@ -44,7 +44,7 @@ Declared fields:                        21329
 Java parse errors:                          0
 
 Dead private production methods:           16
-Dead private production fields:            71
+Dead private production fields:            52
 Exact production duplicate groups:         55
 Methods in duplicate groups:              137
 Estimated duplicate production lines:    1184
@@ -125,7 +125,7 @@ methods. No public or internal callable contract changed.
 
 ```text
 Dead private production methods:            0
-Dead private production fields:            71
+Dead private production fields:            52
 Exact production duplicate groups:         55
 Estimated duplicate production lines:    1184
 Production methods >= 100 lines:           447
@@ -161,7 +161,7 @@ and prohibit reintroducing a local `requireNonBlank` or `requireText` copy.
 
 ```text
 Dead private production methods:            0
-Dead private production fields:            71
+Dead private production fields:            52
 Exact production duplicate groups:         54
 Methods in duplicate groups:              127
 Estimated duplicate production lines:    1121
@@ -174,6 +174,23 @@ Production @SuppressWarnings occurrences:   40
 Production quality markers:                815
 Compiler authority compromise candidates:    0
 ```
+
+## Record-component classification correction
+
+The initial field inventory treated javac record-component backing fields as
+ordinary private fields. That classification was incorrect: a record component
+owns a public accessor and canonical-constructor position, so its compiler-owned
+private backing field is part of the record contract and cannot be classified as
+removable private implementation state.
+
+The scanner now excludes non-static variables declared directly by a record.
+Java records cannot declare additional instance fields, so explicitly declared
+private static fields remain audited normally. This correction reduces the
+production private-field candidate count from 71 to 52 without deleting or
+changing any runtime field, record component, constructor, or accessor.
+
+The monotonic baseline advances to version 4 with the corrected value. Any
+future increase above 52 fails S0.
 
 ## Remaining cleanup sequence
 

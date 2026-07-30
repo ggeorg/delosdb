@@ -27,6 +27,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
@@ -290,15 +291,26 @@ public final class DelosRepositoryIntegrityAudit {
             public Void visitVariable(VariableTree node, Integer nesting) {
                 TreePath path = getCurrentPath();
                 if (path.getParentPath() != null
-                        && path.getParentPath().getLeaf() instanceof ClassTree) {
+                        && path.getParentPath().getLeaf()
+                                instanceof ClassTree ownerTree) {
                     Set<Modifier> modifiers = node.getModifiers().getFlags();
-                    fields.add(new FieldRecord(
-                            source,
-                            owners.isEmpty() ? "<top>" : owners.peek(),
-                            node.getName().toString(),
-                            line(unit, positions.getStartPosition(unit, node)),
-                            modifiers.contains(Modifier.PRIVATE),
-                            !node.getModifiers().getAnnotations().isEmpty()));
+                    // A record component has a compiler-owned private
+                    // backing field plus a public accessor. It is part of the
+                    // record contract, not an ordinary removable private
+                    // field. Records cannot declare other instance fields.
+                    boolean recordComponent = ownerTree.getKind()
+                            == Tree.Kind.RECORD
+                            && !modifiers.contains(Modifier.STATIC);
+                    if (!recordComponent) {
+                        fields.add(new FieldRecord(
+                                source,
+                                owners.isEmpty() ? "<top>" : owners.peek(),
+                                node.getName().toString(),
+                                line(unit,
+                                        positions.getStartPosition(unit, node)),
+                                modifiers.contains(Modifier.PRIVATE),
+                                !node.getModifiers().getAnnotations().isEmpty()));
+                    }
                 }
                 return super.visitVariable(node, nesting);
             }
