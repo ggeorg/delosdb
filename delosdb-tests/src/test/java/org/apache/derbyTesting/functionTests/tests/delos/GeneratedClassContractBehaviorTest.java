@@ -239,8 +239,9 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         finish(booleanConstant);
 
         MethodBuilder shortConstant = noArgMethod(
-                classBuilder, "short", "shortConstant");
+                classBuilder, "int", "shortConstant");
         shortConstant.push((short) 32_000);
+        shortConstant.upCast("int");
         finish(shortConstant);
 
         MethodBuilder intConstant = noArgMethod(
@@ -620,8 +621,9 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 ((Byte) invokeStatic(generatedClass, "byteConstant")).byteValue());
         assertEquals(Boolean.TRUE,
                 invokeStatic(generatedClass, "booleanConstant"));
-        assertEquals((short) 32_000,
-                ((Short) invokeStatic(generatedClass, "shortConstant")).shortValue());
+        assertEquals(32_000,
+                ((Integer) invokeStatic(
+                        generatedClass, "shortConstant")).intValue());
         assertEquals(INT_CONSTANT,
                 ((Integer) invokeStatic(generatedClass, "intConstant")).intValue());
         assertEquals(9_876_543_210L,

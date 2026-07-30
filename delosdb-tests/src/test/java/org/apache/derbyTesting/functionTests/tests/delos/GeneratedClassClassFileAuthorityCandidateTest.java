@@ -80,6 +80,12 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
                         + GeneratedClassClassFileAuthorityCandidateTest.class
                                 .getName()
                         + ".doubleValue'");
+                statement.executeUpdate(
+                        "create function APP.DELOS_SMALLINT_RN(v varchar(10)) "
+                        + "returns smallint external name "
+                        + "'java.lang.Short.parseShort' "
+                        + "language java parameter style java "
+                        + "returns null on null input");
             }
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -148,6 +154,24 @@ public final class GeneratedClassClassFileAuthorityCandidateTest
                     assertTrue(average.compareTo(new BigDecimal("7.5")) > 0);
                     assertTrue(average.compareTo(new BigDecimal("8.0")) < 0);
                     assertEquals(3, row.getInt(3));
+                    assertFalse(row.next());
+                }
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "values APP.DELOS_SMALLINT_RN(?)")) {
+                preparedStatements++;
+                statement.setString(1, "123");
+                try (ResultSet row = statement.executeQuery()) {
+                    assertTrue(row.next());
+                    assertEquals(123, row.getInt(1));
+                    assertFalse(row.wasNull());
+                    assertFalse(row.next());
+                }
+                statement.setString(1, null);
+                try (ResultSet row = statement.executeQuery()) {
+                    assertTrue(row.next());
+                    assertNull(row.getObject(1));
                     assertFalse(row.next());
                 }
             }
