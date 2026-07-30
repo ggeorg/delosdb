@@ -112,7 +112,7 @@ ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
 ext.junitPlatformConsoleVersion = '1.11.4'
-// Compiler Phase 6: no external bytecode dependency configuration remains.
+// Generated classes use only the JDK Class-File API; no external bytecode dependency remains.
 configurations {
     delosdbJunit5Console {
         canBeConsumed = false
@@ -569,7 +569,7 @@ tasks.named('build') {
 
 // JDK 25 bytecode verification lane. This uses the standard Class-File API
 // to verify compiled Derby/DelosDB runtime outputs after ClassFileJava becomes
-// the sole generated-class implementation in Compiler Phase 6.
+// the sole generated-class implementation.
 def delosJdk25ClassFileBytecodeVerifierReport = layout.buildDirectory.file('reports/delosdb/jdk25-classfile-bytecode-verifier.txt')
 
 tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaExec) {
@@ -606,36 +606,33 @@ tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaE
 // DelosDB storage/static-analysis closeout gates.
 apply from: 'gradle/delosdb-storage-static-analysis.gradle'
 
-// Generated-class compiler modernisation has independent ownership from
-// storage analysis and therefore uses a dedicated inventory and gate script.
-apply from: 'gradle/delosdb-compiler-modernization-static-analysis.gradle'
-apply from: 'gradle/delosdb-generated-class-contract-static-analysis.gradle'
+// Generated-class architecture, contract, and dependency policy are owned by
+// one permanent inventory and static-analysis gate.
+apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'
 
 tasks.named('s0CloseoutVerification') {
     dependsOn 'verifyDelosRuntimeStorageProviders'
-    dependsOn 'delosGeneratedClassModernizationStaticAnalysis'
-    dependsOn 'delosGeneratedClassContractStaticAnalysis'
-    dependsOn 'delosGeneratedClassClassFileAsmRemovalStaticAnalysis'
+    dependsOn 'delosGeneratedClassStaticAnalysis'
 }
 
-// Compiler Phase 6 external SQLancer lane. This executes through the sole
-// Class-File API production authority and rejects hidden backend overrides.
-tasks.register('delosGeneratedClassClassFileProductionSqlancerValidation') {
+// External SQLancer remains caller-supplied. The wrapper rejects hidden
+// compiler overrides so it exercises the same fixed registration as DelosDB.
+tasks.register('delosGeneratedClassProductionSqlancerValidation') {
     group = 'verification'
-    description = 'Runs a caller-supplied SQLancer command through the sole Class-File API production authority without a backend override.'
+    description = 'Runs a caller-supplied SQLancer command through the sole generated-class production backend.'
     doLast {
-        String propertyName = 'delosdb.compiler.classfile.production.sqlancer.command'
+        String propertyName = 'delosdb.compiler.generatedClass.production.sqlancer.command'
         String commandText = providers.gradleProperty(propertyName).orNull
         if (commandText == null || commandText.trim().isEmpty()) {
             throw new GradleException(
-                    'delosGeneratedClassClassFileProductionSqlancerValidation requires -P'
+                    'delosGeneratedClassProductionSqlancerValidation requires -P'
                     + propertyName + '="<command>"')
         }
         String inheritedOptions = providers.environmentVariable(
                 'JAVA_TOOL_OPTIONS').orNull ?: ''
         if (inheritedOptions.contains('derby.module.javaCompiler')) {
             throw new GradleException(
-                    'Compiler Phase 6 SQLancer validation must use the sole modules.properties authority; remove derby.module.javaCompiler from JAVA_TOOL_OPTIONS')
+                    'Generated-class SQLancer validation must use modules.properties; remove derby.module.javaCompiler from JAVA_TOOL_OPTIONS')
         }
         def execution = providers.exec {
             String osName = System.getProperty(

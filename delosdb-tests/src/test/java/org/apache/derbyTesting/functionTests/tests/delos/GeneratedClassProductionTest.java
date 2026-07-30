@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassClassFileProductionTest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassProductionTest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -26,10 +26,10 @@ import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.reference.Module;
 
 /**
- * Compiler Phase 6 proof that normal Derby module registration selects the
- * sole JDK 25 Class-File API backend without any JVM backend override.
+ * Proves that normal Derby module registration selects the sole generated-class
+ * backend and that representative SQL compilation preserves its contracts.
  */
-public final class GeneratedClassClassFileProductionTest
+public final class GeneratedClassProductionTest
         extends TestCase {
     private static final String BACKEND_PROPERTY =
             "derby.module.javaCompiler";
@@ -38,7 +38,7 @@ public final class GeneratedClassClassFileProductionTest
     private static final String DATABASE =
             "jdbc:derby:memory:delosClassFileProduction";
 
-    public void testSoleProductionBackendCompilesSql() throws Exception {
+    public void testProductionBackendCompilesSql() throws Exception {
         assertNull("production proof must not use a backend override",
                 System.getProperty(BACKEND_PROPERTY));
 
@@ -106,21 +106,21 @@ public final class GeneratedClassClassFileProductionTest
         String report = String.format(Locale.ROOT,
                 "DelosDB sole Class-File API production proof%n"
                 + "================================================%n"
-                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
+                + "Architecture: JDK25_CLASSFILE%n"
                 + "Selected backend: %s%n"
                 + "Selection source: MODULES_PROPERTIES_SOLE_BACKEND%n"
                 + "Backend override: none%n"
                 + "Prepared statement families: %d%n"
                 + "Elapsed nanos: %d%n"
                 + "SQLState preservation: 22012%n"
-                + "External ASM status: REMOVED%n",
+                + "External bytecode dependency: none%n",
                 CLASSFILE_BACKEND,
                 preparedStatements,
                 System.nanoTime() - started);
         System.out.print(report);
 
         String reportPath = System.getProperty(
-                "delosdb.compiler.classFileProduction.report");
+                "delosdb.compiler.generatedClassProduction.report");
         if (reportPath != null && !reportPath.isBlank()) {
             Path target = Path.of(reportPath);
             Files.createDirectories(target.getParent());

@@ -82,7 +82,7 @@ Current owner: Derby compatibility with the DelosDB JDK 25 Class-File API backen
 
 Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
 
-Current anchor: `ClassFileJava` is the sole production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. The retired external ASM implementation, dependency, JPMS edge, runtime artifact, and oracle tasks are removed in Compiler Phase 6. Compiler nodes depend only on the DelosDB generation contract.
+Current anchor: `ClassFileJava` is the sole production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. The external ASM implementation, dependency, JPMS edge, runtime artifact, and migration-only oracle tasks are absent. Compiler nodes depend only on the DelosDB generation contract.
 
 Risks:
 
@@ -746,7 +746,7 @@ backend, replace byte-array page authority, or create a timing threshold. A futu
 subsystem requires a separate ownership and recovery decision.
 
 
-## Compiler Phase 6 Class-File API backend closeout
+## Generated-class architecture closeout
 
 The generated-class migration is production-closed after final verification.
 
@@ -761,8 +761,6 @@ class-file verifier: JDK 25 java.lang.classfile
 Permanent verification:
 
 ```text
-./gradlew delosGeneratedClassModernizationStaticAnalysis
-./gradlew delosGeneratedClassContractStaticAnalysis
-./gradlew delosGeneratedClassClassFileAsmRemovalStaticAnalysis
-./gradlew :delosdb-tests:runDelosGeneratedClassClassFileProductionAcceptance
+./gradlew delosGeneratedClassStaticAnalysis
+./gradlew :delosdb-tests:runDelosGeneratedClassProductionAcceptance
 ```

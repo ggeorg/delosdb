@@ -79,10 +79,10 @@ No S0 wiring yet.
 The verifier remains an explicit lane because it audits all compiled runtime
 classes and can be more expensive than the structural S0 closeout gates.
 
-## Relationship to Compiler Phase 6
+## Relationship to generated-class architecture
 
-Compiler Phase 6 removes the retired external implementation, dependency,
-module requirement, runtime artifact composition, and differential-oracle
+The generated-class architecture contains no external implementation, dependency,
+module requirement, runtime artifact composition, or differential-oracle
 infrastructure. The verifier remains because it supplies independent JDK-owned
 class-file parsing and version validation for the sole production backend and
 all runtime modules.

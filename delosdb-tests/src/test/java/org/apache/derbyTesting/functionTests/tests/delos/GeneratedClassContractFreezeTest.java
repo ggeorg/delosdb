@@ -99,7 +99,7 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
 
     private static final Set<String> LOCAL_FIELD = Set.of();
 
-    public void testGenerationContractIsFrozenForBackendMigration()
+    public void testGenerationContractIsStable()
             throws Exception {
         assertEquals(JAVA_FACTORY, signatures(JavaFactory.class));
         assertEquals(CLASS_BUILDER, signatures(ClassBuilder.class));
@@ -123,9 +123,9 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
         assertTrue(Modifier.isFinal(backend.getModifiers()));
 
         String report = String.format(Locale.ROOT,
-                "DelosDB generated-class contract freeze%n"
+                "DelosDB generated-class contract%n"
                 + "=======================================%n"
-                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
+                + "Architecture: JDK25_CLASSFILE%n"
                 + "Boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "JavaFactory methods: %d%n"
                 + "ClassBuilder methods: %d%n"
@@ -135,7 +135,7 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
                 + "Total declared methods: %d%n"
                 + "Methods declaring checked exceptions: %d%n"
                 + "Contract SHA-256: %s%n"
-                + "Production authority: CLASSFILE_API_SOLE_BACKEND%n"
+                + "Production authority: SOLE_BACKEND%n"
                 + "Normal runtime backend selector: none%n",
                 JAVA_FACTORY.size(),
                 CLASS_BUILDER.size(),

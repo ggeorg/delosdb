@@ -41,7 +41,7 @@ ext.delosdbRuntimeJarFiles = {
 
 
 ext.delosdbRuntimeJars = {
-    // Compiler Phase 6 uses only JDK-owned runtime modules. The Class-File API
+    // Generated classes use only JDK-owned runtime modules. The Class-File API
     // backend is contained in derby.jar and requires no external bytecode jar.
     project.files(project.ext.delosdbRuntimeJarFiles.call())
 }

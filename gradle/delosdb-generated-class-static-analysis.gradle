@@ -1,0 +1,534 @@
+// DelosDB generated-class architecture, contract, and dependency gate.
+//
+// One permanent gate owns the stable JavaFactory/ClassBuilder/MethodBuilder/
+// LocalField contract, the sole ClassFileJava backend, and zero-external-ASM
+// policy. Migration-only tasks and manifests are intentionally retired.
+
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.HexFormat
+import java.util.regex.Pattern
+
+final File gcRoot = rootProject.projectDir
+final File gcBuild = rootProject.layout.buildDirectory.get().asFile
+final String gcExpectedDigest =
+        '13871aded0743d1c5da22687d8e05a525bb115649397708d487c44261fc57cc6'
+
+final Map<String, String> gcTypeNames = [
+        'String': 'java.lang.String',
+        'Object': 'java.lang.Object',
+        'ClassFactory': 'org.apache.derby.iapi.services.loader.ClassFactory',
+        'ClassBuilder': 'org.apache.derby.iapi.services.compiler.ClassBuilder',
+        'MethodBuilder': 'org.apache.derby.iapi.services.compiler.MethodBuilder',
+        'LocalField': 'org.apache.derby.iapi.services.compiler.LocalField',
+        'GeneratedClass': 'org.apache.derby.iapi.services.loader.GeneratedClass',
+        'ByteArray': 'org.apache.derby.iapi.util.ByteArray',
+        'StandardException': 'org.apache.derby.shared.common.error.StandardException'
+]
+
+final Map<String, File> gcInterfaces = [
+        'JavaFactory': new File(gcRoot,
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/JavaFactory.java'),
+        'ClassBuilder': new File(gcRoot,
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/ClassBuilder.java'),
+        'MethodBuilder': new File(gcRoot,
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/MethodBuilder.java'),
+        'LocalField': new File(gcRoot,
+                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/LocalField.java')
+]
+
+final Closure<String> gcRelative = { File file ->
+    gcRoot.toPath().relativize(file.toPath()).toString().replace('\\', '/')
+}
+
+final Closure<String> gcCanonicalType = { String raw ->
+    String type = raw.trim().replaceAll('\\s+', ' ')
+    int dimensions = 0
+    while (type.endsWith('[]')) {
+        dimensions++
+        type = type.substring(0, type.length() - 2)
+    }
+    gcTypeNames.getOrDefault(type, type) + ('[]' * dimensions)
+}
+
+final Closure<List<Map<String, Object>>> gcParseMethods = { File file ->
+    String source = file.getText('UTF-8')
+            .replaceAll('(?s)/\\*.*?\\*/', '')
+            .replaceAll('(?m)//.*$', '')
+    Pattern declaration = Pattern.compile([
+            '(?m)^\\s*(?:public\\s+)?',
+            '([A-Za-z0-9_<>?,.\\[\\] ]+)\\s+',
+            '([A-Za-z0-9_]+)\\s*',
+            '\\(([^;{}]*)\\)\\s*',
+            '(?:throws\\s+([^;{}]+))?\\s*;'
+    ].join(''))
+    def matcher = declaration.matcher(source)
+    List<Map<String, Object>> methods = []
+    while (matcher.find()) {
+        List<String> parameterTypes = []
+        String arguments = matcher.group(3)
+        if (arguments != null && !arguments.trim().isEmpty()) {
+            arguments.split(',').each { String argument ->
+                List<String> tokens = argument.trim()
+                        .replaceAll('\\s+', ' ').split(' ') as List<String>
+                String sourceType = tokens.size() > 1
+                        ? tokens[0..-2].join(' ') : tokens[0]
+                parameterTypes.add(gcCanonicalType(sourceType))
+            }
+        }
+        List<String> exceptions = []
+        String declaredThrows = matcher.group(4)
+        if (declaredThrows != null && !declaredThrows.trim().isEmpty()) {
+            declaredThrows.split(',').each { String exception ->
+                exceptions.add(gcCanonicalType(exception))
+            }
+            exceptions.sort()
+        }
+        String signature = gcCanonicalType(matcher.group(1)) + ' '
+                + matcher.group(2) + '(' + parameterTypes.join(',') + ')'
+        if (!exceptions.isEmpty()) {
+            signature += ' throws ' + exceptions.join(',')
+        }
+        methods.add([name: matcher.group(2), signature: signature,
+                     exceptions: exceptions])
+    }
+    methods.sort { left, right ->
+        left.signature.toString() <=> right.signature.toString()
+    }
+}
+
+final Closure<Map<String, List<Map<String, Object>>>> gcSnapshot = {
+    Map<String, List<Map<String, Object>>> snapshot = [:]
+    gcInterfaces.each { String owner, File file ->
+        snapshot[owner] = file.isFile() ? gcParseMethods(file) : []
+    }
+    snapshot
+}
+
+final Closure<String> gcCanonicalContract = {
+        Map<String, List<Map<String, Object>>> snapshot ->
+    List<String> lines = []
+    snapshot.each { String owner, List<Map<String, Object>> methods ->
+        methods.each { Map<String, Object> method ->
+            lines.add(owner + ':' + method.signature)
+        }
+    }
+    lines.sort()
+    lines.join('\n') + '\n'
+}
+
+final Closure<String> gcSha256 = { String value ->
+    HexFormat.of().formatHex(MessageDigest.getInstance('SHA-256')
+            .digest(value.getBytes(StandardCharsets.UTF_8)))
+}
+
+final Closure<List<List<String>>> gcRows = {
+        String relative, int fields ->
+    File file = new File(gcRoot, relative)
+    if (!file.isFile()) {
+        return []
+    }
+    file.readLines('UTF-8')
+            .findAll { String line ->
+                !line.trim().isEmpty() && !line.startsWith('#')
+            }
+            .collect { String line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != fields) {
+                    throw new GradleException(
+                            'Invalid generated-class manifest row: ' + line)
+                }
+                parts as List<String>
+            }
+}
+
+final Closure<List<File>> gcJavaFiles = {
+    List<File> files = []
+    rootProject.subprojects.each { project ->
+        File main = new File(project.projectDir, 'src/main/java')
+        File test = new File(project.projectDir, 'src/test/java')
+        [main, test].findAll { it.isDirectory() }.each { dir ->
+            files.addAll(rootProject.fileTree(dir) { include '**/*.java' }.files)
+        }
+    }
+    files.sort { left, right -> gcRelative(left) <=> gcRelative(right) }
+}
+
+final Closure<List<File>> gcBuildFiles = {
+    List<File> files = [
+            new File(gcRoot, 'build.gradle'),
+            new File(gcRoot, 'gradle/delosdb-runtime-artifacts.gradle'),
+            new File(gcRoot, 'benchmarks/jmh/build.gradle')
+    ]
+    rootProject.subprojects.each { project ->
+        [new File(project.projectDir, 'build.gradle'),
+         new File(project.projectDir, 'src/main/java/module-info.java')].each { file ->
+            if (file.isFile()) { files.add(file) }
+        }
+    }
+    files.findAll { it.isFile() }.unique().sort { left, right ->
+        gcRelative(left) <=> gcRelative(right)
+    }
+}
+
+tasks.register('delosGeneratedClassInventory') {
+    group = 'verification'
+    description = 'Reports the stable generated-class contract and architecture.'
+
+    File reportFile = new File(gcBuild,
+            'reports/delosdb/compiler/generated-class-inventory.txt')
+    outputs.file(reportFile)
+    outputs.upToDateWhen { false }
+
+    doLast {
+        Map<String, List<Map<String, Object>>> snapshot = gcSnapshot()
+        List<List<String>> operations = gcRows(
+                'gradle/static-analysis/delosdb-methodbuilder-operation-inventory.txt', 5)
+        List<List<String>> behavior = gcRows(
+                'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt', 5)
+        int totalMethods = snapshot.values().sum { List<?> methods ->
+            methods.size()
+        } as int
+        int exceptionMethods = snapshot.values().sum {
+                List<Map<String, Object>> methods ->
+            methods.count { Map<String, Object> method ->
+                !((List<?>) method.exceptions).isEmpty()
+            }
+        } as int
+        String digest = gcSha256(gcCanonicalContract(snapshot))
+
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB generated-class inventory')
+            writer.println('=================================')
+            writer.println('Architecture: JDK25_CLASSFILE')
+            writer.println('Production authority: SOLE_BACKEND')
+            writer.println('Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField')
+            writer.println('Normal runtime backend selector: none')
+            snapshot.each { String owner, List<Map<String, Object>> methods ->
+                writer.println(owner + ' methods: ' + methods.size())
+            }
+            writer.println('Total declared methods: ' + totalMethods)
+            writer.println('Methods declaring checked exceptions: ' + exceptionMethods)
+            writer.println('MethodBuilder signatures: ' + operations.size())
+            writer.println('MethodBuilder operation names: ' +
+                    operations.collect { it[3] }.toSet().size())
+            writer.println('Behavior fixture rows: ' + behavior.size())
+            writer.println('Behavior fixture groups: ' +
+                    behavior.collect { it[2] }.toSet().size())
+            writer.println('Contract SHA-256: ' + digest)
+        }
+        logger.lifecycle('Generated-class inventory written: {}', reportFile)
+    }
+}
+
+tasks.register('delosGeneratedClassStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the stable generated-class contract, sole backend, task wiring, and zero-external-ASM policy.'
+    dependsOn tasks.named('delosGeneratedClassInventory')
+
+    doLast {
+        List<String> failures = []
+        Map<String, List<Map<String, Object>>> snapshot = gcSnapshot()
+        Map<String, Integer> expectedCounts = [
+                'JavaFactory': 1, 'ClassBuilder': 8,
+                'MethodBuilder': 43, 'LocalField': 0
+        ]
+        expectedCounts.each { String owner, Integer expected ->
+            int actual = snapshot.getOrDefault(owner, []).size()
+            if (actual != expected) {
+                failures.add(owner + ' method count changed: expected '
+                        + expected + ', found ' + actual)
+            }
+        }
+        int totalMethods = snapshot.values().sum { List<?> methods ->
+            methods.size()
+        } as int
+        if (totalMethods != 52) {
+            failures.add('Generated-class contract must contain 52 methods; found '
+                    + totalMethods)
+        }
+        int exceptionMethods = snapshot.values().sum {
+                List<Map<String, Object>> methods ->
+            methods.count { Map<String, Object> method ->
+                !((List<?>) method.exceptions).isEmpty()
+            }
+        } as int
+        if (exceptionMethods != 2) {
+            failures.add('Generated-class contract must retain two checked-exception methods; found '
+                    + exceptionMethods)
+        }
+        String digest = gcSha256(gcCanonicalContract(snapshot))
+        if (digest != gcExpectedDigest) {
+            failures.add('Generated-class contract digest changed: expected '
+                    + gcExpectedDigest + ', found ' + digest)
+        }
+
+        List<List<String>> operations = gcRows(
+                'gradle/static-analysis/delosdb-methodbuilder-operation-inventory.txt', 5)
+        List<List<String>> behavior = gcRows(
+                'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt', 5)
+        if (operations.size() != 43) {
+            failures.add('MethodBuilder operation inventory must contain 43 rows; found '
+                    + operations.size())
+        }
+        if (operations.collect { it[0] }.toSet().size() != operations.size()) {
+            failures.add('MethodBuilder operation inventory contains duplicate ids')
+        }
+        if (operations.collect { it[3] }.toSet().size() != 32) {
+            failures.add('MethodBuilder operation inventory must contain 32 operation names')
+        }
+        if (behavior.size() != 43) {
+            failures.add('MethodBuilder behavior manifest must contain 43 rows; found '
+                    + behavior.size())
+        }
+        if (behavior.collect { it[0] }.toSet().size() != behavior.size()) {
+            failures.add('MethodBuilder behavior manifest contains duplicate ids')
+        }
+        Set<String> operationSignatures = operations.collect { it[2] }.toSet()
+        Set<String> behaviorSignatures = behavior.collect { it[1] }.toSet()
+        if (operationSignatures != behaviorSignatures) {
+            failures.add('MethodBuilder operation and behavior signatures differ')
+        }
+        Set<String> expectedFixtures = [
+                'method-lifecycle', 'parameter-constants', 'field-access',
+                'object-and-array', 'receiver-and-conversion',
+                'stack-and-statement', 'control-flow', 'invocation',
+                'constructor', 'statement-splitting'
+        ] as Set
+        if (behavior.collect { it[2] }.toSet() != expectedFixtures) {
+            failures.add('MethodBuilder behavior fixture groups changed')
+        }
+
+        List<List<String>> architecture = gcRows(
+                'gradle/static-analysis/delosdb-generated-class-architecture.txt', 5)
+        if (architecture.size() != 20) {
+            failures.add('Generated-class architecture manifest must contain 20 rows; found '
+                    + architecture.size())
+        }
+        if (architecture.collect { it[0] }.toSet().size() != architecture.size()) {
+            failures.add('Generated-class architecture manifest contains duplicate ids')
+        }
+        architecture.each { List<String> row ->
+            File proof = new File(gcRoot, row[2])
+            if (!proof.isFile()) {
+                failures.add('Generated-class proof path is missing for '
+                        + row[0] + ': ' + row[2])
+            } else if (!proof.getText('UTF-8').contains(row[3])) {
+                failures.add('Generated-class proof marker is missing for '
+                        + row[0] + ': ' + row[3])
+            }
+            if (row[4].length() < 80) {
+                failures.add('Generated-class proof reason is too thin: ' + row[0])
+            }
+        }
+
+        File backend = new File(gcRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java')
+        String backendText = backend.isFile() ? backend.getText('UTF-8') : ''
+        ['implements JavaFactory', 'import java.lang.classfile.ClassFile;',
+         'private static final int STATEMENT_SPLIT_LIMIT = 128;',
+         'replaceTopType(className);'].each { String marker ->
+            if (!backendText.contains(marker)) {
+                failures.add('ClassFileJava is missing: ' + marker)
+            }
+        }
+        ['COMPILER_PHASE_', 'CLASSFILE_PRODUCTION_SOLE_BACKEND'].each { String marker ->
+            if (backendText.contains(marker)) {
+                failures.add('ClassFileJava retains migration-only marker: ' + marker)
+            }
+        }
+
+        File modules = new File(gcRoot,
+                'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
+        List<String> registrations = modules.readLines('UTF-8').findAll { String line ->
+            line.startsWith('derby.module.javaCompiler=')
+        }
+        if (registrations != [
+                'derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava']) {
+            failures.add('Exactly one ClassFileJava registration is required; found '
+                    + registrations)
+        }
+
+        List<String> forbiddenSourceTokens = [
+                'org.objectweb.asm', 'jdk.internal.org.objectweb.asm',
+                'impl.services.bytecode.asm', 'AsmJava'
+        ]
+        gcJavaFiles().each { File file ->
+            String text = file.getText('UTF-8')
+            forbiddenSourceTokens.each { String token ->
+                if (text.contains(token)) {
+                    failures.add('Forbidden bytecode source reference in '
+                            + gcRelative(file) + ': ' + token)
+                }
+            }
+            if (gcRelative(file).contains('/impl/sql/compile/')
+                    && text.contains('java.lang.classfile')) {
+                failures.add('SQL compiler node imports java.lang.classfile directly: '
+                        + gcRelative(file))
+            }
+            ['GeneratedClassBackend', 'GeneratedClassPlan',
+             'GeneratedClassBytes', 'delosdb.compiler.backend'].each { String token ->
+                if (text.contains(token)) {
+                    failures.add('Forbidden duplicate generation abstraction or selector in '
+                            + gcRelative(file) + ': ' + token)
+                }
+            }
+        }
+        List<String> forbiddenBuildTokens = [
+                'org.ow2.asm', 'org.objectweb.asm', 'asmVersion',
+                'delosdbAsm', 'jdk.internal.org.objectweb.asm'
+        ]
+        gcBuildFiles().each { File file ->
+            String text = file.getText('UTF-8')
+            forbiddenBuildTokens.each { String token ->
+                if (text.contains(token)) {
+                    failures.add('Forbidden bytecode build/module reference in '
+                            + gcRelative(file) + ': ' + token)
+                }
+            }
+        }
+
+        File behaviorTest = new File(gcRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
+        String behaviorText = behaviorTest.isFile()
+                ? behaviorTest.getText('UTF-8') : ''
+        behavior.collect { it[3] }.toSet().each { String marker ->
+            if (!behaviorText.contains(marker)) {
+                failures.add('Behavior proof is missing marker: ' + marker)
+            }
+        }
+        ['Architecture: JDK25_CLASSFILE', 'Authority: SOLE_PRODUCTION_BACKEND',
+         'shortConstant.upCast("int")', 'ClassCastException',
+         'statementNumHitLimit(0)',
+         'Arrays.equals(first.classBytes(), second.classBytes())'].each { String marker ->
+            if (!behaviorText.contains(marker)) {
+                failures.add('Behavior proof is missing: ' + marker)
+            }
+        }
+
+        File freezeTest = new File(gcRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.java')
+        String freezeText = freezeTest.isFile() ? freezeTest.getText('UTF-8') : ''
+        [gcExpectedDigest, 'testGenerationContractIsStable',
+         'assertEquals(52, totalMethodCount())',
+         'assertEquals(2, declaredExceptionMethodCount())',
+         'Architecture: JDK25_CLASSFILE',
+         'Production authority: SOLE_BACKEND'].each { String marker ->
+            if (!freezeText.contains(marker)) {
+                failures.add('Contract proof is missing: ' + marker)
+            }
+        }
+
+        File productionTest = new File(gcRoot,
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassProductionTest.java')
+        String productionText = productionTest.isFile()
+                ? productionTest.getText('UTF-8') : ''
+        ['testProductionBackendCompilesSql', 'MODULES_PROPERTIES_SOLE_BACKEND',
+         'Architecture: JDK25_CLASSFILE',
+         'External bytecode dependency: none',
+         'values 1 / 0', 'update T set s = ? where id = ?'].each { String marker ->
+            if (!productionText.contains(marker)) {
+                failures.add('Production SQL proof is missing: ' + marker)
+            }
+        }
+
+        File testBuild = new File(gcRoot, 'delosdb-tests/build.gradle')
+        String testBuildText = testBuild.getText('UTF-8')
+        ['runDelosGeneratedClassContractFreezeTest',
+         'runDelosGeneratedClassContractBehaviorTest',
+         'runDelosGeneratedClassProductionTest',
+         'runDelosGeneratedClassProductionJdbcDrdaTest',
+         'runDelosGeneratedClassProductionAcceptance',
+         "tasks.named('runDerbyLangSuite')",
+         "tasks.named('runDelosV1ModularImageDrdaTest')"].each { String marker ->
+            if (!testBuildText.contains(marker)) {
+                failures.add('Generated-class test wiring is missing: ' + marker)
+            }
+        }
+        ['runDelosGeneratedClassClassFileProductionTest',
+         'runDelosGeneratedClassClassFileProductionAcceptance',
+         'runDelosGeneratedClassAsmOracleProof'].each { String retired ->
+            if (testBuildText.contains(retired)) {
+                failures.add('Retired generated-class task remains: ' + retired)
+            }
+        }
+
+        File rootBuild = new File(gcRoot, 'build.gradle')
+        String rootBuildText = rootBuild.getText('UTF-8')
+        ["apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'",
+         "dependsOn 'delosGeneratedClassStaticAnalysis'",
+         'delosGeneratedClassProductionSqlancerValidation'].each { String marker ->
+            if (!rootBuildText.contains(marker)) {
+                failures.add('Root generated-class wiring is missing: ' + marker)
+            }
+        }
+        ['delosGeneratedClassModernizationStaticAnalysis',
+         'delosGeneratedClassContractStaticAnalysis',
+         'delosGeneratedClassClassFileAsmRemovalStaticAnalysis',
+         'delosGeneratedClassClassFileProductionSqlancerValidation'].each { String retired ->
+            if (rootBuildText.contains(retired)) {
+                failures.add('Retired root generated-class task remains: ' + retired)
+            }
+        }
+
+        List<String> retiredPaths = [
+                'gradle/delosdb-compiler-modernization-static-analysis.gradle',
+                'gradle/delosdb-generated-class-contract-static-analysis.gradle',
+                'gradle/static-analysis/delosdb-generated-class-modernization.txt',
+                'gradle/static-analysis/delosdb-classfile-asm-removal.txt',
+                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md',
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.java',
+                'scripts/cleanup-phase10-compiler-phase6-external-asm-removal.sh'
+        ]
+        retiredPaths.each { String relative ->
+            if (new File(gcRoot, relative).exists()) {
+                failures.add('Retired compiler migration artifact remains: ' + relative)
+            }
+        }
+
+        File design = new File(gcRoot,
+                'docs/design/V1-GENERATED-CLASS-ARCHITECTURE.md')
+        String designText = design.isFile() ? design.getText('UTF-8') : ''
+        ['Status: VERIFIED AND CONSOLIDATED',
+         'One permanent generated-class gate',
+         'No external ASM dependency remains.',
+         'External randomized SQLancer remains operator-supplied'].each { String marker ->
+            if (!designText.contains(marker)) {
+                failures.add('Generated-class design is missing: ' + marker)
+            }
+        }
+
+        File reportFile = new File(gcBuild,
+                'reports/delosdb/compiler/generated-class-static-analysis.txt')
+        reportFile.parentFile.mkdirs()
+        reportFile.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB generated-class static analysis')
+            writer.println('========================================')
+            writer.println('Architecture: JDK25_CLASSFILE')
+            writer.println('Production authority: SOLE_BACKEND')
+            writer.println('Contract methods: ' + totalMethods)
+            writer.println('Checked-exception methods: ' + exceptionMethods)
+            writer.println('Contract SHA-256: ' + digest)
+            writer.println('MethodBuilder signatures: ' + operations.size())
+            writer.println('MethodBuilder operation names: ' +
+                    operations.collect { it[3] }.toSet().size())
+            writer.println('Behavior fixture groups: ' +
+                    behavior.collect { it[2] }.toSet().size())
+            writer.println('Architecture manifest rows: ' + architecture.size())
+            writer.println('External bytecode dependency: none')
+            writer.println('Normal runtime backend selector: none')
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { String failure -> writer.println('- ' + failure) }
+        }
+        if (!failures.isEmpty()) {
+            logger.error('Generated-class static-analysis failures ({}):',
+                    failures.size())
+            failures.each { String failure -> logger.error('  - {}', failure) }
+            throw new GradleException(
+                    'Generated-class static analysis failed. Report: ' + reportFile)
+        }
+        logger.lifecycle('Generated-class static analysis passed. Report: {}',
+                reportFile)
+    }
+}

@@ -98,8 +98,8 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         String report = String.format(Locale.ROOT,
                 "DelosDB generated-class contract behavior proof%n"
                 + "================================================%n"
-                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
-                + "Authority: CLASSFILE_PRODUCTION_SOLE_BACKEND%n"
+                + "Architecture: JDK25_CLASSFILE%n"
+                + "Authority: SOLE_PRODUCTION_BACKEND%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "MethodBuilder signatures mapped: %d%n"
                 + "Behavior fixture groups executed: %d%n"

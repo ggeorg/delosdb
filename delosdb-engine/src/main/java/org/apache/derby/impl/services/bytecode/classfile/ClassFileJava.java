@@ -36,18 +36,15 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Compiler Phase 6 JDK Class-File API production backend.
+ * JDK 25 Class-File API implementation of DelosDB's generated-class contract.
  *
- * <p>This is a bounded implementation of the inherited DelosDB generation
- * abstraction. It implements the complete inherited MethodBuilder operation
- * surface because {@link CodeBuilder} is supplied inside the Class-File API's
- * method-body callback. It is not a second compiler IR. This is the sole
- * generated-class backend; the external ASM implementation and dependency were
- * removed in Compiler Phase 6.</p>
+ * <p>The SQL compiler targets the inherited {@link JavaFactory},
+ * {@link ClassBuilder}, {@link MethodBuilder}, and {@link LocalField}
+ * interfaces. This class is the sole backend and the only production source
+ * that depends on {@code java.lang.classfile}. It is a narrow implementation
+ * of the existing generation contract, not a second compiler IR.</p>
  */
 public final class ClassFileJava implements JavaFactory {
-    static final String PHASE = "COMPILER_PHASE_6_ASM_REMOVAL";
-    static final String AUTHORITY = "CLASSFILE_PRODUCTION_SOLE_BACKEND";
     private static final int STATEMENT_SPLIT_LIMIT = 128;
 
     @Override

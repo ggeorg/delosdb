@@ -801,7 +801,7 @@ tasks.named('check') {
 
 registerDelosFocusedTest(
         'runDelosGeneratedClassContractFreezeTest',
-        'Runs Compiler Phase 2.1 reflection-based generation-contract freeze and digest proof.',
+        'Runs the stable reflection-based generation-contract and digest proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.class'])
 
 tasks.named('runDelosGeneratedClassContractFreezeTest') {
@@ -844,29 +844,29 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileProductionTest',
-        'Runs the Compiler Phase 6 real SQL proof through the sole JDK 25 Class-File API production registration without a backend override.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.class'],
+        'runDelosGeneratedClassProductionTest',
+        'Runs the real SQL proof through the sole generated-class production registration without a backend override.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassProductionTest.class'],
         [
-                'delosdb.compiler.classFileProduction.report': layout.buildDirectory.file(
-                        'reports/delosdb/compiler/generated-class-classfile-production.txt')
+                'delosdb.compiler.generatedClassProduction.report': layout.buildDirectory.file(
+                        'reports/delosdb/compiler/generated-class-production.txt')
                         .get().asFile.absolutePath
         ])
 
-tasks.named('runDelosGeneratedClassClassFileProductionTest') {
+tasks.named('runDelosGeneratedClassProductionTest') {
     outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/generated-class-classfile-production.txt')
+            'reports/delosdb/compiler/generated-class-production.txt')
     outputs.upToDateWhen { false }
 }
 
 tasks.named('check') {
     dependsOn tasks.named(
-            'runDelosGeneratedClassClassFileProductionTest')
+            'runDelosGeneratedClassProductionTest')
 }
 
 registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileProductionJdbcDrdaTest',
-        'Runs the focused JDBC, DRDA, security, and application-UDT lane through the sole Class-File API production authority without a backend override.',
+        'runDelosGeneratedClassProductionJdbcDrdaTest',
+        'Runs the focused JDBC, DRDA, security, and application-UDT lane through the sole generated-class production backend.',
         [
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
@@ -1540,14 +1540,14 @@ def delosV1GitCommandSucceeded = { List<String> command ->
         return false
     }
 }
-tasks.register('runDelosGeneratedClassClassFileProductionAcceptance') {
+tasks.register('runDelosGeneratedClassProductionAcceptance') {
     group = 'verification'
-    description = 'Runs the complete Compiler Phase 6 production campaign after ASM removal; external SQLancer remains explicit.'
+    description = 'Runs the complete generated-class production acceptance campaign; external SQLancer remains explicit.'
     dependsOn tasks.named('runDelosGeneratedClassContractFreezeTest'),
             tasks.named('runDelosGeneratedClassContractBehaviorTest'),
-            tasks.named('runDelosGeneratedClassClassFileProductionTest'),
+            tasks.named('runDelosGeneratedClassProductionTest'),
             tasks.named('runDerbyLangSuite'),
-            tasks.named('runDelosGeneratedClassClassFileProductionJdbcDrdaTest'),
+            tasks.named('runDelosGeneratedClassProductionJdbcDrdaTest'),
             tasks.named('runDelosV1ModularImageDrdaTest')
     outputs.upToDateWhen { false }
 }
