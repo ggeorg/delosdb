@@ -40,18 +40,17 @@ import org.apache.derby.iapi.services.compiler.MethodBuilder;
 import org.apache.derby.iapi.util.ByteArray;
 
 /**
- * Compiler Phase 2.2 behavior oracle for the inherited generated-class
+ * Complete production behavior proof for the inherited generated-class
  * contract. Every MethodBuilder signature is mapped to one executed fixture
- * group. Compiler Phase 4 reuses this exact fixture for ASM/Class-File API
- * differential execution rather than creating a second behavior model.
+ * group and generated twice through the sole JDK Class-File API backend.
  */
 public final class GeneratedClassContractBehaviorTest extends TestCase {
     private static final String BACKEND_CLASS =
-            "org.apache.derby.impl.services.bytecode.asm.AsmJava";
+            "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String GENERATED_PACKAGE =
             "org.apache.derbyTesting.generated.";
     private static final String GENERATED_CLASS =
-            "DelosAsmContractBehavior";
+            "DelosClassFileContractBehavior";
     static final int INT_CONSTANT = 123_456;
 
     private static final Set<String> EXPECTED_FIXTURES = Set.of(
@@ -66,7 +65,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
             "constructor",
             "statement-splitting");
 
-    public void testAsmContractBehaviorOracle() throws Exception {
+    public void testClassFileContractBehavior() throws Exception {
         FixtureManifest manifest = readManifest();
         assertEquals("complete MethodBuilder signature mapping",
                 43, manifest.signatures().size());
@@ -76,12 +75,12 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 EXPECTED_FIXTURES, manifest.fixtures());
 
         GeneratedFixture first = generateFixture(
-                newAsmFactory(), GENERATED_CLASS);
+                newClassFileFactory(), GENERATED_CLASS);
         GeneratedFixture second = generateFixture(
-                newAsmFactory(), GENERATED_CLASS);
-        assertTrue("ASM fixture bytes must remain deterministic",
+                newClassFileFactory(), GENERATED_CLASS);
+        assertTrue("Class-File API fixture bytes must remain deterministic",
                 Arrays.equals(first.classBytes(), second.classBytes()));
-        assertEquals("ASM fixture digest must remain deterministic",
+        assertEquals("Class-File API fixture digest must remain deterministic",
                 sha256(first.classBytes()), sha256(second.classBytes()));
         assertEquals("statement split observation must remain deterministic",
                 first.statementSplitPoint(), second.statementSplitPoint());
@@ -97,10 +96,10 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 manifest.fixtures(), executedFixtures);
 
         String report = String.format(Locale.ROOT,
-                "DelosDB generated-class contract behavior oracle%n"
+                "DelosDB generated-class contract behavior proof%n"
                 + "================================================%n"
-                + "Phase: COMPILER_PHASE_2_2_OPERATION_BEHAVIOR_FREEZE%n"
-                + "Authority: ASM_BOUNDED_TEST_ORACLE%n"
+                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
+                + "Authority: CLASSFILE_PRODUCTION_SOLE_BACKEND%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "MethodBuilder signatures mapped: %d%n"
                 + "Behavior fixture groups executed: %d%n"
@@ -126,7 +125,7 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         }
     }
 
-    private static JavaFactory newAsmFactory() throws Exception {
+    private static JavaFactory newClassFileFactory() throws Exception {
         return (JavaFactory) Class.forName(BACKEND_CLASS)
                 .getConstructor()
                 .newInstance();

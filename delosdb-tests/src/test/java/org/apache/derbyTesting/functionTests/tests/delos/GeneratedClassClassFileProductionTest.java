@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassClassFileAuthoritySwitchTest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassClassFileProductionTest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -26,20 +26,20 @@ import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.reference.Module;
 
 /**
- * Compiler Phase 5.2 proof that normal Derby module registration selects the
- * JDK 25 Class-File API backend without any JVM backend override.
+ * Compiler Phase 6 proof that normal Derby module registration selects the
+ * sole JDK 25 Class-File API backend without any JVM backend override.
  */
-public final class GeneratedClassClassFileAuthoritySwitchTest
+public final class GeneratedClassClassFileProductionTest
         extends TestCase {
     private static final String BACKEND_PROPERTY =
             "derby.module.javaCompiler";
     private static final String CLASSFILE_BACKEND =
             "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String DATABASE =
-            "jdbc:derby:memory:delosClassFileAuthoritySwitch";
+            "jdbc:derby:memory:delosClassFileProduction";
 
-    public void testDefaultProductionAuthorityCompilesSql() throws Exception {
-        assertNull("authority-switch proof must not use a backend override",
+    public void testSoleProductionBackendCompilesSql() throws Exception {
+        assertNull("production proof must not use a backend override",
                 System.getProperty(BACKEND_PROPERTY));
 
         int preparedStatements = 0;
@@ -104,23 +104,23 @@ public final class GeneratedClassClassFileAuthoritySwitchTest
         }
 
         String report = String.format(Locale.ROOT,
-                "DelosDB Class-File API production authority proof%n"
+                "DelosDB sole Class-File API production proof%n"
                 + "================================================%n"
-                + "Phase: COMPILER_PHASE_5_2_AUTHORITY_SWITCH%n"
+                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
                 + "Selected backend: %s%n"
-                + "Selection source: MODULES_PROPERTIES_DEFAULT%n"
+                + "Selection source: MODULES_PROPERTIES_SOLE_BACKEND%n"
                 + "Backend override: none%n"
                 + "Prepared statement families: %d%n"
                 + "Elapsed nanos: %d%n"
                 + "SQLState preservation: 22012%n"
-                + "ASM role: BOUNDED_TEST_ORACLE%n",
+                + "External ASM status: REMOVED%n",
                 CLASSFILE_BACKEND,
                 preparedStatements,
                 System.nanoTime() - started);
         System.out.print(report);
 
         String reportPath = System.getProperty(
-                "delosdb.compiler.classFileAuthoritySwitch.report");
+                "delosdb.compiler.classFileProduction.report");
         if (reportPath != null && !reportPath.isBlank()) {
             Path target = Path.of(reportPath);
             Files.createDirectories(target.getParent());

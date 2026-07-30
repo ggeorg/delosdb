@@ -112,17 +112,9 @@ ext.buildNumberProvider = buildNumber
 ext.derbyCompatibilityVersion = derbyCompatibilityVersion
 
 ext.junitPlatformConsoleVersion = '1.11.4'
-ext.asmVersion = '9.9'
-
+// Compiler Phase 6: no external bytecode dependency configuration remains.
 configurations {
     delosdbJunit5Console {
-        canBeConsumed = false
-        canBeResolved = true
-        attributes {
-            attribute(Bundling.BUNDLING_ATTRIBUTE, objects.named(Bundling, Bundling.EXTERNAL))
-        }
-    }
-    delosdbAsm {
         canBeConsumed = false
         canBeResolved = true
         attributes {
@@ -134,8 +126,6 @@ configurations {
 dependencies {
     // Test-only dependency for new DelosDB tests. Inherited Derby tests remain JUnit 3.
     delosdbJunit5Console "org.junit.platform:junit-platform-console-standalone:${junitPlatformConsoleVersion}"
-    // Runtime dependency for the transitional ASM generated-bytecode backend.
-    delosdbAsm "org.ow2.asm:asm:${asmVersion}"
 }
 
 ext.delosdbLegalFiles = files(
@@ -577,9 +567,9 @@ tasks.named('build') {
 // MVCC verification tasks are owned by :delosdb-storage-mvcc.
 // Use their canonical project-qualified task names directly.
 
-// JDK 25 bytecode verification lane. This uses the standard Class-File API as
-// a verifier around compiled Derby/DelosDB runtime outputs; ASM remains the
-// transitional production backend during Compiler Phase 1.
+// JDK 25 bytecode verification lane. This uses the standard Class-File API
+// to verify compiled Derby/DelosDB runtime outputs after ClassFileJava becomes
+// the sole generated-class implementation in Compiler Phase 6.
 def delosJdk25ClassFileBytecodeVerifierReport = layout.buildDirectory.file('reports/delosdb/jdk25-classfile-bytecode-verifier.txt')
 
 tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaExec) {
@@ -625,67 +615,27 @@ tasks.named('s0CloseoutVerification') {
     dependsOn 'verifyDelosRuntimeStorageProviders'
     dependsOn 'delosGeneratedClassModernizationStaticAnalysis'
     dependsOn 'delosGeneratedClassContractStaticAnalysis'
-    dependsOn 'delosGeneratedClassClassFileVerticalSliceStaticAnalysis'
-    dependsOn 'delosGeneratedClassClassFileCompleteDifferentialStaticAnalysis'
-    dependsOn 'delosGeneratedClassClassFileAuthorityCandidateStaticAnalysis'
-    dependsOn 'delosGeneratedClassClassFileAuthoritySwitchStaticAnalysis'
+    dependsOn 'delosGeneratedClassClassFileAsmRemovalStaticAnalysis'
 }
 
-// Compiler Phase 5.1 external SQLancer lane. This is intentionally explicit
-// and is not an S0 dependency because SQLancer remains an external tool.
-tasks.register('delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation') {
+// Compiler Phase 6 external SQLancer lane. This executes through the sole
+// Class-File API production authority and rejects hidden backend overrides.
+tasks.register('delosGeneratedClassClassFileProductionSqlancerValidation') {
     group = 'verification'
-    description = 'Runs a caller-supplied SQLancer command with the Class-File API authority candidate selected through JAVA_TOOL_OPTIONS.'
+    description = 'Runs a caller-supplied SQLancer command through the sole Class-File API production authority without a backend override.'
     doLast {
-        String propertyName = 'delosdb.compiler.classfile.sqlancer.command'
+        String propertyName = 'delosdb.compiler.classfile.production.sqlancer.command'
         String commandText = providers.gradleProperty(propertyName).orNull
         if (commandText == null || commandText.trim().isEmpty()) {
             throw new GradleException(
-                    'delosGeneratedClassClassFileAuthorityCandidateSqlancerValidation requires -P'
-                    + propertyName + '="<command>"')
-        }
-        String backend =
-                'org.apache.derby.impl.services.bytecode.classfile.ClassFileJava'
-        String inheritedOptions = providers.environmentVariable(
-                'JAVA_TOOL_OPTIONS').orNull ?: ''
-        String candidateOption =
-                '-Dderby.module.javaCompiler=' + backend
-        def execution = providers.exec {
-            environment 'JAVA_TOOL_OPTIONS',
-                    ([inheritedOptions.trim(), candidateOption]
-                            .findAll { !it.isEmpty() }
-                            .join(' '))
-            String osName = System.getProperty(
-                    'os.name', '').toLowerCase(java.util.Locale.ROOT)
-            if (osName.contains('windows')) {
-                commandLine 'cmd', '/c', commandText.trim()
-            } else {
-                commandLine 'sh', '-c', commandText.trim()
-            }
-        }
-        execution.result.get().assertNormalExitValue()
-    }
-}
-
-
-// Compiler Phase 5.2 external SQLancer lane. This executes through the normal
-// Class-File API registration and rejects hidden backend overrides.
-tasks.register('delosGeneratedClassClassFileAuthoritySqlancerValidation') {
-    group = 'verification'
-    description = 'Runs a caller-supplied SQLancer command through the default Class-File API production authority without a backend override.'
-    doLast {
-        String propertyName = 'delosdb.compiler.classfile.authority.sqlancer.command'
-        String commandText = providers.gradleProperty(propertyName).orNull
-        if (commandText == null || commandText.trim().isEmpty()) {
-            throw new GradleException(
-                    'delosGeneratedClassClassFileAuthoritySqlancerValidation requires -P'
+                    'delosGeneratedClassClassFileProductionSqlancerValidation requires -P'
                     + propertyName + '="<command>"')
         }
         String inheritedOptions = providers.environmentVariable(
                 'JAVA_TOOL_OPTIONS').orNull ?: ''
         if (inheritedOptions.contains('derby.module.javaCompiler')) {
             throw new GradleException(
-                    'Phase 5.2 SQLancer validation must use the default modules.properties authority; remove derby.module.javaCompiler from JAVA_TOOL_OPTIONS')
+                    'Compiler Phase 6 SQLancer validation must use the sole modules.properties authority; remove derby.module.javaCompiler from JAVA_TOOL_OPTIONS')
         }
         def execution = providers.exec {
             String osName = System.getProperty(

@@ -54,7 +54,7 @@ dependencies {
     implementation project(':delosdb-runtime-api')
     implementation project(':delosdb-annotations')
     implementation project(':delosdb-spi')
-    implementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
+    // ClassFileJava uses java.lang.classfile from java.base; no external bytecode library.
     compileOnly project(':delosdb-osgi-stub')
 
     enginePatch project(':delosdb-derby-store-api')

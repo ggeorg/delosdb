@@ -28,19 +28,18 @@ expand JMH and macro benchmarks
 add compilation-phase timing
 add standard JFR recordings
 add generated-class size and loading metrics
-capture the ASM generated-class baseline
+retain the historical generated-class baseline and final Class-File API measurements
 retain semantic checksums and reproducible metadata
 ```
 
 ## Performance Phase 0.5 — generated compiler modernisation
 
 ```text
-inventory ASM and freeze the existing JavaFactory boundary
-add generated-class contract and differential tests
-implement the Class-File API vertical slice
-complete the Class-File API backend
-switch authority only after parity and performance proof
-remove ASM and every transitional dependency
+freeze the existing JavaFactory boundary
+retain the complete generated-class contract and behavior fixtures
+use the JDK 25 Class-File API for the sole production backend
+verify normal language, JDBC/DRDA, modular-image, and SQLancer lanes
+keep the permanent zero-external-bytecode-dependency gates green
 ```
 
 DelosDB reuses the inherited `JavaFactory`, `ClassBuilder`, `MethodBuilder`, and
@@ -66,5 +65,5 @@ single path.
 
 Every compiler-modernisation overlay reports production and test deltas,
 public/API changes, module edges, artifact bytes, transitional code, and removal
-debt. The completed ASM migration must delete its transitional backend and
-dependencies.
+debt. The completed migration has deleted its transitional backend and external
+dependencies; future changes must preserve that zero-dependency boundary.

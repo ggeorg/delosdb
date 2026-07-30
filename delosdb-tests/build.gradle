@@ -122,13 +122,6 @@ def derbyLangFailFast = providers.gradleProperty('delosdb.derby.collectAllFailur
         .orElse(true)
 
 
-def delosClassFileAuthorityCandidateBackend =
-        'org.apache.derby.impl.services.bytecode.classfile.ClassFileJava'
-def delosClassFileCandidateLangBasePort = providers.gradleProperty(
-        'delosdb.derby.classFileCandidateBasePort')
-        .map { it.toInteger() }
-        .orElse(providers.provider { findAvailablePortBlock() })
-
 // Derby's inherited tests compile against the bundled JUnit 3 jar because that
 // is what the upstream test sources import. Gradle's Test worker, however,
 // requires JUnit 4 on the runtime classpath in modern Gradle releases. Keep
@@ -145,8 +138,7 @@ def thirdPartyTestModules = rootProject.files(
         'tools/java/json_simple-1.1.jar',
         'tools/java/lucene-analyzers-common.jar',
         'tools/java/lucene-core.jar',
-        'tools/java/lucene-queryparser.jar',
-        rootProject.configurations.delosdbAsm
+        'tools/java/lucene-queryparser.jar'
 )
 
 // Compile and execute inherited Derby tests against the assembled runtime jars.
@@ -157,10 +149,10 @@ def thirdPartyTestModules = rootProject.files(
 def derbyRuntimeJars = rootProject.ext.delosdbRuntimeJarFiles.call()
 
 // NativeAuthenticationServiceTest creates stored procedures while building
-// its jar-backed fixture. That path uses Derby's ASM bytecode backend, so the
-// fixture generator needs ASM at runtime, not only at test compile/runtime.
+// its jar-backed fixture. The production Class-File API backend is contained
+// in derby.jar, so the normal runtime jars are sufficient.
 def nativeAuthenticationGeneratorClasspath = {
-    rootProject.files(derbyRuntimeJars, rootProject.configurations.delosdbAsm)
+    rootProject.files(derbyRuntimeJars)
 }
 
 def testModulePath = {
@@ -234,7 +226,6 @@ dependencies {
     testCompileOnly rootProject.files('tools/java/lucene-analyzers-common.jar')
     testCompileOnly rootProject.files('tools/java/lucene-core.jar')
     testCompileOnly rootProject.files('tools/java/lucene-queryparser.jar')
-    testCompileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 }
 
 sourceSets {
@@ -809,25 +800,6 @@ tasks.named('check') {
 }
 
 registerDelosFocusedTest(
-        'runDelosGeneratedClassAsmBaselineTest',
-        'Runs Compiler Phase 1 ASM generated-class size, generation, loading, allocation, and execution baseline evidence.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassAsmBaselineTest.class'])
-
-tasks.named('runDelosGeneratedClassAsmBaselineTest') {
-    systemProperty 'delosdb.compiler.asmBaseline.report',
-            layout.buildDirectory.file(
-                    'reports/delosdb/compiler/asm-generated-class-baseline.txt')
-                    .get().asFile.absolutePath
-    outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/asm-generated-class-baseline.txt')
-    outputs.upToDateWhen { false }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest')
-}
-
-registerDelosFocusedTest(
         'runDelosGeneratedClassContractFreezeTest',
         'Runs Compiler Phase 2.1 reflection-based generation-contract freeze and digest proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.class'])
@@ -848,7 +820,7 @@ tasks.named('check') {
 
 registerDelosFocusedTest(
         'runDelosGeneratedClassContractBehaviorTest',
-        'Runs Compiler Phase 2.2 ASM operation-behavior fixtures for every MethodBuilder signature.',
+        'Runs the complete Class-File API operation-behavior fixtures for every MethodBuilder signature.',
         ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.class'])
 
 tasks.named('runDelosGeneratedClassContractBehaviorTest') {
@@ -872,103 +844,29 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileVerticalSliceTest',
-        'Runs Compiler Phase 3 ASM/JDK 25 Class-File API differential generation, verification, loading, execution, and exception comparison.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileVerticalSliceTest.class'])
+        'runDelosGeneratedClassClassFileProductionTest',
+        'Runs the Compiler Phase 6 real SQL proof through the sole JDK 25 Class-File API production registration without a backend override.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.class'],
+        [
+                'delosdb.compiler.classFileProduction.report': layout.buildDirectory.file(
+                        'reports/delosdb/compiler/generated-class-classfile-production.txt')
+                        .get().asFile.absolutePath
+        ])
 
-tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest') {
-    systemProperty 'delosdb.compiler.classFileVerticalSlice.report',
-            layout.buildDirectory.file(
-                    'reports/delosdb/compiler/generated-class-classfile-vertical-slice.txt')
-                    .get().asFile.absolutePath
+tasks.named('runDelosGeneratedClassClassFileProductionTest') {
     outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/generated-class-classfile-vertical-slice.txt')
-    outputs.upToDateWhen { false }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosGeneratedClassClassFileVerticalSliceTest')
-}
-
-registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileCompleteDifferentialTest',
-        'Runs Compiler Phase 4 complete ASM/JDK 25 Class-File API differential generation, verification, behavior, lifecycle, and diagnostic measurement.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileCompleteDifferentialTest.class'])
-
-tasks.named('runDelosGeneratedClassClassFileCompleteDifferentialTest') {
-    def behaviorManifest = rootProject.layout.projectDirectory.file(
-            'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
-    systemProperty 'delosdb.compiler.contractBehavior.manifest',
-            behaviorManifest.asFile.absolutePath
-    systemProperty 'delosdb.compiler.classFileCompleteDifferential.report',
-            layout.buildDirectory.file(
-                    'reports/delosdb/compiler/generated-class-classfile-complete-differential.txt')
-                    .get().asFile.absolutePath
-    inputs.file behaviorManifest
-    outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/generated-class-classfile-complete-differential.txt')
+            'reports/delosdb/compiler/generated-class-classfile-production.txt')
     outputs.upToDateWhen { false }
 }
 
 tasks.named('check') {
     dependsOn tasks.named(
-            'runDelosGeneratedClassClassFileCompleteDifferentialTest')
-}
-
-
-registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileAuthorityCandidateTest',
-        'Runs the verified Compiler Phase 5.1 real SQL candidate proof through an explicit Class-File API module override.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthorityCandidateTest.class'],
-        [
-                'derby.module.javaCompiler': delosClassFileAuthorityCandidateBackend,
-                'delosdb.compiler.classFileAuthorityCandidate.report': layout.buildDirectory.file(
-                        'reports/delosdb/compiler/generated-class-classfile-authority-candidate.txt')
-                        .get().asFile.absolutePath
-        ])
-
-tasks.named('runDelosGeneratedClassClassFileAuthorityCandidateTest') {
-    outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/generated-class-classfile-authority-candidate.txt')
-    outputs.upToDateWhen { false }
+            'runDelosGeneratedClassClassFileProductionTest')
 }
 
 registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileAuthoritySwitchTest',
-        'Runs Compiler Phase 5.2 real SQL compilation through the default JDK 25 Class-File API production registration without a backend override.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileAuthoritySwitchTest.class'],
-        [
-                'delosdb.compiler.classFileAuthoritySwitch.report': layout.buildDirectory.file(
-                        'reports/delosdb/compiler/generated-class-classfile-authority-switch.txt')
-                        .get().asFile.absolutePath
-        ])
-
-tasks.named('runDelosGeneratedClassClassFileAuthoritySwitchTest') {
-    outputs.file layout.buildDirectory.file(
-            'reports/delosdb/compiler/generated-class-classfile-authority-switch.txt')
-    outputs.upToDateWhen { false }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named(
-            'runDelosGeneratedClassClassFileAuthoritySwitchTest')
-}
-
-registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileCandidateJdbcDrdaTest',
-        'Runs focused JDBC, DRDA, security, and application-UDT integration with the Class-File API authority candidate selected only in the test JVM.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/ObjectDeserializationBoundaryTest.class',
-                'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.class',
-                'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
-        ],
-        ['derby.module.javaCompiler': delosClassFileAuthorityCandidateBackend])
-
-registerDelosFocusedTest(
-        'runDelosGeneratedClassClassFileAuthorityJdbcDrdaTest',
-        'Runs the Phase 5.2 focused JDBC, DRDA, security, and application-UDT lane through the default Class-File API production authority without a backend override.',
+        'runDelosGeneratedClassClassFileProductionJdbcDrdaTest',
+        'Runs the focused JDBC, DRDA, security, and application-UDT lane through the sole Class-File API production authority without a backend override.',
         [
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/SecurityTruthTest.class',
@@ -976,53 +874,6 @@ registerDelosFocusedTest(
                 'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.class',
                 'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
         ])
-
-tasks.register('runDerbyLangSuiteClassFileCandidate', Test) {
-    group = 'verification'
-    description = 'Runs the complete inherited Derby language suite with the production-packaged Class-File API candidate selected through a test-only module override.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
-    failFast = derbyLangFailFast.get()
-    systemProperty 'derby.module.javaCompiler', delosClassFileAuthorityCandidateBackend
-
-    workingDir = layout.buildDirectory.dir(
-            'test-work/runDerbyLangSuiteClassFileCandidate').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir(
-            'test-results/binary/runDerbyLangSuiteClassFileCandidate'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir(
-                'test-results/runDerbyLangSuiteClassFileCandidate'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir(
-                'reports/tests/runDerbyLangSuiteClassFileCandidate'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-        systemProperty 'derby.tests.basePort',
-                delosClassFileCandidateLangBasePort.get()
-        logger.lifecycle(
-                'runDerbyLangSuiteClassFileCandidate using backend={} basePort={} failFast={}',
-                delosClassFileAuthorityCandidateBackend,
-                delosClassFileCandidateLangBasePort.get(),
-                failFast)
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
 
 registerDelosFocusedTest(
         'runDelosMvccDrdaConcurrentNetworkClientTest',
@@ -1476,12 +1327,6 @@ def delosV1ModularImageReportDirectory = rootProject.layout.buildDirectory.dir(
         'reports/delosdb/benchmarks/modular-image-drda')
 def delosV1ModularImageDatabaseRoot = rootProject.layout.buildDirectory.dir(
         'tmp/delos-v1-modular-image-drda')
-def delosClassFileCandidateModularImageReportDirectory =
-        rootProject.layout.buildDirectory.dir(
-                'reports/delosdb/benchmarks/modular-image-drda-classfile-candidate')
-def delosClassFileCandidateModularImageDatabaseRoot =
-        rootProject.layout.buildDirectory.dir(
-                'tmp/delos-v1-modular-image-drda-classfile-candidate')
 def delosV1ModularRuntimeJars = rootProject.ext.delosdbRuntimeJars()
 
 tasks.register('assembleDelosV1ModularRuntimeImage') {
@@ -1558,24 +1403,6 @@ tasks.named('runDelosV1ModularImageDrdaTest') {
     group = 'benchmark'
     dependsOn tasks.named('assembleDelosV1ModularRuntimeImage')
     outputs.dir(delosV1ModularImageReportDirectory)
-    outputs.upToDateWhen { false }
-}
-
-registerDelosFocusedTest(
-        'runDelosV1ModularImageDrdaClassFileCandidateTest',
-        'Runs modular-image DRDA with the production-packaged Class-File API candidate selected in the spawned image JVMs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/V1ModularImageDrdaTest.class'],
-        [
-                'delosdb.v1Baseline.modularImage.root': delosV1ModularImageRoot.get().asFile.absolutePath,
-                'delosdb.v1Baseline.modularImage.reportDirectory': delosClassFileCandidateModularImageReportDirectory.get().asFile.absolutePath,
-                'delosdb.v1Baseline.modularImage.databaseRoot': delosClassFileCandidateModularImageDatabaseRoot.get().asFile.absolutePath,
-                'delosdb.v1Baseline.modularImage.javaCompilerBackend': delosClassFileAuthorityCandidateBackend
-        ])
-
-tasks.named('runDelosV1ModularImageDrdaClassFileCandidateTest') {
-    group = 'benchmark'
-    dependsOn tasks.named('assembleDelosV1ModularRuntimeImage')
-    outputs.dir(delosClassFileCandidateModularImageReportDirectory)
     outputs.upToDateWhen { false }
 }
 
@@ -1713,33 +1540,14 @@ def delosV1GitCommandSucceeded = { List<String> command ->
         return false
     }
 }
-tasks.register('runDelosGeneratedClassClassFileAuthorityCandidateBuiltInAcceptance') {
+tasks.register('runDelosGeneratedClassClassFileProductionAcceptance') {
     group = 'verification'
-    description = 'Runs the complete built-in Compiler Phase 5.1 authority-candidate campaign; external SQLancer remains an explicit separate command.'
-    dependsOn tasks.named('runDelosGeneratedClassClassFileAuthorityCandidateTest'),
-            tasks.named('runDelosGeneratedClassClassFileCompleteDifferentialTest'),
-            tasks.named('runDerbyLangSuiteClassFileCandidate'),
-            tasks.named('runDelosGeneratedClassClassFileCandidateJdbcDrdaTest'),
-            tasks.named('runDelosV1ModularImageDrdaClassFileCandidateTest')
-    outputs.upToDateWhen { false }
-}
-
-tasks.register('runDelosGeneratedClassAsmOracleProof') {
-    group = 'verification'
-    description = 'Runs the bounded post-cutover ASM oracle evidence retained only for the Compiler Phase 5.2 proof period.'
-    dependsOn tasks.named('runDelosGeneratedClassAsmBaselineTest'),
+    description = 'Runs the complete Compiler Phase 6 production campaign after ASM removal; external SQLancer remains explicit.'
+    dependsOn tasks.named('runDelosGeneratedClassContractFreezeTest'),
             tasks.named('runDelosGeneratedClassContractBehaviorTest'),
-            tasks.named('runDelosGeneratedClassClassFileCompleteDifferentialTest')
-    outputs.upToDateWhen { false }
-}
-
-tasks.register('runDelosGeneratedClassClassFileAuthoritySwitchBuiltInAcceptance') {
-    group = 'verification'
-    description = 'Runs the complete built-in Compiler Phase 5.2 production-authority campaign through the default Class-File API registration; external SQLancer remains explicit.'
-    dependsOn tasks.named('runDelosGeneratedClassClassFileAuthoritySwitchTest'),
-            tasks.named('runDelosGeneratedClassAsmOracleProof'),
+            tasks.named('runDelosGeneratedClassClassFileProductionTest'),
             tasks.named('runDerbyLangSuite'),
-            tasks.named('runDelosGeneratedClassClassFileAuthorityJdbcDrdaTest'),
+            tasks.named('runDelosGeneratedClassClassFileProductionJdbcDrdaTest'),
             tasks.named('runDelosV1ModularImageDrdaTest')
     outputs.upToDateWhen { false }
 }

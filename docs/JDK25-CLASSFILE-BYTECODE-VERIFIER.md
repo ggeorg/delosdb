@@ -1,50 +1,48 @@
 # JDK 25 Class-File API bytecode verifier
 
-This document records the first DelosDB JDK 25 bytecode-modernization lane.
-
 This is a verifier artifact, not a bytecode-generation rewrite.
 
 ## Purpose
 
-DelosDB currently keeps Derby's ASM-backed execution-bytecode generator as the
-transitional production backend during Compiler Phase 1. The JDK 25 Class-File API is used here only as a verifier
-around compiled DelosDB runtime class files.
-
-The verifier gives DelosDB a JDK-owned bytecode inspection lane before any future
-migration away from ASM is considered.
-
-## Scope
-
-The task is:
-
-```text
-./gradlew delosJdk25ClassFileBytecodeVerifier
-```
-
-It compiles the normal Derby-compatible runtime modules and then invokes:
-
-```text
-org.apache.derbyBuild.DelosJdk25ClassFileVerifier
-```
-
-The verifier parses `.class` files with:
+DelosDB uses the standard JDK 25 Class-File API both for production generated
+SQL activations and for independent verification of compiled runtime classes.
 
 ```text
 java.lang.classfile.ClassFile
 ```
 
-and checks that the compiled runtime outputs match the configured DelosDB Java
-baseline.
+ClassFileJava is the sole production generator.
 
-For JDK 25, the expected class-file major version is:
+External ASM removed.
+
+The verifier parses compiled `.class` files and checks the configured JDK
+class-file baseline. It does not emit classes, select the generator, transform
+bytecode, or change class loading.
+
+## Task
+
+```text
+./gradlew delosJdk25ClassFileBytecodeVerifier
+```
+
+The task invokes:
+
+```text
+org.apache.derbyBuild.DelosJdk25ClassFileVerifier
+```
+
+## Expected class-file major
+
+For JDK 25:
 
 ```text
 69
 ```
 
-## Runtime roots
+The expected major is derived from the configured Java release rather than
+hardcoded only inside the verifier.
 
-The verifier covers the compiled runtime class roots for:
+## Runtime roots
 
 ```text
 org.apache.derby.commons
@@ -57,92 +55,34 @@ org.apache.derby.optionaltools
 org.apache.derby.runner
 ```
 
-## Non-goals
-
-No ASM removal. Compiler Phase 5.2 retains ASM as a bounded test oracle until
-Compiler Phase 6 removes it and the external dependency.
-
-No bytecode-generation logic is implemented in this verifier artifact.
-
-No generated SQL execution behavior change.
-
-No Derby optimizer change.
-
-No storage behavior change.
-
-No heap/raw-store behavior change.
-
-No DRDA behavior change.
-
-No S0 wiring yet.
-
-## Why Class-File API first
-
-The standard `java.lang.classfile` API evolves with the JDK class-file format.
-That makes it a good guardrail for DelosDB's JDK 25 runtime baseline and a safer
-first step than replacing ASM generation immediately.
-
-## Relationship to generated-class authority
-
-ClassFileJava is the production generator. ASM remains only as a bounded test
-oracle during the Compiler Phase 5.2 proof period and is removed in Phase 6.
-
-The verifier is a second opinion over compiled output. It does not emit classes,
-transform classes, select the generator, or alter class loading.
-
-Compiler Phase 1 now adds a focused runtime fixture that generates a deterministic
-class through the existing JavaFactory/ClassBuilder/MethodBuilder contract, parses it
-with the same JDK API, loads it, executes it, and records generation, allocation,
-class-size, loading, and steady-execution evidence.
-
 ## Report
-
-The task writes:
 
 ```text
 build/reports/delosdb/jdk25-classfile-bytecode-verifier.txt
 ```
 
-The report includes:
-
-```text
-Verifier API: java.lang.classfile.ClassFile
-Expected class-file major
-Runtime roots
-Total class files
-Parsed class files
-Per-class major/minor rows
-PASS/FAIL status
-```
+The report includes the verifier API, expected major, roots, parsed class count,
+per-class version rows, and PASS/FAIL status.
 
 ## Safety rules
 
-The verifier must remain a verification lane until it has proven stable.
-
-It must not be wired into S0 in this slice.
-
-It must not weaken ASM generation checks.
-
-It must not change Java behavior.
-
-It must not create a new dependency.
-
-It must not use internal JDK APIs.
-
-## Generated-class baseline
-
-The focused task is:
-
 ```text
-./gradlew :delosdb-tests:runDelosGeneratedClassAsmBaselineTest
+No generated SQL execution behavior change.
+No optimizer change.
+No storage or MVCC change.
+No JDBC or DRDA protocol change.
+No internal JDK bytecode API.
+No external bytecode dependency.
+No S0 wiring yet.
 ```
 
-It writes:
+The verifier remains an explicit lane because it audits all compiled runtime
+classes and can be more expensive than the structural S0 closeout gates.
 
-```text
-build/reports/delosdb/compiler/asm-generated-class-baseline.txt
-```
+## Relationship to Compiler Phase 6
 
-This fixture does not introduce another generation abstraction. It exercises the
-existing Derby generation contract and freezes the evidence required for the later
-Class-File API differential backend.
+Compiler Phase 6 removes the retired external implementation, dependency,
+module requirement, runtime artifact composition, and differential-oracle
+infrastructure. The verifier remains because it supplies independent JDK-owned
+class-file parsing and version validation for the sole production backend and
+all runtime modules.

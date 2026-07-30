@@ -38,7 +38,6 @@ dependencies {
     implementation project(':delosdb-runtime-api')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly externalModulePath
-    compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
     // Optional dump tools compile against inherited Derby raw-store contracts
     // and implementation helpers patched into org.apache.derby.engine.

@@ -30,10 +30,10 @@ import org.apache.derby.iapi.services.compiler.LocalField;
 import org.apache.derby.iapi.services.compiler.MethodBuilder;
 
 /**
- * Freezes the complete inherited generated-class contract before a second
- * backend is implemented. Method exception declarations are part of the
- * contract because generated-class loading and byte extraction preserve
- * Derby's StandardException behavior.
+ * Freezes the complete inherited generated-class contract after the JDK
+ * Class-File API backend becomes the sole implementation. Method exception
+ * declarations remain part of the contract because generated-class loading
+ * and byte extraction preserve Derby's StandardException behavior.
  */
 public final class GeneratedClassContractFreezeTest extends TestCase {
     private static final String EXPECTED_SHA256 =
@@ -117,15 +117,15 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
         String digest = sha256(canonical);
         assertEquals("generation contract digest", EXPECTED_SHA256, digest);
 
-        Class<?> asm = Class.forName(
-                "org.apache.derby.impl.services.bytecode.asm.AsmJava");
-        assertTrue(JavaFactory.class.isAssignableFrom(asm));
-        assertTrue(Modifier.isFinal(asm.getModifiers()));
+        Class<?> backend = Class.forName(
+                "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava");
+        assertTrue(JavaFactory.class.isAssignableFrom(backend));
+        assertTrue(Modifier.isFinal(backend.getModifiers()));
 
         String report = String.format(Locale.ROOT,
                 "DelosDB generated-class contract freeze%n"
                 + "=======================================%n"
-                + "Phase: COMPILER_PHASE_2_CONTRACT_FREEZE%n"
+                + "Phase: COMPILER_PHASE_6_ASM_REMOVAL%n"
                 + "Boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
                 + "JavaFactory methods: %d%n"
                 + "ClassBuilder methods: %d%n"
@@ -135,7 +135,7 @@ public final class GeneratedClassContractFreezeTest extends TestCase {
                 + "Total declared methods: %d%n"
                 + "Methods declaring checked exceptions: %d%n"
                 + "Contract SHA-256: %s%n"
-                + "Production authority: CLASSFILE_API%n"
+                + "Production authority: CLASSFILE_API_SOLE_BACKEND%n"
                 + "Normal runtime backend selector: none%n",
                 JAVA_FACTORY.size(),
                 CLASS_BUILDER.size(),

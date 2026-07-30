@@ -36,19 +36,18 @@ import org.apache.derby.iapi.util.ByteArray;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Compiler Phase 5 production-candidate JDK Class-File API backend.
+ * Compiler Phase 6 JDK Class-File API production backend.
  *
  * <p>This is a bounded implementation of the inherited DelosDB generation
  * abstraction. It implements the complete inherited MethodBuilder operation
  * surface because {@link CodeBuilder} is supplied inside the Class-File API's
- * method-body callback. It is not a second compiler IR. Compiler Phase 5.2
- * makes this implementation the single normal production authority after the
- * Phase 5.1 acceptance campaign completed. ASM remains only as a bounded test
- * oracle until its Phase 6 removal.</p>
+ * method-body callback. It is not a second compiler IR. This is the sole
+ * generated-class backend; the external ASM implementation and dependency were
+ * removed in Compiler Phase 6.</p>
  */
 public final class ClassFileJava implements JavaFactory {
-    static final String PHASE = "COMPILER_PHASE_5_2_AUTHORITY_SWITCH";
-    static final String AUTHORITY = "CLASSFILE_PRODUCTION_AUTHORITY";
+    static final String PHASE = "COMPILER_PHASE_6_ASM_REMOVAL";
+    static final String AUTHORITY = "CLASSFILE_PRODUCTION_SOLE_BACKEND";
     private static final int STATEMENT_SPLIT_LIMIT = 128;
 
     @Override
@@ -235,8 +234,8 @@ public final class ClassFileJava implements JavaFactory {
             if (Modifier.isStatic(fieldModifiers)) {
                 return fieldModifiers;
             }
-            // Preserve the transitional ASM backend's inherited activation
-            // lifecycle: instance fields can be assigned after <init>.
+            // Preserve the inherited activation lifecycle: instance fields
+            // can be assigned after <init>.
             return fieldModifiers & ~Modifier.FINAL;
         }
     }
@@ -633,8 +632,8 @@ public final class ClassFileJava implements JavaFactory {
         @Override
         public void upCast(String className) {
             checkBuilding();
-            // Match the inherited ASM contract exactly: upCast emits no
-            // bytecode and only changes the compiler's tracked stack type.
+            // Preserve the inherited contract: upCast emits no bytecode and
+            // only changes the compiler's tracked stack type.
             // Derby also relies on this for the SMALLINT return-wrapper path,
             // where a JVM int-category short is retyped as int before boxing.
             replaceTopType(className);

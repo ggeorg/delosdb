@@ -272,8 +272,6 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
         Process process = new ProcessBuilder(
                 javaExecutable(),
                 "--add-exports",
-                "java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED",
-                "--add-exports",
                 "java.base/sun.security.action=ALL-UNNAMED",
                 "--add-opens",
                 "java.base/java.nio=ALL-UNNAMED",

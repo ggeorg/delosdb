@@ -19,7 +19,7 @@ Closed or currently green areas include:
 
 ```text
 Gradle-only developer workflow
-ASM generated-bytecode backend isolated behind JavaFactory (transitional)
+JDK 25 Class-File API generated-bytecode backend behind JavaFactory
 opt-in delos_mvcc SQL integration
 MVCC typed durable row codec
 MVCC overflow payload lifecycle

@@ -1428,9 +1428,10 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
                 'verifyDelosRuntimeStorageProviders must reject retained Phase 8 classes from the production MVCC jar')
         DelosDbStaticAnalysisSupport.require(failures, !runtimeText.contains('doLast {\n        def runtimeFiles = project.'),
                 'Runtime provider verification must not resolve Project state from its task action')
-        DelosDbStaticAnalysisSupport.require(failures, runtimeText.contains('delosdbRuntimeJarFileCollection.files')
-                        && runtimeText.contains('delosdbAsmRuntimeFileCollection.files'),
-                'Runtime provider verification must use captured file collections during execution')
+        DelosDbStaticAnalysisSupport.require(failures,
+                runtimeText.contains('delosdbRuntimeJarFileCollection.files')
+                        && !runtimeText.contains('delosdbAsmRuntimeFileCollection'),
+                'Runtime provider verification must use only the captured DelosDB runtime jars after external ASM removal')
 
         DelosDbStaticAnalysisSupport.require(failures, productInfoScript.isFile(),
                 'Missing shared product-information convention: gradle/delosdb-product-info.gradle')
@@ -2874,8 +2875,8 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
         def docsText = new File(delosRepositoryRoot, 'docs/JDK25-CLASSFILE-BYTECODE-VERIFIER.md').getText('UTF-8')
         [
                 'This is a verifier artifact, not a bytecode-generation rewrite.',
-                'ClassFileJava is the production generator.',
-                'No ASM removal.',
+                'ClassFileJava is the sole production generator.',
+                'External ASM removed.',
                 'No generated SQL execution behavior change.',
                 'No S0 wiring yet.',
                 'java.lang.classfile.ClassFile',
@@ -2893,7 +2894,7 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
                 'JDK 25 Class-File API verifier update',
                 'JDK 25 java.lang.classfile.ClassFile',
                 './gradlew delosJdk25ClassFileBytecodeVerifier',
-                'ClassFileJava is the production generator.'
+                'ClassFileJava is the sole production generator.'
         ].each { markerText ->
             if (!inventoryText.contains(markerText)) {
                 failures << 'Algorithm inventory missing JDK 25 class-file verifier marker: ' + markerText

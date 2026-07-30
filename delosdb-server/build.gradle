@@ -33,7 +33,6 @@ dependencies {
     implementation project(':delosdb-runtime-api')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly servletModulePath
-    compileOnly "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 
     enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
 }

@@ -41,10 +41,9 @@ ext.delosdbRuntimeJarFiles = {
 
 
 ext.delosdbRuntimeJars = {
-    // derby.jar contains the transitional ASM bytecode backend. Keep ASM on the
-    // runtime classpath for jar-based smokes instead of relying on the old
-    // optional/static module edge.
-    project.files(project.ext.delosdbRuntimeJarFiles.call(), project.configurations.delosdbAsm)
+    // Compiler Phase 6 uses only JDK-owned runtime modules. The Class-File API
+    // backend is contained in derby.jar and requires no external bytecode jar.
+    project.files(project.ext.delosdbRuntimeJarFiles.call())
 }
 
 ext.delosdbRuntimeBuildTasks = [
@@ -70,7 +69,6 @@ tasks.register('jars') {
 }
 
 def delosdbRuntimeJarFileCollection = objects.fileCollection().from(ext.delosdbRuntimeJarFiles.call())
-def delosdbAsmRuntimeFileCollection = objects.fileCollection().from(configurations.delosdbAsm)
 
 tasks.register('verifyDelosRuntimeStorageProviders') {
     group = 'verification'
@@ -98,7 +96,6 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
 
     inputs.files(delosdbRuntimeJarFileCollection).withPropertyName('runtimeJars')
     inputs.file(mvccJar).withPropertyName('mvccProviderJar')
-    inputs.files(delosdbAsmRuntimeFileCollection).withPropertyName('asmRuntime')
 
     doLast {
         def derbyJar = engineJar.get().asFile
@@ -169,7 +166,6 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
         }
 
         def runtimeFiles = delosdbRuntimeJarFileCollection.files.toList()
-        runtimeFiles.addAll(delosdbAsmRuntimeFileCollection.files)
         def missingRuntimeFiles = runtimeFiles.findAll { !it.isFile() }
         if (!missingRuntimeFiles.isEmpty()) {
             throw new GradleException('DelosDB runtime jar set has missing file(s): '

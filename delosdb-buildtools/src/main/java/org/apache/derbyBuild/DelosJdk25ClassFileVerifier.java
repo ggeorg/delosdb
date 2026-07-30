@@ -35,11 +35,10 @@ import java.util.stream.Stream;
 /**
  * JDK-owned class-file verifier for DelosDB runtime outputs.
  *
- * <p>This tool deliberately verifies compiled class files through
- * {@link java.lang.classfile.ClassFile}. It does not replace Derby's ASM-backed
- * bytecode generator. The first JDK 25 modernization step is to make the
- * generated and compiled bytecode baseline observable with the JDK API that
- * evolves with the class-file format.</p>
+ * <p>This tool verifies compiled class files through
+ * {@link java.lang.classfile.ClassFile}, the same JDK-owned API family used by
+ * DelosDB's sole generated-class implementation. It remains an independent
+ * artifact verifier rather than a second generation path.</p>
  */
 public final class DelosJdk25ClassFileVerifier {
 

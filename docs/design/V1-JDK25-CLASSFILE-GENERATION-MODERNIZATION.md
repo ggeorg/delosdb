@@ -2,27 +2,14 @@
 
 ## Decision
 
-DelosDB will migrate generated SQL activation classes from ASM to the standard
-Class-File API available in the JDK 25 baseline:
+DelosDB generates SQL activation classes with the standard JDK 25 Class-File
+API:
 
 ```text
 java.lang.classfile
 ```
 
-This is compiler-infrastructure modernisation. It is not presented as a
-standalone steady-state query-performance optimisation.
-
-The migration is valuable because the JDK API tracks the platform class-file
-model directly and provides structured class, method, code, constant-pool, and
-verification-oriented builders. DelosDB expects this to reduce backend-specific
-bookkeeping and create a cleaner basis for later primitive-specialised execution.
-Class size, generation latency, allocation, loading, and execution effects remain
-measurements rather than assumptions.
-
-## Existing architecture discovered by inventory
-
-The compiler already has the narrow generation abstraction required for this
-migration:
+The inherited compiler boundary remains unchanged:
 
 ```text
 Bound SQL tree
@@ -31,49 +18,35 @@ Bound SQL tree
     -> ClassBuilder
     -> MethodBuilder
     -> LocalField
-    -> current backend
+    -> ClassFileJava
 ```
 
-Compiler nodes do not import ASM and do not import `java.lang.classfile`.
+Compiler nodes do not import `java.lang.classfile` directly. They depend on the
+existing DelosDB generation contract. No `GeneratedClassPlan`,
+`GeneratedClassBackend`, second general IR, normal backend selector, or fallback
+backend is introduced.
 
-The current production backend is isolated in one implementation:
+## Final architecture
 
 ```text
-org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
+SQL parse and bind
+    -> optimise
+    -> JavaFactory / ClassBuilder / MethodBuilder / LocalField
+    -> ClassFileJava
+    -> JDK 25 class-file bytes
+    -> generated activation loading
 ```
 
-`AsmJava` remains compiled only as a bounded post-cutover test oracle until
-Compiler Phase 6 removes it and the external ASM dependency.
+`ClassFileJava` is the sole production implementation. No external ASM
+dependency remains.
 
-Therefore DelosDB will not add `GeneratedClassPlan`, `GeneratedClassBackend`, or
-another general bytecode IR. Such a layer would duplicate the existing contract
-and increase code size without creating a new responsibility.
-
-## Final compiler architecture
-
-During the Phase 5.2 proof period:
+The fixed monitor registration is:
 
 ```text
-Bound SQL tree
-    -> existing JavaFactory/ClassBuilder/MethodBuilder contract
-        -> ClassFileJava           sole normal production backend
-        -> AsmJava                 bounded test oracle only
+derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
 ```
 
-After Phase 6:
-
-```text
-Bound SQL tree
-    -> existing JavaFactory/ClassBuilder/MethodBuilder contract
-        -> ClassFileJava           sole backend
-```
-
-The final implementation name is fixed as `ClassFileJava`; the verified vertical
-slice and complete differential campaign proved the implementation remains
-bounded by the inherited DelosDB generation contract.
-
-There is no normal runtime backend selector. Differential selection exists only
-inside focused tests.
+There is no production or test-time alternative backend after Compiler Phase 6.
 
 ## Semantic invariants
 
@@ -85,13 +58,16 @@ generated activation interfaces
 null behaviour
 exception behaviour
 SQLStates
-class-loading lifecycle
 statement-cache behaviour
+class-loader ownership
 query results
+JDBC or DRDA protocol fields
+storage or MVCC behaviour
 ```
 
-Byte-for-byte equality is not required. Semantic equivalence, verification, and
-performance acceptance are required.
+Byte-for-byte identity with the retired backend was never required. Verification,
+contract parity, semantic parity, language-suite compatibility, integration
+coverage, lifecycle evidence, and performance measurements were required.
 
 ## Implementation status
 
@@ -102,11 +78,13 @@ Compiler Phase 2.2 status: VERIFIED
 Compiler Phase 3 status: VERIFIED
 Compiler Phase 4 status: VERIFIED
 Compiler Phase 5.1 status: VERIFIED
-Compiler Phase 5.2 status: IMPLEMENTED / PENDING VERIFICATION
-Compiler Phase 6 status: NOT STARTED — NEXT
+Compiler Phase 5.2 status: VERIFIED
+Compiler Phase 6 status: IMPLEMENTED / PENDING VERIFICATION
 ```
 
-Phase 2.1 freezes the exact inherited boundary before any second backend exists:
+## Frozen generation contract
+
+The inherited boundary remains:
 
 ```text
 1 JavaFactory method
@@ -114,280 +92,152 @@ Phase 2.1 freezes the exact inherited boundary before any second backend exists:
 43 MethodBuilder signatures
 32 MethodBuilder operation names
 0 LocalField methods
+52 total declared methods
+2 methods declaring checked exceptions
 ```
 
-All 32 operation names have live SQL compiler-node use and an implementation in
-`AsmJava`. The reflection-based contract test records a deterministic contract
-digest so a later backend cannot silently reshape the compiler-facing API.
-
-Phase 2.2 adds the executable ASM behavior oracle. Every MethodBuilder signature
-is mapped to an executed behavior fixture covering lifecycle, constants and
-parameters, fields, objects and arrays, conversions, stack operations, control
-flow, invocation, constructor chaining, and statement splitting. Generated
-bytes are reproduced twice to prove deterministic fixture construction, then
-loaded and executed to freeze results, declared exceptions, and representative
-runtime failures before the Class-File API backend exists.
-
-## Compiler Phase 1 — inventory and ASM evidence
-
-Phase 1 records:
+Every MethodBuilder signature is mapped to one of ten executed behaviour groups:
 
 ```text
-all production ASM imports
-all direct Class-File API imports
-the fixed production backend registration
-all build and JPMS ASM dependency edges
-the existing generation-contract surface
-compiler-node isolation from backend libraries
-generated class-file version and size
-class generation time
-class generation allocation
-class loading time
-loaded generated-class count
-steady execution timing
-```
-
-The focused baseline generates a deterministic class through
-`JavaFactory/ClassBuilder/MethodBuilder`, parses it with `ClassFile`, loads it,
-executes constants, parameters, null branches, method invocation, field access,
-and return paths, and writes:
-
-```text
-build/reports/delosdb/compiler/asm-generated-class-baseline.txt
-```
-
-Timing and allocation are diagnostic; no threshold is used in Phase 1.
-
-## Required differential fixture matrix
-
-The complete migration proof must cover representative generated activations
-for:
-
-```text
-constants
-parameters
-column reads
-null handling
-primitive arithmetic
-decimal arithmetic
-casts
-comparisons
-Boolean short-circuiting
-conditional branches
-method calls
-user-defined functions
-aggregates
-subqueries
-wide projections
-large generated methods
-exceptions and SQLState preservation
-```
-
-Phase 1 establishes the deterministic generation and measurement harness with a
-bounded subset. Phases 2 through 4 extend the same fixture family until every
-`MethodBuilder` operation used by compiler nodes is covered. The inventory, not
-a speculative feature list, determines completion.
-
-## Compiler Phase 2 — freeze the existing backend boundary
-
-ASM is already isolated behind the inherited contract. Phase 2 therefore does
-not introduce another interface. The implemented contract-freeze increment:
-
-```text
-freezes JavaFactory/ClassBuilder/MethodBuilder/LocalField as the migration boundary
-inventories all 43 MethodBuilder signatures and 32 operation names
-proves every operation name has live compiler-node use
-proves AsmJava implements every inventoried operation name
-adds a deterministic reflection-based contract digest
-keeps AsmJava authoritative
-adds no production Java, public API, module, dependency edge, or runtime selector
-```
-
-The operation-behavior fixture increment maps all 43 MethodBuilder signatures to
-ten executed fixture groups and keeps the ASM backend as the sole authority.
-The focused test writes a stable oracle report for the later differential
-backend. An operation may be removed only when both compiler-node usage and
-compatibility evidence prove it obsolete.
-
-Compiler Phase 2 is closed. The Phase 2.2 focused test, contract static gate,
-generated-class baseline, complete language suite, JDK 25 verifier, and
-modular-image verification are green.
-
-Compiler Phase 3 is verified. It introduced the package-internal, test-only
-JDK 25 Class-File API backend and proved the bounded vertical slice through the
-same inherited DelosDB abstraction as ASM. The focused differential task,
-complete language suite, JDK 25 verifier, modular-image DRDA lane, and normal
-closeout gates are green.
-
-Compiler Phase 4 is verified. It extends that same backend to the complete inherited
-`MethodBuilder` operation surface and proves all 43 signatures and ten behavior
-groups. Phase 5.1 promoted the exact verified implementation into engine
-production source and completed the focused language, JDBC/DRDA, modular-image,
-SQLancer, lifecycle, and performance acceptance campaign. Phase 5.2 switches
-`modules.properties` to the Class-File API backend. ASM remains compiled only
-as a bounded differential and baseline oracle until its Phase 6 removal.
-
-## Compiler Phase 3 — JDK vertical slice
-
-Implement a package-internal Class-File API backend for:
-
-```text
-class and field creation
-method creation and parameters
-constants
+method lifecycle
+parameters and constants
 field access
-method invocation
-primitive and object conversion
-null test
-conditional branch
-return
+objects and arrays
+receiver and conversion behaviour
+stack and statement behaviour
+control flow
+invocation
+constructor chaining
+statement splitting
 ```
 
-For each fixture:
+The contract digest remains fixed. The production behaviour test generates the
+complete fixture twice through `ClassFileJava`, proves deterministic bytes and
+digest, loads the generated class, executes all ten groups, and verifies the
+representative failure contracts.
 
-```text
-generate with ASM
-generate with the Class-File API
-parse and verify both
-load both
-execute both
-compare result or exception
-```
+## Migration evidence
 
-The JDK backend is test-only during this phase. The implemented bounded slice
-covers class and field creation, methods and parameters, primitive and typed-null
-constants, generated and external field access, static/virtual/interface and
-cached method invocation, primitive conversion, reference casts and upcasts,
-`instanceof`, null and Boolean branches, and typed returns. It parses, verifies,
-loads, and executes ASM and Class-File API classes and compares method
-signatures, results, and representative exceptions.
+### Phase 1 — inventory and baseline
 
-The original Phase 3 fixture remains as a bounded regression proof. Phase 4
-removes its former unsupported-operation boundary by implementing arrays,
-object construction, stack choreography, checked-exception declarations, and
-statement splitting in the same implementation that later becomes the production-packaged Phase 5.1 candidate.
+The repository inventoried the generation abstraction, compiler consumers,
+backend imports, build dependencies, module edges, generated class-file version,
+class size, generation time, allocation, class loading, loaded-class count, and
+steady reflective execution.
 
-## Compiler Phase 4 — complete differential backend
+### Phase 2.1 — contract freeze
 
-Extend the Class-File API backend to every operation that is actually used by
-DelosDB compiler nodes, including arrays, constructor calls, stack operations,
-casts, exception declarations, and statement splitting.
+Reflection and source inventory froze all 52 interface methods and the exact
+checked-exception declarations. Compiler nodes remained isolated from backend
+libraries.
 
-The implemented Phase 4 increment reuses the frozen 43-signature ASM behavior
-oracle. Both backends generate the same 38-method fixture, execute all ten
-behavior groups, compare public method and checked-exception contracts, compare
-representative runtime failures, and record generation, allocation, class-size,
-class-loading, loaded-class, and reflective execution diagnostics.
+### Phase 2.2 — operation behaviour freeze
+
+All 43 MethodBuilder signatures were mapped to ten executable groups. The
+fixture covered constants, parameters, fields, construction, arrays, primitive
+and reference conversion, stack operations, branches, calls, exceptions, and
+statement splitting.
+
+### Phase 3 — bounded JDK vertical slice
+
+A test-only Class-File API implementation proved class creation, fields,
+methods, parameters, constants, field access, calls, conversions, branches,
+returns, parsing, verification, loading, execution, and exception comparison.
+
+### Phase 4 — complete differential backend
+
+The JDK implementation reached complete MethodBuilder coverage:
 
 ```text
 MethodBuilder signatures covered: 43
-Behavior fixture groups executed: 10
-Generated methods per backend: 38
+Behaviour fixture groups executed: 10
+Generated methods: 38
 Unsupported MethodBuilder operations: 0
-Normal runtime backend selector: none
+Generated class-file major: 69
 ```
 
-ASM remained the sole production authority through Phase 4. Phase 5.1 moved
-the complete JDK backend unchanged into engine production source and verified
-it through focused acceptance tasks. Phase 5.2 now uses that exact accepted
-implementation as the fixed normal registration; ASM is no longer registered.
+The campaign also measured class size, generation latency, generation
+allocation, class loading, loaded-class deltas, and reflective execution. These
+measurements were diagnostic and did not replace semantic acceptance.
 
-Compare:
+### Phase 5.1 — production candidate acceptance
 
-```text
-query results
-SQLStates
-exception causes
-generated method signatures
-class verification
-class-file size
-generation latency
-class-loading latency
-steady execution
-allocation
-```
-
-Normal production executes one backend only.
-
-## Compiler Phase 5.1 — production candidate acceptance
-
-The complete backend is compiled into the engine under:
+The complete backend moved into engine production source but remained
+unregistered. Isolated acceptance covered:
 
 ```text
-org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
-```
-
-The verified Phase 5.1 campaign used Derby's inherited module override only
-inside isolated test JVMs while normal production remained on ASM. That campaign
-is complete. There is still no user-facing backend selector and no normal
-runtime mode switch.
-
-The built-in campaign covers:
-
-```text
-real SQL compiler selection and execution
-complete 43-signature differential generation
+real SQL compilation
+prepared reads and updates
+primitive arithmetic and null branches
+wide projection generation
+SQLState preservation
 complete inherited language suite
-focused JDBC and DRDA integration
-security and application-UDT boundaries
-jlink modular-image DRDA execution
-class loading and shutdown diagnostics
+JDBC and DRDA
+security and deserialisation boundaries
+application UDT and aggregate paths
+jlink modular-image DRDA
+external SQLancer
+class loading and shutdown
 ```
 
-SQLancer remains an explicit external command. The dedicated candidate task
-injects the internal module selection through `JAVA_TOOL_OPTIONS` without
-making SQLancer a normal build dependency.
-
-## Compiler Phase 5.2 — switch authority
-
-The Phase 5.1 acceptance requirements are verified:
+The candidate campaign exposed and corrected two inherited-contract details:
 
 ```text
-all language tests pass
-all generated-code differential tests pass
-SQLancer passes
-module-image tests pass
-JDBC and DRDA tests pass
-no material compilation regression exists
-no material execution regression exists
-no generated-class leak is observed
+null field owner means infer the owner from the receiver type
+upCast may retype primitive computational values, including short -> int
 ```
 
-Phase 5.2 therefore changes the fixed normal registration to:
+### Phase 5.2 — production authority switch
+
+`modules.properties` switched normal authority to `ClassFileJava`. The default
+SQL proof, complete contract behaviour, normal language suite, default
+JDBC/DRDA lane, modular image, and post-switch SQLancer campaign verified the
+same fixed production path without an override.
+
+### Compiler Phase 6 — external ASM removal
+
+Phase 6 removes:
 
 ```text
-derby.module.javaCompiler=org.apache.derby.impl.services.bytecode.classfile.ClassFileJava
+AsmJava production source
+external ASM dependency declarations
+root ASM version and configuration
+JPMS requires org.objectweb.asm
+runtime ASM artifact composition
+module compile-only ASM edges
+benchmark ASM runtime edges
+ASM baseline and differential tests
+candidate-only and oracle-only Gradle tasks
+candidate backend propagation into modular-image JVMs
+JDK-internal ASM export flags left by the retired path
 ```
 
-The Class-File API backend is now the fixed normal production authority.
-The production path now executes exactly one backend: the JDK 25 Class-File API
-implementation. A focused default-selection proof, the normal language suite,
-normal JDBC/DRDA lane, normal modular-image lane, and post-switch SQLancer task
-must all remain green without a backend override.
-
-ASM remains compiled only as a bounded test oracle for this proof period. Its
-retained evidence is limited to the deterministic ASM baseline, the frozen
-behavior oracle, and the complete differential test. It is not registered as a
-normal module and is removed completely in Phase 6.
-
-## Compiler Phase 6 — remove ASM
-
-After the proof period:
+The final retained executable evidence is:
 
 ```text
-delete AsmJava
-remove the direct ASM dependency
-remove org.objectweb.asm from module-info.java
-remove ASM-only build configurations and fixture wiring
-remove differential tests that no longer provide unique evidence
-add a static gate prohibiting DelosDB-owned ASM imports and direct dependencies
+frozen contract proof
+complete ClassFileJava behaviour proof
+real SQL production-selection proof
+complete inherited language suite
+focused JDBC/DRDA/security/UDT lane
+normal modular-image DRDA lane
+external SQLancer through fixed production registration
+JDK 25 class-file verifier
 ```
 
-The completed migration must be net-negative in production code and dependency
-surface unless the final report identifies a verified correctness or performance
-property that justifies otherwise.
+The permanent gates are:
 
-## Performance acceptance
+```text
+delosGeneratedClassModernizationStaticAnalysis
+delosGeneratedClassContractStaticAnalysis
+delosGeneratedClassClassFileAsmRemovalStaticAnalysis
+```
+
+They prohibit external ASM source references, dependencies, runtime artifacts,
+module requirements, retired oracle files and tasks, backend overrides, and
+alternative production registration.
+
+## Performance and lifecycle acceptance
 
 Acceptance requires:
 
@@ -395,14 +245,51 @@ Acceptance requires:
 no material steady-state execution regression
 no unacceptable compilation regression
 no generated-class leak
+verified class-file major 69
 ```
 
-Potential improvements such as smaller classes, lower generation allocation, or
-faster construction are measured rather than assumed. Steady-state execution is
-expected to depend primarily on emitted bytecode and HotSpot optimisation.
+The previous diagnostic comparison showed similar generation, loading, and
+reflective execution behaviour, with higher Class-File API generation
+allocation in the synthetic fixture. Phase 6 does not hide that measurement or
+invent a threshold; the normal language, JDBC/DRDA, modular-image, and SQLancer
+campaigns remain the authoritative compatibility evidence.
 
-## Later execution work
+## Final dependency policy
 
-Primitive specialisation or other generated execution improvements must use the
-existing DelosDB generation contract. Compiler nodes do not call ASM or
-`java.lang.classfile` directly.
+No external ASM dependency remains.
+
+The standard `java.lang.classfile` API is supplied by `java.base`. DelosDB does
+not package a bytecode library, add an automatic bytecode module, expose a
+backend-selection property, or keep a fallback implementation.
+
+## Verification
+
+Focused final verification:
+
+```text
+./gradlew \
+  delosGeneratedClassModernizationStaticAnalysis \
+  delosGeneratedClassContractStaticAnalysis \
+  delosGeneratedClassClassFileAsmRemovalStaticAnalysis \
+  :delosdb-tests:runDelosGeneratedClassContractFreezeTest \
+  :delosdb-tests:runDelosGeneratedClassContractBehaviorTest \
+  :delosdb-tests:runDelosGeneratedClassClassFileProductionTest \
+  --console=plain
+```
+
+Built-in acceptance:
+
+```text
+./gradlew \
+  :delosdb-tests:runDelosGeneratedClassClassFileProductionAcceptance \
+  --console=plain
+```
+
+External SQLancer:
+
+```text
+./gradlew \
+  delosGeneratedClassClassFileProductionSqlancerValidation \
+  -Pdelosdb.compiler.classfile.production.sqlancer.command='<existing SQLancer command>' \
+  --console=plain
+```

@@ -35,7 +35,6 @@ dependencies {
     testImplementation rootProject.files('tools/java/lucene-analyzers-common.jar')
     testImplementation rootProject.files('tools/java/lucene-core.jar')
     testImplementation rootProject.files('tools/java/lucene-queryparser.jar')
-    testImplementation "org.ow2.asm:asm:${rootProject.ext.asmVersion}"
 }
 
 sourceSets {

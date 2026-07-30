@@ -82,7 +82,7 @@ Current owner: Derby compatibility with the DelosDB JDK 25 Class-File API backen
 
 Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
 
-Current anchor: `ClassFileJava` is the fixed production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. `AsmJava` remains the only production source importing ASM and is retained only as a bounded differential test oracle until Phase 6 removes it. Compiler nodes depend on the DelosDB generation contract rather than either bytecode implementation.
+Current anchor: `ClassFileJava` is the sole production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. The retired external ASM implementation, dependency, JPMS edge, runtime artifact, and oracle tasks are removed in Compiler Phase 6. Compiler nodes depend only on the DelosDB generation contract.
 
 Risks:
 
@@ -92,8 +92,8 @@ Risks:
 
 Next proof idea:
 
-* Capture deterministic ASM generation, class-size, allocation, class-loading, and execution evidence through the existing generation contract.
-* Add a test-only Class-File API backend only after the contract operation inventory is complete.
+* Preserve deterministic ClassFileJava generation, class-size, allocation, class-loading, and execution evidence through the existing generation contract.
+* Keep the permanent zero-external-ASM static gate, complete behavior fixture, language suite, JDBC/DRDA lane, modular-image lane, and SQLancer lane green.
 
 ### Optimizer/costing
 
@@ -512,9 +512,9 @@ JDK 25 java.lang.classfile.ClassFile
 Current rule:
 
 ```text
-ClassFileJava is the production generator.
-ASM is isolated in AsmJava as a bounded test oracle until Compiler Phase 6.
-The Class-File API verifies compiled runtime classes and both generated-class baselines.
+ClassFileJava is the sole production generator.
+External ASM source, dependencies, and module edges are removed.
+The Class-File API verifies compiled runtime classes and generated production fixtures.
 Compiler nodes call only JavaFactory/ClassBuilder/MethodBuilder.
 ```
 
@@ -744,3 +744,25 @@ The experiment may map aligned fixed-size regions, compare exact final state wit
 and record diagnostic timing. It must not enter production RawStore source sets, authorize a mapped
 backend, replace byte-array page authority, or create a timing threshold. A future read-only derived
 subsystem requires a separate ownership and recovery decision.
+
+
+## Compiler Phase 6 Class-File API backend closeout
+
+The generated-class migration is production-closed after final verification.
+
+```text
+sole backend: ClassFileJava
+external bytecode dependency: none
+normal backend selector: none
+fallback backend: none
+class-file verifier: JDK 25 java.lang.classfile
+```
+
+Permanent verification:
+
+```text
+./gradlew delosGeneratedClassModernizationStaticAnalysis
+./gradlew delosGeneratedClassContractStaticAnalysis
+./gradlew delosGeneratedClassClassFileAsmRemovalStaticAnalysis
+./gradlew :delosdb-tests:runDelosGeneratedClassClassFileProductionAcceptance
+```
