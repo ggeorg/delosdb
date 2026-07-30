@@ -19,6 +19,9 @@ def buildToolSourceIncludes = [
         'org/apache/derbyBuild/ClassSizeCrawler.java',
         'org/apache/derbyBuild/SecureXmlFactoryProbe.java',
         'org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java',
+        'org/apache/derbyBuild/DelosRepositoryIntegrityAudit.java',
+        'org/apache/derbyBuild/DelosRepositoryIntegrityMetrics.java',
+        'org/apache/derbyBuild/DelosRepositoryIntegrityModel.java',
         'org/apache/derby/impl/store/access/sort/SortMemoryPolicyProbe.java'
 ]
 

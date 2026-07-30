@@ -1,0 +1,213 @@
+/*
+ * DelosDB repository-integrity inventory and monotonic cleanup gate.
+ *
+ * The inventory reports candidates. It does not automatically classify every
+ * private member, duplicate body, large method, or catch block as a defect.
+ * Later cleanup stages must review the evidence before changing behavior.
+ */
+
+import java.util.Properties
+
+final File riRoot = rootProject.projectDir
+final File riBuild = rootProject.layout.buildDirectory.get().asFile
+final File riReportDirectory = new File(
+        riBuild, 'reports/delosdb/repository-integrity/inventory')
+final File riSummaryFile = new File(riReportDirectory, 'summary.properties')
+final File riStaticReport = new File(
+        riBuild, 'reports/delosdb/repository-integrity-static-analysis.txt')
+final File riBaselineFile = new File(
+        riRoot,
+        'gradle/static-analysis/delosdb-repository-integrity-baseline.properties')
+final Object riBuildToolsClasses = project(':delosdb-buildtools')
+        .layout.buildDirectory.dir('classes/build-tools')
+
+final Closure<Properties> riLoadProperties = { File file ->
+    if (!file.isFile()) {
+        throw new GradleException('Missing repository-integrity properties: ' +
+                file)
+    }
+    Properties properties = new Properties()
+    file.withInputStream { stream -> properties.load(stream) }
+    properties
+}
+
+final Closure<Integer> riInt = { Properties properties, String name ->
+    String value = properties.getProperty(name)
+    if (value == null) {
+        throw new GradleException(
+                'Repository-integrity property is missing: ' + name)
+    }
+    try {
+        return Integer.parseInt(value.trim())
+    } catch (NumberFormatException invalid) {
+        throw new GradleException(
+                'Repository-integrity property is not an integer: ' +
+                        name + '=' + value,
+                invalid)
+    }
+}
+
+tasks.register('delosRepositoryIntegrityInventory', JavaExec) {
+    group = 'verification'
+    description = 'Parses the full Java source tree and writes repository-integrity evidence.'
+    dependsOn ':delosdb-buildtools:classes'
+
+    classpath = files(riBuildToolsClasses)
+    mainClass.set('org.apache.derbyBuild.DelosRepositoryIntegrityAudit')
+    maxHeapSize = '2g'
+    workingDir = riRoot
+
+    inputs.files(rootProject.fileTree(riRoot) {
+        include '**/*.java'
+        include '**/*.gradle'
+        include '**/module-info.java'
+        include 'settings.gradle'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/out/**'
+    })
+    outputs.dir(riReportDirectory)
+
+    doFirst {
+        setArgs([
+                '--root', riRoot.absolutePath,
+                '--report-dir', riReportDirectory.absolutePath
+        ])
+    }
+}
+
+tasks.register('delosRepositoryIntegrityStaticAnalysis') {
+    group = 'verification'
+    description = 'Enforces the repository-integrity baseline and compiler no-compromise invariants.'
+    dependsOn 'delosRepositoryIntegrityInventory'
+    inputs.file(riBaselineFile)
+    inputs.file(riSummaryFile)
+    outputs.file(riStaticReport)
+
+    doLast {
+        Properties actual = riLoadProperties(riSummaryFile)
+        Properties baseline = riLoadProperties(riBaselineFile)
+        List<String> failures = []
+
+        if (riInt(actual, 'parseErrors') != 0) {
+            failures.add('Java parser errors must remain zero')
+        }
+        if (riInt(actual, 'compilerAuthorityViolations') != 0) {
+            failures.add('Generated-class authority violations must remain zero')
+        }
+
+        List<String> monotonicMetrics = [
+                'deadPrivateProductionMethods',
+                'deadPrivateProductionFields',
+                'duplicateProductionMethodGroups',
+                'duplicateProductionMethods',
+                'estimatedDuplicateProductionLines',
+                'productionMethods100Plus',
+                'productionMethodsComplexity20Plus',
+                'productionClasses1000Plus',
+                'productionEmptyCatches',
+                'productionGenericCatches',
+                'productionSuppressWarnings',
+                'productionQualityMarkers',
+                'compilerAuthorityCompromiseCandidates'
+        ]
+        monotonicMetrics.each { String name ->
+            int current = riInt(actual, name)
+            int maximum = riInt(baseline, name)
+            if (current > maximum) {
+                failures.add(name + ' increased from baseline maximum ' +
+                        maximum + ' to ' + current)
+            }
+        }
+
+        List<String> requiredReports = [
+                'repository-integrity-report.txt',
+                'dead-private-method-candidates.tsv',
+                'dead-private-field-candidates.tsv',
+                'duplicate-production-method-groups.tsv',
+                'production-method-outliers.tsv',
+                'production-class-size-outliers.tsv',
+                'catch-inventory.tsv',
+                'quality-marker-inventory.tsv',
+                'compiler-authority-integrity.txt',
+                'parse-errors.txt'
+        ]
+        requiredReports.each { String name ->
+            if (!new File(riReportDirectory, name).isFile()) {
+                failures.add('Repository-integrity report is missing: ' + name)
+            }
+        }
+
+        String authorityText = new File(
+                riReportDirectory,
+                'compiler-authority-integrity.txt').getText('UTF-8')
+        [
+                'Fixed registration: ClassFileJava',
+                'External ASM source/build/module references: none',
+                'Authority violations: 0'
+        ].each { String marker ->
+            if (!authorityText.contains(marker)) {
+                failures.add('Compiler-integrity report is missing: ' + marker)
+            }
+        }
+        if (riInt(actual, 'compilerAuthorityCompromiseCandidates') > 0
+                && !authorityText.contains('COMPILER-AUTHORITY-001|HIGH|')) {
+            failures.add('Compiler-integrity report is missing the active ' +
+                    'COMPILER-AUTHORITY-001 classification')
+        }
+
+        File report = riStaticReport
+        report.parentFile.mkdirs()
+        report.withPrintWriter('UTF-8') { writer ->
+            writer.println('DelosDB repository integrity static analysis')
+            writer.println('==========================================')
+            writer.println('Baseline version: ' +
+                    baseline.getProperty('baselineVersion', 'unknown'))
+            writer.println('Java files: ' + actual.getProperty('javaFiles'))
+            writer.println('Production Java files: ' +
+                    actual.getProperty('productionJavaFiles'))
+            writer.println('Types: ' + actual.getProperty('types'))
+            writer.println('Methods: ' + actual.getProperty('methods'))
+            writer.println('Fields: ' + actual.getProperty('fields'))
+            writer.println('Parse errors: ' + actual.getProperty('parseErrors'))
+            writer.println('Dead private production methods: ' +
+                    actual.getProperty('deadPrivateProductionMethods'))
+            writer.println('Dead private production fields: ' +
+                    actual.getProperty('deadPrivateProductionFields'))
+            writer.println('Exact production duplicate groups: ' +
+                    actual.getProperty('duplicateProductionMethodGroups'))
+            writer.println('Estimated duplicate production lines: ' +
+                    actual.getProperty('estimatedDuplicateProductionLines'))
+            writer.println('Production methods >= 100 lines: ' +
+                    actual.getProperty('productionMethods100Plus'))
+            writer.println('Production methods complexity >= 20: ' +
+                    actual.getProperty('productionMethodsComplexity20Plus'))
+            writer.println('Production classes >= 1000 lines: ' +
+                    actual.getProperty('productionClasses1000Plus'))
+            writer.println('Production empty catches: ' +
+                    actual.getProperty('productionEmptyCatches'))
+            writer.println('Production generic catches: ' +
+                    actual.getProperty('productionGenericCatches'))
+            writer.println('Compiler authority violations: ' +
+                    actual.getProperty('compilerAuthorityViolations'))
+            writer.println('Compiler compromise candidates: ' +
+                    actual.getProperty(
+                            'compilerAuthorityCompromiseCandidates'))
+            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
+            failures.each { String failure -> writer.println('- ' + failure) }
+        }
+
+        if (!failures.isEmpty()) {
+            failures.each { String failure ->
+                logger.error('Repository-integrity failure: {}', failure)
+            }
+            throw new GradleException(
+                    'Repository integrity static analysis failed. Report: ' +
+                            report)
+        }
+        logger.lifecycle(
+                'DelosDB repository integrity static analysis passed. Report: {}',
+                report)
+    }
+}
