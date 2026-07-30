@@ -77,3 +77,19 @@ is ever approved.
 
 `delosMvccRetainedRuntimeRetirementStaticAnalysis` verifies source archive deletion, compact build
 wiring, current proof tasks, runtime artifacts, service boundaries, documentation, and S0 inclusion.
+
+## Retired database-snapshot proofs
+
+The old `MvccDatabaseStorageSnapshotTest` and
+`MvccTableTransactionSnapshotTest` exercised the external persistence runtime's
+`DelosDatabaseStorageSnapshot` implementation. They are not RawStore proofs.
+After authority cutover, `MvccStorageDiagnostics.databaseStorageSnapshot()`
+intentionally fails closed, and `MvccRawStoreAuthorityCutoverTest` preserves
+that contract.
+
+The two obsolete focused tasks and the historical
+`docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md` description are removed. Current
+RawStore diagnostics are proved through maintenance, memory, RawStore I/O,
+storage-path, and transaction-registry tests. The permanent retirement gate
+rejects restoration of either stale test, task, or document.
+

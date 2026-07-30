@@ -208,3 +208,18 @@ storage or MVCC behavior
 generic configurability of unrelated Derby modules
 module ownership or dependencies
 ```
+
+## Stage 3 verification-lane correction
+
+Stage 3's storage validation consolidation passed. Its initial regression
+command also named two Phase 9 snapshot tasks that depended on the already
+retired external persistence runtime. Those tests contradicted the accepted
+RawStore authority boundary because `MvccStorageDiagnostics` deliberately
+rejects `databaseStorageSnapshot()`.
+
+The obsolete database/table snapshot tests, task registrations, dependency
+wiring, and historical snapshot document are removed. The retained-runtime
+retirement gate now prohibits their return. This correction changes no storage
+runtime code and leaves the fail-closed authority proof in
+`MvccRawStoreAuthorityCutoverTest` intact.
+

@@ -8126,8 +8126,14 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
             file('delosdb-storage-mvcc/src/test'),
             file('benchmarks/jcstress/delosdb-storage-mvcc')
     ]
+    def retiredSnapshotProofFiles = [
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccDatabaseStorageSnapshotTest.java'),
+            file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccTableTransactionSnapshotTest.java'),
+            file('docs/MVCC-DATABASE-STORAGE-SNAPSHOT.md')
+    ]
     inputs.files(required)
     inputs.files(removedRoots)
+    inputs.files(retiredSnapshotProofFiles)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
     outputs.file(layout.buildDirectory.file('reports/delosdb/mvcc-retained-runtime-retirement-static-analysis.txt'))
 
@@ -8136,6 +8142,9 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
         required.each { if (!it.isFile()) failures << 'Missing required source: ' + it }
         removedRoots.findAll { it.exists() }.each {
             failures << 'Retired Phase 8 oracle root remains in the repository: ' + it
+        }
+        retiredSnapshotProofFiles.findAll { it.exists() }.each {
+            failures << 'Retired external-runtime snapshot proof remains in the repository: ' + it
         }
         if (failures.isEmpty()) {
             def factory = required[0].getText('UTF-8')
@@ -8202,7 +8211,9 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
                 failures << 'module-info must not discover the retired external provider'
             }
             [':delosdb-storage-mvcc:runMvcc', 'legacyRetainedCheck',
-             'runDelosMvccBufferCacheBenchmark', 'runDelosMvccPageCodecBenchmark'].each { stale ->
+             'runDelosMvccBufferCacheBenchmark', 'runDelosMvccPageCodecBenchmark',
+             'runDelosMvccDatabaseStorageSnapshotTest',
+             'runDelosMvccTableTransactionSnapshotTest'].each { stale ->
                 if (testsBuild.contains(stale)) {
                     failures << 'Normal SQL and baseline tests retain an archived-oracle task reference: ' + stale
                 }
