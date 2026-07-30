@@ -19,6 +19,8 @@ import java.util.Objects;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.derby.iapi.store.types.DelosStorageText;
+
 /**
  * Database-scoped, disabled-by-default deterministic RawStore I/O fault seam.
  *
@@ -54,7 +56,7 @@ final class DelosRawStoreIoFaultInjector {
     }
 
     void bind(String identity) {
-        String normalized = requireText(identity, "identity");
+        String normalized = DelosStorageText.requireNonBlank(identity, "identity");
         if (bound.compareAndSet(false, true)) {
             databaseIdentity = normalized;
             runtimeActive = true;
@@ -283,7 +285,7 @@ final class DelosRawStoreIoFaultInjector {
                         "unsupported RawStore I/O fault registry version "
                                 + registryVersion);
             }
-            id = requireText(id, "id");
+            id = DelosStorageText.requireNonBlank(id, "id");
             steps = List.copyOf(Objects.requireNonNull(steps, "steps"));
             for (int left = 0; left < steps.size(); left++) {
                 Step step = steps.get(left);
@@ -353,8 +355,10 @@ final class DelosRawStoreIoFaultInjector {
             if (registryVersion != REGISTRY_VERSION) {
                 throw new IllegalArgumentException("invalid registryVersion");
             }
-            databaseIdentity = requireText(databaseIdentity, "databaseIdentity");
-            scheduleId = requireText(scheduleId, "scheduleId");
+            databaseIdentity = DelosStorageText.requireNonBlank(
+                    databaseIdentity, "databaseIdentity");
+            scheduleId = DelosStorageText.requireNonBlank(
+                    scheduleId, "scheduleId");
             hits = List.copyOf(Objects.requireNonNull(hits, "hits"));
             if (scheduledSteps < 0
                     || discardedHits < 0L
@@ -402,11 +406,4 @@ final class DelosRawStoreIoFaultInjector {
         void halt(int status);
     }
 
-    private static String requireText(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

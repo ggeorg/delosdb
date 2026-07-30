@@ -20,8 +20,6 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.util.Objects;
-
 /** Versioned immutable observation of one active provider transaction participant. */
 public record DelosTransactionSnapshot(
         int schemaVersion,
@@ -48,9 +46,10 @@ public record DelosTransactionSnapshot(
             throw new IllegalArgumentException("schemaVersion must be positive");
         }
         providerId = DelosStorageProviderIds.normalize(providerId);
-        databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
-        accessMode = requireNonBlank(accessMode, "accessMode");
-        state = requireNonBlank(state, "state");
+        databaseIdentity = DelosStorageText.requireNonBlank(
+                databaseIdentity, "databaseIdentity");
+        accessMode = DelosStorageText.requireNonBlank(accessMode, "accessMode");
+        state = DelosStorageText.requireNonBlank(state, "state");
         if (!READ_ONLY.equals(accessMode) && !READ_WRITE.equals(accessMode)) {
             throw new IllegalArgumentException("unsupported transaction accessMode: " + accessMode);
         }
@@ -73,11 +72,4 @@ public record DelosTransactionSnapshot(
         return "segment-" + segmentId + "/container-" + containerId;
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

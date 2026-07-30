@@ -62,9 +62,11 @@ public record DelosStorageMaintenanceSnapshot(
             throw new IllegalArgumentException("schemaVersion must be positive");
         }
         providerId = DelosStorageProviderIds.normalize(providerId);
-        databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
-        storageMode = requireNonBlank(storageMode, "storageMode");
-        collectionSemantics = requireNonBlank(collectionSemantics, "collectionSemantics");
+        databaseIdentity = DelosStorageText.requireNonBlank(
+                databaseIdentity, "databaseIdentity");
+        storageMode = DelosStorageText.requireNonBlank(storageMode, "storageMode");
+        collectionSemantics = DelosStorageText.requireNonBlank(
+                collectionSemantics, "collectionSemantics");
         validateNonNegative(
                 captureSequence,
                 capturedAtEpochMillis,
@@ -163,13 +165,6 @@ public record DelosStorageMaintenanceSnapshot(
                 List.of());
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 
     private static void validateNonNegative(long... values) {
         for (long value : values) {

@@ -1025,6 +1025,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosStorageTextValidationTest',
+        'Runs the consolidated DelosDB storage text-validation contract proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/StorageTextValidationTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccRawStoreMemoryDatabaseTest',
         'Runs the complete Stage 6 named memory-database feature, isolation, and bounded-accounting proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.class'])

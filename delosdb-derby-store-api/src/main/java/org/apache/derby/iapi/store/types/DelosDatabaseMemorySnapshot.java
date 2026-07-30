@@ -10,8 +10,6 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.util.Objects;
-
 /** Immutable database-scoped observation of inherited memory-storage accounting. */
 public record DelosDatabaseMemorySnapshot(
         int schemaVersion,
@@ -32,7 +30,8 @@ public record DelosDatabaseMemorySnapshot(
             throw new IllegalArgumentException("schemaVersion must be positive");
         }
         providerId = DelosStorageProviderIds.normalize(providerId);
-        databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
+        databaseIdentity = DelosStorageText.requireNonBlank(
+                databaseIdentity, "databaseIdentity");
         if (limitBytes < 0L || usedBytes < 0L || peakBytes < 0L
                 || rejectedGrowthCount < 0L || entryCount < 0) {
             throw new IllegalArgumentException("memory snapshot values must be non-negative");
@@ -61,11 +60,4 @@ public record DelosDatabaseMemorySnapshot(
                 0);
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

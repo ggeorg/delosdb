@@ -49,8 +49,8 @@ public record DelosStoragePathDiagnostic(DelosStorageAccessDecisionKind decision
         decisionKind = Objects.requireNonNull(decisionKind, "decisionKind");
         state = Objects.requireNonNull(state, "state");
         providerId = DelosStorageProviderIds.normalize(providerId);
-        reason = requireNonBlank(reason, "reason");
-        readMode = requireNonBlank(readMode, "readMode");
+        reason = DelosStorageText.requireNonBlank(reason, "reason");
+        readMode = DelosStorageText.requireNonBlank(readMode, "readMode");
         details = List.copyOf(Objects.requireNonNull(details, "details"));
         if (rowIdCount < UNKNOWN_ROW_ID_COUNT) {
             throw new IllegalArgumentException("rowIdCount must be non-negative or UNKNOWN_ROW_ID_COUNT");
@@ -144,11 +144,4 @@ public record DelosStoragePathDiagnostic(DelosStorageAccessDecisionKind decision
                 + " reason=" + reason;
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

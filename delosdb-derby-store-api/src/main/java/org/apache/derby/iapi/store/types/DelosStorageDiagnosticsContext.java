@@ -32,7 +32,8 @@ public record DelosStorageDiagnosticsContext(
                     "diagnostics context cannot name both a directory and database identity");
         }
         if (databaseIdentity != null) {
-            databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
+            databaseIdentity = DelosStorageText.requireNonBlank(
+                databaseIdentity, "databaseIdentity");
         }
     }
 
@@ -46,7 +47,7 @@ public record DelosStorageDiagnosticsContext(
     }
 
     public static DelosStorageDiagnosticsContext memoryDatabase(String databaseName) {
-        String name = requireNonBlank(databaseName, "databaseName");
+        String name = DelosStorageText.requireNonBlank(databaseName, "databaseName");
         try {
             String home = System.getProperty("derby.system.home");
             File database = home != null && !new File(name).isAbsolute()
@@ -75,11 +76,4 @@ public record DelosStorageDiagnosticsContext(
         return databaseIdentity != null;
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

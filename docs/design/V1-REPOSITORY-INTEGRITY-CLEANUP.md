@@ -1,6 +1,6 @@
 # DelosDB repository integrity cleanup
 
-Status: STAGE 2 IMPLEMENTED / PENDING VERIFICATION
+Status: STAGE 3 IMPLEMENTED / PENDING VERIFICATION
 
 ## Purpose
 
@@ -138,12 +138,44 @@ Production quality markers:                815
 Compiler authority compromise candidates:    0
 ```
 
+## Stage 3 DelosDB-owned validation consolidation
+
+Ten identical production validation helpers were replaced by one shared internal
+storage contract:
+
+```text
+org.apache.derby.iapi.store.types.DelosStorageText.requireNonBlank
+```
+
+The consumers remain in their existing modules and preserve the exact contract:
+null values throw `NullPointerException` with the parameter name, blank values
+throw `IllegalArgumentException` with `<name> must not be blank`, and accepted
+values are trimmed. The consolidation covers nine immutable storage snapshot or
+diagnostic records and the RawStore I/O fault injector. A focused executable
+proof verifies normalization and both failure messages.
+
+Permanent source-shape checks require every consumer to use the shared helper
+and prohibit reintroducing a local `requireNonBlank` or `requireText` copy.
+
+## Stage 3 reduced baseline
+
+```text
+Dead private production methods:            0
+Dead private production fields:            71
+Exact production duplicate groups:         54
+Methods in duplicate groups:              127
+Estimated duplicate production lines:    1121
+Production methods >= 100 lines:           447
+Production methods complexity >= 20:       169
+Production classes >= 1000 lines:          139
+Production empty catches:                  249
+Production generic catches:                469
+Production @SuppressWarnings occurrences:   40
+Production quality markers:                815
+Compiler authority compromise candidates:    0
+```
+
 ## Remaining cleanup sequence
-
-### Stage 3 — DelosDB-owned duplication
-
-Consolidate duplicated validation and test-support code introduced by DelosDB
-before modifying inherited JDBC, DRDA, parser, or compatibility boilerplate.
 
 ### Stage 4 — quality and structure
 
@@ -165,7 +197,7 @@ modelling.
 
 ## Non-goals
 
-Stage 2 does not change:
+Stage 3 does not change:
 
 ```text
 SQL semantics or SQLStates

@@ -43,7 +43,8 @@ public record DelosRawStoreIoSnapshot(
         if (schemaVersion <= 0) {
             throw new IllegalArgumentException("schemaVersion must be positive");
         }
-        databaseIdentity = requireNonBlank(databaseIdentity, "databaseIdentity");
+        databaseIdentity = DelosStorageText.requireNonBlank(
+                databaseIdentity, "databaseIdentity");
         long[] values = {
                 pageReadOperations,
                 pageReadBytes,
@@ -185,11 +186,4 @@ public record DelosRawStoreIoSnapshot(
                 new RuntimeState(0L, 0L, 0L, 0L, 0L);
     }
 
-    private static String requireNonBlank(String value, String name) {
-        String normalized = Objects.requireNonNull(value, name).trim();
-        if (normalized.isEmpty()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return normalized;
-    }
 }

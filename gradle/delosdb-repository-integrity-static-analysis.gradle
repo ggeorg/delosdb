@@ -158,6 +158,55 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
             }
         }
 
+        File storageTextUtility = new File(
+                riRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageText.java')
+        if (!storageTextUtility.isFile()) {
+            failures.add('Shared storage text-validation utility is missing')
+        } else {
+            String utilityText = storageTextUtility.getText('UTF-8')
+            [
+                    'public final class DelosStorageText',
+                    'public static String requireNonBlank(String value, String name)',
+                    'Objects.requireNonNull(value, name).trim()',
+                    'name + " must not be blank"'
+            ].each { String marker ->
+                if (!utilityText.contains(marker)) {
+                    failures.add('Storage text-validation utility is missing: ' + marker)
+                }
+            }
+        }
+
+        List<String> storageTextConsumers = [
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePathDiagnostic.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosTransactionSnapshot.java',
+                'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java'
+        ]
+        storageTextConsumers.each { String relativePath ->
+            File source = new File(riRoot, relativePath)
+            if (!source.isFile()) {
+                failures.add('Storage text-validation consumer is missing: ' + relativePath)
+            } else {
+                String sourceText = source.getText('UTF-8')
+                if (!sourceText.contains('DelosStorageText.requireNonBlank(')) {
+                    failures.add('Storage text-validation consumer bypasses the shared utility: ' +
+                            relativePath)
+                }
+                if (sourceText.contains('private static String requireNonBlank(') ||
+                        sourceText.contains('private static String requireText(')) {
+                    failures.add('Storage text-validation consumer retains a duplicate helper: ' +
+                            relativePath)
+                }
+            }
+        }
+
         File report = riStaticReport
         report.parentFile.mkdirs()
         report.withPrintWriter('UTF-8') { writer ->
