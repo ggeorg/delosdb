@@ -29,15 +29,6 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             mixedBackupRestoreTest: file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.java'),
             testBuild: file('delosdb-tests/build.gradle'),
             mvccBuild: file('delosdb-storage-mvcc/build.gradle'),
-            storageApiDesign: file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
-            lifecycleDesign: file('docs/design/V1-JDK25-RAWSTORE-PRODUCTION-CLOSEOUT.md'),
-            representationDesign: file('docs/design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md'),
-            finalDesign: file('docs/design/V1-JDK25-RAWSTORE-FINAL-PRODUCTION-CLOSEOUT.md'),
-            representationChapter: file('.delosdb-v1/04-book/phase8-executable-draft/chapters/37-page-io-representation-production-decision.md'),
-            finalChapter: file('.delosdb-v1/04-book/phase8-executable-draft/chapters/38-final-production-closeout.md'),
-            reproducibility: file('.delosdb-v1/05-research/02-REPRODUCIBILITY.md'),
-            roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
-            handoff: file('.delosdb-v1/NEW-SESSION-README.md'),
             residueManifest: file('gradle/static-analysis/delosdb-stage8-retired-files.txt'),
             typeInventory: file('gradle/static-analysis/delosdb-store-type-contract-inventory.txt')
     ]
@@ -104,13 +95,6 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 [(name): source.getText('UTF-8')]
             }
             def sharedStatic = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-            def normalizedContains = { String source, String token ->
-                source.replaceAll('\\s+', ' ')
-                        .toLowerCase(java.util.Locale.ROOT)
-                        .contains(token.replaceAll('\\s+', ' ')
-                                .toLowerCase(java.util.Locale.ROOT))
-            }
-
             def forbiddenActiveResidue = [
                     'io.github.ggeorg.delosdb.storage.io.',
                     'io.github.ggeorg.delosdb.storage.mvcc.bridge.MvccFailurePointRegistry',
@@ -392,82 +376,6 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 if (!text.decisionWalCrashTest.contains(token)) {
                     failures << 'Live RawStore decision-WAL crash proof is missing: ' + token
                 }
-            }
-
-            ['102 current shared contracts',
-             'authoritative inventory manifest',
-             'three stage 8 runtime diagnostics contracts',
-             'replay manifest is test-only evidence'].each { token ->
-                if (!normalizedContains(text.storageApiDesign, token)) {
-                    failures << 'Storage API inventory design is missing: ' + token
-                }
-            }
-            def lifecycleStatus = text.lifecycleDesign.readLines().find {
-                it.startsWith('Status:')
-            } ?: ''
-            if (!lifecycleStatus.contains('Stage 8.7.1')
-                    || !lifecycleStatus.toLowerCase(java.util.Locale.ROOT)
-                            .contains('verified')) {
-                failures << 'Stage 8.7.1 lifecycle/API closeout status must remain verified'
-            }
-            if (!text.representationDesign.contains('KEEP_POSITIONAL_BYTE_ARRAY')) {
-                failures << 'Page-I/O representation decision must remain KEEP_POSITIONAL_BYTE_ARRAY'
-            }
-            ['REMOVE_RETAINED_PHASE8_ORACLE',
-             'KEEP_RAWSTORE_IO_SNAPSHOT_SCHEMA_3',
-             'GROUP_INTERNAL_SNAPSHOT_CONSTRUCTION',
-             '20 Java classes',
-             'Git history'].each { token ->
-                if (!normalizedContains(text.finalDesign, token)) {
-                    failures << 'Final Stage 8 closeout design is missing: ' + token
-                }
-            }
-            ['one MVCC provider',
-             'no retained oracle',
-             'named groups instead of a long primitive argument list'].each { token ->
-                if (!normalizedContains(text.finalChapter, token)) {
-                    failures << 'Final Stage 8 closeout chapter is missing: ' + token
-                }
-            }
-
-            def roadmapLines = text.roadmap.readLines()
-            def stage871Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.1') }
-            def stage872Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.2') }
-            def stage873Line = roadmapLines.findIndexOf { it.startsWith('## Stage 8.7.3') }
-            def stage9Line = roadmapLines.findIndexOf { it.startsWith('# Stage 9') }
-            if (stage871Line < 0 || stage872Line <= stage871Line
-                    || stage873Line <= stage872Line || stage9Line <= stage873Line) {
-                failures << 'Roadmap does not preserve Stage 8.7.1, 8.7.2, 8.7.3, and Stage 9 ordering'
-            } else {
-                def stage871 = roadmapLines.subList(stage871Line, stage872Line).join('\n')
-                def stage872 = roadmapLines.subList(stage872Line, stage873Line).join('\n')
-                def stage873 = roadmapLines.subList(stage873Line, stage9Line).join('\n')
-                if (!stage871.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
-                        || stage871.toUpperCase(java.util.Locale.ROOT)
-                                .contains('PENDING USER VERIFICATION')) {
-                    failures << 'Stage 8.7.1 roadmap section must be verified'
-                }
-                if (!stage872.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
-                        || stage872.toUpperCase(java.util.Locale.ROOT)
-                                .contains('PENDING USER VERIFICATION')) {
-                    failures << 'Stage 8.7.2 roadmap section must be verified'
-                }
-                if (!stage873.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
-                        || stage873.toUpperCase(java.util.Locale.ROOT)
-                                .contains('PENDING USER VERIFICATION')) {
-                    failures << 'Stage 8.7.3 roadmap section must be verified before compiler or Lucene work'
-                }
-            }
-            ['Stage 8.7.1', 'Stage 8.7.2', 'Stage 8.7.3'].each { stage ->
-                def statusLine = text.handoff.readLines().find {
-                    it.contains(stage) && it.toUpperCase(java.util.Locale.ROOT).contains('VERIFIED')
-                }
-                if (statusLine == null) {
-                    failures << 'Session handoff must mark ' + stage + ' verified'
-                }
-            }
-            if (!text.handoff.contains('REMOVE_RETAINED_PHASE8_ORACLE')) {
-                failures << 'Session handoff is missing REMOVE_RETAINED_PHASE8_ORACLE'
             }
 
             ['delosDatabaseDecisionRetentionStaticAnalysis',

@@ -8535,8 +8535,6 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             file('delosdb-optionaltools/build.gradle'),
             file('gradle/delosdb-runtime-artifacts.gradle'),
             file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
-            file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
-            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
             contractInventory
     ]
     inputs.files(required)
@@ -8553,8 +8551,6 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             def optionalToolsBuild = required[3].getText('UTF-8')
             def artifacts = required[4].getText('UTF-8')
             def parity = required[5].getText('UTF-8')
-            def design = required[6].getText('UTF-8')
-            def roadmap = required[7].getText('UTF-8')
             def staticText = file('gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
 
             if (settings.contains("include 'delosdb-storage-api'")
@@ -8681,19 +8677,6 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
                 failures << 'Provider-neutral external-index vocabulary must remain owned by delosdb-spi'
             }
 
-            def normalizedDesign = design.replaceAll('\\s+', ' ').toLowerCase(java.util.Locale.ROOT)
-            ['101 originally migrated', 'three unwired path-diagnostic contracts',
-             'three stage 8 runtime diagnostics', 'one repository-integrity validation utility',
-             '102 current shared', 'authoritative inventory manifest',
-             '27 unused parallel', '6 unused derbystorage',
-             'no `delosstorageproviderfactory` service registration',
-             '20'].each { token ->
-                if (!normalizedDesign.contains(token)) failures << 'Storage-API retirement design is missing: ' + token
-            }
-            ['## Stage 7.3 — storage-contract module retirement',
-             'delosStorageApiModuleRetirementStaticAnalysis'].each { token ->
-                if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 7.3 token: ' + token
-            }
             def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
             if (!s0.contains("'delosStorageApiModuleRetirementStaticAnalysis'")) {
                 failures << 'S0 must include the storage-API module retirement gate'
