@@ -392,7 +392,7 @@ public final class MessageService {
             }
             else { return null; }
         }
-        catch (Exception ioe)
+        catch (IOException | SecurityException ioe)
         {
             System.out.println(ioe.getMessage());
             return null;

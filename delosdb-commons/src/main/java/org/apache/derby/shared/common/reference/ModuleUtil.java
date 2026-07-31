@@ -171,7 +171,7 @@ public class ModuleUtil
         {
             retval = module.getResourceAsStream(resourceName);
         }
-        catch (Exception pae) { error = pae; }
+        catch (IOException | SecurityException pae) { error = pae; }
 
         if (error != null)
         {

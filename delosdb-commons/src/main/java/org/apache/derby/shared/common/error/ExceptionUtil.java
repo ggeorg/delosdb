@@ -29,7 +29,6 @@ package org.apache.derby.shared.common.error;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.ExceptionSeverity;
@@ -167,7 +166,7 @@ public class ExceptionUtil
             p.println("(Skipping thread dump because it is not " +
             "supported on JVM 1.4)");
 
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | ClassCastException | SecurityException e) {
             p.println("\nAssertFailure tried to do a thread dump, but "
                         + "there was an error:");
             e.printStackTrace(p);

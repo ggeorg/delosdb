@@ -192,7 +192,7 @@ public class DssTrace
                     comBufferWriter = pw;
                     // If we successfully made the file. break out here and don't retry
                     break;
-                } catch (Exception e) {
+                } catch (IOException | SecurityException e) {
                     // If we got a FileNotFoundException on the first attempt,
                     // it is likely that the directory did not exist. 
                     //We will try to make it.

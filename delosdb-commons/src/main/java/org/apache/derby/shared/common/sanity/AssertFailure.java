@@ -24,7 +24,6 @@ package org.apache.derby.shared.common.sanity;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
@@ -165,7 +164,7 @@ public class AssertFailure extends RuntimeException {
             Class<?> c = Class.forName(
                     "org.apache.derby.shared.common.sanity.ThreadDump");
             m = c.getMethod("getStackDumpString", new Class[] {});
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | SecurityException e) {
             p.println("Failed to load class/method required to generate " +
                     "a thread dump:");
             e.printStackTrace(p);
@@ -180,7 +179,7 @@ public class AssertFailure extends RuntimeException {
             p.print("---------------\nStack traces for all live threads:");
             p.println("\n" + dump);
             p.println("---------------");
-        } catch (Exception pae) {
+        } catch (ReflectiveOperationException | ClassCastException | IllegalArgumentException pae) {
             p.println("\nAssertFailure tried to do a thread dump, "
                       + "but there was an error:");
             pae.printStackTrace(p);

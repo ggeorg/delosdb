@@ -21,7 +21,6 @@
 
 package org.apache.derby.shared.common.info;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 
@@ -204,7 +203,7 @@ public abstract class JVMInfo
                 final Method ibmm = ibmc.getMethod("JavaDump", new Class<?>[] {});
                 
                 ibmm.invoke(null, new Object[] {});
-            } catch (Exception e) {
+            } catch (ReflectiveOperationException | IllegalArgumentException | SecurityException e) {
                 if (SanityManager.DEBUG) {
                     SanityManager
                             .THROWASSERT(

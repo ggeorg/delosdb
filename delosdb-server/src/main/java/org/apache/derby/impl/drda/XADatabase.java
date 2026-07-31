@@ -72,7 +72,7 @@ class XADatabase extends Database {
                     clazz = Class.forName("org.apache.derby.jdbc.BasicEmbeddedXADataSource40");
                     xaDataSource = (EmbeddedXADataSourceInterface) clazz.getConstructor().newInstance();
                 }
-            } catch (Exception e) {
+            } catch (ReflectiveOperationException | ClassCastException | SecurityException e) {
                 SQLException ne = new SQLException(
                         MessageService.getTextMessage(
                             MessageId.CORE_DATABASE_NOT_AVAILABLE),

@@ -43,7 +43,7 @@ public abstract class ExceptionFactory {
         try {
             Class<?> clazz = Class.forName(impl);
             factory = (ExceptionFactory) clazz.getConstructor().newInstance();
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | ClassCastException | SecurityException e) {
             throw new ExceptionInInitializerError(e);
         }
         INSTANCE = factory;

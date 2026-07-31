@@ -26,6 +26,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketException;
+import java.security.GeneralSecurityException;
 
 import org.apache.derby.client.am.Agent;
 import org.apache.derby.client.am.DisconnectException;
@@ -142,7 +143,7 @@ public class NetAgent extends Agent {
 
         try {
             socket_ = (new OpenSocketAction(server, port, clientSSLMode_)).run();
-        } catch (Exception e) {
+        } catch (IOException | GeneralSecurityException | ClassCastException e) {
             throw new DisconnectException(this,
                 new ClientMessageId(SQLState.CONNECT_UNABLE_TO_CONNECT_TO_SERVER),
                 e,
