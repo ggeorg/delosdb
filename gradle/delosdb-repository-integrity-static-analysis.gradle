@@ -19,6 +19,9 @@ final File riStaticReport = new File(
 final File riBaselineFile = new File(
         riRoot,
         'gradle/static-analysis/delosdb-repository-integrity-baseline.properties')
+final File riBroadCatchClassificationFile = new File(
+        riRoot,
+        'gradle/static-analysis/delosdb-broad-catch-classification.tsv')
 final Object riBuildToolsClasses = project(':delosdb-buildtools')
         .layout.buildDirectory.dir('classes/build-tools')
 
@@ -83,6 +86,7 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
     description = 'Enforces the repository-integrity baseline and compiler no-compromise invariants.'
     dependsOn 'delosRepositoryIntegrityInventory'
     inputs.file(riBaselineFile)
+    inputs.file(riBroadCatchClassificationFile)
     inputs.file(riSummaryFile)
     inputs.file(riCatchInventoryFile)
     outputs.file(riStaticReport)
@@ -161,6 +165,93 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
             }
             if (!found) {
                 failures.add('Repository-integrity inventory missed fixture catch: ' + method)
+            }
+        }
+
+        Map<String, Integer> broadCatchClassificationCounts = [
+                'REQUIRED_BOUNDARY_CATCH': 0,
+                'INTENTIONAL_BEST_EFFORT': 0,
+                'LEGACY_COMPATIBILITY': 0
+        ]
+        if (!riBroadCatchClassificationFile.isFile()) {
+            failures.add('Broad-catch classification inventory is missing')
+        } else {
+            List<String> classificationLines =
+                    riBroadCatchClassificationFile.readLines('UTF-8')
+                            .findAll { String line ->
+                                !line.trim().isEmpty() &&
+                                        !line.startsWith('#')
+                            }
+            String expectedHeader =
+                    'file\towner\tmethod\tcatchType\toccurrence\tclassification\trationale'
+            Map<String, String[]> classifiedBroadCatches = [:]
+            if (classificationLines.isEmpty() ||
+                    classificationLines.first() != expectedHeader) {
+                failures.add('Broad-catch classification header is invalid')
+            } else {
+                classificationLines.drop(1).eachWithIndex {
+                    String line, int index ->
+                    String[] fields = line.split('\t', -1)
+                    if (fields.length != 7) {
+                        failures.add('Malformed broad-catch classification row: ' +
+                                (index + 1))
+                    } else {
+                        int occurrence = fields[4].isInteger() ?
+                                Integer.parseInt(fields[4]) : 0
+                        String classification = fields[5]
+                        if (occurrence < 1 ||
+                                !broadCatchClassificationCounts.containsKey(
+                                        classification) ||
+                                fields[6].isEmpty()) {
+                            failures.add('Invalid broad-catch classification row: ' +
+                                    (index + 1))
+                        } else {
+                            String key = [
+                                    fields[0], fields[1], fields[2], fields[3],
+                                    fields[4]
+                            ].join('\u001f')
+                            if (classifiedBroadCatches.put(key, fields) != null) {
+                                failures.add('Duplicate broad-catch classification row: ' +
+                                        (index + 1))
+                            }
+                            broadCatchClassificationCounts[classification] =
+                                    broadCatchClassificationCounts[classification] + 1
+                        }
+                    }
+                }
+            }
+
+            Map<String, Integer> observedOccurrences = [:]
+            Set<String> observedBroadCatches = [] as Set<String>
+            catchRows.findAll { String[] fields ->
+                fields.length == 9 &&
+                        fields[0] == 'PRODUCTION' &&
+                        fields[8] == 'true'
+            }.each { String[] fields ->
+                String baseKey = [
+                        fields[1], fields[2], fields[3], fields[5]
+                ].join('\u001f')
+                int occurrence =
+                        observedOccurrences.getOrDefault(baseKey, 0) + 1
+                observedOccurrences[baseKey] = occurrence
+                observedBroadCatches.add(
+                        baseKey + '\u001f' + occurrence)
+            }
+
+            Set<String> classifiedKeys = classifiedBroadCatches.keySet()
+            if (observedBroadCatches != classifiedKeys) {
+                failures.add('Broad-catch classification inventory differs from source: ' +
+                        'unclassified=' +
+                        (observedBroadCatches - classifiedKeys).size() +
+                        ', stale=' +
+                        (classifiedKeys - observedBroadCatches).size())
+            }
+            int expectedClassifications =
+                    riInt(baseline, 'productionGenericCatches')
+            if (classifiedKeys.size() != expectedClassifications) {
+                failures.add('Broad-catch classification count is ' +
+                        classifiedKeys.size() + ' but baseline requires ' +
+                        expectedClassifications)
             }
         }
 
@@ -299,6 +390,12 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                     actual.getProperty('productionEmptyCatches'))
             writer.println('Production generic catches: ' +
                     actual.getProperty('productionGenericCatches'))
+            writer.println('Broad catches classified as required boundaries: ' +
+                    broadCatchClassificationCounts['REQUIRED_BOUNDARY_CATCH'])
+            writer.println('Broad catches classified as best effort: ' +
+                    broadCatchClassificationCounts['INTENTIONAL_BEST_EFFORT'])
+            writer.println('Broad catches classified as legacy compatibility: ' +
+                    broadCatchClassificationCounts['LEGACY_COMPATIBILITY'])
             writer.println('Compiler authority violations: ' +
                     actual.getProperty('compilerAuthorityViolations'))
             writer.println('Compiler compromise candidates: ' +

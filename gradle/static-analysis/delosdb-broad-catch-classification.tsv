@@ -1,0 +1,438 @@
+# DelosDB Repository Integrity Stage 4.3 accepted broad-catch classification.
+# Structural key: file, owner, method, catch type, occurrence within that key.
+# This is executable inventory evidence, not documentation prose.
+file	owner	method	catchType	occurrence	classification	rationale
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java	ClassSizeCrawler	crawl	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java	DelosJdk25ClassFileVerifier	verifyClassFile	RuntimeException | IOException	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/JiraConnector.java	JiraConnector	main	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/MessageBuilder.java	MessageBuilder	execute	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/MessageBuilder.java	MessageBuilder	execute	Exception	2	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/ReleaseNotesGenerator.java	ReleaseNotesGenerator	buildReleaseNoteIssuesList	Throwable	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/ReleaseNotesGenerator.java	ReleaseNotesGenerator	execute	Throwable	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/ReleaseNotesTransformer.java	ReleaseNotesTransformer	execute	Throwable	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyBuild/eclipse/DerbyEclipsePlugin.java	DerbyEclipsePlugin	main	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-buildtools/src/main/java/org/apache/derbyPreBuild/PropertyPrompt.java	PropertyPrompt	promptAndSet	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyPreBuild/ReleaseProperties.java	ReleaseProperties	execute	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyPreBuild/ReleaseProperties.java	ReleaseProperties	execute	Exception	2	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-buildtools/src/main/java/org/apache/derbyPreBuild/ReleaseProperties.java	ReleaseProperties$VersionID	<init>	Exception	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-client/src/main/java/org/apache/derby/client/am/Cursor.java	Cursor	get_UDT	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-client/src/main/java/org/apache/derby/client/net/NetConnection.java	NetConnection	flowConnect	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writePlainScalarStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writePlainScalarStream	Exception	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writeUDT	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java	DelosMvccAnalyzeStatisticsLifecycleDiagnostics	recordExplicitUpdateStatistics	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageBackupCoordinator.java	DelosStorageBackupCoordinator	normalizeIdentity	RuntimeException	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	abortPreparedCommit	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	afterRawStoreCommit	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	commitWriters	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	completeCommit	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	completeLifecycleAction	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	completeParticipant	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	prepareCommit	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	prepareCommit	RuntimeException | Error	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	prepareCommit	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	reader	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	reader	RuntimeException | Error	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	register	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	register	RuntimeException | Error	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	register	RuntimeException | Error	3	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTransactionRegistry.java	DelosStorageTransactionRegistry	releasePreparedCommitForRecovery	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	getOptimizerTraceOutput	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	getOptimizerTracer	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	setOptimizerTracer	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/jdbc/JDBCBoot.java	JDBCBoot	boot	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/SQLChar.java	SQLChar	toString	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/SqlXmlUtil.java	SqlXmlUtil	<init>	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/SqlXmlUtil.java	SqlXmlUtil	compileXQExpr	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/SqlXmlUtil.java	SqlXmlUtil	evaluate	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	XMLExists	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	XMLParse	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	XMLQuery	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	checkJAXPRequirement	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	checkXPathRequirement	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	setStream	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/types/XML.java	XML	setValueFromResultSet	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/db/SlaveDatabase.java	SlaveDatabase	handleShutdown	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-engine/src/main/java/org/apache/derby/impl/db/SlaveDatabase.java	SlaveDatabase$SlaveDatabaseBootThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java	EmbedBlob	getBinaryStream	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java	EmbedBlob	getBytes	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java	EmbedBlob	length	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java	EmbedBlob	position	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedBlob.java	EmbedBlob	position	Throwable	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedCallableStatement.java	EmbedCallableStatement	getBinaryStream	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedCallableStatement.java	EmbedCallableStatement	getCharacterStream	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	<init>	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	close	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	commit	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	commitIfAutoCommit	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	commitIfNeeded	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedConnection.java	EmbedConnection	rollback	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedDatabaseMetaData.java	EmbedDatabaseMetaData	getPreparedQuery	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedDatabaseMetaData.java	EmbedDatabaseMetaData	getPreparedQueryUsingSystemTables	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedDatabaseMetaData.java	EmbedDatabaseMetaData	notInSoftUpgradeMode	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	<init>	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	closeActions	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	getMetaData	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setBigDecimal	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setByte	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setBytes	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setDate	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setDouble	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setFloat	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setInt	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setLong	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setObject	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setShort	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setString	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedPreparedStatement.java	EmbedPreparedStatement	setTime	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	checkRowPosition	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	close	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	closeOnTransactionError	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	deleteRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	getBinaryStream	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	getBlob	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	getCharacterStream	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	getClob	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	getString	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	insertRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	movePosition	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	moveToCurrentRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	moveToInsertRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	rowDeleted	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	rowUpdated	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedResultSet.java	EmbedResultSet	updateRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java	EmbedStatement	execute	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java	EmbedStatement	executeStatement	Throwable	1	LEGACY_COMPATIBILITY	JDBC_COMPATIBILITY_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedStatement.java	EmbedStatement	executeStatement	Throwable	2	LEGACY_COMPATIBILITY	JDBC_COMPATIBILITY_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/EmbedXAResource.java	EmbedXAResource	getLanguageConnectionContext	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/StoreStreamClob.java	StoreStreamClob	getCharLength	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/TransactionResourceImpl.java	TransactionResourceImpl	handleException	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/Util.java	Util	ASSERT	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/XATransactionState.java	XATransactionState$CancelXATransactionTask	run	Throwable	1	LEGACY_COMPATIBILITY	JDBC_COMPATIBILITY_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/authentication/LDAPAuthenticationSchemeImpl.java	LDAPAuthenticationSchemeImpl	setJNDIProviderProperties	Exception	1	LEGACY_COMPATIBILITY	JDBC_COMPATIBILITY_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ColumnInfo.java	ColumnInfo	getUDTClassName	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Export.java	Export	<init>	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Export.java	Export	doExport	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ExportWriteData.java	ExportWriteData	openFiles	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java	Import	<init>	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java	Import	performImport	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java	Import	performImport	Throwable	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java	Import	readHeaders	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java	ImportAbstract	close	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java	ImportAbstract	getObject	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java	ImportAbstract	importError	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java	ImportAbstract	next	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportBlob.java	ImportBlob	getBinaryStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportClob.java	ImportClob	getCharacterStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	ImportReadData	getClobColumnFromExtFile	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	ImportReadData	getClobColumnFromExtFileAsString	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	ImportReadData	initExternalLobFile	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java	BasicDaemon	serviceClient	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java	IndexStatisticsDaemonImpl	recordDelosMvccAnalyzeStatisticsLifecycle	StandardException | RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java	IndexStatisticsDaemonImpl	run	RuntimeException	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherFactory.java	JCECipherFactory	privAccessGetInputStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java	Timeout	buildLockTableString	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java	Timeout	dumpLock	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java	Timeout	dumpLock	Exception	2	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java	BaseMonitor	bootService	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/StorageFactoryService.java	StorageFactoryService	getCanonicalServiceName	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/StorageFactoryService.java	StorageFactoryService	removeServiceRoot	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/StorageFactoryService.java	StorageFactoryService$DirectoryList	run	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectGeneratedClass.java	DirectCall	invoke	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectMethod.java	ReflectMethod	invokeWithMethodHandle	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/reflect/ReflectMethod.java	ReflectMethod	methodHandleFor	IllegalAccessException | RuntimeException	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/services/stream/RollingFileStream.java	RollingFileStream	close	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java	DataDictionaryImpl	getDescriptorViaIndexMinion	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/AggregateNode.java	AggregateNode	instantiateAggDef	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/AggregateNode.java	AggregateNode	instantiateAggDef	Throwable	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java	FromBaseTable	applyIndexProviderCostBridge	ReflectiveOperationException | LinkageError | RuntimeException	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java	FromBaseTable	providerName	RuntimeException	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getDeferralControl	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getNewInstance	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getResultSetMetaData	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getVTICosting	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	implementsDerbyStyleVTICosting	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	implementsDerbyStyleVTICosting	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	modifyAccessPath	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/OptimizerTracer.java	OptimizerTracer	loadTool	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/OptimizerTracer.java	OptimizerTracer	loadTool	Throwable	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/ResultColumnList.java	ResultColumnList	createListFromResultSetMetaData	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/UCode_CharStream.java	UCode_CharStream	ExpandBuff	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/XMLOptTrace.java	XMLOptTrace	createElement	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/XMLOptTrace.java	XMLOptTrace	formatPlanSummary	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/XMLOptTrace.java	XMLOptTrace	printToWriter	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericLanguageConnectionContext.java	GenericLanguageConnectionContext	abortFailedRawStoreDecision	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericLanguageConnectionContext.java	GenericLanguageConnectionContext	abortFailedRawStoreDecision	RuntimeException | Error	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericLanguageConnectionContext.java	GenericLanguageConnectionContext	doCommit	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericStatementContext.java	GenericStatementContext	cleanupOnError	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/BaseActivation.java	BaseActivation	close	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DeleteVTIResultSet.java	DeleteVTIResultSet	openCore	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DeleteVTIResultSet.java	DeleteVTIResultSet	openCore	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/GenericAggregator.java	GenericAggregator	getAggregatorInstance	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	cleanUp	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	cleanUp	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	finish	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	insertIntoVTI	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	insertIntoVTI	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	openCore	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/InsertVTIResultSet.java	InsertVTIResultSet	openCore	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/MatchingClauseConstantAction.java	MatchingClauseConstantAction	executeConstantAction	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/SystemAggregator.java	SystemAggregator	toString	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UpdateVTIResultSet.java	UpdateVTIResultSet	openCore	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UpdateVTIResultSet.java	UpdateVTIResultSet	openCore	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UpdateVTIResultSet.java	UpdateVTIResultSet	updateVTI	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/VTIResultSet.java	VTIResultSet	getNextRowCore	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/VTIResultSet.java	VTIResultSet	openCore	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/VTIResultSet.java	VTIResultSet	populateFromResultSet	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/WindowResultSet.java	WindowResultSet	populateFromSourceRow	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
+delosdb-engine/src/main/java/org/apache/derby/vti/StringColumnVTI.java	StringColumnVTI	getBytes	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/vti/XmlVTI.java	XmlVTI	getRawColumn	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/vti/XmlVTI.java	XmlVTI	next	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/vti/XmlVTI.java	XmlVTI$XMLErrorHandler	closeInput	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	close	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	decryptPage	Exception	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getBigDecimal	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getBlob	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getBoolean	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getByte	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getBytes	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getClob	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getDate	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getDate	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getDouble	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getFloat	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getInt	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getLong	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getObject	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getShort	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getString	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getTime	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getTime	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getTimestamp	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	getTimestamp	Throwable	2	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI	next	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI$DataFile	formatRows	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI$DataFile	readField	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI$DataFile	readNextPage	Throwable	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI$DataFile	readNextPage	Throwable	2	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/dump/DataFileVTI.java	DataFileVTI$DataFile	readOverflowField	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/lucene/LuceneQueryVTI.java	LuceneQueryVTI	getIndexDescriptor	Exception	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/lucene/LuceneQueryVTI.java	LuceneQueryVTI	vetLuceneVersion	Exception	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
+delosdb-optionaltools/src/main/java/org/apache/derby/optional/lucene/LuceneSupport.java	LuceneSupport	getIndexDescriptor	Exception	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
+delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPermission	<init>	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPermission	<init>	RuntimeException	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPermission	<init>	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPermission	<init>	Throwable	2	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-osgi-stub/src/main/java/org/osgi/framework/FrameworkUtil.java	FrameworkUtil	createFilter	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-osgi-stub/src/main/java/org/osgi/framework/FrameworkUtil.java	FrameworkUtil	createFilter	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/ClassSize.java	ClassSize	estimateBaseFromCatalog	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextManager.java	ContextManager	cleanupOnError	Throwable	1	REQUIRED_BOUNDARY_CATCH	RUNTIME_SERVICE_BOUNDARY
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	findDiagnostic	Exception	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	toDiagString	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DebugByteTeeOutputStream.java	DebugByteTeeOutputStream	checkObject	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	readFullyAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	writeAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	displayCurrentStatus	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	doGet	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	doGet	Exception	2	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	doGet	Exception	3	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	getIntParameter	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	getServerStatus	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	init	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	isServerStarted	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	logging	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	runServer	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	runServer	Exception	2	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	runServer	Exception	3	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	runServer	Exception	4	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	setNetParam	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	shutdownServer	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	traceAll	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	traceDirectory	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	traceSession	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet$<anonymous>	run	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
+delosdb-server/src/main/java/org/apache/derby/drda/NetworkServerControl.java	NetworkServerControl	main	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/drda/NetworkServerControl.java	NetworkServerControl	main	Exception	2	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/ClientThread.java	ClientThread	acceptClientWithRetry	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/ClientThread.java	ClientThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	getConnFromDatabaseName	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	getConnFromDatabaseName	Exception	2	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	parseTYPDEFOVR	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	parseTYPDEFOVR	Exception	2	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	parseTYPDEFOVR	Exception	3	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	readUDT	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	run	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	sessionInitialState	Throwable	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java	DRDAConnThread	writeSQLCARD	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAStatement.java	DRDAStatement	getSQLText	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAXAProtocol.java	DRDAXAProtocol	commitLocalTransaction	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAXAProtocol.java	DRDAXAProtocol	rollbackLocalTransaction	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaExtdtaStreamMaterializer.java	DrdaExtdtaStreamMaterializer	materialize	IOException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaExtdtaStreamMaterializer.java	DrdaExtdtaStreamMaterializer	materialize	IOException | RuntimeException	2	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	<static-initializer>	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	2	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	3	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	4	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	5	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	6	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	7	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	8	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	9	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	blockingStart	Exception	10	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	buildLocalAddressList	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	clientSocketError	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	consolePrintAndIgnore	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	findCommand	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	getIntPropVal	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	getNetProductVersionHolder	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	isServerStarted	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	processCommands	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	processCommands	Exception	2	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	processCommands	Exception	3	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	processCommands	Exception	4	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	sendPropInfo	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	setTrace	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	setTrace	Exception	2	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	setUpSocket	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	shutdown	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	shutdown	Exception	2	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	shutdown	Exception	3	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	startNetworkServer	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	supportsCCSID	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	unknownHostException	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerControlImpl.java	NetworkServerControlImpl	usage	Exception	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/NetworkServerMBeanImpl.java	NetworkServerMBeanImpl	ping	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/ProtocolTestAdapter.java	ProtocolTestAdapter$ThreadingProbe	startedThreadIsVirtual	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/ProtocolTestAdapter.java	ProtocolTestAdapter$VirtualThreadFairnessProbe	audit	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
+delosdb-server/src/main/java/org/apache/derby/impl/drda/ReEncodedInputStream.java	ReEncodedInputStream$CleanupState	closeResource	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-server/src/main/java/org/apache/derby/impl/drda/Session.java	Session	initTrace	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java	RAMAccessManager	stop	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	abort	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commit	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commitNoSync	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	destroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAbortFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyCommitFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScanInfo.java	BTreeScanInfo	<init>	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java	BranchControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java	ControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/ConglomerateUtil.java	ConglomerateUtil	debugPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPageAndRepositionScan	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/DelosMvccBackupSidecarSupport.java	DelosMvccBackupSidecarSupport	backupCoordinatorLease	IOException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	backupAndEnableLogArchiveMode	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDeleteAll	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privIsDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRemoveDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRenameTo	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	backupDataFiles	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	boot	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	fileToRemove	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	findMaxContainerId	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	freezePersistentStore	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerNames	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerPath	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	postRecovery	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	registerRawStoreIoMetrics	IOException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	releaseJBMSLockOnDB	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeDroppedContainerFileStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeTempDirectory	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	run	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_print	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_to_containerid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_containerid_to_conglomid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java	D_StoredPage	diag_detail	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosMvccConglomerateLifecycleOperation.java	DelosMvccConglomerateLifecycleOperation	readExternal	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/EncryptOrDecryptData.java	EncryptOrDecryptData	encryptOrDecryptAllContainers	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	openContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	reopenContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java	RAFContainer4	recoverContainerAfterInterrupt	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	recover	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	runBooleanAction	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java	Xact	toString	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java	XactFactory	blockBackupBlockingOperations	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	handleExceptions	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController$SlaveLogReceiverThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	abortChild	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	abortRaw	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	ensureInitialized	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	reserve	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java	MvccRawStoreMaintenanceService	afterCommit	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java	MvccRawStoreMaintenanceService	register	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java	MvccRawStoreMaintenanceService	runMaintenance	StandardException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java	MvccRawStoreMaintenanceService	scanPeriodic	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java	MvccRawStoreMaintenanceService	unregister	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java	MvccRawStoreRuntime	reserveCommitSequence	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java	MvccRawStoreScanController	<init>	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java	MvccRawStoreTable	ensureOrderedIndex	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java	MvccRawStoreTransactionContext	acquireExclusive	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java	MvccRawStoreTransactionContext	acquireShared	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java	MvccRawStoreTransactionContext	beforeCommit	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java	MvccRawStoreTransactionContext	lockUniqueKeys	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/dblook/Logs.java	Logs	cleanup	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/AttributeHolder.java	AttributeHolder	checkName	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/AttributeHolder.java	AttributeHolder	checkValue	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/ConnectionEnv.java	ConnectionEnv	installConnection	Exception	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/ConnectionEnv.java	ConnectionEnv	installConnection	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/Main.java	Main	mainCore	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/UCode_CharStream.java	UCode_CharStream	ExpandBuff	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/URLCheck.java	URLCheck	<init>	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/mtTestSuite.java	mtTestSuite	loadCases	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/util.java	util	getDataSourceConnection	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/util.java	util	getResourceAsStream	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/util.java	util	setupDataSource	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/utilMain.java	utilMain	cleanupGo	Exception	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/utilMain.java	utilMain	cleanupGo	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/utilMain.java	utilMain	doCatch	Throwable	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/utilMain.java	utilMain	runScriptGuts	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/utilMain.java	utilMain	runScriptGuts	Throwable	2	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	CPDataSourceStatement	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	CommitStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	DataSourceStatement	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	EndStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	ForgetStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	PrepareStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	RecoverStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	RollbackStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	StartStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	XAConnectStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	XADataSourceStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	XAGetConnectionStatement	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	setDataSourceProperty	Exception	1	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	setDataSourceProperty	Exception	2	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/xaHelper.java	xaHelper	setDataSourceProperty	Exception	3	REQUIRED_BOUNDARY_CATCH	TOOLING_OR_BUILD_BOUNDARY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	getMainInfo	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	getMainInfo	Exception	2	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	reportLocales	Throwable	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	reportTesting	Exception	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	reportTesting	Throwable	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	tryMyClasspath	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	useMe	Throwable	1	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/impl/tools/sysinfo/Main.java	Main	useMe	Throwable	2	INTENTIONAL_BEST_EFFORT	TOOLING_OR_BUILD_BEST_EFFORT
+delosdb-tools/src/main/java/org/apache/derby/tools/PlanExporter.java	PlanExporter	main	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/tools/dblook.java	dblook	go	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
+delosdb-tools/src/main/java/org/apache/derby/tools/dblook.java	dblook	main	Exception	1	LEGACY_COMPATIBILITY	TOOLING_OR_BUILD_COMPATIBILITY
