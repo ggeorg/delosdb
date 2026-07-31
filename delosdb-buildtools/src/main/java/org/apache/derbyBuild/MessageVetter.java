@@ -190,7 +190,7 @@ public class MessageVetter {
             // See if a MessageFormat instance can be produced based on this
             // message format specifier.
             new MessageFormat(message);
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
             AssertionError ae = new AssertionError(
                     "Message " + key + " in " + file + " isn't a valid " +
                     "java.text.MessageFormat pattern.");

@@ -185,7 +185,7 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
                                                        String.class});
                 }
             }
-            catch(Exception e1)
+            catch (NoSuchMethodException | SecurityException e1)
             {
                 Monitor.logTextMessage(
                     MessageId.CONN_NETWORK_SERVER_START_EXCEPTION, e1.getMessage());
@@ -208,7 +208,8 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
             serverThread = getMonitor().getDaemonThread( this, "NetworkServerStarter", false);
             serverThread.start();
         }
-        catch( Exception e)
+        catch (ReflectiveOperationException | IllegalArgumentException |
+               SecurityException e)
         {
             Monitor.logTextMessage( MessageId.CONN_NETWORK_SERVER_START_EXCEPTION, e.getMessage());
             server = null;
@@ -231,7 +232,7 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
 
             server = null;
         }
-        catch( Exception e)
+        catch (IllegalAccessException | IllegalArgumentException e)
         {
             Monitor.logTextMessage( MessageId.CONN_NETWORK_SERVER_START_EXCEPTION, e.getMessage());
             server = null;
@@ -257,7 +258,7 @@ public final class DRDAServerStarter implements ModuleControl, Runnable
             ite.printStackTrace(Monitor.getStream().getPrintWriter());
 			
         }
-        catch( Exception e)
+        catch (IllegalAccessException | IllegalArgumentException e)
         {
             Monitor.logTextMessage( MessageId.CONN_NETWORK_SERVER_SHUTDOWN_EXCEPTION, e.getMessage());
             e.printStackTrace(Monitor.getStream().getPrintWriter());

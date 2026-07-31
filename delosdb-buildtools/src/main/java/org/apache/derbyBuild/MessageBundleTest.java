@@ -29,6 +29,7 @@ import java.lang.reflect.Field;
 import java.util.ResourceBundle;
 import java.util.Locale;
 import java.util.Iterator;
+import java.util.MissingResourceException;
 
 
 /**
@@ -54,14 +55,9 @@ public class MessageBundleTest {
     public static void main(String [] args) throws Exception
     {
         MessageBundleTest t = new MessageBundleTest();
-        try {
-            t.testMessageBundleOrphanedMessages();
-            t.testMessageIdOrphanedIds();
-            t.testSQLStateOrphanedIds();
-        } catch (Exception e) {
-            System.out.println("Message check failed: ");
-            e.printStackTrace();
-        }
+        t.testMessageBundleOrphanedMessages();
+        t.testMessageIdOrphanedIds();
+        t.testSQLStateOrphanedIds();
         if (failbuild) 
             throw new Exception("Message check failed. \n" +
                 "See error in build output or call ant runmessagecheck.");
@@ -82,14 +78,15 @@ public class MessageBundleTest {
 
             // Load all the ids for the messages_en properties file
             loadMessageBundleIds();
-        } catch ( Exception e ) {
+        } catch (IllegalAccessException | MissingResourceException |
+                 ClassCastException | SecurityException e) {
             e.printStackTrace();
-            throw new RuntimeException(e.getMessage());
+            throw new RuntimeException(e.getMessage(), e);
         }
     }
     
     static void loadClassIds(Class idclass, HashSet<String> set)
-            throws Exception {
+            throws IllegalAccessException {
         Field[] fields = idclass.getFields();
         
         int length = fields.length;
@@ -122,7 +119,7 @@ public class MessageBundleTest {
      * Load all the message ids from messages_en.properties into a HashSet.
      * This assumes its available on the classpath
      */
-    static void loadMessageBundleIds() throws Exception {
+    static void loadMessageBundleIds() {
         // The messages_*.properties files are split into fifty separate
         // message bundle files.  We need to load each one in turn
         int numBundles = 50;
@@ -155,7 +152,7 @@ public class MessageBundleTest {
      * See if there are any message ids in SQLState.java that are
      * not in the message bundle
      */
-    public void testSQLStateOrphanedIds() throws Exception {
+    public void testSQLStateOrphanedIds() {
         Iterator it = sqlStateIds.iterator();
         
         while ( it.hasNext() ) {
@@ -186,7 +183,7 @@ public class MessageBundleTest {
      * See if there are any message ids in MessageId.java not in
      * the message bundle
      */
-    public void testMessageIdOrphanedIds() throws Exception {
+    public void testMessageIdOrphanedIds() {
         Iterator it = messageIdIds.iterator();
         
         while ( it.hasNext() ) {
@@ -207,7 +204,7 @@ public class MessageBundleTest {
      * See if there are any message ids in the message bundle that
      * are <b>not</b> in SQLState.java or MessageId.java
      */
-    public void testMessageBundleOrphanedMessages() throws Exception {
+    public void testMessageBundleOrphanedMessages() {
         Iterator it = messageBundleIds.iterator();
         
         while (it.hasNext() ) {

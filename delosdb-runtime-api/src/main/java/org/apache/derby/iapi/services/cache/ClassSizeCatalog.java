@@ -40,7 +40,8 @@ abstract class ClassSizeCatalog extends ConcurrentHashMap<String, int[]> {
         try {
             Class<?> clazz = Class.forName(className);
             INSTANCE = (ClassSizeCatalog) clazz.getConstructor().newInstance();
-        } catch (Exception e) {
+        } catch (ReflectiveOperationException | ClassCastException |
+                 SecurityException e) {
             System.out.println("Got error while instantiating " + className + ": " + e.getMessage());
             e.printStackTrace();
             throw new ExceptionInInitializerError(e);
