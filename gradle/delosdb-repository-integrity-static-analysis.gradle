@@ -150,8 +150,8 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
         ['<static-initializer>', '<instance-initializer>'].each { String method ->
             boolean found = catchRows.any { String[] fields ->
                 fields.length == 9 &&
-                        fields[0] == 'TEST' &&
-                        fields[1] == 'delosdb-buildtools/src/test/java/org/apache/derbyBuild/DelosRepositoryIntegrityInitializerCatchFixture.java' &&
+                        fields[0] == 'OTHER' &&
+                        fields[1] == 'gradle/static-analysis/fixtures/DelosRepositoryIntegrityInitializerCatchFixture.java' &&
                         fields[2] == 'DelosRepositoryIntegrityInitializerCatchFixture' &&
                         fields[3] == method &&
                         fields[5] == 'Exception' &&
