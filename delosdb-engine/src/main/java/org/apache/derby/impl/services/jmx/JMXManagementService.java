@@ -279,7 +279,7 @@ public final class JMXManagementService implements ManagementService, ModuleCont
         try {
             mbeanServer.unregisterMBean(mbeanName);
         }
-        catch (Exception infe) {
+        catch (JMException infe) {
             Monitor.getStream().printlnWithHeader(
                     "Ignoring JMX unregister failure during management shutdown: "
                             + infe.getMessage());

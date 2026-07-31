@@ -26,6 +26,7 @@ import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.FileInputStream;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Map;
@@ -252,7 +253,7 @@ public class StatementDuration extends VTITemplate
             try {
                 return new Timestamp( sdf.parse( trimmed ).getTime() );
             }
-            catch (Exception e)
+            catch (ParseException e)
             {
                 throw new SQLException( e.getMessage() );
             }

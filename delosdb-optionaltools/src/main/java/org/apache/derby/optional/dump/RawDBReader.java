@@ -22,6 +22,7 @@
 package org.apache.derby.optional.dump;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.sql.Connection;
@@ -398,7 +399,9 @@ public	class   RawDBReader  implements OptionalTool
         try {
             scriptWriter = new PrintWriter( recoveryScript );
         }
-        catch (Exception e) { throw wrap( e ); }
+        catch (FileNotFoundException | SecurityException error) {
+            throw wrap(error);
+        }
 
         String              localDBName = ((EmbedConnection) conn).getDBName();
         scriptWriter.println( "connect 'jdbc:derby:" + localDBName + "';\n" );

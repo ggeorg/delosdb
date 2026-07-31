@@ -22,14 +22,15 @@
 package org.apache.derby.optional.api;
 
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.sql.Blob;
 import java.sql.Clob;
@@ -43,6 +44,7 @@ import java.sql.SQLException;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
 import org.apache.derby.iapi.types.HarmonySerialClob;
 import org.apache.derby.iapi.util.StringUtil;
@@ -152,7 +154,9 @@ public abstract class SimpleJsonUtils
         try {
             obj = parser.parse( reader );
         }
-        catch( Throwable t) { throw ToolUtilities.wrap( t ); }
+        catch (IOException | ParseException error) {
+            throw ToolUtilities.wrap(error);
+        }
 
         if ( (obj == null) || !(obj instanceof JSONArray) )
         {
@@ -229,7 +233,10 @@ public abstract class SimpleJsonUtils
         try {
             fis = new FileInputStream( name_of_file );
         }
-        catch (Exception pae) { throw ToolUtilities.wrap( pae ); }
+        catch (FileNotFoundException | SecurityException |
+               NullPointerException error) {
+            throw ToolUtilities.wrap(error);
+        }
 
         return readArrayFromStream( fis, characterSetName );
     }
@@ -255,7 +262,10 @@ public abstract class SimpleJsonUtils
             URL url = (new URI(url_string)).toURL();
             inputStream = url.openStream();
         }
-        catch (Exception pae) { throw ToolUtilities.wrap( pae ); }
+        catch (IOException | URISyntaxException | IllegalArgumentException |
+               SecurityException | NullPointerException error) {
+            throw ToolUtilities.wrap(error);
+        }
         
         return readArrayFromStream( inputStream, characterSetName );
     }

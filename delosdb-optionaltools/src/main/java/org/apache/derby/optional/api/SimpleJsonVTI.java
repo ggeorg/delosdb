@@ -309,7 +309,9 @@ public class SimpleJsonVTI extends VTITemplate
         try {
             return new BigDecimal( stringValue );
         }
-        catch (Throwable t) { throw ToolUtilities.wrap( t ); }
+        catch (NumberFormatException error) {
+            throw ToolUtilities.wrap(error);
+        }
     }
     
     ////////////////////////////////////////////////////////////////////////

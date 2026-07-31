@@ -260,15 +260,9 @@ implements InfoStreams, ModuleControl
 		if ("rollingFile".equals(style)) {
 		String className = "org.apache.derby.impl.services.stream.RollingFileStreamProvider.getOutputStream";
 			res = makeMethodHPW(className, header, true);
-		} else {            
-			try {
-				IllegalArgumentException ex = new IllegalArgumentException("unknown derby.stream.error.style: " + style);
-                throw ex;
-			} catch (IllegalArgumentException t) {
-				res = useDefaultStream(header, t);
-			} catch (Exception t) {
-				res = useDefaultStream(header, t);
-			}
+		} else {
+            res = useDefaultStream(header, new IllegalArgumentException(
+                    "unknown derby.stream.error.style: " + style));
 		}
 		return res;
 	}
