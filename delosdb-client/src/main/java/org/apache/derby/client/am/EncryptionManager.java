@@ -150,8 +150,9 @@ public class EncryptionManager {
             keyAgreement_ = KeyAgreement.getInstance("DH", providerName);
             keyAgreement_.init(keyPair_.getPrivate());
         } catch (GeneralSecurityException e) {
-            throw new SqlException(agent_.logWriter_, 
-                new ClientMessageId(SQLState.SECURITY_EXCEPTION_ENCOUNTERED), e); 
+            throw new SqlException(
+                agent_ == null ? null : agent_.logWriter_,
+                new ClientMessageId(SQLState.SECURITY_EXCEPTION_ENCOUNTERED), e);
         }
     }
 
