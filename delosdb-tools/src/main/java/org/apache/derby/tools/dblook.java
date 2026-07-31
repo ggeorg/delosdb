@@ -22,6 +22,7 @@
 package org.apache.derby.tools;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.StringReader;
 
 import java.sql.DriverManager;
@@ -333,7 +334,7 @@ public final class dblook {
                 return false;
             }
 	    }
-		catch (Exception e)
+		catch (ReflectiveOperationException | SecurityException e)
 		{
 			Logs.debug(e);
 			return false;
@@ -1191,7 +1192,7 @@ public final class dblook {
 
 			return result.toString();
 
-		} catch (Exception e) {
+		} catch (IOException e) {
 		// if something went wrong, just return the string as is--
 		// worst case is that the generated DDL is correct, it just
 		// can't be run in some SQL script apps (because of the newline

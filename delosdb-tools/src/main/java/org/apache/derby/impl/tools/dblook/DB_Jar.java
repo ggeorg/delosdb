@@ -99,7 +99,7 @@ public class DB_Jar {
                     jarDir.mkdirs();
 
                     doCopy(oldJarPath.toString(), absJarDir + separator + jarFullName);
-                } catch (Exception e) {
+                } catch (IOException | SecurityException e) {
                     Logs.debug("DBLOOK_FailedToLoadJar",
                                absJarDir + separator + jarFullName.toString());
                     Logs.debug(e);
@@ -153,7 +153,7 @@ public class DB_Jar {
                     jarDir.mkdirs();
 
                     doCopy(oldJarPath.toString(), absJarDir + jarFullName);
-                } catch (Exception e) {
+                } catch (IOException | SecurityException e) {
                     Logs.debug("DBLOOK_FailedToLoadJar",
                                absJarDir + jarFullName.toString());
                     Logs.debug(e);

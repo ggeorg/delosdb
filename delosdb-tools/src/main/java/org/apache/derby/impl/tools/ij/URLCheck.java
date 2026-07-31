@@ -166,7 +166,7 @@ public class URLCheck {
                 }
                 validDerbyProps = props;
             }
-            catch (Exception ex)
+            catch (IllegalAccessException | ClassCastException | SecurityException ex)
             {
                 ex.printStackTrace();
             }

@@ -35,7 +35,10 @@ import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.text.ParseException;
 import java.util.Date;
+import java.util.IllformedLocaleException;
 import java.util.Locale;
+import java.util.MissingResourceException;
+import java.util.NoSuchElementException;
 import java.util.ResourceBundle;
 import java.util.StringTokenizer;
 
@@ -272,7 +275,7 @@ public final class LocalizedResource
 				if(st.hasMoreTokens()==true)
 					v=st.nextToken();
 				return Locale.of(l,r,v);
-			} catch (Exception e) {
+			} catch (NoSuchElementException | IllformedLocaleException e) {
 				return null;
 			}
 	}
@@ -282,7 +285,7 @@ public final class LocalizedResource
 		}
 			try{
 				return MessageFormat.format(res.getString(key), objectArr);
-			} catch (Exception e) {
+			} catch (MissingResourceException | IllegalArgumentException e) {
 					String tmpFormat = key;
 					for (int i=0; objectArr != null && i<objectArr.length; i++)
 						tmpFormat = tmpFormat + ", <{" + (i) + "}>";
