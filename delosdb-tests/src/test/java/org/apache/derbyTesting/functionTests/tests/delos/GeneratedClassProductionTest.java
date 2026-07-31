@@ -42,7 +42,7 @@ public final class GeneratedClassProductionTest
     private static final String DATABASE =
             "jdbc:derby:memory:delosClassFileProduction";
     private static final String APPLICATION_OVERRIDE =
-            "derby.module.untrustedGeneratedClassBackend";
+            "derby.module.untrustedJavaFactory";
 
     /** A deliberately invalid backend used to prove monitor override rejection. */
     public static final class RejectingJavaFactory implements JavaFactory {
