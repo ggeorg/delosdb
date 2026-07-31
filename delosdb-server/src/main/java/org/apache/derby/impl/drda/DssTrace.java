@@ -36,7 +36,6 @@ public class DssTrace
   // into ascii and ebcdic.  The goal was to be able to quickly index into the
   // arrays to find the characters.  Char arrays instead of strings were used as
   // much as possible in an attempt to help speed up performance.
-  private static final String LIST_SEPARATOR = " # ";
 
   // trace representation for a java null.
   private static final String NULL_VALUE = "null";

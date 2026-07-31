@@ -52,7 +52,6 @@ class ColumnInfo {
     private ArrayList<Integer> jdbcColumnTypes;
 	private int noOfColumns;
 	private ArrayList columnPositions;
-	private boolean createolumnNames = true;
 	private int expectedNumberOfCols ; //number of Columns that are suppose
                                        // to be in the file to imported  
 	private Connection conn;

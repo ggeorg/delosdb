@@ -82,12 +82,6 @@ class DRDAConnThread extends Thread {
     private static final byte NULL_VALUE = (byte)0xff;
     private static final String SYNTAX_ERR = "42X01";
 
-    // Manager Level 3 constant.
-    private static final int MGRLVL_3 = 0x03;
-
-    // Manager Level 4 constant.
-    private static final int MGRLVL_4 = 0x04;
-
     // Manager Level 5 constant.
     private static final int MGRLVL_5 = 0x05;
 

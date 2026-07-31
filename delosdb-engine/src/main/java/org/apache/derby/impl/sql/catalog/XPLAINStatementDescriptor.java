@@ -106,11 +106,6 @@ public class XPLAINStatementDescriptor extends XPLAINTableDescriptor
     public String getCatalogName() { return TABLENAME_STRING; }
     static final String             TABLENAME_STRING = "SYSXPLAIN_STATEMENTS";
 
-    private static final String[][] indexColumnNames =
-    {
-        {"STMT_ID"}
-    };
-
     /**
      * Builds a list of columns suitable for creating this Catalog.
      *

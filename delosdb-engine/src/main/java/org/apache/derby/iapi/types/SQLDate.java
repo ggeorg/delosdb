@@ -409,7 +409,6 @@ public final class SQLDate extends DataType
     }
 
     static final char ISO_SEPARATOR = '-';
-    private static final char[] ISO_SEPARATOR_ONLY = {ISO_SEPARATOR};
     private static final char IBM_USA_SEPARATOR = '/';
     private static final char[] IBM_USA_SEPARATOR_ONLY = {IBM_USA_SEPARATOR};
     private static final char IBM_EUR_SEPARATOR = '.';

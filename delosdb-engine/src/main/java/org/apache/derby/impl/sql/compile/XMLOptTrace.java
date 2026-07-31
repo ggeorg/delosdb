@@ -119,9 +119,6 @@ class   XMLOptTrace implements  OptTrace
     private static  final   String  SEL_COUNT = "selCount";
     private static  final   String  SEL_SELECTIVITY = "selSelectivity";
 
-    // distinguish table function names from conglomerate names
-    private static  final   String  TABLE_FUNCTION_FLAG = "()";
-    
     //
     // Statement and view for declaring a table function which reads the planCost element.
     // This table function is an instance of the XmlVTI and assumes that you have

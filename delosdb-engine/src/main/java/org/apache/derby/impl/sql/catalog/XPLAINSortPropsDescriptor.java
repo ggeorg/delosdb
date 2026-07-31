@@ -105,14 +105,8 @@ public class XPLAINSortPropsDescriptor extends XPLAINTableDescriptor
         this.merge_run_details = merge_run_details;
     }
 
-
     public String getCatalogName() { return TABLENAME_STRING; }
     static  final   String  TABLENAME_STRING = "SYSXPLAIN_SORT_PROPS";
-
-    private static final String[][] indexColumnNames =
-    {
-        {"SORT_RS_ID"}
-    };
 
     /**
      * Builds a list of columns suitable for creating this Catalog.

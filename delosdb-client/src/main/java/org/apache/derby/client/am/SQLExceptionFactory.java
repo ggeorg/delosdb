@@ -44,13 +44,11 @@ public class SQLExceptionFactory {
     // Important DRDA SQL States, from DRDA v3 spec, Section 8.2
     // We have to consider these as well as the standard SQLState classes
     // when choosing the right exception subclass
-    private static final String DRDA_CONVERSATION_TERMINATED    = "58009";    
     private static final String DRDA_COMMAND_NOT_SUPPORTED      = "58014";
     private static final String DRDA_OBJECT_NOT_SUPPORTED       = "58015";
     private static final String DRDA_PARAM_NOT_SUPPORTED        = "58016";
     private static final String DRDA_VALUE_NOT_SUPPORTED        = "58017";
     private static final String DRDA_SQLTYPE_NOT_SUPPORTED      = "56084";
-    private static final String DRDA_CONVERSION_NOT_SUPPORTED   = "57017";
     private static final String DRDA_REPLY_MSG_NOT_SUPPORTED    = "58018";
        
     /**

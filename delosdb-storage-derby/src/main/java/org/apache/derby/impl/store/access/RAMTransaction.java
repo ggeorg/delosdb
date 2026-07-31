@@ -152,15 +152,6 @@ public class RAMTransaction
      */
     private boolean alterTableCallMade = false;
 
-    /**
-     * The lock level of the transaction.
-     * <p>
-     * Cannot lock a level lower than the getSystemLockLevel().  So if 
-     * getSystemLockLevel() is table level locking, setting the transaction
-     * locking level to record has no effect.
-     **/
-    private int transaction_lock_level;
-
     /**************************************************************************
      * Constructors for This class:
      **************************************************************************

@@ -122,19 +122,13 @@ public class ReleaseNotesGenerator extends GeneratorBase {
     private static  final   String  ANT_HEADLINE = "Ant";
     private static  final   String  BRANCH_HEADLINE = "Branch";
     private static  final   String  COMPILER_HEADLINE = "Compiler";
-    private static  final   String  JAVA6_HEADLINE = "Java 6";
-    private static  final   String  JDK14_HEADLINE = "JDK 1.4";
     private static  final   String  MACHINE_HEADLINE = "Machine";
-    private static  final   String  OSGI_HEADLINE = "OSGi";
 
     // tags in summary xml
     private static  final   String  SUM_ANT_VERSION = "antVersion";
     private static  final   String  SUM_COMPILER = "compilers";
-    private static  final   String  SUM_JAVA6 = "java6";
-    private static  final   String  SUM_JDK14 = "jdk1.4";
     private static  final   String  SUM_MACHINE = "machine";
     private static  final   String  SUM_NEW_FEATURES = "newFeatures";
-    private static  final   String  SUM_OSGI = "osgi";
     private static  final   String  SUM_OVERVIEW = "overview";
     private static  final   String  SUM_RELEASE_VERIFICATION = "releaseVerification";
 

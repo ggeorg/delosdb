@@ -93,11 +93,6 @@ public class XPLAINResultSetTimingsDescriptor extends XPLAINTableDescriptor
     public String getCatalogName() { return TABLENAME_STRING; }
     static final String             TABLENAME_STRING = "SYSXPLAIN_RESULTSET_TIMINGS";
 
-    private static final String[][] indexColumnNames =
-    {
-        {"TIMING_ID"}
-    };
-
     /**
      * Builds a list of columns suitable for creating this Catalog.
      *

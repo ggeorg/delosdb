@@ -153,15 +153,9 @@ public class XPLAINScanPropsDescriptor extends XPLAINTableDescriptor
         this.bitset_of_fetched_columns = bitset_of_fetched_columns;
     }
 
-
     public String getCatalogName() { return TABLENAME_STRING; }
     static final   String  TABLENAME_STRING = "SYSXPLAIN_SCAN_PROPS";
     
-    private static final String[][] indexColumnNames =
-    {
-        {"SCAN_RS_ID"}
-    };
-
 
     /**
      * Builds a list of columns suitable for creating this Catalog.

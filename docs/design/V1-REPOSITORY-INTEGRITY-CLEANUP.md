@@ -210,12 +210,42 @@ permanent source-shape check prohibits restoring those artifacts. Existing
 RawStore maintenance, page-I/O, memory, lifecycle, and authority diagnostics
 remain unchanged.
 
+## Stage 4.1 proven private-field retirement
+
+The corrected Stage 3 inventory identified 52 private production fields with no
+source-level identifier or member-selection use. Each candidate was classified
+against source references, method references, textual/reflective lookup, Java
+serialization and externalization contracts, generated-code access, protocol
+dispatch, and public or package API exposure.
+
+The complete proven batch is removed:
+
+```text
+44 unused private static constants, arrays, and flags
+8 unused private instance fields in non-serializable implementation classes
+52 total private production fields
+```
+
+The instance-field removals are limited to `ClientXAConnection`, `ColumnInfo`,
+`NetworkServerControlImpl`, `RAMTransaction`, and `ReplicationLogScan`. None of
+those fields participates in a serialized form, externalized disk layout,
+reflection contract, generated accessor, or public binary surface. Static
+removals include obsolete release-note labels, unused DRDA constants, redundant
+XPLAIN index-name arrays, retired cost constants, and inactive tool flags.
+
+The repository-integrity baseline now requires zero dead private production
+methods and zero dead private production fields. Removing the unused 96-entry
+FDOCA representation table also reduces `Typdef` below the 1,000-line class
+threshold. No executable expression, branch, method body, constructor signature,
+record component, public field, or serialized instance state changes.
+
 ## Remaining cleanup sequence
 
-### Stage 4 — quality and structure
+### Stage 4.2 — exception handling and structural quality
 
-Reduce dead private fields, empty/generic catches, oversized methods, deep
-nesting, suppressions, and stale markers where correctness permits.
+Classify and reduce empty/generic catches, oversized methods, deep nesting,
+suppressions, and stale markers where correctness permits. Production dead
+private methods and fields are now closed at zero.
 
 ### Stage 5 — compiler no-compromise closeout
 
@@ -232,7 +262,7 @@ modelling.
 
 ## Non-goals
 
-Stage 3 does not change:
+Stages 3 and 4.1 do not change:
 
 ```text
 SQL semantics or SQLStates

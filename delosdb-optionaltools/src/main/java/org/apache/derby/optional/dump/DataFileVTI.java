@@ -102,7 +102,6 @@ public  class   DataFileVTI extends VTITemplate
     private static  final   String  COMPILATION_DB = "dfv_compilation_db";
     private static  final   String  DUMMY_TABLE_NAME = "dfv_dummy";
 
-    private static  final   long READ_ALL_PAGES = -1L;
 
     public  static final int CHECKSUM_SIZE    = 8;
     public  static final int SMALL_SLOT_SIZE  = 2;

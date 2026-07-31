@@ -42,9 +42,6 @@ public class ClientXAConnection extends ClientPooledConnection implements XAConn
      // logicalConnection_ is inherited from ClientPooledConnection
     private Connection logicalCon_;
 
-    // This connection is used to access the indoubt table
-    private NetXAConnection controlCon_ = null;
-
     public ClientXAConnection(BasicClientDataSource ds,
                               LogWriter logWtr,
                               String userId,

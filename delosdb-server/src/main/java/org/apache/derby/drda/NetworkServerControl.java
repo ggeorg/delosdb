@@ -89,7 +89,6 @@ import org.apache.derby.impl.drda.NetworkServerControlImpl;
     This turns drda tracing on or off for the specified session or if no 
     session is  specified for all sessions. Default is off</LI>
 
-
     <LI>tracedirectory &lt;tracedirectory&gt; [-h &lt;host&gt;] [-p &lt;portnumber&gt;]  [-ssl &lt;sslmode&gt;]: 
     This changes where new trace files will be placed. 
     For sessions with tracing already turned on,  
@@ -182,14 +181,8 @@ import org.apache.derby.impl.drda.NetworkServerControlImpl;
 
 public class NetworkServerControl{
 
-
     
     public final static int DEFAULT_PORTNUMBER = 1527;
-
-    private final static String DERBYNET_JAR = "derbynet.jar";
-    private final static String DERBY_HOSTNAME_WILDCARD = "0.0.0.0";
-    private final static String IPV6_HOSTNAME_WILDCARD = "::";
-    private final static String SOCKET_PERMISSION_HOSTNAME_WILDCARD = "*";
 
     private NetworkServerControlImpl serverImpl;
 
@@ -264,7 +257,6 @@ public class NetworkServerControl{
     {
         serverImpl = new NetworkServerControlImpl(address, portNumber);
     }
-
 
     /**
      * 
@@ -426,7 +418,6 @@ public class NetworkServerControl{
         serverImpl.trace(on);
     }
 
-
     /**
      * Turn tracing on or off for all connections on the Network Server.
      *
@@ -499,7 +490,6 @@ public class NetworkServerControl{
         return serverImpl.runtimeInfo();
     }
 
-
     /**
      * Set Network Server maxthread parameter.  This is the maximum number 
      * of threads that will be used for JDBC client connections.   setTimeSlice
@@ -516,7 +506,6 @@ public class NetworkServerControl{
     {
         serverImpl.netSetMaxThreads(max);
     }
-
 
     /** Returns the current maxThreads setting for the running Network Server
      * 
@@ -559,8 +548,6 @@ public class NetworkServerControl{
             serverImpl.getCurrentProperties().getProperty(Property.DRDA_PROP_TIMESLICE);
         return Integer.parseInt(val);
     }
-
-
 
     /**
      * Get current Network server properties

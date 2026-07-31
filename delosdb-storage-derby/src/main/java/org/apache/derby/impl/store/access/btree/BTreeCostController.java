@@ -136,14 +136,11 @@ public class BTreeCostController extends OpenBTree
     //   fetch by exact key, uncached   3.4      3.636842     3.531579
     // 
 
-
     // The following costs are search costs to find a row on a leaf, use
     // the heap costs to determine scan costs, for now ignore qualifier 
     // application and stop comparisons.
     // I used the int key, 2 level numbers divided by 2 to get per level.
     
-    private static final double 
-        BTREE_CACHED_FETCH_BY_KEY_PER_LEVEL    = (0.541 / 2);
 
     private static final double 
         BTREE_SORTMERGE_FETCH_BY_KEY_PER_LEVEL = (1.432 / 2);
@@ -362,7 +359,6 @@ public class BTreeCostController extends OpenBTree
 
         return(ret_cost);
     }
-
 
     /**
      * Calculate the cost of a scan.
@@ -606,7 +602,6 @@ public class BTreeCostController extends OpenBTree
             // pick an obviously useful index.
             if (estimated_row_count < 1)
                 estimated_row_count = 1;
-
 
             // first the base cost of positioning on the first row in the scan.
             double cost = 

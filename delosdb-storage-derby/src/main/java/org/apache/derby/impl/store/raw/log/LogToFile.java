@@ -290,11 +290,6 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
      */
     private static boolean wasDBInDurabilityTestModeNoSync = false;
     
-	/* to err on the conservative side, unless otherwise set, assume log
-	 *	archive is ON 
-	 */
-	private static final String DEFAULT_LOG_ARCHIVE_DIRECTORY = "DEFAULT";
-
 	private int     logSwitchInterval   = DEFAULT_LOG_SWITCH_INTERVAL;
 	private int     checkpointInterval  = DEFAULT_CHECKPOINT_INTERVAL;
 

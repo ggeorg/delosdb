@@ -141,11 +141,6 @@ public class XPLAINResultSetDescriptor extends XPLAINTableDescriptor
     public String getCatalogName() { return TABLENAME_STRING; }
     static final String             TABLENAME_STRING = "SYSXPLAIN_RESULTSETS";
 
-    private static final String[][] indexColumnNames =
-    {
-        {"RS_ID"}
-    };
-
     /**
      * Builds a list of columns suitable for creating this Catalog.
      *

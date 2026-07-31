@@ -50,9 +50,6 @@ import java.io.ObjectInput;
 		extentEnd(long) the last page this extent can ever hope to manage 
 		extentLength(int) the number of pages allocated in this extent
 		extentStatus(int) status bits for the whole extent.
-				HAS_DEALLOCATED - most likely, this extent has a deallocated 
-                        page somewhere
-						If !HAD_DEALLOCATED, the extent has no deallocated page
 				HAS_FREE - most likely, this extent has a free page somewhere
 						If !HAS_FREE, there is no free page in the extent
 				ALL_FREE - most likely, this extent only has free pages, good 
@@ -136,7 +133,6 @@ public class AllocExtent implements Externalizable
 	private long reserved3;
 
 	// extent Status bits
-	private static final int HAS_DEALLOCATED = 0x1;
 	private static final int HAS_FREE = 0x2;
 	private static final int ALL_FREE = 0x4;
 	private static final int HAS_UNFILLED_PAGES = 0x10;

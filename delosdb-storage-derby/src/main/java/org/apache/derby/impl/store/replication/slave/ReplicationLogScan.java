@@ -69,7 +69,6 @@ class ReplicationLogScan {
     // Data for the latest log record read by next(). Use the
     // get-methods to retrieve these
     private long currentInstant;
-    private int currentDataOffset;
     private byte[] currentData;
 
     /** hasInfo = true when the scan will return meaningful

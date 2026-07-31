@@ -143,7 +143,6 @@ public final class NetworkServerControlImpl {
     private final static String REPLY_HEADER = "RPY:";
     private final static int REPLY_HEADER_LENGTH = REPLY_HEADER.length();
     private final static int OK = 0;
-    private final static int WARNING = 1;
     private final static int ERROR = 2;
     private final static int SQLERROR = 3;
     private final static int SQLWARNING = 4;
@@ -163,7 +162,6 @@ public final class NetworkServerControlImpl {
     private final static String DEFAULT_HOST = "localhost";
     private final static String DRDA_MSG_PREFIX = "DRDA_";
     private final static String DEFAULT_LOCALE= "en";
-    private final static String DEFAULT_LOCALE_COUNTRY="US";
 
     // Check up to 10 seconds to see if shutdown occurred
     private final static int SHUTDOWN_CHECK_ATTEMPTS = 100;
@@ -245,7 +243,6 @@ public final class NetworkServerControlImpl {
     // here, but this class is robust enough to allow for null as default.
     private String userArg = null;
     private String passwordArg = null;
-    private String bootPasswordArg;
     private String encAlgArg;
     private String encPrvArg;
     private String hostArg = DEFAULT_HOST;
@@ -285,9 +282,6 @@ public final class NetworkServerControlImpl {
                                         // and changing timeSlice
 
     private boolean keepAlive = true;   // keepAlive value for client socket 
-    private int minPoolSize;            //minimum pool size for pooled connections
-    private int maxPoolSize;            //maximum pool size for pooled connections
-    private Object poolSync = new Object(); // object to use for syning reading
 
     private boolean debugOutput = false;
     private boolean cleanupOnStart = false; // Should we clean up when starting the server?

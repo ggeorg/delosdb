@@ -90,7 +90,6 @@ public class LogAccessFile
      **/
     private static final int            LOG_RECORD_FIXED_OVERHEAD_SIZE = 16;
 	private static final int            LOG_RECORD_HEADER_SIZE = 12; //(length + instant)
-	private static final int            LOG_RECORD_TRAILER_SIZE = 4; //trailing length 
     private static final int            LOG_NUMBER_LOG_BUFFERS = 3;
 
 

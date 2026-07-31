@@ -56,7 +56,6 @@ import org.apache.derby.shared.common.reference.ModuleUtil;
 
 import org.apache.derby.iapi.tools.i18n.*;
 
-
 /**
   <P>
   Sysinfo reports values relevant to the current Derby configuration.
@@ -83,7 +82,6 @@ import org.apache.derby.iapi.tools.i18n.*;
   </PRE>
 
  */
-
 
 public final class Main {
 
@@ -138,7 +136,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
     reportDerby (aw);
     aw.println (sep);
 
-
     // Locales info
     try {
       reportLocales (aw);
@@ -159,17 +156,13 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
         e.printStackTrace();
     }
 
-
     if (pause) {
      pause();
     }
 
   } // end of getMainInfo (AppStreamWriter aw, boolean printLicense, boolean pause)
 
-
   private static boolean setPause = false;
-
-  private static boolean setLicense = false;
 
   private static boolean cptester = false;
 
@@ -179,7 +172,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 
       return;
     }
-
 
     for (int i = 0; i < args.length; i++) {
 
@@ -196,7 +188,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
     } // end for
 
   } // end of parseArgs (String args[])
-
 
   /**
     For the benefit of DOS box users, this method waits for input
@@ -254,7 +245,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
       localAW.println (Main.getTextMessage ("SIF01.D"));
     }
 
-
   } // end of reportDerby
 
   /**
@@ -304,7 +294,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 	printPropertyIfNotNull(localAW, "java.runtime.version");
 	printPropertyIfNotNull(localAW, "java.fullversion");
 
-
   } // end of reportJavaInfo
 
   /**
@@ -347,7 +336,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
     return property;
   } // end of getJavaProperty (String whichProperty)
 
-
     /**
      * wrapper for getCanonicalPath for sysinfo. When we installed a SecurityManager
      * (see DERBY-7138), we wanted to print
@@ -371,19 +359,12 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 
   private final static String jbmsSep = Main.getTextMessage ("SIF01.M");
 
-  private final static String licSep  = Main.getTextMessage ("SIF01.N");
-
   private final static String locSep  = Main.getTextMessage ("SIF01.P");
-
-  private final static String curLoc  = Main.getTextMessage ("SIF01.T");
 
   private static void getClasspathInfo (String args[], java.io.PrintWriter aw) {
 
     Main.useMe (args, aw);
   }
-
-
-
 
   /**
     Writes out information about the locales with the
@@ -460,7 +441,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
                   localAW.println (Main.getTextMessage ("SIF01.R",
                                                         localeName));
 
-
                   int major = Integer.parseInt(p.getProperty ("derby.locale.version.major"));
                   int minor = Integer.parseInt(p.getProperty ("derby.locale.version.minor"));
                   int maint = Integer.parseInt(p.getProperty ("derby.locale.version.maint"));
@@ -468,9 +448,7 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 
                   String lv = ProductVersionHolder.fullVersionString(major, minor, maint, false, build);
 
-
                   localAW.println (Main.getTextMessage ("SIF01.S", lv));
-
 
               }
               catch (IOException ioe) {
@@ -491,7 +469,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
       }
 
     }
-
 
     localAW.println (sep);
 
@@ -629,7 +606,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 	        localPW = new java.io.PrintWriter(System.out);
 	    }
 
-
       int length = args.length;
 	  if (length==1) {
 
@@ -653,10 +629,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 	  }
 
   }
-
-
-
-
 
 	  private static void tryAllClasspaths(java.io.PrintWriter localPW) throws Throwable {
 		  localPW.println(Main.getTextMessage("SIF08.B"));
@@ -707,7 +679,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 			seenArg =true;
 
 		}
-
 
 		String userclass = argumentMatches(args, ".class");
 		if (!userclass.equals("")) {
@@ -768,7 +739,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
 			failures.append(notFound(cn, library));
 
 		}
-
 
 	}
 
@@ -1242,7 +1212,6 @@ public static void getMainInfo (java.io.PrintWriter aw, boolean pause) {
         }
         return result;
     }
-
 
     public static class LocaleSorter implements Comparator<Locale>
     {

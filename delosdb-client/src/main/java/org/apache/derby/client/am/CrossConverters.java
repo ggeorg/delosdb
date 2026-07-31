@@ -65,10 +65,6 @@ final class CrossConverters {
      */
     public static final int UNKNOWN_LENGTH = Integer.MIN_VALUE;
 
-    private final static BigDecimal bdMaxByteValue__ =
-            BigDecimal.valueOf(Byte.MAX_VALUE);
-    private final static BigDecimal bdMinByteValue__ =
-            BigDecimal.valueOf(Byte.MIN_VALUE);
     private final static BigDecimal bdMaxShortValue__ =
             BigDecimal.valueOf(Short.MAX_VALUE);
     private final static BigDecimal bdMinShortValue__ =
@@ -89,10 +85,6 @@ final class CrossConverters {
             new BigDecimal(Double.MAX_VALUE);
     private final static BigDecimal bdMinDoubleValue__ =
             new BigDecimal(-Double.MAX_VALUE);
-
-    // Since BigDecimals are immutable, we can return pointers to these canned 0's and 1's.
-    private final static BigDecimal bdZero__ = BigDecimal.valueOf(0);
-    private final static BigDecimal bdOne__ = BigDecimal.valueOf(1);
 
     // ---------------------- state ----------------------------------------------
 

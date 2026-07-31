@@ -50,10 +50,6 @@ public class ClassInspector
 		 "java.lang.Short", "java.lang.Integer", "java.lang.Long",
 		 "java.lang.Float", "java.lang.Double"};
 
-    private static final String OBJECT_TYPE_NAME = "java.lang.Object";
-    private static final String STRING_TYPE_NAME = "java.lang.String";
-    private static final String BIGDECIMAL_TYPE_NAME = "java.math.BigDecimal";
-
 	private final ClassFactory cf;
 
 	/**
@@ -111,7 +107,6 @@ public class ClassInspector
 			if (fromClass == null)
 				return !toClass.isPrimitive() || (toClass == Void.TYPE);
 
-
 			return toClass.isAssignableFrom(fromClass);
 		}
 		catch (ClassNotFoundException cnfe)
@@ -143,7 +138,6 @@ public class ClassInspector
 		return true;
 	}
 
-
 	/**
 	 * Get the Java name of the return type from a Member representing
 	 * a method or the type of a Member representing a field.
@@ -169,7 +163,6 @@ public class ClassInspector
 
 		return ClassInspector.readableClassName(type);
 	}
-
 
 	/**
 	 * Find a public method that implements a given signature.
@@ -304,7 +297,6 @@ public class ClassInspector
 
 				} catch (NoSuchMethodException nsme2) {
 
-
 					// if we are an interface then the method could be defined on Object
 					if (!receiverClass.isInterface())
 						return null;
@@ -334,7 +326,6 @@ public class ClassInspector
              hasVarargs
              );
 	}
-
 
 	/**
 	 * Find a public field  for a class.
@@ -641,7 +632,6 @@ public class ClassInspector
 		return false;
 	}
 
-
 	/**
 	 *  Tricky function to resolve a method.  If primParamClasses is null
 	 *  we know it's first pass.  First pass try to match as all "object"
@@ -736,7 +726,6 @@ nextMethod:	for (int i = 0; i < methods.length; i++) {
 							continue;
 						}
 
-
 					} else {
 
 						// regular match on parameter count
@@ -766,7 +755,6 @@ nextMethod:	for (int i = 0; i < methods.length; i++) {
 							continue;
 						}
 					}	
-
 
 					if (repeatLastParameter) {
 						// With N parameters requested check all parameters from N-1 to end are equal
@@ -1019,7 +1007,6 @@ nextMethod:	for (int i = 0; i < methods.length; i++) {
 				}
 				continue;
 			}
-
 
 			if ((!classConvertableFromTo(fromClass, toClass, mixTypes)) &&
 				// primitive type, if any, also doesn't work

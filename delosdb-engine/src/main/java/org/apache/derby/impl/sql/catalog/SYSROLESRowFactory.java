@@ -52,7 +52,6 @@ public class SYSROLESRowFactory extends CatalogRowFactory
     private static final int SYSROLES_ROLEID = 2;
     private static final int SYSROLES_GRANTEE = 3;
     private static final int SYSROLES_GRANTOR = 4;
-    private static final int SYSROLES_WITHADMINOPTION = 5;
     static final int SYSROLES_ISDEF = 6;
 
     private static final int[][] indexColumnPositions =
