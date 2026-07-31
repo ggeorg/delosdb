@@ -133,9 +133,11 @@ final class DelosRepositoryIntegrityMetrics extends TreeScanner<Void, Integer> {
     public Void visitCatch(CatchTree node, Integer depth) {
         method.catches++; nested(depth);
         String type = node.getParameter().getType().toString();
+        boolean empty = node.getBlock().getStatements().isEmpty();
+        boolean documented = empty && hasComment(node.getBlock());
         catches.add(new CatchRecord(source, method.owner, method.name,
                 line(positions.getStartPosition(unit, node)), type,
-                node.getBlock().getStatements().isEmpty(), isGeneric(type)));
+                empty, documented, isGeneric(type)));
         return super.visitCatch(node, depth + 1);
     }
 
@@ -177,6 +179,16 @@ final class DelosRepositoryIntegrityMetrics extends TreeScanner<Void, Integer> {
     private void nested(Integer depth) {
         method.maxNesting = Math.max(method.maxNesting,
                 depth == null ? 0 : depth);
+    }
+
+    private boolean hasComment(Tree tree) {
+        long start = positions.getStartPosition(unit, tree);
+        long end = positions.getEndPosition(unit, tree);
+        if (start < 0L || end < start || end > source.text.length()) {
+            return false;
+        }
+        String text = source.text.substring((int) start, (int) end);
+        return text.contains("//") || text.contains("/*");
     }
 
     private static boolean isGeneric(String type) {

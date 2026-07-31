@@ -21,7 +21,6 @@
 
 package org.apache.derby.jdbc;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import javax.naming.NamingException;
@@ -301,8 +300,8 @@ public class EmbeddedDataSource extends ReferenceableDataSource
                     if (ov != null) {
                         ref.add(new StringRefAddr(propertyName, ov.toString()));
                     }
-                } catch (IllegalAccessException iae) {
-                } catch (InvocationTargetException ite) {
+                } catch (ReflectiveOperationException ignored) {
+                    // Skip properties whose getter cannot be invoked.
                 }
 
             }

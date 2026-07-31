@@ -27,7 +27,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Serializable;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.sql.Connection;
@@ -1685,8 +1684,8 @@ public class BasicClientDataSource
                     if (ov != null) {
                         properties.setProperty(propertyName, ov.toString());
                     }
-                } catch (IllegalAccessException iae) {
-                } catch (InvocationTargetException ite) {
+                } catch (ReflectiveOperationException ignored) {
+                    // Skip properties whose getter cannot be invoked.
                 }
 
             }

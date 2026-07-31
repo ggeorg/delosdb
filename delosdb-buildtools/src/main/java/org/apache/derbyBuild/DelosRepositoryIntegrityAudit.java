@@ -466,7 +466,8 @@ public final class DelosRepositoryIntegrityAudit {
                         >= CLASS_LINE_THRESHOLD),
                 catches.size(), countProduction(catches),
                 countProduction(catches.stream()
-                        .filter(record -> record.empty).toList()),
+                        .filter(record -> record.empty && !record.documented)
+                        .toList()),
                 countProduction(catches.stream()
                         .filter(record -> record.generic).toList()),
                 sourceFiles.stream().mapToInt(source -> source.suppressions).sum(),
@@ -656,13 +657,14 @@ public final class DelosRepositoryIntegrityAudit {
 
     private void writeCatchInventory() throws IOException {
         try (PrintWriter writer = writer("catch-inventory.tsv")) {
-            writer.println("sourceKind\tfile\towner\tmethod\tline\ttype\tempty\tgeneric");
+            writer.println("sourceKind\tfile\towner\tmethod\tline\ttype\tempty\tdocumented\tgeneric");
             catches.stream().sorted(CatchRecord.ORDER)
                     .forEach(record -> writer.printf(Locale.ROOT,
-                            "%s\t%s\t%s\t%s\t%d\t%s\t%b\t%b%n",
+                            "%s\t%s\t%s\t%s\t%d\t%s\t%b\t%b\t%b%n",
                             record.source.kind, record.source.relative,
                             record.owner, record.method, record.line,
-                            record.type, record.empty, record.generic));
+                            record.type, record.empty, record.documented,
+                            record.generic));
         }
     }
 
@@ -735,7 +737,7 @@ public final class DelosRepositoryIntegrityAudit {
                     + summary.productionMethodsComplexity20Plus());
             writer.println("Production classes >= " + CLASS_LINE_THRESHOLD
                     + " lines: " + summary.productionClasses1000Plus());
-            writer.println("Production empty catches: "
+            writer.println("Production silent empty catches: "
                     + summary.productionEmptyCatches());
             writer.println("Production generic catches: "
                     + summary.productionGenericCatches());

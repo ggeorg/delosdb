@@ -126,10 +126,7 @@ final class XAStatementControl implements BrokeredStatementControl {
 			Statement newStatement = applicationStatement.createDuplicateStatement(xaConnection.realConnection, realStatement);
 			((EmbedStatement) realStatement).transferBatch((EmbedStatement) newStatement);
  
-			try {
-				realStatement.close();
-			} catch (SQLException sqle) {
-			}
+            closeReplacedStatement(realStatement);
 
 			realStatement = newStatement;
 			realConnection = xaConnection.realConnection;
@@ -143,6 +140,14 @@ final class XAStatementControl implements BrokeredStatementControl {
 		}
 		return realStatement;
 	}
+
+    private static void closeReplacedStatement(Statement statement) {
+        try {
+            statement.close();
+        } catch (SQLException ignored) {
+            // The replacement is authoritative; closing the old handle is best effort.
+        }
+    }
 
 	public PreparedStatement getRealPreparedStatement() throws SQLException {
 		// 
@@ -167,10 +172,7 @@ final class XAStatementControl implements BrokeredStatementControl {
 			// ((EmbedStatement) realPreparedStatement).transferBatch((EmbedStatement) newPreparedStatement);
 			((EmbedPreparedStatement) realPreparedStatement).transferParameters((EmbedPreparedStatement) newPreparedStatement);
 
-			try {
-				realPreparedStatement.close();
-			} catch (SQLException sqle) {
-			}
+            closeReplacedStatement(realPreparedStatement);
 
 			realPreparedStatement = newPreparedStatement;
 			realConnection = xaConnection.realConnection;
@@ -205,10 +207,7 @@ final class XAStatementControl implements BrokeredStatementControl {
 
 			((EmbedStatement) realCallableStatement).transferBatch((EmbedStatement) newCallableStatement);
 
-			try {
-				realCallableStatement.close();
-			} catch (SQLException sqle) {
-			}
+            closeReplacedStatement(realCallableStatement);
 
 			realCallableStatement = newCallableStatement;
 			realConnection = xaConnection.realConnection;

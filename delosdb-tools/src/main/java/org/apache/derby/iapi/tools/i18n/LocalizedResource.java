@@ -225,7 +225,7 @@ public final class LocalizedResource
 			    return new LocalizedInput(i,encode);
 		}
 		catch (UnsupportedEncodingException e){
-			
+            return new LocalizedInput(i);
 		}
 		return new LocalizedInput(i);
 	}
@@ -235,9 +235,8 @@ public final class LocalizedResource
 	          return new LocalizedInput(i,encoding);
 		}
 		catch (UnsupportedEncodingException e){
-			
+            return new LocalizedInput(i);
 		}
-		return new LocalizedInput(i);
         }
 
 	public LocalizedOutput getNewOutput(OutputStream o){
@@ -246,6 +245,7 @@ public final class LocalizedResource
 			    return new LocalizedOutput(o,encode);
 		}
 		catch(UnsupportedEncodingException e){
+            return new LocalizedOutput(o);
 		}
 		return new LocalizedOutput(o);
 	}

@@ -509,8 +509,10 @@ public final class SQLTimestamp extends DataType
             encodedTime = dateAndTime[1];
             return;
         }
-        catch( ParseException pe){}
-        catch( StandardException se){}
+        catch( ParseException | StandardException ignored)
+        {
+            // The original syntax exception below remains authoritative.
+        }
         if( thrownSE != null)
             throw thrownSE;
         throw StandardException.newException( SQLState.LANG_DATE_SYNTAX_EXCEPTION);

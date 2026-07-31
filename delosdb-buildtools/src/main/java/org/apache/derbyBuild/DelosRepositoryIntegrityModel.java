@@ -192,16 +192,19 @@ final class DelosRepositoryIntegrityModel {
         final long line;
         final String type;
         final boolean empty;
+        final boolean documented;
         final boolean generic;
 
         CatchRecord(SourceFile source, String owner, String method, long line,
-                String type, boolean empty, boolean generic) {
+                String type, boolean empty, boolean documented,
+                boolean generic) {
             this.source = source;
             this.owner = owner;
             this.method = method;
             this.line = line;
             this.type = type;
             this.empty = empty;
+            this.documented = documented;
             this.generic = generic;
         }
 

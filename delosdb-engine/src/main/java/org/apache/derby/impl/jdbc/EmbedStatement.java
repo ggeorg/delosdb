@@ -325,6 +325,7 @@ public class EmbedStatement extends ConnectionChild
             try {
                 checkExecStatus();
             } catch (SQLException sqle) {
+                // checkExecStatus marks the statement inactive; report that below.
             }
         }
         return !active;

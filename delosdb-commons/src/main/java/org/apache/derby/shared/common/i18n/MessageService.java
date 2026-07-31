@@ -61,8 +61,8 @@ public final class MessageService {
 		try {
 			return MessageService.getBundleWithEnDefault("org.apache.derby.loc.m"+hashString50(msgId), locale);
 		} catch (MissingResourceException mre) {
+            return null;
 		}
-		return null;
 	}
 
 
@@ -94,7 +94,8 @@ public final class MessageService {
 			// message does not exist in the requested locale or the default locale.
 			// most likely it does exist in our fake base class _en, so try that.
 		} catch (ShutdownException se) {
-		}
+            // Message lookup is unavailable during shutdown; use English fallback.
+        }
 		return formatMessage(getBundleForLocale(EN, messageId), messageId, arguments, false);
 	}
 
@@ -116,6 +117,7 @@ public final class MessageService {
 			if (bundle != null)
 				return bundle.getString(messageId.concat(".").concat(propertyName));
 		} catch (MissingResourceException mre) {
+            return null;
 		}
 		return null;
 	}
@@ -136,12 +138,8 @@ public final class MessageService {
 				try {
 					return MessageFormat.format(messageId, arguments);
 				}
-				catch (IllegalArgumentException iae) {
-				}
-				catch (NullPointerException npe) {
-					//
-					//null arguments cause a NullPointerException. 
-					//This improves reporting.
+				catch (IllegalArgumentException | NullPointerException ignored) {
+                    // Preserve the preformatted fallback below when formatting fails.
 				}
 
 			} catch (MissingResourceException mre) {
@@ -248,14 +246,18 @@ public final class MessageService {
 
 		try {
             retval = lookupBundle(localizeResourceName(resource, locale.toString()), locale);
-		} catch (MissingResourceException mre) {}
+		} catch (MissingResourceException mre) {
+            // Fall through to the language-only lookup.
+        }
 
         // just try the language. it's better than nothing.
         if (retval == null)
         {
             try {
                 retval = lookupBundle(localizeResourceName(resource, locale.getLanguage()), locale);
-            } catch (MissingResourceException mre) {}
+            } catch (MissingResourceException mre) {
+                // No localized bundle is available for this locale.
+            }
         }
 
         return retval;

@@ -33,7 +33,6 @@ import java.sql.SQLNonTransientConnectionException;
 import java.sql.SQLSyntaxErrorException;
 import java.sql.SQLTimeoutException;
 import java.sql.SQLTransactionRollbackException;
-import java.text.MessageFormat;
 import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
@@ -216,73 +215,14 @@ public class MessageUtils
      * @return the resulting hash
      */
     public static int hashString50(String key) {
-		int hash = 0;
-		int len = key.length();
-		if (len > 5)
-			len = 5;
+        return MessageService.hashString50(key);
+    }
 
-		for (int i = 0; i < len; i++) {
-			hash += key.charAt(i);
-		}
-		hash = hash % 50;
-		return hash;
-	}
-
-	public static String formatMessage(ResourceBundle bundle, String messageId, Object[] arguments, boolean lastChance) {
-
-		if (arguments == null)
-			arguments = new Object[0];
-
-		if (bundle != null) {
-
-			try {
-				messageId = bundle.getString(messageId);
-
-				try {
-					return MessageFormat.format(messageId, arguments);
-				}
-				catch (IllegalArgumentException iae) {
-				}
-				catch (NullPointerException npe) {
-					//
-					//null arguments cause a NullPointerException. 
-					//This improves reporting.
-				}
-
-			} catch (MissingResourceException mre) {
-				// caller will try and handle the last chance
-				if (lastChance)
-					throw mre;
-			} 
-		}
-
-		if (messageId == null)
-			messageId = "UNKNOWN";
-
-		
-		StringBuffer sb = new StringBuffer(messageId);
-
-		int len = arguments.length;
-		if (len > 0)
-			sb.append(" : ");
-
-		for (int i=0; i < len; i++) {
-		    // prepend a comma to all but the first
-			if (i > 0)
-				sb.append(", ");
-
-			sb.append('[');
-			sb.append(i);
-			sb.append("] ");
-			if (arguments[i] == null)
-				sb.append("null");
-			else
-				sb.append(arguments[i].toString());
-		}
-
-		
-		return sb.toString();
-	}
+	public static String formatMessage(ResourceBundle bundle, String messageId,
+            Object[] arguments, boolean lastChance) {
+        return MessageService.formatMessage(
+                bundle, messageId, arguments, lastChance);
+    }
 
 	/**
      * Method used by Derby Network Server to get localized message
@@ -354,6 +294,7 @@ public class MessageUtils
             // message does not exist in the requested locale
             // most likely it does exist in our fake base class _en, so try that.
         } catch (ShutdownException se) {
+            // Message lookup is unavailable during shutdown; use English fallback.
         }
         msg[0] = formatMessage
           (MessageService.getBundleForLocale(EN, messageId), messageId, arguments, false);
@@ -380,6 +321,7 @@ public class MessageUtils
             // message does not exist in the requested locale
             // most likely it does exist in our fake base class _en, so try that.
         } catch (ShutdownException se) {
+            // Message lookup is unavailable during shutdown; use English fallback.
         }
         locMsg = formatMessage(MessageService.getBundleForLocale(EN, messageId), messageId, args, false);
         return locMsg;

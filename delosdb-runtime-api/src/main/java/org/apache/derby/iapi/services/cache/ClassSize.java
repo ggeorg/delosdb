@@ -314,7 +314,9 @@ public class ClassSize
         String dataModel = getSystemProperty("sun.arch.data.model");
         try {
             return Integer.parseInt(dataModel) / 8;
-        } catch (NumberFormatException ignoreNFE) {}
+        } catch (NumberFormatException ignoreNFE) {
+            // Fall back to the architecture-name mapping below.
+        }
 
         // Try 'os.arch'
         String arch = getSystemProperty("os.arch");

@@ -447,7 +447,9 @@ public final class ProductVersionHolder
 					result = Integer.parseInt(s);
 			}
 		catch (NumberFormatException nfe)
-			{}
+			{
+                return BAD_NUMBER;
+            }
 
 		if (result < 0) result = BAD_NUMBER;
 		return result;
