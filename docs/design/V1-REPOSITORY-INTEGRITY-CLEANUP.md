@@ -288,3 +288,16 @@ retirement gate now prohibits their return. This correction changes no storage
 runtime code and leaves the fail-closed authority proof in
 `MvccRawStoreAuthorityCutoverTest` intact.
 
+## Stage 4.1 closeout correction: shared store/type inventory
+
+The Stage 8 production-closeout and Stage 7.3 module-retirement gates previously duplicated a fixed
+`104` source-count assertion. Repository Integrity Stage 3 legitimately changed that inventory by
+retiring three unwired path-diagnostic types and adding `DelosStorageText`, leaving 102 current contracts.
+The duplicated counts were both stale, and one Groovy continuation hid the actual count from the failure
+message.
+
+The exact categorized inventory now lives in
+`gradle/static-analysis/delosdb-store-type-contract-inventory.txt`. The storage-API retirement gate owns
+exact-set verification, while the Stage 8 closeout gate depends on that authority instead of repeating a
+second count. This preserves strict drift detection without parallel magic numbers.
+

@@ -5,6 +5,7 @@
 
 tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
     group = 'verification'
+    dependsOn 'delosStorageApiModuleRetirementStaticAnalysis'
     description = 'Verifies the complete Stage 8 RawStore production closeout.'
 
     def required = [
@@ -37,7 +38,8 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             reproducibility: file('.delosdb-v1/05-research/02-REPRODUCIBILITY.md'),
             roadmap: file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
             handoff: file('.delosdb-v1/NEW-SESSION-README.md'),
-            residueManifest: file('gradle/static-analysis/delosdb-stage8-retired-files.txt')
+            residueManifest: file('gradle/static-analysis/delosdb-stage8-retired-files.txt'),
+            typeInventory: file('gradle/static-analysis/delosdb-store-type-contract-inventory.txt')
     ]
     def retiredRoots = [
             file('delosdb-storage-api'),
@@ -93,8 +95,7 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 }
             }
             if (retiredFiles.size() != 220) {
-                failures << 'Expected 220 retired Stage 8 file paths; found '
-                        + retiredFiles.size()
+                failures << 'Expected 220 retired Stage 8 file paths; found ' + retiredFiles.size()
             }
         }
 
@@ -227,8 +228,8 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 include 'org/apache/derby/impl/store/access/mvcc/**/*.java'
             }.files
             if (liveMvccSources.size() != 20) {
-                failures << 'Expected 20 live RawStore-backed MVCC production sources; found '
-                        + liveMvccSources.size()
+                failures << 'Expected 20 live RawStore-backed MVCC production sources; found ' +
+                        liveMvccSources.size()
             }
             if (text.mvccBuild.readLines().size() > 140) {
                 failures << 'MVCC production build must remain compact (maximum 140 lines)'
@@ -271,16 +272,6 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
             }
             if (countToken(text.metrics, 'new DelosRawStoreIoSnapshot(') != 0) {
                 failures << 'Metrics must not reconstruct the flat snapshot positionally'
-            }
-
-            def runtimeTypeRoot = file(
-                    'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types')
-            def runtimeTypeCount = fileTree(runtimeTypeRoot) {
-                include '**/*.java'
-            }.files.size()
-            if (runtimeTypeCount != 104) {
-                failures << 'Expected 104 runtime store/type contracts after closeout; found '
-                        + runtimeTypeCount
             }
 
             ['prepareRawStoreInternalTestSupportSources',
@@ -403,8 +394,9 @@ tasks.register('delosSharedRawStoreProductionCloseoutStaticAnalysis') {
                 }
             }
 
-            ['104 current shared contracts',
-             'three post-retirement runtime diagnostics contracts',
+            ['102 current shared contracts',
+             'authoritative inventory manifest',
+             'three stage 8 runtime diagnostics contracts',
              'replay manifest is test-only evidence'].each { token ->
                 if (!normalizedContains(text.storageApiDesign, token)) {
                     failures << 'Storage API inventory design is missing: ' + token

@@ -38,6 +38,45 @@ class DelosDbStaticFileSupport {
         }
         files.sort { left, right -> left.path <=> right.path }
     }
+
+
+    static Map loadStoreTypeContractInventory(File manifest) {
+        if (!manifest.isFile()) {
+            throw new org.gradle.api.GradleException(
+                    'Missing shared store/type contract inventory: ' + manifest)
+        }
+        def allowedCategories = [
+                'STAGE7_3_SURVIVOR',
+                'STAGE8_RUNTIME_DIAGNOSTIC',
+                'REPOSITORY_INTEGRITY_UTILITY'
+        ] as Set
+        def rows = []
+        manifest.readLines('UTF-8').eachWithIndex { rawLine, index ->
+            def line = rawLine.trim()
+            if (!line || line.startsWith('#')) {
+                return
+            }
+            def parts = line.split('\\|', -1).collect { it.trim() }
+            if (parts.size() != 2 || !allowedCategories.contains(parts[0])
+                    || !parts[1].endsWith('.java') || parts[1].startsWith('/')
+                    || parts[1].contains('..') || parts[1].contains('\\')) {
+                throw new org.gradle.api.GradleException(
+                        'Invalid shared store/type contract inventory row '
+                                + (index + 1) + ': ' + rawLine)
+            }
+            rows << [category: parts[0], path: parts[1]]
+        }
+        def duplicatePaths = rows.groupBy { it.path }
+                .findAll { path, entries -> entries.size() > 1 }.keySet()
+        if (!duplicatePaths.isEmpty()) {
+            throw new org.gradle.api.GradleException(
+                    'Duplicate shared store/type contract inventory paths: '
+                            + duplicatePaths.sort())
+        }
+        [rows: rows,
+         paths: rows.collect { it.path } as Set,
+         categoryCounts: rows.countBy { it.category }]
+    }
 }
 class DelosDbStaticAnalysisSupport {
     static String relativePath(File repositoryRoot, File sourceFile) {
@@ -417,6 +456,8 @@ class DelosDbStaticAnalysisSupport {
 
 def delosRepositoryRoot = rootProject.projectDir
 def delosBuildRoot = layout.buildDirectory.get().asFile
+
+
 
 /*
  * DelosDB-owned storage/MVCC static-analysis gate.
@@ -8485,6 +8526,8 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
     group = 'verification'
     description = 'Verifies Stage 7.3 retirement of the standalone DelosDB storage-contract module.'
 
+    def contractInventory = file(
+            'gradle/static-analysis/delosdb-store-type-contract-inventory.txt')
     def required = [
             file('settings.gradle'),
             file('delosdb-derby-store-api/build.gradle'),
@@ -8493,7 +8536,8 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             file('gradle/delosdb-runtime-artifacts.gradle'),
             file('gradle/static-analysis/delosdb-derby-module-parity.txt'),
             file('docs/design/V1-RAWSTORE-STORAGE-API-MODULE-RETIREMENT.md'),
-            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md')
+            file('.delosdb-v1/03-roadmap/09-PHASE-9-RAWSTORE-CONVERGENCE.md'),
+            contractInventory
     ]
     inputs.files(required)
     inputs.file(file('gradle/delosdb-storage-static-analysis.gradle'))
@@ -8521,20 +8565,43 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
             def migratedTypeRoot = file(
                     'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types')
             def migratedTypes = DelosDbStaticFileSupport.javaFiles([migratedTypeRoot])
+            def inventory = DelosDbStaticFileSupport.loadStoreTypeContractInventory(contractInventory)
+            def actualTypePaths = migratedTypes.collect { source ->
+                migratedTypeRoot.toPath().relativize(source.toPath()).toString()
+                        .replace(File.separatorChar, '/' as char)
+            } as Set
+            def missingTypePaths = (inventory.paths - actualTypePaths).sort()
+            def unexpectedTypePaths = (actualTypePaths - inventory.paths).sort()
+            if (!missingTypePaths.isEmpty()) {
+                failures << 'Missing shared store/type contracts: ' + missingTypePaths
+            }
+            if (!unexpectedTypePaths.isEmpty()) {
+                failures << 'Unclassified shared store/type contracts: ' + unexpectedTypePaths
+            }
+            def expectedCategoryCounts = [
+                    STAGE7_3_SURVIVOR: 98,
+                    STAGE8_RUNTIME_DIAGNOSTIC: 3,
+                    REPOSITORY_INTEGRITY_UTILITY: 1
+            ]
+            expectedCategoryCounts.each { category, expectedCount ->
+                def actualCount = inventory.categoryCounts[category] ?: 0
+                if (actualCount != expectedCount) {
+                    failures << 'Expected ' + expectedCount + ' ' + category
+                            + ' contracts; found ' + actualCount
+                }
+            }
             def postRetirementSharedTypes = [
                     'DelosRawStoreIoDiagnosticsDirectory.java',
                     'DelosRawStoreIoMetrics.java',
                     'DelosRawStoreIoSnapshot.java'
             ]
-            if (migratedTypes.size() != 104) {
-                failures << 'Expected 104 current shared store/type contracts in derby-store-api '
-                        + '(101 migrated at Stage 7.3 plus 3 Stage 8 runtime contracts); found '
-                        + migratedTypes.size()
-            }
             postRetirementSharedTypes.each { fileName ->
                 if (!new File(migratedTypeRoot, fileName).isFile()) {
                     failures << 'Missing post-retirement shared store contract: ' + fileName
                 }
+            }
+            if (!new File(migratedTypeRoot, 'DelosStorageText.java').isFile()) {
+                failures << 'Missing consolidated storage text validation utility'
             }
 
             def deletedFacadeTypes = [
@@ -8614,8 +8681,10 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
                 failures << 'Provider-neutral external-index vocabulary must remain owned by delosdb-spi'
             }
 
-            def normalizedDesign = design.toLowerCase(java.util.Locale.ROOT)
-            ['101 shared', 'three post-retirement runtime', '104 current shared',
+            def normalizedDesign = design.replaceAll('\\s+', ' ').toLowerCase(java.util.Locale.ROOT)
+            ['101 originally migrated', 'three unwired path-diagnostic contracts',
+             'three stage 8 runtime diagnostics', 'one repository-integrity validation utility',
+             '102 current shared', 'authoritative inventory manifest',
              '27 unused parallel', '6 unused derbystorage',
              'no `delosstorageproviderfactory` service registration',
              '20'].each { token ->

@@ -50,18 +50,23 @@ Normal database shutdown still publishes bounded terminal diagnostics and fault 
 `DelosRawStoreIoFailureReplayManifest` has no production producer or consumer. It exists only to
 serialize and verify deterministic failure evidence in the focused Stage 8.3 test.
 
-Stage 8.7.1 therefore moves it from `delosdb-derby-store-api` to `delosdb-tests`. The runtime contract
-inventory returns from 105 to 104 types:
+Stage 8.7.1 therefore moves it from `delosdb-derby-store-api` to `delosdb-tests`. At that historical
+closeout point, the runtime contract inventory returned from 105 to 104 types. Later repository-integrity
+cleanup retired three unwired path-diagnostic contracts and added the shared `DelosStorageText` validation
+utility, producing the current 102-contract inventory:
 
 ```text
-101 contracts migrated during Stage 7.3
+101 contracts originally migrated during Stage 7.3
+ -3 unwired path-diagnostic contracts retired
   3 Stage 8 runtime diagnostics contracts
+  1 repository-integrity validation utility
 ---
-104 runtime store/type contracts
+102 current shared contracts
 ```
 
-The test-only replay manifest remains strict and fully covered, but it is no longer a supported or
-accidental runtime API.
+The authoritative inventory manifest is
+`gradle/static-analysis/delosdb-store-type-contract-inventory.txt`. The test-only replay manifest remains
+strict and fully covered, but it is no longer a supported or accidental runtime API.
 
 ## Shared complete-transfer loops
 

@@ -36,10 +36,33 @@ DelosRawStoreIoMetrics
 DelosRawStoreIoSnapshot
 ```
 
-The current shared-contract inventory is therefore 104: the original 101 Stage 7.3 migrations plus
-three post-retirement runtime diagnostics contracts. The replay manifest is test-only evidence under
-`delosdb-tests`; it is not a supported runtime API. This growth does not recreate the retired module
-or a parallel provider API.
+Repository Integrity Stage 3 retired three unwired path-diagnostic contracts from the original Stage 7.3
+set:
+
+```text
+DelosStorageAccessDecisionKind
+DelosStorageAccessDecisionState
+DelosStoragePathDiagnostic
+```
+
+The same cleanup campaign added one package-local validation utility, `DelosStorageText`, to consolidate
+ten duplicate non-blank checks without introducing another module. The current inventory therefore
+contains three Stage 8 runtime diagnostics and one repository-integrity validation utility, for 102
+current shared contracts:
+
+```text
+101 originally migrated during Stage 7.3
+ -3 unwired path-diagnostic contracts retired
+ +3 Stage 8 runtime diagnostics contracts
+ +1 repository-integrity validation utility
+---
+102 current shared contracts
+```
+
+`gradle/static-analysis/delosdb-store-type-contract-inventory.txt` is the authoritative inventory
+manifest. Both the module-retirement gate and later closeout gates consume that single exact file set
+instead of maintaining duplicated magic counts. The replay manifest remains test-only evidence under
+`delosdb-tests`; it is not a supported runtime API.
 
 ## Deleted parallel facade
 
@@ -57,9 +80,11 @@ lifecycle remain authoritative. No `DelosStorageProviderFactory` service registr
 ```text
 delosdb-storage-api project                 -> removed
 delosdb-storage-api.jar                     -> removed
-delosdb-derby-store-api                     -> owns 104 current shared contracts
-                                                 101 migrated during Stage 7.3
-                                                 3 post-retirement runtime contracts from Stage 8.2
+delosdb-derby-store-api                     -> owns 102 current shared contracts
+                                                 98 surviving Stage 7.3 contracts
+                                                 3 Stage 8 runtime diagnostics contracts
+                                                 1 repository-integrity validation utility
+authoritative inventory manifest              -> gradle/static-analysis/delosdb-store-type-contract-inventory.txt
 engine/optional-tools patch wiring          -> derby-store-api only
 production runtime provider discovery       -> unchanged
 module count before future Lucene module    -> 20
