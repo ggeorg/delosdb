@@ -3077,6 +3077,24 @@ tasks.register('delosJfrStorageLifecycleEventsStaticAnalysis') {
 }
 
 
+
+def delosLoadOptimizerCostAuthorityRows = {
+    def manifest = new File(delosRepositoryRoot,
+            'gradle/static-analysis/delosdb-optimizer-cost-authority.txt')
+    manifest.readLines('UTF-8')
+            .findAll { line -> line.trim() && !line.startsWith('#') }
+            .collect { line ->
+                def parts = line.split('\\|', -1)
+                if (parts.length != 5) {
+                    throw new GradleException(
+                            'Invalid optimizer cost authority manifest row: ' + line)
+                }
+                [id: parts[0], category: parts[1], path: parts[2],
+                 marker: parts[3], authority: parts[4]]
+            }
+}
+
+
 tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
     group = 'verification'
     description = 'Validates the DelosDB optimizer cost authority audit and Derby optimizer guardrails.'
