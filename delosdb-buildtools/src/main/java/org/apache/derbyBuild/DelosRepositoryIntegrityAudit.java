@@ -21,6 +21,7 @@ package org.apache.derbyBuild;
 import org.apache.derbyBuild.DelosRepositoryIntegrityModel.*;
 
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
@@ -258,6 +259,9 @@ public final class DelosRepositoryIntegrityAudit {
                         source, owner,
                         line(unit, positions.getStartPosition(unit, node)),
                         line(unit, positions.getEndPosition(unit, node))));
+                node.getMembers().stream().filter(BlockTree.class::isInstance)
+                        .map(BlockTree.class::cast).forEach(block ->
+                                scanInitializer(source, unit, positions, owner, block));
                 super.visitClass(node, increment(nesting));
                 owners.pop();
                 return null;
@@ -335,6 +339,25 @@ public final class DelosRepositoryIntegrityAudit {
                 return super.visitMemberReference(node, nesting);
             }
         }.scan(unit, 0);
+    }
+
+    private void scanInitializer(SourceFile source,
+            CompilationUnitTree unit, SourcePositions positions,
+            String owner, BlockTree block) {
+        MethodRecord initializer = new MethodRecord(
+                source,
+                owner,
+                block.isStatic()
+                        ? "<static-initializer>"
+                        : "<instance-initializer>",
+                false,
+                false,
+                false,
+                line(unit, positions.getStartPosition(unit, block)),
+                line(unit, positions.getEndPosition(unit, block)));
+        new DelosRepositoryIntegrityMetrics(
+                source, unit, positions, initializer, catches)
+                .scan(block, 0);
     }
 
     private void addUse(String name) {

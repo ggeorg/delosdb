@@ -459,7 +459,7 @@ public abstract class AuthenticationServiceBase
                 if ( passwordLifetime < 0L ) { passwordLifetime = 0L; }
 
                 return passwordLifetime;
-            } catch (Exception e) { return null; }
+            } catch (NumberFormatException | NullPointerException invalid) { return null; }
     }
     /** Parse the value of the password expiration threshold property. Return null if it is bad. */
     protected   Double  parsePasswordThreshold( String expirationThresholdString )
@@ -469,7 +469,7 @@ public abstract class AuthenticationServiceBase
 
                 if ( expirationThreshold <= 0L ) { return null; }
                 else { return expirationThreshold; }
-            } catch (Exception e) { return null; }
+            } catch (NumberFormatException | NullPointerException invalid) { return null; }
     }
     
 	/**

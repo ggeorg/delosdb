@@ -194,8 +194,8 @@ public class BasicClientDataSource
             // exception will be thrown if support is not available in the JCE
             // implementation in the JVM in which the client is loaded.
             new EncryptionManager(null);
-        } catch(Exception e) {
-            // if an exception is thrown, ignore exception.
+        } catch (SqlException unavailableEncryption) {
+            // Encryption support is optional for data-source initialization.
         }
 
     }
@@ -845,7 +845,7 @@ public class BasicClientDataSource
                 new BufferedOutputStream(
                     new FileOutputStream(
                         fileCanonicalPath, fileAppend), 4096), true);
-        } catch (Exception pae) {
+        } catch (IOException | SecurityException pae) {
             throw new SqlException(null, 
                 new ClientMessageId(SQLState.UNABLE_TO_OPEN_FILE),
                 new Object[] { fileName, pae.getMessage() },

@@ -13,6 +13,7 @@ final File riBuild = rootProject.layout.buildDirectory.get().asFile
 final File riReportDirectory = new File(
         riBuild, 'reports/delosdb/repository-integrity/inventory')
 final File riSummaryFile = new File(riReportDirectory, 'summary.properties')
+final File riCatchInventoryFile = new File(riReportDirectory, 'catch-inventory.tsv')
 final File riStaticReport = new File(
         riBuild, 'reports/delosdb/repository-integrity-static-analysis.txt')
 final File riBaselineFile = new File(
@@ -83,6 +84,7 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
     dependsOn 'delosRepositoryIntegrityInventory'
     inputs.file(riBaselineFile)
     inputs.file(riSummaryFile)
+    inputs.file(riCatchInventoryFile)
     outputs.file(riStaticReport)
 
     doLast {
@@ -139,6 +141,26 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
         requiredReports.each { String name ->
             if (!new File(riReportDirectory, name).isFile()) {
                 failures.add('Repository-integrity report is missing: ' + name)
+            }
+        }
+
+        List<String[]> catchRows = riCatchInventoryFile.readLines('UTF-8')
+                .drop(1)
+                .collect { String row -> row.split('\t', -1) }
+        ['<static-initializer>', '<instance-initializer>'].each { String method ->
+            boolean found = catchRows.any { String[] fields ->
+                fields.length == 9 &&
+                        fields[0] == 'TEST' &&
+                        fields[1] == 'delosdb-buildtools/src/test/java/org/apache/derbyBuild/DelosRepositoryIntegrityInitializerCatchFixture.java' &&
+                        fields[2] == 'DelosRepositoryIntegrityInitializerCatchFixture' &&
+                        fields[3] == method &&
+                        fields[5] == 'Exception' &&
+                        fields[6] == 'true' &&
+                        fields[7] == 'false' &&
+                        fields[8] == 'true'
+            }
+            if (!found) {
+                failures.add('Repository-integrity inventory missed fixture catch: ' + method)
             }
         }
 

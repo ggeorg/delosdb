@@ -152,7 +152,7 @@ public class Configuration {
         try {
             Class.forName("java.sql.SQLType");
             return true;
-        } catch (Exception e) {
+        } catch (ClassNotFoundException | LinkageError | SecurityException unavailable) {
             return false;
         }
     }

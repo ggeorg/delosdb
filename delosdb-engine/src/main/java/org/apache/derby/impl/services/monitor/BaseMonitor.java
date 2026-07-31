@@ -1664,7 +1664,7 @@ nextModule:
         {
             storageFactoryClass = Class.forName( className);
        }
-        catch (Throwable e)
+        catch (ClassNotFoundException | LinkageError | SecurityException e)
         {
             throw StandardException.newException( SQLState.INSTANTIATE_STORAGE_FACTORY_ERROR,
                                                   e,

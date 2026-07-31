@@ -464,9 +464,9 @@ final class JCECipherFactory implements CipherFactory
             // export (this is how 3.5 got it's clearance).
             try
             {
-                Class c = Class.forName("javax.crypto.ExemptionMechanism");
+                Class.forName("javax.crypto.ExemptionMechanism");
             }
-            catch (Throwable t)
+            catch (ClassNotFoundException | LinkageError | SecurityException unavailable)
             {
                 throw StandardException.newException(
                     SQLState.ENCRYPTION_BAD_JCE);
