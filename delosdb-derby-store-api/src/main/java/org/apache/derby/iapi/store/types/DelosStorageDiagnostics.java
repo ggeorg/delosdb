@@ -883,19 +883,6 @@ public interface DelosStorageDiagnostics {
         return 0;
     }
 
-    default void resetStoragePathDiagnosticsForTesting() {
-    }
-
-    default List<DelosStoragePathDiagnostic> storagePathDiagnosticsForTesting() {
-        return List.of();
-    }
-
-    default List<String> storagePathDiagnosticLinesForTesting() {
-        return storagePathDiagnosticsForTesting().stream()
-                .map(DelosStoragePathDiagnostic::diagnosticLine)
-                .toList();
-    }
-
     void clearTransactionsForTesting();
 
     boolean isProviderScan(Object scanController);

@@ -3160,13 +3160,23 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
 
         def mvccCostText = new File(delosRepositoryRoot, 'delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java').getText('UTF-8')
         [
-                'DelosMvccOptimizerCostDiagnostics.enabled()',
-                'storageStatisticsSnapshot()',
-                'DelosStorageCostEstimate.fromStatisticsForOptimizerCosting',
-                'rather than through a parallel optimizer statistics channel'
+                'Conservative optimizer cost model for RawStore-backed MVCC scans.',
+                'implements StoreCostController',
+                'long rows = fallbackRows(rowCount)',
+                'costResult.setEstimatedRowCount(rows)',
+                'costResult.setEstimatedCost(cost)'
         ].each { markerText ->
             if (!mvccCostText.contains(markerText)) {
                 failures << 'MVCC StoreCostController missing authority marker: ' + markerText
+            }
+        }
+        [
+                'DelosMvccOptimizerCostDiagnostics',
+                'DelosStorageCostEstimate.fromStatisticsForOptimizerCosting',
+                'CostModelProvider'
+        ].each { forbiddenText ->
+            if (mvccCostText.contains(forbiddenText)) {
+                failures << 'MVCC StoreCostController restored parallel cost authority: ' + forbiddenText
             }
         }
 

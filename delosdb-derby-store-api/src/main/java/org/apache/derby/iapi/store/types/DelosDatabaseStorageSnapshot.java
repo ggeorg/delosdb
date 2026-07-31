@@ -30,7 +30,7 @@ import java.util.Objects;
  * operation capable of changing database state. Counter fields are collected
  * with weakly consistent semantics: every field is an atomic observation, but
  * concurrent storage activity may occur between field reads. Path history is
- * copied under its own lock. Nested table provider fields use existing
+ * not included. Nested table provider fields use existing
  * read-lock-guarded diagnostics, but the combined table observation remains
  * weakly consistent across fields. Table and transaction collections are
  * bounded with explicit dropped-entry accounting.</p>
@@ -58,9 +58,6 @@ public record DelosDatabaseStorageSnapshot(
         long pageBackedCommittedReadCount,
         long rowIdFastPathReadCount,
         long rowIdFastPathHitCount,
-        int storagePathDiagnosticCapacity,
-        long storagePathDiagnosticDroppedCount,
-        List<DelosStoragePathDiagnostic> storagePathDiagnostics,
         int tableSnapshotCapacity,
         long tableSnapshotDroppedCount,
         List<DelosTableStorageSnapshot> tableSnapshots,
@@ -69,9 +66,9 @@ public record DelosDatabaseStorageSnapshot(
         List<DelosTransactionSnapshot> transactionSnapshots,
         DelosDatabaseCommitTimingSnapshot commitTiming) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
     public static final String WEAKLY_CONSISTENT_COLLECTION =
-            "weakly-consistent-database-counters-with-bounded-table-transaction-and-path-observations";
+            "weakly-consistent-database-counters-with-bounded-table-and-transaction-observations";
 
     public DelosDatabaseStorageSnapshot {
         if (schemaVersion <= 0) {
@@ -100,23 +97,16 @@ public record DelosDatabaseStorageSnapshot(
                 pageBackedCommittedReadCount,
                 rowIdFastPathReadCount,
                 rowIdFastPathHitCount,
-                storagePathDiagnosticDroppedCount,
                 tableSnapshotDroppedCount,
                 transactionSnapshotDroppedCount);
-        if (storagePathDiagnosticCapacity < 0
-                || tableSnapshotCapacity < 0
+        if (tableSnapshotCapacity < 0
                 || transactionSnapshotCapacity < 0) {
             throw new IllegalArgumentException("snapshot capacities must be non-negative");
         }
-        storagePathDiagnostics = List.copyOf(
-                Objects.requireNonNull(storagePathDiagnostics, "storagePathDiagnostics"));
         tableSnapshots = List.copyOf(
                 Objects.requireNonNull(tableSnapshots, "tableSnapshots"));
         transactionSnapshots = List.copyOf(
                 Objects.requireNonNull(transactionSnapshots, "transactionSnapshots"));
-        if (storagePathDiagnostics.size() > storagePathDiagnosticCapacity) {
-            throw new IllegalArgumentException("storage path history exceeds declared capacity");
-        }
         if (tableSnapshots.size() > tableSnapshotCapacity) {
             throw new IllegalArgumentException("table snapshots exceed declared capacity");
         }
@@ -166,16 +156,7 @@ public record DelosDatabaseStorageSnapshot(
                 0,
                 0L,
                 List.of(),
-                0,
-                0L,
-                List.of(),
                 DelosDatabaseCommitTimingSnapshot.EMPTY);
-    }
-
-    public List<String> storagePathDiagnosticLines() {
-        return storagePathDiagnostics.stream()
-                .map(DelosStoragePathDiagnostic::diagnosticLine)
-                .toList();
     }
 
     private static void requireMatchingIdentity(

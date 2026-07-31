@@ -61,9 +61,9 @@ optimizer cost.
 
 ### DIAGNOSTIC_ONLY_COST_REPORT
 
-`DelosStorageCostIntegration`, storage cost reports, storage path diagnostics,
-JFR path-decision events, and optimizer-adjacent reports may explain cost inputs
-and storage paths, but they must not decide plans.
+`DelosStorageCostIntegration`, storage cost reports, JFR path-decision events,
+and optimizer-adjacent reports may explain cost inputs and storage paths, but they
+must not decide plans.
 
 ### REFERENCE_MODEL_ONLY
 
@@ -81,8 +81,6 @@ validation. They are not optimizer dependencies in this audit.
 * Do not resurrect candidate indexes as optimizer authority.
 * Do not consume provider cost without a safe Derby baseline.
 * Keep IndexProvider cost diagnostics diagnostic-only.
-* Keep storage path diagnostics diagnostic-only until a named runtime-wiring gate
-  explicitly says otherwise.
 * No optimizer behavior change in this audit.
 
 ## Verification

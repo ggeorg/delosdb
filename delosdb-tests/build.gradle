@@ -1055,16 +1055,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'])
 
 
-registerDelosFocusedTest(
-        'runDelosMvccStoragePathDiagnosticsRuntimeTest',
-        'Runs the MVCC storage path diagnostics runtime wiring proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStoragePathDiagnosticsRuntimeTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccOrderedIndexCompositeRangeProofTest',
-        'Runs the MVCC ordered-index composite/range predicate proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexCompositeRangeProofTest.class'])
-
 
 registerDelosFocusedTest(
         'runDelosMvccLifecycleTest',
@@ -1229,8 +1219,6 @@ registerDelosFocusedTest(
         'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'runDelosMvccTableRebuildProviderTruthTest',
-        'runDelosMvccStoragePathDiagnosticsRuntimeTest',
-        'runDelosMvccOrderedIndexCompositeRangeProofTest',
         'runDelosStorageLifecycleConsistencyReportTest',
         'runDelosStorageSharedServiceReadinessReportTest',
         'runDelosHeapDiagnosticsPerformanceAuditTest',

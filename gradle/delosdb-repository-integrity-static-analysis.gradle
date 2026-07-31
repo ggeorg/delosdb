@@ -184,7 +184,6 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java',
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java',
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java',
-                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePathDiagnostic.java',
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java',
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosTransactionSnapshot.java',
                 'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java'
@@ -204,6 +203,45 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                     failures.add('Storage text-validation consumer retains a duplicate helper: ' +
                             relativePath)
                 }
+            }
+        }
+
+        List<String> retiredStoragePathDiagnosticFiles = [
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionKind.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageAccessDecisionState.java',
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePathDiagnostic.java',
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlStoragePathDiagnosticsRuntimeTest.java',
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccSqlOrderedIndexCompositeRangeProofTest.java',
+                'docs/STORAGE-ACCESS-DECISIONS.md',
+                'docs/STORAGE-PATH-DIAGNOSTICS.md'
+        ]
+        retiredStoragePathDiagnosticFiles.each { String relativePath ->
+            if (new File(riRoot, relativePath).exists()) {
+                failures.add('Retired storage-path diagnostic artifact restored: ' + relativePath)
+            }
+        }
+
+        String diagnosticsApiText = new File(
+                riRoot,
+                'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java')
+                .getText('UTF-8')
+        [
+                'resetStoragePathDiagnosticsForTesting',
+                'storagePathDiagnosticsForTesting',
+                'storagePathDiagnosticLinesForTesting'
+        ].each { String retiredMethod ->
+            if (diagnosticsApiText.contains(retiredMethod)) {
+                failures.add('Retired storage-path diagnostic API restored: ' + retiredMethod)
+            }
+        }
+
+        String testBuildText = new File(riRoot, 'delosdb-tests/build.gradle').getText('UTF-8')
+        [
+                'runDelosMvccStoragePathDiagnosticsRuntimeTest',
+                'runDelosMvccOrderedIndexCompositeRangeProofTest'
+        ].each { String retiredTask ->
+            if (testBuildText.contains(retiredTask)) {
+                failures.add('Retired storage-path diagnostic task restored: ' + retiredTask)
             }
         }
 

@@ -169,10 +169,11 @@ Classification: `DELOSDB_OWNED_ALGORITHM`, `DIAGNOSTIC_ONLY_ALGORITHM` for the n
 
 Current anchor: `MvccScanController`, `DerbyMvccAccessMethodProvider`, and storage provider lookup seams.
 
-Algorithmic goal:
+Algorithmic rule:
 
-* Introduce an explicit DelosStorageAccessDecision concept in a later slice.
-* Record why a path was chosen, rejected, diagnostic-only, or fallback-only.
+* Do not retain a standalone storage-path decision model without a live runtime producer.
+* Existing access paths remain owned by the Derby and RawStore/MVCC implementations that execute them.
+* Future explainability work must derive from the stable plan model or bounded live diagnostics, not a speculative parallel vocabulary.
 
 Reference influence:
 

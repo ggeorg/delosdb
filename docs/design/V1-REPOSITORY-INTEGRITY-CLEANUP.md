@@ -192,6 +192,24 @@ changing any runtime field, record component, constructor, or accessor.
 The monotonic baseline advances to version 4 with the corrected value. Any
 future increase above 52 fails S0.
 
+## Retired storage-path diagnostic prototype
+
+The Stage 3 regression review found two runtime tests expecting storage-path
+records even though the converged `MvccStorageDiagnostics` implementation had
+no recorder and inherited the interface's empty default methods. The test output
+was therefore always empty. The same repository still carried a diagnostic
+record, two enums, two runtime proof tasks, and documents claiming that
+`MvccBridgeDiagnosticsSupport` supplied runtime wiring, although that bridge no
+longer existed after RawStore convergence.
+
+The dead prototype is removed rather than reintroduced as a second diagnostics
+subsystem. This retirement removes the two tests and tasks, the unused typed
+vocabulary, the no-op testing methods, the path-history fields from the already
+retired database-storage snapshot shape, and both stale design documents. A
+permanent source-shape check prohibits restoring those artifacts. Existing
+RawStore maintenance, page-I/O, memory, lifecycle, and authority diagnostics
+remain unchanged.
+
 ## Remaining cleanup sequence
 
 ### Stage 4 — quality and structure
