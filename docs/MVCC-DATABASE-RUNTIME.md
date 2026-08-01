@@ -39,8 +39,8 @@ Current MVCC rows, indexes, transaction decisions, and recovery state live in
 ordinary Derby RawStore containers and log records. Normal Derby backup copies
 those files. Current databases do not create a `delos_mvcc` durability sidecar.
 
-The retained sidecar copy path exists only to preserve external state from an
-older format and fail closed on current boot; it is not current MVCC authority.
+Artifacts from the retired external format are not copied or restored. A `delos_mvcc` directory,
+backup manifest, or in-progress marker rejects boot, backup, and restore with SQLState `0A000`.
 
 ## Diagnostics
 
@@ -64,6 +64,6 @@ shutdown of database A cannot close database B
 
 ```text
 :delosdb-tests:runDelosMvccSqlIntegrationTest
-:delosdb-tests:runDelosMvccBackupSidecarTruthTest
+:delosdb-tests:runDelosMvccRetiredSidecarRejectionTest
 :delosdb-tests:runDelosMixedEngineBackupRestoreMatrixTest
 ```

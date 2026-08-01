@@ -28,7 +28,7 @@ The current DelosDB MVCC lifecycle has several independently proven pieces. This
 | Subsystem recovery records | `MvccSubsystemRecoveryRecordStore` and `MvccRecoveryReplayEngine` | subsystem recovery record order: cross-subsystem completeness is validated before page mutation replay | Phase L replay engine validates the plan before replay. |
 | Checkpoint compaction | `PageBackedMvccTable` | checkpoint image rewrite must keep mutation log and transaction outcome log consistent | Both mutation log and outcome log are rewritten from the retained checkpoint image. |
 | Purge scheduling | `MvccPurgeDaemon` and visibility-debt policy | purge/checkpoint interaction: purge must not remove history still needed by open snapshots or checkpoint/recovery evidence | Visibility debt controls scheduling; long-reader stress remains a future proof. |
-| Backup sidecars | `DelosMvccBackupSidecarSupport` through `RawStore` hooks | backup snapshot boundary: heap backup control flow must include MVCC sidecar state and manifest verification | Sidecar copy/restore is isolated in a Derby-storage helper without MVCC-module imports. |
+| Backup/restore | inherited `RawStore` | one backup image must contain all heap and MVCC containers/log records | Current MVCC has no sidecar; retired external artifacts reject before backup or restore. |
 
 ## Reference model influence
 
@@ -43,7 +43,7 @@ The current DelosDB MVCC lifecycle has several independently proven pieces. This
 This audit should be followed by proof slices, not immediate algorithm rewrites.
 
 1. Expand crash/reopen matrices around checkpoint prepare/publish/complete interruption points.
-2. Add a mixed heap + delos_mvcc backup/restore matrix that verifies manifest, stale sidecar cleanup, and reopen behavior.
+2. Maintain the mixed heap + `delos_mvcc` backup/restore matrix and retired-artifact rejection proof.
 3. Add a lifecycle consistency report that shows checkpoint, recovery, purge, analyze, and backup state together.
 4. Stress purge/checkpoint interaction with long readers and visibility debt.
 5. Benchmark flush ordering and recovery replay costs through external validation lanes, not S0.

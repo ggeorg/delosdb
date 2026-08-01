@@ -1,6 +1,6 @@
 # DelosDB shared store/type contract inventory
 # category|file
-# 89 surviving Stage 7.3 contracts + 3 Stage 8 runtime diagnostics + 1 repository-integrity utility = 93
+# 88 surviving Stage 7.3 contracts + 3 Stage 8 runtime diagnostics + 1 repository-integrity utility = 92
 STAGE7_3_SURVIVOR|DelosCrossEngineConsistencyReport.java
 STAGE7_3_SURVIVOR|DelosDatabaseCommitDecision.java
 STAGE7_3_SURVIVOR|DelosDatabaseCommitTimingSnapshot.java
@@ -21,7 +21,6 @@ STAGE7_3_SURVIVOR|DelosRawStoreCommitParticipant.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoDiagnosticsDirectory.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoMetrics.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoSnapshot.java
-STAGE7_3_SURVIVOR|DelosStorageBackupCoordinator.java
 STAGE7_3_SURVIVOR|DelosStorageCapabilities.java
 STAGE7_3_SURVIVOR|DelosStorageCapabilitiesReport.java
 STAGE7_3_SURVIVOR|DelosStorageCommitCoordinator.java

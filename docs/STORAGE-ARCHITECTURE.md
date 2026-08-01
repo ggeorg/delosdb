@@ -104,11 +104,10 @@ See [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md).
 
 ### Backup
 
-Each database has its own backup coordinator. Durable MVCC mutations take the shared side of the
-boundary; sidecar backup copy takes the exclusive side. Backing up one database does not freeze an
-unrelated database in the same JVM.
-
-See [`MVCC-BACKUP-COORDINATION.md`](MVCC-BACKUP-COORDINATION.md).
+Derby RawStore is the only backup and restore authority. Current MVCC rows, indexes, decisions, and
+recovery records are ordinary RawStore state and require no separate copy protocol. Any retired
+`delos_mvcc` directory, manifest, or in-progress marker rejects database boot, backup, and restore
+with SQLState `0A000` rather than being transported or silently discarded.
 
 ## Isolation
 
@@ -152,7 +151,7 @@ MVCC visibility and transaction state
 MVCC page WAL and recovery
 MVCC ordered-index authority
 MVCC maintenance and vacuum
-MVCC database backup coordination
+RawStore backup/restore compatibility
 storage diagnostics and JFR events
 ```
 

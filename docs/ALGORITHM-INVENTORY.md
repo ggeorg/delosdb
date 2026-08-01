@@ -376,7 +376,7 @@ Current owner: DelosDB MVCC plus Derby raw-store backup/restore hooks.
 
 Classification: `MVCC_AUTHORITY_ALGORITHM`, `HEAP_COMPATIBILITY_BOUNDARY`.
 
-Current anchor: `MvccRecoveryReplayEngine`, checkpoint stores, subsystem recovery records, recovery runner, and RawStore sidecar helper.
+Current anchor: `MvccRecoveryReplayEngine`, checkpoint stores, subsystem recovery records, recovery runner, and RawStore backup/restore control flow.
 
 Algorithmic goal:
 
@@ -390,16 +390,17 @@ Reference influence:
 
 ### Backup/restore
 
-Current owner: inherited Derby RawStore control flow with DelosDB sidecar helper seams.
+Current owner: inherited Derby RawStore control flow.
 
-Classification: `HEAP_COMPATIBILITY_BOUNDARY`, `SHARED_SERVICE_ALGORITHM` when reporting only.
+Classification: `HEAP_COMPATIBILITY_BOUNDARY`.
 
-Current anchor: `DelosMvccBackupSidecarSupport` and RawStore helper calls.
+Current anchor: RawStore container/log backup plus explicit rejection of retired external-format
+artifacts.
 
 Algorithmic goal:
 
-* Expand mixed heap + delos_mvcc backup/restore matrices.
-* Keep helper extraction free of direct MVCC implementation-module dependencies.
+* Expand mixed heap + `delos_mvcc` backup/restore matrices.
+* Preserve one RawStore persistence image and reject any second-format artifact.
 
 ### DRDA/runtime concurrency
 

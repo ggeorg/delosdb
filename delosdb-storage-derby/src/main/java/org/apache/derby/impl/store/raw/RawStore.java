@@ -100,6 +100,11 @@ import org.apache.derby.iapi.store.replication.slave.SlaveFactory;
 public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSupportable
 {
 	private static final String BACKUP_HISTORY = "BACKUP.HISTORY";
+    private static final String RETIRED_DELOS_MVCC_DIRECTORY = "delos_mvcc";
+    private static final String RETIRED_DELOS_MVCC_BACKUP_MANIFEST =
+            "delos_mvcc.BACKUP-MANIFEST";
+    private static final String RETIRED_DELOS_MVCC_BACKUP_IN_PROGRESS =
+            "delos_mvcc.BACKUP-IN-PROGRESS";
 	protected TransactionFactory	xactFactory;
 	protected DataFactory			dataFactory;
 	protected LogFactory			logFactory;
@@ -148,7 +153,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
     private static final int STORAGE_FILE_GET_CANONICALPATH_ACTION = 16;
     private static final int COPY_STORAGE_FILE_TO_STORAGE_ACTION = 17;
     private static final int STORAGE_FILE_DELETE_ACTION = 18;
-    private static final int STORAGE_FILE_DELETE_ALL_ACTION = 19;
     private static final int README_FILE_OUTPUTSTREAM_WRITER_ACTION = 20;
 
 	public RawStore() {
@@ -171,6 +175,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 
         boolean transformExistingData = false;
         boolean inReplicationSlaveMode = false;
+        String restoreFromBackup = restoreFromBackup(properties);
+        rejectRetiredDelosMvccArtifactsInBackup(restoreFromBackup);
 
         String slave = properties.getProperty(SlaveFactory.REPLICATION_MODE);
         if (slave != null && slave.equals(SlaveFactory.SLAVE_MODE)) {
@@ -188,20 +194,7 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 					bootServiceModule(
 					  create, this, getDataFactoryModule(), properties);
 		storageFactory = dataFactory.getStorageFactory();
-
-        String restoreFromBackup = null;
-
-		if (properties != null)
-		{
-            // check if this is a restore from a backup copy. 
-            restoreFromBackup = properties.getProperty(Attribute.CREATE_FROM);
-            if(restoreFromBackup == null)
-                restoreFromBackup = properties.getProperty(Attribute.RESTORE_FROM);
-            if(restoreFromBackup == null)
-                restoreFromBackup =
-                    properties.getProperty(Attribute.ROLL_FORWARD_RECOVERY_FROM);
-
-        }
+        rejectRetiredDelosMvccStateInDatabase("boot");
 
         // setup database encryption engines.
         if (create) {
@@ -704,6 +697,8 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 	public synchronized void backup(Transaction t, File backupDir) 
         throws StandardException
 	{
+        rejectRetiredDelosMvccStateInDatabase("backup");
+
         if (!privExists(backupDir))
 		{
             // if backup dir does not exist, go ahead and create it.
@@ -986,9 +981,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
                    MessageId.STORE_DATA_SEG_BACKUP_COMPLETED,
                    getFilePath(segBackup)));
 
-            backupDelosMvccSidecars(backupcopy);
-
-
             // copy the log that got generated after the backup started to
 			// backup location and tell the logfactory that backup has come 
             // to end.
@@ -1173,56 +1165,61 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 
 	
 
-    /**
-     * Copy DelosDB MVCC provider-owned sidecars into Derby online backups.
-     *
-     * <p>RawStore keeps the inherited backup control flow. DelosDB sidecar
-     * manifesting/copy/verification lives behind {@link DelosMvccBackupSidecarSupport}.</p>
-     */
-    private void backupDelosMvccSidecars(File backupcopy)
-            throws StandardException
-    {
-        delosMvccBackupSidecarSupport().backupSidecars(backupcopy);
+    private static String restoreFromBackup(Properties properties) {
+        if (properties == null) {
+            return null;
+        }
+        String backupPath = properties.getProperty(Attribute.CREATE_FROM);
+        if (backupPath == null) {
+            backupPath = properties.getProperty(Attribute.RESTORE_FROM);
+        }
+        if (backupPath == null) {
+            backupPath = properties.getProperty(Attribute.ROLL_FORWARD_RECOVERY_FROM);
+        }
+        return backupPath;
     }
 
-    /**
-     * Restore DelosDB MVCC provider-owned sidecars alongside Derby data/log state.
-     *
-     * <p>RawStore keeps the inherited restore control flow. DelosDB sidecar
-     * replacement/copy/verification lives behind {@link DelosMvccBackupSidecarSupport}.</p>
-     */
-    private void restoreDelosMvccSidecarsFromBackup(String backupPath)
-            throws StandardException
-    {
-        delosMvccBackupSidecarSupport().restoreSidecarsFromBackup(backupPath);
+    private void rejectRetiredDelosMvccStateInDatabase(String operation)
+            throws StandardException {
+        StorageFile retiredDirectory =
+                storageFactory.newStorageFile(RETIRED_DELOS_MVCC_DIRECTORY);
+        StorageFile retiredManifest =
+                storageFactory.newStorageFile(RETIRED_DELOS_MVCC_BACKUP_MANIFEST);
+        StorageFile retiredMarker =
+                storageFactory.newStorageFile(RETIRED_DELOS_MVCC_BACKUP_IN_PROGRESS);
+        if (privExists(retiredDirectory)
+                || privExists(retiredManifest)
+                || privExists(retiredMarker)) {
+            StorageFile databaseDirectory = storageFactory.newStorageFile(null);
+            throw retiredDelosMvccState(databaseDirectory.getPath(), operation);
+        }
     }
 
-    private DelosMvccBackupSidecarSupport delosMvccBackupSidecarSupport()
-    {
-        return new DelosMvccBackupSidecarSupport(
-                storageFactory,
-                new DelosMvccBackupSidecarSupport.FileOperations() {
-                    public boolean exists(File file) {
-                        return privExists(file);
-                    }
-
-                    public boolean exists(StorageFile file) {
-                        return privExists(file);
-                    }
-
-                    public boolean removeDirectory(File file) {
-                        return privRemoveDirectory(file);
-                    }
-
-                    public boolean deleteAll(StorageFile file) {
-                        return privDeleteAll(file);
-                    }
-
-                    public boolean copyDirectory(File from, StorageFile to) {
-                        return privCopyDirectory(from, to);
-                    }
-                });
+    private void rejectRetiredDelosMvccArtifactsInBackup(String backupPath)
+            throws StandardException {
+        if (backupPath == null) {
+            return;
+        }
+        File retiredDirectory = new File(backupPath, RETIRED_DELOS_MVCC_DIRECTORY);
+        File retiredManifest =
+                new File(backupPath, RETIRED_DELOS_MVCC_BACKUP_MANIFEST);
+        File retiredMarker =
+                new File(backupPath, RETIRED_DELOS_MVCC_BACKUP_IN_PROGRESS);
+        if (privExists(retiredDirectory)
+                || privExists(retiredManifest)
+                || privExists(retiredMarker)) {
+            throw retiredDelosMvccState(backupPath, "restore");
+        }
     }
+
+    private static StandardException retiredDelosMvccState(
+            String location, String operation) {
+        return StandardException.newException(
+                SQLState.NOT_IMPLEMENTED,
+                "The retired external delos_mvcc format is not supported during "
+                        + operation + "; remove or migrate state under " + location);
+    }
+
 
 	/*
 	 * Restore any remaining files from backup that are not 
@@ -1253,7 +1250,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 			}
 		}
 
-		restoreDelosMvccSidecarsFromBackup(backupPath);
 
 		// copy the backup history file from the backup. 
 		StorageFile dbHistoryFile = 
@@ -2505,23 +2501,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
         }
     }
 
-    private synchronized boolean privDeleteAll(StorageFile file)
-    {
-        actionCode = STORAGE_FILE_DELETE_ALL_ACTION;
-        actionStorageFile = file;
-
-        try
-        {
-            Object ret = run();
-            return ((Boolean) ret).booleanValue();
-        }
-        catch( Exception pae) { return false;} // does not throw an exception
-        finally
-        {
-            actionStorageFile = null;
-        }
-    }
-
     private synchronized boolean privMkdirs(File file) throws IOException
     {
         actionCode = REGULAR_FILE_MKDIRS_ACTION;
@@ -2782,9 +2761,6 @@ public final class RawStore implements RawStoreFactory, ModuleControl, ModuleSup
 
         case STORAGE_FILE_DELETE_ACTION:
             return actionStorageFile.delete();
-
-        case STORAGE_FILE_DELETE_ALL_ACTION:
-            return actionStorageFile.deleteAll();
 
         case REGULAR_FILE_MKDIRS_ACTION:
             // SECURITY PERMISSION - OP4

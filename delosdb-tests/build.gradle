@@ -1068,19 +1068,9 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosMvccBackupSidecarTruthTest',
-        'Proves current RawStore MVCC backup authority and retained sidecar transport/rejection behavior.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccBackupSidecarTruthTest.class'])
-
-tasks.named('runDelosMvccBackupSidecarTruthTest') {
-    systemProperty 'delosdb.mvccBackupSidecarTruth.report',
-            layout.buildDirectory.file(
-                    'reports/delosdb/mvcc-backup-sidecar-truth.txt')
-                    .get().asFile.absolutePath
-    outputs.file layout.buildDirectory.file(
-            'reports/delosdb/mvcc-backup-sidecar-truth.txt')
-    outputs.upToDateWhen { false }
-}
+        'runDelosMvccRetiredSidecarRejectionTest',
+        'Proves backup and restore reject every artifact from the retired external delos_mvcc format.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRetiredSidecarRejectionTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMixedEngineBackupRestoreMatrixTest',

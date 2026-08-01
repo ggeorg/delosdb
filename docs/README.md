@@ -40,7 +40,6 @@ manifests.
 | [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md) | transaction decision, failure, and recovery authority |
 | [`MVCC-GROUP-COMMIT.md`](MVCC-GROUP-COMMIT.md) | concurrent preparation and bounded grouping |
 | [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md) | database-owned vacuum and maintenance |
-| [`MVCC-BACKUP-COORDINATION.md`](MVCC-BACKUP-COORDINATION.md) | online-backup boundary |
 | [`MVCC-BUFFER-REPLACEMENT-POLICY.md`](MVCC-BUFFER-REPLACEMENT-POLICY.md) | page-cache replacement and force policy |
 | [`MVCC-CHECKPOINT-RECOVERY-ORDERING.md`](MVCC-CHECKPOINT-RECOVERY-ORDERING.md) | checkpoint and recovery ordering |
 | [`MVCC-VISIBILITY-ALGORITHMS.md`](MVCC-VISIBILITY-ALGORITHMS.md) | snapshots and version visibility |

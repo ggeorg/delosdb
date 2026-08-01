@@ -22,7 +22,6 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -301,23 +300,11 @@ public final class MvccConglomerateFactory
                 .toAbsolutePath()
                 .normalize()
                 .resolve(DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY);
-        if (Files.notExists(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
-            return;
-        }
         try {
-            if (!Files.isDirectory(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            if (Files.exists(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
                 throw retainedExternalState(providerDirectory);
             }
-            try (var paths = Files.walk(providerDirectory)) {
-                boolean retainedStatePresent = paths
-                        .skip(1L)
-                        .anyMatch(path -> Files.isSymbolicLink(path)
-                                || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS));
-                if (retainedStatePresent) {
-                    throw retainedExternalState(providerDirectory);
-                }
-            }
-        } catch (IOException | UncheckedIOException failure) {
+        } catch (SecurityException failure) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     failure,

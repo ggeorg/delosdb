@@ -17,7 +17,7 @@ before any inherited-code algorithm is touched.
 * Shared-service extraction is not authorized by this audit.
 * Do not touch without a format plan where the boundary is page-format or log-format sensitive.
 * Derby heap/raw-store remains the compatibility anchor.
-* DelosDB MVCC sidecar backup/restore remains an extension seam, not a rewrite of RawStore authority.
+* Derby RawStore remains the only backup/restore authority; retired external MVCC artifacts reject explicitly.
 
 ## Classification vocabulary
 
@@ -30,7 +30,6 @@ before any inherited-code algorithm is touched.
 | `CLEANUP_CANDIDATE` | Code may be clarified or extracted only if behavior, format, and log semantics are unchanged. |
 | `SHARED_SERVICE_CANDIDATE` | Possible future shared service only after heap and MVCC both have concrete proof gates. |
 | `DO_NOT_TOUCH_WITHOUT_FORMAT_PLAN` | High-risk inherited area where cleanup must stop until the format/recovery plan exists. |
-| `BACKUP_RESTORE_EXTENSION_SEAM` | DelosDB-owned sidecar hook attached to Derby backup/restore without changing heap backup semantics. |
 
 ## Audited inherited-code boundaries
 
@@ -63,11 +62,11 @@ The current audit only records the boundary.
 `D_StoredPage` and `D_HeapController` are the safe side of heap modernization: read-only diagnostics.
 They may expand as long as they do not repair, rewrite, compact, or mutate inherited heap state.
 
-### RawStore sidecar seam
+### RawStore backup boundary
 
-`DelosMvccBackupSidecarSupport` is an extension seam created by DelosDB to keep MVCC sidecar backup and
-restore outside inherited RawStore control-flow noise. It must not import or depend on the MVCC module.
-RawStore remains the Derby backup/restore compatibility authority.
+RawStore backs up the same containers and log records used by heap and `delos_mvcc`. DelosDB adds
+only fail-closed detection for artifacts from the retired external format; it does not copy, verify,
+or restore a second persistence image.
 
 ## Reference models
 
