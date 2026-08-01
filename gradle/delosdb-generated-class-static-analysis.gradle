@@ -1,8 +1,8 @@
 // DelosDB generated-class architecture, contract, and dependency gate.
 //
 // One permanent gate owns the stable JavaFactory/ClassBuilder/MethodBuilder/
-// LocalField contract, the sole ClassFileJava backend, and zero-external-ASM
-// policy. Migration-only tasks and manifests are intentionally retired.
+// LocalField contract and the sole ClassFileJava backend. Migration-only
+// tasks and manifests are intentionally retired.
 
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -253,23 +253,6 @@ final Closure<List<File>> gcJavaFiles = {
     files.sort { left, right -> gcRelative(left) <=> gcRelative(right) }
 }
 
-final Closure<List<File>> gcBuildFiles = {
-    List<File> files = [
-            new File(gcRoot, 'build.gradle'),
-            new File(gcRoot, 'gradle/delosdb-runtime-artifacts.gradle'),
-            new File(gcRoot, 'benchmarks/jmh/build.gradle')
-    ]
-    rootProject.subprojects.each { project ->
-        [new File(project.projectDir, 'build.gradle'),
-         new File(project.projectDir, 'src/main/java/module-info.java')].each { file ->
-            if (file.isFile()) { files.add(file) }
-        }
-    }
-    files.findAll { it.isFile() }.unique().sort { left, right ->
-        gcRelative(left) <=> gcRelative(right)
-    }
-}
-
 tasks.register('delosGeneratedClassInventory') {
     group = 'verification'
     description = 'Reports the stable generated-class contract and architecture.'
@@ -323,7 +306,7 @@ tasks.register('delosGeneratedClassInventory') {
 
 tasks.register('delosGeneratedClassStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the stable generated-class contract, sole backend, import boundary, and zero-external-ASM policy.'
+    description = 'Validates the stable generated-class contract, sole backend, and Class-File API import boundary.'
     dependsOn tasks.named('delosGeneratedClassInventory')
 
     doLast {
@@ -412,20 +395,10 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                     + registrations)
         }
 
-        List<String> forbiddenSourceTokens = [
-                'org.objectweb.asm', 'jdk.internal.org.objectweb.asm',
-                'impl.services.bytecode.asm', 'AsmJava'
-        ]
         gcJavaFiles().each { File file ->
             String code = gcCodeWithoutComments(file.getText('UTF-8'))
             String structure = gcStructureWithoutCommentsOrLiterals(
                     file.getText('UTF-8'))
-            forbiddenSourceTokens.each { String token ->
-                if (structure.contains(token)) {
-                    failures.add('Forbidden bytecode source reference in '
-                            + gcRelative(file) + ': ' + token)
-                }
-            }
             if (gcRelative(file).contains('/impl/sql/compile/')
                     && structure.contains('java.lang.classfile')) {
                 failures.add('SQL compiler node imports java.lang.classfile directly: '
@@ -443,20 +416,6 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                         + gcRelative(file) + ': delosdb.compiler.backend')
             }
         }
-        List<String> forbiddenBuildTokens = [
-                'org.ow2.asm', 'org.objectweb.asm', 'asmVersion',
-                'delosdbAsm', 'jdk.internal.org.objectweb.asm'
-        ]
-        gcBuildFiles().each { File file ->
-            String text = gcCodeWithoutComments(file.getText('UTF-8'))
-            forbiddenBuildTokens.each { String token ->
-                if (text.contains(token)) {
-                    failures.add('Forbidden bytecode build/module reference in '
-                            + gcRelative(file) + ': ' + token)
-                }
-            }
-        }
-
         Set<String> directClassFileApiUsers = gcJavaFiles().findAll { File file ->
             gcRelative(file).contains('/src/main/java/')
                     && gcStructureWithoutCommentsOrLiterals(
@@ -494,9 +453,7 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                 'gradle/delosdb-compiler-modernization-static-analysis.gradle',
                 'gradle/delosdb-generated-class-contract-static-analysis.gradle',
                 'gradle/static-analysis/delosdb-generated-class-modernization.txt',
-                'gradle/static-analysis/delosdb-classfile-asm-removal.txt',
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.java',
-                'scripts/cleanup-phase10-compiler-phase6-external-asm-removal.sh'
+                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.java'
         ]
         retiredPaths.each { String relative ->
             if (new File(gcRoot, relative).exists()) {

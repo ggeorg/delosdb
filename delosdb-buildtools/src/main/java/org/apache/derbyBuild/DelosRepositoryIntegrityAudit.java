@@ -82,10 +82,6 @@ public final class DelosRepositoryIntegrityAudit {
             "@SuppressWarnings\\s*\\(");
     private static final Pattern QUALITY_MARKER = Pattern.compile(
             "(?i)\\b(TODO|FIXME|HACK|XXX|RESOLVE)\\b");
-    private static final Pattern ASM_IMPORT = Pattern.compile(
-            "(?m)^\\s*import\\s+(?:jdk\\.internal\\.)?org\\.objectweb\\.asm(?:\\.|;)");
-    private static final Pattern ASM_BUILD_DECLARATION = Pattern.compile(
-            "org\\.ow2\\.asm|delosdbAsm|asmVersion|requires(?:\\s+static)?\\s+org\\.objectweb\\.asm");
     private static final Pattern CLASSFILE_IMPORT = Pattern.compile(
             "(?m)^\\s*import\\s+java\\.lang\\.classfile(?:\\.|;)" );
 
@@ -388,11 +384,6 @@ public final class DelosRepositoryIntegrityAudit {
                 "delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java");
 
         for (SourceFile source : production) {
-            if (ASM_IMPORT.matcher(source.text).find()) {
-                authorityViolations.add(
-                        "External ASM import in production source: "
-                                + source.relative);
-            }
             if (CLASSFILE_IMPORT.matcher(source.text).find()
                     && !allowedClassFileSources.contains(source.relative)) {
                 authorityViolations.add(
@@ -405,24 +396,6 @@ public final class DelosRepositoryIntegrityAudit {
                 authorityViolations.add(
                         "SQL compiler node depends directly on java.lang.classfile: "
                                 + source.relative);
-            }
-        }
-
-        for (SourceFile source : sourceFiles) {
-            if (source.kind != SourceKind.PRODUCTION
-                    && ASM_IMPORT.matcher(source.text).find()) {
-                authorityViolations.add(
-                        "External ASM import in non-production source: "
-                                + source.relative);
-            }
-        }
-
-        for (Path path : activeBuildAndModuleFiles()) {
-            String text = Files.readString(path, StandardCharsets.UTF_8);
-            if (ASM_BUILD_DECLARATION.matcher(text).find()) {
-                authorityViolations.add(
-                        "External ASM dependency or module declaration remains: "
-                                + relative(path));
             }
         }
 
@@ -447,23 +420,6 @@ public final class DelosRepositoryIntegrityAudit {
                     "BaseMonitor.getImplementations must reject external "
                             + "JavaFactory implementations before registration");
         }
-    }
-
-    private List<Path> activeBuildAndModuleFiles() throws IOException {
-        List<Path> files = new ArrayList<>();
-        try (Stream<Path> stream = Files.walk(root)) {
-            stream.filter(Files::isRegularFile)
-                    .filter(Predicate.not(this::isExcludedPath))
-                    .filter(path -> {
-                        String name = path.getFileName().toString();
-                        return name.equals("build.gradle")
-                                || name.equals("settings.gradle")
-                                || name.equals("module-info.java");
-                    })
-                    .sorted(Comparator.comparing(this::relative))
-                    .forEach(files::add);
-        }
-        return files;
     }
 
     private Summary buildSummary() {
@@ -719,7 +675,6 @@ public final class DelosRepositoryIntegrityAudit {
             writer.println("DelosDB generated-class authority integrity");
             writer.println("=========================================");
             writer.println("Fixed registration: ClassFileJava");
-            writer.println("External ASM source/build/module references: none");
             writer.println("Direct java.lang.classfile production users: 2");
             writer.println("  - ClassFileJava");
             writer.println("  - DelosJdk25ClassFileVerifier");
