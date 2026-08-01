@@ -101,10 +101,13 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
                     0,
                     mvccContainerId);
             assertTrue("MVCC lifecycle should observe a checkpoint", mvcc.checkpointObserved());
-            assertTrue("MVCC lifecycle should expose recovery metadata records",
-                    mvcc.recoveryRecordCount() > 0L);
-            assertTrue("MVCC lifecycle should expose a complete recovery boundary",
+            assertEquals("RawStore-owned recovery should not invent external recovery metadata records",
+                    0L, mvcc.recoveryRecordCount());
+            assertFalse("RawStore-owned recovery should not advertise the retired external recovery boundary",
                     mvcc.recoveryComplete());
+            assertTrue("MVCC lifecycle should report RawStore recovery authority: "
+                            + mvcc.consistencySummary(),
+                    mvcc.consistencySummary().contains("RawStore owns consistency and recovery"));
             assertTrue("MVCC lifecycle should expose purge/vacuum state", mvcc.purgeObserved());
             assertTrue("MVCC lifecycle should expose analyze/update-statistics state", mvcc.analyzeObserved());
             assertTrue("MVCC analyze summary should preserve Derby optimizer authority: " + mvcc.analyzeSummary(),
