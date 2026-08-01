@@ -1,204 +1,19 @@
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.util.regex.Pattern
-
 /*
- * Permanent DelosDB architecture verification.
+ * Permanent DelosDB module and architecture verification.
  *
- * This script intentionally contains only durable module/dependency checks.
- * Historical stage gates and exact implementation-text preservation do not
- * belong on the normal build path.
+ * Gradle configuration is intentionally limited to lazy task registration.
+ * The executable audit runs only when its verification task is selected.
  */
-class DelosPermanentArchitectureSupport {
-    static String relativePath(File root, File file) {
-        root.toPath().relativize(file.toPath()).toString()
-                .replace(File.separatorChar, '/' as char)
-    }
-
-    static String codeWithoutComments(String source) {
-        StringBuilder code = new StringBuilder(source.length())
-        boolean blockComment = false
-        boolean lineComment = false
-        boolean singleQuoted = false
-        boolean doubleQuoted = false
-        boolean textBlock = false
-        boolean escaped = false
-        int offset = 0
-
-        while (offset < source.length()) {
-            char current = source.charAt(offset)
-            char next = offset + 1 < source.length()
-                    ? source.charAt(offset + 1) : Character.MIN_VALUE
-            boolean tripleQuote = offset + 2 < source.length() &&
-                    current == ('"' as char) &&
-                    next == ('"' as char) &&
-                    source.charAt(offset + 2) == ('"' as char)
-
-            if (lineComment) {
-                if (current == ('\n' as char)) {
-                    lineComment = false
-                    code.append(current)
-                } else {
-                    code.append(' ')
-                }
-                offset++
-                continue
-            }
-            if (blockComment) {
-                if (current == ('*' as char) && next == ('/' as char)) {
-                    code.append('  ')
-                    blockComment = false
-                    offset += 2
-                } else {
-                    code.append(current == ('\n' as char) ? '\n' : ' ')
-                    offset++
-                }
-                continue
-            }
-            if (textBlock) {
-                code.append(current)
-                if (tripleQuote) {
-                    code.append('""')
-                    textBlock = false
-                    offset += 3
-                } else {
-                    offset++
-                }
-                continue
-            }
-            if (singleQuoted || doubleQuoted) {
-                code.append(current)
-                if (escaped) {
-                    escaped = false
-                } else if (current == ('\\' as char)) {
-                    escaped = true
-                } else if (singleQuoted && current == ('\'' as char)) {
-                    singleQuoted = false
-                } else if (doubleQuoted && current == ('"' as char)) {
-                    doubleQuoted = false
-                }
-                offset++
-                continue
-            }
-            if (tripleQuote) {
-                code.append('"""')
-                textBlock = true
-                offset += 3
-            } else if (current == ('\'' as char)) {
-                code.append(current)
-                singleQuoted = true
-                offset++
-            } else if (current == ('"' as char)) {
-                code.append(current)
-                doubleQuoted = true
-                offset++
-            } else if (current == ('/' as char) && next == ('/' as char)) {
-                code.append('  ')
-                lineComment = true
-                offset += 2
-            } else if (current == ('/' as char) && next == ('*' as char)) {
-                code.append('  ')
-                blockComment = true
-                offset += 2
-            } else {
-                code.append(current)
-                offset++
-            }
-        }
-        code.toString()
-    }
-
-    static List<String> codeLinesWithoutComments(File file) {
-        codeWithoutComments(file.getText('UTF-8')).split('\n', -1) as List<String>
-    }
-
-    static List<String[]> tsvRows(File file) {
-        if (!file.isFile()) {
-            throw new org.gradle.api.GradleException(
-                    'Missing architecture evidence file: ' + file)
-        }
-        List<String> lines = file.readLines('UTF-8')
-        if (lines.isEmpty()) {
-            throw new org.gradle.api.GradleException(
-                    'Empty architecture evidence file: ' + file)
-        }
-        lines.drop(1)
-                .findAll { String line -> !line.trim().isEmpty() }
-                .collect { String line -> line.split('\t', -1) }
-    }
-
-    static Map<String, List<String>> loadSections(
-            File file,
-            Set<String> requiredSections) {
-        if (!file.isFile()) {
-            throw new org.gradle.api.GradleException(
-                    'Missing architecture target: ' + file)
-        }
-        Map<String, List<String>> sections = new LinkedHashMap<>()
-        String currentSection = null
-        file.readLines('UTF-8').eachWithIndex { String raw, int index ->
-            String line = raw.trim()
-            if (!line || line.startsWith('#')) {
-                return
-            }
-            def matcher = line =~ /^\[([^]]+)]$/
-            if (matcher.matches()) {
-                currentSection = matcher.group(1)
-                if (sections.containsKey(currentSection)) {
-                    throw new org.gradle.api.GradleException(
-                            'Duplicate architecture target section [' +
-                                    currentSection + ']')
-                }
-                sections[currentSection] = []
-            } else if (currentSection == null) {
-                throw new org.gradle.api.GradleException(
-                        'Architecture target value outside a section at line ' +
-                                (index + 1) + ': ' + line)
-            } else if (sections[currentSection].contains(line)) {
-                throw new org.gradle.api.GradleException(
-                        'Duplicate architecture target value in [' +
-                                currentSection + ']: ' + line)
-            } else {
-                sections[currentSection].add(line)
-            }
-        }
-        Set<String> missing = requiredSections - sections.keySet()
-        Set<String> unexpected = sections.keySet() - requiredSections
-        if (!missing.isEmpty() || !unexpected.isEmpty()) {
-            throw new org.gradle.api.GradleException(
-                    'Architecture target sections differ from the permanent schema; ' +
-                            'missing=' + missing.sort() +
-                            ', unexpected=' + unexpected.sort())
-        }
-        sections
-    }
-
-    static List<String> parseEdges(List<String> rows, String sectionName) {
-        rows.collect { String row ->
-            def matcher = row =~ /^([a-z0-9-]+)\s*->\s*([a-z0-9-]+)$/
-            if (!matcher.matches()) {
-                throw new org.gradle.api.GradleException(
-                        'Invalid edge in [' + sectionName + ']: ' + row)
-            }
-            matcher.group(1) + ' -> ' + matcher.group(2)
-        }
-    }
-}
-
-final File delosArchitectureRoot = rootProject.projectDir
+final File delosArchitectureAudit = rootProject.file(
+        'scripts/delos-permanent-architecture-audit.py')
 final Object delosModuleDependencyReportDir = rootProject.layout.buildDirectory.dir(
         'reports/delosdb-module-dependencies')
-final File delosV1ModuleTarget = new File(
-        delosArchitectureRoot,
+final Object delosModuleBoundaryReport = rootProject.layout.buildDirectory.file(
+        'reports/delosdb/module-dependency-boundary-static-analysis.txt')
+final Object delosV1ArchitectureReport = rootProject.layout.buildDirectory.file(
+        'reports/delosdb/v1-module-architecture-static-analysis.txt')
+final File delosV1ModuleTarget = rootProject.file(
         'gradle/static-analysis/delosdb-v1-final-module-target.txt')
-
-final List<String> delosModuleBoundaryEvidenceFiles = [
-        'package-owners.tsv',
-        'missing-declared-project-dependencies.tsv',
-        'duplicate-resources.tsv',
-        'output-dir-backdoors.tsv',
-        'unresolved-imports.tsv'
-]
 
 tasks.register('delosModuleDependencyReport', Exec) {
     group = 'verification'
@@ -206,7 +21,7 @@ tasks.register('delosModuleDependencyReport', Exec) {
 
     inputs.file('scripts/module-dependency-tree.py')
     inputs.file('settings.gradle')
-    inputs.files(rootProject.fileTree(delosArchitectureRoot) {
+    inputs.files(rootProject.fileTree(rootProject.projectDir) {
         include '*/build.gradle'
         include '*/src/main/java/**/*.java'
         include '*/src/test/java/**/*.java'
@@ -221,287 +36,68 @@ tasks.register('delosModuleDependencyReport', Exec) {
     commandLine 'python3', 'scripts/module-dependency-tree.py'
 }
 
-tasks.register('delosModuleDependencyBoundaryStaticAnalysis') {
+tasks.register('delosModuleDependencyBoundaryStaticAnalysis', Exec) {
     group = 'verification'
     description = 'Verifies durable module dependency and resource-boundary invariants.'
     dependsOn 'delosModuleDependencyReport'
 
-    inputs.files(delosModuleBoundaryEvidenceFiles.collect { String name ->
-        delosModuleDependencyReportDir.map { it.file(name) }
-    })
+    inputs.file(delosArchitectureAudit)
+    inputs.files(delosModuleDependencyReportDir)
     inputs.file(
             'delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java')
-    outputs.file(rootProject.layout.buildDirectory.file(
-            'reports/delosdb/module-dependency-boundary-static-analysis.txt'))
+    outputs.file(delosModuleBoundaryReport)
 
-    doLast {
-        File reportDir = delosModuleDependencyReportDir.get().asFile
-        List<String> failures = []
-
-        [
-                'missing-declared-project-dependencies.tsv':
-                        'missing declared production dependencies',
-                'duplicate-resources.tsv':
-                        'duplicate resource paths',
-                'output-dir-backdoors.tsv':
-                        'cross-module output-directory backdoors',
-                'unresolved-imports.tsv':
-                        'unresolved project imports'
-        ].each { String name, String description ->
-            List<String[]> rows = DelosPermanentArchitectureSupport.tsvRows(
-                    new File(reportDir, name))
-            if (!rows.isEmpty()) {
-                failures.add('Unexpected ' + description + ': ' +
-                        rows.collect { String[] row -> row.join('\t') }.join(' | '))
-            }
-        }
-
-        DelosPermanentArchitectureSupport.tsvRows(
-                new File(reportDir, 'package-owners.tsv')).each { String[] row ->
-            if (row.length != 2) {
-                failures.add('Malformed package owner row: ' + row.join('\t'))
-            } else if (row[1].split(',', -1).findAll { it }.size() != 1) {
-                failures.add('Package has multiple production owners: ' +
-                        row.join('\t'))
-            }
-        }
-
-        File baseMonitor = new File(
-                delosArchitectureRoot,
-                'delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java')
-        String baseMonitorCode = DelosPermanentArchitectureSupport
-                .codeWithoutComments(baseMonitor.getText('UTF-8'))
-        if (baseMonitorCode.contains(
-                'import org.apache.derby.iapi.services.loader.ClassInfo;') ||
-                baseMonitorCode.contains('new ClassInfo(')) {
-            failures.add(
-                    'Registered-format construction must remain inside the engine module')
-        }
-
-        File reportFile = rootProject.layout.buildDirectory.file(
-                'reports/delosdb/module-dependency-boundary-static-analysis.txt')
-                .get().asFile
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB module dependency boundary static analysis')
-            writer.println('=================================================')
-            writer.println('Evidence: generated dependency/resource TSV reports and executable Java structure')
-            writer.println('Documentation/comment authority: none')
-            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
-            failures.each { String failure -> writer.println('- ' + failure) }
-        }
-
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'DelosDB module dependency boundary static analysis failed. Report: ' +
-                            reportFile)
-        }
-        logger.lifecycle(
-                'DelosDB module dependency boundary static analysis passed. Report: {}',
-                reportFile)
+    doFirst {
+        setCommandLine([
+                'python3', delosArchitectureAudit.absolutePath,
+                '--mode', 'boundary',
+                '--root', rootProject.projectDir.absolutePath,
+                '--dependency-report-dir',
+                delosModuleDependencyReportDir.get().asFile.absolutePath,
+                '--output', delosModuleBoundaryReport.get().asFile.absolutePath
+        ])
     }
 }
 
-tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
+tasks.register('delosV1ModuleArchitectureStaticAnalysis', Exec) {
     group = 'verification'
     description = 'Verifies the permanent v1 module and storage-authority structure.'
     dependsOn 'delosModuleDependencyReport'
 
+    inputs.file(delosArchitectureAudit)
     inputs.file(delosV1ModuleTarget)
     inputs.file('settings.gradle')
     inputs.file('gradle/delosdb-runtime-artifacts.gradle')
     inputs.file(delosModuleDependencyReportDir.map {
         it.file('module-source-edge-summary.tsv')
     })
-    inputs.files(rootProject.fileTree(delosArchitectureRoot) {
+    inputs.files(rootProject.fileTree(rootProject.projectDir) {
         include 'build.gradle'
         include 'delosdb-*/build.gradle'
         exclude '**/build/**'
         exclude '**/.gradle/**'
         exclude '**/.git/**'
     })
-    outputs.file(rootProject.layout.buildDirectory.file(
-            'reports/delosdb/v1-module-architecture-static-analysis.txt'))
+    outputs.file(delosV1ArchitectureReport)
 
-    doLast {
-        Set<String> requiredSections = [
-                'target-modules',
-                'deferred-modules',
-                'retired-modules',
-                'retired-artifacts',
-                'required-provider-artifacts',
-                'deferred-provider-artifacts',
-                'build-only-artifacts',
-                'forbidden-production-edges'
-        ] as Set<String>
-        Map<String, List<String>> sections = DelosPermanentArchitectureSupport
-                .loadSections(delosV1ModuleTarget, requiredSections)
-        List<String> failures = []
-
-        Set<String> targetModules = sections['target-modules'] as Set<String>
-        Set<String> deferredModules = sections['deferred-modules'] as Set<String>
-        Set<String> retiredModules = sections['retired-modules'] as Set<String>
-        Set<String> retiredArtifacts = sections['retired-artifacts'] as Set<String>
-        Set<String> requiredProviderArtifacts =
-                sections['required-provider-artifacts'] as Set<String>
-        Set<String> deferredProviderArtifacts =
-                sections['deferred-provider-artifacts'] as Set<String>
-        Set<String> buildOnlyArtifacts = sections['build-only-artifacts'] as Set<String>
-        Set<String> forbiddenEdges = DelosPermanentArchitectureSupport
-                .parseEdges(sections['forbidden-production-edges'],
-                        'forbidden-production-edges') as Set<String>
-
-        if (!targetModules.containsAll(deferredModules)) {
-            failures.add('Deferred modules must be members of target-modules')
+    doFirst {
+        List<String> auditArgs = [
+                delosArchitectureAudit.absolutePath,
+                '--mode', 'v1',
+                '--root', rootProject.projectDir.absolutePath,
+                '--dependency-report-dir',
+                delosModuleDependencyReportDir.get().asFile.absolutePath,
+                '--target', delosV1ModuleTarget.absolutePath,
+                '--output', delosV1ArchitectureReport.get().asFile.absolutePath
+        ]
+        rootProject.ext.delosdbRuntimeJarArtifacts.each { artifact ->
+            auditArgs.add('--runtime-artifact')
+            auditArgs.add(artifact.jarName.toString())
         }
-        if (!requiredProviderArtifacts.containsAll(deferredProviderArtifacts)) {
-            failures.add(
-                    'Deferred provider artifacts must be members of required-provider-artifacts')
+        rootProject.ext.delosdbAssembledSupportJarArtifacts.each { artifact ->
+            auditArgs.add('--support-artifact')
+            auditArgs.add(artifact.jarName.toString())
         }
-        if (!(targetModules.intersect(retiredModules)).isEmpty()) {
-            failures.add('Target and retired modules overlap: ' +
-                    targetModules.intersect(retiredModules).sort())
-        }
-
-        List<String> settingsModules = []
-        DelosPermanentArchitectureSupport.codeLinesWithoutComments(
-                new File(delosArchitectureRoot, 'settings.gradle')).each { String line ->
-            def matcher = line =~ /^\s*include\s+['"]([^'"]+)['"]\s*$/
-            if (matcher.matches()) {
-                settingsModules.add(matcher.group(1))
-            }
-        }
-        Set<String> settingsModuleSet = settingsModules as Set<String>
-        if (settingsModuleSet.size() != settingsModules.size()) {
-            failures.add('settings.gradle contains duplicate module declarations')
-        }
-        Set<String> extraModules = settingsModuleSet - targetModules
-        Set<String> missingModules = targetModules - settingsModuleSet
-        if (!extraModules.isEmpty()) {
-            failures.add('settings.gradle contains modules outside the v1 target: ' +
-                    extraModules.sort())
-        }
-        if (!deferredModules.containsAll(missingModules)) {
-            failures.add('settings.gradle is missing non-deferred target modules: ' +
-                    (missingModules - deferredModules).sort())
-        }
-
-        retiredModules.each { String moduleName ->
-            if (settingsModuleSet.contains(moduleName) ||
-                    new File(delosArchitectureRoot, moduleName).exists()) {
-                failures.add('Retired module remains active or present: ' + moduleName)
-            }
-        }
-
-        List<File> buildFiles = [new File(delosArchitectureRoot, 'build.gradle')]
-        buildFiles.addAll(rootProject.fileTree(delosArchitectureRoot) {
-            include 'delosdb-*/build.gradle'
-            exclude '**/build/**'
-        }.files)
-        buildFiles = buildFiles.unique().sort { File left, File right ->
-            left.path <=> right.path
-        }
-        Map<String, String> buildCode = buildFiles.collectEntries { File buildFile ->
-            [(DelosPermanentArchitectureSupport.relativePath(
-                    delosArchitectureRoot, buildFile)):
-                     DelosPermanentArchitectureSupport.codeWithoutComments(
-                             buildFile.getText('UTF-8'))]
-        }
-
-        retiredModules.each { String moduleName ->
-            Pattern dependencyPattern = Pattern.compile(
-                    "project\\s*\\(\\s*(?:path\\s*:\\s*)?['\"]:" +
-                            Pattern.quote(moduleName) + "['\"]")
-            buildCode.each { String relative, String code ->
-                if (dependencyPattern.matcher(code).find()) {
-                    failures.add('Build wiring references retired module ' +
-                            moduleName + ': ' + relative)
-                }
-            }
-        }
-
-        Set<String> runtimeArtifacts = rootProject.ext.delosdbRuntimeJarArtifacts
-                .collect { artifact -> artifact.jarName.toString() } as Set<String>
-        Set<String> supportArtifacts =
-                rootProject.ext.delosdbAssembledSupportJarArtifacts
-                        .collect { artifact -> artifact.jarName.toString() } as Set<String>
-        Set<String> assembledArtifacts = runtimeArtifacts + supportArtifacts
-
-        Set<String> activeRequiredProviderArtifacts =
-                requiredProviderArtifacts - deferredProviderArtifacts
-        if (!assembledArtifacts.containsAll(activeRequiredProviderArtifacts)) {
-            failures.add('Required provider artifacts are missing: ' +
-                    (activeRequiredProviderArtifacts - assembledArtifacts).sort())
-        }
-        Set<String> wronglyRuntimeArtifacts =
-                activeRequiredProviderArtifacts.intersect(runtimeArtifacts)
-        if (!wronglyRuntimeArtifacts.isEmpty()) {
-            failures.add('Provider artifacts must remain support artifacts: ' +
-                    wronglyRuntimeArtifacts.sort())
-        }
-        Set<String> buildOnlyOnRuntime = buildOnlyArtifacts.intersect(runtimeArtifacts)
-        if (!buildOnlyOnRuntime.isEmpty()) {
-            failures.add('Build-only artifacts appear on the runtime model: ' +
-                    buildOnlyOnRuntime.sort())
-        }
-        Set<String> retainedRetiredArtifacts =
-                retiredArtifacts.intersect(assembledArtifacts)
-        if (!retainedRetiredArtifacts.isEmpty()) {
-            failures.add('Retired artifacts remain assembled: ' +
-                    retainedRetiredArtifacts.sort())
-        }
-
-        List<String[]> edgeRows = DelosPermanentArchitectureSupport.tsvRows(
-                delosModuleDependencyReportDir.get().file(
-                        'module-source-edge-summary.tsv').asFile)
-        Set<String> observedSourceEdges = edgeRows.collect { String[] row ->
-            row.length >= 2 ? row[0] + ' -> ' + row[1] : ''
-        }.findAll { it } as Set<String>
-        Set<String> forbiddenSourceEdges = forbiddenEdges.intersect(observedSourceEdges)
-        if (!forbiddenSourceEdges.isEmpty()) {
-            failures.add('Forbidden production source edges remain: ' +
-                    forbiddenSourceEdges.sort())
-        }
-
-        forbiddenEdges.each { String edge ->
-            String[] parts = edge.split(' -> ', -1)
-            String sourceModule = parts[0]
-            String targetModule = parts[1]
-            String sourceBuildCode = buildCode[sourceModule + '/build.gradle'] ?: ''
-            Pattern sourceDependencyPattern = Pattern.compile(
-                    "(?m)^\\s*(?:api|implementation|compileOnly|runtimeOnly)" +
-                            "\\s+project\\s*\\(\\s*" +
-                            "(?:path\\s*:\\s*)?['\"]:" +
-                            Pattern.quote(targetModule) + "['\"]")
-            if (sourceDependencyPattern.matcher(sourceBuildCode).find()) {
-                failures.add('Forbidden production dependency remains: ' + edge)
-            }
-        }
-
-        File reportFile = rootProject.layout.buildDirectory.file(
-                'reports/delosdb/v1-module-architecture-static-analysis.txt')
-                .get().asFile
-        reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
-            writer.println('DelosDB v1 module architecture static analysis')
-            writer.println('==============================================')
-            writer.println('Evidence: settings, generated dependency edges, build declarations, and runtime artifact model')
-            writer.println('Documentation/comment authority: none')
-            writer.println('Current modules: ' + settingsModules.size())
-            writer.println('Deferred target modules: ' + missingModules.sort())
-            writer.println('Required active provider artifacts: ' +
-                    activeRequiredProviderArtifacts.sort())
-            writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
-            failures.each { String failure -> writer.println('- ' + failure) }
-        }
-
-        if (!failures.isEmpty()) {
-            throw new GradleException(
-                    'DelosDB v1 module architecture static analysis failed. Report: ' +
-                            reportFile)
-        }
-        logger.lifecycle(
-                'DelosDB v1 module architecture static analysis passed. Report: {}',
-                reportFile)
+        setCommandLine(['python3'] + auditArgs)
     }
 }
