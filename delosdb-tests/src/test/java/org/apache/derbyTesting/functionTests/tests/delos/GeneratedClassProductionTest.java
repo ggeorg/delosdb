@@ -41,8 +41,6 @@ public final class GeneratedClassProductionTest
             "org.apache.derby.impl.services.bytecode.classfile.ClassFileJava";
     private static final String DATABASE =
             "jdbc:derby:memory:delosClassFileProduction";
-    private static final String APPLICATION_OVERRIDE =
-            "derby.module.untrustedJavaFactory";
 
     /** A deliberately invalid backend used to prove monitor override rejection. */
     public static final class RejectingJavaFactory implements JavaFactory {
@@ -59,13 +57,18 @@ public final class GeneratedClassProductionTest
     }
 
     public void testProductionBackendCompilesSql() throws Exception {
-        assertNull("production proof must not use a system backend override",
+        assertNull("production proof requires a clean backend property",
                 System.getProperty(BACKEND_PROPERTY));
+        System.setProperty(
+                BACKEND_PROPERTY,
+                RejectingJavaFactory.class.getName());
         Files.writeString(Path.of("derby.properties"),
-                APPLICATION_OVERRIDE + "="
-                        + RejectingJavaFactory.class.getName() + System.lineSeparator());
+                BACKEND_PROPERTY + "="
+                        + RejectingJavaFactory.class.getName()
+                        + System.lineSeparator());
 
         int preparedStatements = 0;
+        int cachedPlanReuses = 0;
         long started = System.nanoTime();
         try (Connection connection = DriverManager.getConnection(
                 DATABASE + ";create=true")) {
@@ -79,6 +82,33 @@ public final class GeneratedClassProductionTest
                         "create table T (id int primary key, v int, s varchar(40))");
                 statement.executeUpdate(
                         "insert into T values (1, 10, 'alpha'), (2, 20, null)");
+            }
+
+            String cachedSql = "select v from T where id = ?";
+            String cachedPlanIdentity;
+            try (PreparedStatement statement = connection.prepareStatement(
+                    cachedSql)) {
+                preparedStatements++;
+                cachedPlanIdentity = statement.toString();
+                statement.setInt(1, 1);
+                try (ResultSet row = statement.executeQuery()) {
+                    assertTrue(row.next());
+                    assertEquals(10, row.getInt(1));
+                    assertFalse(row.next());
+                }
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    cachedSql)) {
+                preparedStatements++;
+                assertEquals("generated statement plan must be reused",
+                        cachedPlanIdentity, statement.toString());
+                cachedPlanReuses++;
+                statement.setInt(1, 2);
+                try (ResultSet row = statement.executeQuery()) {
+                    assertTrue(row.next());
+                    assertEquals(20, row.getInt(1));
+                    assertFalse(row.next());
+                }
             }
 
             try (PreparedStatement statement = connection.prepareStatement(
@@ -123,7 +153,12 @@ public final class GeneratedClassProductionTest
             }
             connection.commit();
         } finally {
-            shutdownDatabase();
+            try {
+                shutdownDatabase();
+            } finally {
+                System.clearProperty(BACKEND_PROPERTY);
+                Files.deleteIfExists(Path.of("derby.properties"));
+            }
         }
 
         String report = String.format(Locale.ROOT,
@@ -132,13 +167,15 @@ public final class GeneratedClassProductionTest
                 + "Architecture: JDK25_CLASSFILE%n"
                 + "Selected backend: %s%n"
                 + "Selection source: MODULES_PROPERTIES_SOLE_BACKEND%n"
-                + "External override attempt: REJECTED%n"
-                + "Prepared statement families: %d%n"
+                + "System/application override attempt: REJECTED%n"
+                + "Prepared statement executions: %d%n"
+                + "Statement plan cache reuses: %d%n"
                 + "Elapsed nanos: %d%n"
                 + "SQLState preservation: 22012%n"
                 + "External bytecode dependency: none%n",
                 CLASSFILE_BACKEND,
                 preparedStatements,
+                cachedPlanReuses,
                 System.nanoTime() - started);
         System.out.print(report);
 

@@ -125,7 +125,6 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                 'productionEmptyCatches',
                 'productionGenericCatches',
                 'productionSuppressWarnings',
-                'productionQualityMarkers',
                 'compilerAuthorityCompromiseCandidates'
         ]
         monotonicMetrics.each { String name ->

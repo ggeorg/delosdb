@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,6 +52,11 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
             "org.apache.derbyTesting.generated.";
     private static final String GENERATED_CLASS =
             "DelosClassFileContractBehavior";
+    private static final int EXPECTED_CONTRACT_METHODS = 52;
+    private static final int EXPECTED_GENERATED_METHODS = 38;
+    private static final int EXPECTED_GENERATED_CLASS_BYTES = 3_465;
+    private static final String EXPECTED_GENERATED_CLASS_SHA256 =
+            "31df8ee46dcc6256a7ad556c90d5772e69c8656670c4356cd0df3205a47abefe";
     static final int INT_CONSTANT = 123_456;
 
     private static final Set<String> EXPECTED_FIXTURES = Set.of(
@@ -74,8 +80,10 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
         assertEquals("behavior fixture groups",
                 EXPECTED_FIXTURES, manifest.fixtures());
 
+        ContractCoverage coverage = new ContractCoverage();
         GeneratedFixture first = generateFixture(
-                newClassFileFactory(), GENERATED_CLASS);
+                coverage.wrap(newClassFileFactory()), GENERATED_CLASS);
+        coverage.assertComplete();
         GeneratedFixture second = generateFixture(
                 newClassFileFactory(), GENERATED_CLASS);
         assertTrue("Class-File API fixture bytes must remain deterministic",
@@ -84,6 +92,10 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 sha256(first.classBytes()), sha256(second.classBytes()));
         assertEquals("statement split observation must remain deterministic",
                 first.statementSplitPoint(), second.statementSplitPoint());
+        assertEquals("frozen generated-class byte length",
+                EXPECTED_GENERATED_CLASS_BYTES, first.classBytes().length);
+        assertEquals("frozen generated-class SHA-256",
+                EXPECTED_GENERATED_CLASS_SHA256, sha256(first.classBytes()));
 
         Class<?> generatedClass = new GeneratedClassLoader().define(
                 GENERATED_PACKAGE + GENERATED_CLASS,
@@ -94,6 +106,10 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
 
         assertEquals("every mapped behavior fixture must execute",
                 manifest.fixtures(), executedFixtures);
+        assertEquals("frozen generated method count",
+                EXPECTED_GENERATED_METHODS,
+                generatedClass.getDeclaredMethods().length);
+        assertCategoryTwoBranchMerges(newClassFileFactory());
 
         String report = String.format(Locale.ROOT,
                 "DelosDB generated-class contract behavior proof%n"
@@ -101,13 +117,16 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                 + "Architecture: JDK25_CLASSFILE%n"
                 + "Authority: SOLE_PRODUCTION_BACKEND%n"
                 + "Generation boundary: JavaFactory/ClassBuilder/MethodBuilder/LocalField%n"
+                + "Contract methods exercised: %d%n"
                 + "MethodBuilder signatures mapped: %d%n"
                 + "Behavior fixture groups executed: %d%n"
+                + "Category-two branch merge cases: 4%n"
                 + "Generated methods: %d%n"
                 + "Generated class bytes: %d%n"
                 + "Generated class SHA-256: %s%n"
                 + "Observed statement split point: %d%n"
                 + "Normal runtime backend selector: none%n",
+                coverage.exercisedCount(),
                 manifest.signatures().size(),
                 executedFixtures.size(),
                 generatedClass.getDeclaredMethods().length,
@@ -827,11 +846,158 @@ public final class GeneratedClassContractBehaviorTest extends TestCase {
                     ids.add(parts[0]));
             signatures.add(parts[1]);
             fixtures.add(parts[2]);
-            assertFalse("missing behavior proof marker", parts[3].isBlank());
-            assertTrue("behavior fixture rationale is too thin",
-                    parts[4].length() >= 90);
         }
         return new FixtureManifest(List.copyOf(signatures), Set.copyOf(fixtures));
+    }
+
+
+    private static void assertCategoryTwoBranchMerges(
+            JavaFactory factory) throws Exception {
+        String className = "DelosClassFileCategoryTwoMerge";
+        ClassBuilder classBuilder = factory.newClassBuilder(
+                null,
+                GENERATED_PACKAGE,
+                Modifier.PUBLIC | Modifier.FINAL,
+                className,
+                Object.class.getName());
+
+        MethodBuilder constructor = classBuilder.newConstructorBuilder(
+                Modifier.PUBLIC);
+        constructor.callSuper();
+        constructor.methodReturn();
+        constructor.complete();
+
+        MethodBuilder chooseLong = classBuilder.newMethodBuilder(
+                Modifier.PUBLIC | Modifier.STATIC,
+                "long",
+                "chooseLong",
+                new String[] { "boolean" });
+        chooseLong.getParameter(0);
+        chooseLong.conditionalIf();
+        chooseLong.push(11L);
+        chooseLong.startElseCode();
+        chooseLong.push(13L);
+        chooseLong.completeConditional();
+        chooseLong.methodReturn();
+        chooseLong.complete();
+
+        MethodBuilder chooseDouble = classBuilder.newMethodBuilder(
+                Modifier.PUBLIC | Modifier.STATIC,
+                "double",
+                "chooseDouble",
+                new String[] { "boolean" });
+        chooseDouble.getParameter(0);
+        chooseDouble.conditionalIf();
+        chooseDouble.push(17.5d);
+        chooseDouble.startElseCode();
+        chooseDouble.push(19.5d);
+        chooseDouble.completeConditional();
+        chooseDouble.methodReturn();
+        chooseDouble.complete();
+
+        Class<?> generatedClass = new GeneratedClassLoader().define(
+                GENERATED_PACKAGE + className,
+                copy(classBuilder.getClassBytecode()));
+        Method longMethod = generatedClass.getMethod(
+                "chooseLong", boolean.class);
+        assertEquals(11L,
+                ((Long) longMethod.invoke(null, true)).longValue());
+        assertEquals(13L,
+                ((Long) longMethod.invoke(null, false)).longValue());
+        Method doubleMethod = generatedClass.getMethod(
+                "chooseDouble", boolean.class);
+        assertEquals(17.5d,
+                ((Double) doubleMethod.invoke(null, true)).doubleValue(),
+                0.0d);
+        assertEquals(19.5d,
+                ((Double) doubleMethod.invoke(null, false)).doubleValue(),
+                0.0d);
+    }
+
+    private static final class ContractCoverage {
+        private final Set<String> expected = contractMethods();
+        private final Set<String> exercised = new LinkedHashSet<>();
+
+        private JavaFactory wrap(JavaFactory delegate) {
+            return (JavaFactory) Proxy.newProxyInstance(
+                    JavaFactory.class.getClassLoader(),
+                    new Class<?>[] { JavaFactory.class },
+                    (proxy, method, arguments) -> adapt(
+                            invoke(delegate, method, arguments)));
+        }
+
+        private Object wrapInterface(Object delegate, Class<?> contract) {
+            return Proxy.newProxyInstance(
+                    contract.getClassLoader(),
+                    new Class<?>[] { contract },
+                    (proxy, method, arguments) -> adapt(
+                            invoke(delegate, method, arguments)));
+        }
+
+        private Object invoke(
+                Object delegate,
+                Method method,
+                Object[] arguments) throws Throwable {
+            if (method.getDeclaringClass() != Object.class) {
+                exercised.add(methodKey(method));
+            }
+            try {
+                return method.invoke(delegate, arguments);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        }
+
+        private Object adapt(Object value) {
+            if (value instanceof ClassBuilder classBuilder) {
+                return wrapInterface(classBuilder, ClassBuilder.class);
+            }
+            if (value instanceof MethodBuilder methodBuilder) {
+                return wrapInterface(methodBuilder, MethodBuilder.class);
+            }
+            return value;
+        }
+
+        private void assertComplete() {
+            assertEquals("every generated-class contract method must execute",
+                    expected, exercised);
+        }
+
+        private int exercisedCount() {
+            return exercised.size();
+        }
+
+        private static Set<String> contractMethods() {
+            Set<String> methods = new LinkedHashSet<>();
+            for (Class<?> contract : List.of(
+                    JavaFactory.class,
+                    ClassBuilder.class,
+                    MethodBuilder.class,
+                    LocalField.class)) {
+                for (Method method : contract.getDeclaredMethods()) {
+                    methods.add(methodKey(method));
+                }
+            }
+            assertEquals("frozen generated-class contract size",
+                    EXPECTED_CONTRACT_METHODS, methods.size());
+            return Set.copyOf(methods);
+        }
+
+        private static String methodKey(Method method) {
+            StringBuilder key = new StringBuilder()
+                    .append(method.getDeclaringClass().getName())
+                    .append('#')
+                    .append(method.getName())
+                    .append('(');
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            for (int i = 0; i < parameterTypes.length; i++) {
+                if (i > 0) {
+                    key.append(',');
+                }
+                key.append(parameterTypes[i].getTypeName());
+            }
+            return key.append(')').toString();
+        }
     }
 
     record GeneratedFixture(

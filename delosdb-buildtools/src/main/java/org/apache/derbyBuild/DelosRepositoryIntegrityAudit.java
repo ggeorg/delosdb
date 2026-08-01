@@ -89,6 +89,11 @@ public final class DelosRepositoryIntegrityAudit {
     private static final Pattern CLASSFILE_IMPORT = Pattern.compile(
             "(?m)^\\s*import\\s+java\\.lang\\.classfile(?:\\.|;)" );
 
+    private static final Pattern JAVA_FACTORY_AUTHORITY_PIN = Pattern.compile(
+            "(?s)if\\s*\\(\\s*!\\s*actualModuleList\\s*&&\\s*"
+            + "JavaFactory\\.class\\.isAssignableFrom\\s*"
+            + "\\(\\s*possibleModule\\s*\\)\\s*\\)\\s*\\{.*?continue\\s*;");
+
     private static final int DUPLICATE_MIN_LINES = 6;
     private static final int DUPLICATE_MIN_STATEMENTS = 4;
     private static final int COMPLEXITY_THRESHOLD = 20;
@@ -106,6 +111,7 @@ public final class DelosRepositoryIntegrityAudit {
     private final Map<String, Integer> symbolUses = new TreeMap<>();
     private final List<String> authorityViolations = new ArrayList<>();
     private final List<String> authorityCandidates = new ArrayList<>();
+    private boolean javaFactoryAuthorityPinFound;
 
     private DelosRepositoryIntegrityAudit(Path root, Path reportDirectory) {
         this.root = root;
@@ -245,7 +251,6 @@ public final class DelosRepositoryIntegrityAudit {
             CompilationUnitTree unit, SourcePositions positions) {
         new TreePathScanner<Void, Integer>() {
             private final Deque<String> owners = new ArrayDeque<>();
-
             @Override
             public Void visitClass(ClassTree node, Integer nesting) {
                 String simpleName = node.getSimpleName().toString();
@@ -286,6 +291,7 @@ public final class DelosRepositoryIntegrityAudit {
                     new DelosRepositoryIntegrityMetrics(
                             source, unit, positions, record, catches)
                             .scan(node.getBody(), 0);
+                    javaFactoryAuthorityPinFound |= isJavaFactoryAuthorityPin(source, node);
                 }
                 methods.add(record);
                 return super.visitMethod(node, increment(nesting));
@@ -339,6 +345,15 @@ public final class DelosRepositoryIntegrityAudit {
                 return super.visitMemberReference(node, nesting);
             }
         }.scan(unit, 0);
+    }
+
+    private static boolean isJavaFactoryAuthorityPin(
+            SourceFile source, MethodTree method) {
+        return source.relative.equals(
+                "delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java")
+                && method.getName().contentEquals("getImplementations")
+                && JAVA_FACTORY_AUTHORITY_PIN.matcher(
+                        method.getBody().toString()).find();
     }
 
     private void scanInitializer(SourceFile source,
@@ -427,20 +442,10 @@ public final class DelosRepositoryIntegrityAudit {
                             + "; found " + registrations);
         }
 
-        Path monitor = root.resolve(
-                "delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java");
-        String monitorText = Files.readString(monitor, StandardCharsets.UTF_8);
-        List<String> authorityPinMarkers = List.of(
-                "!actualModuleList",
-                "JavaFactory.class.isAssignableFrom(possibleModule)",
-                "Ignored external JavaFactory module",
-                "packaged ClassFileJava backend");
-        for (String marker : authorityPinMarkers) {
-            if (!monitorText.contains(marker)) {
-                authorityViolations.add(
-                        "BaseMonitor is missing generated-class authority pin: "
-                                + marker);
-            }
+        if (!javaFactoryAuthorityPinFound) {
+            authorityViolations.add(
+                    "BaseMonitor.getImplementations must reject external "
+                            + "JavaFactory implementations before registration");
         }
     }
 
