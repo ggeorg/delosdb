@@ -901,8 +901,11 @@ tasks.named('check') {
 
 registerDelosFocusedTest(
         'runDelosMvccAnalyzeStatisticsLifecycleTest',
-        'Runs the MVCC analyze/update-statistics lifecycle proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccAnalyzeStatisticsLifecycleTest.class'])
+        'Runs the MVCC analyze lifecycle and explicit optimizer-cost opt-in proofs.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccAnalyzeStatisticsLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/OptimizerStorageCostOptInTest.class'
+        ])
 
 
 registerDelosFocusedTest(

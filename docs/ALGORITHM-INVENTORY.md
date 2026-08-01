@@ -93,7 +93,7 @@ Risks:
 Next proof idea:
 
 * Preserve deterministic ClassFileJava generation, class-size, allocation, class-loading, and execution evidence through the existing generation contract.
-* Keep the permanent zero-external-ASM static gate, complete behavior fixture, language suite, JDBC/DRDA lane, modular-image lane, and SQLancer lane green.
+* Keep structural generated-class dependency, module, backend-authority, behavior-fixture, JDBC/DRDA, modular-image, and SQLancer evidence green.
 
 ### Optimizer/costing
 
@@ -599,7 +599,7 @@ Current DelosDB seams:
 
 * `StoreCostController` and `StoreCostControllerWrapper`
 * `MvccStoreCostController`
-* `DelosMvccOptimizerCostDiagnostics`
+* `CostModelDiagnostics` through `DelosOptimizerStorageCostOptInDiagnostics`
 * `DelosStorageCostIntegration`
 * `CostModelProvider` and `StoreCostControllerBridge`
 * legacy `IndexProviderCostMode` diagnostics

@@ -1,165 +1,70 @@
-# MVCC database maintenance service
+# RawStore MVCC Database Maintenance
 
 ## Purpose
 
-The inherited MVCC provider previously created one asynchronous purge executor
-for every open table. That ownership model scaled thread count with table count,
-provided no database-wide prioritization, and made database shutdown depend on
-closing independent table executors in the correct order.
-
-The current implementation uses one maintenance service owned by the open
-`DelosStorageStore` for a database.
-
-The purge algorithm itself is unchanged. Tables still own:
-
-- visibility-debt calculation;
-- oldest-reader and retained-snapshot checks;
-- durable mutation and backup-boundary entry;
-- page-volume vacuum execution;
-- purge outcome and table diagnostics.
-
-The database service owns only scheduling and lifecycle.
+`MvccRawStoreMaintenanceService` is the database-owned scheduler for
+RawStore-backed MVCC reclamation. It owns scheduling and autonomous RawStore
+transactions only. Visibility rules, reader horizons, logical and physical
+locking, vacuum planning, logging, undo, commit, and recovery remain owned by
+the established RawStore MVCC components.
 
 ## Ownership
 
 ```text
-one database
-    one DelosStorageStore
-        one MvccDatabaseMaintenanceService
-            bounded worker pool
-            one periodic scanner
-            N registered tables
+one booted database
+    -> one MvccRawStoreRuntime
+        -> one MvccRawStoreMaintenanceService
+            -> one bounded virtual worker
+            -> one periodic scanner
+            -> registered RawStore MVCC table descriptors
 ```
 
-The Derby compatibility bridge now reuses one storage store for all MVCC
-conglomerates in the same database. Database state cleanup closes the store,
-which first drains maintenance and then closes its tables.
+The service is disabled by default and is not created as one executor per table.
+Read-only databases do not accept maintenance work.
 
-Standalone table tests still receive a private service because they do not have
-a database-store owner. Production tables opened through `MvccInheritedStore`
-share the store-owned service.
-
-## Scheduling routes
-
-### Commit-triggered wakeup
-
-After a committed transaction creates eligible visibility debt, the table:
-
-1. applies the existing changed-row threshold;
-2. applies the existing visibility-debt policy;
-3. records the table purge-daemon decision;
-4. submits one deduplicated maintenance request to the database service.
-
-### Periodic idle-table scan
-
-The database service periodically asks every registered table for its current
-visibility-debt priority. This allows cleanup to resume after a long reader
-closes even when no later commit occurs on that table.
-
-Periodic scheduling is active only when the existing purge daemon and async
-properties are enabled.
-
-## Prioritization
-
-Queued work is ordered by:
-
-1. total visibility-debt score;
-2. obsolete-version growth;
-3. pending purge entries;
-4. FIFO sequence for equal priority.
-
-This is a scheduling order only. It does not change vacuum eligibility or the
-reader-horizon invariant.
-
-## Concurrency
-
-The worker count is bounded per database.
+## Configuration
 
 ```text
-delosdb.mvcc.maintenance.workerCount
+delosdb.mvcc.rawStoreMaintenance.enabled
+delosdb.mvcc.rawStoreMaintenance.periodMillis
+delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold
 ```
 
-The default is one worker and the accepted range is one through eight.
+Defaults are disabled, a 1,000 ms periodic interval, and an eight-row commit
+threshold. Invalid values fall back to those defaults.
 
-The periodic interval is configured by:
+## Scheduling
 
-```text
-delosdb.mvcc.maintenance.periodMillis
-```
-
-The default is 1000 milliseconds.
-
-Each table has at most one queued or running maintenance task. A wakeup received
-while that task is active requests one later re-evaluation rather than creating
-an unbounded task stream.
+Maintenance may be requested when a table is registered, after a commit crosses
+the configured changed-row threshold, or by the periodic scanner. A table has at
+most one queued or running task; another signal requests reevaluation rather
+than creating an unbounded queue.
 
 ## Safety boundaries
 
-Maintenance still enters the table's durable-mutation boundary. Therefore it:
+Every run opens an autonomous RawStore transaction and rechecks eligibility
+before mutation. Maintenance remains subordinate to:
 
-- serializes with same-table commit publication;
-- waits behind an active backup freeze;
-- cannot run after table storage has closed;
-- rechecks active transactions and retained snapshots immediately before
-  vacuuming;
-- rechecks visibility debt immediately before vacuuming.
+- active reader and retained-snapshot horizons;
+- the table's physical maintenance boundary;
+- RawStore logging, undo, commit, and recovery;
+- database read-only and shutdown state;
+- backup and table-lifecycle ownership.
 
-The database scheduler does not make the purge algorithm optimistic and does
-not bypass checkpoint, backup, or reader-horizon ownership.
+The scheduler cannot decide visibility, bypass transaction logging, or mutate a
+closed table.
 
-## Shutdown
+## Shutdown and diagnostics
 
-Database-store shutdown performs:
+Shutdown stops periodic scans, rejects new work, interrupts and joins the worker,
+and waits for the scanner to terminate. Immutable diagnostics report scheduling,
+completion, skip, failure, mutation, and removed-version counters together with
+registered-table and active-worker state.
+
+## Focused proofs
 
 ```text
-stop periodic scans
-stop accepting new maintenance requests
-drain queued and running maintenance tasks
-close registered tables
-close page volumes and sidecars
+:delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest
+:delosdb-tests:runDelosMvccRawStoreVacuumTest
+:delosdb-tests:runDelosMvccSqlIntegrationTest
 ```
-
-Closing one table unregisters it and waits for its queued or running maintenance
-work to finish before closing that table's durable state. Other tables in the
-database continue using the shared service.
-
-## Diagnostics
-
-The storage diagnostics surface now reports:
-
-- configured database worker count;
-- registered table count;
-- queued task count;
-- commit wakeup count;
-- periodic scan count;
-- executed task count;
-- scheduler failure count;
-- maximum active worker count;
-- whether the service still accepts work.
-
-Existing per-table purge-daemon metrics remain authoritative for scheduling,
-skip, run, visibility-debt, and last-decision details.
-
-## Proof obligations
-
-`MvccDatabaseMaintenanceServiceTest` proves:
-
-- multiple tables in one store share one service;
-- worker concurrency stays within the configured bound;
-- higher visibility/storage debt runs before lower debt;
-- periodic scans wake an idle table;
-- a retained reader prevents purge;
-- purge resumes after that reader closes without another commit;
-- store shutdown stops the service and closes tables cleanly.
-
-## Deliberate limits
-
-The maintenance service does not:
-
-- change the vacuum or purge algorithm;
-- add a JVM-global maintenance service;
-- allow maintenance to bypass backup coordination;
-- change checkpoint format or frequency;
-- add cross-database workers;
-- tune worker count automatically;
-- bypass the database-scoped backup coordinator.

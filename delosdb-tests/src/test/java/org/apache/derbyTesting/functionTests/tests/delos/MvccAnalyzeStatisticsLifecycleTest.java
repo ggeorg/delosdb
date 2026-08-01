@@ -23,7 +23,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.sql.Connection;
 
 import org.apache.derby.iapi.store.types.DelosMvccAnalyzeStatisticsLifecycleDiagnostics;
-import org.apache.derby.iapi.store.types.DelosMvccOptimizerCostDiagnostics;
+import org.apache.derby.iapi.sql.compile.DelosOptimizerStorageCostOptInDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /** SQL gate for MVCC storage statistics at Derby's explicit analyze/update-statistics boundary. */
@@ -32,9 +32,9 @@ public final class MvccAnalyzeStatisticsLifecycleTest extends MvccSqlTestSupport
             throws Exception {
         String databaseName = databaseName("mvcc-analyze-statistics-lifecycle-db");
 
-        try (SystemPropertyScope ignored = clearSystemProperty(DelosMvccOptimizerCostDiagnostics.PROPERTY_NAME)) {
+        try (SystemPropertyScope ignored = clearSystemProperty(DelosOptimizerStorageCostOptInDiagnostics.PROPERTY_NAME)) {
             DelosMvccAnalyzeStatisticsLifecycleDiagnostics.clearForTesting();
-            DelosMvccOptimizerCostDiagnostics.clearForTesting();
+            DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
 
             try (Connection connection = openDatabase(databaseName, true)) {
                 connection.setAutoCommit(false);
@@ -55,7 +55,7 @@ public final class MvccAnalyzeStatisticsLifecycleTest extends MvccSqlTestSupport
                         DelosMvccAnalyzeStatisticsLifecycleDiagnostics.explicitUpdateCountForTesting());
                 assertEquals("optimizer-cost diagnostics should start clean",
                         0L,
-                        DelosMvccOptimizerCostDiagnostics.statisticsEstimateCountForTesting());
+                        DelosOptimizerStorageCostOptInDiagnostics.probeCountForTesting());
 
                 executeStatement(connection,
                         "call SYSCS_UTIL.SYSCS_UPDATE_STATISTICS('APP', 'MVCC_ANALYZE_LIFECYCLE_T', null)");
@@ -97,7 +97,7 @@ public final class MvccAnalyzeStatisticsLifecycleTest extends MvccSqlTestSupport
                                 .contains("optimizerAuthority=derby"));
                 assertEquals("explicit update statistics must not enable MVCC optimizer-cost consumption",
                         0L,
-                        DelosMvccOptimizerCostDiagnostics.statisticsEstimateCountForTesting());
+                        DelosOptimizerStorageCostOptInDiagnostics.probeCountForTesting());
 
                 assertRows(connection,
                         "select id, payload from mvcc_analyze_lifecycle_t where category = 'beta' order by id",
@@ -107,7 +107,7 @@ public final class MvccAnalyzeStatisticsLifecycleTest extends MvccSqlTestSupport
             }
         } finally {
             DelosMvccAnalyzeStatisticsLifecycleDiagnostics.clearForTesting();
-            DelosMvccOptimizerCostDiagnostics.clearForTesting();
+            DelosOptimizerStorageCostOptInDiagnostics.clearForTesting();
         }
     }
 }
