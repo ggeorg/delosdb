@@ -27,6 +27,8 @@ tasks.register('compileDelosHumanMaintainabilityAudit', JavaCompile) {
     source hmAuditSource
     classpath = files()
     destinationDirectory.set(hmAuditClasses)
+    sourceCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
+    targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
 }
