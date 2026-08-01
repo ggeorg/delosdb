@@ -612,6 +612,7 @@ apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'
 
 // Repository-wide Java integrity inventory and monotonic cleanup baseline.
 apply from: 'gradle/delosdb-repository-integrity-static-analysis.gradle'
+apply from: 'gradle/delosdb-human-maintainability-inventory.gradle'
 
 final List<Object> delosPermanentS0Dependencies = [
         'delosModuleDependencyBoundaryStaticAnalysis',

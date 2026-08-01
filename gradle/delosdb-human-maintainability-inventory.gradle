@@ -1,0 +1,64 @@
+/*
+ * Human-centred maintainability inventory.
+ *
+ * This task emits review evidence. It is intentionally not part of S0 and
+ * does not turn human review thresholds into automatic build failures.
+ */
+
+import org.gradle.api.tasks.compile.JavaCompile
+
+final File hmRoot = rootProject.projectDir
+final File hmBuild = rootProject.layout.buildDirectory.get().asFile
+final File hmReportDirectory = new File(
+        hmBuild, 'reports/delosdb/human-maintainability/inventory')
+final File hmAuthoredManifest = new File(
+        hmRoot, 'gradle/static-analysis/delosdb-authored-production-files.txt')
+final File hmModifiedInheritedManifest = new File(
+        hmRoot, 'gradle/static-analysis/delosdb-modified-inherited-production-files.txt')
+final File hmAuditSource = new File(
+        hmRoot,
+        'gradle/static-analysis/java/org/apache/derbyBuild/DelosHumanMaintainabilityAudit.java')
+final Object hmAuditClasses = rootProject.layout.buildDirectory.dir(
+        'classes/human-maintainability-audit')
+
+tasks.register('compileDelosHumanMaintainabilityAudit', JavaCompile) {
+    group = 'build setup'
+    description = 'Compiles the isolated human-maintainability inventory tool.'
+    source hmAuditSource
+    classpath = files()
+    destinationDirectory.set(hmAuditClasses)
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('delosHumanMaintainabilityInventory', JavaExec) {
+    group = 'verification'
+    description = 'Writes human-maintainability review evidence without enforcing subjective thresholds.'
+    dependsOn 'compileDelosHumanMaintainabilityAudit'
+
+    classpath = files(hmAuditClasses)
+    mainClass.set('org.apache.derbyBuild.DelosHumanMaintainabilityAudit')
+    maxHeapSize = '2g'
+    workingDir = hmRoot
+
+    inputs.files(rootProject.fileTree(hmRoot) {
+        include '**/src/main/java/**/*.java'
+        exclude '**/build/**'
+        exclude '**/.gradle/**'
+        exclude '**/.git/**'
+        exclude '**/out/**'
+    })
+    inputs.file(hmAuthoredManifest)
+    inputs.file(hmModifiedInheritedManifest)
+    inputs.file(hmAuditSource)
+    outputs.dir(hmReportDirectory)
+
+    doFirst {
+        setArgs([
+                '--root', hmRoot.absolutePath,
+                '--report-dir', hmReportDirectory.absolutePath,
+                '--authored-manifest', hmAuthoredManifest.absolutePath,
+                '--modified-inherited-manifest', hmModifiedInheritedManifest.absolutePath
+        ])
+    }
+}
