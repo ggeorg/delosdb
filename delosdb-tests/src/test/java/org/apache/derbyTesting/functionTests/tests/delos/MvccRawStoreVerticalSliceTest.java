@@ -126,7 +126,6 @@ public final class MvccRawStoreVerticalSliceTest extends MvccSqlTestSupport {
                 assertTrue(expected.toString(),
                         containsMessage(expected, "retired external delos_mvcc format"));
             }
-            shutdownDatabase(database);
         }
 
         Files.delete(retainedMarker);

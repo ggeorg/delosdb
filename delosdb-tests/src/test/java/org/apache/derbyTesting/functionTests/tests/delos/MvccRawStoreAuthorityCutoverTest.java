@@ -85,7 +85,6 @@ public final class MvccRawStoreAuthorityCutoverTest extends MvccSqlTestSupport {
                 assertTrue(expected.toString(),
                         containsMessage(expected, "No active RawStore-backed delos_mvcc runtime"));
             }
-            shutdownDatabase(database);
         }
 
         Files.delete(retainedMarker);
