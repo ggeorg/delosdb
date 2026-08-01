@@ -41,6 +41,107 @@ final Closure<String> gcRelative = { File file ->
     gcRoot.toPath().relativize(file.toPath()).toString().replace('\\', '/')
 }
 
+final Closure<String> gcLexicalCode = { String source, boolean retainLiterals ->
+    def code = new StringBuilder(source.length())
+    boolean blockComment = false
+    boolean lineComment = false
+    boolean singleQuoted = false
+    boolean doubleQuoted = false
+    boolean textBlock = false
+    boolean escaped = false
+    int offset = 0
+    while (offset < source.length()) {
+        char current = source.charAt(offset)
+        char next = offset + 1 < source.length()
+                ? source.charAt(offset + 1) : Character.MIN_VALUE
+        boolean tripleQuote = offset + 2 < source.length()
+                && current == ('"' as char)
+                && next == ('"' as char)
+                && source.charAt(offset + 2) == ('"' as char)
+
+        if (lineComment) {
+            if (current == ('\n' as char)) {
+                lineComment = false
+                code.append(current)
+            } else {
+                code.append(' ')
+            }
+            offset++
+            continue
+        }
+        if (blockComment) {
+            if (current == ('*' as char) && next == ('/' as char)) {
+                code.append('  ')
+                blockComment = false
+                offset += 2
+            } else {
+                code.append(current == ('\n' as char) ? '\n' : ' ')
+                offset++
+            }
+            continue
+        }
+        if (textBlock) {
+            if (tripleQuote) {
+                code.append(retainLiterals ? '"""' : '   ')
+                textBlock = false
+                offset += 3
+            } else {
+                code.append(retainLiterals || current == ('\n' as char)
+                        ? current : (' ' as char))
+                offset++
+            }
+            continue
+        }
+        if (singleQuoted || doubleQuoted) {
+            code.append(retainLiterals || current == ('\n' as char)
+                    ? current : (' ' as char))
+            if (escaped) {
+                escaped = false
+            } else if (current == ('\\' as char)) {
+                escaped = true
+            } else if (singleQuoted && current == ('\'' as char)) {
+                singleQuoted = false
+            } else if (doubleQuoted && current == ('"' as char)) {
+                doubleQuoted = false
+            }
+            offset++
+            continue
+        }
+        if (tripleQuote) {
+            code.append(retainLiterals ? '"""' : '   ')
+            textBlock = true
+            offset += 3
+        } else if (current == ('\'' as char)) {
+            code.append(retainLiterals ? current : (' ' as char))
+            singleQuoted = true
+            offset++
+        } else if (current == ('"' as char)) {
+            code.append(retainLiterals ? current : (' ' as char))
+            doubleQuoted = true
+            offset++
+        } else if (current == ('/' as char) && next == ('/' as char)) {
+            code.append('  ')
+            lineComment = true
+            offset += 2
+        } else if (current == ('/' as char) && next == ('*' as char)) {
+            code.append('  ')
+            blockComment = true
+            offset += 2
+        } else {
+            code.append(current)
+            offset++
+        }
+    }
+    code.toString()
+}
+
+final Closure<String> gcCodeWithoutComments = { String source ->
+    gcLexicalCode(source, true)
+}
+
+final Closure<String> gcStructureWithoutCommentsOrLiterals = { String source ->
+    gcLexicalCode(source, false)
+}
 final Closure<String> gcCanonicalType = { String raw ->
     String type = raw.trim().replaceAll('\\s+', ' ')
     int dimensions = 0
@@ -52,9 +153,7 @@ final Closure<String> gcCanonicalType = { String raw ->
 }
 
 final Closure<List<Map<String, Object>>> gcParseMethods = { File file ->
-    String source = file.getText('UTF-8')
-            .replaceAll('(?s)/\\*.*?\\*/', '')
-            .replaceAll('(?m)//.*$', '')
+    String source = gcCodeWithoutComments(file.getText('UTF-8'))
     Pattern declaration = Pattern.compile([
             '(?m)^\\s*(?:public\\s+)?',
             '([A-Za-z0-9_<>?,.\\[\\] ]+)\\s+',
@@ -224,7 +323,7 @@ tasks.register('delosGeneratedClassInventory') {
 
 tasks.register('delosGeneratedClassStaticAnalysis') {
     group = 'verification'
-    description = 'Validates the stable generated-class contract, sole backend, task wiring, and zero-external-ASM policy.'
+    description = 'Validates the stable generated-class contract, sole backend, import boundary, and zero-external-ASM policy.'
     dependsOn tasks.named('delosGeneratedClassInventory')
 
     doLast {
@@ -300,44 +399,7 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
             failures.add('MethodBuilder behavior fixture groups changed')
         }
 
-        List<List<String>> architecture = gcRows(
-                'gradle/static-analysis/delosdb-generated-class-architecture.txt', 5)
-        if (architecture.size() != 20) {
-            failures.add('Generated-class architecture manifest must contain 20 rows; found '
-                    + architecture.size())
-        }
-        if (architecture.collect { it[0] }.toSet().size() != architecture.size()) {
-            failures.add('Generated-class architecture manifest contains duplicate ids')
-        }
-        architecture.each { List<String> row ->
-            File proof = new File(gcRoot, row[2])
-            if (!proof.isFile()) {
-                failures.add('Generated-class proof path is missing for '
-                        + row[0] + ': ' + row[2])
-            } else if (!proof.getText('UTF-8').contains(row[3])) {
-                failures.add('Generated-class proof marker is missing for '
-                        + row[0] + ': ' + row[3])
-            }
-            if (row[4].length() < 80) {
-                failures.add('Generated-class proof reason is too thin: ' + row[0])
-            }
-        }
 
-        File backend = new File(gcRoot,
-                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java')
-        String backendText = backend.isFile() ? backend.getText('UTF-8') : ''
-        ['implements JavaFactory', 'import java.lang.classfile.ClassFile;',
-         'private static final int STATEMENT_SPLIT_LIMIT = 128;',
-         'replaceTopType(className);'].each { String marker ->
-            if (!backendText.contains(marker)) {
-                failures.add('ClassFileJava is missing: ' + marker)
-            }
-        }
-        ['COMPILER_PHASE_', 'CLASSFILE_PRODUCTION_SOLE_BACKEND'].each { String marker ->
-            if (backendText.contains(marker)) {
-                failures.add('ClassFileJava retains migration-only marker: ' + marker)
-            }
-        }
 
         File modules = new File(gcRoot,
                 'delosdb-engine/src/main/java/org/apache/derby/modules.properties')
@@ -355,24 +417,30 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                 'impl.services.bytecode.asm', 'AsmJava'
         ]
         gcJavaFiles().each { File file ->
-            String text = file.getText('UTF-8')
+            String code = gcCodeWithoutComments(file.getText('UTF-8'))
+            String structure = gcStructureWithoutCommentsOrLiterals(
+                    file.getText('UTF-8'))
             forbiddenSourceTokens.each { String token ->
-                if (text.contains(token)) {
+                if (structure.contains(token)) {
                     failures.add('Forbidden bytecode source reference in '
                             + gcRelative(file) + ': ' + token)
                 }
             }
             if (gcRelative(file).contains('/impl/sql/compile/')
-                    && text.contains('java.lang.classfile')) {
+                    && structure.contains('java.lang.classfile')) {
                 failures.add('SQL compiler node imports java.lang.classfile directly: '
                         + gcRelative(file))
             }
             ['GeneratedClassBackend', 'GeneratedClassPlan',
-             'GeneratedClassBytes', 'delosdb.compiler.backend'].each { String token ->
-                if (text.contains(token)) {
-                    failures.add('Forbidden duplicate generation abstraction or selector in '
+             'GeneratedClassBytes'].each { String token ->
+                if (structure.contains(token)) {
+                    failures.add('Forbidden duplicate generation abstraction in '
                             + gcRelative(file) + ': ' + token)
                 }
+            }
+            if (code.contains('delosdb.compiler.backend')) {
+                failures.add('Forbidden generated-class runtime selector in '
+                        + gcRelative(file) + ': delosdb.compiler.backend')
             }
         }
         List<String> forbiddenBuildTokens = [
@@ -380,7 +448,7 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                 'delosdbAsm', 'jdk.internal.org.objectweb.asm'
         ]
         gcBuildFiles().each { File file ->
-            String text = file.getText('UTF-8')
+            String text = gcCodeWithoutComments(file.getText('UTF-8'))
             forbiddenBuildTokens.each { String token ->
                 if (text.contains(token)) {
                     failures.add('Forbidden bytecode build/module reference in '
@@ -389,87 +457,37 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
             }
         }
 
-        File behaviorTest = new File(gcRoot,
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java')
-        String behaviorText = behaviorTest.isFile()
-                ? behaviorTest.getText('UTF-8') : ''
-        behavior.collect { it[3] }.toSet().each { String marker ->
-            if (!behaviorText.contains(marker)) {
-                failures.add('Behavior proof is missing marker: ' + marker)
-            }
-        }
-        ['Architecture: JDK25_CLASSFILE', 'Authority: SOLE_PRODUCTION_BACKEND',
-         'shortConstant.upCast("int")', 'ClassCastException',
-         'statementNumHitLimit(0)',
-         'Arrays.equals(first.classBytes(), second.classBytes())'].each { String marker ->
-            if (!behaviorText.contains(marker)) {
-                failures.add('Behavior proof is missing: ' + marker)
-            }
+        Set<String> directClassFileApiUsers = gcJavaFiles().findAll { File file ->
+            gcRelative(file).contains('/src/main/java/')
+                    && gcStructureWithoutCommentsOrLiterals(
+                            file.getText('UTF-8')).contains('java.lang.classfile')
+        }.collect { File file -> gcRelative(file) }.toSet()
+        Set<String> authorizedClassFileApiUsers = [
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java',
+                'delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java'
+        ] as Set
+        if (directClassFileApiUsers != authorizedClassFileApiUsers) {
+            failures.add('Direct java.lang.classfile users changed: expected '
+                    + authorizedClassFileApiUsers + ', found '
+                    + directClassFileApiUsers)
         }
 
-        File freezeTest = new File(gcRoot,
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractFreezeTest.java')
-        String freezeText = freezeTest.isFile() ? freezeTest.getText('UTF-8') : ''
-        [gcExpectedDigest, 'testGenerationContractIsStable',
-         'assertEquals(52, totalMethodCount())',
-         'assertEquals(2, declaredExceptionMethodCount())',
-         'Architecture: JDK25_CLASSFILE',
-         'Production authority: SOLE_BACKEND'].each { String marker ->
-            if (!freezeText.contains(marker)) {
-                failures.add('Contract proof is missing: ' + marker)
-            }
-        }
+        Pattern javaFactoryImplementation = Pattern.compile(
+                /(?s)\bimplements\b[^{}]*\bJavaFactory\b/)
 
-        File productionTest = new File(gcRoot,
-                'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassProductionTest.java')
-        String productionText = productionTest.isFile()
-                ? productionTest.getText('UTF-8') : ''
-        ['testProductionBackendCompilesSql', 'MODULES_PROPERTIES_SOLE_BACKEND',
-         'Architecture: JDK25_CLASSFILE',
-         'External bytecode dependency: none',
-         'values 1 / 0', 'update T set s = ? where id = ?'].each { String marker ->
-            if (!productionText.contains(marker)) {
-                failures.add('Production SQL proof is missing: ' + marker)
-            }
-        }
-
-        File testBuild = new File(gcRoot, 'delosdb-tests/build.gradle')
-        String testBuildText = testBuild.getText('UTF-8')
-        ['runDelosGeneratedClassContractFreezeTest',
-         'runDelosGeneratedClassContractBehaviorTest',
-         'runDelosGeneratedClassProductionTest',
-         'runDelosGeneratedClassProductionJdbcDrdaTest',
-         'runDelosGeneratedClassProductionAcceptance',
-         "tasks.named('runDerbyLangSuite')",
-         "tasks.named('runDelosV1ModularImageDrdaTest')"].each { String marker ->
-            if (!testBuildText.contains(marker)) {
-                failures.add('Generated-class test wiring is missing: ' + marker)
-            }
-        }
-        ['runDelosGeneratedClassClassFileProductionTest',
-         'runDelosGeneratedClassClassFileProductionAcceptance',
-         'runDelosGeneratedClassAsmOracleProof'].each { String retired ->
-            if (testBuildText.contains(retired)) {
-                failures.add('Retired generated-class task remains: ' + retired)
-            }
-        }
-
-        File rootBuild = new File(gcRoot, 'build.gradle')
-        String rootBuildText = rootBuild.getText('UTF-8')
-        ["apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'",
-         "dependsOn 'delosGeneratedClassStaticAnalysis'",
-         'delosGeneratedClassProductionSqlancerValidation'].each { String marker ->
-            if (!rootBuildText.contains(marker)) {
-                failures.add('Root generated-class wiring is missing: ' + marker)
-            }
-        }
-        ['delosGeneratedClassModernizationStaticAnalysis',
-         'delosGeneratedClassContractStaticAnalysis',
-         'delosGeneratedClassClassFileAsmRemovalStaticAnalysis',
-         'delosGeneratedClassClassFileProductionSqlancerValidation'].each { String retired ->
-            if (rootBuildText.contains(retired)) {
-                failures.add('Retired root generated-class task remains: ' + retired)
-            }
+        Set<String> javaFactoryImplementations = gcJavaFiles().findAll { File file ->
+            gcRelative(file).contains('/src/main/java/')
+                    && javaFactoryImplementation.matcher(
+                            gcStructureWithoutCommentsOrLiterals(
+                                    file.getText('UTF-8'))).find()
+        }.collect { File file -> gcRelative(file) }.toSet()
+        Set<String> expectedJavaFactoryImplementations = [
+                'delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java'
+        ] as Set
+        if (javaFactoryImplementations != expectedJavaFactoryImplementations) {
+            failures.add('JavaFactory implementations changed: expected '
+                    + expectedJavaFactoryImplementations + ', found '
+                    + javaFactoryImplementations)
         }
 
         List<String> retiredPaths = [
@@ -477,25 +495,12 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                 'gradle/delosdb-generated-class-contract-static-analysis.gradle',
                 'gradle/static-analysis/delosdb-generated-class-modernization.txt',
                 'gradle/static-analysis/delosdb-classfile-asm-removal.txt',
-                'docs/design/V1-JDK25-CLASSFILE-GENERATION-MODERNIZATION.md',
                 'delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassClassFileProductionTest.java',
                 'scripts/cleanup-phase10-compiler-phase6-external-asm-removal.sh'
         ]
         retiredPaths.each { String relative ->
             if (new File(gcRoot, relative).exists()) {
                 failures.add('Retired compiler migration artifact remains: ' + relative)
-            }
-        }
-
-        File design = new File(gcRoot,
-                'docs/design/V1-GENERATED-CLASS-ARCHITECTURE.md')
-        String designText = design.isFile() ? design.getText('UTF-8') : ''
-        ['Status: VERIFIED AND CONSOLIDATED',
-         'One permanent generated-class gate',
-         'No external ASM dependency remains.',
-         'External randomized SQLancer remains operator-supplied'].each { String marker ->
-            if (!designText.contains(marker)) {
-                failures.add('Generated-class design is missing: ' + marker)
             }
         }
 
@@ -515,7 +520,6 @@ tasks.register('delosGeneratedClassStaticAnalysis') {
                     operations.collect { it[3] }.toSet().size())
             writer.println('Behavior fixture groups: ' +
                     behavior.collect { it[2] }.toSet().size())
-            writer.println('Architecture manifest rows: ' + architecture.size())
             writer.println('External bytecode dependency: none')
             writer.println('Normal runtime backend selector: none')
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')

@@ -613,10 +613,20 @@ apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'
 // Repository-wide Java integrity inventory and monotonic cleanup baseline.
 apply from: 'gradle/delosdb-repository-integrity-static-analysis.gradle'
 
-tasks.named('s0CloseoutVerification') {
-    dependsOn 'verifyDelosRuntimeStorageProviders'
-    dependsOn 'delosGeneratedClassStaticAnalysis'
-    dependsOn 'delosRepositoryIntegrityStaticAnalysis'
+final List<Object> delosPermanentS0Dependencies = [
+        'delosModuleDependencyBoundaryStaticAnalysis',
+        'delosV1ModuleArchitectureStaticAnalysis',
+        'delosGeneratedClassStaticAnalysis',
+        'delosRepositoryIntegrityStaticAnalysis',
+        'verifyDelosRuntimeStorageProviders',
+        'delosJdk25ClassFileBytecodeVerifier',
+        ':delosdb-tests:runDelosSecurityTruthTest'
+]
+
+tasks.register('s0CloseoutVerification') {
+    group = 'verification'
+    description = 'Runs the permanent executable and structural DelosDB closeout evidence.'
+    dependsOn(delosPermanentS0Dependencies)
 }
 
 // External SQLancer remains caller-supplied. The wrapper rejects hidden

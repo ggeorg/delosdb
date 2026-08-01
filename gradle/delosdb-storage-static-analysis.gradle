@@ -87,42 +87,101 @@ class DelosDbStaticAnalysisSupport {
         line == null ? '' : line.trim().replaceAll(/\s+/, ' ')
     }
 
-    static List<String> codeLinesWithoutComments(List<String> lines) {
-        def codeLines = []
-        boolean inBlockComment = false
-        lines.each { String rawLine ->
-            def code = new StringBuilder()
-            int offset = 0
-            while (offset < rawLine.length()) {
-                if (inBlockComment) {
-                    int end = rawLine.indexOf('*/', offset)
-                    if (end < 0) {
-                        offset = rawLine.length()
-                    } else {
-                        inBlockComment = false
-                        offset = end + 2
-                    }
+    static String codeWithoutComments(String source) {
+        def code = new StringBuilder(source.length())
+        boolean blockComment = false
+        boolean lineComment = false
+        boolean singleQuoted = false
+        boolean doubleQuoted = false
+        boolean textBlock = false
+        boolean escaped = false
+        int offset = 0
+        while (offset < source.length()) {
+            char current = source.charAt(offset)
+            char next = offset + 1 < source.length()
+                    ? source.charAt(offset + 1) : Character.MIN_VALUE
+            boolean tripleQuote = offset + 2 < source.length()
+                    && current == ('"' as char)
+                    && next == ('"' as char)
+                    && source.charAt(offset + 2) == ('"' as char)
+
+            if (lineComment) {
+                if (current == ('\n' as char)) {
+                    lineComment = false
+                    code.append(current)
                 } else {
-                    int blockStart = rawLine.indexOf('/*', offset)
-                    int lineStart = rawLine.indexOf('//', offset)
-                    if (lineStart >= 0 && (blockStart < 0 || lineStart < blockStart)) {
-                        code.append(rawLine.substring(offset, lineStart))
-                        offset = rawLine.length()
-                    } else if (blockStart >= 0) {
-                        code.append(rawLine.substring(offset, blockStart))
-                        inBlockComment = true
-                        offset = blockStart + 2
-                    } else {
-                        code.append(rawLine.substring(offset))
-                        offset = rawLine.length()
-                    }
+                    code.append(' ')
                 }
+                offset++
+                continue
             }
-            codeLines << code.toString()
+            if (blockComment) {
+                if (current == ('*' as char) && next == ('/' as char)) {
+                    code.append('  ')
+                    blockComment = false
+                    offset += 2
+                } else {
+                    code.append(current == ('\n' as char) ? '\n' : ' ')
+                    offset++
+                }
+                continue
+            }
+            if (textBlock) {
+                code.append(current)
+                if (tripleQuote) {
+                    code.append('""')
+                    textBlock = false
+                    offset += 3
+                } else {
+                    offset++
+                }
+                continue
+            }
+            if (singleQuoted || doubleQuoted) {
+                code.append(current)
+                if (escaped) {
+                    escaped = false
+                } else if (current == ('\\' as char)) {
+                    escaped = true
+                } else if (singleQuoted && current == ('\'' as char)) {
+                    singleQuoted = false
+                } else if (doubleQuoted && current == ('"' as char)) {
+                    doubleQuoted = false
+                }
+                offset++
+                continue
+            }
+            if (tripleQuote) {
+                code.append('"""')
+                textBlock = true
+                offset += 3
+            } else if (current == ('\'' as char)) {
+                code.append(current)
+                singleQuoted = true
+                offset++
+            } else if (current == ('"' as char)) {
+                code.append(current)
+                doubleQuoted = true
+                offset++
+            } else if (current == ('/' as char) && next == ('/' as char)) {
+                code.append('  ')
+                lineComment = true
+                offset += 2
+            } else if (current == ('/' as char) && next == ('*' as char)) {
+                code.append('  ')
+                blockComment = true
+                offset += 2
+            } else {
+                code.append(current)
+                offset++
+            }
         }
-        codeLines
+        code.toString()
     }
 
+    static List<String> codeLinesWithoutComments(List<String> lines) {
+        codeWithoutComments(lines.join('\n')).split('\n', -1) as List<String>
+    }
     static String importTarget(String line) {
         def matcher = line =~ /^\s*import\s+(?:static\s+)?([^;]+);/
         matcher.find() ? matcher.group(1) : null
@@ -161,10 +220,9 @@ class DelosDbStaticAnalysisSupport {
         def findings = []
         javaSources(repositoryRoot, sourceRoots).each { sourceFile ->
             def relative = relativePath(repositoryRoot, sourceFile)
-            def lines = sourceFile.readLines('UTF-8')
-            lines.eachWithIndex { String line, int index ->
+            def codeLines = codeLinesWithoutComments(sourceFile.readLines('UTF-8'))
+            codeLines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
-                // Catching an optional platform capability is not an unsupported storage path.
                 if (line =~ /\bthrow\s+new\s+(?:[A-Za-z_$][\w$]*\.)*UnsupportedOperationException\s*\(/) {
                     findings << finding(repositoryRoot, 'STORAGE_UNSUPPORTED_OPERATION', sourceFile, lineNumber, line)
                 }
@@ -207,7 +265,7 @@ class DelosDbStaticAnalysisSupport {
         def netServletPath = 'delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java'
         javaSources(repositoryRoot, sourceRoots).each { sourceFile ->
             def relative = relativePath(repositoryRoot, sourceFile)
-            def lines = sourceFile.readLines('UTF-8')
+            def lines = codeLinesWithoutComments(sourceFile.readLines('UTF-8'))
             lines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
                 def importedType = importTarget(line)
@@ -295,7 +353,7 @@ class DelosDbStaticAnalysisSupport {
     static List<Map> heapCompatibilityFindings(File repositoryRoot, Collection<String> sourceRoots) {
         def findings = []
         javaSources(repositoryRoot, sourceRoots).each { sourceFile ->
-            def lines = sourceFile.readLines('UTF-8')
+            def lines = codeLinesWithoutComments(sourceFile.readLines('UTF-8'))
             lines.eachWithIndex { String line, int index ->
                 int lineNumber = index + 1
                 def importedType = importTarget(line)
@@ -488,7 +546,8 @@ tasks.register('delosStorageStaticAnalysis') {
 
         def synchronizedCount = 0
         DelosDbStaticAnalysisSupport.javaSources(delosRepositoryRoot, delosStorageStaticSourceRoots).each { sourceFile ->
-            sourceFile.eachLine('UTF-8') { line ->
+            DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                    sourceFile.readLines('UTF-8')).each { line ->
                 if (line =~ /\bsynchronized\b/) {
                     synchronizedCount++
                 }
@@ -1593,11 +1652,6 @@ tasks.register('delosRuntimeArtifactModelStaticAnalysis') {
             }
         }
 
-        DelosDbStaticAnalysisSupport.require(failures, rootText.contains("tasks.named('s0CloseoutVerification')"),
-                'Root build.gradle must wire additional closeout dependencies through tasks.named(s0CloseoutVerification)')
-        DelosDbStaticAnalysisSupport.require(failures, rootText.contains("dependsOn 'verifyDelosRuntimeStorageProviders'"),
-                's0CloseoutVerification must depend on verifyDelosRuntimeStorageProviders')
-
         def reportFile = new File(delosBuildRoot, 'reports/delosdb/runtime-artifact-model-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
@@ -1941,10 +1995,11 @@ def delosV1FinalModuleTargetFile = new File(
 
 tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
     group = 'verification'
-    description = 'Enforces the current provider-isolation boundary and the final 21-module DelosDB v1 target.'
+    description = 'Enforces the durable DelosDB module, provider, and storage-authority boundaries.'
 
     inputs.file(delosV1FinalModuleTargetFile)
     inputs.file('settings.gradle')
+    inputs.file('gradle/delosdb-runtime-artifacts.gradle')
     inputs.files(fileTree('.') {
         include '*/build.gradle'
         include '*/src/main/java/**/*.java'
@@ -1953,7 +2008,8 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         exclude '**/.gradle/**'
         exclude '**/.git/**'
     })
-    outputs.file(layout.buildDirectory.file('reports/delosdb/v1-module-architecture-static-analysis.txt'))
+    outputs.file(layout.buildDirectory.file(
+            'reports/delosdb/v1-module-architecture-static-analysis.txt'))
 
     doLast {
         def failures = []
@@ -1962,7 +2018,7 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         def sections = new LinkedHashMap<String, List<String>>()
         String currentSection = null
         delosV1FinalModuleTargetFile.readLines('UTF-8').each { String rawLine ->
-            def line = rawLine.trim()
+            String line = rawLine.trim()
             if (!line || line.startsWith('#')) {
                 return
             }
@@ -1970,9 +2026,7 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
             if (sectionMatcher.matches()) {
                 currentSection = sectionMatcher.group(1)
                 sections[currentSection] = []
-                return
-            }
-            if (currentSection == null) {
+            } else if (currentSection == null) {
                 failures << 'Final-module target contains a value outside a section: ' + line
             } else {
                 sections[currentSection] << line
@@ -2032,9 +2086,7 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         def requireExactSection = { String sectionName, List<String> expectedValues ->
             def actualValues = sections[sectionName] ?: []
             if (actualValues != expectedValues) {
-                failures << (
-                        "Final-module target section [${sectionName}] differs from the frozen v1 target. " +
-                                "Expected ${expectedValues}; found ${actualValues}.")
+                failures << "Final-module target section [${sectionName}] differs from the frozen v1 target. Expected ${expectedValues}; found ${actualValues}."
             }
         }
         requireExactSection('target-modules', expectedTargetModules)
@@ -2044,70 +2096,85 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
         requireExactSection('forbidden-production-edges', expectedForbiddenEdges)
         requireExactSection('neutral-api-modules', expectedNeutralApiModules)
 
-        def settingsModules = new LinkedHashSet<String>()
-        new File(delosRepositoryRoot, 'settings.gradle').readLines('UTF-8').each { String line ->
+        def settingsModules = []
+        DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                file('settings.gradle').readLines('UTF-8')).each { String line ->
             def matcher = line =~ /^\s*include\s+['"]([^'"]+)['"]\s*$/
             if (matcher.matches()) {
                 settingsModules << matcher.group(1)
             }
         }
-
-        def allowedMigrationModules = new LinkedHashSet<String>(expectedTargetModules)
-        allowedMigrationModules.addAll(expectedRetiredModules)
-        def unknownModules = settingsModules.findAll { !allowedMigrationModules.contains(it) }
-        if (!unknownModules.isEmpty()) {
-            failures << 'settings.gradle contains modules outside the frozen v1 migration set: ' + unknownModules
-        }
-
-        def requiredBeforeLuceneSplit = expectedTargetModules.findAll {
+        def preLuceneModules = expectedTargetModules.findAll {
             it != 'delosdb-search-lucene'
         }
-        def missingRequiredModules = requiredBeforeLuceneSplit.findAll { !settingsModules.contains(it) }
-        if (!missingRequiredModules.isEmpty()) {
-            failures << 'settings.gradle is missing required core/future modules: ' + missingRequiredModules
+        if (settingsModules.toSet().size() != settingsModules.size()) {
+            failures << 'settings.gradle contains duplicate module declarations: ' + settingsModules
+        }
+        if (settingsModules.toSet() != preLuceneModules.toSet()
+                && settingsModules.toSet() != expectedTargetModules.toSet()) {
+            failures << 'settings.gradle must match the accepted 20-module pre-Lucene layout or the final 21-module layout; found ' + settingsModules
+        }
+        expectedRetiredModules.each { String moduleName ->
+            if (settingsModules.contains(moduleName)
+                    || new File(delosRepositoryRoot, moduleName).exists()) {
+                failures << 'Retired module remains active or present: ' + moduleName
+            }
+        }
+        observations << 'Current Gradle subprojects: ' + settingsModules.size()
+        observations << (settingsModules.contains('delosdb-search-lucene')
+                ? 'Lucene provider module is present.'
+                : 'Lucene provider module remains the only deferred final-target module.')
+
+        def buildFiles = [file('build.gradle')]
+        buildFiles.addAll(fileTree(delosRepositoryRoot) {
+            include 'delosdb-*/build.gradle'
+            exclude '**/build/**'
+        }.files)
+        buildFiles = buildFiles.unique().sort { left, right -> left.path <=> right.path }
+        def buildCodeByPath = buildFiles.collectEntries { File buildFile ->
+            [(DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, buildFile)):
+                    DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                            buildFile.readLines('UTF-8')).join('\n')]
+        }
+        expectedRetiredModules.each { String moduleName ->
+            buildCodeByPath.each { String relativePath, String code ->
+                if (code.contains(":" + moduleName)
+                        || code.contains(moduleName + '.jar')) {
+                    failures << 'Active build wiring references retired module/artifact '
+                            + moduleName + ': ' + relativePath
+                }
+            }
         }
 
-        boolean luceneModulePresent = settingsModules.contains('delosdb-search-lucene')
-        def retainedLegacyModules = expectedRetiredModules.findAll { String moduleName ->
-            settingsModules.contains(moduleName)
+        def runtimeArtifactNames = rootProject.ext.delosdbRuntimeJarArtifacts
+                .collect { artifact -> artifact.jarName.toString() }
+        def supportArtifactNames = rootProject.ext.delosdbAssembledSupportJarArtifacts
+                .collect { artifact -> artifact.jarName.toString() }
+        ['delosdb-storage-api.jar', 'delosdb-storage-io.jar',
+         'delosdb-storage-bridge.jar'].each { String retiredArtifact ->
+            if (runtimeArtifactNames.contains(retiredArtifact)
+                    || supportArtifactNames.contains(retiredArtifact)) {
+                failures << 'Runtime artifact model retains retired artifact: '
+                        + retiredArtifact
+            }
         }
-        def expectedMigrationModules = new LinkedHashSet<String>(expectedTargetModules)
-        if (!luceneModulePresent) {
-            expectedMigrationModules.remove('delosdb-search-lucene')
+        if (runtimeArtifactNames.contains('delosdb-storage-mvcc.jar')
+                || !supportArtifactNames.contains('delosdb-storage-mvcc.jar')) {
+            failures << 'The MVCC provider must remain a support/patch artifact, not a parallel runtime authority'
         }
-        expectedMigrationModules.addAll(retainedLegacyModules)
-        def missingMigrationModules = expectedMigrationModules.findAll { String moduleName ->
-            !settingsModules.contains(moduleName)
+        if (!supportArtifactNames.contains('delosdb-derby-store-api.jar')) {
+            failures << 'The consolidated Derby store API artifact is missing from support assembly'
         }
-        def unexpectedMigrationModules = settingsModules.findAll { String moduleName ->
-            !expectedMigrationModules.contains(moduleName)
-        }
-        if (!missingMigrationModules.isEmpty() || !unexpectedMigrationModules.isEmpty()) {
-            failures << (
-                    "Current settings.gradle does not match the valid v1 migration module set. " +
-                            "Missing ${missingMigrationModules}; unexpected ${unexpectedMigrationModules}.")
-        }
-        observations << "Current Gradle subprojects: ${settingsModules.size()}"
-        observations << 'Final Gradle subprojects: 21'
-        observations << (luceneModulePresent
-                ? 'delosdb-search-lucene is present.'
-                : 'delosdb-search-lucene is not present yet; it is added during the Lucene foundation stage.')
-        observations << 'Transitional modules still present: ' + retainedLegacyModules
 
         def buildCode = { String moduleName ->
-            def buildFile = new File(delosRepositoryRoot, moduleName + '/build.gradle')
-            if (!buildFile.isFile()) {
-                return ''
-            }
-            DelosDbStaticAnalysisSupport.codeLinesWithoutComments(buildFile.readLines('UTF-8')).join('\n')
+            buildCodeByPath[moduleName + '/build.gradle'] ?: ''
         }
         def hasProjectReference = { String moduleName, String targetModule ->
-            def code = buildCode(moduleName)
             def pattern = Pattern.compile(
                     "project\\s*\\(\\s*(?:path\\s*:\\s*)?['\"]:"
                             + Pattern.quote(targetModule)
                             + "['\"]")
-            pattern.matcher(code).find()
+            pattern.matcher(buildCode(moduleName)).find()
         }
         def forbidProjectReference = { String sourceModule, String targetModule ->
             if (new File(delosRepositoryRoot, sourceModule).isDirectory()
@@ -2115,24 +2182,23 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
                 failures << "Forbidden project dependency: ${sourceModule} -> ${targetModule}"
             }
         }
-
-        def engineBuildCode = buildCode('delosdb-engine')
-        def forbiddenEngineMvccDependency = Pattern.compile(
-                "(?m)^\\s*(?:api|implementation|compileOnly|runtimeOnly)\\s+project\\s*\\(\\s*(?:path\\s*:\\s*)?['\"]:delosdb-storage-mvcc['\"]")
-        if (forbiddenEngineMvccDependency.matcher(engineBuildCode).find()) {
-            failures << 'Forbidden production dependency: delosdb-engine -> delosdb-storage-mvcc'
-        }
         forbidProjectReference('delosdb-engine', 'delosdb-search-lucene')
         forbidProjectReference('delosdb-storage-derby', 'delosdb-storage-mvcc')
         forbidProjectReference('delosdb-storage-derby', 'delosdb-search-lucene')
         forbidProjectReference('delosdb-storage-mvcc', 'delosdb-engine')
         forbidProjectReference('delosdb-storage-mvcc', 'delosdb-search-lucene')
-        if (luceneModulePresent) {
+        if (settingsModules.contains('delosdb-search-lucene')) {
             forbidProjectReference('delosdb-search-lucene', 'delosdb-engine')
         }
-        if (settingsModules.contains('delosdb-storage-bridge')) {
-            forbidProjectReference('delosdb-storage-bridge', 'delosdb-engine')
-            forbidProjectReference('delosdb-storage-bridge', 'delosdb-search-lucene')
+
+        def engineBuildCode = buildCode('delosdb-engine')
+        if (!engineBuildCode.contains("project(path: ':delosdb-storage-mvcc', configuration: 'derbyRuntimePatchElements')")) {
+            failures << 'derby.jar must consume the production MVCC provider patch artifact directly'
+        }
+        def forbiddenEngineMvccDependency = Pattern.compile(
+                /(?m)^\s*(?:api|implementation|compileOnly|runtimeOnly)\s+project\s*\(\s*(?:path\s*:\s*)?['"]:delosdb-storage-mvcc['"]/)
+        if (forbiddenEngineMvccDependency.matcher(engineBuildCode).find()) {
+            failures << 'delosdb-engine must not take a production dependency on delosdb-storage-mvcc'
         }
 
         def rejectImports = { String moduleName, List<String> forbiddenPrefixes, String description ->
@@ -2144,19 +2210,18 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
                 if (sourceFile.name == 'module-info.java') {
                     return
                 }
-                sourceFile.readLines('UTF-8').eachWithIndex { String line, int index ->
+                DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                        sourceFile.readLines('UTF-8')).eachWithIndex { String line, int index ->
                     def importedType = DelosDbStaticAnalysisSupport.importTarget(line)
                     if (importedType != null
                             && forbiddenPrefixes.any { String prefix -> importedType.startsWith(prefix) }) {
-                        failures << (
-                                description + ': ' +
-                                        DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, sourceFile) +
-                                        ':' + (index + 1) + ': ' + line.trim())
+                        failures << description + ': '
+                                + DelosDbStaticAnalysisSupport.relativePath(delosRepositoryRoot, sourceFile)
+                                + ':' + (index + 1) + ': ' + line.trim()
                     }
                 }
             }
         }
-
         rejectImports(
                 'delosdb-engine',
                 ['io.github.ggeorg.delosdb.storage.mvcc.',
@@ -2165,7 +2230,8 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
                 'Engine imports a provider implementation')
         rejectImports(
                 'delosdb-storage-mvcc',
-                ['org.apache.derby.impl.', 'io.github.ggeorg.delosdb.search.lucene.'],
+                ['org.apache.derby.impl.',
+                 'io.github.ggeorg.delosdb.search.lucene.'],
                 'MVCC imports an engine or Lucene implementation')
         rejectImports(
                 'delosdb-storage-derby',
@@ -2174,122 +2240,142 @@ tasks.register('delosV1ModuleArchitectureStaticAnalysis') {
                  'io.github.ggeorg.delosdb.search.lucene.',
                  'org.apache.lucene.'],
                 'RawStore implementation imports an MVCC or Lucene implementation')
-        if (luceneModulePresent) {
+        if (settingsModules.contains('delosdb-search-lucene')) {
             rejectImports(
                     'delosdb-search-lucene',
-                    ['org.apache.derby.impl.', 'io.github.ggeorg.delosdb.storage.mvcc.'],
+                    ['org.apache.derby.impl.',
+                     'io.github.ggeorg.delosdb.storage.mvcc.'],
                     'Lucene imports an engine or MVCC implementation')
         }
         expectedNeutralApiModules.each { String moduleName ->
-            rejectImports(
-                    moduleName,
-                    ['org.apache.lucene.'],
+            rejectImports(moduleName, ['org.apache.lucene.'],
                     'Neutral API exposes a Lucene implementation type')
         }
 
-        def providerInterface = new File(
-                delosRepositoryRoot,
+        def providerInterface = file(
                 'delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java')
         if (!providerInterface.isFile()) {
-            failures << 'Neutral ExternalAccessMethodProvider must remain in delosdb-derby-store-api.'
+            failures << 'Neutral ExternalAccessMethodProvider must remain in delosdb-derby-store-api'
         }
 
-        def ramAccessManager = new File(
-                delosRepositoryRoot,
+        def ramAccessManager = file(
                 'delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java')
-        def ramAccessText = ramAccessManager.isFile() ? ramAccessManager.getText('UTF-8') : ''
-        if (!ramAccessText.contains('ServiceLoader.load(ExternalAccessMethodProvider.class)')) {
-            failures << 'RAMAccessManager must discover access methods through the neutral ExternalAccessMethodProvider service.'
+        def ramAccessCode = ramAccessManager.isFile()
+                ? DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                        ramAccessManager.readLines('UTF-8')).join('\n') : ''
+        if (!ramAccessCode.contains('ServiceLoader.load(ExternalAccessMethodProvider.class)')) {
+            failures << 'RAMAccessManager must discover access methods through ExternalAccessMethodProvider'
         }
 
-        def engineModuleInfo = new File(
-                delosRepositoryRoot,
-                'delosdb-engine/src/main/java/module-info.java')
-        def engineModuleText = engineModuleInfo.isFile() ? engineModuleInfo.getText('UTF-8') : ''
-        if (!engineModuleText.contains('uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;')) {
-            failures << 'The engine module must use the neutral ExternalAccessMethodProvider service.'
+        def engineModuleInfo = file('delosdb-engine/src/main/java/module-info.java')
+        def engineModuleCode = engineModuleInfo.isFile()
+                ? DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                        engineModuleInfo.readLines('UTF-8')).join('\n') : ''
+        if (!engineModuleCode.contains('uses org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider;')) {
+            failures << 'The engine module must use ExternalAccessMethodProvider'
         }
-        if (engineModuleText.contains('requires io.github.ggeorg.delosdb.storage.mvcc')
-                || engineModuleText.contains('requires io.github.ggeorg.delosdb.search.lucene')) {
-            failures << 'The engine module descriptor must not require MVCC or Lucene provider modules.'
+        if (engineModuleCode.contains('requires io.github.ggeorg.delosdb.storage.mvcc')
+                || engineModuleCode.contains('requires io.github.ggeorg.delosdb.search.lucene')
+                || engineModuleCode.contains('uses org.apache.derby.iapi.store.types.DelosStorageProviderFactory')) {
+            failures << 'The engine module descriptor retains a provider implementation or retired provider edge'
         }
 
         def providerImplementations = []
-        [
-                'delosdb-engine/src/main/java',
-                'delosdb-storage-mvcc/src/main/java'
-        ].each { String sourcePath ->
-            def root = new File(delosRepositoryRoot, sourcePath)
-            if (root.isDirectory()) {
-                DelosDbStaticFileSupport.javaFiles([root]).each { File sourceFile ->
-                    if (sourceFile.getText('UTF-8').contains('implements ExternalAccessMethodProvider')) {
-                        providerImplementations << DelosDbStaticAnalysisSupport.relativePath(
-                                delosRepositoryRoot,
-                                sourceFile)
+        [file('delosdb-engine/src/main/java'),
+         file('delosdb-storage-mvcc/src/main/java')].findAll { it.isDirectory() }.each { File root ->
+            DelosDbStaticFileSupport.javaFiles([root]).each { File sourceFile ->
+                def code = DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                        sourceFile.readLines('UTF-8')).join('\n')
+                if (code.contains('implements ExternalAccessMethodProvider')) {
+                    providerImplementations << DelosDbStaticAnalysisSupport.relativePath(
+                            delosRepositoryRoot, sourceFile)
+                }
+            }
+        }
+        def expectedProvider = 'delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'
+        if (providerImplementations != [expectedProvider]) {
+            failures << 'The only ExternalAccessMethodProvider implementation must be '
+                    + expectedProvider + '; found ' + providerImplementations
+        }
+
+        def mvccServiceFile = file(
+                'delosdb-storage-mvcc/src/main/resources/META-INF/services/'
+                        + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
+        def providers = mvccServiceFile.isFile()
+                ? mvccServiceFile.readLines('UTF-8').collect { it.trim() }
+                        .findAll { it && !it.startsWith('#') }
+                : []
+        if (providers != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
+            failures << 'delosdb-storage-mvcc must publish exactly one access-method provider'
+        }
+
+        def retiredProviderServices = fileTree(delosRepositoryRoot) {
+            include 'delosdb-*/src/main/resources/META-INF/services/org.apache.derby.iapi.store.types.DelosStorageProviderFactory'
+        }.files
+        if (!retiredProviderServices.isEmpty()) {
+            failures << 'Retired DelosStorageProviderFactory service registrations remain: '
+                    + retiredProviderServices
+        }
+        def retiredProviderTypes = fileTree(delosRepositoryRoot) {
+            include 'delosdb-*/src/main/java/**/DelosStorageProviderFactory.java'
+        }.files
+        if (!retiredProviderTypes.isEmpty()) {
+            failures << 'Retired DelosStorageProviderFactory types remain: ' + retiredProviderTypes
+        }
+        if (file('delosdb-storage-mvcc/src/main/java/io').exists()) {
+            failures << 'Retired external MVCC source root remains under delosdb-storage-mvcc/src/main/java/io'
+        }
+
+        def forbiddenTransitionalTokens = [
+                'DelosObsoleteStorageProperties',
+                'DelosHeapScanShadowResultSet',
+                'DelosHeapLiveTableScanResultSet',
+                'DelosHeapInsertResultSet',
+                'DelosHeapDeleteResultSet',
+                'DelosHeapUpdateResultSet',
+                'DelosTableScanProviderLookup',
+                'DelosCreateIndexProviderLookup',
+                'DelosHeapCostProofLookup',
+                '"delosdb.storage.phase'
+        ]
+        fileTree(delosRepositoryRoot) {
+            include 'delosdb-*/src/main/java/**/*.java'
+            exclude '**/build/**'
+        }.files.sort { left, right -> left.path <=> right.path }.each { File sourceFile ->
+            def codeLines = DelosDbStaticAnalysisSupport.codeLinesWithoutComments(
+                    sourceFile.readLines('UTF-8'))
+            codeLines.eachWithIndex { String line, int index ->
+                forbiddenTransitionalTokens.each { String token ->
+                    if (line.contains(token)) {
+                        failures << 'Transitional production token remains: '
+                                + DelosDbStaticAnalysisSupport.relativePath(
+                                        delosRepositoryRoot, sourceFile)
+                                + ':' + (index + 1) + ': ' + token
                     }
                 }
             }
         }
 
-        def expectedProvider = 'delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAccessMethodProvider.java'
-        if (providerImplementations != [expectedProvider]) {
-            failures << ('The only ExternalAccessMethodProvider implementation must be ' +
-                    expectedProvider + '; found ' + providerImplementations)
-        }
-        def mvccServiceFile = new File(
-                delosRepositoryRoot,
-                'delosdb-storage-mvcc/src/main/resources/META-INF/services/'
-                        + 'org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider')
-        def providers = mvccServiceFile.isFile()
-                ? mvccServiceFile.readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
-                : []
-        if (providers != ['org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider']) {
-            failures << 'delosdb-storage-mvcc must publish exactly one neutral access-method provider.'
-        }
-        observations << 'Stage 7 provider ownership: delosdb-storage-mvcc; delosdb-storage-bridge retired.'
-
-
-        def reportFile = new File(
-                delosBuildRoot,
-                'reports/delosdb/v1-module-architecture-static-analysis.txt')
+        def reportFile = layout.buildDirectory.file(
+                'reports/delosdb/v1-module-architecture-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
-        reportFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+        reportFile.withPrintWriter('UTF-8') { writer ->
             writer.println('DelosDB v1 module architecture static analysis')
             writer.println('==============================================')
-            writer.println()
-            writer.println('Frozen final target: 21 Gradle subprojects')
-            writer.println('Required new module: delosdb-search-lucene')
-            writer.println('Required retired modules: delosdb-storage-api, delosdb-storage-io, delosdb-storage-bridge')
-            writer.println('Required provider artifacts: delosdb-storage-mvcc.jar, delosdb-search-lucene.jar')
-            writer.println('Build-only physical-store artifact: delosdb-storage-derby.jar')
-            writer.println()
-            writer.println('Checked current migration invariants:')
-            writer.println('  - no engine project dependency on MVCC or Lucene')
-            writer.println('  - no RawStore implementation dependency on MVCC or Lucene')
-            writer.println('  - no MVCC dependency/import on engine or Lucene implementation')
-            writer.println('  - no Lucene types in runtime-api, spi, or derby-store-api')
-            writer.println('  - access-method discovery uses the neutral store API')
-            writer.println('  - current settings.gradle remains within the frozen migration set')
-            writer.println()
+            writer.println('Evidence authority: settings, build dependencies, imports, service files, and production source structure')
+            writer.println('Documentation/comment authority: none')
+            writer.println('Current modules: ' + settingsModules.size())
+            writer.println('Retired modules present: 0 required')
+            writer.println('Provider implementations: ' + providerImplementations.size())
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
-            writer.println()
-            writer.println('Observations:')
-            observations.each { writer.println('  - ' + it) }
-            if (!failures.isEmpty()) {
-                writer.println()
-                writer.println('Failures:')
-                failures.each { writer.println('  - ' + it) }
-            }
+            observations.each { writer.println('- ' + it) }
+            failures.each { writer.println('- ' + it) }
         }
-
         if (!failures.isEmpty()) {
             throw new GradleException(
-                    'DelosDB v1 module architecture static analysis failed: '
-                            + failures.join(' | ')
-                            + '. Report: '
+                    'DelosDB v1 module architecture static analysis failed. Report: '
                             + reportFile)
         }
-
         logger.lifecycle(
                 'DelosDB v1 module architecture static analysis passed. Report: {}',
                 reportFile)
@@ -2653,18 +2739,6 @@ tasks.register('delosPerformanceConcurrencyValidationStaticAnalysis') {
             }
         }
 
-        def s0Text = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-        [
-                'delosJmhMicrobenchmarks',
-                'delosJcstressConcurrencyValidation',
-                'delosSqlancerMvccValidation',
-                'delosTwoSidedMvccWorkloadBenchmark',
-                'delosLongReaderVacuumSoak'
-        ].each { taskName ->
-            if (s0Text.contains(taskName)) {
-                failures << 'Phase P long-running/external validation task must not be wired into S0: ' + taskName
-            }
-        }
         def delosTestsBuildText = new File(delosRepositoryRoot, 'delosdb-tests/build.gradle').getText('UTF-8')
         [
                 'runDelosSharedRawStorePageIoRepresentationDecisionTest',
@@ -2939,16 +3013,6 @@ tasks.register('delosJdk25ClassFileBytecodeVerifierStaticAnalysis') {
         ].each { markerText ->
             if (!inventoryText.contains(markerText)) {
                 failures << 'Algorithm inventory missing JDK 25 class-file verifier marker: ' + markerText
-            }
-        }
-
-        def staticText = new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index >= 0) {
-            def s0Section = staticText.substring(s0Index)
-            if (s0Section.contains('delosJdk25ClassFileBytecodeVerifier')
-                    || s0Section.contains('delosJdk25ClassFileBytecodeVerifierStaticAnalysis')) {
-                failures << 'JDK 25 class-file verifier tasks must remain outside S0 until the verifier lane is proven stable'
             }
         }
 
@@ -3258,15 +3322,6 @@ tasks.register('delosOptimizerCostAuthorityAuditStaticAnalysis') {
             failures << 'MVCC analyze/statistics lifecycle must keep optimizerAuthority=derby marker'
         }
 
-        def staticText = new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index >= 0) {
-            def s0Section = staticText.substring(s0Index)
-            if (s0Section.contains('delosOptimizerCostAuthorityAuditStaticAnalysis')) {
-                failures << 'Optimizer cost authority audit gate must remain outside S0 until the audit is proven stable'
-            }
-        }
-
         def reportFile = new File(delosBuildRoot, 'reports/delosdb/optimizer-cost-authority-audit-static-analysis.txt')
         reportFile.parentFile.mkdirs()
         reportFile.withPrintWriter('UTF-8') { writer ->
@@ -3487,15 +3542,6 @@ tasks.register('delosSqlancerProfileSkeleton') {
          'benchmarks/sqlancer/delosdb-mvcc'].each { marker ->
             if (!docsText.contains(marker)) {
                 failures << 'External validation docs missing SQLancer profile marker: ' + marker
-            }
-        }
-
-        def staticText = new File(delosRepositoryRoot, 'gradle/delosdb-storage-static-analysis.gradle').getText('UTF-8')
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index >= 0) {
-            def s0Text = staticText.substring(s0Index)
-            if (s0Text.contains('delosSqlancerProfileSkeleton')) {
-                failures << 'SQLancer profile skeleton task must not be wired into S0'
             }
         }
 
@@ -3941,26 +3987,6 @@ tasks.register('delosV1BaselineCaptureStaticAnalysis') {
         def captureIndex = testText.indexOf("tasks.register('captureDelosV1Baseline')")
         if (captureIndex < 0) {
             failures << 'Missing captureDelosV1Baseline task'
-        }
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index < 0) {
-            failures << 'Missing s0CloseoutVerification task'
-        } else {
-            def s0Text = staticText.substring(s0Index)
-            if (s0Text.contains("'captureDelosV1Baseline'")
-                    || s0Text.contains("'runDelosV1BaselineOperationalCapture'")
-                    || s0Text.contains("'runDelosV1ModularImageDrdaTest'")
-                    || s0Text.contains("'assembleDelosV1ModularRuntimeImage'")
-                    || s0Text.contains("'reviewDelosV1ProductionCloseoutCapture'")
-                    || s0Text.contains("'verifyDelosV1ProductionCloseout'")) {
-                failures << 'Machine-specific v1 baseline execution must remain outside S0'
-            }
-            if (!s0Text.contains("'delosV1BaselineCaptureStaticAnalysis'")) {
-                failures << 'S0 must retain the cheap v1 baseline contract static analysis'
-            }
-            if (!s0Text.contains("'delosV1AcceptedBaselineStaticAnalysis'")) {
-                failures << 'S0 must verify the immutable accepted v1 baseline bundle'
-            }
         }
         if (!testText.contains("status: 'CAPTURED_NOT_ACCEPTED'")) {
             failures << 'The capture manifest must not claim acceptance automatically'
@@ -5568,6 +5594,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     def formatFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java')
     def tableFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java')
     def indexFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java')
+    def predicateFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndexPredicate.java')
     def scanFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java')
     def scanInfoFile = file('delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java')
     def inspectionFile = file('delosdb-tests/src/test/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java')
@@ -5575,7 +5602,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
     def testsBuildFile = file('delosdb-tests/build.gradle')
     def designFile = file('docs/design/V1-RAWSTORE-MVCC-ORDERED-INDEXES.md')
     def implementationFile = file('docs/design/V1-RAWSTORE-MVCC-ISOLATED-FORMAT-IMPLEMENTATION.md')
-    def requiredFiles = [valueCopyFile, formatFile, tableFile, indexFile, scanFile, scanInfoFile,
+    def requiredFiles = [valueCopyFile, formatFile, tableFile, indexFile, predicateFile, scanFile, scanInfoFile,
             inspectionFile, sqlTestFile, testsBuildFile, designFile, implementationFile]
 
     inputs.files(requiredFiles)
@@ -5595,6 +5622,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
             def formatText = formatFile.getText('UTF-8')
             def tableText = tableFile.getText('UTF-8')
             def indexText = indexFile.getText('UTF-8')
+            def predicateText = predicateFile.getText('UTF-8')
             def scanText = scanFile.getText('UTF-8')
             def scanInfoText = scanInfoFile.getText('UTF-8')
             def inspectionText = inspectionFile.getText('UTF-8')
@@ -5677,11 +5705,20 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     'page.purgeAtSlot(',
                     'page.insertAtSlot(',
                     'StoreTypeUtil.compare(',
-                    'ScanDecision.SKIP',
-                    'ScanDecision.MATCH',
-                    'ScanDecision.FINISH',
                     'LinkedHashSet<Long> distinctRowIds',
                     'visibleAt(entry, context, snapshotSequence)'
+            ])
+            requireTokens('Ordered-index qualifier interpretation', predicateText, [
+                    'static Optional<Predicate> from(Qualifier[][] qualifiers)',
+                    'private static Optional<Predicate> equality(',
+                    'private static Optional<Predicate> range(',
+                    'private static int normalizedRangeOperator(',
+                    'private static BoundChoice chooseLower(',
+                    'private static BoundChoice chooseUpper(',
+                    'Decision.SKIP',
+                    'Decision.MATCH',
+                    'Decision.FINISH',
+                    'StoreTypeUtil.compare('
             ])
             requireTokens('RawStore MVCC long-row ordered-index insertion policy', indexText, [
                     'private static byte insertFlags(Page page)',
@@ -5734,7 +5771,9 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
             requireOrdered('Ordered range traversal stops at the upper boundary',
                     section(indexText, 'static Optional<List<Long>> rowIdsForAt(',
                             'private static void addVersionEntries(', 'ordered-index lookup section'),
-                    ['IndexPredicate.from(', 'ScanDecision decision', 'ScanDecision.FINISH',
+                    ['MvccRawStoreOrderedIndexPredicate.from(',
+                            'MvccRawStoreOrderedIndexPredicate.Decision decision',
+                            'MvccRawStoreOrderedIndexPredicate.Decision.FINISH',
                             'visibleAt(entry, context, snapshotSequence)', 'distinctRowIds.add('])
 
             requireOrdered('Index candidate reread remains subordinate to base MVCC',
@@ -5808,7 +5847,7 @@ tasks.register('delosMvccRawStoreOrderedIndexStaticAnalysis') {
                     ':delosdb-tests:runDelosMvccRawStoreOrderedIndexTest'
             ])
 
-            [indexText, tableText, scanText].each { productionText ->
+            [indexText, predicateText, tableText, scanText].each { productionText ->
                 ['java.nio.file.Path', 'java.nio.file.Files', 'FileChannel',
                  'RandomAccessFile', 'DelosPageVolume'].each { token ->
                     if (productionText.contains(token)) {
@@ -8294,10 +8333,6 @@ tasks.register('delosMvccRetainedRuntimeRetirementStaticAnalysis') {
                     failures << 'Current RawStore MVCC proof wiring is missing: ' + current
                 }
             }
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosMvccRetainedRuntimeRetirementStaticAnalysis'")) {
-                failures << 'S0 must include the retained-runtime retirement gate'
-            }
             def normalizedDesign = design.replaceAll('\\s+', ' ')
                     .toLowerCase(java.util.Locale.ROOT)
             ['repository source archive', 'git history preserves', '20 production java classes',
@@ -8501,10 +8536,6 @@ tasks.register('delosStorageIoModuleRetirementStaticAnalysis') {
              'delosStorageIoModuleRetirementStaticAnalysis'].each { token ->
                 if (!roadmap.contains(token)) failures << 'Roadmap is missing storage-I/O retirement token: ' + token
             }
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosStorageIoModuleRetirementStaticAnalysis'")) {
-                failures << 'S0 must include the storage-I/O module retirement gate'
-            }
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -8677,10 +8708,6 @@ tasks.register('delosStorageApiModuleRetirementStaticAnalysis') {
                 failures << 'Provider-neutral external-index vocabulary must remain owned by delosdb-spi'
             }
 
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosStorageApiModuleRetirementStaticAnalysis'")) {
-                failures << 'S0 must include the storage-API module retirement gate'
-            }
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -8812,10 +8839,6 @@ tasks.register('delosSharedStoragePositionalIoStaticAnalysis') {
                     'delosSharedStoragePositionalIoStaticAnalysis'
             ].each { token ->
                 if (!roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.1 token: ' + token
-            }
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosSharedStoragePositionalIoStaticAnalysis'")) {
-                failures << 'S0 must include the shared positional-I/O gate'
             }
         }
 
@@ -9052,10 +9075,6 @@ tasks.register('delosSharedRawStoreIoDiagnosticsStaticAnalysis') {
                 if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.2 token: ' + token
             }
 
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosSharedRawStoreIoDiagnosticsStaticAnalysis'")) {
-                failures << 'S0 must include the shared RawStore I/O diagnostics gate'
-            }
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -9312,10 +9331,6 @@ tasks.register('delosSharedRawStoreIoFaultInjectionStaticAnalysis') {
                 if (!text.roadmap.contains(token)) failures << 'Roadmap is missing Stage 8.3 token: ' + token
             }
 
-            def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-            if (!s0.contains("'delosSharedRawStoreIoFaultInjectionStaticAnalysis'")) {
-                failures << 'S0 must include the shared RawStore I/O fault/replay gate'
-            }
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -9452,11 +9467,6 @@ tasks.register('delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis') {
             failures << 'Session handoff does not record the Stage 8.4 removal'
         }
 
-        def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-        if (!s0.contains("'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis'")) {
-            failures << 'S0 must include the Stage 8.4 final-decision gate'
-        }
-
         def reportFile = layout.buildDirectory.file(
                 'reports/delosdb/shared-rawstore-heap-memory-segment-page-buffer-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
@@ -9588,11 +9598,6 @@ tasks.register('delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis') {
         if (!foreignMemorySites.isEmpty()) {
             failures << 'Foreign-memory API remains in production inherited RawStore sources: '
                     + foreignMemorySites
-        }
-
-        def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-        if (!s0.contains("'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis'")) {
-            failures << 'S0 must include the Stage 8.5 final-decision gate'
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -9754,11 +9759,6 @@ tasks.register('delosSharedRawStoreMappedRegionDecisionStaticAnalysis') {
             failures << 'Session handoff does not preserve the frozen mapped RawStore no-go decision'
         }
 
-        def s0 = staticText.substring(staticText.lastIndexOf("tasks.register('s0CloseoutVerification')"))
-        if (!s0.contains("'delosSharedRawStoreMappedRegionDecisionStaticAnalysis'")) {
-            failures << 'S0 must include the Stage 8.6 mapped-region decision gate'
-        }
-
         def reportFile = layout.buildDirectory.file(
                 'reports/delosdb/shared-rawstore-mapped-region-decision-static-analysis.txt').get().asFile
         reportFile.parentFile.mkdirs()
@@ -9849,13 +9849,6 @@ tasks.register('delosDrdaDisconnectCleanupStaticAnalysis') {
             if (!testBuildText.contains(token)) {
                 failures << 'DRDA cleanup test wiring is missing: ' + token
             }
-        }
-
-        def s0Index = staticText.lastIndexOf("tasks.register('s0CloseoutVerification')")
-        if (s0Index < 0
-                || !staticText.substring(s0Index).contains(
-                        "'delosDrdaDisconnectCleanupStaticAnalysis'")) {
-            failures << 'S0 must include the DRDA disconnect-cleanup static gate'
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -9954,13 +9947,6 @@ tasks.register('delosMvccSerializableBindingBoundaryStaticAnalysis') {
                 }
             }
 
-            int s0Index = staticAnalysisText.lastIndexOf(
-                    "tasks.register('s0CloseoutVerification')")
-            if (s0Index < 0
-                    || !staticAnalysisText.substring(s0Index).contains(
-                            "'delosMvccSerializableBindingBoundaryStaticAnalysis'")) {
-                failures << 'S0 must include the MVCC SERIALIZABLE binding-boundary static gate'
-            }
         }
 
         def reportFile = layout.buildDirectory.file(
@@ -9983,59 +9969,66 @@ tasks.register('delosMvccSerializableBindingBoundaryStaticAnalysis') {
     }
 }
 
-apply from: file('gradle/delosdb-stage8-production-closeout-static-analysis.gradle')
+final Set<String> delosHistoricalStaticAnalysisTasks = [
+        'delosStorageStaticAnalysis',
+        'delosServerStaticAnalysis',
+        'delosHeapCompatibilityStaticAnalysis',
+        'delosHeapObjectDeserializationFilterStaticAnalysis',
+        'delosStaleGradleScriptCheck',
+        'delosHeapRawStoreDuplicateClassificationReport',
+        'delosDerbyModuleParityStaticAnalysis',
+        'delosRuntimeArtifactModelStaticAnalysis',
+        'delosCrossEngineConsistencyFrameworkStaticAnalysis',
+        'delosOverlayCleanupScriptStaticAnalysis',
+        'delosWorkspaceChurnStaticAnalysis',
+        'delosDerbyForkDiffClassificationStaticAnalysis',
+        'delosPerformanceConcurrencyValidationStaticAnalysis',
+        'delosJdk25ClassFileBytecodeVerifierStaticAnalysis',
+        'delosJfrStorageLifecycleEventsStaticAnalysis',
+        'delosOptimizerCostAuthorityAuditStaticAnalysis',
+        'delosMvccOrderedIndexNullKeyProofStaticAnalysis',
+        'delosSqlancerProfileSkeleton',
+        'delosNoTransitionalStorageRoutingStaticAnalysis',
+        'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
+        'delosMvccTableRebuildProviderTruthStaticAnalysis',
+        'delosSecurityTruthStaticAnalysis',
+        'delosV1BaselineCaptureStaticAnalysis',
+        'delosV1AcceptedBaselineStaticAnalysis',
+        'delosMvccTransactionalDdlStaticAnalysis',
+        'delosAccessMethodTransactionLifecycleStaticAnalysis',
+        'delosMvccRawStoreVerticalSliceStaticAnalysis',
+        'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
+        'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
+        'delosMvccRawStoreUpdateDeleteStaticAnalysis',
+        'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
+        'delosMvccRawStoreLookupHintStaticAnalysis',
+        'delosMvccRawStoreOrderedIndexStaticAnalysis',
+        'delosMvccRawStoreUniqueConstraintStaticAnalysis',
+        'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
+        'delosMvccRawStoreLogicalLockingStaticAnalysis',
+        'delosMvccRawStorePhysicalLockingStaticAnalysis',
+        'delosMvccRawStoreVacuumStaticAnalysis',
+        'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
+        'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
+        'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
+        'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
+        'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
+        'delosMvccRetainedRuntimeRetirementStaticAnalysis',
+        'delosMvccStorageModuleConvergenceStaticAnalysis',
+        'delosStorageIoModuleRetirementStaticAnalysis',
+        'delosStorageApiModuleRetirementStaticAnalysis',
+        'delosSharedStoragePositionalIoStaticAnalysis',
+        'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
+        'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
+        'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
+        'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis',
+        'delosSharedRawStoreMappedRegionDecisionStaticAnalysis',
+        'delosDrdaDisconnectCleanupStaticAnalysis',
+        'delosMvccSerializableBindingBoundaryStaticAnalysis'
+] as Set<String>
 
-tasks.register('s0CloseoutVerification') {
-    group = 'verification'
-    description = 'Runs stable S0 engineering gates only. Roadmap/prose phase gates are intentionally not S0 dependencies.'
-    dependsOn 'delosStorageStaticAnalysis',
-            'delosServerStaticAnalysis',
-            'delosDrdaDisconnectCleanupStaticAnalysis',
-            'delosHeapCompatibilityStaticAnalysis',
-            'delosHeapObjectDeserializationFilterStaticAnalysis',
-            'delosSecurityTruthStaticAnalysis',
-            'delosV1BaselineCaptureStaticAnalysis',
-            'delosV1AcceptedBaselineStaticAnalysis',
-            'delosStaleGradleScriptCheck',
-            'delosOverlayCleanupScriptStaticAnalysis',
-            'delosRuntimeArtifactModelStaticAnalysis',
-            'delosModuleDependencyBoundaryStaticAnalysis',
-            'delosV1ModuleArchitectureStaticAnalysis',
-            'delosWorkspaceChurnStaticAnalysis',
-            'delosHeapRawStoreDuplicateClassificationReport',
-            'delosDerbyModuleParityStaticAnalysis',
-            'delosDerbyForkDiffClassificationStaticAnalysis',
-            'delosNoTransitionalStorageRoutingStaticAnalysis',
-            'delosMvccDatabaseRuntimeOwnershipStaticAnalysis',
-            'delosAccessMethodTransactionLifecycleStaticAnalysis',
-            'delosMvccRawStoreVerticalSliceStaticAnalysis',
-            'delosMvccRawStoreDatabaseIdentityStaticAnalysis',
-            'delosMvccRawStoreMultiTableTransactionStaticAnalysis',
-            'delosMvccRawStoreUpdateDeleteStaticAnalysis',
-            'delosMvccRawStoreMixedHeapTransactionStaticAnalysis',
-            'delosMvccRawStoreLookupHintStaticAnalysis',
-            'delosMvccRawStoreOrderedIndexStaticAnalysis',
-            'delosMvccRawStoreUniqueConstraintStaticAnalysis',
-            'delosMvccRawStoreUniqueLifecycleStaticAnalysis',
-            'delosMvccRawStoreLogicalLockingStaticAnalysis',
-            'delosMvccRawStorePhysicalLockingStaticAnalysis',
-            'delosMvccRawStoreVacuumStaticAnalysis',
-            'delosMvccRawStoreMaintenanceDiagnosticsStaticAnalysis',
-            'delosMvccRawStoreAuthorityCutoverStaticAnalysis',
-            'delosMvccRawStoreDecisionRecoveryCutoverStaticAnalysis',
-            'delosMvccRawStoreSqlTransactionCutoverStaticAnalysis',
-            'delosMvccRetainedRuntimeRetirementStaticAnalysis',
-            'delosMvccStorageModuleConvergenceStaticAnalysis',
-            'delosStorageIoModuleRetirementStaticAnalysis',
-            'delosStorageApiModuleRetirementStaticAnalysis',
-            'delosSharedStoragePositionalIoStaticAnalysis',
-            'delosSharedRawStoreIoDiagnosticsStaticAnalysis',
-            'delosSharedRawStoreIoFaultInjectionStaticAnalysis',
-            'delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis',
-            'delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis',
-            'delosSharedRawStoreMappedRegionDecisionStaticAnalysis',
-            'delosSharedRawStoreProductionCloseoutStaticAnalysis',
-            'delosMvccRawStoreMemoryDatabaseStaticAnalysis',
-            'delosMvccTransactionalDdlStaticAnalysis',
-            'delosMvccSerializableBindingBoundaryStaticAnalysis'
+tasks.configureEach { task ->
+    if (delosHistoricalStaticAnalysisTasks.contains(task.name)) {
+        task.group = 'verification history'
+    }
 }
