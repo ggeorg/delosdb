@@ -121,10 +121,10 @@ public final class MvccRawStoreVerticalSliceTest extends MvccSqlTestSupport {
         try (SystemPropertyScope ignored = setSystemProperty(RETIRED_PROPERTY, "false")) {
             try (Connection connection = DriverManager.getConnection("jdbc:derby:" + database)) {
                 assertRows(connection, "select id from retired_guard_t", "1");
-                fail("Retained external state must reject MVCC factory boot");
+                fail("Retired external state must reject database boot");
             } catch (java.sql.SQLException expected) {
                 assertTrue(expected.toString(),
-                        containsMessage(expected, "retained external delos_mvcc format has been retired"));
+                        containsMessage(expected, "retired external delos_mvcc format"));
             }
             shutdownDatabase(database);
         }
