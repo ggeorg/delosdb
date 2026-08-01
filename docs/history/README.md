@@ -1,38 +1,24 @@
-# DelosDB historical engineering records
+# DelosDB historical records
 
-This directory preserves completed phase closeouts and superseded roadmaps for
-provenance. Historical records explain how DelosDB reached the current design;
-they do not define current runtime behavior.
+This directory contains completed phase closeouts and superseded plans retained for provenance.
 
-Current authority is, in order:
+Historical documents may reference task names, modules, scripts, stage numbers, or commands that no
+longer exist. They do not override current product documentation, source code, tests, or permanent
+structural manifests.
 
-1. the root `README.md`;
-2. `docs/PRODUCT-STRATEGY.md`;
-3. `docs/ARCHITECTURE.md`;
-4. `docs/DERBY-COMPATIBILITY.md`;
-5. current protocol documents in `docs/`;
-6. current source and executable tests.
-
-## Retained records
-
-| Document | Historical purpose |
-|---|---|
-| `PHASE-6-CLOSEOUT.md` | build, module, dependency, and engineering closeout before the concurrent-commit phase |
-| `PHASE-7-CLOSEOUT.md` | concurrent commit, durability, maintenance, backup, isolation, and production-hardening closeout |
-| `STORAGE-ROADMAP-PHASES-A-J.md` | superseded storage-development sequence retained as design provenance |
-| `ENGINE-DEPTH-ROADMAP.md` | superseded comparison-driven engine-depth plan |
-| `RELEASE-READINESS-EARLY-PLAN.md` | early release-readiness plan superseded by the v1.0 program |
-
-Intermediate Phase 7 slice documents were consolidated into current protocol
-authorities:
+Current public authority starts at:
 
 ```text
-MVCC-DURABILITY-PROTOCOL.md
-MVCC-GROUP-COMMIT.md
-MVCC-MAINTENANCE.md
-MVCC-BACKUP-COORDINATION.md
+README.md
+docs/PROJECT-STATUS.md
+docs/ARCHITECTURE.md
+docs/BUILDING.md
+docs/STATIC-GATE-POLICY.md
 ```
 
-A historical document may describe an implementation that was later replaced
-or hardened. Use it to understand why a change was made, not to infer current
-behavior or supported configuration.
+Detailed accepted implementation records remain under `docs/design/`. A design record may preserve
+the historical stage that created it, but it is not an active roadmap unless a current status or
+roadmap document explicitly says so.
+
+Do not restore retired gates, scripts, prototypes, or alternate runtimes solely because a historical
+document mentions them.

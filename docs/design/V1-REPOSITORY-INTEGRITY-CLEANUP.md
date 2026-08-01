@@ -1,20 +1,14 @@
-# DelosDB repository integrity cleanup
+# DelosDB repository integrity
 
-Status: STAGE 3 IMPLEMENTED / PENDING VERIFICATION
+Status: **complete; permanent monotonic gate retained**
 
 ## Purpose
 
-Before adding the Phase 10.1 stable plan model, DelosDB performs a full-source
-cleanup and no-compromise campaign. The campaign must reduce dead code,
-duplication, complexity, exception-handling debt, and architecture drift
-without changing SQL, transaction, storage, generated-code, JDBC, or DRDA
-semantics.
-
-The inventory parses the complete Java source tree with the public
-`com.sun.source` javac tree API. Findings are classification candidates: a
-private member or duplicate body is not removed until reflection, serialization,
-generated-code, protocol, SQL-routine, test-discovery, and compatibility use
-have been reviewed.
+Before Phase 10.1, DelosDB completed a repository-wide static quality, cleanup, and no-compromise
+audit. The work removed proven dead code, consolidated safe duplicate authorities, classified
+remaining duplicates and broad catches, reduced selected structural outliers, and retired temporary
+or prose-based gate infrastructure without changing SQL, JDBC, DRDA, transaction, storage, or
+generated-class semantics.
 
 ## Permanent tasks
 
@@ -23,281 +17,68 @@ delosRepositoryIntegrityInventory
 delosRepositoryIntegrityStaticAnalysis
 ```
 
-Evidence is written under:
+The inventory uses the public javac AST API and writes evidence under:
 
 ```text
 build/reports/delosdb/repository-integrity/inventory/
 ```
 
-The static task fails on Java parse errors, generated-class authority
-violations, missing evidence, or increases above the checked-in debt baseline.
-Candidate debt may decrease without updating the baseline; increases fail.
+The permanent gate checks parse success, compiler authority, dead private production members,
+monotonic duplicate/catch/size/complexity metrics, and structural classification inventories.
 
-## Stage 1 baseline
-
-```text
-Java files:                              3303
-Production Java files:                   2070
-Declared types:                          4014
-Declared methods:                       45713
-Declared fields:                        21329
-Java parse errors:                          0
-
-Dead private production methods:           16
-Dead private production fields:            52
-Exact production duplicate groups:         55
-Methods in duplicate groups:              137
-Estimated duplicate production lines:    1184
-Production methods >= 100 lines:           447
-Production methods complexity >= 20:       169
-Production classes >= 1000 lines:          140
-Production empty catches:                  250
-Production generic catches:                473
-Production @SuppressWarnings occurrences:   40
-Production quality markers:                816
-Compiler authority compromise candidates:    1
-```
-
-## Stage 2 generated-class authority pin
-
-The generic Derby monitor still supports inherited external module properties
-for modules that remain configurable. Generated-class authority is different:
-`ClassFileJava` is an architectural constant. `BaseMonitor` now rejects every
-externally supplied class implementing `JavaFactory` when processing boot, JVM,
-application, service, or database properties. Only the packaged
-`modules.properties` inventory may provide that interface.
-
-The production SQL proof writes an application-level `derby.module.*` entry
-pointing at a deliberately rejecting `JavaFactory`. Boot must ignore it, select
-`ClassFileJava`, compile representative SQL, and retain SQLState behavior.
-
-Permanent invariants:
+## Final baseline
 
 ```text
-ClassFileJava is the sole packaged JavaFactory registration
-external JavaFactory module injection is rejected
-no external ASM source/build/module reference exists
-only ClassFileJava and DelosJdk25ClassFileVerifier import java.lang.classfile
-SQL compiler nodes do not import java.lang.classfile
-compiler authority violations: 0
-compiler authority compromise candidates: 0
+baselineVersion=19
+deadPrivateProductionMethods=0
+deadPrivateProductionFields=0
+duplicateProductionMethodGroups=48
+duplicateProductionMethods=115
+estimatedDuplicateProductionLines=1009
+productionMethods100Plus=443
+productionMethodsComplexity20Plus=169
+productionClasses1000Plus=137
+productionEmptyCatches=102
+productionGenericCatches=434
+productionSuppressWarnings=40
+compilerAuthorityCompromiseCandidates=0
+parseErrors=0
 ```
 
-## Stage 2 proven dead-code batch
+## Classification rules
 
-All 16 private production candidates from Stage 1 were removed after confirming:
+Remaining exact duplicate groups are classified as protocol mirrors, JDBC boilerplate, generated
+source, visitor patterns, public compatibility wrappers, private helpers, or cross-module code that
+must not be consolidated.
 
-```text
-no source invocation
-no method reference
-no reflective string reference
-no serialization callback contract
-no generated parser or bytecode hook
-no SQL external-routine binding
-no compatibility or public API surface
-```
+Remaining broad catches are classified as required boundaries, intentional best-effort paths, or
+legacy compatibility behavior.
 
-Removed methods:
+Classification prevents mechanical cleanup. A metric is a review signal, not proof of a defect.
 
-```text
-NetConnection.flowSimpleConnect
-DelosStorageTransactionRegistry.writeParticipationFor
-EmbedConnection.checkDatabaseCreatePrivileges
-DataDictionaryImpl.twoDigits
-BasicDependencyManager.dropDependency
-InsertResultSet.getTableScanResultSet
-SetOpResultSet.advanceRightPastDuplicates
-NetworkServerControl.hostnamesEqual
-NetworkServerControl.isIPV6Address
-DRDAConnThread.writeQRYPOPRM
-D_BTreeController.olddiag_tabulate
-B2I.traverseRight
-FileContainer.switchToMultiInsertPageMode
-StoredPage.logOverflowField
-sysinfo.Main.tryAsResource
-sysinfo.Main.lookForMainArg
-```
+## Completed outcomes
 
-Commented-out call sites belonging only to these methods were removed with the
-methods. No public or internal callable contract changed.
+- all proven dead private production methods and fields were removed;
+- generated-class authority was pinned against external monitor-module injection;
+- safe storage text, message, array, hex, identity, and compiler helper authorities were consolidated;
+- silent catches and high-confidence broad catches were narrowed or documented;
+- selected DelosDB-owned long methods and responsibility-heavy classes were simplified;
+- all retained exact duplicate groups and generic catches received structural classifications;
+- temporary stage gates, documentation gates, task self-inspection, and historical build scaffolding
+  were retired;
+- S0 was reduced to seven durable executable or structural authorities.
 
-## Stage 2 reduced baseline
+## Gate-quality rule
 
-```text
-Dead private production methods:            0
-Dead private production fields:            52
-Exact production duplicate groups:         55
-Estimated duplicate production lines:    1184
-Production methods >= 100 lines:           447
-Production methods complexity >= 20:       169
-Production classes >= 1000 lines:          139
-Production empty catches:                  249
-Production generic catches:                469
-Production @SuppressWarnings occurrences:   40
-Production quality markers:                815
-Compiler authority compromise candidates:    0
-```
+The permanent gate does not use Markdown, comments, TODO wording, line numbers, exact report prose,
+or private helper names as pass/fail authority. Documentation can describe the baseline but cannot
+change it.
 
-## Stage 3 DelosDB-owned validation consolidation
+## Future changes
 
-Ten identical production validation helpers were replaced by one shared internal
-storage contract:
+Accepted debt may decrease. New dead private production members, unclassified duplicate debt,
+unclassified broad catches, parse errors, compiler authority drift, or increases above the baseline
+fail immediately.
 
-```text
-org.apache.derby.iapi.store.types.DelosStorageText.requireNonBlank
-```
-
-The consumers remain in their existing modules and preserve the exact contract:
-null values throw `NullPointerException` with the parameter name, blank values
-throw `IllegalArgumentException` with `<name> must not be blank`, and accepted
-values are trimmed. The consolidation covers nine immutable storage snapshot or
-diagnostic records and the RawStore I/O fault injector. A focused executable
-proof verifies normalization and both failure messages.
-
-Permanent source-shape checks require every consumer to use the shared helper
-and prohibit reintroducing a local `requireNonBlank` or `requireText` copy.
-
-## Stage 3 reduced baseline
-
-```text
-Dead private production methods:            0
-Dead private production fields:            52
-Exact production duplicate groups:         54
-Methods in duplicate groups:              127
-Estimated duplicate production lines:    1121
-Production methods >= 100 lines:           447
-Production methods complexity >= 20:       169
-Production classes >= 1000 lines:          139
-Production empty catches:                  249
-Production generic catches:                469
-Production @SuppressWarnings occurrences:   40
-Production quality markers:                815
-Compiler authority compromise candidates:    0
-```
-
-## Record-component classification correction
-
-The initial field inventory treated javac record-component backing fields as
-ordinary private fields. That classification was incorrect: a record component
-owns a public accessor and canonical-constructor position, so its compiler-owned
-private backing field is part of the record contract and cannot be classified as
-removable private implementation state.
-
-The scanner now excludes non-static variables declared directly by a record.
-Java records cannot declare additional instance fields, so explicitly declared
-private static fields remain audited normally. This correction reduces the
-production private-field candidate count from 71 to 52 without deleting or
-changing any runtime field, record component, constructor, or accessor.
-
-The monotonic baseline advances to version 4 with the corrected value. Any
-future increase above 52 fails S0.
-
-## Retired storage-path diagnostic prototype
-
-The Stage 3 regression review found two runtime tests expecting storage-path
-records even though the converged `MvccStorageDiagnostics` implementation had
-no recorder and inherited the interface's empty default methods. The test output
-was therefore always empty. The same repository still carried a diagnostic
-record, two enums, two runtime proof tasks, and documents claiming that
-`MvccBridgeDiagnosticsSupport` supplied runtime wiring, although that bridge no
-longer existed after RawStore convergence.
-
-The dead prototype is removed rather than reintroduced as a second diagnostics
-subsystem. This retirement removes the two tests and tasks, the unused typed
-vocabulary, the no-op testing methods, the path-history fields from the already
-retired database-storage snapshot shape, and both stale design documents. A
-permanent source-shape check prohibits restoring those artifacts. Existing
-RawStore maintenance, page-I/O, memory, lifecycle, and authority diagnostics
-remain unchanged.
-
-## Stage 4.1 proven private-field retirement
-
-The corrected Stage 3 inventory identified 52 private production fields with no
-source-level identifier or member-selection use. Each candidate was classified
-against source references, method references, textual/reflective lookup, Java
-serialization and externalization contracts, generated-code access, protocol
-dispatch, and public or package API exposure.
-
-The complete proven batch is removed:
-
-```text
-44 unused private static constants, arrays, and flags
-8 unused private instance fields in non-serializable implementation classes
-52 total private production fields
-```
-
-The instance-field removals are limited to `ClientXAConnection`, `ColumnInfo`,
-`NetworkServerControlImpl`, `RAMTransaction`, and `ReplicationLogScan`. None of
-those fields participates in a serialized form, externalized disk layout,
-reflection contract, generated accessor, or public binary surface. Static
-removals include obsolete release-note labels, unused DRDA constants, redundant
-XPLAIN index-name arrays, retired cost constants, and inactive tool flags.
-
-The repository-integrity baseline now requires zero dead private production
-methods and zero dead private production fields. Removing the unused 96-entry
-FDOCA representation table also reduces `Typdef` below the 1,000-line class
-threshold. No executable expression, branch, method body, constructor signature,
-record component, public field, or serialized instance state changes.
-
-## Remaining cleanup sequence
-
-### Stage 4.2 — exception handling and structural quality
-
-Classify and reduce empty/generic catches, oversized methods, deep nesting,
-suppressions, and stale markers where correctness permits. Production dead
-private methods and fields are now closed at zero.
-
-### Stage 5 — compiler no-compromise closeout
-
-Review all 43 `MethodBuilder` operations and confirm primitive categories,
-category-two stack values, inferred field owners, arrays, branches, exception
-attributes, deterministic generation, and class-loading lifecycle. Authority
-injection is already closed by Stage 2.
-
-### Stage 6 — final consolidation
-
-Replace campaign-specific evidence with reduced permanent budgets and retain
-new-debt prohibition in S0. Only then does DelosDB begin Phase 10.1 stable plan
-modelling.
-
-## Non-goals
-
-Stages 3 and 4.1 do not change:
-
-```text
-SQL semantics or SQLStates
-generated activation interfaces or bytecode contracts
-class-loading lifecycle or statement caching
-JDBC or DRDA protocol behavior
-storage or MVCC behavior
-generic configurability of unrelated Derby modules
-module ownership or dependencies
-```
-
-## Stage 3 verification-lane correction
-
-Stage 3's storage validation consolidation passed. Its initial regression
-command also named two Phase 9 snapshot tasks that depended on the already
-retired external persistence runtime. Those tests contradicted the accepted
-RawStore authority boundary because `MvccStorageDiagnostics` deliberately
-rejects `databaseStorageSnapshot()`.
-
-The obsolete database/table snapshot tests, task registrations, dependency
-wiring, and historical snapshot document are removed. The retained-runtime
-retirement gate now prohibits their return. This correction changes no storage
-runtime code and leaves the fail-closed authority proof in
-`MvccRawStoreAuthorityCutoverTest` intact.
-
-## Stage 4.1 closeout correction: shared store/type inventory
-
-The Stage 8 production-closeout and Stage 7.3 module-retirement gates previously duplicated a fixed
-`104` source-count assertion. Repository Integrity Stage 3 legitimately changed that inventory by
-retiring three unwired path-diagnostic types and adding `DelosStorageText`, leaving 102 current contracts.
-The duplicated counts were both stale, and one Groovy continuation hid the actual count from the failure
-message.
-
-The exact categorized inventory now lives in
-`gradle/static-analysis/delosdb-store-type-contract-inventory.txt`. The storage-API retirement gate owns
-exact-set verification, while the Stage 8 closeout gate depends on that authority instead of repeating a
-second count. This preserves strict drift detection without parallel magic numbers.
-
+The repository-integrity campaign is closed. Phase 10.1 should not reopen it as an endless
+method-by-method cleanup program.

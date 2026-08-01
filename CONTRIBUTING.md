@@ -1,94 +1,102 @@
 # Contributing to DelosDB
 
-DelosDB is in a proof-driven modernization phase. The project accepts focused, compatibility-preserving changes that are backed by executable gates.
+DelosDB accepts focused, compatibility-preserving changes backed by executable evidence.
+Documentation should explain current behavior, but documentation wording must never become a build
+gate.
 
-## Supported local workflow
+## Supported workflow
 
-Use the checked-in Gradle Wrapper from the repository root:
+Use JDK 25 and the checked-in Gradle Wrapper from the repository root:
 
-```sh
-./gradlew build
-./gradlew derbyRuntimeSmoke
-./gradlew :delosdb-tests:runDerbyLangSuite
+```bash
+./gradlew build --console=plain
 ```
 
-Current focused gates:
+For normal iteration, run the smallest relevant verification set:
 
-```sh
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
-./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
-./gradlew s0CloseoutVerification
+```bash
+./gradlew <affected-module>:check <focused-test-or-gate> --console=plain
 ```
 
-Full gate:
+Run the permanent structural closeout when a change affects architecture, modules, generated code,
+security boundaries, or repository integrity:
 
-```sh
-./gradlew clean fullVerification :delosdb-storage-mvcc:check
+```bash
+./gradlew s0CloseoutVerification --console=plain
 ```
 
-If a Derby test run was interrupted, run a clean verification from the repository root.
+Run the inherited Derby language suite only at meaningful integration or release boundaries:
 
-## Current project lanes
+```bash
+./gradlew :delosdb-tests:runDerbyLangSuite --console=plain
+```
 
-### MVCC storage lane
+See [`docs/BUILDING.md`](docs/BUILDING.md).
 
-`delos_mvcc` is explicit and opt-in. Changes must preserve the default Derby-compatible heap path.
+## Architectural boundaries
 
-Current green MVCC storage work includes typed rows, overflow pages, page checksums, whole-page reuse, reusable-page index recovery, bounded page cache, page-record headers, slot accounting, and storage-layer static gates.
-
-Do not change these boundaries casually:
+Preserve these constraints unless a reviewed product decision explicitly changes them:
 
 ```text
-Derby heap format remains compatibility-locked.
-DRDA/JDBC wire compatibility remains compatibility-locked.
-JAVA_OBJECT / Derby UDT object values are rejected in delos_mvcc.
-BLOB/CLOB are rejected in delos_mvcc until a deliberate LOB lifecycle design exists.
+one Derby SQL/JDBC/DRDA engine
+one Derby RawStore persistence authority
+heap and delos_mvcc as peer access methods
+no parallel MVCC file store, WAL, checkpoint, recovery, or backup authority
+ClassFileJava as the sole generated-class backend
+no external ASM dependency or fallback backend
+no engine -> MVCC implementation dependency
 ```
 
-### Server lane
+`delos_mvcc` remains explicit through `USING delos_mvcc`; the Derby-compatible heap remains the
+default path.
 
-`delosdb-server` remains a Derby-compatible DRDA server. Server changes should preserve the protocol and compatibility model.
+## Change quality
 
-Current green server work includes dependency hygiene, no forced GC in runtimeinfo, isolated session scheduler, scheduler behavior gates, optional virtual-thread worker mode, EXTDTA temp spooling, and centralized DelosDB DRDA server configuration.
+- Keep changes small enough to review semantically.
+- Prefer net-negative handwritten production code for cleanup and refactoring.
+- Preserve SQLStates, exception causes, resource ownership, synchronization, branch order, and
+  compatibility behavior unless the change intentionally revises them.
+- Classify dead code, duplicate code, broad catches, and structural outliers before changing them.
+- Do not consolidate client/server protocol mirrors or generated/JDBC boilerplate merely to reduce a
+  metric.
+- Do not add a static gate for a one-time implementation detail.
+- Do not inspect Markdown, comments, exact report prose, or task wiring as architectural truth.
+- Add or update focused runtime proof when behavior changes.
 
-Do not replace DRDA with Netty, gRPC, JSON, protobuf, or a new wire protocol inside this module.
+## Generated-class changes
 
-## Contribution rules
-
-- Keep changes focused and source-backed.
-- Add or update a smoke/proof when behavior changes.
-- Preserve Derby-compatible heap behavior by default.
-- Do not flip the global default store to `delos_mvcc`.
-- Do not redesign DRDA/JDBC wire compatibility.
-- Do not import MVCC implementation packages into `delosdb-server`.
-- Do not add Java object serialization to `delosdb-storage-mvcc`.
-- Do not add BLOB/CLOB support to `delos_mvcc` without a full lifecycle design and gate.
-- Use Derby heap/raw-store patterns where useful, but do not lift Derby's log-coupled raw page layer wholesale into MVCC.
-- Prefer small verified changes over mechanical rewrites.
-- Update documentation after the code proof or planning decision is real.
-- Do not remove Apache license headers or attribution.
-- Do not use Apache Derby branding for modified DelosDB distributions.
-
-## Documentation rules
-
-Root-level Markdown should stay project-facing and current. Technical details belong under `docs/`.
-
-Useful docs:
+Compiler-facing changes must preserve the frozen boundary:
 
 ```text
-docs/BUILDING.md
-docs/DERBY-COMPATIBILITY.md
-docs/MVCC-MISSION.md
-docs/DELOSDB-SERVER.md
-docs/sql-extensions.md
+JavaFactory methods:         1
+ClassBuilder methods:        8
+MethodBuilder signatures:   43
+LocalField methods:          0
+Total contract methods:     52
 ```
 
-Avoid stale checkpoint documents. Update the maintained status docs instead.
+Run:
 
-## Workspace metadata
+```bash
+./gradlew   delosGeneratedClassStaticAnalysis   :delosdb-tests:runDelosGeneratedClassProductionAcceptance   delosJdk25ClassFileBytecodeVerifier   --console=plain
+```
 
-Developer workspaces may contain `.git/`, `.gradle/`, `.idea/`, build reports, and local databases. Cleanup scripts must not delete them. Overlay ZIPs and release artifacts must not include them.
+## Storage and MVCC changes
 
-## Style
+Run the affected storage module checks and a directly relevant SQL or RawStore test. Typical
+closeout coverage is:
 
-Preserve inherited Derby style unless the cleanup is deliberate and behavior-preserving. Prefer small verified changes over broad rewrites.
+```bash
+./gradlew   :delosdb-derby-store-api:check   :delosdb-storage-derby:check   :delosdb-storage-mvcc:check   :delosdb-tests:runDelosMvccSqlIntegrationTest   --console=plain
+```
+
+Do not introduce a second persistence runtime or bypass Derby transaction ownership.
+
+## Documentation changes
+
+Public current documentation lives in `README.md` and `docs/`. Local/private planning and manuscript
+material lives in `.delosdb-v1/`. Historical documents belong under `docs/history/` or
+`.delosdb-v1/99-history/` and must not be presented as active roadmaps.
+
+Update the current owner document when public behavior, durable state, module ownership, or
+verification changes. Avoid duplicating the same status across many files.

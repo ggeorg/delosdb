@@ -1,150 +1,96 @@
-# DelosDB static gate policy
+# DelosDB permanent gate policy
 
 ## Purpose
 
-Static gates protect stable engineering boundaries before slower integration tests run. They must
-validate source, artifacts, dependencies, or repository safety—not roadmap prose.
+Permanent gates protect durable product and architecture invariants before slower integration and
+compatibility suites run. They must remain small, deterministic, and resilient to harmless source
+refactoring.
 
-## S0 criteria
+## S0 authorities
 
-A gate belongs in `s0CloseoutVerification` when it is:
+`./gradlew s0CloseoutVerification` has seven direct dependencies:
 
-- deterministic;
-- fast enough for normal iteration;
-- based on source, bytecode, artifacts, dependency metadata, or exact repository structure;
-- stable across harmless wording or method-local refactoring;
-- responsible for a continuing product or compatibility invariant.
+| Task | Evidence |
+|---|---|
+| `delosModuleDependencyBoundaryStaticAnalysis` | generated dependency/resource reports and executable monitor structure |
+| `delosV1ModuleArchitectureStaticAnalysis` | settings, Gradle dependencies, artifacts, providers, module descriptors, structured target manifest |
+| `delosGeneratedClassStaticAnalysis` | compiler contract, implementation inventory, dependency/import boundaries, executable test inventory |
+| `delosRepositoryIntegrityStaticAnalysis` | javac AST inventory, monotonic metrics, classified catches and duplicates, compiler authority |
+| `verifyDelosRuntimeStorageProviders` | built runtime artifacts and provider discovery |
+| `delosJdk25ClassFileBytecodeVerifier` | generated class bytes and JDK verifier behavior |
+| `:delosdb-tests:runDelosSecurityTruthTest` | executable security behavior |
 
-Current examples include:
+## Allowed evidence
 
-```text
-storage and server structural analysis
-heap compatibility and deserialization integration
-runtime provider discovery
-module dependency boundaries
-Derby module parity
-workspace and cleanup-script hygiene
-fork-diff classification
-absence of transitional storage routing
-```
-
-## Prohibited S0 criteria
-
-S0 must not fail because a roadmap or closeout document uses different prose.
-
-Examples that do not belong in S0:
+Permanent gates may use:
 
 ```text
-phase status wording
-commit-message text
-overlay file names
-"current" or "closed green" markers
-document-only proof rows
-benchmark thresholds
-long-running external tools
+Java AST structure
+module and dependency metadata
+service-provider files
+JPMS descriptors
+artifact inventories
+bytecode and class loading
+runtime tests
+exact structured manifests with stable schemas
+retired-file existence checks for permanent architecture boundaries
 ```
 
-Performance, JMH, JFR recording runs, jcstress, SQLancer, long-reader soak, and fault campaigns remain
-opt-in or phase-specific validation.
+## Prohibited evidence
 
-## Transitional routing rule
-
-Production source must not retain phase-named system-property routes such as:
+Permanent gates must not fail because of:
 
 ```text
-delosdb.storage.phase...
+Markdown or documentation wording
+comments or Javadocs
+TODO/FIXME text
+roadmap status
+commit messages
+archive or overlay names
+exact report sentences
+source line numbers
+private helper names that are not architectural contracts
+another task's presence as text in a Gradle script
 ```
 
-These switches were useful while establishing experimental heap/provider paths, but they are not a
-supported product configuration surface. The authoritative heap path is Derby's normal result-set
-and access-method route; MVCC selection comes from persisted table and conglomerate identity.
+Documentation is reviewed for correctness by humans and normal change review. It is not executable
+architecture authority.
 
-`delosNoTransitionalStorageRoutingStaticAnalysis` verifies that the phase-named properties and
-retired proof classes do not reappear in main source.
+## Gate lifecycle
 
-## Historical gate cleanup
+A temporary implementation gate may be useful while a migration is active. At closeout it must be:
 
-Roadmap/prose gates removed after earlier closeouts include:
+1. promoted into a durable structural or executable invariant;
+2. merged into an existing permanent gate; or
+3. retired.
+
+Historical stage gates must not accumulate in S0. New permanent tasks require a distinct durable
+invariant that is not already covered by the seven authorities.
+
+## Monotonic repository integrity
+
+The repository-integrity baseline records accepted inherited debt. New findings fail immediately;
+accepted counts may decrease.
+
+Current permanent values include:
 
 ```text
-delosBalancedStorageModernizationCloseoutStaticAnalysis
-delosStorageModernizationTradeoffAuditStaticAnalysis
-delosStorageModernizationTradeoffAuditRound2StaticAnalysis
-delosNextEngineDepthRoadmapContractsStaticAnalysis
-delosSharedStorageServiceExtractionAuditStaticAnalysis
+dead private production methods: 0
+dead private production fields:  0
+exact duplicate groups:          48
+silent empty catches:            102
+generic catches:                 434
+methods >= 100 lines:            443
+complexity >= 20:                169
+classes >= 1000 lines:           137
+parse errors:                    0
 ```
 
-Their useful conclusions remain in source, tests, current protocol documents, or historical records.
-They are not executable release authority.
+The remaining duplicates and broad catches have structural classifications. Metrics are not a reason
+to perform mechanical refactoring.
 
-## MVCC database runtime ownership
+## Performance and external validation
 
-`delosMvccDatabaseRuntimeOwnershipStaticAnalysis` is a stable S0 gate. It verifies that:
-
-* `MvccConglomerate` does not select a database through mutable JVM-global state;
-* `MvccDatabaseRuntime` owns the database-scoped provider store and table-state registry;
-* `MvccConglomerateFactory` acquires that runtime from its explicit Derby database directory;
-* MVCC diagnostics can bind to an explicit database context;
-* SQL and metadata tests do not use directory-free MVCC diagnostics;
-* explicit statistics and optimizer metadata hooks bind to Derby's owning database service;
-* embedded SQL reopen tests activate persisted MVCC base tables through `LOCK TABLE ... IN SHARE MODE`;
-* reopen helpers do not invoke internal transaction APIs outside Derby's JDBC context or scan user rows;
-* `RAMAccessManager` stops ServiceLoader-booted access-method factories and releases their runtime leases.
-
-Run it directly with:
-
-```bash
-./gradlew delosMvccDatabaseRuntimeOwnershipStaticAnalysis
-```
-
-## MVCC table rebuild provider truth
-
-`delosMvccTableRebuildProviderTruthStaticAnalysis` is a stable S0 gate. It verifies that inherited
-base-table rebuild DDL cannot reach the hard-coded Derby heap replacement path for an MVCC table.
-The gate requires early provider-aware rejection for offline compress, truncate, and drop-column
-rebuilds. Directly exposed rebuild DDL such as `TRUNCATE TABLE` and `ALTER TABLE ... DROP COLUMN`
-must return stable SQLState `0A000`. Offline compression is exposed publicly only through the
-`SYSCS_COMPRESS_TABLE` Java routine: JDBC callers receive Derby's outer routine SQLState `38000`,
-and the exception chain must retain the underlying engine SQLState `0A000`. The gate also requires
-provider-preserving in-place maintenance in the long-row proof and proof that rejected operations
-preserve both data and `delos_mvcc` identity across reopen.
-
-Run it directly with:
-
-```bash
-./gradlew delosMvccTableRebuildProviderTruthStaticAnalysis
-```
-
-## Security truth
-
-`delosSecurityTruthStaticAnalysis` is a stable S0 gate. It verifies null-safe TLS keystore
-properties, deterministic keystore stream closure, centralized secure XML transformer creation,
-focused security tests, fail-closed deserialization documentation, and the distinction between
-`basic` encryption-only TLS and certificate-authenticated `peerAuthentication`.
-
-Run it directly with:
-
-```bash
-./gradlew delosSecurityTruthStaticAnalysis
-```
-
-### Retired Phase 8 decision-retention proof
-
-The former `delosDatabaseDecisionRetentionStaticAnalysis` gate protected the retired Phase 8 oracle.
-Stage 8.7.3 removes that source archive and its gate. Current database-decision durability is protected
-by the RawStore decision/WAL crash proof and the MVCC recovery/convergence gates in S0.
-
-## V1 baseline capture contract
-
-`delosV1BaselineCaptureStaticAnalysis` is the cheap S0 authority for the opt-in baseline workflow.
-It does not run machine-specific measurements. It requires the fixed writer matrix, separate
-`CAPTURED_NOT_ACCEPTED` status, semantic and file checksums, split raw decision-force and MVCC
-participant-publication evidence, the jlink/JPMS DRDA lane, stable MVCC module identity, and named-
-module ServiceLoader declarations. It also rejects wiring the operational or modular-image tasks
-into S0.
-
-Run the contract gate directly with:
-
-```bash
-./gradlew delosV1BaselineCaptureStaticAnalysis
-```
+Wall-clock benchmarks, JMH, JFR recordings, jcstress, SQLancer, long-reader soak tests, baseline
+capture, and destructive fault campaigns are opt-in or closeout evidence. They do not belong in
+normal S0.
