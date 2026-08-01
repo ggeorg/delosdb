@@ -74,43 +74,8 @@ final class MvccRawStoreVacuum {
             List<DirectoryEntry> directories,
             List<VersionEntry> versions,
             long oldestVisibleThrough) {
-        Map<Long, VersionEntry> versionsById = new HashMap<>();
-        for (VersionEntry version : versions) {
-            if (version.rowId() <= 0L || version.versionId() <= 0L
-                    || version.creatorTransactionId() <= 0L) {
-                throw corruption("non-positive row/version/transaction identity", version.toString());
-            }
-            if ((version.flags() != MvccRawStoreFormat.LIVE_FLAGS
-                            && version.flags() != MvccRawStoreFormat.TOMBSTONE_FLAGS)
-                    || version.beginSequence() < MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                    || version.endSequence() <= MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-                throw corruption("invalid visibility interval or flags", version.toString());
-            }
-            if (version.previousVersionId() < 0L
-                    || (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                        && version.previousVersionId() >= version.versionId())) {
-                throw corruption("invalid predecessor ordering", version.toString());
-            }
-            VersionEntry duplicate = versionsById.put(version.versionId(), version);
-            if (duplicate != null) {
-                throw corruption(
-                        "duplicate MvccVersionId " + version.versionId(),
-                        duplicate + " / " + version);
-            }
-        }
-
-        Map<Long, DirectoryEntry> directoriesByRow = new LinkedHashMap<>();
-        for (DirectoryEntry directory : directories) {
-            if (directory.rowId() <= 0L || directory.headVersionId() <= 0L) {
-                throw corruption("invalid directory identity", directory.toString());
-            }
-            DirectoryEntry duplicate = directoriesByRow.put(directory.rowId(), directory);
-            if (duplicate != null) {
-                throw corruption(
-                        "duplicate MvccRowId directory " + directory.rowId(),
-                        duplicate + " / " + directory);
-            }
-        }
+        Map<Long, VersionEntry> versionsById = indexVersions(versions);
+        validateDirectories(directories);
 
         List<LinkUpdate> linkUpdates = new ArrayList<>();
         List<HeadUpdate> headUpdates = new ArrayList<>();
@@ -175,6 +140,49 @@ final class MvccRawStoreVacuum {
                 List.copyOf(headUpdates),
                 List.copyOf(removedVersions),
                 List.copyOf(removedDirectories));
+    }
+
+    private static Map<Long, VersionEntry> indexVersions(List<VersionEntry> versions) {
+        Map<Long, VersionEntry> versionsById = new HashMap<>();
+        for (VersionEntry version : versions) {
+            if (version.rowId() <= 0L || version.versionId() <= 0L
+                    || version.creatorTransactionId() <= 0L) {
+                throw corruption("non-positive row/version/transaction identity", version.toString());
+            }
+            if ((version.flags() != MvccRawStoreFormat.LIVE_FLAGS
+                            && version.flags() != MvccRawStoreFormat.TOMBSTONE_FLAGS)
+                    || version.beginSequence() < MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                    || version.endSequence() <= MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+                throw corruption("invalid visibility interval or flags", version.toString());
+            }
+            if (version.previousVersionId() < 0L
+                    || (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION
+                        && version.previousVersionId() >= version.versionId())) {
+                throw corruption("invalid predecessor ordering", version.toString());
+            }
+            VersionEntry duplicate = versionsById.put(version.versionId(), version);
+            if (duplicate != null) {
+                throw corruption(
+                        "duplicate MvccVersionId " + version.versionId(),
+                        duplicate + " / " + version);
+            }
+        }
+        return versionsById;
+    }
+
+    private static void validateDirectories(List<DirectoryEntry> directories) {
+        Map<Long, DirectoryEntry> directoriesByRow = new LinkedHashMap<>();
+        for (DirectoryEntry directory : directories) {
+            if (directory.rowId() <= 0L || directory.headVersionId() <= 0L) {
+                throw corruption("invalid directory identity", directory.toString());
+            }
+            DirectoryEntry duplicate = directoriesByRow.put(directory.rowId(), directory);
+            if (duplicate != null) {
+                throw corruption(
+                        "duplicate MvccRowId directory " + directory.rowId(),
+                        duplicate + " / " + directory);
+            }
+        }
     }
 
     private static List<VersionEntry> chainFor(
