@@ -1,5 +1,5 @@
-# DelosDB v1 final Gradle module target.
-# This file is consumed by delosV1ModuleArchitectureStaticAnalysis.
+# DelosDB v1 permanent Gradle module and artifact target.
+# This structured file is consumed by delosV1ModuleArchitectureStaticAnalysis.
 
 [target-modules]
 delosdb-osgi-stub
@@ -24,13 +24,24 @@ delosdb-demos
 delosdb-locales
 delosdb-buildtools
 
+[deferred-modules]
+delosdb-search-lucene
+
 [retired-modules]
 delosdb-storage-api
 delosdb-storage-io
 delosdb-storage-bridge
 
+[retired-artifacts]
+delosdb-storage-api.jar
+delosdb-storage-io.jar
+delosdb-storage-bridge.jar
+
 [required-provider-artifacts]
 delosdb-storage-mvcc.jar
+delosdb-search-lucene.jar
+
+[deferred-provider-artifacts]
 delosdb-search-lucene.jar
 
 [build-only-artifacts]
@@ -44,8 +55,3 @@ delosdb-storage-mvcc -> delosdb-search-lucene
 delosdb-search-lucene -> delosdb-engine
 delosdb-storage-derby -> delosdb-storage-mvcc
 delosdb-storage-derby -> delosdb-search-lucene
-
-[neutral-api-modules]
-delosdb-runtime-api
-delosdb-spi
-delosdb-derby-store-api

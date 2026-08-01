@@ -603,8 +603,8 @@ tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaE
     }
 }
 
-// DelosDB storage/static-analysis closeout gates.
-apply from: 'gradle/delosdb-storage-static-analysis.gradle'
+// Permanent module, dependency, and storage-authority verification.
+apply from: 'gradle/delosdb-permanent-architecture-verification.gradle'
 
 // Generated-class architecture, contract, and dependency policy are owned by
 // one permanent inventory and static-analysis gate.
