@@ -121,6 +121,7 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
                     "select id, category from mvcc_lifecycle_report_t order by id",
                     "1|alpha",
                     "2|beta");
+            connection.commit();
         } finally {
             DelosMvccAnalyzeStatisticsLifecycleDiagnostics.clearForTesting();
         }
