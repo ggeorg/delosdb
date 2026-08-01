@@ -152,7 +152,6 @@ public final class StorageCostIntegrationCheckpointTest extends MvccSqlTestSuppo
                 0L,
                 Long.MAX_VALUE,
                 Long.MAX_VALUE,
-                Long.MAX_VALUE,
                 List.of("synthetic extreme statistics"));
 
         DelosStorageCostEstimate estimate = DelosStorageCostEstimate.fromStatistics(extreme, true);
