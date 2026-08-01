@@ -77,10 +77,11 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
 /**
- * Inventory-only human maintainability audit.
+ * Inventory-only human maintainability audit for the complete production tree.
  *
- * <p>The task reports review signals. It deliberately does not convert human
- * thresholds into automatic build failures.</p>
+ * <p>The task reports ALL_PRODUCTION first and then provenance breakdowns.
+ * It deliberately does not convert human thresholds into automatic build
+ * failures.</p>
  */
 public final class DelosHumanMaintainabilityAudit {
     private final Path root;
@@ -546,67 +547,16 @@ public final class DelosHumanMaintainabilityAudit {
 
     private void writeSummary() throws IOException {
         Properties summary = new Properties();
+        addSummary(summary, "allProduction", methods, classes, sources.size());
         for (SourceCategory category : SourceCategory.values()) {
-            String prefix = category.propertyPrefix;
             List<MethodRecord> categoryMethods = methods.stream()
                     .filter(method -> method.source.category == category).toList();
             List<ClassRecord> categoryClasses = classes.stream()
                     .filter(record -> record.source.category == category).toList();
-            summary.setProperty(prefix + "Files", Integer.toString((int) sources.stream()
-                    .filter(source -> source.category == category).count()));
-            summary.setProperty(prefix + "Methods", Integer.toString(categoryMethods.size()));
-            summary.setProperty(prefix + "TinyMethods1To3", Integer.toString(count(categoryMethods,
-                    method -> !method.declarationOnly() && method.executableLines >= 1
-                            && method.executableLines <= 3)));
-            summary.setProperty(prefix + "TinyMethods4To5", Integer.toString(count(categoryMethods,
-                    method -> !method.declarationOnly() && method.executableLines >= 4
-                            && method.executableLines <= 5)));
-            summary.setProperty(prefix + "PrivateTinyMethods", Integer.toString(count(categoryMethods,
-                    MethodRecord::privateTiny)));
-            summary.setProperty(prefix + "PrivateTinyOneCaller", Integer.toString(count(categoryMethods,
-                    method -> method.privateTiny() && method.localCallerNames.size() <= 1)));
-            summary.setProperty(prefix + "PureForwarders", Integer.toString(count(categoryMethods,
-                    method -> method.pureForwarder)));
-            summary.setProperty(prefix + "PrivateForwardersOneCaller", Integer.toString(count(categoryMethods,
-                    method -> method.isPrivate && method.pureForwarder
-                            && method.localCallerNames.size() <= 1)));
-            summary.setProperty(prefix + "MethodsOver80Lines", Integer.toString(count(categoryMethods,
-                    method -> method.executableLines > 80)));
-            summary.setProperty(prefix + "MethodsOver150Lines", Integer.toString(count(categoryMethods,
-                    method -> method.executableLines > 150)));
-            summary.setProperty(prefix + "MethodsComplexityOver15", Integer.toString(count(categoryMethods,
-                    method -> method.complexity > 15)));
-            summary.setProperty(prefix + "MethodsComplexityOver25", Integer.toString(count(categoryMethods,
-                    method -> method.complexity > 25)));
-            summary.setProperty(prefix + "MethodsNestingOver4", Integer.toString(count(categoryMethods,
-                    method -> method.maxNesting > 4)));
-            summary.setProperty(prefix + "MethodsNestingOver6", Integer.toString(count(categoryMethods,
-                    method -> method.maxNesting > 6)));
-            summary.setProperty(prefix + "MethodsParametersOver6", Integer.toString(count(categoryMethods,
-                    method -> method.parameters > 6)));
-            summary.setProperty(prefix + "MethodsParametersOver9", Integer.toString(count(categoryMethods,
-                    method -> method.parameters > 9)));
-            summary.setProperty(prefix + "MethodsBooleanParametersOver2", Integer.toString(count(categoryMethods,
-                    method -> method.booleanParameters > 2)));
-            summary.setProperty(prefix + "MethodsBooleanParametersOver3", Integer.toString(count(categoryMethods,
-                    method -> method.booleanParameters > 3)));
-            summary.setProperty(prefix + "Classes", Integer.toString(categoryClasses.size()));
-            summary.setProperty(prefix + "ClassesOver750Lines", Integer.toString(count(categoryClasses,
-                    record -> record.lines() > 750)));
-            summary.setProperty(prefix + "ClassesOver1200Lines", Integer.toString(count(categoryClasses,
-                    record -> record.lines() > 1200)));
-            summary.setProperty(prefix + "ClassesNonTrivialMethodsOver40", Integer.toString(count(categoryClasses,
-                    record -> record.nonTrivialMethods > 40)));
-            summary.setProperty(prefix + "ClassesNonTrivialMethodsOver70", Integer.toString(count(categoryClasses,
-                    record -> record.nonTrivialMethods > 70)));
-            summary.setProperty(prefix + "ClassesMutableFieldsOver12", Integer.toString(count(categoryClasses,
-                    record -> record.mutableFields > 12)));
-            summary.setProperty(prefix + "ClassesMutableFieldsOver20", Integer.toString(count(categoryClasses,
-                    record -> record.mutableFields > 20)));
-            summary.setProperty(prefix + "ClassesExternalDependenciesOver10", Integer.toString(count(categoryClasses,
-                    record -> record.externalDependencies > 10)));
-            summary.setProperty(prefix + "ClassesExternalDependenciesOver16", Integer.toString(count(categoryClasses,
-                    record -> record.externalDependencies > 16)));
+            int categoryFiles = (int) sources.stream()
+                    .filter(source -> source.category == category).count();
+            addSummary(summary, category.propertyPrefix, categoryMethods,
+                    categoryClasses, categoryFiles);
         }
         summary.setProperty("parseErrors", Integer.toString(parseErrors.size()));
         try (PrintWriter writer = writer("summary.properties")) {
@@ -614,6 +564,65 @@ public final class DelosHumanMaintainabilityAudit {
                 writer.println(name + "=" + summary.getProperty(name));
             }
         }
+    }
+
+    private void addSummary(Properties summary, String prefix,
+            List<MethodRecord> scopeMethods, List<ClassRecord> scopeClasses,
+            int scopeFiles) {
+        summary.setProperty(prefix + "Files", Integer.toString(scopeFiles));
+        summary.setProperty(prefix + "Methods", Integer.toString(scopeMethods.size()));
+        summary.setProperty(prefix + "TinyMethods1To3", Integer.toString(count(scopeMethods,
+                method -> !method.declarationOnly() && method.executableLines >= 1
+                        && method.executableLines <= 3)));
+        summary.setProperty(prefix + "TinyMethods4To5", Integer.toString(count(scopeMethods,
+                method -> !method.declarationOnly() && method.executableLines >= 4
+                        && method.executableLines <= 5)));
+        summary.setProperty(prefix + "PrivateTinyMethods", Integer.toString(count(scopeMethods,
+                MethodRecord::privateTiny)));
+        summary.setProperty(prefix + "PrivateTinyOneCaller", Integer.toString(count(scopeMethods,
+                method -> method.privateTiny() && method.localCallerNames.size() <= 1)));
+        summary.setProperty(prefix + "PureForwarders", Integer.toString(count(scopeMethods,
+                method -> method.pureForwarder)));
+        summary.setProperty(prefix + "PrivateForwardersOneCaller", Integer.toString(count(scopeMethods,
+                method -> method.isPrivate && method.pureForwarder
+                        && method.localCallerNames.size() <= 1)));
+        summary.setProperty(prefix + "MethodsOver80Lines", Integer.toString(count(scopeMethods,
+                method -> method.executableLines > 80)));
+        summary.setProperty(prefix + "MethodsOver150Lines", Integer.toString(count(scopeMethods,
+                method -> method.executableLines > 150)));
+        summary.setProperty(prefix + "MethodsComplexityOver15", Integer.toString(count(scopeMethods,
+                method -> method.complexity > 15)));
+        summary.setProperty(prefix + "MethodsComplexityOver25", Integer.toString(count(scopeMethods,
+                method -> method.complexity > 25)));
+        summary.setProperty(prefix + "MethodsNestingOver4", Integer.toString(count(scopeMethods,
+                method -> method.maxNesting > 4)));
+        summary.setProperty(prefix + "MethodsNestingOver6", Integer.toString(count(scopeMethods,
+                method -> method.maxNesting > 6)));
+        summary.setProperty(prefix + "MethodsParametersOver6", Integer.toString(count(scopeMethods,
+                method -> method.parameters > 6)));
+        summary.setProperty(prefix + "MethodsParametersOver9", Integer.toString(count(scopeMethods,
+                method -> method.parameters > 9)));
+        summary.setProperty(prefix + "MethodsBooleanParametersOver2", Integer.toString(count(scopeMethods,
+                method -> method.booleanParameters > 2)));
+        summary.setProperty(prefix + "MethodsBooleanParametersOver3", Integer.toString(count(scopeMethods,
+                method -> method.booleanParameters > 3)));
+        summary.setProperty(prefix + "Classes", Integer.toString(scopeClasses.size()));
+        summary.setProperty(prefix + "ClassesOver750Lines", Integer.toString(count(scopeClasses,
+                record -> record.lines() > 750)));
+        summary.setProperty(prefix + "ClassesOver1200Lines", Integer.toString(count(scopeClasses,
+                record -> record.lines() > 1200)));
+        summary.setProperty(prefix + "ClassesNonTrivialMethodsOver40", Integer.toString(count(scopeClasses,
+                record -> record.nonTrivialMethods > 40)));
+        summary.setProperty(prefix + "ClassesNonTrivialMethodsOver70", Integer.toString(count(scopeClasses,
+                record -> record.nonTrivialMethods > 70)));
+        summary.setProperty(prefix + "ClassesMutableFieldsOver12", Integer.toString(count(scopeClasses,
+                record -> record.mutableFields > 12)));
+        summary.setProperty(prefix + "ClassesMutableFieldsOver20", Integer.toString(count(scopeClasses,
+                record -> record.mutableFields > 20)));
+        summary.setProperty(prefix + "ClassesExternalDependenciesOver10", Integer.toString(count(scopeClasses,
+                record -> record.externalDependencies > 10)));
+        summary.setProperty(prefix + "ClassesExternalDependenciesOver16", Integer.toString(count(scopeClasses,
+                record -> record.externalDependencies > 16)));
     }
 
     private void writeMethodInventory() throws IOException {
@@ -637,7 +646,6 @@ public final class DelosHumanMaintainabilityAudit {
         try (PrintWriter writer = writer("fragmentation-candidates.tsv")) {
             writer.println("status\tcategory\tfile\towner\tmethod\tline\texecutableLines\tstatements\tcallers\tpureForwarder\tforwardTarget\treviewReason");
             methods.stream()
-                    .filter(method -> method.source.category != SourceCategory.UNMODIFIED_INHERITED)
                     .filter(MethodRecord::fragmentationCandidate)
                     .sorted(MethodRecord.ORDER)
                     .forEach(method -> writer.println("UNCLASSIFIED\t"
@@ -655,7 +663,6 @@ public final class DelosHumanMaintainabilityAudit {
         try (PrintWriter writer = writer("method-review-outliers.tsv")) {
             writer.println("status\tcategory\tfile\towner\tmethod\tline\texecutableLines\tcomplexity\tnesting\tparameters\tbooleanParameters\treasons");
             methods.stream()
-                    .filter(method -> method.source.category != SourceCategory.UNMODIFIED_INHERITED)
                     .filter(MethodRecord::methodReviewOutlier)
                     .sorted(MethodRecord.ORDER)
                     .forEach(method -> writer.println("UNCLASSIFIED\t"
@@ -672,7 +679,6 @@ public final class DelosHumanMaintainabilityAudit {
         try (PrintWriter writer = writer("class-review-outliers.tsv")) {
             writer.println("status\tcategory\tfile\tclass\tkind\tline\tlines\tmethods\tnonTrivialMethods\tmutableFields\texternalDependencies\tpublicMethods\treasons");
             classes.stream()
-                    .filter(record -> record.source.category != SourceCategory.UNMODIFIED_INHERITED)
                     .filter(ClassRecord::classReviewOutlier)
                     .sorted(ClassRecord.ORDER)
                     .forEach(record -> writer.println("UNCLASSIFIED\t"
@@ -689,8 +695,7 @@ public final class DelosHumanMaintainabilityAudit {
         try (PrintWriter writer = writer("forwarding-chains.tsv")) {
             writer.println("status\tcategory\tfile\towner\tstartMethod\tline\tdepth\tchain");
             for (MethodRecord method : methods.stream().sorted(MethodRecord.ORDER).toList()) {
-                if (method.source.category == SourceCategory.UNMODIFIED_INHERITED
-                        || !method.pureForwarder || method.forwardTarget == null) {
+                if (!method.pureForwarder || method.forwardTarget == null) {
                     continue;
                 }
                 List<String> chain = forwardingChain(method);
@@ -726,7 +731,6 @@ public final class DelosHumanMaintainabilityAudit {
             writer.println("status\tcategory\tfile\tinterface\tline\timplementationCount\treviewReason");
             classes.stream()
                     .filter(record -> record.kind.equals("INTERFACE"))
-                    .filter(record -> record.source.category != SourceCategory.UNMODIFIED_INHERITED)
                     .filter(record -> implementationCounts.getOrDefault(record.simpleName, 0) <= 1)
                     .sorted(ClassRecord.ORDER)
                     .forEach(record -> writer.println("UNCLASSIFIED\t"
@@ -748,35 +752,18 @@ public final class DelosHumanMaintainabilityAudit {
             writer.println("=====================================");
             writer.println();
             writer.println("This report contains review signals, not automatic quality verdicts.");
+            writer.println("ALL_PRODUCTION is authoritative; provenance is explanatory only.");
             writer.println("Human classification is required before refactoring or baselining.");
             writer.println();
+            writeHumanScope(writer, "ALL_PRODUCTION", methods, classes, sources.size());
             for (SourceCategory category : SourceCategory.values()) {
                 List<MethodRecord> categoryMethods = byCategory.get(category);
-                writer.println(category + ":");
-                writer.println("  files: " + sources.stream()
-                        .filter(source -> source.category == category).count());
-                writer.println("  methods: " + categoryMethods.size());
-                writer.println("  1-3 executable lines: " + count(categoryMethods,
-                        method -> !method.declarationOnly()
-                                && method.executableLines >= 1
-                                && method.executableLines <= 3));
-                writer.println("  4-5 executable lines: " + count(categoryMethods,
-                        method -> !method.declarationOnly()
-                                && method.executableLines >= 4
-                                && method.executableLines <= 5));
-                writer.println("  private tiny methods: " + count(categoryMethods,
-                        MethodRecord::privateTiny));
-                writer.println("  private tiny methods with zero/one local caller: "
-                        + count(categoryMethods, method -> method.privateTiny()
-                                && method.localCallerNames.size() <= 1));
-                writer.println("  pure forwarding methods: " + count(categoryMethods,
-                        method -> method.pureForwarder));
-                writer.println("  method review outliers: " + count(categoryMethods,
-                        MethodRecord::methodReviewOutlier));
-                writer.println("  class review outliers: " + classes.stream()
-                        .filter(record -> record.source.category == category)
-                        .filter(ClassRecord::classReviewOutlier).count());
-                writer.println();
+                List<ClassRecord> categoryClasses = classes.stream()
+                        .filter(record -> record.source.category == category).toList();
+                int categoryFiles = (int) sources.stream()
+                        .filter(source -> source.category == category).count();
+                writeHumanScope(writer, category.name(), categoryMethods,
+                        categoryClasses, categoryFiles);
             }
             writer.println("Not measured automatically in this first inventory:");
             writer.println("- cognitive complexity");
@@ -789,6 +776,34 @@ public final class DelosHumanMaintainabilityAudit {
             writer.println("These require later structural implementation or runtime evidence;");
             writer.println("they must not be guessed from method length or call counts.");
         }
+    }
+
+    private void writeHumanScope(PrintWriter writer, String label,
+            List<MethodRecord> scopeMethods, List<ClassRecord> scopeClasses,
+            int scopeFiles) {
+        writer.println(label + ":");
+        writer.println("  files: " + scopeFiles);
+        writer.println("  methods: " + scopeMethods.size());
+        writer.println("  1-3 executable lines: " + count(scopeMethods,
+                method -> !method.declarationOnly()
+                        && method.executableLines >= 1
+                        && method.executableLines <= 3));
+        writer.println("  4-5 executable lines: " + count(scopeMethods,
+                method -> !method.declarationOnly()
+                        && method.executableLines >= 4
+                        && method.executableLines <= 5));
+        writer.println("  private tiny methods: " + count(scopeMethods,
+                MethodRecord::privateTiny));
+        writer.println("  private tiny methods with zero/one local caller: "
+                + count(scopeMethods, method -> method.privateTiny()
+                        && method.localCallerNames.size() <= 1));
+        writer.println("  pure forwarding methods: " + count(scopeMethods,
+                method -> method.pureForwarder));
+        writer.println("  method review outliers: " + count(scopeMethods,
+                MethodRecord::methodReviewOutlier));
+        writer.println("  class review outliers: " + count(scopeClasses,
+                ClassRecord::classReviewOutlier));
+        writer.println();
     }
 
     private void writeParseErrors() throws IOException {

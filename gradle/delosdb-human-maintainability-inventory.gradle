@@ -1,5 +1,5 @@
 /*
- * Human-centred maintainability inventory.
+ * Complete-codebase human-centred maintainability inventory.
  *
  * This task emits review evidence. It is intentionally not part of S0 and
  * does not turn human review thresholds into automatic build failures.
@@ -35,7 +35,7 @@ tasks.register('compileDelosHumanMaintainabilityAudit', JavaCompile) {
 
 tasks.register('delosHumanMaintainabilityInventory', JavaExec) {
     group = 'verification'
-    description = 'Writes human-maintainability review evidence without enforcing subjective thresholds.'
+    description = 'Writes ALL_PRODUCTION-first human-maintainability evidence without enforcing subjective thresholds.'
     dependsOn 'compileDelosHumanMaintainabilityAudit'
 
     classpath = files(hmAuditClasses)
