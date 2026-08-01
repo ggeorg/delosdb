@@ -28,7 +28,7 @@ import java.util.List;
  *
  * <p>The façade preserves the stable diagnostics type used by tests and
  * inspection tools, while the inherited interfaces keep database lifecycle,
- * persistence, space management, maintenance, index, cache/recovery, and
+ * persistence, space management, maintenance, index, cache/consistency, and
  * operation concerns independently readable and maintainable.</p>
  */
 public interface DelosStorageDiagnostics
@@ -37,7 +37,7 @@ public interface DelosStorageDiagnostics
                 DelosStorageSpaceDiagnostics,
                 DelosStorageMaintenanceDiagnostics,
                 DelosStorageIndexDiagnostics,
-                DelosStorageCacheRecoveryDiagnostics,
+                DelosStorageCacheConsistencyDiagnostics,
                 DelosStorageOperationDiagnostics {
     default DelosStoragePageDiagnostics pageDiagnosticsForTesting(int segment, long containerId) {
         return new DelosStoragePageDiagnostics(
@@ -91,20 +91,6 @@ public interface DelosStorageDiagnostics
                 pageCacheFlushCountForTesting(segment, containerId),
                 pageCachePinnedEvictionSkipCountForTesting(segment, containerId),
                 pageCacheLastPageGenerationForTesting(segment, containerId));
-    }
-
-    default DelosStorageRecoveryDiagnostics recoveryDiagnosticsForTesting(int segment, long containerId) {
-        return new DelosStorageRecoveryDiagnostics(
-                subsystemRecoveryRecordsFileForTesting(segment, containerId),
-                subsystemRecoveryRecordCountForTesting(segment, containerId),
-                subsystemRecoveryLastSequenceForTesting(segment, containerId),
-                rowPageRedoRecordCountForTesting(segment, containerId),
-                indexPageRedoRecordCountForTesting(segment, containerId),
-                overflowPageRedoRecordCountForTesting(segment, containerId),
-                freeSpaceMapRedoRecordCountForTesting(segment, containerId),
-                transactionOutcomeRedoRecordCountForTesting(segment, containerId),
-                checkpointRecoveryRecordCountForTesting(segment, containerId),
-                subsystemRecoveryRecordSummariesForTesting(segment, containerId));
     }
 
     default DelosStorageConsistencyDiagnostics consistencyDiagnosticsForTesting(int segment, long containerId) {

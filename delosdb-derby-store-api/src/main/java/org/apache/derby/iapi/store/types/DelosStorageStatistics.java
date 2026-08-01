@@ -53,7 +53,6 @@ public record DelosStorageStatistics(String providerId,
                                      long pageCacheSize,
                                      long pageCacheDirtyPageCount,
                                      long attributeOverflowValueBytes,
-                                     long subsystemRecoveryRecordCount,
                                      long observedStorageBytes,
                                      List<String> observations) {
     public DelosStorageStatistics {
@@ -71,7 +70,6 @@ public record DelosStorageStatistics(String providerId,
                 || pageCacheSize < 0L
                 || pageCacheDirtyPageCount < 0L
                 || attributeOverflowValueBytes < 0L
-                || subsystemRecoveryRecordCount < 0L
                 || observedStorageBytes < 0L) {
             throw new IllegalArgumentException("storage statistics counters must not be negative");
         }
@@ -107,7 +105,6 @@ public record DelosStorageStatistics(String providerId,
                 diagnostics.pageCacheSizeForTesting(segment, containerId),
                 diagnostics.pageCacheDirtyPageCountForTesting(segment, containerId),
                 diagnostics.attributeOverflowValueBytesForTesting(segment, containerId),
-                diagnostics.subsystemRecoveryRecordCountForTesting(segment, containerId),
                 observedBytes,
                 observations);
     }
@@ -150,7 +147,6 @@ public record DelosStorageStatistics(String providerId,
                 diagnostics.pageCacheSizeForTesting(),
                 diagnostics.pageCacheDirtyPageCountForTesting(),
                 diagnostics.attributeOverflowValueBytesForTesting(),
-                diagnostics.subsystemRecoveryRecordCountForTesting(),
                 observedBytes,
                 observations);
     }
@@ -165,10 +161,6 @@ public record DelosStorageStatistics(String providerId,
 
     public boolean hasOrderedIndexStatistics() {
         return orderedIndexPageCount > 0L || orderedIndexEntryCount > 0L;
-    }
-
-    public boolean hasRecoveryStatistics() {
-        return subsystemRecoveryRecordCount > 0L;
     }
 
     public String summary() {
@@ -198,7 +190,6 @@ public record DelosStorageStatistics(String providerId,
         add(paths, diagnostics.pageMutationLogFileForTesting(segment, containerId));
         add(paths, diagnostics.writeAheadLogFileForTesting(segment, containerId));
         add(paths, diagnostics.checkpointFileForTesting(segment, containerId));
-        add(paths, diagnostics.subsystemRecoveryRecordsFileForTesting(segment, containerId));
         add(paths, diagnostics.legacySnapshotFileForTesting(segment, containerId));
 
         long bytes = 0L;
@@ -227,7 +218,6 @@ public record DelosStorageStatistics(String providerId,
         add(paths, diagnostics.pageMutationLogFileForTesting());
         add(paths, diagnostics.writeAheadLogFileForTesting());
         add(paths, diagnostics.checkpointFileForTesting());
-        add(paths, diagnostics.subsystemRecoveryRecordsFileForTesting());
         add(paths, diagnostics.legacySnapshotFileForTesting());
 
         long bytes = 0L;

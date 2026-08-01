@@ -63,12 +63,6 @@ public record DelosStorageLifecycleConsistencyReport(
                 .count();
     }
 
-    public long recoveryCompleteTargetCount() {
-        return snapshots.stream()
-                .filter(DelosStorageLifecycleConsistencySnapshot::recoveryComplete)
-                .count();
-    }
-
     public List<String> summaries() {
         return snapshots.stream()
                 .map(DelosStorageLifecycleConsistencySnapshot::summary)

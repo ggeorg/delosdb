@@ -1,6 +1,6 @@
 # DelosDB shared store/type contract inventory
 # category|file
-# 83 surviving Stage 7.3 contracts + 3 Stage 8 runtime diagnostics + 1 repository-integrity utility = 87
+# 82 surviving Stage 7.3 contracts + 3 Stage 8 runtime diagnostics + 1 repository-integrity utility = 86
 STAGE7_3_SURVIVOR|DelosCrossEngineConsistencyReport.java
 STAGE7_3_SURVIVOR|DelosDatabaseCommitTimingSnapshot.java
 STAGE7_3_SURVIVOR|DelosDatabaseMemorySnapshot.java
@@ -18,7 +18,7 @@ STAGE7_3_SURVIVOR|DelosOptimizerPredicatePushdownDiagnostics.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoDiagnosticsDirectory.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoMetrics.java
 STAGE8_RUNTIME_DIAGNOSTIC|DelosRawStoreIoSnapshot.java
-STAGE7_3_SURVIVOR|DelosStorageCacheRecoveryDiagnostics.java
+STAGE7_3_SURVIVOR|DelosStorageCacheConsistencyDiagnostics.java
 STAGE7_3_SURVIVOR|DelosStorageCapabilities.java
 STAGE7_3_SURVIVOR|DelosStorageCapabilitiesReport.java
 STAGE7_3_SURVIVOR|DelosStorageConsistencyDiagnostics.java
@@ -57,7 +57,6 @@ STAGE7_3_SURVIVOR|DelosStoragePredicatePushdown.java
 STAGE7_3_SURVIVOR|DelosStoragePredicatePushdownReport.java
 STAGE7_3_SURVIVOR|DelosStoragePredicatePushdownRequest.java
 STAGE7_3_SURVIVOR|DelosStorageProviderIds.java
-STAGE7_3_SURVIVOR|DelosStorageRecoveryDiagnostics.java
 STAGE7_3_SURVIVOR|DelosStorageRow.java
 STAGE7_3_SURVIVOR|DelosStorageScan.java
 STAGE7_3_SURVIVOR|DelosStorageSharedServiceReadinessItem.java

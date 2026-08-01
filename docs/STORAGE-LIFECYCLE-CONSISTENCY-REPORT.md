@@ -9,7 +9,6 @@ The report is intentionally diagnostic-only. It does not create a new storage au
 The report aggregates already-existing lifecycle signals into one shape:
 
 * checkpoint status
-* subsystem recovery metadata completeness
 * purge/vacuum state
 * Derby analyze/update-statistics observation for MVCC tables
 * backup status marker
@@ -34,7 +33,7 @@ It must not:
 
 * change heap page format
 * change raw log format
-* change MVCC page/sidecar format
+* change MVCC page or RawStore format
 * replace Derby optimizer/statistics authority
 * make heap depend on MVCC implementation
 * make MVCC durable storage depend on Derby heap internals
@@ -42,4 +41,4 @@ It must not:
 
 ## Current proof
 
-`StorageLifecycleConsistencyReportTest` creates a mixed heap + `delos_mvcc` database, drives MVCC checkpoint/recovery, purge/vacuum, and analyze/update-statistics lifecycle points, then verifies that one shared report can summarize both engines without changing SQL results or reopen behavior.
+`StorageLifecycleConsistencyReportTest` creates a mixed heap + `delos_mvcc` database, drives MVCC checkpoint, purge/vacuum, and analyze/update-statistics lifecycle points, then verifies that one shared report can summarize both engines without changing SQL results or reopen behavior.

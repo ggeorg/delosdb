@@ -35,7 +35,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosOpt
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoMetrics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCacheRecoveryDiagnostics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCacheConsistencyDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilities.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilitiesReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java
@@ -74,7 +74,6 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosSto
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdownReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdownRequest.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageProviderIds.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageRecoveryDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageRow.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageScan.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessItem.java

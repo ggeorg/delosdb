@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.iapi.store.types.DelosStorageCacheRecoveryDiagnostics
+   Derby - Class org.apache.derby.iapi.store.types.DelosStorageCacheConsistencyDiagnostics
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -20,10 +20,8 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.util.List;
-
-/** Page-cache, overflow, recovery, and consistency diagnostics. */
-interface DelosStorageCacheRecoveryDiagnostics {
+/** Page-cache, overflow, and consistency diagnostics. */
+interface DelosStorageCacheConsistencyDiagnostics {
     long pageCacheMaxPageCountForTesting(int segment, long containerId);
 
     long pageCacheSizeForTesting(int segment, long containerId);
@@ -84,42 +82,6 @@ interface DelosStorageCacheRecoveryDiagnostics {
 
     default long attributeOverflowValueBytesForTesting(int segment, long containerId) {
         return 0L;
-    }
-
-    default long subsystemRecoveryRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long subsystemRecoveryLastSequenceForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long rowPageRedoRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long indexPageRedoRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long overflowPageRedoRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapRedoRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long transactionOutcomeRedoRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long checkpointRecoveryRecordCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default List<String> subsystemRecoveryRecordSummariesForTesting(int segment, long containerId) {
-        return List.of();
     }
 
     int consistencyErrorCountForTesting(int segment, long containerId);

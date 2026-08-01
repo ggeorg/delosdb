@@ -101,10 +101,6 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
                     0,
                     mvccContainerId);
             assertTrue("MVCC lifecycle should observe a checkpoint", mvcc.checkpointObserved());
-            assertEquals("RawStore-owned recovery should not invent external recovery metadata records",
-                    0L, mvcc.recoveryRecordCount());
-            assertFalse("RawStore-owned recovery should not advertise the retired external recovery boundary",
-                    mvcc.recoveryComplete());
             assertTrue("MVCC lifecycle should report RawStore recovery authority: "
                             + mvcc.consistencySummary(),
                     mvcc.consistencySummary().contains("RawStore owns consistency and recovery"));
@@ -115,7 +111,7 @@ public final class StorageLifecycleConsistencyReportTest extends MvccSqlTestSupp
             assertTrue("MVCC summary should be compact and provider-neutral: " + mvcc.summary(),
                     mvcc.summary().contains("provider=" + DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID)
                             && mvcc.summary().contains("checkpoint=")
-                            && mvcc.summary().contains("recoveryRecords="));
+                            && mvcc.summary().contains("purgeObserved="));
 
             assertRows(connection,
                     "select id, category from mvcc_lifecycle_report_t order by id",

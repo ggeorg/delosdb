@@ -53,10 +53,6 @@ interface DelosStoragePersistenceDiagnostics {
 
     Path checkpointFileForTesting(int segment, long containerId);
 
-    default Path subsystemRecoveryRecordsFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
     Path legacySnapshotFileForTesting(int segment, long containerId);
 
     String checkpointStatusForTesting(int segment, long containerId);

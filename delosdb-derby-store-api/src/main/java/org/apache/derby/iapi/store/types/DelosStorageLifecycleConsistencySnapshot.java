@@ -26,7 +26,7 @@ import java.util.Objects;
  * Read-only storage lifecycle snapshot for a single heap or MVCC target.
  *
  * <p>The snapshot aggregates lifecycle signals which already exist elsewhere:
- * checkpoint status, subsystem recovery metadata, purge/vacuum state,
+ * checkpoint status, purge/vacuum state,
  * analyze/update-statistics diagnostics, backup status, and consistency.  It is
  * a reporting shape only; it is not storage authority and it must not change
  * optimizer, recovery, backup, heap, or MVCC behavior.</p>
@@ -37,8 +37,6 @@ public record DelosStorageLifecycleConsistencySnapshot(
         long containerId,
         String checkpointStatus,
         boolean checkpointObserved,
-        long recoveryRecordCount,
-        boolean recoveryComplete,
         long purgeQueuePendingCount,
         long purgeDaemonRunCount,
         boolean purgeObserved,
@@ -58,8 +56,7 @@ public record DelosStorageLifecycleConsistencySnapshot(
         backupStatus = normalize(backupStatus);
         consistencySummary = normalize(consistencySummary);
         summary = normalize(summary);
-        if (recoveryRecordCount < 0L
-                || purgeQueuePendingCount < 0L
+        if (purgeQueuePendingCount < 0L
                 || purgeDaemonRunCount < 0L
                 || analyzeUpdateCount < 0L) {
             throw new IllegalArgumentException("lifecycle diagnostic counts must not be negative");
@@ -81,7 +78,6 @@ public record DelosStorageLifecycleConsistencySnapshot(
         Objects.requireNonNull(diagnostics, "diagnostics");
         String providerId = diagnostics.providerId();
         String checkpointStatus = diagnostics.checkpointStatusForTesting(segment, containerId);
-        DelosStorageRecoveryDiagnostics recovery = diagnostics.recoveryDiagnosticsForTesting(segment, containerId);
         DelosVacuumOutcome vacuum = diagnostics.lastVacuumOutcomeForTesting(segment, containerId);
         long purgeQueuePending = diagnostics.purgeQueuePendingCountForTesting(segment, containerId);
         long purgeDaemonRuns = diagnostics.purgeDaemonRunCountForTesting(segment, containerId);
@@ -110,14 +106,11 @@ public record DelosStorageLifecycleConsistencySnapshot(
         boolean consistent = diagnostics.consistencyErrorCountForTesting(segment, containerId) == 0;
         String consistencySummary = diagnostics.consistencySummaryForTesting(segment, containerId);
         boolean checkpointObserved = checkpointObserved(checkpointStatus);
-        boolean recoveryComplete = recovery.completeCheckpointBoundary();
         String summary = "provider=" + DelosStorageProviderIds.normalize(providerId)
                 + " segment=" + segment
                 + " container=" + containerId
                 + " checkpoint=" + checkpointStatus
                 + " checkpointObserved=" + checkpointObserved
-                + " recoveryRecords=" + recovery.recordCount()
-                + " recoveryComplete=" + recoveryComplete
                 + " purgeObserved=" + purgeObserved
                 + " analyzeObserved=" + analyzeObserved
                 + " backup=" + normalize(backupStatus)
@@ -128,8 +121,6 @@ public record DelosStorageLifecycleConsistencySnapshot(
                 containerId,
                 checkpointStatus,
                 checkpointObserved,
-                recovery.recordCount(),
-                recoveryComplete,
                 purgeQueuePending,
                 purgeDaemonRuns,
                 purgeObserved,

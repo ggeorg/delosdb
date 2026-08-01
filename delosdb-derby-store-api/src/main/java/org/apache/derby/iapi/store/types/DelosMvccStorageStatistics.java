@@ -91,14 +91,6 @@ public record DelosMvccStorageStatistics(String providerId,
                                          long attributeOverflowReadCount,
                                          long attributeOverflowInlineRowBytes,
                                          long attributeOverflowValueBytes,
-                                         long subsystemRecoveryRecordCount,
-                                         long subsystemRecoveryLastSequence,
-                                         long rowPageRedoRecordCount,
-                                         long indexPageRedoRecordCount,
-                                         long overflowPageRedoRecordCount,
-                                         long freeSpaceMapRedoRecordCount,
-                                         long transactionOutcomeRedoRecordCount,
-                                         long checkpointRecoveryRecordCount,
                                          boolean candidateIndexAuthorityRemoved,
                                          long observedStorageBytes,
                                          List<String> observations) {
@@ -165,14 +157,6 @@ public record DelosMvccStorageStatistics(String providerId,
                 || attributeOverflowReadCount < 0L
                 || attributeOverflowInlineRowBytes < 0L
                 || attributeOverflowValueBytes < 0L
-                || subsystemRecoveryRecordCount < 0L
-                || subsystemRecoveryLastSequence < 0L
-                || rowPageRedoRecordCount < 0L
-                || indexPageRedoRecordCount < 0L
-                || overflowPageRedoRecordCount < 0L
-                || freeSpaceMapRedoRecordCount < 0L
-                || transactionOutcomeRedoRecordCount < 0L
-                || checkpointRecoveryRecordCount < 0L
                 || observedStorageBytes < 0L) {
             throw new IllegalArgumentException("MVCC storage statistics counters must not be negative");
         }
@@ -251,14 +235,6 @@ public record DelosMvccStorageStatistics(String providerId,
                 diagnostics.attributeOverflowReadCountForTesting(segment, containerId),
                 diagnostics.attributeOverflowInlineRowBytesForTesting(segment, containerId),
                 diagnostics.attributeOverflowValueBytesForTesting(segment, containerId),
-                diagnostics.subsystemRecoveryRecordCountForTesting(segment, containerId),
-                diagnostics.subsystemRecoveryLastSequenceForTesting(segment, containerId),
-                diagnostics.rowPageRedoRecordCountForTesting(segment, containerId),
-                diagnostics.indexPageRedoRecordCountForTesting(segment, containerId),
-                diagnostics.overflowPageRedoRecordCountForTesting(segment, containerId),
-                diagnostics.freeSpaceMapRedoRecordCountForTesting(segment, containerId),
-                diagnostics.transactionOutcomeRedoRecordCountForTesting(segment, containerId),
-                diagnostics.checkpointRecoveryRecordCountForTesting(segment, containerId),
                 true,
                 base.observedStorageBytes(),
                 observations);
@@ -284,25 +260,12 @@ public record DelosMvccStorageStatistics(String providerId,
         return attributeOverflowWriteCount > 0L || attributeOverflowValueBytes > 0L;
     }
 
-    public boolean hasRecoveryStatistics() {
-        return subsystemRecoveryRecordCount > 0L;
-    }
-
     public boolean cachePinsBalanced() {
         return pageCachePinCount == pageCacheUnpinCount && pageCachePinnedPageCount == 0L;
     }
 
     public boolean dirtyStateClean() {
         return pageCacheDirtyPageCount == 0L && pageCacheFlushListPageCount == 0L;
-    }
-
-    public boolean recoveryBoundaryComplete() {
-        return rowPageRedoRecordCount > 0L
-                && indexPageRedoRecordCount > 0L
-                && overflowPageRedoRecordCount > 0L
-                && freeSpaceMapRedoRecordCount > 0L
-                && transactionOutcomeRedoRecordCount > 0L
-                && checkpointRecoveryRecordCount > 0L;
     }
 
     public String summary() {
@@ -314,7 +277,6 @@ public record DelosMvccStorageStatistics(String providerId,
                 + " orderedIndexPages=" + orderedIndexPageCount
                 + " overflowPages=" + overflowPageCount
                 + " cache=" + pageCacheSize + "/" + pageCacheMaxPageCount
-                + " recoveryRecords=" + subsystemRecoveryRecordCount
                 + " bytes=" + observedStorageBytes;
     }
 }
