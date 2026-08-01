@@ -36,7 +36,6 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
@@ -389,7 +388,8 @@ final class MvccRawStoreOrderedIndex {
             Qualifier[][] qualifiers,
             long snapshotSequence,
             MvccRawStoreTransactionContext context) throws StandardException {
-        Optional<IndexPredicate> predicate = IndexPredicate.from(qualifiers);
+        Optional<MvccRawStoreOrderedIndexPredicate.Predicate> predicate =
+                MvccRawStoreOrderedIndexPredicate.from(qualifiers);
         if (predicate.isEmpty()) {
             return Optional.empty();
         }
@@ -430,12 +430,13 @@ final class MvccRawStoreOrderedIndex {
                     if (entry == null) {
                         continue;
                     }
-                    ScanDecision decision = predicate.get().decide(entry.columnId(), entry.key());
-                    if (decision == ScanDecision.FINISH) {
+                    MvccRawStoreOrderedIndexPredicate.Decision decision =
+                            predicate.get().decide(entry.columnId(), entry.key());
+                    if (decision == MvccRawStoreOrderedIndexPredicate.Decision.FINISH) {
                         finished = true;
                         break;
                     }
-                    if (decision == ScanDecision.MATCH
+                    if (decision == MvccRawStoreOrderedIndexPredicate.Decision.MATCH
                             && visibleAt(entry, context, snapshotSequence)) {
                         distinctRowIds.add(entry.rowId());
                     }
@@ -980,223 +981,6 @@ final class MvccRawStoreOrderedIndex {
                 && snapshotSequence < entry.endSequence();
     }
 
-    private sealed interface IndexPredicate permits EqualityPredicate, RangePredicate {
-        int columnId();
-
-        ScanDecision decide(int columnId, StoreDataValue key) throws StandardException;
-
-        static Optional<IndexPredicate> from(Qualifier[][] qualifiers) throws StandardException {
-            Optional<IndexPredicate> equality = equality(qualifiers);
-            return equality.isPresent() ? equality : range(qualifiers);
-        }
-
-        private static Optional<IndexPredicate> equality(Qualifier[][] qualifiers)
-                throws StandardException {
-            if (qualifiers == null || qualifiers.length == 0) {
-                return Optional.empty();
-            }
-            for (int andTermIndex = 0; andTermIndex < qualifiers.length; andTermIndex++) {
-                Qualifier[] andTerm = qualifiers[andTermIndex];
-                if (andTerm == null || andTerm.length == 0) {
-                    continue;
-                }
-                if (andTermIndex > 0 && andTerm.length != 1) {
-                    return Optional.empty();
-                }
-                for (Qualifier qualifier : andTerm) {
-                    if (qualifier == null
-                            || qualifier.getColumnId() < 0
-                            || qualifier.getOperator() != StoreOrderable.ORDER_OP_EQUALS
-                            || qualifier.negateCompareResult()) {
-                        continue;
-                    }
-                    StoreDataValue orderable = qualifier.getOrderable();
-                    if (orderable == null) {
-                        return Optional.empty();
-                    }
-                    return Optional.of(new EqualityPredicate(
-                            qualifier.getColumnId(),
-                            StoreValueCopySupport.cloneValue(orderable)));
-                }
-            }
-            return Optional.empty();
-        }
-
-        private static Optional<IndexPredicate> range(Qualifier[][] qualifiers)
-                throws StandardException {
-            if (qualifiers == null || qualifiers.length == 0) {
-                return Optional.empty();
-            }
-            int column = -1;
-            StoreDataValue lower = null;
-            boolean lowerInclusive = true;
-            StoreDataValue upper = null;
-            boolean upperInclusive = true;
-            boolean sawBound = false;
-
-            for (int andTermIndex = 0; andTermIndex < qualifiers.length; andTermIndex++) {
-                Qualifier[] andTerm = qualifiers[andTermIndex];
-                if (andTerm == null || andTerm.length == 0) {
-                    return Optional.empty();
-                }
-                if (andTermIndex > 0 && andTerm.length != 1) {
-                    return Optional.empty();
-                }
-                for (Qualifier qualifier : andTerm) {
-                    if (qualifier == null || qualifier.getColumnId() < 0) {
-                        return Optional.empty();
-                    }
-                    int operator = normalizedRangeOperator(
-                            qualifier.getOperator(),
-                            qualifier.negateCompareResult());
-                    if (operator == Integer.MIN_VALUE) {
-                        return Optional.empty();
-                    }
-                    if (column == -1) {
-                        column = qualifier.getColumnId();
-                    } else if (column != qualifier.getColumnId()) {
-                        return Optional.empty();
-                    }
-                    StoreDataValue orderable = qualifier.getOrderable();
-                    if (orderable == null) {
-                        return Optional.empty();
-                    }
-                    StoreDataValue bound = StoreValueCopySupport.cloneValue(orderable);
-                    switch (operator) {
-                        case StoreOrderable.ORDER_OP_GREATERTHAN -> {
-                            BoundChoice choice = chooseLower(lower, lowerInclusive, bound, false);
-                            lower = choice.value();
-                            lowerInclusive = choice.inclusive();
-                            sawBound = true;
-                        }
-                        case StoreOrderable.ORDER_OP_GREATEROREQUALS -> {
-                            BoundChoice choice = chooseLower(lower, lowerInclusive, bound, true);
-                            lower = choice.value();
-                            lowerInclusive = choice.inclusive();
-                            sawBound = true;
-                        }
-                        case StoreOrderable.ORDER_OP_LESSTHAN -> {
-                            BoundChoice choice = chooseUpper(upper, upperInclusive, bound, false);
-                            upper = choice.value();
-                            upperInclusive = choice.inclusive();
-                            sawBound = true;
-                        }
-                        case StoreOrderable.ORDER_OP_LESSOREQUALS -> {
-                            BoundChoice choice = chooseUpper(upper, upperInclusive, bound, true);
-                            upper = choice.value();
-                            upperInclusive = choice.inclusive();
-                            sawBound = true;
-                        }
-                        default -> {
-                            return Optional.empty();
-                        }
-                    }
-                }
-            }
-            return !sawBound || column < 0
-                    ? Optional.empty()
-                    : Optional.of(new RangePredicate(
-                            column,
-                            lower,
-                            lowerInclusive,
-                            upper,
-                            upperInclusive));
-        }
-
-        private static int normalizedRangeOperator(int operator, boolean negated) {
-            if (!negated) {
-                return operator;
-            }
-            return switch (operator) {
-                case StoreOrderable.ORDER_OP_LESSTHAN -> StoreOrderable.ORDER_OP_GREATEROREQUALS;
-                case StoreOrderable.ORDER_OP_LESSOREQUALS -> StoreOrderable.ORDER_OP_GREATERTHAN;
-                case StoreOrderable.ORDER_OP_GREATERTHAN -> StoreOrderable.ORDER_OP_LESSOREQUALS;
-                case StoreOrderable.ORDER_OP_GREATEROREQUALS -> StoreOrderable.ORDER_OP_LESSTHAN;
-                default -> Integer.MIN_VALUE;
-            };
-        }
-
-        private static BoundChoice chooseLower(
-                StoreDataValue current,
-                boolean currentInclusive,
-                StoreDataValue candidate,
-                boolean candidateInclusive) throws StandardException {
-            if (current == null) {
-                return new BoundChoice(candidate, candidateInclusive);
-            }
-            int comparison = StoreTypeUtil.compare(candidate, current, true);
-            if (comparison > 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
-                return new BoundChoice(candidate, candidateInclusive);
-            }
-            return new BoundChoice(current, currentInclusive);
-        }
-
-        private static BoundChoice chooseUpper(
-                StoreDataValue current,
-                boolean currentInclusive,
-                StoreDataValue candidate,
-                boolean candidateInclusive) throws StandardException {
-            if (current == null) {
-                return new BoundChoice(candidate, candidateInclusive);
-            }
-            int comparison = StoreTypeUtil.compare(candidate, current, true);
-            if (comparison < 0 || (comparison == 0 && currentInclusive && !candidateInclusive)) {
-                return new BoundChoice(candidate, candidateInclusive);
-            }
-            return new BoundChoice(current, currentInclusive);
-        }
-    }
-
-    private record EqualityPredicate(int columnId, StoreDataValue value) implements IndexPredicate {
-        @Override
-        public ScanDecision decide(int candidateColumnId, StoreDataValue key) throws StandardException {
-            if (candidateColumnId < columnId) {
-                return ScanDecision.SKIP;
-            }
-            if (candidateColumnId > columnId) {
-                return ScanDecision.FINISH;
-            }
-            int comparison = StoreTypeUtil.compare(key, value, true);
-            if (comparison < 0) {
-                return ScanDecision.SKIP;
-            }
-            return comparison == 0 ? ScanDecision.MATCH : ScanDecision.FINISH;
-        }
-    }
-
-    private record RangePredicate(
-            int columnId,
-            StoreDataValue lower,
-            boolean lowerInclusive,
-            StoreDataValue upper,
-            boolean upperInclusive) implements IndexPredicate {
-        @Override
-        public ScanDecision decide(int candidateColumnId, StoreDataValue key) throws StandardException {
-            if (candidateColumnId < columnId) {
-                return ScanDecision.SKIP;
-            }
-            if (candidateColumnId > columnId) {
-                return ScanDecision.FINISH;
-            }
-            if (lower != null) {
-                int comparison = StoreTypeUtil.compare(key, lower, true);
-                if (comparison < 0 || (comparison == 0 && !lowerInclusive)) {
-                    return ScanDecision.SKIP;
-                }
-            }
-            if (upper != null) {
-                int comparison = StoreTypeUtil.compare(key, upper, true);
-                if (comparison > 0 || (comparison == 0 && !upperInclusive)) {
-                    return ScanDecision.FINISH;
-                }
-            }
-            return ScanDecision.MATCH;
-        }
-    }
-
-    private record BoundChoice(StoreDataValue value, boolean inclusive) {
-    }
-
     private record EntryIdentity(int columnId, long rowId, long versionId) {
     }
 
@@ -1222,11 +1006,6 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
-    private enum ScanDecision {
-        SKIP,
-        MATCH,
-        FINISH
-    }
 
     private static final class OrderedIndexComparisonFailure extends RuntimeException {
         OrderedIndexComparisonFailure(StandardException cause) {

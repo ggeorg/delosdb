@@ -70,89 +70,108 @@ public record DelosStorageSharedServiceReadinessReport(
                         && capability.supportsOrderedLookup()
                         && capability.supportsStableKeyOrder());
 
-        List<DelosStorageSharedServiceReadinessItem> decisions = new ArrayList<>();
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                DIAGNOSTICS_READ_MODEL,
-                readyReadOnly(mixedProviders && readOnlyCapabilities),
-                mixedProviders && readOnlyCapabilities,
-                true,
-                List.of(
-                        "heap and MVCC diagnostics are reachable through DelosStorageDiagnosticsRegistry",
-                        "capability snapshots are read-only",
-                        "provider ids are normalized through DelosStorageProviderIds"),
-                mixedProviders ? List.of() : List.of("report does not cover both heap and delos_mvcc"),
-                "keep this service read-only; do not make it storage authority"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                LIFECYCLE_READ_MODEL,
-                readyReadOnly(mixedProviders && cleanLifecycle),
-                mixedProviders && cleanLifecycle,
-                true,
-                List.of(
-                        "lifecycle consistency report covers checkpoint/recovery/purge/analyze/backup signals",
-                        "all observed lifecycle snapshots are clean"),
-                cleanLifecycle ? List.of() : List.of("one or more lifecycle snapshots are not clean"),
-                "allow shared reporting only; leave lifecycle execution provider-local"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                STATISTICS_COST_READ_MODEL,
-                optimizerNotConsumingCapabilities
-                        ? DelosStorageSharedServiceReadinessLevel.READY_FOR_REPORT_ONLY
-                        : DelosStorageSharedServiceReadinessLevel.NOT_READY,
-                false,
-                true,
-                List.of(
-                        "statistics and cost reports are exposed through provider-neutral snapshots",
-                        "Derby optimizer remains the execution authority"),
-                optimizerNotConsumingCapabilities
-                        ? List.of("report is not optimizer-consumed and must stay diagnostic-only")
-                        : List.of("capability report says optimizer is consuming storage capabilities"),
-                "keep cost/statistics shared as a report until a separate optimizer gate consumes it"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                BACKUP_RESTORE_ORCHESTRATION,
-                DelosStorageSharedServiceReadinessLevel.READY_FOR_REPORT_ONLY,
-                false,
-                true,
-                List.of(
-                        "mixed-engine backup/restore matrix proves heap and delos_mvcc can be verified together",
-                        "backup sidecar state is observable as lifecycle/report metadata"),
-                List.of("backup execution is still owned by Derby raw-store plus MVCC sidecar integration"),
-                "keep orchestration/reporting shared; do not extract execution yet"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                BUFFER_MANAGEMENT,
-                DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF,
-                false,
-                false,
-                List.of("MVCC page-cache replacement policy has a test seam"),
-                List.of("Derby heap buffer/raw cache remains an inherited compatibility boundary"),
-                "collect comparable heap/raw-store cache proof before considering a shared buffer service"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                PAGE_CODEC,
-                DelosStorageSharedServiceReadinessLevel.HEAP_COMPATIBILITY_BOUNDARY,
-                false,
-                false,
-                List.of("MVCC durable page codec is DelosDB-owned"),
-                List.of("Derby heap page and raw log formats are compatibility boundaries"),
-                "do not extract a shared page codec; continue typed-codec proofs inside MVCC only"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                ORDERED_INDEX_AUTHORITY,
-                mvccOrderedProof
-                        ? DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF
-                        : DelosStorageSharedServiceReadinessLevel.NOT_READY,
-                false,
-                false,
-                mvccOrderedProof
-                        ? List.of("MVCC ordered equality/range capabilities are proven by ordered-index pages")
-                        : List.of("no MVCC ordered-index proof was observed in capabilities"),
-                List.of("heap ordered/index authority remains Derby BTree/access-path behavior"),
-                "keep ordered-index execution provider-local; share only diagnostics"));
-        decisions.add(new DelosStorageSharedServiceReadinessItem(
-                PURGE_VACUUM,
-                DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF,
-                false,
-                false,
-                List.of("MVCC purge/vacuum is observable through lifecycle diagnostics"),
-                List.of("heap compress/purge behavior is inherited Derby behavior with different semantics"),
-                "stress MVCC purge separately; do not extract a heap/MVCC purge service"));
+        List<DelosStorageSharedServiceReadinessItem> decisions = new ArrayList<>(8);
+        decisions.addAll(readModelDecisions(
+                mixedProviders,
+                readOnlyCapabilities,
+                cleanLifecycle,
+                optimizerNotConsumingCapabilities));
+        decisions.addAll(providerOwnedDecisions(mvccOrderedProof));
         return new DelosStorageSharedServiceReadinessReport(decisions);
+    }
+
+    private static List<DelosStorageSharedServiceReadinessItem> readModelDecisions(
+            boolean mixedProviders,
+            boolean readOnlyCapabilities,
+            boolean cleanLifecycle,
+            boolean optimizerNotConsumingCapabilities) {
+        return List.of(
+                new DelosStorageSharedServiceReadinessItem(
+                        DIAGNOSTICS_READ_MODEL,
+                        readyReadOnly(mixedProviders && readOnlyCapabilities),
+                        mixedProviders && readOnlyCapabilities,
+                        true,
+                        List.of(
+                                "heap and MVCC diagnostics are reachable through DelosStorageDiagnosticsRegistry",
+                                "capability snapshots are read-only",
+                                "provider ids are normalized through DelosStorageProviderIds"),
+                        mixedProviders ? List.of() : List.of("report does not cover both heap and delos_mvcc"),
+                        "keep this service read-only; do not make it storage authority"),
+                new DelosStorageSharedServiceReadinessItem(
+                        LIFECYCLE_READ_MODEL,
+                        readyReadOnly(mixedProviders && cleanLifecycle),
+                        mixedProviders && cleanLifecycle,
+                        true,
+                        List.of(
+                                "lifecycle consistency report covers checkpoint/recovery/purge/analyze/backup signals",
+                                "all observed lifecycle snapshots are clean"),
+                        cleanLifecycle ? List.of() : List.of("one or more lifecycle snapshots are not clean"),
+                        "allow shared reporting only; leave lifecycle execution provider-local"),
+                new DelosStorageSharedServiceReadinessItem(
+                        STATISTICS_COST_READ_MODEL,
+                        optimizerNotConsumingCapabilities
+                                ? DelosStorageSharedServiceReadinessLevel.READY_FOR_REPORT_ONLY
+                                : DelosStorageSharedServiceReadinessLevel.NOT_READY,
+                        false,
+                        true,
+                        List.of(
+                                "statistics and cost reports are exposed through provider-neutral snapshots",
+                                "Derby optimizer remains the execution authority"),
+                        optimizerNotConsumingCapabilities
+                                ? List.of("report is not optimizer-consumed and must stay diagnostic-only")
+                                : List.of("capability report says optimizer is consuming storage capabilities"),
+                        "keep cost/statistics shared as a report until a separate optimizer gate consumes it"),
+                new DelosStorageSharedServiceReadinessItem(
+                        BACKUP_RESTORE_ORCHESTRATION,
+                        DelosStorageSharedServiceReadinessLevel.READY_FOR_REPORT_ONLY,
+                        false,
+                        true,
+                        List.of(
+                                "mixed-engine backup/restore matrix proves heap and delos_mvcc can be verified together",
+                                "backup sidecar state is observable as lifecycle/report metadata"),
+                        List.of("backup execution is still owned by Derby raw-store plus MVCC sidecar integration"),
+                        "keep orchestration/reporting shared; do not extract execution yet"));
+    }
+
+    private static List<DelosStorageSharedServiceReadinessItem> providerOwnedDecisions(
+            boolean mvccOrderedProof) {
+        return List.of(
+                new DelosStorageSharedServiceReadinessItem(
+                        BUFFER_MANAGEMENT,
+                        DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF,
+                        false,
+                        false,
+                        List.of("MVCC page-cache replacement policy has a test seam"),
+                        List.of("Derby heap buffer/raw cache remains an inherited compatibility boundary"),
+                        "collect comparable heap/raw-store cache proof before considering a shared buffer service"),
+                new DelosStorageSharedServiceReadinessItem(
+                        PAGE_CODEC,
+                        DelosStorageSharedServiceReadinessLevel.HEAP_COMPATIBILITY_BOUNDARY,
+                        false,
+                        false,
+                        List.of("MVCC durable page codec is DelosDB-owned"),
+                        List.of("Derby heap page and raw log formats are compatibility boundaries"),
+                        "do not extract a shared page codec; continue typed-codec proofs inside MVCC only"),
+                new DelosStorageSharedServiceReadinessItem(
+                        ORDERED_INDEX_AUTHORITY,
+                        mvccOrderedProof
+                                ? DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF
+                                : DelosStorageSharedServiceReadinessLevel.NOT_READY,
+                        false,
+                        false,
+                        mvccOrderedProof
+                                ? List.of("MVCC ordered equality/range capabilities are proven by ordered-index pages")
+                                : List.of("no MVCC ordered-index proof was observed in capabilities"),
+                        List.of("heap ordered/index authority remains Derby BTree/access-path behavior"),
+                        "keep ordered-index execution provider-local; share only diagnostics"),
+                new DelosStorageSharedServiceReadinessItem(
+                        PURGE_VACUUM,
+                        DelosStorageSharedServiceReadinessLevel.MVCC_ONLY_PROOF,
+                        false,
+                        false,
+                        List.of("MVCC purge/vacuum is observable through lifecycle diagnostics"),
+                        List.of("heap compress/purge behavior is inherited Derby behavior with different semantics"),
+                        "stress MVCC purge separately; do not extract a heap/MVCC purge service"));
     }
 
     public int itemCount() {
