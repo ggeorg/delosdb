@@ -342,11 +342,7 @@ public final class ClassFileJava implements JavaFactory {
         }
 
         private MethodTypeDesc methodType() {
-            ClassDesc[] parameters = new ClassDesc[parameterTypes.length];
-            for (int i = 0; i < parameterTypes.length; i++) {
-                parameters[i] = classDesc(parameterTypes[i]);
-            }
-            return MethodTypeDesc.of(classDesc(returnType), parameters);
+            return ClassFileJava.methodType(returnType, parameterTypes);
         }
 
         private List<ClassDesc> thrownExceptionDescs() {

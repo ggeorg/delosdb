@@ -14,6 +14,8 @@ final File riReportDirectory = new File(
         riBuild, 'reports/delosdb/repository-integrity/inventory')
 final File riSummaryFile = new File(riReportDirectory, 'summary.properties')
 final File riCatchInventoryFile = new File(riReportDirectory, 'catch-inventory.tsv')
+final File riDuplicateInventoryFile = new File(
+        riReportDirectory, 'duplicate-production-method-groups.tsv')
 final File riStaticReport = new File(
         riBuild, 'reports/delosdb/repository-integrity-static-analysis.txt')
 final File riBaselineFile = new File(
@@ -22,6 +24,9 @@ final File riBaselineFile = new File(
 final File riBroadCatchClassificationFile = new File(
         riRoot,
         'gradle/static-analysis/delosdb-broad-catch-classification.tsv')
+final File riDuplicateClassificationFile = new File(
+        riRoot,
+        'gradle/static-analysis/delosdb-exact-duplicate-classification.tsv')
 final Object riBuildToolsClasses = project(':delosdb-buildtools')
         .layout.buildDirectory.dir('classes/build-tools')
 
@@ -87,8 +92,10 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
     dependsOn 'delosRepositoryIntegrityInventory'
     inputs.file(riBaselineFile)
     inputs.file(riBroadCatchClassificationFile)
+    inputs.file(riDuplicateClassificationFile)
     inputs.file(riSummaryFile)
     inputs.file(riCatchInventoryFile)
+    inputs.file(riDuplicateInventoryFile)
     outputs.file(riStaticReport)
 
     doLast {
@@ -255,6 +262,77 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
             }
         }
 
+        Map<String, Integer> duplicateClassificationCounts = [
+                'INTENTIONAL_PROTOCOL_MIRROR': 0,
+                'JDBC_INTERFACE_BOILERPLATE': 0,
+                'GENERATED_SOURCE': 0,
+                'VISITOR_PATTERN': 0,
+                'PUBLIC_COMPATIBILITY_WRAPPER': 0,
+                'SAFE_SHARED_AUTHORITY': 0,
+                'SAFE_PRIVATE_HELPER': 0,
+                'DO_NOT_CONSOLIDATE_ACROSS_MODULES': 0
+        ]
+        Set<String> classifiedDuplicateHashes = [] as Set<String>
+        if (!riDuplicateClassificationFile.isFile()) {
+            failures.add('Exact-duplicate classification inventory is missing')
+        } else {
+            List<String> lines = riDuplicateClassificationFile
+                    .readLines('UTF-8')
+                    .findAll { String line -> !line.trim().isEmpty() }
+            if (lines.isEmpty() || lines.first() != 'hash\tclassification') {
+                failures.add('Exact-duplicate classification header is invalid')
+            } else {
+                lines.drop(1).eachWithIndex { String line, int index ->
+                    String[] fields = line.split('\t', -1)
+                    if (fields.length != 2 ||
+                            !(fields[0] ==~ /[0-9a-f]{64}/) ||
+                            !duplicateClassificationCounts.containsKey(fields[1]) ||
+                            !classifiedDuplicateHashes.add(fields[0])) {
+                        failures.add('Invalid exact-duplicate classification row: ' +
+                                (index + 1))
+                    } else {
+                        duplicateClassificationCounts[fields[1]] =
+                                duplicateClassificationCounts[fields[1]] + 1
+                    }
+                }
+            }
+        }
+
+        Set<String> observedDuplicateHashes = [] as Set<String>
+        if (!riDuplicateInventoryFile.isFile()) {
+            failures.add('Exact-duplicate analyzer inventory is missing')
+        } else {
+            List<String> lines = riDuplicateInventoryFile.readLines('UTF-8')
+            if (lines.isEmpty() || lines.first() !=
+                    'hash\tmethodCount\testimatedDuplicateLines\tlocations') {
+                failures.add('Exact-duplicate analyzer header is invalid')
+            } else {
+                lines.drop(1).eachWithIndex { String line, int index ->
+                    String[] fields = line.split('\t', -1)
+                    if (fields.length != 4 ||
+                            !(fields[0] ==~ /[0-9a-f]{64}/) ||
+                            !observedDuplicateHashes.add(fields[0])) {
+                        failures.add('Malformed exact-duplicate analyzer row: ' +
+                                (index + 1))
+                    }
+                }
+            }
+        }
+        if (observedDuplicateHashes != classifiedDuplicateHashes) {
+            failures.add('Exact-duplicate classification differs from source: ' +
+                    'unclassified=' +
+                    (observedDuplicateHashes - classifiedDuplicateHashes).size() +
+                    ', stale=' +
+                    (classifiedDuplicateHashes - observedDuplicateHashes).size())
+        }
+        int expectedDuplicateGroups =
+                riInt(baseline, 'duplicateProductionMethodGroups')
+        if (classifiedDuplicateHashes.size() != expectedDuplicateGroups) {
+            failures.add('Exact-duplicate classification count is ' +
+                    classifiedDuplicateHashes.size() +
+                    ' but baseline requires ' + expectedDuplicateGroups)
+        }
+
         File report = riStaticReport
         report.parentFile.mkdirs()
         report.withPrintWriter('UTF-8') { writer ->
@@ -277,6 +355,22 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                     actual.getProperty('duplicateProductionMethodGroups'))
             writer.println('Estimated duplicate production lines: ' +
                     actual.getProperty('estimatedDuplicateProductionLines'))
+            writer.println('Duplicate groups classified as protocol mirrors: ' +
+                    duplicateClassificationCounts['INTENTIONAL_PROTOCOL_MIRROR'])
+            writer.println('Duplicate groups classified as JDBC boilerplate: ' +
+                    duplicateClassificationCounts['JDBC_INTERFACE_BOILERPLATE'])
+            writer.println('Duplicate groups classified as generated source: ' +
+                    duplicateClassificationCounts['GENERATED_SOURCE'])
+            writer.println('Duplicate groups classified as visitor patterns: ' +
+                    duplicateClassificationCounts['VISITOR_PATTERN'])
+            writer.println('Duplicate groups classified as compatibility wrappers: ' +
+                    duplicateClassificationCounts['PUBLIC_COMPATIBILITY_WRAPPER'])
+            writer.println('Duplicate groups classified as shared authorities: ' +
+                    duplicateClassificationCounts['SAFE_SHARED_AUTHORITY'])
+            writer.println('Duplicate groups classified as private helpers: ' +
+                    duplicateClassificationCounts['SAFE_PRIVATE_HELPER'])
+            writer.println('Duplicate groups retained across module boundaries: ' +
+                    duplicateClassificationCounts['DO_NOT_CONSOLIDATE_ACROSS_MODULES'])
             writer.println('Production methods >= 100 lines: ' +
                     actual.getProperty('productionMethods100Plus'))
             writer.println('Production methods complexity >= 20: ' +

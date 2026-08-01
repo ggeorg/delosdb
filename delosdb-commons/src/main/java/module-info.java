@@ -123,7 +123,8 @@ module org.apache.derby.commons
 
     exports org.apache.derby.shared.common.util to
         org.apache.derby.engine,
-        io.github.ggeorg.delosdb.runtime.api;
+        io.github.ggeorg.delosdb.runtime.api,
+        org.apache.derby.tools;
 
     //
     // STANZAS FOR USE WHEN QUERY PLANS ARE GENERATED INTO

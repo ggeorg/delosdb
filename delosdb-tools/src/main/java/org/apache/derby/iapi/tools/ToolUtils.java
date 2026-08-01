@@ -21,60 +21,37 @@
 
 package org.apache.derby.iapi.tools;
 
-public  abstract    class   ToolUtils
-{
-	///////////////////////////////////////////////////////////////////
-	//
-	// Methods to copy arrays. We'd like to use java.util.copyOf(), but
-    // we have to run on Java 5. The same methods also appear in
-    // org.apache.derby.shared.common.util.ArrayUtil. They are repeated here
-    // in order to avoid sealing issues.
-	//
-	///////////////////////////////////////////////////////////////////
+import org.apache.derby.shared.common.util.ArrayUtil;
 
-    /** Copy an array of objects; the original array could be null */
-    public  static  Object[]    copy( Object[] original )
-    {
-        return (original == null) ? null : (Object[]) original.clone();
+public abstract class ToolUtils {
+
+    /** Copy an array of objects; the original array could be null. */
+    public static Object[] copy(Object[] original) {
+        return ArrayUtil.copy(original);
     }
 
-    /** Copy a (possibly null) array of strings */
-    public  static  String[]    copy( String[] original )
-    {
-        return (original == null) ? null : (String[]) original.clone();
+    /** Copy a possibly null array of strings. */
+    public static String[] copy(String[] original) {
+        return ArrayUtil.copy(original);
     }
 
-    /** Copy a (possibly null) array of booleans */
-    public  static  boolean[]   copy( boolean[] original )
-    {
-        return (original == null) ? null : (boolean[]) original.clone();
+    /** Copy a possibly null array of booleans. */
+    public static boolean[] copy(boolean[] original) {
+        return ArrayUtil.copy(original);
     }
 
-    /** Copy a (possibly null) array of bytes */
-    public  static  byte[]   copy( byte[] original )
-    {
-        return (original == null) ? null : (byte[]) original.clone();
+    /** Copy a possibly null array of bytes. */
+    public static byte[] copy(byte[] original) {
+        return ArrayUtil.copy(original);
     }
 
-    /** Copy a (possibly null) array of ints */
-    public  static  int[]   copy( int[] original )
-    {
-        return (original == null) ? null : (int[]) original.clone();
+    /** Copy a possibly null array of ints. */
+    public static int[] copy(int[] original) {
+        return ArrayUtil.copy(original);
     }
 
-    /** Copy a (possibly null) 2-dimensional array of ints */
-    public  static  int[][]   copy2( int[][] original )
-    {
-        if ( original == null ) { return null; }
-
-        int[][] result = new int[ original.length ][];
-        for ( int i = 0; i < original.length; i++ )
-        {
-            result[ i ] = copy( original[ i ] );
-        }
-        
-        return result;
+    /** Copy a possibly null two-dimensional array of ints. */
+    public static int[][] copy2(int[][] original) {
+        return ArrayUtil.copy2(original);
     }
-
-
 }

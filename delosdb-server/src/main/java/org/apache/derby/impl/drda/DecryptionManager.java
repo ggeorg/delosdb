@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.drda;
 
+import org.apache.derby.iapi.util.StringUtil;
+
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -423,47 +425,17 @@ class DecryptionManager
         return randomSeedBytes;
     }
 
-    /*********************************************************************
-     * RESOLVE:                                                          *
-     * The methods and static vars below should go into some 'shared'    *
-     * package when the capability is put back in (StringUtil.java).     *
-     *********************************************************************/
-
-    private static char[] hex_table = {
-                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
-                'a', 'b', 'c', 'd', 'e', 'f'
-            };
-    
     /**
-        Convert a byte array to a String with a hexidecimal format.
-        The String may be converted back to a byte array using fromHexString.
-        <BR>
-        For each byte (b) two characaters are generated, the first character
-        represents the high nibble (4 bits) in hexidecimal (<code>b &amp; 0xf0</code>),
-        the second character represents the low nibble (<code>b &amp; 0x0f</code>).
-        <BR>
-        The byte at <code>data[offset]</code> is represented by the first two characters in the returned String.
+        Convert a byte array to a String with a hexadecimal format.
 
-        @param  data    byte array
-        @param  offset  starting byte (zero based) to convert.
-        @param  length  number of bytes to convert.
+        @param data byte array
+        @param offset starting byte to convert
+        @param length number of bytes to convert
 
-        @return the String (with hexidecimal format) form of the byte array
+        @return the hexadecimal form of the byte array
     */
-    protected static String toHexString(byte[] data, int offset, int length)
-    {
-        StringBuffer s = new StringBuffer(length*2);
-        int end = offset+length;
-
-        for (int i = offset; i < end; i++)
-        {
-            int high_nibble = (data[i] & 0xf0) >>> 4;
-            int low_nibble = (data[i] & 0x0f);
-            s.append(hex_table[high_nibble]);
-            s.append(hex_table[low_nibble]);
-        }
-
-        return s.toString();
+    protected static String toHexString(byte[] data, int offset, int length) {
+        return StringUtil.toHexString(data, offset, length);
     }
 
     /**

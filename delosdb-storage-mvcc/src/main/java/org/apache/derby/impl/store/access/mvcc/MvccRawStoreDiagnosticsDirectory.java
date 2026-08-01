@@ -10,7 +10,8 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.io.IOException;
+import org.apache.derby.iapi.store.types.DelosRawStoreIoDiagnosticsDirectory;
+
 import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -30,22 +31,11 @@ final class MvccRawStoreDiagnosticsDirectory {
     }
 
     static String fileIdentity(Path databaseDirectory) {
-        Path absolute = databaseDirectory.toAbsolutePath().normalize();
-        try {
-            absolute = absolute.toRealPath();
-        } catch (IOException ignored) {
-            // A just-created or just-shut-down database may not currently resolve.
-        }
-        return "file:" + absolute;
+        return DelosRawStoreIoDiagnosticsDirectory.fileIdentity(databaseDirectory);
     }
 
     static String memoryIdentity(String canonicalName) {
-        if (canonicalName == null || canonicalName.isBlank()) {
-            throw new IllegalArgumentException("memory database identity must not be blank");
-        }
-        return canonicalName.startsWith("memory:")
-                ? canonicalName
-                : "memory:" + canonicalName;
+        return DelosRawStoreIoDiagnosticsDirectory.memoryIdentity(canonicalName);
     }
 
     static void register(String databaseIdentity, MvccRawStoreRuntime runtime) {
