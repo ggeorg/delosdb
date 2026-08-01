@@ -111,7 +111,9 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
         this.rawStoreFactory = Objects.requireNonNull(rawStoreFactory, "rawStoreFactory");
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         this.readOnly = readOnly;
-        this.enabled = configuredEnabled(serviceProperties) && !readOnly;
+        this.enabled = Boolean.parseBoolean(
+                configuredValue(serviceProperties, ENABLED_PROPERTY, "false"))
+                && !readOnly;
         this.changedRowsThreshold = configuredChangedRowsThreshold(serviceProperties);
         this.periodMillis = configuredPeriodMillis(serviceProperties);
         this.accepting.set(enabled);
@@ -818,11 +820,6 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             return left;
         }
         return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
-    }
-
-    private static boolean configuredEnabled(Properties serviceProperties) {
-        return Boolean.parseBoolean(
-                configuredValue(serviceProperties, ENABLED_PROPERTY, "false"));
     }
 
     private static int configuredChangedRowsThreshold(Properties serviceProperties) {

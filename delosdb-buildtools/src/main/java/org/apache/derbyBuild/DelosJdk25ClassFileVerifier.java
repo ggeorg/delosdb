@@ -90,7 +90,7 @@ public final class DelosJdk25ClassFileVerifier {
         report.totalClasses++;
         String relativePath = root.relativize(classFilePath).toString().replace('\\', '/');
         try {
-            ClassModel model = classFile.parse(readAllBytes(classFilePath));
+            ClassModel model = classFile.parse(Files.readAllBytes(classFilePath));
             int major = model.majorVersion();
             int minor = model.minorVersion();
             report.parsedClasses++;
@@ -102,10 +102,6 @@ public final class DelosJdk25ClassFileVerifier {
         } catch (RuntimeException | IOException ex) {
             report.failures.add(relativePath + " could not be parsed with java.lang.classfile: " + ex);
         }
-    }
-
-    private static byte[] readAllBytes(Path path) throws IOException {
-        return Files.readAllBytes(path);
     }
 
     private static final class Options {

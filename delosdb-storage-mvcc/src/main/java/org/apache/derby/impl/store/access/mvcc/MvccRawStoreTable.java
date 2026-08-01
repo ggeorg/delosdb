@@ -244,7 +244,7 @@ final class MvccRawStoreTable {
             if (page == null || page.recordCount() < 2) {
                 return null;
             }
-            Object[] prefix = controlPrefixTemplate(rawTransaction);
+            Object[] prefix = controlTemplate(rawTransaction, 0, false, -1);
             page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, prefix, null, false);
             if (MvccRawStoreFormat.longAt(prefix, MvccRawStoreFormat.CONTROL_MAGIC)
                     != MvccRawStoreFormat.MAGIC
@@ -1906,7 +1906,6 @@ final class MvccRawStoreTable {
         throw new IllegalStateException("RawStore MVCC version disappeared before commit: " + versionId);
     }
 
-
     private static void updateVersionEnd(
             Transaction transaction,
             Descriptor table,
@@ -2149,10 +2148,6 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.VERSION_FLAGS),
                 values,
                 handle);
-    }
-
-    private static Object[] controlPrefixTemplate(Transaction transaction) throws StandardException {
-        return controlTemplate(transaction, 0, false, -1);
     }
 
     private static Object[] controlTemplate(

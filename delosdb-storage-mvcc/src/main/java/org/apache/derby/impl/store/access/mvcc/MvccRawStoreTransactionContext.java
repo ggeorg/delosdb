@@ -264,7 +264,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
 
         if (!hasPendingVersions) {
-            publishVacuumOrderedIndexes(committableIndexes);
+            publishOrderedIndexes(committableIndexes);
             if (vacuumMutation) {
                 MvccRawStoreRuntime.haltAtFailurePoint(
                         MvccRawStoreRuntime.AFTER_VACUUM_BEFORE_RAW_COMMIT,
@@ -452,12 +452,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         clearLocalState();
     }
 
-
-    private void publishVacuumOrderedIndexes(List<OrderedIndexGeneration> generations)
-            throws StandardException {
-        publishOrderedIndexes(generations);
-    }
-
     private void publishOrderedIndexes(List<OrderedIndexGeneration> generations)
             throws StandardException {
         List<OrderedIndexGeneration> ordered = new ArrayList<>(generations);
@@ -495,7 +489,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     reservation.nextVersionId());
         }
     }
-
 
     private List<MvccRawStoreTable.Descriptor> committableCreatedTables() {
         List<MvccRawStoreTable.Descriptor> committable =
