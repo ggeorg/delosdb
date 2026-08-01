@@ -103,10 +103,6 @@ public interface DelosStorageDiagnostics
         return DelosStorageStatistics.fromDiagnostics(this, segment, containerId);
     }
 
-    default DelosMvccStorageStatistics mvccStorageStatisticsForTesting(int segment, long containerId) {
-        return DelosMvccStorageStatistics.fromDiagnostics(this, segment, containerId);
-    }
-
     default DelosHeapSanityDiagnostics heapSanityDiagnosticsForTesting(int segment, long containerId) {
         DelosStorageConsistencyDiagnostics consistency = consistencyDiagnosticsForTesting(segment, containerId);
         Path containerFile = pageVolumeStateFileForTesting(segment, containerId);
@@ -131,7 +127,6 @@ public interface DelosStorageDiagnostics
                 java.util.List.of(consistency.summary()),
                 consistency.errorCount() == 0 ? java.util.List.of() : java.util.List.of(consistency.summary()));
     }
-
 
     default DelosHeapRawStoreBoundaryDiagnostics heapRawStoreBoundaryDiagnosticsForTesting(
             int segment,

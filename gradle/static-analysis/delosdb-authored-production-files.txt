@@ -29,7 +29,6 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosHea
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosHeapStorageStatistics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosOptimizerPredicatePushdownDecision.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosOptimizerPredicatePushdownDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java

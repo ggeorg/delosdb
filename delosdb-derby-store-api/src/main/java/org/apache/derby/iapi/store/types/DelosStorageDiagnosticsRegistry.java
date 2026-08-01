@@ -95,7 +95,6 @@ public final class DelosStorageDiagnosticsRegistry {
         return mvcc(databaseDirectory).transactionSnapshots();
     }
 
-
     public static DelosStorageDiagnostics heap() {
         return forProvider(HEAP_PROVIDER_ID);
     }
@@ -160,17 +159,6 @@ public final class DelosStorageDiagnosticsRegistry {
         return mvcc(databaseDirectory).storageStatisticsForTesting(segment, containerId);
     }
 
-    public static DelosMvccStorageStatistics mvccStorageStatistics(int segment, long containerId) {
-        return mvcc().mvccStorageStatisticsForTesting(segment, containerId);
-    }
-
-    public static DelosMvccStorageStatistics mvccStorageStatistics(
-            Path databaseDirectory,
-            int segment,
-            long containerId) {
-        return mvcc(databaseDirectory).mvccStorageStatisticsForTesting(segment, containerId);
-    }
-
     public static DelosStorageStatistics statisticsForHeap(Path databaseDirectory, int segment, long containerId) {
         DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.storageStatisticsForTesting(segment, containerId);
@@ -180,7 +168,6 @@ public final class DelosStorageDiagnosticsRegistry {
         DelosStorageDiagnostics diagnostics = heapDiagnostics(databaseDirectory);
         return diagnostics.heapSanityDiagnosticsForTesting(segment, containerId);
     }
-
 
     public static DelosHeapRawStoreBoundaryDiagnostics inspectHeapRawStoreBoundary(
             Path databaseDirectory,
@@ -332,7 +319,6 @@ public final class DelosStorageDiagnosticsRegistry {
         return metadataQuery().costReport(targets);
     }
 
-
     public static DelosStorageLifecycleConsistencySnapshot lifecycleConsistencySnapshot(
             String providerId,
             int segment,
@@ -406,19 +392,9 @@ public final class DelosStorageDiagnosticsRegistry {
         return metadataQuery().optimizerReviewReport(targets, requests);
     }
 
-    public static DelosMvccStorageStatistics mvccStorageStatistics(String providerId, int segment, long containerId) {
-        String normalizedProviderId = DelosStorageProviderIds.normalize(providerId);
-        if (!DelosStorageProviderIds.isMvcc(normalizedProviderId)) {
-            throw new IllegalArgumentException("MVCC storage statistics require provider "
-                    + MVCC_PROVIDER_ID + ", got " + providerId);
-        }
-        return forProvider(normalizedProviderId).mvccStorageStatisticsForTesting(segment, containerId);
-    }
-
     public static DelosStorageInspector inspectorForProvider(String providerId) {
         return DelosStorageInspector.fromDiagnostics(forProvider(providerId));
     }
-
 
     private static DelosStorageDiagnostics heapDiagnostics(Path databaseDirectory) {
         return heap().withContext(DelosStorageDiagnosticsContext.databaseDirectory(databaseDirectory));

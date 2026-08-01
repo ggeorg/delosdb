@@ -154,13 +154,15 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosHea
 MVCC proof:
 
 ```text
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosMvccStorageStatistics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostIntegration.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
 ```
 
-This concern already has a shared diagnostic/reporting boundary. Phase K added
-an explicit opt-in path from MVCC statistics into Derby's inherited cost-controller
-seam. No new extraction is needed in Phase O.
+This concern already has a provider-neutral diagnostic/reporting boundary. The
+opt-in cost checkpoint consumes `DelosStorageStatistics`; Derby's inherited
+`StoreCostController` seam remains the optimizer authority. No separate
+MVCC-only statistics façade or new Phase O extraction is needed.
 
 ### 6. Purge and maintenance scheduling
 
