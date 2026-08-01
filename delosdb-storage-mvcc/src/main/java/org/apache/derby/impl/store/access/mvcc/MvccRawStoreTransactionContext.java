@@ -23,7 +23,6 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLi
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
@@ -74,14 +73,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "RawStore-backed delos_mvcc XA participation");
-        }
-        try {
-            DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transactionManager);
-        } catch (IllegalStateException mixedAuthorities) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    mixedAuthorities,
-                    mixedAuthorities.getMessage());
         }
         ensureTransactionId();
     }

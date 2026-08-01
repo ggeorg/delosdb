@@ -925,7 +925,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccTransactionParticipationTest',
-        'Runs supported single-provider/read-only participation and the retained MVCC XA restriction proof.',
+        'Runs supported read-only/mixed access and the direct RawStore-backed MVCC XA restriction proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
         [:],
         [
@@ -944,12 +944,6 @@ registerDelosFocusedTest(
                 'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
                 'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMixedHeapAndMvccWritesShareOneRawStoreTransaction'
         ])
-
-tasks.register('runDelosMvccDatabaseCommitDecisionTest') {
-    group = 'verification'
-    description = 'Compatibility alias for the Stage 5 RawStore SQL transaction-authority proof.'
-    dependsOn tasks.named('runDelosMvccRawStoreSqlTransactionCutoverTest')
-}
 
 registerDelosFocusedTest(
         'runDelosMvccRawStoreDecisionWalCrashTest',

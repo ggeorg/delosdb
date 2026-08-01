@@ -275,7 +275,6 @@ The implemented seam is documented in:
 docs/design/V1-ACCESS-METHOD-TRANSACTION-LIFECYCLE-SEAM.md
 ```
 
-`RAMTransaction` owns identity-keyed participants and brackets the inherited RawStore commit,
-commitNoSync, abort, savepoint, nested-user-transaction, XA, and destroy paths. The existing Phase 8
-`DelosStorageTransactionRegistry` is intentionally not migrated onto the seam; Stage 3 is its first
-RawStore-backed MVCC consumer.
+`RAMTransaction` brackets the inherited RawStore commit, commitNoSync, abort, savepoint,
+nested-user-transaction, XA, and destroy paths. RawStore-backed MVCC uses that lifecycle seam directly;
+the transitional external transaction registry no longer exists.

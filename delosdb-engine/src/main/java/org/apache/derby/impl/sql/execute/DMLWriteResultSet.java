@@ -36,7 +36,6 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DeferredConstraintRecorder;
@@ -103,15 +102,10 @@ abstract public class DMLWriteResultSet extends NoRowsResultSetImpl
                         SQLState.NOT_IMPLEMENTED,
                         "SERIALIZABLE isolation for delos_mvcc");
             }
-            DelosStorageTransactionRegistry.WriteParticipationResult participation =
-                    DelosStorageTransactionRegistry.registerWriteIntent(
-                            tc,
-                            mvcc,
-                            tc.isGlobal());
-            if (participation != DelosStorageTransactionRegistry.WriteParticipationResult.ALLOWED) {
+            if (mvcc && tc.isGlobal()) {
                 throw StandardException.newException(
                         SQLState.NOT_IMPLEMENTED,
-                        participation.description());
+                        "delos_mvcc writes in XA transactions are not supported");
             }
 
 			heapDCOCI = tc.getDynamicCompiledConglomInfo(this.constantAction.conglomId);

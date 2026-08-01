@@ -263,13 +263,6 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
     // if commitNoSync() has been called rather than commit.
     private boolean         flush_log_on_xact_end;
 
-    // True only after a synchronous transaction-end record has been forced.
-    // This survives completion-processing failures so callers can distinguish
-    // an abortable transaction from an already durable commit decision.
-    private boolean         synchronousCommitDecisionDurable;
-    private boolean         synchronousCommitDecisionTimingEnabled;
-    private long            synchronousCommitDecisionForceNanos;
-
 	// true, if the transaction executed some operations(like unlogged
 	// operations) that block the  online backup to prevent inconsistent
 	// backup copy.
@@ -771,8 +764,6 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
         throws StandardException 
     {
 		LogInstant flushTo = null;
-        boolean captureDecisionForceTiming = synchronousCommitDecisionTimingEnabled;
-        synchronousCommitDecisionTimingEnabled = false;
 
 		if (state == CLOSED)
         {
@@ -826,19 +817,8 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
                     }
 					else
 					{
-                        if (captureDecisionForceTiming) {
-                            long forceStarted = System.nanoTime();
-                            try {
-                                logger.flush(flushTo);
-                            } finally {
-                                synchronousCommitDecisionForceNanos = Math.max(
-                                        0L, System.nanoTime() - forceStarted);
-                            }
-                        } else {
-                            logger.flush(flushTo);
-                        }
+                        logger.flush(flushTo);
 						needSync = false;
-                        synchronousCommitDecisionDurable = true;
 					}
 				}
 			}
@@ -847,19 +827,8 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 				// this transaction object was used to lazily commit some
 				// previous transaction without syncing.  Now that we commit
 				// for real, make sure any outstanding log is flushed.
-                if (captureDecisionForceTiming) {
-                    long forceStarted = System.nanoTime();
-                    try {
-                        logger.flushAll();
-                    } finally {
-                        synchronousCommitDecisionForceNanos = Math.max(
-                                0L, System.nanoTime() - forceStarted);
-                    }
-                } else {
-                    logger.flushAll();
-                }
+                logger.flushAll();
 				needSync = false;
-                synchronousCommitDecisionDurable = true;
 			}
 		} 
         catch (StandardException se) 
@@ -930,8 +899,6 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	private LogInstant commit(int commitflag) 
         throws StandardException 
     {
-        synchronousCommitDecisionDurable = false;
-        synchronousCommitDecisionForceNanos = 0L;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -952,8 +919,6 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 	*/
 	public void abort() throws StandardException {
 
-        synchronousCommitDecisionDurable = false;
-        synchronousCommitDecisionForceNanos = 0L;
 		if (SanityManager.DEBUG)
 		{
 			if (SanityManager.DEBUG_ON("XATrace"))
@@ -2087,24 +2052,6 @@ public class Xact extends RawTransaction implements Limit, LockOwner {
 		// recovery transaction cannot handle post termination work
 		return (recoveryTransaction == false);
 	}
-
-    @Override
-    public boolean isSynchronousCommitDecisionDurable()
-    {
-        return synchronousCommitDecisionDurable;
-    }
-
-    @Override
-    public void setSynchronousCommitDecisionTimingEnabled(boolean enabled)
-    {
-        synchronousCommitDecisionTimingEnabled = enabled;
-    }
-
-    @Override
-    public long getSynchronousCommitDecisionForceNanos()
-    {
-        return synchronousCommitDecisionForceNanos;
-    }
 
 	public void recoveryTransaction()
 	{

@@ -81,8 +81,6 @@ import org.apache.derby.iapi.sql.execute.RunTimeStatistics;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.XATransactionController;
 
-import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
-import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueFactory;
 import org.apache.derby.iapi.util.IdUtil;
@@ -1547,163 +1545,42 @@ public class GenericLanguageConnectionContext
 
         // now commit the Store transaction
         TransactionController tc = getTransactionExecute();
-        boolean requiresRawStoreDecision =
-                DelosStorageTransactionRegistry.requiresRawStoreDecision(tc);
-        if (requiresRawStoreDecision && (!commitStore || commitflag != NON_XA)) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "delos_mvcc commit outside a local raw-store transaction");
-        }
-
-        DelosStorageTransactionRegistry.CommitPreparation storagePreparation = null;
-        boolean rawStoreCommitted = false;
-        try {
-            DelosRawStoreCommitParticipant rawStoreParticipant =
-                    tc instanceof DelosRawStoreCommitParticipant participant
-                            ? participant
-                            : null;
-            storagePreparation = DelosStorageTransactionRegistry.prepareCommit(
-                    tc, rawStoreParticipant);
-
-            if ( tc != null && commitStore )
+        if (tc != null && commitStore)
+        {
+            if (sync)
             {
-                if (storagePreparation.requiresRawStoreDecision())
+                if (commitflag == NON_XA)
                 {
-                    // The logged raw-store operation is the authoritative decision.
-                    // Its marker is materialized only after commit or by recovery.
-                    // A no-sync commit cannot provide the required durability.
-                    DelosStorageTransactionRegistry.beforeRawStoreCommit(storagePreparation);
-                    boolean captureDatabaseCommitTiming =
-                            DelosStorageTransactionRegistry.databaseCommitTimingEnabled(
-                                    storagePreparation);
-                    rawStoreParticipant.setDatabaseCommitDecisionTimingEnabled(
-                            captureDatabaseCommitTiming);
+                    // regular commit
                     tc.commit();
-                    rawStoreCommitted = true;
-                    if (captureDatabaseCommitTiming) {
-                        DelosStorageTransactionRegistry.recordRawStoreDecisionForceNanos(
-                                storagePreparation,
-                                rawStoreParticipant.databaseCommitDecisionForceNanos());
-                    }
-                    DelosStorageTransactionRegistry.afterRawStoreCommit(storagePreparation);
-                }
-                else if (sync)
-                {
-                    if (commitflag == NON_XA)
-                    {
-                        // regular commit
-                        tc.commit();
-                    }
-                    else
-                    {
-                        // This may be a xa_commit, check overloaded commitflag.
-
-                        if (SanityManager.DEBUG)
-                            SanityManager.ASSERT(commitflag == XA_ONE_PHASE ||
-                                                 commitflag == XA_TWO_PHASE,
-                                                   "invalid commit flag");
-
-                        ((XATransactionController)tc).xa_commit(
-                                commitflag == XA_ONE_PHASE);
-
-                    }
                 }
                 else
                 {
-                    tc.commitNoSync(commitflag);
-                }
-                if (!storagePreparation.requiresRawStoreDecision()) {
-                    rawStoreCommitted = true;
-                }
+                    // This may be a xa_commit, check overloaded commitflag.
+                    if (SanityManager.DEBUG)
+                        SanityManager.ASSERT(commitflag == XA_ONE_PHASE ||
+                                             commitflag == XA_TWO_PHASE,
+                                               "invalid commit flag");
 
-                // Publish external outcomes immediately after the authoritative
-                // raw-store decision and release all preparation ownership before
-                // any later post-commit bookkeeping can fail.
-                DelosStorageTransactionRegistry.completeCommit(storagePreparation);
-
-                // reset the savepoints to the new
-                // location, since any outer nesting
-                // levels expect there to be a savepoint
-                resetSavepoints();
-
-                // Do post commit XA temp table cleanup if necessary.
-                if ((allDeclaredGlobalTempTables != null) &&
-                    (commitflag != NON_XA))
-                {
-                    tempTablesXApostCommit();
+                    ((XATransactionController)tc).xa_commit(
+                            commitflag == XA_ONE_PHASE);
                 }
             }
             else
             {
-                DelosStorageTransactionRegistry.completeCommit(storagePreparation);
+                tc.commitNoSync(commitflag);
             }
-        }
-        catch (StandardException commitFailure)
-        {
-            abortFailedRawStoreDecision(
-                    tc, storagePreparation, requiresRawStoreDecision,
-                    rawStoreCommitted, commitFailure);
-            throw commitFailure;
-        }
-        catch (RuntimeException | Error commitFailure)
-        {
-            abortFailedRawStoreDecision(
-                    tc, storagePreparation, requiresRawStoreDecision,
-                    rawStoreCommitted, commitFailure);
-            throw commitFailure;
-        }
-    }
 
-    private void abortFailedRawStoreDecision(
-            TransactionController tc,
-            DelosStorageTransactionRegistry.CommitPreparation preparation,
-            boolean requiresRawStoreDecision,
-            boolean rawStoreCommitted,
-            Throwable commitFailure) {
-        if (!requiresRawStoreDecision || tc == null) {
-            return;
-        }
+            // reset the savepoints to the new location, since any outer
+            // nesting levels expect there to be a savepoint
+            resetSavepoints();
 
-        DelosRawStoreCommitParticipant rawStoreParticipant =
-                tc instanceof DelosRawStoreCommitParticipant participant
-                        ? participant
-                        : null;
-        if (rawStoreParticipant != null) {
-            rawStoreParticipant.setDatabaseCommitDecisionTimingEnabled(false);
-        }
-        boolean durableRawStoreDecision = rawStoreCommitted
-                || (rawStoreParticipant != null
-                        && rawStoreParticipant.isDatabaseCommitDecisionDurable());
-        if (durableRawStoreDecision) {
-            try {
-                if (preparation != null) {
-                    DelosStorageTransactionRegistry.releasePreparedCommitForRecovery(preparation);
-                }
-            } catch (RuntimeException | Error releaseFailure) {
-                commitFailure.addSuppressed(releaseFailure);
+            // Do post commit XA temp table cleanup if necessary.
+            if ((allDeclaredGlobalTempTables != null) &&
+                (commitflag != NON_XA))
+            {
+                tempTablesXApostCommit();
             }
-            return;
-        }
-
-        boolean rawStoreAborted = false;
-        try {
-            tc.abort();
-            rawStoreAborted = true;
-        } catch (StandardException abortFailure) {
-            commitFailure.addSuppressed(abortFailure);
-        }
-
-        if (!rawStoreAborted) {
-            return;
-        }
-        try {
-            if (preparation == null) {
-                DelosStorageTransactionRegistry.abort(tc);
-            } else {
-                DelosStorageTransactionRegistry.abortPreparedCommit(preparation);
-            }
-        } catch (RuntimeException | Error participantAbortFailure) {
-            commitFailure.addSuppressed(participantAbortFailure);
         }
     }
 
@@ -1897,7 +1774,6 @@ public class GenericLanguageConnectionContext
         // now rollback the Store transaction
         TransactionController tc = getTransactionExecute();
 
-        DelosStorageTransactionRegistry.abort(tc);
         if (tc != null) 
         {   
             if (xa)
@@ -1963,10 +1839,6 @@ public class GenericLanguageConnectionContext
             else { closeConglomerates = false; }
 
             currentSavepointLevel = tc.rollbackToSavePoint( savepointName, closeConglomerates, kindOfSavepoint );
-            if (kindOfSavepoint != null)
-            {
-                DelosStorageTransactionRegistry.rollbackToSavepoint(tc, savepointName);
-            }
         }
 
         if (tc != null && refreshStyle && allDeclaredGlobalTempTables != null)
@@ -1990,10 +1862,6 @@ public class GenericLanguageConnectionContext
         if (tc != null)
         {
             currentSavepointLevel = tc.releaseSavePoint( savepointName, kindOfSavepoint );
-            if (kindOfSavepoint != null)
-            {
-                DelosStorageTransactionRegistry.releaseSavepoint(tc, savepointName);
-            }
             //after a release of a savepoint, we need to go through our temp tables list.
             if (allDeclaredGlobalTempTables != null)
                 tempTablesReleaseSavepointLevels();
@@ -2017,10 +1885,6 @@ public class GenericLanguageConnectionContext
         if (tc != null)
         {
             currentSavepointLevel = tc.setSavePoint( savepointName, kindOfSavepoint );
-            if (kindOfSavepoint != null)
-            {
-                DelosStorageTransactionRegistry.setSavepoint(tc, savepointName);
-            }
         }
     }
 

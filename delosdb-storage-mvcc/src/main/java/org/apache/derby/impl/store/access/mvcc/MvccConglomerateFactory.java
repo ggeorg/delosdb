@@ -22,8 +22,6 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Properties;
 
@@ -44,9 +42,7 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
 import org.apache.derby.io.DatabaseMemoryStorage;
-import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -111,7 +107,6 @@ public final class MvccConglomerateFactory
 
         MvccRawStoreRuntime currentRuntime = runtime();
         currentRuntime.ensureMetadata(xactManager);
-        registerRawStoreOwnedMvcc(xactManager);
         long containerId = reserveConglomerateId(inputContainerId);
         MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.create(
                 xactManager.getRawStoreXact(),
@@ -135,9 +130,8 @@ public final class MvccConglomerateFactory
                 containerKey);
         if (descriptor == null) {
             throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "The retained external delos_mvcc format has been retired; "
-                            + "only RawStore-backed delos_mvcc tables are supported");
+                    SQLState.STORE_CONGLOMERATE_DOES_NOT_EXIST,
+                    containerKey.getContainerId());
         }
         MvccRawStoreRuntime currentRuntime = runtime();
         currentRuntime.ensureMetadata(xactManager);
@@ -173,8 +167,6 @@ public final class MvccConglomerateFactory
                 || storageRoot.isBlank()
                 ? null
                 : Path.of(storageRoot);
-        rejectRetainedExternalState(databaseDirectory);
-
         diagnosticsIdentity = memoryStorage != null
                 ? configureMemoryStorage(memoryStorage, context.serviceProperties())
                 : MvccRawStoreDiagnosticsDirectory.fileIdentity(databaseDirectory);
@@ -203,18 +195,6 @@ public final class MvccConglomerateFactory
         }
         nextConglomerateId = Math.addExact(candidate, 16L);
         return candidate;
-    }
-
-    private static void registerRawStoreOwnedMvcc(TransactionManager transaction)
-            throws StandardException {
-        try {
-            DelosStorageTransactionRegistry.registerRawStoreOwnedMvcc(transaction);
-        } catch (IllegalStateException mixedAuthorities) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    mixedAuthorities,
-                    mixedAuthorities.getMessage());
-        }
     }
 
     private static void rejectGlobalLifecycle(TransactionManager transaction)
@@ -289,36 +269,6 @@ public final class MvccConglomerateFactory
                             "Invalid " + MEMORY_LIMIT_PROPERTY + " value: " + value,
                             invalidLimit));
         }
-    }
-
-    private static void rejectRetainedExternalState(Path databaseDirectory)
-            throws StandardException {
-        if (databaseDirectory == null || !databaseDirectory.isAbsolute()) {
-            return;
-        }
-        Path providerDirectory = databaseDirectory
-                .toAbsolutePath()
-                .normalize()
-                .resolve(DelosMvccConglomerateLifecycle.PROVIDER_DIRECTORY);
-        try {
-            if (Files.exists(providerDirectory, LinkOption.NOFOLLOW_LINKS)) {
-                throw retainedExternalState(providerDirectory);
-            }
-        } catch (SecurityException failure) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    failure,
-                    "Unable to verify that retained external delos_mvcc state is absent under "
-                            + providerDirectory);
-        }
-    }
-
-    private static StandardException retainedExternalState(Path providerDirectory) {
-        return StandardException.newException(
-                SQLState.NOT_IMPLEMENTED,
-                "The retained external delos_mvcc format has been retired; "
-                        + "remove or migrate state under " + providerDirectory
-                        + " before booting this database");
     }
 
     @Override

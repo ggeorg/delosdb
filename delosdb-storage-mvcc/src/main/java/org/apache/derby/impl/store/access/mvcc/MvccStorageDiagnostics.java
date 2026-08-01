@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
-import org.apache.derby.iapi.store.types.DelosStorageTransactionRegistry;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 /** Non-owning diagnostics adapter for the RawStore-backed MVCC runtime. */
@@ -316,7 +315,6 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
 
     @Override
     public void clearTransactionsForTesting() {
-        DelosStorageTransactionRegistry.clearForTesting();
     }
 
     @Override

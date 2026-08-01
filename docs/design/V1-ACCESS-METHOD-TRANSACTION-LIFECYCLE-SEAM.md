@@ -183,14 +183,11 @@ Before commit, an MVCC participant must transfer any required immutable snapshot
 cursor. The transaction-unit lifecycle is then retired normally. Closing the cursor releases its own
 lease.
 
-## Transitional boundary
+## Final RawStore boundary
 
-The current Phase 8 `DelosStorageTransactionRegistry` remains active and unchanged. It still owns the
-independent MVCC persistence protocol while that implementation is the production path.
-
-Stage 2.2 does not register the Phase 8 implementation into the new seam. Stage 3 will use the seam for
-the new RawStore-backed vertical slice. This avoids changing proven Phase 8 commit semantics before a
-replacement exists.
+The transitional external transaction registry has been removed. RawStore-backed MVCC participates
+through the access-method transaction lifecycle seam and the inherited RawStore transaction only.
+Commit, abort, savepoint, and destroy ordering therefore have one executable authority.
 
 ## Verification
 

@@ -538,10 +538,10 @@ private static final    String[] TwoByte = {
         /* 477 */       "org.apache.derby.impl.sql.execute.MergeConstantAction",
         /* 478 */       "org.apache.derby.impl.store.access.mvcc.MvccConglomerate",
         /* 479 */       "org.apache.derby.impl.store.access.mvcc.MvccRowLocation",
-        /* 480 */       "org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation",
-        /* 481 */       "org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionUndoOperation",
-        /* 482 */       "org.apache.derby.impl.store.raw.data.DelosMvccConglomerateLifecycleOperation",
-        /* 483 */       "org.apache.derby.impl.store.raw.data.DelosMvccConglomerateLifecycleUndoOperation",
+        /* 480 */       null, // reserved: retired DelosDB external commit decision
+        /* 481 */       null, // reserved: retired DelosDB external commit decision undo
+        /* 482 */       null, // reserved: retired DelosDB external lifecycle operation
+        /* 483 */       null, // reserved: retired DelosDB external lifecycle undo
 };
 
     /**

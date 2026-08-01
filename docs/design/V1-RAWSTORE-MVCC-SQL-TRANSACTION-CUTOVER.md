@@ -57,7 +57,7 @@ one heap table plus two MVCC tables
 Each database is cleanly shut down before reopen. After the final shutdown the proof asserts that no
 regular retained MVCC state exists below `delos_mvcc/inherited-store`.
 
-## Focused task and compatibility alias
+## Focused task
 
 The permanent focused task is:
 
@@ -65,14 +65,7 @@ The permanent focused task is:
 :delosdb-tests:runDelosMvccRawStoreSqlTransactionCutoverTest
 ```
 
-The historical task name remains temporarily as a compatibility alias:
-
-```text
-:delosdb-tests:runDelosMvccDatabaseCommitDecisionTest
-    -> depends on runDelosMvccRawStoreSqlTransactionCutoverTest
-```
-
-The alias contains no separate test selection and no retained decision proof.
+The retired database-decision compatibility alias has been removed.
 
 ## Authority invariant
 

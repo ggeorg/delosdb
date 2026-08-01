@@ -73,14 +73,9 @@ import org.apache.derby.iapi.store.raw.Loggable;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 
-import org.apache.derby.iapi.store.types.DelosDatabaseCommitDecision;
-import org.apache.derby.iapi.store.types.DelosMvccConglomerateLifecycle;
-import org.apache.derby.iapi.store.types.DelosRawStoreCommitParticipant;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
-import org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation;
-import org.apache.derby.impl.store.raw.data.DelosMvccConglomerateLifecycleOperation;
 
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 
@@ -92,7 +87,7 @@ import java.io.Serializable;
 // debugging
 
 public class RAMTransaction 
-    implements XATransactionController, TransactionManager, DelosRawStoreCommitParticipant
+    implements XATransactionController, TransactionManager
 {
 
 	/**
@@ -1262,38 +1257,6 @@ public class RAMTransaction
 	{
 		rawtran.logAndDo(operation);
 	}
-
-    @Override
-    public void stageDatabaseCommitDecision(DelosDatabaseCommitDecision decision)
-            throws StandardException
-    {
-        rawtran.logAndDo(new DelosDatabaseCommitDecisionOperation(decision));
-    }
-
-    @Override
-    public void stageMvccConglomerateLifecycle(DelosMvccConglomerateLifecycle lifecycle)
-            throws StandardException
-    {
-        rawtran.logAndDo(new DelosMvccConglomerateLifecycleOperation(lifecycle));
-    }
-
-    @Override
-    public boolean isDatabaseCommitDecisionDurable()
-    {
-        return ((RawTransaction) rawtran).isSynchronousCommitDecisionDurable();
-    }
-
-    @Override
-    public void setDatabaseCommitDecisionTimingEnabled(boolean enabled)
-    {
-        ((RawTransaction) rawtran).setSynchronousCommitDecisionTimingEnabled(enabled);
-    }
-
-    @Override
-    public long databaseCommitDecisionForceNanos()
-    {
-        return ((RawTransaction) rawtran).getSynchronousCommitDecisionForceNanos();
-    }
 
     public ConglomerateController openCompiledConglomerate(
     boolean                         hold,

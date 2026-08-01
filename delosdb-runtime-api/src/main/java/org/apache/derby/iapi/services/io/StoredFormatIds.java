@@ -1592,21 +1592,11 @@ public interface StoredFormatIds {
             (MIN_ID_2 + 460);
 
 
-    /* org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionOperation */
-    public static final int LOGOP_DELOS_DATABASE_COMMIT_DECISION =
-            (MIN_ID_2 + 480);
-
-    /* org.apache.derby.impl.store.raw.data.DelosDatabaseCommitDecisionUndoOperation */
-    public static final int LOGOP_DELOS_DATABASE_COMMIT_DECISION_UNDO =
-            (MIN_ID_2 + 481);
-
-    /** Transactional delos_mvcc conglomerate create/drop lifecycle. */
-    public static final int LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE =
-            (MIN_ID_2 + 482);
-
-    /** Compensation for an uncommitted delos_mvcc conglomerate lifecycle. */
-    public static final int LOGOP_DELOS_MVCC_CONGLOMERATE_LIFECYCLE_UNDO =
-            (MIN_ID_2 + 483);
+    /*
+     * MIN_ID_2 + 480 through MIN_ID_2 + 483 are permanently reserved.
+     * They belonged to the retired external DelosDB transaction/lifecycle lane
+     * and must not be reassigned to another stored format.
+     */
 
     /*******************************************************************
     **

@@ -379,8 +379,8 @@ tables share one inherited RawStore transaction for commit and rollback. A heap 
 tables also share that same outcome and survive normal shutdown/reopen together. The proof creates no
 retained `delos_mvcc/inherited-store` file.
 
-The historical `runDelosMvccDatabaseCommitDecisionTest` task remains only as a compatibility alias for
-`runDelosMvccRawStoreSqlTransactionCutoverTest`; it no longer selects retained decision-journal tests.
+The compatibility alias for the retired database-decision proof has been removed.
+`runDelosMvccRawStoreSqlTransactionCutoverTest` is the sole focused SQL transaction-authority task.
 
 ## Stage 5 retained production runtime retirement
 
