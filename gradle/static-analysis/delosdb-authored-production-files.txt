@@ -1,6 +1,3 @@
-# DelosDB source-category inventory.
-# One repository-relative production Java path per line.
-# Used only by the human-maintainability inventory; not an S0 architecture gate.
 delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/ExperimentalSpi.java
 delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/InternalApi.java
 delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/LegacyInternal.java
@@ -38,6 +35,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosOpt
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoDiagnosticsDirectory.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoMetrics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosRawStoreIoSnapshot.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCacheRecoveryDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilities.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCapabilitiesReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageConsistencyDiagnostics.java
@@ -46,27 +44,32 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosSto
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostEstimate.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostIntegration.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageCostReport.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDatabaseDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageDiagnosticsRegistry.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageFreeSpaceDiagnostics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageIndexDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspection.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspectionReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageInspector.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleConsistencyReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleConsistencySnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageLifecycleJfr.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceSnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMaintenanceTableSnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataProvider.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataQuery.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageMetadataSnapshot.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOperationDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOptimizerReviewReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageOrderedIndexFallbackReason.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageCacheDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePageDiagnostics.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePersistenceDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdown.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdownReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdownRequest.java
@@ -78,6 +81,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosSto
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessLevel.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSnapshot.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSpaceDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatisticsReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java
