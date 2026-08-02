@@ -1006,7 +1006,8 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosMvccRawStorePhysicalLockingTest',
-        'Runs row-level RawStore MVCC physical concurrency, private ordered-index publication, savepoint, crash, reopen, and memory proofs.',
+        'Runs row-level RawStore MVCC physical concurrency, transactional shared-index mutation, ' +
+                'savepoint, crash, reopen, and memory proofs.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class'])
 
 registerDelosFocusedTest(

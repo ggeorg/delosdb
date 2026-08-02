@@ -42,13 +42,15 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
 /**
- * Version-aware ordered-index entries stored in an ordinary RawStore container.
+ * Version-aware index candidates stored in an ordinary RawStore container.
  *
  * <p>The index is a row-id narrowing structure, not a second row authority.
  * Every candidate is resolved and qualified again through the authoritative
- * MVCC version chain. Index entries retain begin/end sequences so historical
- * snapshots and transaction-local writes use the same visibility rule as the
- * corresponding base version.</p>
+ * MVCC version chain. Normal mutations append only the new version entries and
+ * rely on RawStore undo for rollback. Until the B-tree convergence tranche,
+ * predicate reads deliberately scan all entries and do not depend on physical
+ * key ordering. Full rewrites remain limited to compatibility and maintenance
+ * rebuilds.</p>
  */
 final class MvccRawStoreOrderedIndex {
     private static final int OVERFLOW_THRESHOLD = 100;
@@ -154,7 +156,7 @@ final class MvccRawStoreOrderedIndex {
         if (values == null) {
             return;
         }
-        List<IndexEntry> entries = readEntriesForUpdate(transaction, table, key);
+        List<IndexEntry> entries = new ArrayList<>(indexedColumnCount(table));
         addVersionEntries(
                 entries,
                 table,
@@ -164,7 +166,21 @@ final class MvccRawStoreOrderedIndex {
                 beginSequence,
                 endSequence,
                 values);
-        rewriteSorted(transaction, table, key, entries);
+        ContainerHandle container = transaction.openContainer(
+                key,
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC ordered-index container is absent: " + key);
+        }
+        try {
+            appendEntries(transaction, table, container, entries);
+            long currentEstimate = Math.max(0L, container.getEstimatedRowCount(0));
+            container.setEstimatedRowCount(currentEstimate + entries.size(), 0);
+        } finally {
+            container.close();
+        }
     }
 
     static void rebuild(
@@ -188,52 +204,6 @@ final class MvccRawStoreOrderedIndex {
                     version.values());
         }
         rewriteSorted(transaction, table, key, entries);
-    }
-
-    static void stampVersionBegin(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            long versionId,
-            long commitSequence,
-            int expectedEntryCount) throws StandardException {
-        int updated = updateSequence(
-                transaction,
-                table,
-                rowId,
-                versionId,
-                MvccRawStoreFormat.ORDERED_INDEX_ENTRY_BEGIN_SEQUENCE,
-                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
-                commitSequence);
-        if (updated != expectedEntryCount) {
-            throw new IllegalStateException(
-                    "RawStore MVCC ordered-index begin stamping mismatch for row "
-                            + rowId + ", version " + versionId
-                            + ": expected " + expectedEntryCount + " entries, found " + updated);
-        }
-    }
-
-    static void stampVersionEnd(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            long versionId,
-            long commitSequence) throws StandardException {
-        int updated = updateSequence(
-                transaction,
-                table,
-                rowId,
-                versionId,
-                MvccRawStoreFormat.ORDERED_INDEX_ENTRY_END_SEQUENCE,
-                MvccRawStoreFormat.CURRENT_END_SEQUENCE,
-                commitSequence);
-        int expectedEntryCount = indexedColumnCount(table);
-        if (updated != expectedEntryCount) {
-            throw new IllegalStateException(
-                    "RawStore MVCC ordered-index end stamping mismatch for row "
-                            + rowId + ", version " + versionId
-                            + ": expected " + expectedEntryCount + " entries, found " + updated);
-        }
     }
 
     static void assertUnique(
@@ -406,19 +376,18 @@ final class MvccRawStoreOrderedIndex {
                 ContainerHandle.MODE_READONLY);
         if (container == null) {
             // READ_UNCOMMITTED control-row discovery can transiently observe a
-            // writer's not-yet-published private generation. The logical row
-            // directory remains authoritative, so an unavailable generation
+            // not-yet-published maintenance replacement. The logical row
+            // directory remains authoritative, so an unavailable replacement
             // means "fall back to the base version chain", never query failure.
             return Optional.empty();
         }
 
         LinkedHashSet<Long> distinctRowIds = new LinkedHashSet<>();
-        boolean finished = false;
         Page page = null;
         try {
             page = container.getFirstPage();
             validateControl(transaction, table, page);
-            while (page != null && !finished) {
+            while (page != null) {
                 int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
                         ? Page.FIRST_SLOT_NUMBER + 1
                         : Page.FIRST_SLOT_NUMBER;
@@ -432,20 +401,14 @@ final class MvccRawStoreOrderedIndex {
                     }
                     MvccRawStoreOrderedIndexPredicate.Decision decision =
                             predicate.get().decide(entry.columnId(), entry.key());
-                    if (decision == MvccRawStoreOrderedIndexPredicate.Decision.FINISH) {
-                        finished = true;
-                        break;
-                    }
                     if (decision == MvccRawStoreOrderedIndexPredicate.Decision.MATCH
                             && visibleAt(entry, context, snapshotSequence)) {
                         distinctRowIds.add(entry.rowId());
                     }
                 }
-                if (!finished) {
-                    long pageNumber = page.getPageNumber();
-                    page.unlatch();
-                    page = container.getNextPage(pageNumber);
-                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
             }
         } finally {
             if (page != null) {
@@ -589,9 +552,18 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.Descriptor table,
             ContainerHandle container,
             List<IndexEntry> entries) throws StandardException {
-        Page page = container.getFirstPage();
+        Page control = null;
+        Page page = null;
         try {
-            validateControl(transaction, table, page);
+            control = container.getFirstPage();
+            validateControl(transaction, table, control);
+            control.unlatch();
+            control = null;
+
+            page = container.getPageForInsert(ContainerHandle.GET_PAGE_UNFILLED);
+            if (page == null) {
+                page = container.getFirstPage();
+            }
             for (IndexEntry entry : entries) {
                 Object[] row = entryRow(transaction, table, entry);
                 while (true) {
@@ -614,6 +586,9 @@ final class MvccRawStoreOrderedIndex {
                 }
             }
         } finally {
+            if (control != null) {
+                control.unlatch();
+            }
             if (page != null) {
                 page.unlatch();
             }
@@ -643,67 +618,6 @@ final class MvccRawStoreOrderedIndex {
         } catch (OrderedIndexComparisonFailure failure) {
             throw (StandardException) failure.getCause();
         }
-    }
-
-    private static int updateSequence(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            long versionId,
-            int field,
-            long expectedCurrentValue,
-            long newValue) throws StandardException {
-        ContainerKey key = requireContainer(table);
-        ContainerHandle container = transaction.openContainer(
-                key,
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            throw new IllegalStateException("RawStore MVCC ordered-index container is absent: " + key);
-        }
-        int updated = 0;
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            validateControl(transaction, table, page);
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 1
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    EntryIdentity identity = decodeIdentity(transaction, page, slot);
-                    if (identity == null
-                            || identity.rowId() != rowId
-                            || identity.versionId() != versionId) {
-                        continue;
-                    }
-                    long current = longField(transaction, page, slot, field);
-                    if (current != expectedCurrentValue) {
-                        throw new IllegalStateException(
-                                "RawStore MVCC ordered-index entry has unexpected sequence for row "
-                                        + rowId + ", version " + versionId + ": " + current);
-                    }
-                    page.updateFieldAtSlot(
-                            slot,
-                            field,
-                            MvccRawStoreFormat.longValue(transaction, newValue),
-                            null);
-                    updated++;
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-        return updated;
     }
 
     private static Object[] controlRow(
@@ -883,7 +797,7 @@ final class MvccRawStoreOrderedIndex {
         return StoreTypeUtil.getLong(value);
     }
 
-    private static void validateControl(
+    static void validateControl(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
             Page firstPage) throws StandardException {
@@ -936,7 +850,7 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
-    private static int indexedColumnCount(MvccRawStoreTable.Descriptor table) {
+    static int indexedColumnCount(MvccRawStoreTable.Descriptor table) {
         int count = 0;
         for (int column = 0; column < table.columnCount(); column++) {
             if (indexesColumn(table, column)) {
@@ -958,7 +872,7 @@ final class MvccRawStoreOrderedIndex {
         };
     }
 
-    private static ContainerKey requireContainer(MvccRawStoreTable.Descriptor table) {
+    static ContainerKey requireContainer(MvccRawStoreTable.Descriptor table) {
         ContainerKey key = table.orderedIndexContainer();
         if (key == null) {
             throw new IllegalStateException("RawStore MVCC ordered index is not installed");

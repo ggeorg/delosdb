@@ -223,7 +223,7 @@ public final class MvccConglomerate
                 currentTable,
                 context.vacuumHorizon());
         if (result.requiresOrderedIndexReplacement()) {
-            context.orderedIndexForWrite(currentTable);
+            context.prepareOrderedIndexReplacement(currentTable);
         }
         if (result.mutated()) {
             context.markVacuumMutation();

@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-/** Row-level RawStore physical locking and private ordered-index publication proofs. */
+/** Row-level RawStore physical locking and transactional shared-index proofs. */
 public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
@@ -125,9 +125,9 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testPrivateOrderedIndexGenerationPublishesOnlyAtCommit()
+    public void testSharedOrderedIndexMutationsFollowRawStoreTransactionBoundaries()
             throws Exception {
-        String database = databaseName("mvcc-raw-store-private-index-publication");
+        String database = databaseName("mvcc-raw-store-shared-index-transaction");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
@@ -146,11 +146,11 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 observer.commit();
             }
 
-            // A private generation created after the savepoint is fully undone.
+            // Shared-index records inserted after the savepoint are fully undone by RawStore.
             try (Connection writer = openDatabase(database, false);
                  Connection observer = openDatabase(database, false)) {
                 writer.setAutoCommit(false);
-                Savepoint beforeGeneration = writer.setSavepoint("before_generation");
+                Savepoint beforeMutation = writer.setSavepoint("before_mutation");
                 executeUpdate(writer,
                         "update private_index_t set score = 20 where id = 1");
                 assertRows(writer,
@@ -166,8 +166,8 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                                 observer,
                                 "PRIVATE_INDEX_T"));
 
-                writer.rollback(beforeGeneration);
-                writer.releaseSavepoint(beforeGeneration);
+                writer.rollback(beforeMutation);
+                writer.releaseSavepoint(beforeMutation);
                 assertRows(writer,
                         "select id from private_index_t where score = 10",
                         "1");
@@ -185,7 +185,7 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 observer.commit();
             }
 
-            // A committed mutation atomically switches generations and drops the old one.
+            // A committed mutation keeps the same container and publishes only MVCC sequences.
             long publishedIndex;
             try (Connection writer = openDatabase(database, false);
                  Connection observer = openDatabase(database, false)) {
@@ -217,15 +217,14 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 publishedIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
                         observer,
                         "PRIVATE_INDEX_T");
-                assertTrue("commit must publish a new ordered-index generation",
-                        publishedIndex != originalIndex);
-                assertFalse("the replaced generation must be dropped transactionally",
-                        MvccRawStoreMetadataInspection.containerExists(observer, originalIndex));
+                assertEquals("normal writes must retain the published ordered-index container",
+                        originalIndex,
+                        publishedIndex);
                 assertTrue(MvccRawStoreMetadataInspection.containerExists(observer, publishedIndex));
                 observer.commit();
             }
 
-            // Transaction rollback preserves the currently published generation.
+            // Transaction rollback removes only the transaction's in-place index mutations.
             try (Connection writer = openDatabase(database, false)) {
                 writer.setAutoCommit(false);
                 executeUpdate(writer,
@@ -246,7 +245,7 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testPrivateGenerationRecoveryOnBothRawStoreCommitBoundaries()
+    public void testSharedIndexRecoveryOnBothRawStoreCommitBoundaries()
             throws Exception {
         verifyCrashBoundary(BEFORE_RAW_COMMIT, 91, false);
         verifyCrashBoundary(AFTER_RAW_COMMIT, 92, true);
@@ -311,13 +310,13 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
             long firstPublished = MvccRawStoreMetadataInspection.orderedIndexContainerId(
                     first,
                     "MEMORY_PHYSICAL_T");
-            assertTrue(firstPublished != initialIndex);
+            assertEquals(initialIndex, firstPublished);
             first.commit();
             second.commit();
             long secondPublished = MvccRawStoreMetadataInspection.orderedIndexContainerId(
                     second,
                     "MEMORY_PHYSICAL_T");
-            assertTrue(secondPublished != firstPublished);
+            assertEquals(initialIndex, secondPublished);
             second.commit();
 
             reader.commit();
@@ -325,9 +324,9 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                     "select id, value from memory_physical_t order by id",
                     "1|11",
                     "2|22");
-            assertFalse(MvccRawStoreMetadataInspection.containerExists(reader, initialIndex));
-            assertFalse(MvccRawStoreMetadataInspection.containerExists(reader, firstPublished));
-            assertTrue(MvccRawStoreMetadataInspection.containerExists(reader, secondPublished));
+            assertTrue(MvccRawStoreMetadataInspection.containerExists(reader, initialIndex));
+            assertEquals(initialIndex, firstPublished);
+            assertEquals(initialIndex, secondPublished);
             reader.commit();
         }
         shutdownMemoryDatabase(database);
@@ -389,10 +388,7 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 assertRows(recovered,
                         "select id from physical_crash_t where value = 20",
                         "1");
-                assertTrue(recoveredIndex != originalIndex);
-                assertFalse(MvccRawStoreMetadataInspection.containerExists(
-                        recovered,
-                        originalIndex));
+                assertEquals(originalIndex, recoveredIndex);
                 assertTrue(MvccRawStoreMetadataInspection.containerExists(
                         recovered,
                         recoveredIndex));

@@ -30,10 +30,13 @@ import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Converts supported qualifier shapes into ordered-index scan decisions.
+ * Converts supported qualifier shapes into index-candidate decisions.
  *
  * <p>This class owns only qualifier interpretation and key-bound comparison.
- * Container access, MVCC visibility, and row-id authority remain in
+ * {@link Decision#FINISH} means the candidate lies beyond an ordered bound;
+ * the current append-only physical scan treats it as a non-match and continues,
+ * while a later B-tree cursor may use it as an end condition. Container access,
+ * MVCC visibility, and row-id authority remain in
  * {@link MvccRawStoreOrderedIndex}.</p>
  */
 final class MvccRawStoreOrderedIndexPredicate {

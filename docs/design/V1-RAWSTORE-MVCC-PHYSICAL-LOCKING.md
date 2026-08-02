@@ -36,7 +36,7 @@ record.
 Commit ordering is:
 
 ```text
-stamp versions and rebuild private index
+stamp base versions and their shared index entries
 write one RawStore commit record
 retire active MvccTransactionId
 publish committed high-water
@@ -55,33 +55,32 @@ Rollback may leave harmless numeric gaps. Reuse is not allowed within the runnin
 committed high-water reconstructs the allocator after reopen. This removes the allocator control row
 from the normal writer serialization path without making it a second persistence authority.
 
-## transaction-private ordered-index generation
+## transactional shared index mutation
 
-A writer does not rewrite the currently published ordered-index container. On its first indexed
-mutation for a table, it:
+Normal DML no longer copies and republishes the complete index container. The currently published
+container participates directly in the parent RawStore transaction:
 
 ```text
-creates a private RawStore container
-rebuilds the visible ordered state into that container
-applies statement-time INSERT or UPDATE entries there
-keeps the published generation available to other transactions
+append entries for the new MVCC version
+retain creator/begin/end visibility fields on each entry
+stamp new and predecessor entries during precommit
+use RawStore savepoint, abort, WAL, and recovery for physical rollback
 ```
 
-At precommit, while holding the database publication boundary, the transaction rebuilds the private
-generation from authoritative base versions, rewrites the table control row to point to it, and
-transactionally drops the replaced generation. The control-row switch, old-container drop, base
-version stamps, allocator high-water, and committed high-water share the parent RawStore commit.
+Readers use READ_UNCOMMITTED physical access and reject entries owned by another active transaction.
+The authoritative version chain is still re-read and qualified, so the index remains a candidate
+narrowing structure rather than row authority. Until Derby B-tree convergence, predicate lookup scans
+all candidate entries deliberately; it never assumes that normal append order is key order.
 
-Savepoint rollback reconciles transaction-local generation state against RawStore container existence.
-A generation created after the savepoint disappears through RawStore undo and is removed from the
-transaction context.
+Full private-generation replacement is retained only for compatibility rebuild and history-removing
+vacuum. Those maintenance paths rebuild from authoritative versions, switch the control-row pointer,
+and drop the replaced container in the same RawStore transaction.
 
-## Reader fallback during publication
+## Reader fallback during maintenance publication
 
-A READ_UNCOMMITTED control-row read may transiently observe a writer's not-yet-published container
-identifier. If that private container is not openable by the reader, the ordered-index lookup returns
-"not answered" and the scan falls back to the authoritative stable-row directory and version chain.
-It never reports false row absence.
+A READ_UNCOMMITTED control-row read may transiently observe a maintenance replacement identifier. If
+that replacement is not openable by the reader, lookup returns "not answered" and the scan falls back
+to the authoritative stable-row directory and version chain. It never reports false row absence.
 
 ## Compatibility control rows
 
@@ -90,25 +89,27 @@ rewrite remains logged and transactional.
 
 ## Recovery and memory
 
-The private generation is an ordinary RawStore container.
+Normal index-entry insertion and sequence stamping are ordinary logged RawStore record mutations.
 
 ```text
 crash before RawStore commit:
-    private generation, control-row switch, and row changes are undone
+    base-version and shared-index mutations are undone
 
 crash after RawStore commit before in-memory publication:
-    new generation and row changes recover together
+    base-version and shared-index mutations recover together
 ```
 
-`jdbc:derby:memory:` uses the same `MODE_RECORD`, active-writer, private-generation, and publication
-implementation. No filesystem fallback or memory-specific storage authority exists.
+A vacuum replacement remains an ordinary RawStore container whose control-row switch and old-container
+drop share that same outcome. `jdbc:derby:memory:` uses the same `MODE_RECORD`, active-writer, direct
+mutation, and maintenance-replacement implementation. No filesystem fallback or memory-specific
+storage authority exists.
 
 ## Current limits
 
-This milestone does not add predicate/range-gap locks, finalize page-layout performance, or remove the
-retained Phase 8 storage system. Transactional vacuum and purge are implemented by the next Stage 4
-slice in `V1-RAWSTORE-MVCC-VACUUM.md`; background maintenance, relocation, and incremental ordered-index
-page maintenance remain later work.
+The append-only candidate representation removes whole-index rewrite amplification but does not yet add
+B-tree descent, page-level key directories, or predicate/range-gap locks. Equality and range probes scan
+all candidate entries until the retained Derby B-tree becomes the physical index authority. Vacuum,
+maintenance replacement, and recovery remain complete and transactional.
 
 ## Executable proof
 
@@ -124,6 +125,7 @@ Permanent architecture gate:
 delosMvccRawStorePhysicalLockingStaticAnalysis
 ```
 
-The proof covers different-row writer concurrency, nonblocking snapshot reads, transaction-private
-index visibility, savepoint rollback, atomic generation replacement, old-generation retirement,
-both RawStore crash boundaries, reopen, and real memory-database operation.
+The proof covers different-row writer concurrency, nonblocking snapshot reads, transaction-local
+index visibility, in-place savepoint/rollback behavior, stable normal-DML container identity,
+both RawStore crash boundaries, reopen, and real memory-database operation. Vacuum tests separately
+cover atomic maintenance-generation replacement and old-generation retirement.

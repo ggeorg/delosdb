@@ -40,7 +40,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
     private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
-    private final Map<Long, OrderedIndexGeneration> orderedIndexGenerations = new LinkedHashMap<>();
+    private final Map<Long, OrderedIndexReplacement> orderedIndexReplacements = new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreTable.Descriptor> createdTables =
             new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreTable.Descriptor> droppedTables =
@@ -101,10 +101,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         beforeSchemaChange(table);
         droppedTables.put(table.metadataContainer(), table);
 
-        OrderedIndexGeneration generation = orderedIndexGenerations.get(
+        OrderedIndexReplacement replacement = orderedIndexReplacements.get(
                 table.metadataContainer().getContainerId());
-        if (generation != null) {
-            rawTransaction.dropContainer(generation.privateContainer());
+        if (replacement != null) {
+            rawTransaction.dropContainer(replacement.privateContainer());
         }
     }
 
@@ -183,10 +183,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     ContainerKey orderedIndexForRead(MvccRawStoreTable.Descriptor table)
             throws StandardException {
-        OrderedIndexGeneration generation = orderedIndexGenerations.get(
+        OrderedIndexReplacement replacement = orderedIndexReplacements.get(
                 table.metadataContainer().getContainerId());
-        if (generation != null) {
-            return generation.privateContainer();
+        if (replacement != null) {
+            return replacement.privateContainer();
         }
         return MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction,
@@ -196,15 +196,29 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     ContainerKey orderedIndexForWrite(MvccRawStoreTable.Descriptor table)
             throws StandardException {
-        long tableId = table.metadataContainer().getContainerId();
-        OrderedIndexGeneration generation = orderedIndexGenerations.get(tableId);
-        if (generation != null) {
-            return generation.privateContainer();
+        OrderedIndexReplacement replacement = orderedIndexReplacements.get(
+                table.metadataContainer().getContainerId());
+        if (replacement != null) {
+            return replacement.privateContainer();
         }
         ContainerKey published = MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction,
                 table,
                 false);
+        if (published == null) {
+            prepareOrderedIndexReplacement(table);
+            return orderedIndexReplacements.get(
+                    table.metadataContainer().getContainerId()).privateContainer();
+        }
+        return published;
+    }
+
+    void prepareOrderedIndexReplacement(MvccRawStoreTable.Descriptor table)
+            throws StandardException {
+        long tableId = table.metadataContainer().getContainerId();
+        if (orderedIndexReplacements.containsKey(tableId)) {
+            return;
+        }
         ContainerKey privateContainer = MvccRawStoreOrderedIndex.createPrivateGeneration(
                 rawTransaction,
                 table);
@@ -213,10 +227,14 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                 table,
                 privateContainer,
                 this);
-        orderedIndexGenerations.put(
+        orderedIndexReplacements.put(
                 tableId,
-                new OrderedIndexGeneration(table, published, privateContainer));
-        return privateContainer;
+                new OrderedIndexReplacement(table, privateContainer));
+    }
+
+    boolean hasOrderedIndexReplacement(MvccRawStoreTable.Descriptor table) {
+        return orderedIndexReplacements.containsKey(
+                table.metadataContainer().getContainerId());
     }
 
     void addPending(MvccRawStoreTable.PendingVersion version) {
@@ -255,16 +273,16 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     public void beforeCommit(CommitMode mode) throws StandardException {
         List<MvccRawStoreTable.PendingVersion> committableVersions =
                 committablePendingVersions();
-        List<OrderedIndexGeneration> committableIndexes =
-                committableOrderedIndexes();
+        List<OrderedIndexReplacement> committableIndexes =
+                committableOrderedIndexReplacements();
         boolean hasPendingVersions = !committableVersions.isEmpty();
-        boolean hasPrivateIndexes = !committableIndexes.isEmpty();
-        if (!hasPendingVersions && !hasPrivateIndexes && !vacuumMutation) {
+        boolean hasIndexReplacements = !committableIndexes.isEmpty();
+        if (!hasPendingVersions && !hasIndexReplacements && !vacuumMutation) {
             return;
         }
 
         if (!hasPendingVersions) {
-            publishOrderedIndexes(committableIndexes);
+            publishOrderedIndexReplacements(committableIndexes);
             if (vacuumMutation) {
                 MvccRawStoreRuntime.haltAtFailurePoint(
                         MvccRawStoreRuntime.AFTER_VACUUM_BEFORE_RAW_COMMIT,
@@ -280,8 +298,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreTable.stampPendingVersions(
                     rawTransaction,
                     committableVersions,
-                    reservedCommitSequence);
-            publishOrderedIndexes(committableIndexes);
+                    reservedCommitSequence,
+                    this);
+            publishOrderedIndexReplacements(committableIndexes);
             runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
@@ -317,8 +336,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
         }
-        for (OrderedIndexGeneration generation : committableOrderedIndexes()) {
-            generation.table().observeOrderedIndexContainer(generation.privateContainer());
+        for (OrderedIndexReplacement replacement : committableOrderedIndexReplacements()) {
+            replacement.table().observeOrderedIndexContainer(replacement.privateContainer());
         }
         if (publicationLockHeld) {
             // A snapshot at the newly published high-water must never reject
@@ -376,7 +395,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             }
         }
 
-        orderedIndexGenerations.entrySet().removeIf(entry -> {
+        orderedIndexReplacements.entrySet().removeIf(entry -> {
             try {
                 return !MvccRawStoreOrderedIndex.containerExists(
                         rawTransaction,
@@ -452,23 +471,23 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         clearLocalState();
     }
 
-    private void publishOrderedIndexes(List<OrderedIndexGeneration> generations)
+    private void publishOrderedIndexReplacements(List<OrderedIndexReplacement> replacements)
             throws StandardException {
-        List<OrderedIndexGeneration> ordered = new ArrayList<>(generations);
+        List<OrderedIndexReplacement> ordered = new ArrayList<>(replacements);
         ordered.sort(java.util.Comparator.comparingLong(
-                generation -> generation.table().metadataContainer().getContainerId()));
-        for (OrderedIndexGeneration generation : ordered) {
+                replacement -> replacement.table().metadataContainer().getContainerId()));
+        for (OrderedIndexReplacement replacement : ordered) {
             MvccRawStoreTable.rebuildOrderedIndexForPublication(
                     rawTransaction,
-                    generation.table(),
-                    generation.privateContainer(),
+                    replacement.table(),
+                    replacement.privateContainer(),
                     transactionId,
                     this);
             ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
                     rawTransaction,
-                    generation.table(),
-                    generation.privateContainer());
-            if (replaced != null && !replaced.equals(generation.privateContainer())) {
+                    replacement.table(),
+                    replacement.privateContainer());
+            if (replaced != null && !replaced.equals(replacement.privateContainer())) {
                 rawTransaction.dropContainer(replaced);
             }
         }
@@ -511,11 +530,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return List.copyOf(committable);
     }
 
-    private List<OrderedIndexGeneration> committableOrderedIndexes() {
-        List<OrderedIndexGeneration> committable = new ArrayList<>(orderedIndexGenerations.size());
-        for (OrderedIndexGeneration generation : orderedIndexGenerations.values()) {
-            if (!isDropped(generation.table())) {
-                committable.add(generation);
+    private List<OrderedIndexReplacement> committableOrderedIndexReplacements() {
+        List<OrderedIndexReplacement> committable = new ArrayList<>(orderedIndexReplacements.size());
+        for (OrderedIndexReplacement replacement : orderedIndexReplacements.values()) {
+            if (!isDropped(replacement.table())) {
+                committable.add(replacement);
             }
         }
         return List.copyOf(committable);
@@ -589,7 +608,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         sharedLocks.clear();
         exclusiveLocks.clear();
         allocatorReservations.clear();
-        orderedIndexGenerations.clear();
+        orderedIndexReplacements.clear();
         createdTables.clear();
         droppedTables.clear();
         transactionId = 0L;
@@ -608,9 +627,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             long nextVersionId) {
     }
 
-    private record OrderedIndexGeneration(
+    private record OrderedIndexReplacement(
             MvccRawStoreTable.Descriptor table,
-            ContainerKey publishedContainer,
             ContainerKey privateContainer) {
     }
 

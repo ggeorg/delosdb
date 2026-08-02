@@ -116,10 +116,11 @@ No filesystem fallback or memory-specific lock registry exists.
 ## Physical locking completion
 
 The physical lock-granularity completion is now implemented. Normal table and ordered-index access
-uses inherited RawStore record locking, active-writer filtering, and transaction-private ordered-index
-generations. Logical schema, row, and typed key locks remain the semantic conflict authority.
+uses inherited RawStore record locking, active-writer filtering, and transactional mutation of the
+published index-candidate container. Logical schema, row, and typed key locks remain the semantic
+conflict authority.
 
-See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for the publication and recovery protocol. Short
+See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for the mutation, maintenance-publication, and recovery protocol. Short
 serializable container ownership remains only around database-wide identity metadata, not normal row
 mutation.
 

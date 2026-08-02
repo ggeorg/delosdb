@@ -30,9 +30,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-/** RawStore-owned MVCC ordered-index visibility, recovery, and compatibility proofs. */
+/** RawStore-owned MVCC index-candidate visibility, recovery, and compatibility proofs. */
 public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
@@ -40,13 +41,14 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
 
-    public void testEqualityRangeOrderingAndReopenUseRawStoreIndex() throws Exception {
+    public void testEqualityRangeCandidateLookupAndReopenUseRawStoreIndex() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
-                        "create table indexed_t (id int, name varchar(64), score int, padding varchar(600)) using delos_mvcc");
+                        "create table indexed_t (id int, name varchar(64), score int, "
+                                + "padding varchar(600)) using delos_mvcc");
                 for (int id : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 10}) {
                     String padding = "pad-" + id + '-' + "x".repeat(400);
                     executeUpdate(connection, "insert into indexed_t values ("
@@ -74,7 +76,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
                 assertEquals(36, entries.size());
-                assertPhysicalTypedOrder(entries);
+                assertPhysicalTypedCoverage(entries);
                 for (MvccRawStoreMetadataInspection.OrderedIndexIdentity entry : entries) {
                     assertEquals(1L, entry.beginCommitSequence());
                     assertEquals(CURRENT_END_SEQUENCE, entry.endCommitSequence());
@@ -243,24 +245,30 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         shutdownMemoryDatabase(memoryDatabase);
     }
 
-    private static void assertPhysicalTypedOrder(
+    private static void assertPhysicalTypedCoverage(
             List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries) {
-        assertEquals(
-                List.of("1", "2", "3", "4", "5", "6", "7", "8", "10"),
-                entries.subList(0, 9).stream()
-                        .map(MvccRawStoreMetadataInspection.OrderedIndexIdentity::key)
-                        .toList());
-        assertEquals(
-                List.of("name-1", "name-10", "name-2", "name-3", "name-4",
-                        "name-5", "name-6", "name-7", "name-8"),
-                entries.subList(9, 18).stream()
-                        .map(MvccRawStoreMetadataInspection.OrderedIndexIdentity::key)
-                        .toList());
-        assertEquals(
-                List.of("10", "20", "30", "40", "50", "60", "70", "80", "100"),
-                entries.subList(18, 27).stream()
-                        .map(MvccRawStoreMetadataInspection.OrderedIndexIdentity::key)
-                        .toList());
+        int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 10};
+        assertColumnKeys(entries, 0, Set.of("1", "2", "3", "4", "5", "6", "7", "8", "10"));
+        assertColumnKeys(entries, 1, Set.of(
+                "name-1", "name-2", "name-3", "name-4", "name-5",
+                "name-6", "name-7", "name-8", "name-10"));
+        assertColumnKeys(entries, 2, Set.of(
+                "10", "20", "30", "40", "50", "60", "70", "80", "100"));
+        assertColumnKeys(entries, 3, java.util.Arrays.stream(ids)
+                .mapToObj(id -> "pad-" + id + '-' + "x".repeat(400))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+    }
+
+    private static void assertColumnKeys(
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries,
+            int columnId,
+            Set<String> expectedKeys) {
+        List<String> keys = entries.stream()
+                .filter(entry -> entry.columnId() == columnId)
+                .map(MvccRawStoreMetadataInspection.OrderedIndexIdentity::key)
+                .toList();
+        assertEquals(expectedKeys.size(), keys.size());
+        assertEquals(expectedKeys, Set.copyOf(keys));
     }
 
     private static void assertIndexedRows(

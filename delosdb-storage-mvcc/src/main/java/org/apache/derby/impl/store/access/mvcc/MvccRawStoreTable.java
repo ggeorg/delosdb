@@ -13,7 +13,9 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -583,7 +585,8 @@ final class MvccRawStoreTable {
     static void stampPendingVersions(
             Transaction rawTransaction,
             List<PendingVersion> pending,
-            long commitSequence) throws StandardException {
+            long commitSequence,
+            MvccRawStoreTransactionContext context) throws StandardException {
         List<PendingVersion> ordered = new ArrayList<>(pending);
         ordered.sort(Comparator
                 .comparingLong((PendingVersion version) ->
@@ -591,6 +594,7 @@ final class MvccRawStoreTable {
                 .thenComparingLong(version ->
                         version.table().metadataContainer().getContainerId())
                 .thenComparingLong(PendingVersion::versionId));
+        Map<Descriptor, List<PendingVersion>> sharedIndexStamps = new LinkedHashMap<>();
         for (PendingVersion version : ordered) {
             updateVersionBegin(
                     rawTransaction,
@@ -606,6 +610,18 @@ final class MvccRawStoreTable {
                         version.previousHint(),
                         commitSequence);
             }
+            if (!context.hasOrderedIndexReplacement(version.table())) {
+                sharedIndexStamps.computeIfAbsent(
+                        version.table(),
+                        ignored -> new ArrayList<>()).add(version);
+            }
+        }
+        for (Map.Entry<Descriptor, List<PendingVersion>> entry : sharedIndexStamps.entrySet()) {
+            MvccRawStoreOrderedIndexCommitStamper.stampPendingVersions(
+                    rawTransaction,
+                    entry.getKey(),
+                    entry.getValue(),
+                    commitSequence);
         }
     }
 

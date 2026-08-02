@@ -439,10 +439,11 @@ The RawStore path acquires stable schema, row, and unique-key identities through
 lock manager. Normal table and ordered-index physical access uses `MODE_RECORD` with
 `READ_UNCOMMITTED`; MVCC visibility rejects records owned by another active transaction.
 
-Each writer maintains a transaction-private ordered-index generation. Precommit rebuilds and publishes
-that generation through a logged control-row rewrite, and the replaced generation is dropped in the
-same parent RawStore transaction. Readers that transiently observe an unavailable private generation
-fall back to the authoritative base version chain.
+Normal writers append new version entries to the published index-candidate container in their parent
+RawStore transaction. Precommit stamps the corresponding begin/end sequences, while savepoint, abort,
+WAL, and recovery use inherited RawStore behavior. Full generation rebuild and control-row publication
+remain limited to compatibility repair and history-removing vacuum; an unavailable maintenance
+replacement still causes fallback to the authoritative base version chain.
 
 ```text
 :delosdb-tests:runDelosMvccRawStoreLogicalLockingTest
@@ -454,8 +455,8 @@ delosMvccRawStoreVacuumStaticAnalysis
 ```
 
 See `V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md` for active-writer filtering, allocator high-water staging,
-private-generation publication, compatibility control-row rewrites, crash behavior, and remaining
-limits.
+transactional index mutation, maintenance-generation publication, compatibility control-row rewrites,
+crash behavior, and remaining limits.
 
 
 ## Transactional RawStore MVCC vacuum and purge

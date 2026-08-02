@@ -109,12 +109,12 @@ catalog conglomerate identity, SQL visibility, reopen behaviour, and the absence
 of retired backup artefacts.
 
 When a transaction performs DML and then drops that MVCC table, transaction-local
-versions, allocator reservations, and private ordered-index generations for the
-dropped table are excluded from commit publication. A private ordered-index
-generation is dropped in the same RawStore transaction. Rollback to a savepoint
-restores the RawStore containers and retains the transaction-local generation,
-so DML performed before the savepoint still commits correctly after the DROP is
-rolled back.
+versions and allocator reservations for the dropped table are excluded from commit
+publication; in-place index entries disappear with the dropped RawStore container.
+A maintenance replacement created in the same transaction is dropped as well.
+Rollback to a savepoint restores the RawStore containers and their transactional
+index mutations, so DML performed before the savepoint still commits correctly
+after the DROP is rolled back.
 
 ## Transactional test readback boundaries
 
