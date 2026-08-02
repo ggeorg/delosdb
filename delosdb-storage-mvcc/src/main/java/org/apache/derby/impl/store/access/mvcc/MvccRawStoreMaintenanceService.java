@@ -446,7 +446,7 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                             transaction, table);
                     MvccRawStoreTable.rebuildOrderedIndexForMaintenance(
                             transaction, table, replacement);
-                    ContainerKey replaced = MvccRawStoreTable.publishOrderedIndexContainer(
+                    ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
                             transaction, table, replacement);
                     if (replaced != null) {
                         transaction.dropContainer(replaced);

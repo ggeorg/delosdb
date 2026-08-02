@@ -188,7 +188,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         if (generation != null) {
             return generation.privateContainer();
         }
-        return MvccRawStoreTable.discoverOrderedIndexContainer(
+        return MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction,
                 table,
                 false);
@@ -201,7 +201,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         if (generation != null) {
             return generation.privateContainer();
         }
-        ContainerKey published = MvccRawStoreTable.discoverOrderedIndexContainer(
+        ContainerKey published = MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction,
                 table,
                 false);
@@ -464,7 +464,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     generation.privateContainer(),
                     transactionId,
                     this);
-            ContainerKey replaced = MvccRawStoreTable.publishOrderedIndexContainer(
+            ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
                     rawTransaction,
                     generation.table(),
                     generation.privateContainer());

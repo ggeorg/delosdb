@@ -176,7 +176,7 @@ final class MvccRawStoreConglomerateController
             boolean deferrable) throws StandardException {
         ensureOpen();
         runtime.context(transactionManager, rawTransaction).beforeSchemaChange(table);
-        MvccRawStoreTable.validateUniqueConstraintDefinition(
+        MvccRawStoreTableMetadata.validateUniqueConstraintDefinition(
                 table,
                 baseColumnPositions,
                 deferrable);
@@ -190,7 +190,7 @@ final class MvccRawStoreConglomerateController
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
         context.beforeSchemaChange(table);
-        MvccRawStoreTable.addUniqueConstraint(
+        MvccRawStoreTableMetadata.addUniqueConstraint(
                 rawTransaction,
                 table,
                 baseColumnPositions,
@@ -206,7 +206,7 @@ final class MvccRawStoreConglomerateController
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
         context.beforeSchemaChange(table);
-        MvccRawStoreTable.dropUniqueConstraint(
+        MvccRawStoreTableMetadata.dropUniqueConstraint(
                 rawTransaction,
                 table,
                 baseColumnPositions,

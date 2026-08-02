@@ -125,7 +125,7 @@ public final class MvccConglomerateFactory
     public Conglomerate readConglomerate(
             TransactionManager xactManager,
             ContainerKey containerKey) throws StandardException {
-        MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.read(
+        MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTableMetadata.read(
                 xactManager.getRawStoreXact(),
                 containerKey);
         if (descriptor == null) {

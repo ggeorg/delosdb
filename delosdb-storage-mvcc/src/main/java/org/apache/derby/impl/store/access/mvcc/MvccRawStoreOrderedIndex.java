@@ -251,7 +251,7 @@ final class MvccRawStoreOrderedIndex {
         // metadata. Read the control row without a physical update lock so
         // unrelated constrained writers do not serialize on one record.
         List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false);
+                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
         if (constraints.isEmpty()) {
             return;
         }
@@ -302,7 +302,7 @@ final class MvccRawStoreOrderedIndex {
             StoreDataValue[] previousValues,
             MvccRawStoreTransactionContext context) throws StandardException {
         List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTable.refreshUniqueConstraints(transaction, table, false);
+                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
         if (!constraints.isEmpty()) {
             context.lockUniqueKeys(table, constraints, previousValues);
         }
