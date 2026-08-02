@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Savepoint;
 import java.sql.SQLException;
@@ -169,6 +170,39 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             }
             shutdownDatabase(database);
         }
+    }
+
+    public void testWideVarcharKeysUseLargePagesAndOversizeKeysFallBack() throws Exception {
+        String database = databaseName("mvcc-raw-store-wide-ordered-index");
+        String pageSizedPayload = "p".repeat(4096);
+        String oversizePayload = "o".repeat(32672);
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table page_sized_t (id int primary key, payload varchar(4096)) "
+                            + "using delos_mvcc");
+            executeUpdate(connection,
+                    "create table oversize_t (id int primary key, payload varchar(32672)) "
+                            + "using delos_mvcc");
+
+            insertWideRow(connection, "page_sized_t", pageSizedPayload);
+            insertWideRow(connection, "oversize_t", oversizePayload);
+            connection.commit();
+
+            assertPreparedLookup(
+                    connection,
+                    "select id from page_sized_t where payload = ?",
+                    pageSizedPayload,
+                    true);
+            assertPreparedLookup(
+                    connection,
+                    "select id from oversize_t where payload = ?",
+                    oversizePayload,
+                    false);
+            connection.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testUpdateDeleteSavepointAndHistoricalSnapshotsKeepIndexVisibility() throws Exception {
@@ -415,6 +449,39 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         assertRows(connection, sql, expectedRows);
         String statistics = runtimeStatistics(connection);
         assertTrue("expected RawStore MVCC ordered-index scan; statistics=" + statistics,
+                statistics.contains("delos_mvcc_rawstore_ordered_index"));
+    }
+
+    private static void insertWideRow(
+            Connection connection,
+            String table,
+            String payload) throws Exception {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into " + table + " values (?, ?)")) {
+            insert.setInt(1, 1);
+            insert.setString(2, payload);
+            assertEquals(1, insert.executeUpdate());
+        }
+    }
+
+    private static void assertPreparedLookup(
+            Connection connection,
+            String sql,
+            String payload,
+            boolean expectOrderedIndex) throws Exception {
+        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
+        try (PreparedStatement lookup = connection.prepareStatement(sql)) {
+            lookup.setString(1, payload);
+            try (ResultSet resultSet = lookup.executeQuery()) {
+                assertTrue(resultSet.next());
+                assertEquals(1, resultSet.getInt(1));
+                assertFalse(resultSet.next());
+            }
+        }
+        String statistics = runtimeStatistics(connection);
+        assertEquals(
+                "unexpected RawStore MVCC ordered-index eligibility; statistics=" + statistics,
+                expectOrderedIndex,
                 statistics.contains("delos_mvcc_rawstore_ordered_index"));
     }
 

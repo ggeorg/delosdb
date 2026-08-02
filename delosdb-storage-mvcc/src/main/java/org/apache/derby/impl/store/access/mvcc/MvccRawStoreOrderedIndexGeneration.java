@@ -24,6 +24,7 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
 
 /**
@@ -32,6 +33,7 @@ import org.apache.derby.shared.common.reference.SQLState;
  */
 final class MvccRawStoreOrderedIndexGeneration {
     private static final int OVERFLOW_THRESHOLD = 100;
+    private static final long DISABLED_BTREE_CONGLOMERATE = Long.MIN_VALUE;
 
     private static final String BTREE_IMPLEMENTATION = "BTREE";
     private static final String PROPERTY_BASE_CONGLOMERATE_ID = "baseConglomerateId";
@@ -119,7 +121,7 @@ final class MvccRawStoreOrderedIndexGeneration {
         }
         List<ContainerKey> containers = new ArrayList<>();
         for (long btree : btrees) {
-            if (btree > 0L) {
+            if (btree > 0L && !isDisabled(btree)) {
                 containers.add(new ContainerKey(
                         0,
                         transactionManager.findContainerid(btree)));
@@ -182,6 +184,11 @@ final class MvccRawStoreOrderedIndexGeneration {
                         PROPERTY_UNIQUE_COLUMNS,
                         Integer.toString(MvccRawStoreOrderedIndex.INDEX_FIELD_COUNT));
                 properties.setProperty(PROPERTY_PARENT_LINKS, "true");
+                if (MvccRawStoreOrderedIndex.requiresLargePage(table, column)) {
+                    properties.setProperty(
+                            Property.PAGE_SIZE_PARAMETER,
+                            Property.PAGE_SIZE_DEFAULT_LONG);
+                }
                 int[] collationIds = new int[MvccRawStoreOrderedIndex.INDEX_FIELD_COUNT];
                 collationIds[MvccRawStoreOrderedIndex.KEY_FIELD] =
                         table.collationIds()[column];
@@ -207,7 +214,7 @@ final class MvccRawStoreOrderedIndexGeneration {
             TransactionManager transactionManager,
             long[] btrees) throws StandardException {
         for (long btree : btrees) {
-            if (btree != 0L) {
+            if (isUsable(btree)) {
                 transactionManager.dropConglomerate(btree);
             }
         }
@@ -218,7 +225,7 @@ final class MvccRawStoreOrderedIndexGeneration {
             long[] btrees,
             Throwable failure) {
         for (int column = btrees.length - 1; column >= 0; column--) {
-            if (btrees[column] == 0L) {
+            if (!isUsable(btrees[column])) {
                 continue;
             }
             try {
@@ -418,6 +425,40 @@ final class MvccRawStoreOrderedIndexGeneration {
             return null;
         }
         return btrees;
+    }
+
+    static boolean isDisabled(long btreeConglomerate) {
+        return btreeConglomerate == DISABLED_BTREE_CONGLOMERATE;
+    }
+
+    static boolean isUsable(long btreeConglomerate) {
+        return btreeConglomerate != 0L && !isDisabled(btreeConglomerate);
+    }
+
+    static void disableBtree(
+            TransactionManager transactionManager,
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey directoryKey,
+            long[] btrees,
+            int column) throws StandardException {
+        long btree = btrees[column];
+        if (isDisabled(btree)) {
+            return;
+        }
+        if (btree == 0L) {
+            throw new IllegalStateException(
+                    "RawStore MVCC cannot disable an absent ordered-index B-tree for column "
+                            + column);
+        }
+        transactionManager.dropConglomerate(btree);
+        btrees[column] = DISABLED_BTREE_CONGLOMERATE;
+        if (directoryKey != null) {
+            replaceDirectoryMappings(
+                    transactionManager.getRawStoreXact(),
+                    table,
+                    directoryKey,
+                    btrees);
+        }
     }
 
     private static Object[] mappingRow(

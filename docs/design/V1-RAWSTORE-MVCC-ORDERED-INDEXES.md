@@ -25,6 +25,7 @@ The generation directory is an ordinary RawStore container. Each mapping row rec
 
 ```text
 base-table column id -> Derby B-tree conglomerate id
+base-table column id -> disabled marker when a legal SQL value exceeds Derby's B-tree key capacity
 ```
 
 The B-trees are ordinary Derby access-method conglomerates backed by RawStore. Their creation, page
@@ -62,6 +63,13 @@ becoming visible to the wrong transaction or snapshot.
 BLOB, CLOB, LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined values are not duplicated
 into B-trees. Qualifiers on those columns use the authoritative stable-row directory and version-chain
 scan. This also prevents stream-backed values from being consumed a second time.
+
+VARCHAR and VARCHAR FOR BIT DATA candidate B-trees use Derby's inherited
+32 KiB long-key page policy. If a legal value still cannot fit in a B-tree leaf entry, the access
+transaction drops that column's auxiliary B-tree and publishes a durable disabled marker in the
+generation directory. Reads and native uniqueness checks then fall back to the authoritative visible-row
+scan for that column. The table mutation itself remains valid; an optional candidate structure must never
+make a legal base-table value uninsertable.
 
 ## Mutation and commit publication
 
@@ -109,8 +117,10 @@ B-tree candidate (MvccRowId, MvccVersionId, validated directory locator)
 ```
 
 Native unique constraints probe the first constrained column's exact key range and then compare every
-constraint column against authoritative visible rows. Unsupported qualifier shapes and qualifiers on
-non-orderable columns fall back to the full stable-row directory scan.
+constraint column against authoritative visible rows. If the first-column B-tree is disabled because a
+key exceeded Derby's physical B-tree capacity, uniqueness enforcement uses the same authoritative
+visible-row scan. Unsupported qualifier shapes and qualifiers on non-orderable or disabled columns fall
+back to the full stable-row directory scan.
 
 ## Generation replacement and compatibility
 
@@ -133,6 +143,8 @@ The executable proof covers:
 
 ```text
 one inherited Derby B-tree per orderable column
+large-page VARCHAR/VARBIT candidate storage
+oversized-key column fallback without rejecting the base-table insert
 bounded equality and range lookup
 transaction-local INSERT/UPDATE visibility
 committed UPDATE and DELETE visibility

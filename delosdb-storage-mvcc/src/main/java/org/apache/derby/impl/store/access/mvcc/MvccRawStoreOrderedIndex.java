@@ -56,7 +56,8 @@ final class MvccRawStoreOrderedIndex {
             long versionId,
             MvccRowLocation rowLocation,
             StoreDataValue[] previousValues,
-            StoreDataValue[] values) throws StandardException {
+            StoreDataValue[] values,
+            MvccRawStoreTransactionContext context) throws StandardException {
         if (values == null) {
             return;
         }
@@ -74,17 +75,33 @@ final class MvccRawStoreOrderedIndex {
                     || indexedValueUnchanged(previousValues, values, column)) {
                 continue;
             }
-            insertEntry(
-                    transactionManager,
-                    btrees[column],
-                    indexRow(
-                            transactionManager.getRawStoreXact(),
-                            table,
-                            column,
-                            values[column],
-                            rowId,
-                            versionId,
-                            rowLocation));
+            if (MvccRawStoreOrderedIndexGeneration.isDisabled(btrees[column])) {
+                continue;
+            }
+            try {
+                insertEntry(
+                        transactionManager,
+                        btrees[column],
+                        indexRow(
+                                transactionManager.getRawStoreXact(),
+                                table,
+                                column,
+                                values[column],
+                                rowId,
+                                versionId,
+                                rowLocation));
+            } catch (StandardException failure) {
+                if (!isOversizedBtreeKey(failure)) {
+                    throw failure;
+                }
+                context.beforeSchemaChange(table);
+                MvccRawStoreOrderedIndexGeneration.disableBtree(
+                        transactionManager,
+                        table,
+                        directoryKey,
+                        btrees,
+                        column);
+            }
         }
     }
 
@@ -152,29 +169,47 @@ final class MvccRawStoreOrderedIndex {
             int firstColumn = columns[0];
             MvccRawStoreVersionRows.FetchProjection projection =
                     constraintProjection(table, columns);
-            List<Candidate> candidates = candidatesForKey(
+            Optional<List<Candidate>> candidates = candidatesForKey(
                     context.transactionManager(),
                     table,
                     directoryKey,
                     firstColumn,
                     values[firstColumn]);
-            for (Candidate candidateEntry : candidates) {
-                long candidateRowId = candidateEntry.rowId();
-                if (candidateRowId == currentRowId) {
-                    continue;
+            if (candidates.isPresent()) {
+                for (Candidate candidateEntry : candidates.get()) {
+                    long candidateRowId = candidateEntry.rowId();
+                    if (candidateRowId == currentRowId) {
+                        continue;
+                    }
+                    MvccRawStoreTable.VisibleRow candidate = MvccRawStoreTable.readVisibleAt(
+                            transaction,
+                            table,
+                            candidateEntry.rowLocation(),
+                            committedSequence,
+                            projection,
+                            context);
+                    rejectDuplicate(
+                            table,
+                            constraint,
+                            values,
+                            columns,
+                            currentRowId,
+                            candidate);
                 }
-                MvccRawStoreTable.VisibleRow candidate = MvccRawStoreTable.readVisibleAt(
+            } else {
+                for (MvccRawStoreTable.VisibleRow candidate : MvccRawStoreTable.scanVisibleAt(
                         transaction,
                         table,
-                        candidateEntry.rowLocation(),
                         committedSequence,
                         projection,
-                        context);
-                if (candidate != null && sameKey(values, candidate.values(), columns)) {
-                    throw StandardException.newException(
-                            SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
-                            constraint.displayName(),
-                            "RAWSTORE_MVCC_" + table.metadataContainer().getContainerId());
+                        context)) {
+                    rejectDuplicate(
+                            table,
+                            constraint,
+                            values,
+                            columns,
+                            currentRowId,
+                            candidate);
                 }
             }
         }
@@ -246,6 +281,10 @@ final class MvccRawStoreOrderedIndex {
         if (btrees == null || btrees[predicate.columnId()] == 0L) {
             return Optional.empty();
         }
+        if (MvccRawStoreOrderedIndexGeneration.isDisabled(
+                btrees[predicate.columnId()])) {
+            return Optional.empty();
+        }
         return Optional.of(scanCandidates(
                 transactionManager,
                 table,
@@ -254,7 +293,7 @@ final class MvccRawStoreOrderedIndex {
     }
 
 
-    private static List<Candidate> candidatesForKey(
+    private static Optional<List<Candidate>> candidatesForKey(
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
             ContainerKey directoryKey,
@@ -262,13 +301,16 @@ final class MvccRawStoreOrderedIndex {
             StoreDataValue key) throws StandardException {
         long[] btrees = MvccRawStoreOrderedIndexGeneration.requireBtreeConglomerates(
                 transactionManager, table, directoryKey);
+        if (MvccRawStoreOrderedIndexGeneration.isDisabled(btrees[column])) {
+            return Optional.empty();
+        }
         MvccRawStoreOrderedIndexPredicate.Predicate predicate =
                 MvccRawStoreOrderedIndexPredicate.equality(column, key);
-        return scanCandidates(
+        return Optional.of(scanCandidates(
                 transactionManager,
                 table,
                 btrees[column],
-                predicate);
+                predicate));
     }
 
     private static List<Candidate> scanCandidates(
@@ -339,21 +381,34 @@ final class MvccRawStoreOrderedIndex {
                     "RawStore MVCC ordered-index value count mismatch");
         }
         for (int column = 0; column < table.columnCount(); column++) {
-            if (!indexesColumn(table, column)) {
+            if (!indexesColumn(table, column)
+                    || MvccRawStoreOrderedIndexGeneration.isDisabled(btrees[column])) {
                 continue;
             }
-            insertEntry(
-                    transactionManager,
-                    btrees[column],
-                    indexRow(
-                            transaction,
-                            table,
-                            column,
-                            values[column],
-                            version.rowId(),
-                            version.versionId(),
-                            version.rowLocation()),
-                    true);
+            try {
+                insertEntry(
+                        transactionManager,
+                        btrees[column],
+                        indexRow(
+                                transaction,
+                                table,
+                                column,
+                                values[column],
+                                version.rowId(),
+                                version.versionId(),
+                                version.rowLocation()),
+                        true);
+            } catch (StandardException failure) {
+                if (!isOversizedBtreeKey(failure)) {
+                    throw failure;
+                }
+                MvccRawStoreOrderedIndexGeneration.disableBtree(
+                        transactionManager,
+                        table,
+                        null,
+                        btrees,
+                        column);
+            }
         }
     }
 
@@ -434,6 +489,17 @@ final class MvccRawStoreOrderedIndex {
         return isOrderableFormat(table.formatIds()[columnId]);
     }
 
+    static boolean requiresLargePage(MvccRawStoreTable.Descriptor table, int columnId) {
+        if (!indexesColumn(table, columnId)) {
+            return false;
+        }
+        return switch (table.formatIds()[columnId]) {
+            case StoredFormatIds.SQL_VARCHAR_ID,
+                    StoredFormatIds.SQL_VARBIT_ID -> true;
+            default -> false;
+        };
+    }
+
     static void validateConstraintColumns(
             MvccRawStoreTable.Descriptor table,
             int[] columns) throws StandardException {
@@ -475,6 +541,29 @@ final class MvccRawStoreOrderedIndex {
             int column) throws StandardException {
         return previousValues != null
                 && StoreTypeUtil.compare(previousValues[column], values[column], true) == 0;
+    }
+
+    private static boolean isOversizedBtreeKey(StandardException failure) {
+        return StandardException.getSQLStateFromIdentifier(
+                SQLState.BTREE_NO_SPACE_FOR_KEY).equals(failure.getSQLState());
+    }
+
+    private static void rejectDuplicate(
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTable.UniqueConstraint constraint,
+            StoreDataValue[] values,
+            int[] columns,
+            long currentRowId,
+            MvccRawStoreTable.VisibleRow candidate) throws StandardException {
+        if (candidate == null || candidate.rowId() == currentRowId) {
+            return;
+        }
+        if (sameKey(values, candidate.values(), columns)) {
+            throw StandardException.newException(
+                    SQLState.LANG_DUPLICATE_KEY_CONSTRAINT,
+                    constraint.displayName(),
+                    "RAWSTORE_MVCC_" + table.metadataContainer().getContainerId());
+        }
     }
 
 

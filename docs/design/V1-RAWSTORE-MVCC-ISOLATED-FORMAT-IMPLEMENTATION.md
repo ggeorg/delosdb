@@ -82,7 +82,11 @@ entry keyed by typed SQL value, stable row/version identity, creator transaction
 and final `MvccRowLocation`. BLOB, CLOB, LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined
 values remain only in the authoritative base version. Index results are candidate `MvccRowId` values
 only; the authoritative base version chain is always reread and complete SQL qualifiers are reapplied.
-Non-orderable qualifiers fall back to the base chain. See `V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
+Variable-width VARCHAR and VARCHAR FOR BIT DATA candidate B-trees use inherited 32 KiB pages. A legal key which still
+exceeds Derby's B-tree leaf capacity disables only that optional column candidate B-tree; the durable
+directory marker makes reads and uniqueness checks fall back to the authoritative base chain instead of
+rejecting the table mutation. Non-orderable and disabled-column qualifiers use the same fallback. See
+`V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
 
 A version row contains format-versioned logical identity and visibility fields followed by the normal
 RawStore-encoded payload:
