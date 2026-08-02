@@ -418,6 +418,7 @@ final class MvccRawStoreTable {
                 allocation.rowId(),
                 allocation.versionId(),
                 directoryLocation,
+                null,
                 values);
         PendingVersion pending = new PendingVersion(
                 table,
@@ -981,6 +982,7 @@ final class MvccRawStoreTable {
                 rowId,
                 versionId,
                 directoryLocation,
+                previousVersion.values(),
                 values);
         PendingVersion pending = new PendingVersion(
                 table,

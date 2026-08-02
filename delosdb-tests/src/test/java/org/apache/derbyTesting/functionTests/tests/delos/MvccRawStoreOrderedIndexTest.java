@@ -257,6 +257,64 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         shutdownMemoryDatabase(memoryDatabase);
     }
 
+
+    public void testUnchangedIndexedValuesDoNotCreateRedundantCandidates() throws Exception {
+        String database = databaseName("mvcc-raw-store-ordered-index-delta");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table index_delta (id int, name varchar(64), quantity int) "
+                                + "using delos_mvcc");
+                executeUpdate(setup, "insert into index_delta values (1, 'one', 10)");
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                writer.setAutoCommit(false);
+                assertIndexedRows(historical,
+                        "select id, name, quantity from index_delta where id = 1",
+                        "1|one|10");
+
+                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> initial =
+                        MvccRawStoreMetadataInspection.orderedIndexEntries(
+                                writer, "INDEX_DELTA");
+                assertEquals("one initial candidate per indexed column", 3, initial.size());
+
+                executeUpdate(writer,
+                        "update index_delta set quantity = quantity + 1 where id = 1");
+                writer.commit();
+
+                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> updated =
+                        MvccRawStoreMetadataInspection.orderedIndexEntries(
+                                writer, "INDEX_DELTA");
+                assertEquals("only the changed quantity key adds a candidate", 4, updated.size());
+                assertFalse("unchanged id key must not gain a second-version candidate",
+                        updated.stream().anyMatch(entry -> entry.columnId() == 0
+                                && entry.versionId() == 2L));
+                assertFalse("unchanged name key must not gain a second-version candidate",
+                        updated.stream().anyMatch(entry -> entry.columnId() == 1
+                                && entry.versionId() == 2L));
+                assertTrue("changed quantity key must retain its new historical candidate",
+                        updated.stream().anyMatch(entry -> entry.columnId() == 2
+                                && entry.versionId() == 2L
+                                && "11".equals(entry.key())));
+
+                assertIndexedRows(writer,
+                        "select id, name, quantity from index_delta where id = 1",
+                        "1|one|11");
+                writer.commit();
+                assertIndexedRows(historical,
+                        "select id, name, quantity from index_delta where id = 1",
+                        "1|one|10");
+                historical.commit();
+            }
+            shutdownDatabase(database);
+        }
+    }
+
     private static void assertPhysicalTypedCoverage(
             List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries) {
         int[] ids = {1, 2, 3, 4, 5, 6, 7, 8, 10};

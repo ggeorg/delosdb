@@ -54,11 +54,13 @@ final class MvccRawStoreOrderedIndex {
             long rowId,
             long versionId,
             MvccRowLocation rowLocation,
+            StoreDataValue[] previousValues,
             StoreDataValue[] values) throws StandardException {
         if (values == null) {
             return;
         }
-        if (values.length != table.columnCount()) {
+        if (values.length != table.columnCount()
+                || (previousValues != null && previousValues.length != table.columnCount())) {
             throw new IllegalArgumentException(
                     "RawStore MVCC ordered-index value count mismatch");
         }
@@ -67,7 +69,8 @@ final class MvccRawStoreOrderedIndex {
                 table,
                 directoryKey);
         for (int column = 0; column < table.columnCount(); column++) {
-            if (!indexesColumn(table, column)) {
+            if (!indexesColumn(table, column)
+                    || indexedValueUnchanged(previousValues, values, column)) {
                 continue;
             }
             insertEntry(
@@ -458,6 +461,15 @@ final class MvccRawStoreOrderedIndex {
                     StoredFormatIds.XML_ID -> false;
             default -> true;
         };
+    }
+
+
+    private static boolean indexedValueUnchanged(
+            StoreDataValue[] previousValues,
+            StoreDataValue[] values,
+            int column) throws StandardException {
+        return previousValues != null
+                && StoreTypeUtil.compare(previousValues[column], values[column], true) == 0;
     }
 
 

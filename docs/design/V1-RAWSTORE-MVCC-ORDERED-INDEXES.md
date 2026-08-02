@@ -39,7 +39,8 @@ to the logical directory scan.
 
 ## Physical B-tree layout
 
-Each non-tombstone version contributes one entry to every orderable-column B-tree:
+An inserted row contributes one entry to every orderable-column B-tree. A later version contributes
+an entry only when that column's indexed value differs from its predecessor:
 
 ```text
 typed Derby key
@@ -64,8 +65,11 @@ scan. This also prevents stream-backed values from being consumed a second time.
 
 ## Mutation and commit publication
 
-INSERT and UPDATE insert only the new version's B-tree rows during statement execution. DELETE appends
-a tombstone base version and creates no new key entries.
+INSERT writes the initial candidate set during statement execution. UPDATE writes a candidate only for
+an orderable column whose typed key changed; unchanged keys keep their existing stable-row candidate.
+That candidate remains valid for current and historical snapshots because authoritative values and
+visibility come from the version chain. DELETE appends a tombstone base version and creates no new key
+entries.
 
 Before the one inherited RawStore commit, the access-method participant stamps only authoritative base
 state:
