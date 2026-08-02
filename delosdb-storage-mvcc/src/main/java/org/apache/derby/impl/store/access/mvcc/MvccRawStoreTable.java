@@ -1189,14 +1189,6 @@ final class MvccRawStoreTable {
         return null;
     }
 
-    private static DirectoryHead findHead(
-            Transaction transaction,
-            Descriptor table,
-            long rowId) throws StandardException {
-        return MvccRawStoreRowDirectory.find(
-                transaction, table, new MvccRowLocation(rowId)).head();
-    }
-
     private static VersionRecord findVersion(
             Transaction transaction,
             Descriptor table,
