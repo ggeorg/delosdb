@@ -203,6 +203,7 @@ public final class MvccConglomerate
                 xactManager,
                 rawtran,
                 hold,
+                openMode,
                 scanColumnList,
                 qualifier);
     }

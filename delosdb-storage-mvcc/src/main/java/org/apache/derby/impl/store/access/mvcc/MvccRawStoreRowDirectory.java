@@ -29,12 +29,29 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        try {
+            return find(transaction, rowLocation, container);
+        } finally {
+            if (container != null) {
+                container.close();
+            }
+        }
+    }
+
+    static MvccRawStoreTable.DirectoryRecord find(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            ContainerHandle container) throws StandardException {
         MvccRawStoreTable.DirectoryRecord hinted = findByHint(
-                transaction, table, rowLocation);
+                transaction, rowLocation, container);
         if (hinted != null) {
             return hinted;
         }
-        return findByLogicalId(transaction, table, rowLocation.rowId());
+        return findByLogicalId(transaction, rowLocation.rowId(), container);
     }
 
     static Map<Long, MvccRowLocation> locations(
@@ -168,16 +185,9 @@ final class MvccRawStoreRowDirectory {
 
     private static MvccRawStoreTable.DirectoryRecord findByHint(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation) throws StandardException {
-        if (rowLocation == null || !rowLocation.hasLocatorHint()) {
-            return null;
-        }
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
+            MvccRowLocation rowLocation,
+            ContainerHandle container) throws StandardException {
+        if (container == null || rowLocation == null || !rowLocation.hasLocatorHint()) {
             return null;
         }
         Page page = null;
@@ -199,18 +209,13 @@ final class MvccRawStoreRowDirectory {
             if (page != null) {
                 page.unlatch();
             }
-            container.close();
         }
     }
 
     private static MvccRawStoreTable.DirectoryRecord findByLogicalId(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
+            long rowId,
+            ContainerHandle container) throws StandardException {
         if (container == null) {
             return new MvccRawStoreTable.DirectoryRecord(
                     rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
@@ -242,7 +247,6 @@ final class MvccRawStoreRowDirectory {
             if (page != null) {
                 page.unlatch();
             }
-            container.close();
         }
     }
 

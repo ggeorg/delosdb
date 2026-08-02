@@ -12,12 +12,10 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -468,7 +466,7 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
-        VersionRecord version = findVisibleVersion(
+        VersionRecord version = MvccRawStoreVersionReader.findVisible(
                 rawTransaction,
                 table,
                 rowLocation.rowId(),
@@ -493,7 +491,7 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
-        VersionRecord version = findVisibleVersion(
+        VersionRecord version = MvccRawStoreVersionReader.findVisible(
                 rawTransaction,
                 table,
                 rowLocation.rowId(),
@@ -608,7 +606,7 @@ final class MvccRawStoreTable {
                     if (directory == null) {
                         continue;
                     }
-                    VersionRecord version = findVisibleVersion(
+                    VersionRecord version = MvccRawStoreVersionReader.findVisible(
                             rawTransaction,
                             table,
                             directory.rowId(),
@@ -642,7 +640,7 @@ final class MvccRawStoreTable {
             Transaction rawTransaction,
             PendingVersion pending,
             long creatorTransactionId) throws StandardException {
-        VersionRecord version = findVersion(
+        VersionRecord version = MvccRawStoreVersionReader.find(
                 rawTransaction,
                 pending.table(),
                 pending.rowId(),
@@ -931,7 +929,7 @@ final class MvccRawStoreTable {
             MvccRawStoreTransactionContext context) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction, table, new MvccRowLocation(rowId));
-        VersionRecord visible = findVisibleVersion(
+        VersionRecord visible = MvccRawStoreVersionReader.findVisible(
                 transaction,
                 table,
                 rowId,
@@ -1144,203 +1142,6 @@ final class MvccRawStoreTable {
             if (container != null) {
                 container.close();
             }
-        }
-    }
-
-    private static VersionRecord findVisibleVersion(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            DirectoryHead head,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context) throws StandardException {
-        return findVisibleVersion(
-                transaction,
-                table,
-                rowId,
-                head,
-                context.transactionId(),
-                context.snapshotSequence(),
-                projection,
-                context);
-    }
-
-    private static VersionRecord findVisibleVersion(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            DirectoryHead head,
-            long transactionId,
-            long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context) throws StandardException {
-        long versionId = head.versionId();
-        RecordHint hint = head.hint();
-        Set<Long> visited = new HashSet<>();
-        while (versionId != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
-            if (!visited.add(versionId)) {
-                throw new IllegalStateException(
-                        "RawStore MVCC version-chain cycle for logical row " + rowId
-                                + " at version " + versionId);
-            }
-            VersionRecord version = findVersion(
-                    transaction,
-                    table,
-                    rowId,
-                    versionId,
-                    hint,
-                    projection);
-            if (version == null) {
-                throw new IllegalStateException(
-                        "RawStore MVCC version-chain entry is missing for logical row " + rowId
-                                + ": version " + versionId);
-            }
-            if (visible(version, transactionId, snapshotSequence, context)) {
-                return version;
-            }
-            versionId = version.previousVersionId();
-            hint = version.previousHint();
-        }
-        return null;
-    }
-
-    private static VersionRecord findVersion(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            RecordHint hint,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        VersionRecord hinted = findVersionByHint(
-                transaction,
-                table,
-                rowId,
-                versionId,
-                hint,
-                projection);
-        if (hinted != null) {
-            return hinted;
-        }
-        return findVersionByLogicalId(
-                transaction,
-                table,
-                rowId,
-                versionId,
-                projection);
-    }
-
-    private static VersionRecord findVersionByHint(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            RecordHint hint,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        if (!hint.valid()) {
-            return null;
-        }
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(hint.pageNumber());
-            if (page == null) {
-                return null;
-            }
-            RecordHandle handle = page.getRecordHandle(hint.recordId());
-            if (handle == null) {
-                return null;
-            }
-            int slot = page.getSlotNumber(handle);
-            if (page.isDeletedAtSlot(slot)) {
-                return null;
-            }
-            int fieldCount = page.fetchNumFieldsAtSlot(slot);
-            int baseFieldCount = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
-            int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
-            if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
-                return null;
-            }
-            StoreDataValue candidateKind = MvccRawStoreFormat.intValue(transaction, 0);
-            StoreDataValue candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-            StoreDataValue candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_KIND_FIELD, candidateKind);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
-            if (StoreTypeUtil.getLong(candidateKind) != MvccRawStoreFormat.VERSION_KIND
-                    || StoreTypeUtil.getLong(candidateRow) != rowId
-                    || StoreTypeUtil.getLong(candidateVersion) != versionId) {
-                return null;
-            }
-            return MvccRawStoreVersionRows.decodeAtSlot(
-                    transaction,
-                    table,
-                    page,
-                    slot,
-                    projection);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    private static VersionRecord findVersionByLogicalId(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 1
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    VersionRecord version = MvccRawStoreVersionRows.decodeAtSlot(
-                            transaction,
-                            table,
-                            page,
-                            slot,
-                            projection);
-                    if (version != null && version.versionId() == versionId) {
-                        if (version.rowId() != rowId) {
-                            throw new IllegalStateException(
-                                    "RawStore MVCC version identity " + versionId
-                                            + " belongs to logical row " + version.rowId()
-                                            + " instead of " + rowId);
-                        }
-                        return version;
-                    }
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-            return null;
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
         }
     }
 
@@ -1579,22 +1380,6 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.VERSION_END_SEQUENCE,
                 MvccRawStoreFormat.longValue(transaction, commitSequence),
                 null);
-    }
-
-    private static boolean visible(
-            VersionRecord version,
-            long transactionId,
-            long snapshotSequence,
-            MvccRawStoreTransactionContext context) {
-        if (version.creatorTransactionId() != transactionId
-                && context.isTransactionActive(version.creatorTransactionId())) {
-            return false;
-        }
-        if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-            return version.creatorTransactionId() == transactionId;
-        }
-        return version.beginSequence() <= snapshotSequence
-                && snapshotSequence < version.endSequence();
     }
 
     static DirectoryRecord decodeDirectory(

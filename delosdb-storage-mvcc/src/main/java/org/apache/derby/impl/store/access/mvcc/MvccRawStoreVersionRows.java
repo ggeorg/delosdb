@@ -93,6 +93,10 @@ final class MvccRawStoreVersionRows {
         return payloadColumns == null ? null : new FetchProjection(table, payloadColumns);
     }
 
+    static FetchProjection metadataProjection(MvccRawStoreTable.Descriptor table) {
+        return new FetchProjection(table, new FormatableBitSet(table.columnCount()));
+    }
+
     static MvccRawStoreTable.VersionRecord decodeAtSlot(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,

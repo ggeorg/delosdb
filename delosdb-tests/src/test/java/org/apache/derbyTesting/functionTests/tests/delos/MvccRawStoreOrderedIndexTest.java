@@ -172,6 +172,98 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testCoveringCandidateUsesVisibleHeadAndFallsBackForChangedHead()
+            throws Exception {
+        String database = databaseName("mvcc-raw-store-covering-index");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table covering_t (id int primary key, category int, "
+                            + "payload varchar(600)) using delos_mvcc");
+            executeUpdate(connection,
+                    "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
+            executeUpdate(connection,
+                    "insert into covering_t values (2, 7, '" + "y".repeat(500) + "')");
+            connection.commit();
+
+            assertCoveringIndexedRows(connection,
+                    "select id from covering_t where id = 2",
+                    "2");
+            assertCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7",
+                    "7",
+                    "7");
+            assertCoveringIndexedRows(connection,
+                    "select count(*) from covering_t where category = 7",
+                    "2");
+            assertNonCoveringIndexedRows(connection,
+                    "select id, category from covering_t where category = 7 order by id",
+                    "1|7",
+                    "2|7");
+
+            executeUpdate(connection,
+                    "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
+            connection.commit();
+            assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7",
+                    "7",
+                    "7");
+
+            executeUpdate(connection,
+                    "update covering_t set category = 9 where id = 2");
+            connection.commit();
+            assertCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 9",
+                    "9");
+
+            executeUpdate(connection, "delete from covering_t where id = 1");
+            connection.commit();
+            assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7");
+            connection.commit();
+        }
+        shutdownDatabase(database);
+    }
+
+    public void testCoveringCandidateFallsBackForHistoricalSnapshot() throws Exception {
+        String database = databaseName("mvcc-raw-store-covering-snapshot");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table covering_snapshot_t (id int primary key, category int) "
+                                + "using delos_mvcc");
+                executeUpdate(setup,
+                        "insert into covering_snapshot_t values (1, 7)");
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                writer.setAutoCommit(false);
+                assertCoveringIndexedRows(historical,
+                        "select category from covering_snapshot_t where category = 7",
+                        "7");
+
+                executeUpdate(writer,
+                        "update covering_snapshot_t set category = 9 where id = 1");
+                writer.commit();
+
+                assertNonCoveringIndexedRows(historical,
+                        "select category from covering_snapshot_t where category = 7",
+                        "7");
+                historical.commit();
+                assertCoveringIndexedRows(historical,
+                        "select category from covering_snapshot_t where category = 9",
+                        "9");
+                historical.commit();
+            }
+            shutdownDatabase(database);
+        }
+    }
+
     public void testWideVarcharKeysUseLargePagesAndOversizeKeysFallBack() throws Exception {
         String database = databaseName("mvcc-raw-store-wide-ordered-index");
         String pageSizedPayload = "p".repeat(4096);
@@ -439,6 +531,30 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 .toList();
         assertEquals(expectedKeys.size(), keys.size());
         assertEquals(expectedKeys, Set.copyOf(keys));
+    }
+
+    private static void assertCoveringIndexedRows(
+            Connection connection,
+            String sql,
+            String... expectedRows) throws Exception {
+        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
+        assertRows(connection, sql, expectedRows);
+        String statistics = runtimeStatistics(connection);
+        assertTrue("expected RawStore MVCC covering ordered-index scan; statistics=" + statistics,
+                statistics.contains("delos_mvcc_rawstore_ordered_index_covering"));
+    }
+
+    private static void assertNonCoveringIndexedRows(
+            Connection connection,
+            String sql,
+            String... expectedRows) throws Exception {
+        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
+        assertRows(connection, sql, expectedRows);
+        String statistics = runtimeStatistics(connection);
+        assertTrue("expected RawStore MVCC ordered-index scan; statistics=" + statistics,
+                statistics.contains("delos_mvcc_rawstore_ordered_index"));
+        assertFalse("unexpected RawStore MVCC covering scan; statistics=" + statistics,
+                statistics.contains("delos_mvcc_rawstore_ordered_index_covering"));
     }
 
     private static void assertIndexedRows(

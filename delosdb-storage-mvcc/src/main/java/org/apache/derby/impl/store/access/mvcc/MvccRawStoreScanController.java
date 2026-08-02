@@ -17,6 +17,7 @@ import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanInfo;
+import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -32,6 +33,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final boolean hold;
+    private final boolean forUpdate;
     private final FormatableBitSet scanColumnList;
     private final MvccRawStoreVersionRows.FetchProjection versionProjection;
     private final long snapshotSequence;
@@ -46,6 +48,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private long rowsQualified;
     private long estimatedRowCount;
     private boolean orderedIndexScan;
+    private boolean coveringIndexScan;
 
     MvccRawStoreScanController(
             MvccRawStoreRuntime runtime,
@@ -53,6 +56,7 @@ final class MvccRawStoreScanController implements ScanManager {
             TransactionManager transactionManager,
             Transaction rawTransaction,
             boolean hold,
+            int openMode,
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) throws StandardException {
         this.runtime = runtime;
@@ -60,6 +64,7 @@ final class MvccRawStoreScanController implements ScanManager {
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
         this.hold = hold;
+        this.forUpdate = (openMode & TransactionController.OPENMODE_FORUPDATE) != 0;
         this.scanColumnList = scanColumnList;
         this.versionProjection = MvccRawStoreVersionRows.projection(table, scanColumnList);
         this.qualifiers = qualifiers;
@@ -118,8 +123,11 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public ScanInfo getScanInfo() {
         ensureOpen();
+        String scanType = coveringIndexScan
+                ? "delos_mvcc_rawstore_ordered_index_covering"
+                : orderedIndexScan ? "delos_mvcc_rawstore_ordered_index" : "delos_mvcc";
         return new MvccScanInfo(
-                orderedIndexScan ? "delos_mvcc_rawstore_ordered_index" : "delos_mvcc",
+                scanType,
                 rowsVisited,
                 rowsQualified,
                 scanColumnList);
@@ -352,21 +360,28 @@ final class MvccRawStoreScanController implements ScanManager {
                             qualifiers,
                             context);
             if (candidates.isPresent()) {
+                List<MvccRawStoreOrderedIndex.Candidate> candidateRows = candidates.get();
                 List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
-                for (MvccRawStoreOrderedIndex.Candidate candidate : candidates.get()) {
-                    MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisibleAt(
-                            rawTransaction,
-                            table,
-                            candidate.rowLocation(),
-                            snapshotSequence,
-                            versionProjection,
-                            context);
-                    if (visible != null) {
-                        indexedRows.add(visible);
+                boolean allCovered = !candidateRows.isEmpty();
+                try (MvccRawStoreIndexedReader reader = new MvccRawStoreIndexedReader(
+                        rawTransaction,
+                        table,
+                        snapshotSequence,
+                        versionProjection,
+                        context)) {
+                    for (MvccRawStoreOrderedIndex.Candidate candidate : candidateRows) {
+                        MvccRawStoreIndexedReader.Result result = reader.read(
+                                candidate,
+                                coveringEligible(candidate.columnId()));
+                        allCovered &= result.covered();
+                        if (result.row() != null) {
+                            indexedRows.add(result.row());
+                        }
                     }
                 }
                 rows = List.copyOf(indexedRows);
                 orderedIndexScan = true;
+                coveringIndexScan = allCovered;
             } else {
                 rows = MvccRawStoreTable.scanVisibleAt(
                         rawTransaction,
@@ -375,6 +390,7 @@ final class MvccRawStoreScanController implements ScanManager {
                         versionProjection,
                         context);
                 orderedIndexScan = false;
+                coveringIndexScan = false;
             }
         }
         nextIndex = 0;
@@ -383,6 +399,31 @@ final class MvccRawStoreScanController implements ScanManager {
         rowsVisited = 0L;
         rowsQualified = 0L;
         estimatedRowCount = rows.size();
+    }
+
+    private boolean coveringEligible(int indexedColumn) {
+        if (forUpdate || scanColumnList == null) {
+            return false;
+        }
+        int column = -1;
+        while ((column = scanColumnList.anySetBit(column)) >= 0) {
+            if (column != indexedColumn) {
+                return false;
+            }
+        }
+        if (qualifiers != null) {
+            for (Qualifier[] group : qualifiers) {
+                if (group == null) {
+                    return false;
+                }
+                for (Qualifier qualifier : group) {
+                    if (qualifier == null || qualifier.getColumnId() != indexedColumn) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     private boolean qualifies(StoreDataValue[] row) throws StandardException {

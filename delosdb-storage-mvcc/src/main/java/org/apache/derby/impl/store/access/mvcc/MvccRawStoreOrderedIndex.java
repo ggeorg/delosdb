@@ -351,6 +351,7 @@ final class MvccRawStoreOrderedIndex {
                         predicate.columnId());
                 scan.fetch(row);
                 long rowId = StoreTypeUtil.getLong(row[ROW_ID_FIELD]);
+                long versionId = StoreTypeUtil.getLong(row[VERSION_ID_FIELD]);
                 MvccRowLocation rowLocation = MvccRowLocation.from(
                         row[ROW_LOCATION_FIELD]);
                 if (rowLocation.rowId() != rowId) {
@@ -360,7 +361,12 @@ final class MvccRawStoreOrderedIndex {
                 }
                 candidates.putIfAbsent(
                         rowId,
-                        new Candidate(rowId, rowLocation));
+                        new Candidate(
+                                predicate.columnId(),
+                                StoreValueCopySupport.cloneValue(row[KEY_FIELD], true),
+                                rowId,
+                                versionId,
+                                rowLocation));
             }
         } finally {
             scan.close();
@@ -600,8 +606,17 @@ final class MvccRawStoreOrderedIndex {
     }
 
 
-    record Candidate(long rowId, MvccRowLocation rowLocation) {
+    record Candidate(
+            int columnId,
+            StoreDataValue key,
+            long rowId,
+            long versionId,
+            MvccRowLocation rowLocation) {
         Candidate {
+            if (key == null) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC candidate key is absent for row " + rowId);
+            }
             if (rowLocation == null || rowLocation.rowId() != rowId) {
                 throw new IllegalArgumentException(
                         "RawStore MVCC candidate location does not match row " + rowId);
