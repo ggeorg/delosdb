@@ -290,7 +290,7 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public boolean positionAtRowLocation(StoreRowLocation rowLocation) throws StandardException {
         ensureOpen();
-        long rowId = MvccRowLocation.from(rowLocation).rowId();
+        MvccRowLocation mvccLocation = MvccRowLocation.from(rowLocation);
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
                 rawTransaction);
@@ -299,7 +299,7 @@ final class MvccRawStoreScanController implements ScanManager {
             visible = MvccRawStoreTable.readVisibleAt(
                     rawTransaction,
                     table,
-                    rowId,
+                    mvccLocation,
                     snapshotSequence,
                     context);
         }
@@ -343,18 +343,18 @@ final class MvccRawStoreScanController implements ScanManager {
     private void reload() throws StandardException {
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-            java.util.Optional<List<Long>> candidateRowIds =
-                    MvccRawStoreTable.orderedIndexRowIdsForAt(
+            java.util.Optional<List<MvccRawStoreOrderedIndex.Candidate>> candidates =
+                    MvccRawStoreTable.orderedIndexCandidatesForAt(
                             table,
                             qualifiers,
                             context);
-            if (candidateRowIds.isPresent()) {
+            if (candidates.isPresent()) {
                 List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
-                for (long rowId : candidateRowIds.get()) {
+                for (MvccRawStoreOrderedIndex.Candidate candidate : candidates.get()) {
                     MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisibleAt(
                             rawTransaction,
                             table,
-                            rowId,
+                            candidate.rowLocation(),
                             snapshotSequence,
                             context);
                     if (visible != null) {

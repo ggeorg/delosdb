@@ -260,12 +260,13 @@ final class MvccRawStoreTable {
         return descriptor;
     }
 
-    static java.util.Optional<List<Long>> orderedIndexRowIdsForAt(
-            Descriptor table,
-            org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
-            MvccRawStoreTransactionContext context) throws StandardException {
+    static java.util.Optional<List<MvccRawStoreOrderedIndex.Candidate>>
+            orderedIndexCandidatesForAt(
+                    Descriptor table,
+                    org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
+                    MvccRawStoreTransactionContext context) throws StandardException {
         ContainerKey orderedIndex = context.orderedIndexForRead(table);
-        return MvccRawStoreOrderedIndex.rowIdsForAt(
+        return MvccRawStoreOrderedIndex.candidatesForAt(
                 context.transactionManager(),
                 table,
                 orderedIndex,
@@ -322,6 +323,8 @@ final class MvccRawStoreTable {
             TransactionManager transactionManager, Descriptor table)
             throws StandardException {
         Transaction transaction = transactionManager.getRawStoreXact();
+        Map<Long, MvccRowLocation> directoryLocations = MvccRawStoreRowDirectory.locations(
+                transaction, table);
         ContainerHandle container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -349,6 +352,8 @@ final class MvccRawStoreTable {
                     versions.add(new MvccRawStoreOrderedIndex.VersionInput(
                             version.rowId(),
                             version.versionId(),
+                            MvccRawStoreRowDirectory.requireLocation(
+                                    directoryLocations, version.rowId()),
                             version.values()));
                 }
                 long pageNumber = page.getPageNumber();
@@ -402,13 +407,17 @@ final class MvccRawStoreTable {
                 allocation.rowId(),
                 allocation.versionId(),
                 RecordHint.of(versionHandle));
-        insertRow(rawTransaction, table.metadataContainer(), directoryRow);
+        RecordHandle directoryHandle = insertRow(
+                rawTransaction, table.metadataContainer(), directoryRow);
+        MvccRowLocation directoryLocation = MvccRawStoreRowDirectory.location(
+                allocation.rowId(), directoryHandle);
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
                 orderedIndex,
                 allocation.rowId(),
                 allocation.versionId(),
+                directoryLocation,
                 values);
         PendingVersion pending = new PendingVersion(
                 table,
@@ -433,17 +442,30 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        DirectoryHead head = findHead(rawTransaction, table, rowId);
+        return readVisible(
+                rawTransaction, table, new MvccRowLocation(rowId), context);
+    }
+
+    private static VisibleRow readVisible(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
         VersionRecord version = findVisibleVersion(
                 rawTransaction,
                 table,
-                rowId,
-                head,
+                rowLocation.rowId(),
+                directory.head(),
                 context);
         if (version == null || version.tombstone()) {
             return null;
         }
-        return new VisibleRow(rowId, version.versionId(), version.values(), version.handle());
+        return new VisibleRow(
+                rowLocation.rowId(),
+                version.versionId(),
+                version.values(),
+                version.handle());
     }
 
     static VisibleRow readVisibleAt(
@@ -452,19 +474,37 @@ final class MvccRawStoreTable {
             long rowId,
             long snapshotSequence,
             MvccRawStoreTransactionContext context) throws StandardException {
-        DirectoryHead head = findHead(rawTransaction, table, rowId);
+        return readVisibleAt(
+                rawTransaction,
+                table,
+                new MvccRowLocation(rowId),
+                snapshotSequence,
+                context);
+    }
+
+    static VisibleRow readVisibleAt(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            long snapshotSequence,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
         VersionRecord version = findVisibleVersion(
                 rawTransaction,
                 table,
-                rowId,
-                head,
+                rowLocation.rowId(),
+                directory.head(),
                 context.transactionId(),
                 snapshotSequence,
                 context);
         if (version == null || version.tombstone()) {
             return null;
         }
-        return new VisibleRow(rowId, version.versionId(), version.values(), version.handle());
+        return new VisibleRow(
+                rowLocation.rowId(),
+                version.versionId(),
+                version.values(),
+                version.handle());
     }
 
     static boolean replace(
@@ -497,7 +537,8 @@ final class MvccRawStoreTable {
                 rawTransaction,
                 table,
                 rowId,
-                target.head(),
+                target.directory().head(),
+                target.directoryLocation(),
                 target.visible(),
                 MvccRawStoreFormat.LIVE_FLAGS,
                 values,
@@ -524,7 +565,8 @@ final class MvccRawStoreTable {
                 rawTransaction,
                 table,
                 rowId,
-                target.head(),
+                target.directory().head(),
+                target.directoryLocation(),
                 target.visible(),
                 MvccRawStoreFormat.TOMBSTONE_FLAGS,
                 null,
@@ -674,6 +716,8 @@ final class MvccRawStoreTable {
             Transaction transaction,
             Descriptor table,
             MvccRawStoreTransactionContext context) throws StandardException {
+        Map<Long, MvccRowLocation> directoryLocations = MvccRawStoreRowDirectory.locations(
+                transaction, table);
         ContainerHandle container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -717,6 +761,8 @@ final class MvccRawStoreTable {
                     versions.add(new MvccRawStoreOrderedIndex.VersionInput(
                             version.rowId(),
                             version.versionId(),
+                            MvccRawStoreRowDirectory.requireLocation(
+                                    directoryLocations, version.rowId()),
                             version.values()));
                 }
                 long pageNumber = page.getPageNumber();
@@ -875,22 +921,26 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        DirectoryHead head = findHead(transaction, table, rowId);
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
+                transaction, table, new MvccRowLocation(rowId));
         VersionRecord visible = findVisibleVersion(
                 transaction,
                 table,
                 rowId,
-                head,
+                directory.head(),
                 context);
         if (visible == null || visible.tombstone()) {
             return null;
         }
-        if (visible.versionId() != head.versionId()) {
+        if (visible.versionId() != directory.head().versionId()) {
             throw StandardException.newException(
                     SQLState.DEADLOCK,
                     "RawStore MVCC write conflict for logical row " + rowId);
         }
-        return new MutationTarget(head, visible);
+        return new MutationTarget(
+                directory,
+                MvccRawStoreRowDirectory.location(rowId, directory.handle()),
+                visible);
     }
 
     private static PendingVersion appendVersion(
@@ -898,6 +948,7 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             DirectoryHead expectedHead,
+            MvccRowLocation directoryLocation,
             VersionRecord previousVersion,
             int flags,
             StoreDataValue[] values,
@@ -915,11 +966,12 @@ final class MvccRawStoreTable {
                 flags,
                 values);
         RecordHandle versionHandle = insertRow(transaction, table.versionContainer(), versionRow);
-        updateDirectoryHead(
+        MvccRawStoreRowDirectory.updateHead(
                 transaction,
                 table,
                 rowId,
                 expectedHead,
+                directoryLocation,
                 versionId,
                 RecordHint.of(versionHandle));
         MvccRawStoreOrderedIndex.insertVersion(
@@ -928,6 +980,7 @@ final class MvccRawStoreTable {
                 orderedIndex,
                 rowId,
                 versionId,
+                directoryLocation,
                 values);
         PendingVersion pending = new PendingVersion(
                 table,
@@ -1083,63 +1136,6 @@ final class MvccRawStoreTable {
         }
     }
 
-    private static void updateDirectoryHead(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            DirectoryHead expectedHead,
-            long newHeadVersionId,
-            RecordHint newHeadHint) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    DirectoryRecord directory = decodeDirectory(transaction, page, slot);
-                    if (directory == null || directory.rowId() != rowId) {
-                        continue;
-                    }
-                    if (!directory.head().equals(expectedHead)) {
-                        throw StandardException.newException(
-                                SQLState.DEADLOCK,
-                                "RawStore MVCC directory head changed for logical row " + rowId);
-                    }
-                    page.updateAtSlot(
-                            slot,
-                            directoryRow(
-                                    transaction,
-                                    rowId,
-                                    newHeadVersionId,
-                                    newHeadHint),
-                            null);
-                    return;
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            if (container != null) {
-                container.close();
-            }
-        }
-        throw new IllegalStateException(
-                "RawStore MVCC directory entry disappeared for logical row " + rowId);
-    }
-
     private static VersionRecord findVisibleVersion(
             Transaction transaction,
             Descriptor table,
@@ -1197,40 +1193,8 @@ final class MvccRawStoreTable {
             Transaction transaction,
             Descriptor table,
             long rowId) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            return DirectoryHead.NONE;
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    DirectoryRecord directory = decodeDirectory(transaction, page, slot);
-                    if (directory != null && directory.rowId() == rowId) {
-                        return directory.head();
-                    }
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-            return DirectoryHead.NONE;
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
+        return MvccRawStoreRowDirectory.find(
+                transaction, table, new MvccRowLocation(rowId)).head();
     }
 
     private static VersionRecord findVersion(
@@ -1611,7 +1575,7 @@ final class MvccRawStoreTable {
                 && snapshotSequence < version.endSequence();
     }
 
-    private static DirectoryRecord decodeDirectory(
+    static DirectoryRecord decodeDirectory(
             Transaction transaction,
             Page page,
             int slot) throws StandardException {
@@ -1719,7 +1683,7 @@ final class MvccRawStoreTable {
         };
     }
 
-    private static Object[] directoryRow(
+    static Object[] directoryRow(
             Transaction transaction,
             long rowId,
             long headVersionId,
@@ -1797,30 +1761,33 @@ final class MvccRawStoreTable {
     record AllocatorHighWater(long nextRowId, long nextVersionId) {
     }
 
-    private record RecordHint(long pageNumber, int recordId) {
-        private static final RecordHint NONE = new RecordHint(0L, 0);
+    record RecordHint(long pageNumber, int recordId) {
+        static final RecordHint NONE = new RecordHint(0L, 0);
 
-        private static RecordHint of(RecordHandle handle) {
+        static RecordHint of(RecordHandle handle) {
             return handle == null
                     ? NONE
                     : new RecordHint(handle.getPageNumber(), handle.getId());
         }
 
-        private boolean valid() {
+        boolean valid() {
             return pageNumber >= ContainerHandle.FIRST_PAGE_NUMBER
                     && recordId >= RecordHandle.FIRST_RECORD_ID;
         }
     }
 
-    private record DirectoryHead(long versionId, RecordHint hint) {
-        private static final DirectoryHead NONE =
+    record DirectoryHead(long versionId, RecordHint hint) {
+        static final DirectoryHead NONE =
                 new DirectoryHead(MvccRawStoreFormat.NO_PREVIOUS_VERSION, RecordHint.NONE);
     }
 
-    private record DirectoryRecord(long rowId, DirectoryHead head, RecordHandle handle) {
+    record DirectoryRecord(long rowId, DirectoryHead head, RecordHandle handle) {
     }
 
-    private record MutationTarget(DirectoryHead head, VersionRecord visible) {
+    private record MutationTarget(
+            DirectoryRecord directory,
+            MvccRowLocation directoryLocation,
+            VersionRecord visible) {
     }
 
     private record VersionRecord(

@@ -31,9 +31,11 @@ The B-trees are ordinary Derby access-method conglomerates backed by RawStore. T
 splits, inserts, deletes, undo, recovery, and drop share the same access transaction and RawStore
 commit as the base MVCC table.
 
-The ordered index is never row authority. It returns stable `MvccRowId` candidates only. Every
-candidate is reread through the authoritative MVCC version chain, and the full SQL qualifier set is
-applied again before a row is returned.
+The ordered index is never row authority. It returns stable `MvccRowId` candidates plus an optional
+physical locator for that row's stable-directory record. Every candidate is reread through the
+authoritative MVCC version chain, and the full SQL qualifier set is applied again before a row is
+returned. The locator is only a validated acceleration hint; absent, stale, or reused hints fall back
+to the logical directory scan.
 
 ## Physical B-tree layout
 
@@ -47,8 +49,9 @@ MvccRowLocation
 ```
 
 The fields are ordered as one immutable B-tree key. The typed SQL key is first, enabling bounded
-partial-key scans. Stable row/version identity distinguishes historical candidates, and
-`MvccRowLocation` is last because Derby B2I requires the base-row location in the final field.
+partial-key scans. Stable row/version identity distinguishes historical candidates. `MvccRowLocation` is last because
+Derby B2I requires the base-row location in the final field; its logical identity remains the stable
+row id while its optional page/slot values address the stable-directory record directly.
 
 The B-tree intentionally does not duplicate transaction or commit-sequence visibility fields. A
 candidate's authoritative creator/begin/end state is read from the base version chain before the row is
@@ -93,7 +96,8 @@ closed/open range: Derby GE/GT start and stop operators
 Candidate row IDs are de-duplicated in B-tree order and then processed through:
 
 ```text
-B-tree candidate (MvccRowId, MvccVersionId)
+B-tree candidate (MvccRowId, MvccVersionId, validated directory locator)
+    -> direct stable-directory head lookup, or logical fallback
     -> authoritative MVCC version-chain lookup
     -> snapshot visibility
     -> full RowUtil qualifier evaluation

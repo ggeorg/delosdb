@@ -80,6 +80,11 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
                 assertEquals(36, entries.size());
+                assertTrue(
+                        "fresh B-tree candidates must carry direct directory locators",
+                        entries.stream().allMatch(
+                                MvccRawStoreMetadataInspection.OrderedIndexIdentity::
+                                        hasDirectoryLocator));
                 assertPhysicalTypedCoverage(entries);
                 connection.commit();
             }
@@ -211,10 +216,16 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 assertIndexedRows(connection,
                         "select id, name from legacy_index_t where name = 'two-v2'",
                         "2|two-v2");
-                assertEquals(6,
+                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> rebuiltEntries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(
                                 connection,
-                                "LEGACY_INDEX_T").size());
+                                "LEGACY_INDEX_T");
+                assertEquals(6, rebuiltEntries.size());
+                assertTrue(
+                        "lazy rebuild must populate direct directory locators",
+                        rebuiltEntries.stream().allMatch(
+                                MvccRawStoreMetadataInspection.OrderedIndexIdentity::
+                                        hasDirectoryLocator));
                 connection.commit();
             }
             shutdownDatabase(database);

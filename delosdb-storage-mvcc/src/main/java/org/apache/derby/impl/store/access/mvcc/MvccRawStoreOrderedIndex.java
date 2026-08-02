@@ -10,7 +10,7 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,6 +53,7 @@ final class MvccRawStoreOrderedIndex {
             ContainerKey directoryKey,
             long rowId,
             long versionId,
+            MvccRowLocation rowLocation,
             StoreDataValue[] values) throws StandardException {
         if (values == null) {
             return;
@@ -78,7 +79,8 @@ final class MvccRawStoreOrderedIndex {
                             column,
                             values[column],
                             rowId,
-                            versionId));
+                            versionId,
+                            rowLocation));
         }
     }
 
@@ -144,20 +146,21 @@ final class MvccRawStoreOrderedIndex {
                 continue;
             }
             int firstColumn = columns[0];
-            List<Long> candidates = candidateRowIdsForKey(
+            List<Candidate> candidates = candidatesForKey(
                     context.transactionManager(),
                     table,
                     directoryKey,
                     firstColumn,
                     values[firstColumn]);
-            for (long candidateRowId : candidates) {
+            for (Candidate candidateEntry : candidates) {
+                long candidateRowId = candidateEntry.rowId();
                 if (candidateRowId == currentRowId) {
                     continue;
                 }
                 MvccRawStoreTable.VisibleRow candidate = MvccRawStoreTable.readVisibleAt(
                         transaction,
                         table,
-                        candidateRowId,
+                        candidateEntry.rowLocation(),
                         committedSequence,
                         context);
                 if (candidate != null && sameKey(values, candidate.values(), columns)) {
@@ -214,7 +217,7 @@ final class MvccRawStoreOrderedIndex {
         }
     }
 
-    static Optional<List<Long>> rowIdsForAt(
+    static Optional<List<Candidate>> candidatesForAt(
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
             ContainerKey directoryKey,
@@ -235,7 +238,7 @@ final class MvccRawStoreOrderedIndex {
         if (btrees == null || btrees[predicate.columnId()] == 0L) {
             return Optional.empty();
         }
-        return Optional.of(scanCandidateRowIds(
+        return Optional.of(scanCandidates(
                 transactionManager,
                 table,
                 btrees[predicate.columnId()],
@@ -243,7 +246,7 @@ final class MvccRawStoreOrderedIndex {
     }
 
 
-    private static List<Long> candidateRowIdsForKey(
+    private static List<Candidate> candidatesForKey(
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
             ContainerKey directoryKey,
@@ -253,14 +256,14 @@ final class MvccRawStoreOrderedIndex {
                 transactionManager, table, directoryKey);
         MvccRawStoreOrderedIndexPredicate.Predicate predicate =
                 MvccRawStoreOrderedIndexPredicate.equality(column, key);
-        return scanCandidateRowIds(
+        return scanCandidates(
                 transactionManager,
                 table,
                 btrees[column],
                 predicate);
     }
 
-    private static List<Long> scanCandidateRowIds(
+    private static List<Candidate> scanCandidates(
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
             long btreeConglomerate,
@@ -277,7 +280,7 @@ final class MvccRawStoreOrderedIndex {
         int stopOperator = stopKey == null
                 ? ScanController.NA
                 : (predicate.upperInclusive() ? ScanController.GT : ScanController.GE);
-        LinkedHashSet<Long> rowIds = new LinkedHashSet<>();
+        LinkedHashMap<Long, Candidate> candidates = new LinkedHashMap<>();
         ScanController scan = transactionManager.openScan(
                 btreeConglomerate,
                 false,
@@ -297,12 +300,22 @@ final class MvccRawStoreOrderedIndex {
                         table,
                         predicate.columnId());
                 scan.fetch(row);
-                rowIds.add(StoreTypeUtil.getLong(row[ROW_ID_FIELD]));
+                long rowId = StoreTypeUtil.getLong(row[ROW_ID_FIELD]);
+                MvccRowLocation rowLocation = MvccRowLocation.from(
+                        row[ROW_LOCATION_FIELD]);
+                if (rowLocation.rowId() != rowId) {
+                    throw new IllegalStateException(
+                            "RawStore MVCC B-tree candidate row-location identity mismatch: row="
+                                    + rowId + ", location=" + rowLocation);
+                }
+                candidates.putIfAbsent(
+                        rowId,
+                        new Candidate(rowId, rowLocation));
             }
         } finally {
             scan.close();
         }
-        return List.copyOf(rowIds);
+        return List.copyOf(candidates.values());
     }
 
 
@@ -330,7 +343,8 @@ final class MvccRawStoreOrderedIndex {
                             column,
                             values[column],
                             version.rowId(),
-                            version.versionId()),
+                            version.versionId(),
+                            version.rowLocation()),
                     true);
         }
     }
@@ -375,12 +389,17 @@ final class MvccRawStoreOrderedIndex {
             int column,
             StoreDataValue key,
             long rowId,
-            long versionId) throws StandardException {
+            long versionId,
+            MvccRowLocation rowLocation) throws StandardException {
         StoreDataValue[] row = indexRowTemplate(transaction, table, column);
         row[KEY_FIELD] = StoreValueCopySupport.cloneValue(key);
         StoreTypeUtil.setLongValue(row[ROW_ID_FIELD], rowId);
         StoreTypeUtil.setLongValue(row[VERSION_ID_FIELD], versionId);
-        row[ROW_LOCATION_FIELD] = new MvccRowLocation(rowId);
+        if (rowLocation == null || rowLocation.rowId() != rowId) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC ordered-index row location does not match row " + rowId);
+        }
+        row[ROW_LOCATION_FIELD] = rowLocation.cloneValue(false);
         return row;
     }
 
@@ -465,11 +484,27 @@ final class MvccRawStoreOrderedIndex {
     }
 
 
+    record Candidate(long rowId, MvccRowLocation rowLocation) {
+        Candidate {
+            if (rowLocation == null || rowLocation.rowId() != rowId) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC candidate location does not match row " + rowId);
+            }
+            rowLocation = (MvccRowLocation) rowLocation.cloneValue(false);
+        }
+    }
+
     record VersionInput(
             long rowId,
             long versionId,
+            MvccRowLocation rowLocation,
             StoreDataValue[] values) {
         VersionInput {
+            if (rowLocation == null || rowLocation.rowId() != rowId) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC rebuild location does not match row " + rowId);
+            }
+            rowLocation = (MvccRowLocation) rowLocation.cloneValue(false);
             values = values == null ? null : values.clone();
         }
     }

@@ -387,7 +387,7 @@ def registerDelosFocusedTest = { String taskName,
     tasks.register(taskName, Test) {
         group = 'verification'
         description = descriptionText
-        dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
+        dependsOn tasks.named('compileTestJava'), ':jars'
 
         modularity.inferModulePath = false
         testClassesDirs = files(derbyTestsClassDir)

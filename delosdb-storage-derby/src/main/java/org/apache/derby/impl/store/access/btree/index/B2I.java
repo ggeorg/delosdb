@@ -321,7 +321,7 @@ public class B2I extends BTree
                 "bad isolation_level = " + isolation_level);
         }
 
-        if (!base_cc.requiresSecondaryIndexBaseRowLocking())
+        if (base_cc != null && !base_cc.requiresSecondaryIndexBaseRowLocking())
         {
             ret_locking_policy =
                 new B2INoLocking(

@@ -35,6 +35,7 @@ import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.impl.jdbc.EmbedConnection;
+import org.apache.derby.impl.store.access.mvcc.MvccRowLocation;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
 /** Low-level RawStore inspection used by focused MVCC convergence proofs. */
@@ -266,11 +267,16 @@ final class MvccRawStoreMetadataInspection {
                                 raw, layout, mapping.columnId(), base.newRowLocationTemplate());
                         scan.fetch(row);
                         Object keyObject = StoreTypeUtil.getObject(row[ORDERED_INDEX_KEY_FIELD]);
+                        MvccRowLocation rowLocation = MvccRowLocation.from(
+                                row[ORDERED_INDEX_ROW_LOCATION_FIELD]);
                         result.add(new OrderedIndexIdentity(
                                 mapping.columnId(),
                                 keyObject == null ? null : keyObject.toString(),
                                 StoreTypeUtil.getLong(row[ORDERED_INDEX_ROW_ID_FIELD]),
-                                StoreTypeUtil.getLong(row[ORDERED_INDEX_VERSION_ID_FIELD])));
+                                StoreTypeUtil.getLong(row[ORDERED_INDEX_VERSION_ID_FIELD]),
+                                rowLocation.hasLocatorHint(),
+                                rowLocation.locatorPageId(),
+                                rowLocation.locatorSlotId()));
                     }
                 } finally {
                     scan.close();
@@ -928,7 +934,10 @@ final class MvccRawStoreMetadataInspection {
             int columnId,
             String key,
             long rowId,
-            long versionId) {
+            long versionId,
+            boolean hasDirectoryLocator,
+            long directoryPage,
+            int directorySlot) {
     }
 
     record UniqueConstraintIdentity(
