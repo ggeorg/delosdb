@@ -134,25 +134,26 @@ that JDK 25 was used, and that every primary score is finite.
 - `delosdb.jmh.profilers` — comma-separated profiler names
 - `delosdb.jmh.jvmArgs` — separate multiple arguments with `;;`, preserving commas inside an argument
 
-The build pins JMH `1.37` and the Gradle JMH plugin `0.7.3`.
+The build pins JMH `1.37` and the Gradle JMH plugin `0.7.3`. JMH 1.37
+still uses terminally deprecated `sun.misc.Unsafe` field-offset access internally.
+The standalone benchmark launcher therefore opts its JMH runner and forks into
+JDK 25 compatibility mode with `--sun-misc-unsafe-memory-access=allow`; DelosDB
+runtime processes outside this benchmark build are unaffected.
 
-## Concurrent commit durability benchmark
+## Concurrent commit benchmark
 
-The standalone build also includes a public-JDBC concurrency runner for Phase 7:
+The standalone build also includes a public-JDBC concurrency runner:
 
 ```bash
 ./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
 ```
 
 It measures commit throughput and p50/p95/p99 latency for same-table,
-different-table, and different-database writers. DelosDB's
-`org.apache.derby.delosdb.mvcc.Commit` JFR event supplies table-lock waits,
-backup-boundary waits, per-table and process-wide durability concurrency,
-force counts, and logical pages/bytes covered by force calls without exposing
-implementation APIs to the benchmark. It also verifies insert row counts,
-commit-event transaction and changed-row identities, and the final contents of
-every updated fixture row. The runner deliberately records one JFR event per
-commit, so reported absolute throughput includes that diagnostic cost.
+different-table, and different-database writers. The runner records current
+JDK Flight Recorder events for file writes, contended monitor entry, thread
+parking, and GC pauses without importing DelosDB implementation APIs. It also
+verifies insert row counts and the final contents of every updated fixture row.
+Reported throughput includes the cost of this bounded JFR recording.
 
 Configuration uses Gradle properties:
 

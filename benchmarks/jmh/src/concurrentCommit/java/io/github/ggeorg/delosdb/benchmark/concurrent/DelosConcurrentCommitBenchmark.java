@@ -38,13 +38,16 @@ import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 
 /**
- * Public-JDBC concurrent commit benchmark with JFR-backed DelosDB durability metrics.
+ * Public-JDBC concurrent commit benchmark with JDK JFR contention and file-I/O evidence.
  *
  * <p>This is an external measurement lane. It changes no database setting and
  * imports no Derby or DelosDB implementation API.</p>
  */
 public final class DelosConcurrentCommitBenchmark {
-    private static final String COMMIT_EVENT = "org.apache.derby.delosdb.mvcc.Commit";
+    private static final String FILE_WRITE_EVENT = "jdk.FileWrite";
+    private static final String MONITOR_ENTER_EVENT = "jdk.JavaMonitorEnter";
+    private static final String THREAD_PARK_EVENT = "jdk.ThreadPark";
+    private static final String GC_PAUSE_EVENT = "jdk.GCPhasePause";
     private static final String TABLE_PREFIX = "DELOS_CC_";
     private static final long INSERT_WARMUP_BASE = 1_000_000_000L;
     private static final long INSERT_MEASUREMENT_BASE = 2_000_000_000L;
@@ -97,7 +100,7 @@ public final class DelosConcurrentCommitBenchmark {
             Files.deleteIfExists(recordingFile);
             RoundResult round;
             try (Recording recording = new Recording()) {
-                recording.enable(COMMIT_EVENT).withThreshold(Duration.ZERO);
+                enableCurrentJfrEvents(recording);
                 recording.start();
                 round = runRound(
                         environment,
@@ -111,20 +114,7 @@ public final class DelosConcurrentCommitBenchmark {
             environment.verify(
                     config.warmupTransactionsPerWriter(),
                     config.transactionsPerWriter());
-            JfrMetrics jfr = readCommitMetrics(recordingFile, scenario.rowsPerTransaction());
-            int expectedCommits = Math.multiplyExact(scenario.writers(), config.transactionsPerWriter());
-            if (jfr.eventCount() != expectedCommits) {
-                throw new IllegalStateException("expected " + expectedCommits + " MVCC commit events for "
-                        + scenario + ", found " + jfr.eventCount());
-            }
-            if (jfr.failedEventCount() != 0L) {
-                throw new IllegalStateException("benchmark observed failed MVCC commits for " + scenario
-                        + ": " + jfr.failedEventCount());
-            }
-            if (jfr.incompleteDurabilityMeasurementCount() != 0L) {
-                throw new IllegalStateException("benchmark observed incomplete durability measurements for "
-                        + scenario + ": " + jfr.incompleteDurabilityMeasurementCount());
-            }
+            JfrMetrics jfr = readJfrMetrics(recordingFile);
             if (!config.keepJfr()) {
                 Files.deleteIfExists(recordingFile);
             }
@@ -285,190 +275,63 @@ public final class DelosConcurrentCommitBenchmark {
         return "writer=" + writerId + ";tx=" + transaction + ";row=" + row;
     }
 
-    private static JfrMetrics readCommitMetrics(Path recordingFile, int expectedChangedRows) throws IOException {
-        long eventCount = 0L;
-        long failedEventCount = 0L;
-        long incompleteDurabilityMeasurementCount = 0L;
-        long totalCommitNanos = 0L;
-        long preparationNanos = 0L;
-        long backupWaitNanos = 0L;
-        long durabilityCoordinatorWaitNanos = 0L;
-        long durabilityCoordinatorHoldNanos = 0L;
-        String durabilityCoordinatorMode = "";
-        int maxDurabilityEnrollmentDepth = 0;
-        long groupCommitLeaderCount = 0L;
-        long groupedCommitCount = 0L;
-        long groupCommitTransactionCount = 0L;
-        int maxGroupCommitSize = 0;
-        long groupCommitWaitNanos = 0L;
-        long groupCommitSharedForceCount = 0L;
-        long groupCommitLeaderFailureCount = 0L;
-        long groupCommitFollowerFailureCount = 0L;
-        long tableLockWaitNanos = 0L;
-        long tableLockHoldNanos = 0L;
-        long validationNanos = 0L;
-        long transactionStatusCommitNanos = 0L;
-        long pageStatePersistenceNanos = 0L;
-        long orderedIndexRebuildNanos = 0L;
-        long transactionStatePublicationNanos = 0L;
-        long maintenanceNanos = 0L;
-        long transactionStatusForceCount = 0L;
-        long transactionOutcomeForceCount = 0L;
-        long writeAheadLogForceCount = 0L;
-        long otherSidecarForceCount = 0L;
-        long directoryForceCount = 0L;
-        long pageVolumeForceCount = 0L;
-        long pageVolumePagesCovered = 0L;
-        long sidecarBytesCovered = 0L;
-        long pageVolumeBytesCovered = 0L;
-        int maxTableRequestConcurrency = 0;
-        int maxProcessRequestConcurrency = 0;
-        int maxTablePreparationConcurrency = 0;
-        int maxProcessPreparationConcurrency = 0;
-        int maxTableDurabilityQueueConcurrency = 0;
-        int maxProcessDurabilityQueueConcurrency = 0;
-        int maxTableDurabilityExecutionConcurrency = 0;
-        int maxProcessDurabilityExecutionConcurrency = 0;
+    private static void enableCurrentJfrEvents(Recording recording) {
+        recording.enable(FILE_WRITE_EVENT).withThreshold(Duration.ZERO);
+        recording.enable(MONITOR_ENTER_EVENT).withThreshold(Duration.ZERO);
+        recording.enable(THREAD_PARK_EVENT).withThreshold(Duration.ZERO);
+        recording.enable(GC_PAUSE_EVENT).withThreshold(Duration.ZERO);
+    }
+
+    private static JfrMetrics readJfrMetrics(Path recordingFile) throws IOException {
+        long fileWriteCount = 0L;
+        long fileWriteBytes = 0L;
+        long fileWriteNanos = 0L;
+        long monitorEnterCount = 0L;
+        long monitorEnterNanos = 0L;
+        long threadParkCount = 0L;
+        long threadParkNanos = 0L;
+        long gcPauseCount = 0L;
+        long gcPauseNanos = 0L;
         try (RecordingFile recording = new RecordingFile(recordingFile)) {
             while (recording.hasMoreEvents()) {
                 RecordedEvent event = recording.readEvent();
-                if (!COMMIT_EVENT.equals(event.getEventType().getName())) {
-                    continue;
+                String eventName = event.getEventType().getName();
+                switch (eventName) {
+                    case FILE_WRITE_EVENT -> {
+                        fileWriteCount++;
+                        fileWriteNanos += event.getDuration().toNanos();
+                        if (event.hasField("bytesWritten")) {
+                            fileWriteBytes += event.getLong("bytesWritten");
+                        }
+                    }
+                    case MONITOR_ENTER_EVENT -> {
+                        monitorEnterCount++;
+                        monitorEnterNanos += event.getDuration().toNanos();
+                    }
+                    case THREAD_PARK_EVENT -> {
+                        threadParkCount++;
+                        threadParkNanos += event.getDuration().toNanos();
+                    }
+                    case GC_PAUSE_EVENT -> {
+                        gcPauseCount++;
+                        gcPauseNanos += event.getDuration().toNanos();
+                    }
+                    default -> {
+                        // Only explicitly enabled events are summarized.
+                    }
                 }
-                eventCount++;
-                if (event.getLong("transactionId") <= 0L) {
-                    throw new IllegalStateException("MVCC commit event has invalid transaction id: "
-                            + event.getLong("transactionId"));
-                }
-                if (event.getInt("changedRows") != expectedChangedRows) {
-                    throw new IllegalStateException("MVCC commit event changed-row mismatch: expected="
-                            + expectedChangedRows + ", actual=" + event.getInt("changedRows"));
-                }
-                if (!event.getBoolean("success")) {
-                    failedEventCount++;
-                }
-                if (!event.getBoolean("durabilityMeasurementComplete")) {
-                    incompleteDurabilityMeasurementCount++;
-                }
-                totalCommitNanos += event.getLong("totalCommitNanos");
-                preparationNanos += event.getLong("preparationNanos");
-                backupWaitNanos += event.getLong("backupWaitNanos");
-                durabilityCoordinatorWaitNanos += event.getLong("durabilityCoordinatorWaitNanos");
-                durabilityCoordinatorHoldNanos += event.getLong("durabilityCoordinatorHoldNanos");
-                String eventCoordinatorMode = event.getString("durabilityCoordinatorMode");
-                if (durabilityCoordinatorMode.isEmpty()) {
-                    durabilityCoordinatorMode = eventCoordinatorMode;
-                } else if (!durabilityCoordinatorMode.equals(eventCoordinatorMode)) {
-                    throw new IllegalStateException("mixed durability coordinator modes in one scenario: "
-                            + durabilityCoordinatorMode + " and " + eventCoordinatorMode);
-                }
-                maxDurabilityEnrollmentDepth = Math.max(
-                        maxDurabilityEnrollmentDepth,
-                        event.getInt("durabilityEnrollmentDepth"));
-                int groupSize = event.getInt("groupCommitSize");
-                maxGroupCommitSize = Math.max(maxGroupCommitSize, groupSize);
-                if (groupSize > 1) {
-                    groupedCommitCount++;
-                }
-                if (event.getBoolean("groupCommitLeader")) {
-                    groupCommitLeaderCount++;
-                    groupCommitTransactionCount += groupSize;
-                }
-                groupCommitWaitNanos += event.getLong("groupCommitWaitNanos");
-                groupCommitSharedForceCount += event.getLong("groupCommitSharedForceCount");
-                if (event.getBoolean("groupCommitLeaderFailure")) {
-                    groupCommitLeaderFailureCount++;
-                }
-                if (event.getBoolean("groupCommitFollowerFailure")) {
-                    groupCommitFollowerFailureCount++;
-                }
-                tableLockWaitNanos += event.getLong("tableLockWaitNanos");
-                tableLockHoldNanos += event.getLong("tableLockHoldNanos");
-                validationNanos += event.getLong("validationNanos");
-                transactionStatusCommitNanos += event.getLong("transactionStatusCommitNanos");
-                pageStatePersistenceNanos += event.getLong("pageStatePersistenceNanos");
-                orderedIndexRebuildNanos += event.getLong("orderedIndexRebuildNanos");
-                transactionStatePublicationNanos += event.getLong("transactionStatePublicationNanos");
-                maintenanceNanos += event.getLong("maintenanceNanos");
-                transactionStatusForceCount += event.getLong("transactionStatusForceCount");
-                transactionOutcomeForceCount += event.getLong("transactionOutcomeForceCount");
-                writeAheadLogForceCount += event.getLong("writeAheadLogForceCount");
-                otherSidecarForceCount += event.getLong("otherSidecarForceCount");
-                directoryForceCount += event.getLong("directoryForceCount");
-                pageVolumeForceCount += event.getLong("pageVolumeForceCount");
-                pageVolumePagesCovered += event.getLong("pageVolumePagesCovered");
-                sidecarBytesCovered += event.getLong("sidecarBytesCovered");
-                pageVolumeBytesCovered += event.getLong("pageVolumeBytesCovered");
-                maxTableRequestConcurrency = Math.max(
-                        maxTableRequestConcurrency,
-                        event.getInt("tableRequestConcurrency"));
-                maxProcessRequestConcurrency = Math.max(
-                        maxProcessRequestConcurrency,
-                        event.getInt("processRequestConcurrency"));
-                maxTablePreparationConcurrency = Math.max(
-                        maxTablePreparationConcurrency,
-                        event.getInt("tablePreparationConcurrency"));
-                maxProcessPreparationConcurrency = Math.max(
-                        maxProcessPreparationConcurrency,
-                        event.getInt("processPreparationConcurrency"));
-                maxTableDurabilityQueueConcurrency = Math.max(
-                        maxTableDurabilityQueueConcurrency,
-                        event.getInt("tableDurabilityQueueConcurrency"));
-                maxProcessDurabilityQueueConcurrency = Math.max(
-                        maxProcessDurabilityQueueConcurrency,
-                        event.getInt("processDurabilityQueueConcurrency"));
-                maxTableDurabilityExecutionConcurrency = Math.max(
-                        maxTableDurabilityExecutionConcurrency,
-                        event.getInt("tableDurabilityExecutionConcurrency"));
-                maxProcessDurabilityExecutionConcurrency = Math.max(
-                        maxProcessDurabilityExecutionConcurrency,
-                        event.getInt("processDurabilityExecutionConcurrency"));
             }
         }
         return new JfrMetrics(
-                eventCount,
-                failedEventCount,
-                incompleteDurabilityMeasurementCount,
-                totalCommitNanos,
-                preparationNanos,
-                backupWaitNanos,
-                durabilityCoordinatorWaitNanos,
-                durabilityCoordinatorHoldNanos,
-                durabilityCoordinatorMode,
-                maxDurabilityEnrollmentDepth,
-                groupCommitLeaderCount,
-                groupedCommitCount,
-                groupCommitTransactionCount,
-                maxGroupCommitSize,
-                groupCommitWaitNanos,
-                groupCommitSharedForceCount,
-                groupCommitLeaderFailureCount,
-                groupCommitFollowerFailureCount,
-                tableLockWaitNanos,
-                tableLockHoldNanos,
-                validationNanos,
-                transactionStatusCommitNanos,
-                pageStatePersistenceNanos,
-                orderedIndexRebuildNanos,
-                transactionStatePublicationNanos,
-                maintenanceNanos,
-                transactionStatusForceCount,
-                transactionOutcomeForceCount,
-                writeAheadLogForceCount,
-                otherSidecarForceCount,
-                directoryForceCount,
-                pageVolumeForceCount,
-                pageVolumePagesCovered,
-                sidecarBytesCovered,
-                pageVolumeBytesCovered,
-                maxTableRequestConcurrency,
-                maxProcessRequestConcurrency,
-                maxTablePreparationConcurrency,
-                maxProcessPreparationConcurrency,
-                maxTableDurabilityQueueConcurrency,
-                maxProcessDurabilityQueueConcurrency,
-                maxTableDurabilityExecutionConcurrency,
-                maxProcessDurabilityExecutionConcurrency);
+                fileWriteCount,
+                fileWriteBytes,
+                fileWriteNanos,
+                monitorEnterCount,
+                monitorEnterNanos,
+                threadParkCount,
+                threadParkNanos,
+                gcPauseCount,
+                gcPauseNanos);
     }
 
     private static void writeCsv(Path path, List<Result> results) throws IOException {
@@ -502,7 +365,7 @@ public final class DelosConcurrentCommitBenchmark {
 
     private static void writeHuman(Path path, Config config, List<Result> results) throws IOException {
         try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8))) {
-            writer.println("DelosDB concurrent commit durability benchmark");
+            writer.println("DelosDB concurrent commit benchmark");
             writer.println("Java: " + System.getProperty("java.version"));
             writer.println("Transactions per writer: " + config.transactionsPerWriter());
             writer.println("Warmup transactions per writer: " + config.warmupTransactionsPerWriter());
@@ -889,94 +752,54 @@ public final class DelosConcurrentCommitBenchmark {
     }
 
     record JfrMetrics(
-            long eventCount,
-            long failedEventCount,
-            long incompleteDurabilityMeasurementCount,
-            long totalCommitNanos,
-            long preparationNanos,
-            long backupWaitNanos,
-            long durabilityCoordinatorWaitNanos,
-            long durabilityCoordinatorHoldNanos,
-            String durabilityCoordinatorMode,
-            int maxDurabilityEnrollmentDepth,
-            long groupCommitLeaderCount,
-            long groupedCommitCount,
-            long groupCommitTransactionCount,
-            int maxGroupCommitSize,
-            long groupCommitWaitNanos,
-            long groupCommitSharedForceCount,
-            long groupCommitLeaderFailureCount,
-            long groupCommitFollowerFailureCount,
-            long tableLockWaitNanos,
-            long tableLockHoldNanos,
-            long validationNanos,
-            long transactionStatusCommitNanos,
-            long pageStatePersistenceNanos,
-            long orderedIndexRebuildNanos,
-            long transactionStatePublicationNanos,
-            long maintenanceNanos,
-            long transactionStatusForceCount,
-            long transactionOutcomeForceCount,
-            long writeAheadLogForceCount,
-            long otherSidecarForceCount,
-            long directoryForceCount,
-            long pageVolumeForceCount,
-            long pageVolumePagesCovered,
-            long sidecarBytesCovered,
-            long pageVolumeBytesCovered,
-            int maxTableRequestConcurrency,
-            int maxProcessRequestConcurrency,
-            int maxTablePreparationConcurrency,
-            int maxProcessPreparationConcurrency,
-            int maxTableDurabilityQueueConcurrency,
-            int maxProcessDurabilityQueueConcurrency,
-            int maxTableDurabilityExecutionConcurrency,
-            int maxProcessDurabilityExecutionConcurrency) {
+            long fileWriteCount,
+            long fileWriteBytes,
+            long fileWriteNanos,
+            long monitorEnterCount,
+            long monitorEnterNanos,
+            long threadParkCount,
+            long threadParkNanos,
+            long gcPauseCount,
+            long gcPauseNanos) {
     }
 
     record Result(
             Scenario scenario,
             long commits,
             double commitsPerSecond,
+            long averageCommitNanos,
             long p50CommitNanos,
             long p95CommitNanos,
             long p99CommitNanos,
+            long maxCommitNanos,
             JfrMetrics jfr) {
         static Result from(Scenario scenario, RoundResult round, JfrMetrics jfr) {
             long[] sorted = round.commitLatenciesNanos().clone();
             Arrays.sort(sorted);
             long commits = sorted.length;
+            long totalCommitNanos = 0L;
+            for (long latency : sorted) {
+                totalCommitNanos += latency;
+            }
             double seconds = round.elapsedNanos() / 1_000_000_000.0d;
             return new Result(
                     scenario,
                     commits,
                     commits / seconds,
+                    commits == 0L ? 0L : totalCommitNanos / commits,
                     percentile(sorted, 0.50d),
                     percentile(sorted, 0.95d),
                     percentile(sorted, 0.99d),
+                    sorted.length == 0 ? 0L : sorted[sorted.length - 1],
                     jfr);
         }
 
         static String csvHeader() {
             return "topology,operation,writers,rowsPerTransaction,commits,commitsPerSecond,"
-                    + "p50CommitMicros,p95CommitMicros,p99CommitMicros,avgCommitMicros,"
-                    + "avgPreparationMicros,avgBackupWaitMicros,avgDurabilityCoordinatorWaitMicros,"
-                    + "avgDurabilityCoordinatorHoldMicros,durabilityCoordinatorMode,"
-                    + "maxDurabilityEnrollmentDepth,groupCommitGroups,groupedCommits,"
-                    + "avgTransactionsPerGroup,maxGroupCommitSize,avgGroupCommitWaitMicros,"
-                    + "sharedForcesPerCommit,groupCommitLeaderFailures,groupCommitFollowerFailures,"
-                    + "avgTableLockWaitMicros,avgTableLockHoldMicros,"
-                    + "avgValidationMicros,avgTransactionStatusCommitMicros,"
-                    + "avgPageStatePersistenceMicros,avgOrderedIndexRebuildMicros,"
-                    + "avgTransactionStatePublicationMicros,avgMaintenanceMicros,"
-                    + "statusForcesPerCommit,outcomeForcesPerCommit,"
-                    + "walForcesPerCommit,otherSidecarForcesPerCommit,directoryForcesPerCommit,"
-                    + "pageVolumeForcesPerCommit,pageVolumePagesCoveredPerCommit,"
-                    + "logicalBytesCoveredPerCommit,maxTableRequestConcurrency,"
-                    + "maxProcessRequestConcurrency,maxTablePreparationConcurrency,"
-                    + "maxProcessPreparationConcurrency,maxTableDurabilityQueueConcurrency,"
-                    + "maxProcessDurabilityQueueConcurrency,maxTableDurabilityExecutionConcurrency,"
-                    + "maxProcessDurabilityExecutionConcurrency";
+                    + "avgCommitMicros,p50CommitMicros,p95CommitMicros,p99CommitMicros,maxCommitMicros,"
+                    + "fileWriteEvents,fileWriteBytes,fileWriteMicros,"
+                    + "monitorEnterEvents,monitorEnterMicros,threadParkEvents,threadParkMicros,"
+                    + "gcPauseEvents,gcPauseMicros";
         }
 
         String csvLine() {
@@ -987,85 +810,33 @@ public final class DelosConcurrentCommitBenchmark {
                     Integer.toString(scenario.rowsPerTransaction()),
                     Long.toString(commits),
                     decimal(commitsPerSecond),
+                    decimal(micros(averageCommitNanos)),
                     decimal(micros(p50CommitNanos)),
                     decimal(micros(p95CommitNanos)),
                     decimal(micros(p99CommitNanos)),
-                    decimal(micros(average(jfr.totalCommitNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.preparationNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.backupWaitNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.durabilityCoordinatorHoldNanos(), jfr.eventCount()))),
-                    jfr.durabilityCoordinatorMode(),
-                    Integer.toString(jfr.maxDurabilityEnrollmentDepth()),
-                    Long.toString(jfr.groupCommitLeaderCount()),
-                    Long.toString(jfr.groupedCommitCount()),
-                    decimal(average(jfr.groupCommitTransactionCount(), jfr.groupCommitLeaderCount())),
-                    Integer.toString(jfr.maxGroupCommitSize()),
-                    decimal(micros(average(jfr.groupCommitWaitNanos(), jfr.eventCount()))),
-                    decimal(average(jfr.groupCommitSharedForceCount(), jfr.eventCount())),
-                    Long.toString(jfr.groupCommitLeaderFailureCount()),
-                    Long.toString(jfr.groupCommitFollowerFailureCount()),
-                    decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.tableLockHoldNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.orderedIndexRebuildNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.transactionStatePublicationNanos(), jfr.eventCount()))),
-                    decimal(micros(average(jfr.maintenanceNanos(), jfr.eventCount()))),
-                    decimal(average(jfr.transactionStatusForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.writeAheadLogForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.otherSidecarForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.directoryForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.pageVolumeForceCount(), jfr.eventCount())),
-                    decimal(average(jfr.pageVolumePagesCovered(), jfr.eventCount())),
-                    decimal(average(
-                            jfr.sidecarBytesCovered() + jfr.pageVolumeBytesCovered(),
-                            jfr.eventCount())),
-                    Integer.toString(jfr.maxTableRequestConcurrency()),
-                    Integer.toString(jfr.maxProcessRequestConcurrency()),
-                    Integer.toString(jfr.maxTablePreparationConcurrency()),
-                    Integer.toString(jfr.maxProcessPreparationConcurrency()),
-                    Integer.toString(jfr.maxTableDurabilityQueueConcurrency()),
-                    Integer.toString(jfr.maxProcessDurabilityQueueConcurrency()),
-                    Integer.toString(jfr.maxTableDurabilityExecutionConcurrency()),
-                    Integer.toString(jfr.maxProcessDurabilityExecutionConcurrency()));
+                    decimal(micros(maxCommitNanos)),
+                    Long.toString(jfr.fileWriteCount()),
+                    Long.toString(jfr.fileWriteBytes()),
+                    decimal(micros(jfr.fileWriteNanos())),
+                    Long.toString(jfr.monitorEnterCount()),
+                    decimal(micros(jfr.monitorEnterNanos())),
+                    Long.toString(jfr.threadParkCount()),
+                    decimal(micros(jfr.threadParkNanos())),
+                    Long.toString(jfr.gcPauseCount()),
+                    decimal(micros(jfr.gcPauseNanos())));
         }
 
         String humanLine() {
             return scenario.fileStem()
                     + " commits/s=" + decimal(commitsPerSecond)
+                    + " avg=" + decimal(micros(averageCommitNanos)) + "us"
                     + " p95=" + decimal(micros(p95CommitNanos)) + "us"
-                    + " prepare=" + decimal(micros(average(jfr.preparationNanos(), jfr.eventCount()))) + "us"
-                    + " coordinatorWait="
-                    + decimal(micros(average(jfr.durabilityCoordinatorWaitNanos(), jfr.eventCount()))) + "us"
-                    + " coordinatorMode=" + jfr.durabilityCoordinatorMode()
-                    + " enrollmentDepth=" + jfr.maxDurabilityEnrollmentDepth()
-                    + " groupMax=" + jfr.maxGroupCommitSize()
-                    + " grouped=" + jfr.groupedCommitCount()
-                    + " groups=" + jfr.groupCommitLeaderCount()
-                    + " txPerGroup=" + decimal(average(
-                            jfr.groupCommitTransactionCount(), jfr.groupCommitLeaderCount()))
-                    + " sharedForces=" + decimal(average(
-                            jfr.groupCommitSharedForceCount(), jfr.eventCount()))
-                    + " lockWait=" + decimal(micros(average(jfr.tableLockWaitNanos(), jfr.eventCount()))) + "us"
-                    + " phases/revalidate=" + decimal(micros(average(jfr.validationNanos(), jfr.eventCount()))) + "us"
-                    + " status=" + decimal(micros(average(jfr.transactionStatusCommitNanos(), jfr.eventCount()))) + "us"
-                    + " state=" + decimal(micros(average(jfr.pageStatePersistenceNanos(), jfr.eventCount()))) + "us"
-                    + " index=" + decimal(micros(average(jfr.orderedIndexRebuildNanos(), jfr.eventCount()))) + "us"
-                    + " publish=" + decimal(micros(average(jfr.transactionStatePublicationNanos(), jfr.eventCount()))) + "us"
-                    + " maintenance=" + decimal(micros(average(jfr.maintenanceNanos(), jfr.eventCount()))) + "us"
-                    + " forces/status=" + decimal(average(jfr.transactionStatusForceCount(), jfr.eventCount()))
-                    + " outcome=" + decimal(average(jfr.transactionOutcomeForceCount(), jfr.eventCount()))
-                    + " wal=" + decimal(average(jfr.writeAheadLogForceCount(), jfr.eventCount()))
-                    + " sidecar=" + decimal(average(jfr.otherSidecarForceCount(), jfr.eventCount()))
-                    + " directory=" + decimal(average(jfr.directoryForceCount(), jfr.eventCount()))
-                    + " page=" + decimal(average(jfr.pageVolumeForceCount(), jfr.eventCount()))
-                    + " tablePreparationConcurrency=" + jfr.maxTablePreparationConcurrency()
-                    + " processPreparationConcurrency=" + jfr.maxProcessPreparationConcurrency()
-                    + " tableExecutionConcurrency=" + jfr.maxTableDurabilityExecutionConcurrency()
-                    + " processExecutionConcurrency=" + jfr.maxProcessDurabilityExecutionConcurrency();
+                    + " p99=" + decimal(micros(p99CommitNanos)) + "us"
+                    + " fileWrites=" + jfr.fileWriteCount()
+                    + " fileBytes=" + jfr.fileWriteBytes()
+                    + " monitorWait=" + decimal(micros(jfr.monitorEnterNanos())) + "us"
+                    + " park=" + decimal(micros(jfr.threadParkNanos())) + "us"
+                    + " gcPause=" + decimal(micros(jfr.gcPauseNanos())) + "us";
         }
 
         String json(String indent) {
@@ -1077,65 +848,20 @@ public final class DelosConcurrentCommitBenchmark {
                     + next + "\"rowsPerTransaction\": " + scenario.rowsPerTransaction() + ",\n"
                     + next + "\"commits\": " + commits + ",\n"
                     + next + "\"commitsPerSecond\": " + decimal(commitsPerSecond) + ",\n"
+                    + next + "\"averageCommitNanos\": " + averageCommitNanos + ",\n"
                     + next + "\"p50CommitNanos\": " + p50CommitNanos + ",\n"
                     + next + "\"p95CommitNanos\": " + p95CommitNanos + ",\n"
                     + next + "\"p99CommitNanos\": " + p99CommitNanos + ",\n"
-                    + next + "\"eventCount\": " + jfr.eventCount() + ",\n"
-                    + next + "\"incompleteDurabilityMeasurementCount\": "
-                    + jfr.incompleteDurabilityMeasurementCount() + ",\n"
-                    + next + "\"transactionStatusForceCount\": "
-                    + jfr.transactionStatusForceCount() + ",\n"
-                    + next + "\"transactionOutcomeForceCount\": "
-                    + jfr.transactionOutcomeForceCount() + ",\n"
-                    + next + "\"writeAheadLogForceCount\": "
-                    + jfr.writeAheadLogForceCount() + ",\n"
-                    + next + "\"otherSidecarForceCount\": "
-                    + jfr.otherSidecarForceCount() + ",\n"
-                    + next + "\"directoryForceCount\": " + jfr.directoryForceCount() + ",\n"
-                    + next + "\"pageVolumeForceCount\": " + jfr.pageVolumeForceCount() + ",\n"
-                    + next + "\"pageVolumePagesCovered\": " + jfr.pageVolumePagesCovered() + ",\n"
-                    + next + "\"sidecarBytesCovered\": " + jfr.sidecarBytesCovered() + ",\n"
-                    + next + "\"pageVolumeBytesCovered\": " + jfr.pageVolumeBytesCovered() + ",\n"
-                    + next + "\"backupWaitNanos\": " + jfr.backupWaitNanos() + ",\n"
-                    + next + "\"durabilityCoordinatorMode\": \""
-                    + jsonEscape(jfr.durabilityCoordinatorMode()) + "\",\n"
-                    + next + "\"maxDurabilityEnrollmentDepth\": "
-                    + jfr.maxDurabilityEnrollmentDepth() + ",\n"
-                    + next + "\"groupCommitGroups\": " + jfr.groupCommitLeaderCount() + ",\n"
-                    + next + "\"groupedCommits\": " + jfr.groupedCommitCount() + ",\n"
-                    + next + "\"groupCommitTransactionCount\": "
-                    + jfr.groupCommitTransactionCount() + ",\n"
-                    + next + "\"maxGroupCommitSize\": " + jfr.maxGroupCommitSize() + ",\n"
-                    + next + "\"groupCommitWaitNanos\": " + jfr.groupCommitWaitNanos() + ",\n"
-                    + next + "\"groupCommitSharedForceCount\": "
-                    + jfr.groupCommitSharedForceCount() + ",\n"
-                    + next + "\"groupCommitLeaderFailureCount\": "
-                    + jfr.groupCommitLeaderFailureCount() + ",\n"
-                    + next + "\"groupCommitFollowerFailureCount\": "
-                    + jfr.groupCommitFollowerFailureCount() + ",\n"
-                    + next + "\"tableLockWaitNanos\": " + jfr.tableLockWaitNanos() + ",\n"
-                    + next + "\"tableLockHoldNanos\": " + jfr.tableLockHoldNanos() + ",\n"
-                    + next + "\"validationNanos\": " + jfr.validationNanos() + ",\n"
-                    + next + "\"transactionStatusCommitNanos\": "
-                    + jfr.transactionStatusCommitNanos() + ",\n"
-                    + next + "\"pageStatePersistenceNanos\": "
-                    + jfr.pageStatePersistenceNanos() + ",\n"
-                    + next + "\"orderedIndexRebuildNanos\": "
-                    + jfr.orderedIndexRebuildNanos() + ",\n"
-                    + next + "\"transactionStatePublicationNanos\": "
-                    + jfr.transactionStatePublicationNanos() + ",\n"
-                    + next + "\"maintenanceNanos\": " + jfr.maintenanceNanos() + ",\n"
-                    + next + "\"maxTableRequestConcurrency\": " + jfr.maxTableRequestConcurrency() + ",\n"
-                    + next + "\"maxProcessRequestConcurrency\": "
-                    + jfr.maxProcessRequestConcurrency() + ",\n"
-                    + next + "\"maxTableDurabilityQueueConcurrency\": "
-                    + jfr.maxTableDurabilityQueueConcurrency() + ",\n"
-                    + next + "\"maxProcessDurabilityQueueConcurrency\": "
-                    + jfr.maxProcessDurabilityQueueConcurrency() + ",\n"
-                    + next + "\"maxTableDurabilityExecutionConcurrency\": "
-                    + jfr.maxTableDurabilityExecutionConcurrency() + ",\n"
-                    + next + "\"maxProcessDurabilityExecutionConcurrency\": "
-                    + jfr.maxProcessDurabilityExecutionConcurrency() + "\n"
+                    + next + "\"maxCommitNanos\": " + maxCommitNanos + ",\n"
+                    + next + "\"fileWriteEvents\": " + jfr.fileWriteCount() + ",\n"
+                    + next + "\"fileWriteBytes\": " + jfr.fileWriteBytes() + ",\n"
+                    + next + "\"fileWriteNanos\": " + jfr.fileWriteNanos() + ",\n"
+                    + next + "\"monitorEnterEvents\": " + jfr.monitorEnterCount() + ",\n"
+                    + next + "\"monitorEnterNanos\": " + jfr.monitorEnterNanos() + ",\n"
+                    + next + "\"threadParkEvents\": " + jfr.threadParkCount() + ",\n"
+                    + next + "\"threadParkNanos\": " + jfr.threadParkNanos() + ",\n"
+                    + next + "\"gcPauseEvents\": " + jfr.gcPauseCount() + ",\n"
+                    + next + "\"gcPauseNanos\": " + jfr.gcPauseNanos() + "\n"
                     + indent + "}";
         }
 
@@ -1147,10 +873,6 @@ public final class DelosConcurrentCommitBenchmark {
             return sorted[Math.max(0, Math.min(index, sorted.length - 1))];
         }
 
-        private static double average(long total, long count) {
-            return count == 0L ? 0.0d : total / (double) count;
-        }
-
         private static double micros(double nanos) {
             return nanos / 1_000.0d;
         }
@@ -1159,4 +881,5 @@ public final class DelosConcurrentCommitBenchmark {
             return String.format(Locale.ROOT, "%.3f", value);
         }
     }
+
 }

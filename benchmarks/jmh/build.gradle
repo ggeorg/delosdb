@@ -168,8 +168,12 @@ if (expectedBenchmarkNames.isEmpty()) {
                     + configuredIncludeExpression)
 }
 final List<String> configuredProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
+final String jmhUnsafeCompatibilityArg = '--sun-misc-unsafe-memory-access=allow'
 final List<String> configuredJvmArgs = doubleSemicolonProperty(
         project, 'delosdb.jmh.jvmArgs', [])
+final List<String> effectiveJmhJvmArgs = configuredJvmArgs.any {
+    it.startsWith('--sun-misc-unsafe-memory-access=')
+} ? configuredJvmArgs : [jmhUnsafeCompatibilityArg] + configuredJvmArgs
 
 // Plugin 0.7.3 models benchmarkParameters as
 // MapProperty<String, ListProperty<String>>. Keep provider-backed parameter
@@ -243,7 +247,7 @@ jmh {
     resultsFile = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
     humanOutputFile = layout.buildDirectory.file('reports/jmh/human.txt').get().asFile
     profilers = configuredProfilers
-    jvmArgsAppend = configuredJvmArgs
+    jvmArgsAppend = effectiveJmhJvmArgs
     includeTests = false
     duplicateClassesStrategy = DuplicatesStrategy.FAIL
     benchmarkParameters = [
@@ -423,7 +427,7 @@ tasks.register('writeConcurrentCommitRunManifest') {
 
 tasks.register('runConcurrentCommitBenchmark', JavaExec) {
     group = 'benchmark'
-    description = 'Measures concurrent MVCC commit throughput, latency, lock waits, and durability forces.'
+    description = 'Measures concurrent MVCC commit throughput, latency, file writes, and JVM contention.'
     dependsOn tasks.named('compileConcurrentCommitJava'), tasks.named('writeConcurrentCommitRunManifest')
     classpath = sourceSets.concurrentCommit.runtimeClasspath
     mainClass = 'io.github.ggeorg.delosdb.benchmark.concurrent.DelosConcurrentCommitBenchmark'
@@ -496,7 +500,7 @@ tasks.register('writeJmhRunManifest') {
     inputs.property('commitBatchSizes', commitBatchSizes)
     inputs.property('includes', configuredIncludes)
     inputs.property('profilers', configuredProfilers)
-    inputs.property('jvmArgs', configuredJvmArgs)
+    inputs.property('jvmArgs', effectiveJmhJvmArgs)
     inputs.property('warmupIterations', configuredWarmupIterations)
     inputs.property('measurementIterations', configuredMeasurementIterations)
     inputs.property('warmupTime', configuredWarmupTime)
@@ -521,7 +525,7 @@ tasks.register('writeJmhRunManifest') {
             writer.println('Fixture commit batches: ' + commitBatchSizes)
             writer.println('Includes: ' + configuredIncludes)
             writer.println('Profilers: ' + configuredProfilers)
-            writer.println('JVM args: ' + configuredJvmArgs)
+            writer.println('JVM args: ' + effectiveJmhJvmArgs)
             writer.println('Warmup iterations: '
                     + configuredWarmupIterations)
             writer.println('Measurement iterations: '
@@ -545,6 +549,12 @@ tasks.register('writeJmhRunManifest') {
                 writer.println('  ' + relative + ' size=' + input.length() + ' sha256=' + sha256(input))
             }
         }
+    }
+}
+
+tasks.withType(JavaExec).configureEach {
+    if (name == 'jmh') {
+        jvmArgs(jmhUnsafeCompatibilityArg)
     }
 }
 
