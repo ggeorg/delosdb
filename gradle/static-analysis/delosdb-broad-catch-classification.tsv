@@ -129,7 +129,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/stream/RollingFileSt
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java	DataDictionaryImpl	getDescriptorViaIndexMinion	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/AggregateNode.java	AggregateNode	instantiateAggDef	Throwable	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/AggregateNode.java	AggregateNode	instantiateAggDef	Throwable	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
-delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java	FromBaseTable	providerName	RuntimeException	1	LEGACY_COMPATIBILITY	OPTIONAL_COMPONENT_COMPATIBILITY
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getDeferralControl	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getNewInstance	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromVTI.java	FromVTI	getResultSetMetaData	Throwable	1	REQUIRED_BOUNDARY_CATCH	EXTERNAL_PROVIDER_OR_USER_CODE_BOUNDARY
