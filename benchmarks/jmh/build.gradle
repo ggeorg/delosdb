@@ -150,11 +150,15 @@ final String benchmarkClassName =
         'io.github.ggeorg.delosdb.benchmark.jmh.DelosJdbcJmhBenchmark'
 final List<String> benchmarkMethodNames = [
         'aggregate',
+        'compositeRangeCoveredScan',
         'compositeRangeScan',
         'fullScan',
+        'primaryKeyCoveredLookup',
         'primaryKeyLookup',
         'readTransactionCommit',
         'readTransactionRollback',
+        'secondaryEqualityCoveredCount',
+        'secondaryEqualityCoveredLookup',
         'secondaryEqualityLookup'
 ]
 final Pattern configuredIncludePattern = regexProperty(

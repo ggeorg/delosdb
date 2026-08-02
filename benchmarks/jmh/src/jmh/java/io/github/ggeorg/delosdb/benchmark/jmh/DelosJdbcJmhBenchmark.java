@@ -29,13 +29,33 @@ public class DelosJdbcJmhBenchmark {
     }
 
     @Benchmark
+    public long primaryKeyCoveredLookup(DelosJdbcJmhState state) throws SQLException {
+        return state.primaryKeyCoveredLookup();
+    }
+
+    @Benchmark
     public long secondaryEqualityLookup(DelosJdbcJmhState state) throws SQLException {
         return state.secondaryEqualityLookup();
     }
 
     @Benchmark
+    public long secondaryEqualityCoveredLookup(DelosJdbcJmhState state) throws SQLException {
+        return state.secondaryEqualityCoveredLookup();
+    }
+
+    @Benchmark
+    public long secondaryEqualityCoveredCount(DelosJdbcJmhState state) throws SQLException {
+        return state.secondaryEqualityCoveredCount();
+    }
+
+    @Benchmark
     public long compositeRangeScan(DelosJdbcJmhState state) throws SQLException {
         return state.compositeRangeScan();
+    }
+
+    @Benchmark
+    public long compositeRangeCoveredScan(DelosJdbcJmhState state) throws SQLException {
+        return state.compositeRangeCoveredScan();
     }
 
     @Benchmark

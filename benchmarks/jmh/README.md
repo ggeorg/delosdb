@@ -11,9 +11,10 @@ API.
 
 The benchmark matrix contains:
 
-- prepared primary-key lookup;
-- prepared secondary-index equality lookup;
-- prepared composite range scan;
+- prepared primary-key lookup and a key-only covered projection;
+- prepared secondary-index equality lookup, a key-only covered projection,
+  and a covered `count(*)` shape;
+- prepared composite range scan and a projection covered by the composite key;
 - prepared full scan;
 - prepared aggregate;
 - one-row read transaction followed by commit;
@@ -28,6 +29,14 @@ initial semantic verification occur outside measurement. Every measured read
 also validates its deterministic result fingerprint. Read operations execute
 repeatedly inside the iteration transaction; iteration rollback remains outside
 the measured read method.
+
+The `*Covered*` names describe the SQL shape: every projected and residual
+qualifier column is present in the selected Derby index. They do not assert that
+every provider already executes an index-only plan. Heap currently has an
+inherited covering-index path; MVCC still resolves candidates through its
+stable row directory and authoritative version chain. The paired covered and
+non-covered methods establish the evidence needed before changing that MVCC
+path.
 
 Mutating SQL operations remain in the JUnit benchmark lane until restoration can
 be represented without hiding work inside a JMH invocation boundary. Low-level
@@ -63,6 +72,30 @@ From the repository root:
   -Pdelosdb.jmh.iterationTime=250ms \
   -Pdelosdb.jmh.forks=1
 ```
+
+## Focused covering-scan comparison
+
+Run the covered shapes beside their non-covered controls:
+
+```bash
+./gradlew -p benchmarks/jmh clean jmh \
+  '-Pdelosdb.jmh.includes=.*(primaryKeyLookup|primaryKeyCoveredLookup|secondaryEqualityLookup|secondaryEqualityCoveredLookup|secondaryEqualityCoveredCount|compositeRangeScan|compositeRangeCoveredScan)' \
+  -Pdelosdb.jmh.providers=heap,mvcc \
+  -Pdelosdb.jmh.rows=1000 \
+  -Pdelosdb.jmh.payloadSizes=128,4096 \
+  -Pdelosdb.jmh.commitBatchSizes=100 \
+  -Pdelosdb.jmh.warmupIterations=5 \
+  -Pdelosdb.jmh.iterations=10 \
+  -Pdelosdb.jmh.warmupTime=1s \
+  -Pdelosdb.jmh.iterationTime=1s \
+  -Pdelosdb.jmh.forks=2
+```
+
+Interpret each pair rather than comparing unrelated methods. The primary and
+secondary pairs isolate the cost removed when only the indexed key is needed.
+The composite pair measures a projection and residual range predicate fully
+represented by `(bucket, quantity)`. The covered count shape removes JDBC row
+materialization while retaining candidate traversal and MVCC visibility work.
 
 ## Bounded standalone run
 
