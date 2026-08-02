@@ -56,6 +56,9 @@ final class DelosBenchmarkSupport {
             failure = rollbackOpenConnection(connection, failure);
             failure = closeConnection(connection, failure);
         }
+        if (Files.exists(database)) {
+            failure = shutdownEmbeddedDatabase(database, failure);
+        }
         try {
             deleteRecursively(database);
         } catch (Throwable cleanupFailure) {
@@ -109,6 +112,24 @@ final class DelosBenchmarkSupport {
             return preserve(primaryFailure, cleanupFailure);
         }
         return primaryFailure;
+    }
+
+    private static Throwable shutdownEmbeddedDatabase(
+            Path database,
+            Throwable primaryFailure) {
+        try {
+            DriverManager.getConnection("jdbc:derby:" + database + ";shutdown=true");
+            return preserve(primaryFailure, new IllegalStateException(
+                    "Embedded database shutdown completed without Derby SQLState 08006: "
+                            + database));
+        } catch (SQLException expectedShutdown) {
+            if ("08006".equals(expectedShutdown.getSQLState())) {
+                return primaryFailure;
+            }
+            return preserve(primaryFailure, expectedShutdown);
+        } catch (Throwable cleanupFailure) {
+            return preserve(primaryFailure, cleanupFailure);
+        }
     }
 
     private static Throwable preserve(Throwable first, Throwable next) {
