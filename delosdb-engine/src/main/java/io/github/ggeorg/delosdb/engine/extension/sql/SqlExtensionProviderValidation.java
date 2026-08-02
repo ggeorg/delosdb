@@ -3,26 +3,23 @@ package io.github.ggeorg.delosdb.engine.extension.sql;
 import io.github.ggeorg.delosdb.engine.extension.ExtensionResolutionException;
 import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
 import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderResolver;
-import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
-import io.github.ggeorg.delosdb.engine.extension.storage.StorageProviderResolver;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
+import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import java.util.Locale;
 
 /**
- * Central validation for the small DelosDB SQL extension surface.
+ * Central validation for the DelosDB SQL provider clauses.
  *
- * <p>v0 deliberately supports only built-in providers. The parser accepts the
- * optional provider clauses, but binding must keep Derby behavior unchanged by
- * resolving omitted providers to the built-in defaults and rejecting unknown
- * names before any physical storage/index work is attempted.</p>
+ * <p>Index providers resolve through the executable index-provider registry.
+ * Table storage uses the catalog identities owned by the Derby heap and the
+ * DelosDB MVCC access-method bridge.</p>
  */
 @InternalApi
 public final class SqlExtensionProviderValidation {
-    private static final String DELOS_MVCC_STORAGE_PROVIDER = "delos_mvcc";
-
     private SqlExtensionProviderValidation() {
     }
 
@@ -31,7 +28,7 @@ public final class SqlExtensionProviderValidation {
     }
 
     public static String normalizeStorageProviderName(String providerName) {
-        return normalizeProviderName(providerName, BuiltInStorageProviders.defaultProviderName());
+        return normalizeProviderName(providerName, TableDescriptor.DEFAULT_STORAGE_PROVIDER_NAME);
     }
 
     public static void requireIndexProvider(String providerName) throws StandardException {
@@ -48,15 +45,11 @@ public final class SqlExtensionProviderValidation {
 
     public static void requireStorageProvider(String providerName) throws StandardException {
         String normalizedName = normalizeStorageProviderName(providerName);
-        try {
-            StorageProviderResolver.builtIns().requireEnabled(normalizedName);
+        if (TableDescriptor.DEFAULT_STORAGE_PROVIDER_NAME.equals(normalizedName)
+                || DelosStorageProviderIds.MVCC_PROVIDER_ID.equals(normalizedName)) {
             return;
-        } catch (ExtensionResolutionException e) {
-            if (isKnownBridgeStorageProvider(normalizedName)) {
-                return;
-            }
-            throw unsupportedProvider("CREATE TABLE", normalizedName);
         }
+        throw unsupportedProvider("CREATE TABLE", normalizedName);
     }
 
     private static String normalizeProviderName(String providerName, String defaultProviderName) {
@@ -66,16 +59,9 @@ public final class SqlExtensionProviderValidation {
         return providerName.toLowerCase(Locale.ROOT);
     }
 
-    private static boolean isKnownBridgeStorageProvider(String providerName) {
-        // SQL binding recognizes reserved bridge provider names here; actual table
-        // state and provider dispatch are owned by the Derby store/access bridge.
-        return DELOS_MVCC_STORAGE_PROVIDER.equals(providerName);
-    }
-
     private static StandardException unsupportedProvider(String statementName, String providerName) {
         return StandardException.newException(
                 SQLState.NOT_IMPLEMENTED,
                 statementName + " USING " + providerName);
     }
-
 }

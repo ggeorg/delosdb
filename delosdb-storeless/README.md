@@ -10,9 +10,9 @@ Current status:
 - resource-gated by `:delosdb-storeless:processStorelessResources`
 - smoke-gated by `:delosdb-storeless:storelessPrototypeSmoke`
 - not a public SPI
-- not a `StorageProvider` implementation yet
+- not connected to a physical storage access method
 - not packaged as a runtime module
 
 The intended direction is no-store compiler/planner research and, later, a
-possible bridge toward experimental storage-provider work. Until that bridge is
+possible bridge toward experimental storage research. Until that bridge is
 designed, this module must remain explicitly experimental and isolated.

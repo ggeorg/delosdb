@@ -58,7 +58,7 @@ import java.io.IOException;
 	not execute ModuleControl methods for a PersistentService.
 */
 
-@LegacyInternal("Inherited Derby persistent-service contract; future StorageProvider SPI must bridge above it.")
+@LegacyInternal("Inherited Derby persistent-service contract; storage extensions must remain above it.")
 public interface PersistentService {
 
 	/**

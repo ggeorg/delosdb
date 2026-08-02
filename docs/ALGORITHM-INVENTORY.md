@@ -603,7 +603,7 @@ Current DelosDB seams:
 * `CostModelDiagnostics` through `DelosOptimizerStorageCostOptInDiagnostics`
 * `DelosStorageCostIntegration`
 * `CostModelProvider` and `StoreCostControllerBridge`
-* legacy `IndexProviderCostMode` diagnostics
+* native `CostModelProvider` diagnostics through `StoreCostControllerBridge`
 * `optimizerAuthority=derby` analyze/statistics lifecycle marker
 
 Reference models:

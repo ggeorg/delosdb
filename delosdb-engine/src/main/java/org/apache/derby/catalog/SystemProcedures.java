@@ -34,9 +34,6 @@ import java.sql.SQLException;
 import org.apache.derby.iapi.store.access.DelosStoreCostTuning;
 import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.StringTokenizer;
@@ -76,10 +73,6 @@ import org.apache.derby.impl.sql.execute.JarUtil;
 import org.apache.derby.iapi.jdbc.InternalDriver;
 import org.apache.derby.iapi.store.access.TransactionController;
 
-import io.github.ggeorg.delosdb.engine.extension.BuiltInExtensions;
-import io.github.ggeorg.delosdb.engine.extension.ExtensionDescriptor;
-import io.github.ggeorg.delosdb.engine.extension.type.BuiltInTypeProviders;
-import io.github.ggeorg.delosdb.spi.type.TypeProvider;
 import org.apache.derby.iapi.sql.dictionary.AliasDescriptor;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.DataDescriptorGenerator;
@@ -101,7 +94,7 @@ import org.apache.derby.shared.common.error.MessageUtils;
 	Also used for builtin-routines, such as SYSFUN functions, when direct calls
 	into Java libraries cannot be made.
 */
-@LegacyInternal("Inherited Derby system routine host with DelosDB built-ins; public extension visibility must remain through SQL functions/procedures.")
+@LegacyInternal("Inherited Derby system routine host with DelosDB storage-cost controls.")
 public class SystemProcedures  {
 
 
@@ -2793,71 +2786,6 @@ public class SystemProcedures  {
         try {
             return( getMonitor().getCanonicalServiceName( lcc.getDbname() ) );
         } catch (StandardException se) { throw PublicAPI.wrapStandardException(se); }
-    }
-
-    /**
-     * Return a compact, SQL-visible list of built-in DelosDB extension
-     * providers. This is deliberately read-only and diagnostic in v0; it does
-     * not perform provider discovery or expose mutable plugin state.
-     *
-     * @return newline-separated provider descriptors
-     */
-    public static String DELOSDB_EXTENSIONS()
-    {
-        List<ExtensionDescriptor> descriptors = BuiltInExtensions.newRegistryWithBuiltIns()
-                .descriptors()
-                .stream()
-                .sorted(Comparator
-                        .comparing((ExtensionDescriptor descriptor) -> descriptor.type().name())
-                        .thenComparing(ExtensionDescriptor::name))
-                .toList();
-
-        StringBuilder summary = new StringBuilder();
-        for (ExtensionDescriptor descriptor : descriptors) {
-            if (summary.length() > 0) {
-                summary.append('\n');
-            }
-            summary.append(descriptor.type().name().toLowerCase(Locale.ROOT))
-                    .append(' ')
-                    .append(descriptor.name())
-                    .append(' ')
-                    .append(descriptor.state().name().toLowerCase(Locale.ROOT));
-        }
-        return summary.toString();
-    }
-
-    /**
-     * Return a compact, SQL-visible list of SQL type metadata known to the
-     * built-in DelosDB TypeProvider. TypeProvider v0 is metadata-only; this
-     * routine is a diagnostic catalog view, not a hook for parser, binder, or
-     * storage-format behavior.
-     *
-     * @return newline-separated type descriptors
-     */
-    public static String DELOSDB_TYPES()
-    {
-        TypeProvider provider = BuiltInTypeProviders.derby();
-
-        StringBuilder summary = new StringBuilder();
-        provider.types().stream()
-                .sorted(Comparator.comparing(type -> type.typeName()))
-                .forEach(type -> {
-                    if (summary.length() > 0) {
-                        summary.append('\n');
-                    }
-                    summary.append(provider.name())
-                            .append(' ')
-                            .append(type.typeName())
-                            .append(" jdbc=")
-                            .append(type.jdbcTypeName())
-                            .append(" java=")
-                            .append(type.javaTypeName())
-                            .append(" nullable=")
-                            .append(type.nullable())
-                            .append(" comparable=")
-                            .append(type.comparable());
-                });
-        return summary.toString();
     }
 
     /**

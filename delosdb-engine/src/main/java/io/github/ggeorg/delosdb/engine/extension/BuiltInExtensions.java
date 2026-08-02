@@ -1,94 +1,29 @@
 package io.github.ggeorg.delosdb.engine.extension;
 
-import io.github.ggeorg.delosdb.engine.extension.cost.BuiltInCostModelProviders;
 import io.github.ggeorg.delosdb.engine.extension.cost.CostModelProvider;
-import io.github.ggeorg.delosdb.engine.extension.function.BuiltInFunctionProviders;
-import io.github.ggeorg.delosdb.engine.extension.index.BuiltInIndexProviders;
-import io.github.ggeorg.delosdb.engine.extension.storage.BuiltInStorageProviders;
-import io.github.ggeorg.delosdb.engine.extension.type.BuiltInTypeProviders;
 import io.github.ggeorg.delosdb.spi.annotation.InternalApi;
 import io.github.ggeorg.delosdb.spi.index.IndexCapabilities;
 import io.github.ggeorg.delosdb.spi.index.IndexMetadata;
 import io.github.ggeorg.delosdb.spi.index.IndexProvider;
-import io.github.ggeorg.delosdb.spi.function.FunctionCapabilities;
-import io.github.ggeorg.delosdb.spi.function.FunctionProvider;
-import io.github.ggeorg.delosdb.spi.storage.StorageCapabilities;
-import io.github.ggeorg.delosdb.spi.storage.StorageProvider;
-import io.github.ggeorg.delosdb.spi.type.TypeCapabilities;
-import io.github.ggeorg.delosdb.spi.type.TypeProvider;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Internal registration point for DelosDB providers that are built into the
- * current engine implementation.
- *
- * <p>This class records provider identity only. It does not expose Derby
- * storage, optimizer, or monitor classes as public SPI.</p>
+ * Internal descriptor factory for the provider families that participate in
+ * executable DelosDB runtime paths.
  */
 @InternalApi
 public final class BuiltInExtensions {
     public static final String BUILTIN_VERSION = "builtin";
     public static final String BTREE_INDEX_PROVIDER = "btree";
-    public static final String MEMORY_INDEX_PROVIDER = "memory";
     public static final String DEFAULT_INDEX_PROVIDER = BTREE_INDEX_PROVIDER;
-    public static final String HEAP_STORAGE_PROVIDER = "heap";
-    public static final String DEFAULT_STORAGE_PROVIDER = HEAP_STORAGE_PROVIDER;
-    public static final String BUILTIN_FUNCTION_PROVIDER = "delos";
-    public static final String DEFAULT_FUNCTION_PROVIDER = BUILTIN_FUNCTION_PROVIDER;
     public static final String HEAP_COST_MODEL_PROVIDER = "heap";
     public static final String BTREE_COST_MODEL_PROVIDER = "btree";
-    public static final String BUILTIN_COST_MODEL_PROVIDER = BTREE_COST_MODEL_PROVIDER;
-    public static final String DEFAULT_COST_MODEL_PROVIDER = BUILTIN_COST_MODEL_PROVIDER;
-    public static final String BUILTIN_TYPE_PROVIDER = "derby";
-    public static final String DEFAULT_TYPE_PROVIDER = BUILTIN_TYPE_PROVIDER;
+    public static final String DEFAULT_COST_MODEL_PROVIDER = BTREE_COST_MODEL_PROVIDER;
 
     private BuiltInExtensions() {
-    }
-
-    public static void registerBuiltIns(ExtensionRegistry registry) {
-        Objects.requireNonNull(registry, "registry");
-        BuiltInIndexProviders.all().forEach(provider -> registry.register(indexProviderDescriptor(provider)));
-        BuiltInStorageProviders.all().forEach(provider -> registry.register(storageProviderDescriptor(provider)));
-        BuiltInFunctionProviders.all().forEach(provider -> registry.register(functionProviderDescriptor(provider)));
-        BuiltInCostModelProviders.all().forEach(provider -> registry.register(costModelProviderDescriptor(provider)));
-        BuiltInTypeProviders.all().forEach(provider -> registry.register(typeProviderDescriptor(provider)));
-    }
-
-    public static InMemoryExtensionRegistry newRegistryWithBuiltIns() {
-        InMemoryExtensionRegistry registry = new InMemoryExtensionRegistry();
-        registerBuiltIns(registry);
-        return registry;
-    }
-
-    public static ExtensionDescriptor btreeIndexProvider() {
-        return indexProviderDescriptor(BuiltInIndexProviders.btree());
-    }
-
-    public static ExtensionDescriptor memoryIndexProvider() {
-        return indexProviderDescriptor(BuiltInIndexProviders.memory());
-    }
-
-    public static ExtensionDescriptor heapStorageProvider() {
-        return storageProviderDescriptor(BuiltInStorageProviders.heap());
-    }
-
-    public static ExtensionDescriptor builtinFunctionProvider() {
-        return functionProviderDescriptor(BuiltInFunctionProviders.builtin());
-    }
-
-    public static ExtensionDescriptor heapCostModelProvider() {
-        return costModelProviderDescriptor(BuiltInCostModelProviders.heap());
-    }
-
-    public static ExtensionDescriptor btreeCostModelProvider() {
-        return costModelProviderDescriptor(BuiltInCostModelProviders.btree());
-    }
-
-    public static ExtensionDescriptor derbyTypeProvider() {
-        return typeProviderDescriptor(BuiltInTypeProviders.derby());
     }
 
     public static ExtensionDescriptor indexProviderDescriptor(IndexProvider provider) {
@@ -109,51 +44,7 @@ public final class BuiltInExtensions {
                 ExtensionType.INDEX,
                 provider.name(),
                 version,
-                capabilityNames(provider.capabilities(metadata), defaultProvider)
-        );
-    }
-
-    public static ExtensionDescriptor storageProviderDescriptor(StorageProvider provider) {
-        Objects.requireNonNull(provider, "provider");
-        return storageProviderDescriptor(
-                provider,
-                BUILTIN_VERSION,
-                DEFAULT_STORAGE_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
-    }
-
-    public static ExtensionDescriptor storageProviderDescriptor(
-            StorageProvider provider,
-            String version,
-            boolean defaultProvider) {
-        Objects.requireNonNull(provider, "provider");
-        return ExtensionDescriptor.enabled(
-                ExtensionType.STORAGE,
-                provider.name(),
-                version,
-                storageCapabilityNames(provider.capabilities(), defaultProvider)
-        );
-    }
-
-
-    public static ExtensionDescriptor functionProviderDescriptor(FunctionProvider provider) {
-        Objects.requireNonNull(provider, "provider");
-        return functionProviderDescriptor(
-                provider,
-                BUILTIN_VERSION,
-                DEFAULT_FUNCTION_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
-    }
-
-    public static ExtensionDescriptor functionProviderDescriptor(
-            FunctionProvider provider,
-            String version,
-            boolean defaultProvider) {
-        Objects.requireNonNull(provider, "provider");
-        return ExtensionDescriptor.enabled(
-                ExtensionType.FUNCTION,
-                provider.name(),
-                version,
-                functionCapabilityNames(provider.capabilities(), defaultProvider, !provider.functions().isEmpty())
-        );
+                capabilityNames(provider.capabilities(metadata), defaultProvider));
     }
 
     public static ExtensionDescriptor costModelProviderDescriptor(CostModelProvider provider) {
@@ -173,30 +64,7 @@ public final class BuiltInExtensions {
                 ExtensionType.COST_MODEL,
                 provider.name(),
                 version,
-                costModelCapabilityNames(provider, defaultProvider)
-        );
-    }
-
-
-    public static ExtensionDescriptor typeProviderDescriptor(TypeProvider provider) {
-        Objects.requireNonNull(provider, "provider");
-        return typeProviderDescriptor(
-                provider,
-                BUILTIN_VERSION,
-                DEFAULT_TYPE_PROVIDER.equals(ExtensionDescriptor.normalizeName(provider.name())));
-    }
-
-    public static ExtensionDescriptor typeProviderDescriptor(
-            TypeProvider provider,
-            String version,
-            boolean defaultProvider) {
-        Objects.requireNonNull(provider, "provider");
-        return ExtensionDescriptor.enabled(
-                ExtensionType.TYPE,
-                provider.name(),
-                version,
-                typeCapabilityNames(provider.capabilities(), defaultProvider, !provider.types().isEmpty())
-        );
+                costModelCapabilityNames(provider, defaultProvider));
     }
 
     private static List<String> capabilityNames(IndexCapabilities capabilities, boolean defaultProvider) {
@@ -223,27 +91,9 @@ public final class BuiltInExtensions {
         return List.copyOf(names);
     }
 
-    private static List<String> storageCapabilityNames(StorageCapabilities capabilities, boolean defaultProvider) {
-        Objects.requireNonNull(capabilities, "capabilities");
-        List<String> names = new ArrayList<>();
-        if (defaultProvider) {
-            names.add("default-storage-provider");
-        }
-        if (capabilities.rowStore()) {
-            names.add("row-store");
-        }
-        if (capabilities.transactional()) {
-            names.add("transactional");
-        }
-        if (capabilities.derbyHeapCompatible()) {
-            names.add("derby-heap-compatible");
-            names.add("legacy-derby-store");
-        }
-        return List.copyOf(names);
-    }
-
-
-    private static List<String> costModelCapabilityNames(CostModelProvider provider, boolean defaultProvider) {
+    private static List<String> costModelCapabilityNames(
+            CostModelProvider provider,
+            boolean defaultProvider) {
         Objects.requireNonNull(provider, "provider");
         List<String> names = new ArrayList<>();
         if (defaultProvider) {
@@ -257,58 +107,6 @@ public final class BuiltInExtensions {
             names.add("heap-access-method");
         } else if (provider.accessMethodFactoryId() == 1) {
             names.add("btree-access-method");
-        }
-        return List.copyOf(names);
-    }
-
-
-    private static List<String> typeCapabilityNames(
-            TypeCapabilities capabilities,
-            boolean defaultProvider,
-            boolean hasTypes) {
-        Objects.requireNonNull(capabilities, "capabilities");
-        List<String> names = new ArrayList<>();
-        if (defaultProvider) {
-            names.add("default-type-provider");
-        }
-        if (hasTypes) {
-            names.add("type-metadata");
-        }
-        if (capabilities.builtInCatalogTypes()) {
-            names.add("derby-built-in-types");
-        }
-        if (capabilities.scalarTypes()) {
-            names.add("scalar-types");
-        }
-        if (capabilities.jdbcMetadata()) {
-            names.add("jdbc-metadata");
-        }
-        if (capabilities.comparableTypes()) {
-            names.add("comparable-types");
-        }
-        return List.copyOf(names);
-    }
-
-    private static List<String> functionCapabilityNames(
-            FunctionCapabilities capabilities,
-            boolean defaultProvider,
-            boolean hasFunctions) {
-        Objects.requireNonNull(capabilities, "capabilities");
-        List<String> names = new ArrayList<>();
-        if (defaultProvider) {
-            names.add("default-function-provider");
-        }
-        if (hasFunctions) {
-            names.add("function-metadata");
-        }
-        if (capabilities.scalar()) {
-            names.add("scalar-function");
-        }
-        if (capabilities.deterministic()) {
-            names.add("deterministic");
-        }
-        if (!capabilities.readsSqlData()) {
-            names.add("no-sql-data");
         }
         return List.copyOf(names);
     }

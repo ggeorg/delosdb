@@ -109,7 +109,7 @@ public class DataDescriptorGenerator
 	}
 
 	/**
-	 * Create a table descriptor with DelosDB StorageProvider v0 metadata.
+	 * Create a table descriptor with its DelosDB storage access-method identity.
 	 */
 	public TableDescriptor	newTableDescriptor
 	(

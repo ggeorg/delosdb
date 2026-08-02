@@ -26,7 +26,7 @@ package org.apache.derbyTesting.junit;
  *
  * <p>Derby tests sometimes assert exact row counts in system catalogs. DelosDB
  * intentionally adds a small number of built-in SYSCS_UTIL routines for
- * extension visibility and storage-cost controls. Those routines receive PUBLIC execute permissions and
+ * storage-cost controls. Those routines receive PUBLIC execute permissions and
  * therefore add rows to SYS.SYSROUTINEPERMS. Keep that product delta here so
  * new DelosDB system routines do not require scattered test magic numbers.</p>
  */
@@ -44,11 +44,9 @@ public final class DelosDbTestBaselines
      * <ul>
      *   <li>SYSCS_UTIL.SYSCS_SET_DELOSDB_UNCACHED_ROW_FETCH_COST(double)</li>
      *   <li>SYSCS_UTIL.SYSCS_CLEAR_DELOSDB_UNCACHED_ROW_FETCH_COST()</li>
-     *   <li>SYSCS_UTIL.DELOSDB_EXTENSIONS()</li>
-     *   <li>SYSCS_UTIL.DELOSDB_TYPES()</li>
      * </ul>
      */
-    public static final int EXTRA_SYSTEM_ROUTINE_PERMISSION_ROWS = 4;
+    public static final int EXTRA_SYSTEM_ROUTINE_PERMISSION_ROWS = 2;
 
     public static int withExtraSystemRoutinePermissions(int derbyBaseline)
     {

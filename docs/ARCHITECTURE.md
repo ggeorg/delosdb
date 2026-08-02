@@ -111,7 +111,7 @@ Core production ownership is separated as follows:
 |---|---|
 | `delosdb-commons` | shared compatibility and utility contracts |
 | `delosdb-runtime-api` | neutral runtime-facing APIs |
-| `delosdb-spi` | provider discovery contracts |
+| `delosdb-spi` | provider-neutral external-index contracts |
 | `delosdb-derby-store-api` | neutral storage/access-method contracts |
 | `delosdb-storage-derby` | inherited heap and RawStore implementation |
 | `delosdb-storage-mvcc` | MVCC provider and semantics |

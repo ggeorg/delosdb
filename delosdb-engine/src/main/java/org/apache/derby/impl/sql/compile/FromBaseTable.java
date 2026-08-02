@@ -23,18 +23,13 @@ package	org.apache.derby.impl.sql.compile;
 
 import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
-import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostDiagnostics;
-import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostMode;
-import io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostProbe;
 import org.apache.derby.catalog.IndexDescriptor;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.ClassName;
@@ -114,7 +109,7 @@ import org.apache.derby.impl.sql.catalog.SYSUSERSRowFactory;
  *
  */
 
-@LegacyInternal("Inherited Derby optimizer table node; provider-cost diagnostics touch it only through internal bridge code.")
+@LegacyInternal("Inherited Derby optimizer table node; DelosDB storage hooks remain internal and fail closed.")
 class FromBaseTable extends FromTable
 {
 	static final int UNSET = -1;
@@ -2065,7 +2060,6 @@ class FromBaseTable extends FromTable
 		currentJoinStrategy.putBasePredicates(predList,
 								   baseTableRestrictionList);
 
-        applyIndexProviderCostBridge(cd, costEst);
         return costEst;
 	}
 
@@ -2142,100 +2136,6 @@ class FromBaseTable extends FromTable
         return descriptions;
     }
 
-    /**
-     * Applies the legacy DelosDB index-provider cost diagnostic bridge only
-     * when explicitly requested. The default mode is Derby-compatible and does
-     * not probe the provider layer. Diagnostic and enabled spellings both record
-     * provider estimates without replacing Derby's optimizer cost. Native cost
-     * consumption belongs to CostModelProvider through StoreCostController.
-     */
-    private void applyIndexProviderCostBridge(
-            ConglomerateDescriptor cd,
-            CostEstimate derbyCostEstimate) {
-        IndexProviderCostMode mode = IndexProviderCostMode.fromSystemProperties();
-        if (!mode.probesProviderCost()) {
-            return;
-        }
-        if (cd == null || !cd.isIndex() || derbyCostEstimate == null) {
-            return;
-        }
-
-        String indexName = cd.getConglomerateName();
-        long derbyEstimatedRows = nonNegativeLong(derbyCostEstimate.rowCount());
-        // Keep this bridge side-effect free: do not call baseRowCount() here,
-        // because that API can throw StandardException and provider diagnostics
-        // must never introduce a new checked-exception path into Derby costing.
-        long tableRowCount = derbyEstimatedRows;
-        double derbyCost = nonNegativeDouble(derbyCostEstimate.getEstimatedCost());
-
-        try {
-            Method costProbe = Class.forName(
-                    "io.github.ggeorg.delosdb.engine.extension.index.IndexProviderCostBridge")
-                    .getMethod(
-                            "builtInCostProbeFor",
-                            String.class,
-                            String.class,
-                            IndexDescriptor.class,
-                            long.class,
-                            long.class,
-                            double.class,
-                            boolean.class,
-                            boolean.class,
-                            boolean.class);
-            IndexProviderCostProbe probe = (IndexProviderCostProbe) costProbe.invoke(
-                    null,
-                    mode.name().toLowerCase(Locale.ROOT),
-                    indexName,
-                    cd.getIndexDescriptor(),
-                    tableRowCount,
-                    derbyEstimatedRows,
-                    derbyCost,
-                    false,
-                    false,
-                    false);
-            /*
-             * This bridge is intentionally diagnostic-only. Earlier DelosDB
-             * experiments allowed this optimizer-side hook to replace Derby's
-             * cost estimate. CostModelProvider v2 moved real consumption to the
-             * StoreCostController path, where heap and B-tree are both selected
-             * through the provider resolver. Keeping this hook read-only avoids
-             * two independent provider-cost paths mutating planner state.
-             */
-            IndexProviderCostDiagnostics.record(probe);
-        } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
-            IndexProviderCostDiagnostics.record(IndexProviderCostProbe.unavailable(
-                    mode.name().toLowerCase(Locale.ROOT),
-                    providerName(cd),
-                    indexName,
-                    tableRowCount,
-                    derbyEstimatedRows,
-                    derbyCost,
-                    "provider cost bridge unavailable"));
-        }
-    }
-
-    private static String providerName(ConglomerateDescriptor cd) {
-        try {
-            IndexDescriptor descriptor = cd.getIndexDescriptor();
-            return descriptor == null ? "unknown" : descriptor.indexProviderName();
-        } catch (RuntimeException ignored) {
-            return "unknown";
-        }
-    }
-
-    private static long nonNegativeLong(double value) {
-        if (!Double.isFinite(value) || value <= 0.0d) {
-            return 0L;
-        }
-        return Math.max(0L, Math.round(value));
-    }
-
-    private static double nonNegativeDouble(double value) {
-        if (!Double.isFinite(value) || value <= 0.0d) {
-            return 0.0d;
-        }
-        return value;
-    }
 
 	private double scanCostAfterSelectivity(double originalScanCost,
 											double initialPositionCost,

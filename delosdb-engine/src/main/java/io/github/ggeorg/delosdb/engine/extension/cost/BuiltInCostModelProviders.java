@@ -10,10 +10,9 @@ import java.util.Optional;
 /**
  * Built-in DelosDB cost-model providers known to the engine.
  *
- * <p>The provider family is still engine-internal. This class makes built-in
- * proof providers visible to the same registry machinery used by index,
- * storage, function, and type providers without exposing Derby cost classes
- * as public SPI.</p>
+ * <p>The provider family is engine-internal and uses the same registry
+ * machinery as the executable B-tree index provider without exposing Derby
+ * cost classes as public SPI.</p>
  */
 @InternalApi
 public final class BuiltInCostModelProviders {

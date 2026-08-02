@@ -89,7 +89,7 @@ import org.apache.derby.iapi.util.IdUtil;
 		</ol>
 	*/
 
-@LegacyInternal("Inherited Derby table catalog descriptor; StorageProvider metadata bridge may read it, but providers must not depend on it directly.")
+@LegacyInternal("Inherited Derby table catalog descriptor extended with DelosDB storage access-method identity.")
 public class TableDescriptor extends UniqueSQLObjectDescriptor
 	implements Provider, Dependent
 {
@@ -261,7 +261,7 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
 	}
 
 	/**
-	 * Constructor for a TableDescriptor with DelosDB storage-provider metadata.
+	 * Constructor for a TableDescriptor with DelosDB storage access-method identity.
 	 */
 	public TableDescriptor
 	(
@@ -367,9 +367,8 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
     /**
      * Gets the DelosDB storage provider associated with this table.
      *
-     * <p>StorageProvider v0 maps all Derby-compatible tables to the built-in
-     * heap provider. Future catalog versions can persist non-heap provider
-     * names without changing this descriptor API.</p>
+     * <p>The value selects the Derby heap or DelosDB MVCC access-method bridge;
+     * it is catalog state rather than a public storage-provider SPI.</p>
      *
      * @return normalized storage provider name
      */

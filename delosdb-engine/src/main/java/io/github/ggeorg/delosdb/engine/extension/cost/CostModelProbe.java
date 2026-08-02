@@ -21,8 +21,7 @@ public record CostModelProbe(
         String explanation
 ) {
     /**
-     * Stable diagnostic label for the native DelosDB cost path. The legacy
-     * optimizer-side IndexProviderCostBridge must not use this label.
+     * Stable diagnostic label for the native DelosDB cost path.
      */
     public static final String ADAPTER_PATH = "store-cost-controller";
 
