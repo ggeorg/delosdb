@@ -35,7 +35,6 @@ import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.impl.jdbc.EmbedConnection;
-import org.apache.derby.impl.store.access.mvcc.MvccRowLocation;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
 /** Low-level RawStore inspection used by focused MVCC convergence proofs. */
@@ -267,16 +266,16 @@ final class MvccRawStoreMetadataInspection {
                                 raw, layout, mapping.columnId(), base.newRowLocationTemplate());
                         scan.fetch(row);
                         Object keyObject = StoreTypeUtil.getObject(row[ORDERED_INDEX_KEY_FIELD]);
-                        MvccRowLocation rowLocation = MvccRowLocation.from(
+                        RowLocationIdentity rowLocation = rowLocationIdentity(
                                 row[ORDERED_INDEX_ROW_LOCATION_FIELD]);
                         result.add(new OrderedIndexIdentity(
                                 mapping.columnId(),
                                 keyObject == null ? null : keyObject.toString(),
                                 StoreTypeUtil.getLong(row[ORDERED_INDEX_ROW_ID_FIELD]),
                                 StoreTypeUtil.getLong(row[ORDERED_INDEX_VERSION_ID_FIELD]),
-                                rowLocation.hasLocatorHint(),
-                                rowLocation.locatorPageId(),
-                                rowLocation.locatorSlotId()));
+                                rowLocation.hasLocator(),
+                                rowLocation.pageId(),
+                                rowLocation.slotId()));
                     }
                 } finally {
                     scan.close();
@@ -292,6 +291,26 @@ final class MvccRawStoreMetadataInspection {
                 .thenComparingLong(OrderedIndexIdentity::rowId)
                 .thenComparingLong(OrderedIndexIdentity::versionId));
         return List.copyOf(result);
+    }
+
+    private static RowLocationIdentity rowLocationIdentity(StoreDataValue value)
+            throws Exception {
+        Object rowLocation = StoreTypeUtil.getObject(value);
+        String text = String.valueOf(rowLocation);
+        int pageMarker = text.indexOf("@page:");
+        if (pageMarker < 0) {
+            if (text.endsWith("@locator:none")) {
+                return new RowLocationIdentity(false, 0L, -1);
+            }
+            throw new AssertionError("Unexpected MVCC row-location text: " + text);
+        }
+        int slotMarker = text.indexOf(":slot:", pageMarker + 6);
+        if (slotMarker < 0) {
+            throw new AssertionError("Unexpected MVCC row-location text: " + text);
+        }
+        long pageId = Long.parseLong(text.substring(pageMarker + 6, slotMarker));
+        int slotId = Integer.parseInt(text.substring(slotMarker + 6));
+        return new RowLocationIdentity(true, pageId, slotId);
     }
 
     static void removeOrderedIndexForCompatibility(
@@ -928,6 +947,9 @@ final class MvccRawStoreMetadataInspection {
         boolean tombstone() {
             return (flags & 1) != 0;
         }
+    }
+
+    private record RowLocationIdentity(boolean hasLocator, long pageId, int slotId) {
     }
 
     record OrderedIndexIdentity(
