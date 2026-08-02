@@ -321,7 +321,13 @@ public class B2I extends BTree
                 "bad isolation_level = " + isolation_level);
         }
 
-        if (lock_level == TransactionController.MODE_TABLE)
+        if (!base_cc.requiresSecondaryIndexBaseRowLocking())
+        {
+            ret_locking_policy =
+                new B2INoLocking(
+                    rawtran, lock_level, null, base_cc, open_btree);
+        }
+        else if (lock_level == TransactionController.MODE_TABLE)
         {
             ret_locking_policy = 
                 new B2ITableLocking3(

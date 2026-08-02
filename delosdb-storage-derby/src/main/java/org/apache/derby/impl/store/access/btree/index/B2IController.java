@@ -113,7 +113,14 @@ public class B2IController extends BTreeController
         }
         
         BTreeLockingPolicy b2i_locking_policy;
-        if (lock_level == TransactionController.MODE_TABLE)
+        if (!base_cc_for_locking.requiresSecondaryIndexBaseRowLocking())
+        {
+            b2i_locking_policy =
+                new B2INoLocking(
+                    rawtran, lock_level, locking_policy,
+                    base_cc_for_locking, this);
+        }
+        else if (lock_level == TransactionController.MODE_TABLE)
         {
             b2i_locking_policy = 
                 new B2ITableLocking3(

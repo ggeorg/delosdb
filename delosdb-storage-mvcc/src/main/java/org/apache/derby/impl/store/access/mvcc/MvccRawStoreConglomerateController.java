@@ -148,6 +148,11 @@ final class MvccRawStoreConglomerateController
     }
 
     @Override
+    public boolean requiresSecondaryIndexBaseRowLocking() {
+        return false;
+    }
+
+    @Override
     public void unlockRowAfterRead(StoreRowLocation loc, boolean forUpdate, boolean rowQualified) {
         ensureOpen();
     }

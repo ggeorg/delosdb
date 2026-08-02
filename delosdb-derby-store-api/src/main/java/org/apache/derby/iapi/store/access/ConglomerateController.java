@@ -416,6 +416,25 @@ public interface ConglomerateController extends ConglomPropertyQueryable
     }
 
     /**
+     * Return whether Derby secondary-index access should acquire base-row
+     * locks through this controller.
+     *
+     * <p>The inherited B-tree index implementation normally locks the base
+     * row identified by each index entry, including previous-key locks used
+     * for phantom protection. Conglomerates with their own logical locking
+     * and visibility authority must return {@code false}; their secondary
+     * indexes still use RawStore latches, logging, and structural page
+     * protection, but must not create a second base-row lock namespace.</p>
+     *
+     * @return {@code true} when inherited secondary-index base-row locks are
+     *         part of this conglomerate's concurrency control
+     */
+    default boolean requiresSecondaryIndexBaseRowLocking()
+    {
+        return true;
+    }
+
+    /**
      * UnLock the given row location.
      * <p>
      * Should only be called by access.

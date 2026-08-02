@@ -125,6 +125,62 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testDifferentRowsWithSameIndexKeyDoNotAcquireNeighborRowLocks()
+            throws Exception {
+        String database = databaseName("mvcc-btree-no-neighbor-row-locking");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table neighbor_lock_t ("
+                                + "id int primary key, bucket int) using delos_mvcc");
+                executeUpdate(setup,
+                        "insert into neighbor_lock_t values (1, 10), (2, 20)");
+                setup.commit();
+            }
+
+            try (Connection first = openDatabase(database, false);
+                 Connection second = openDatabase(database, false)) {
+                first.setAutoCommit(false);
+                second.setAutoCommit(false);
+
+                executeUpdate(first,
+                        "update neighbor_lock_t set bucket = 30 where id = 1");
+
+                ExecutorService executor = Executors.newSingleThreadExecutor();
+                try {
+                    Future<String> sameKeyWriter = executor.submit(() -> {
+                        try {
+                            executeUpdate(second,
+                                    "update neighbor_lock_t set bucket = 30 where id = 2");
+                            return "SUCCESS";
+                        } catch (SQLException failure) {
+                            return failure.getSQLState() + ':' + failure.getMessage();
+                        }
+                    });
+                    assertEquals(
+                            "a B-tree insert must not lock the neighboring MVCC base row",
+                            "SUCCESS",
+                            sameKeyWriter.get(10, TimeUnit.SECONDS));
+                } finally {
+                    executor.shutdownNow();
+                }
+
+                first.commit();
+                second.commit();
+            }
+
+            try (Connection observer = openDatabase(database, false)) {
+                assertRows(observer,
+                        "select id, bucket from neighbor_lock_t order by id",
+                        "1|30",
+                        "2|30");
+                observer.commit();
+            }
+            shutdownDatabase(database);
+        }
+    }
+
     public void testSharedOrderedIndexMutationsFollowRawStoreTransactionBoundaries()
             throws Exception {
         String database = databaseName("mvcc-raw-store-shared-index-transaction");
