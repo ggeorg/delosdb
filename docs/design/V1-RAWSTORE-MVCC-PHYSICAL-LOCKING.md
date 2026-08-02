@@ -62,15 +62,14 @@ container participates directly in the parent RawStore transaction:
 
 ```text
 append entries for the new MVCC version
-retain creator/begin/end visibility fields on each entry
-stamp new and predecessor entries during precommit
+retain immutable key/row/version/location candidate identity
+stamp visibility only in the authoritative base version chain
 use RawStore savepoint, abort, WAL, and recovery for physical rollback
 ```
 
-Readers use READ_UNCOMMITTED physical access and reject entries owned by another active transaction.
-The authoritative version chain is still re-read and qualified, so the index remains a candidate
-narrowing structure rather than row authority. Until Derby B-tree convergence, predicate lookup scans
-all candidate entries deliberately; it never assumes that normal append order is key order.
+Readers use bounded typed Derby B-tree scans with READ_UNCOMMITTED physical access. The authoritative
+version chain is re-read for creator/begin/end visibility and all SQL qualifiers, so physically present
+uncommitted or historical candidates never become row authority.
 
 Full private-generation replacement is retained only for compatibility rebuild and history-removing
 vacuum. Those maintenance paths rebuild from authoritative versions, switch the control-row pointer,
@@ -89,7 +88,8 @@ rewrite remains logged and transactional.
 
 ## Recovery and memory
 
-Normal index-entry insertion and sequence stamping are ordinary logged RawStore record mutations.
+Normal immutable index-entry insertion is an ordinary logged RawStore record mutation. Commit-sequence
+stamping updates only the authoritative base version rows.
 
 ```text
 crash before RawStore commit:
@@ -106,10 +106,10 @@ storage authority exists.
 
 ## Current limits
 
-The append-only candidate representation removes whole-index rewrite amplification but does not yet add
-B-tree descent, page-level key directories, or predicate/range-gap locks. Equality and range probes scan
-all candidate entries until the retained Derby B-tree becomes the physical index authority. Vacuum,
-maintenance replacement, and recovery remain complete and transactional.
+Derby B-tree descent, incremental page splits, and bounded typed lookup are now the physical
+ordered-index authority. Predicate/range-gap locks are not added; transaction-duration
+schema, row, and unique-key locks remain the semantic conflict authority. Vacuum, maintenance generation
+replacement, and recovery remain complete and transactional.
 
 ## Executable proof
 

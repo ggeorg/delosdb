@@ -39,7 +39,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
 
     public void testEqualityRangeCandidateLookupAndReopenUseRawStoreIndex() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index");
@@ -69,6 +68,11 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         connection,
                         "INDEXED_T");
                 assertTrue("ordered-index container must be persisted", indexContainer > 0L);
+                assertEquals("one Derby B-tree per orderable column",
+                        4,
+                        MvccRawStoreMetadataInspection.orderedIndexBtreeCount(
+                                connection,
+                                "INDEXED_T"));
                 assertTrue("ordered-index proof must cross a RawStore page boundary",
                         MvccRawStoreMetadataInspection.orderedIndexPageCount(
                                 connection,
@@ -77,10 +81,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
                 assertEquals(36, entries.size());
                 assertPhysicalTypedCoverage(entries);
-                for (MvccRawStoreMetadataInspection.OrderedIndexIdentity entry : entries) {
-                    assertEquals(1L, entry.beginCommitSequence());
-                    assertEquals(CURRENT_END_SEQUENCE, entry.endCommitSequence());
-                }
                 connection.commit();
             }
             shutdownDatabase(database);
@@ -161,13 +161,14 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
 
                 List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(writer, "INDEX_HISTORY");
-                assertTrue("historical ordered-index entries must remain present",
-                        entries.stream().anyMatch(entry -> entry.versionId() == 1L
-                                && entry.endCommitSequence() == 2L));
-                assertTrue("replacement ordered-index entries must be current",
-                        entries.stream().anyMatch(entry -> entry.versionId() == 3L
-                                && entry.beginCommitSequence() == 2L
-                                && entry.endCommitSequence() == CURRENT_END_SEQUENCE));
+                assertTrue("historical ordered-index candidates must remain present",
+                        entries.stream().anyMatch(entry -> entry.columnId() == 1
+                                && entry.versionId() == 1L
+                                && "old".equals(entry.key())));
+                assertTrue("replacement ordered-index candidates must remain present",
+                        entries.stream().anyMatch(entry -> entry.columnId() == 1
+                                && entry.versionId() == 3L
+                                && "new".equals(entry.key())));
                 writer.commit();
             }
             shutdownDatabase(database);

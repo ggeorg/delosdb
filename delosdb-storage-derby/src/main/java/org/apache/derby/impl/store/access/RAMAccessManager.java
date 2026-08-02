@@ -1186,6 +1186,7 @@ public abstract class RAMAccessManager
                     rawstore.getDataFactoryModule());
         }
         externalAccessMethodBootContext = new AccessMethodBootContext(
+                this,
                 rawstore,
                 dataFactory,
                 dataFactory.getStorageFactory(),

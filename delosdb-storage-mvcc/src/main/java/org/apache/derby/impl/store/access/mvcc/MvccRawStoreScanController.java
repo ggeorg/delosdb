@@ -345,10 +345,8 @@ final class MvccRawStoreScanController implements ScanManager {
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
             java.util.Optional<List<Long>> candidateRowIds =
                     MvccRawStoreTable.orderedIndexRowIdsForAt(
-                            rawTransaction,
                             table,
                             qualifiers,
-                            snapshotSequence,
                             context);
             if (candidateRowIds.isPresent()) {
                 List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();

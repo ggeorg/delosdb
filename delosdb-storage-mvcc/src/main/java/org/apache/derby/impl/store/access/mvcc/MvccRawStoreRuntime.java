@@ -29,7 +29,7 @@ import org.apache.derby.iapi.services.locks.ShExQual;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
-import org.apache.derby.iapi.store.raw.RawStoreFactory;
+import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
 import org.apache.derby.iapi.store.types.DelosRawStoreIoMetrics;
@@ -91,7 +91,7 @@ final class MvccRawStoreRuntime {
 
     synchronized void startMaintenance(
             String databaseIdentity,
-            RawStoreFactory rawStoreFactory,
+            AccessFactory accessFactory,
             boolean readOnly,
             Properties serviceProperties) {
         if (maintenanceService != null) {
@@ -99,7 +99,7 @@ final class MvccRawStoreRuntime {
         }
         diagnosticIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         maintenanceService = new MvccRawStoreMaintenanceService(
-                diagnosticIdentity, rawStoreFactory, this, readOnly, serviceProperties);
+                diagnosticIdentity, accessFactory, this, readOnly, serviceProperties);
     }
 
     void registerTable(MvccRawStoreTable.Descriptor table) {

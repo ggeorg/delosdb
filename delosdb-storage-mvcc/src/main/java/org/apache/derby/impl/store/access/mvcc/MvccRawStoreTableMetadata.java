@@ -133,7 +133,7 @@ final class MvccRawStoreTableMetadata {
             MvccRawStoreTransactionContext context) throws StandardException {
         validateUniqueConstraintDefinition(table, baseColumnPositions, deferrable);
         context.beforeWrite();
-        MvccRawStoreTable.ensureOrderedIndex(transaction, table);
+        MvccRawStoreTable.ensureOrderedIndex(context.transactionManager(), table);
 
         List<UniqueConstraint> existing = refreshUniqueConstraints(transaction, table, true);
         UniqueConstraint candidate = new UniqueConstraint(

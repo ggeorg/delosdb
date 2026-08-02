@@ -101,7 +101,7 @@ public final class MvccConglomerate
                 xactManager,
                 xactManager.getRawStoreXact());
         context.beforeDrop(currentTable);
-        MvccRawStoreTable.drop(xactManager.getRawStoreXact(), currentTable);
+        MvccRawStoreTable.drop(xactManager, currentTable);
     }
 
     @Override
@@ -143,6 +143,16 @@ public final class MvccConglomerate
     @Override
     public boolean isTemporary() {
         return temporary;
+    }
+
+    @Override
+    public void conglomerateIdAssigned(
+            TransactionManager xactManager,
+            long conglomId) throws StandardException {
+        MvccRawStoreTable.Descriptor currentTable = requireTable();
+        currentTable.observeAccessConglomerateId(conglomId);
+        MvccRawStoreOrderedIndexGeneration.initialize(
+                xactManager, currentTable, currentTable.orderedIndexContainer());
     }
 
     @Override

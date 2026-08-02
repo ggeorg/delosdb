@@ -818,12 +818,30 @@ public class RAMTransaction
 			if (tempCongloms == null)
 				tempCongloms = new HashMap<Long,Conglomerate>();
 			tempCongloms.put(conglomId, conglom);
+			try
+			{
+				conglom.conglomerateIdAssigned(this, conglomId);
+			}
+			catch (StandardException failure)
+			{
+				tempCongloms.remove(conglomId);
+				throw failure;
+			}
 		}
 		else
 		{
 			conglomId = conglom.getContainerid();
 
             accessmanager.conglomCacheAddEntry(conglomId, conglom);
+			try
+			{
+				conglom.conglomerateIdAssigned(this, conglomId);
+			}
+			catch (StandardException failure)
+			{
+				accessmanager.conglomCacheRemoveEntry(conglomId);
+				throw failure;
+			}
 		}
 
 		return conglomId;

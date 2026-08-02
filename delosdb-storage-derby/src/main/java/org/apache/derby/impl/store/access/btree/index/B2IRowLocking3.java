@@ -46,7 +46,6 @@ import org.apache.derby.impl.store.access.btree.LeafControlRow;
 import org.apache.derby.impl.store.access.btree.OpenBTree;
 import org.apache.derby.impl.store.access.btree.BTreeRowPosition;
 import org.apache.derby.impl.store.access.btree.WaitError;
-import org.apache.derby.impl.store.access.heap.HeapController;
 
 /**
 
@@ -298,7 +297,7 @@ class B2IRowLocking3 implements BTreeLockingPolicy
                 aux_leaf = null;
             }
 
-            if ((((HeapController)base_cc).getOpenConglomerate().getOpenMode() &
+            if ((open_btree.getOpenMode() &
                     TransactionManager.OPENMODE_LOCK_ROW_NOWAIT) != 0) {
                 throw StandardException.newException(SQLState.LOCK_TIMEOUT);
             }

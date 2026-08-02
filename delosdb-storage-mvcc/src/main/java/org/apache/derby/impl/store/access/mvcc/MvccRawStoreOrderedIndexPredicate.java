@@ -32,15 +32,19 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Converts supported qualifier shapes into index-candidate decisions.
  *
- * <p>This class owns only qualifier interpretation and key-bound comparison.
- * {@link Decision#FINISH} means the candidate lies beyond an ordered bound;
- * the current append-only physical scan treats it as a non-match and continues,
- * while a later B-tree cursor may use it as an end condition. Container access,
- * MVCC visibility, and row-id authority remain in
- * {@link MvccRawStoreOrderedIndex}.</p>
+ * <p>This class owns only qualifier interpretation and B-tree key-bound
+ * selection. Container access, MVCC visibility, and logical row-id authority
+ * remain in {@link MvccRawStoreOrderedIndex}.</p>
  */
 final class MvccRawStoreOrderedIndexPredicate {
     private MvccRawStoreOrderedIndexPredicate() {
+    }
+
+
+    static Predicate equality(int columnId, StoreDataValue value) throws StandardException {
+        return new EqualityPredicate(
+                columnId,
+                StoreValueCopySupport.cloneValue(value));
     }
 
     static Optional<Predicate> from(Qualifier[][] qualifiers) throws StandardException {
@@ -207,29 +211,35 @@ final class MvccRawStoreOrderedIndexPredicate {
     sealed interface Predicate permits EqualityPredicate, RangePredicate {
         int columnId();
 
-        Decision decide(int columnId, StoreDataValue key) throws StandardException;
-    }
+        StoreDataValue lowerBound();
 
-    enum Decision {
-        SKIP,
-        MATCH,
-        FINISH
+        boolean lowerInclusive();
+
+        StoreDataValue upperBound();
+
+        boolean upperInclusive();
+
     }
 
     private record EqualityPredicate(int columnId, StoreDataValue value) implements Predicate {
         @Override
-        public Decision decide(int candidateColumnId, StoreDataValue key) throws StandardException {
-            if (candidateColumnId < columnId) {
-                return Decision.SKIP;
-            }
-            if (candidateColumnId > columnId) {
-                return Decision.FINISH;
-            }
-            int comparison = StoreTypeUtil.compare(key, value, true);
-            if (comparison < 0) {
-                return Decision.SKIP;
-            }
-            return comparison == 0 ? Decision.MATCH : Decision.FINISH;
+        public StoreDataValue lowerBound() {
+            return value;
+        }
+
+        @Override
+        public boolean lowerInclusive() {
+            return true;
+        }
+
+        @Override
+        public StoreDataValue upperBound() {
+            return value;
+        }
+
+        @Override
+        public boolean upperInclusive() {
+            return true;
         }
     }
 
@@ -240,26 +250,13 @@ final class MvccRawStoreOrderedIndexPredicate {
             StoreDataValue upper,
             boolean upperInclusive) implements Predicate {
         @Override
-        public Decision decide(int candidateColumnId, StoreDataValue key) throws StandardException {
-            if (candidateColumnId < columnId) {
-                return Decision.SKIP;
-            }
-            if (candidateColumnId > columnId) {
-                return Decision.FINISH;
-            }
-            if (lower != null) {
-                int comparison = StoreTypeUtil.compare(key, lower, true);
-                if (comparison < 0 || (comparison == 0 && !lowerInclusive)) {
-                    return Decision.SKIP;
-                }
-            }
-            if (upper != null) {
-                int comparison = StoreTypeUtil.compare(key, upper, true);
-                if (comparison > 0 || (comparison == 0 && !upperInclusive)) {
-                    return Decision.FINISH;
-                }
-            }
-            return Decision.MATCH;
+        public StoreDataValue lowerBound() {
+            return lower;
+        }
+
+        @Override
+        public StoreDataValue upperBound() {
+            return upper;
         }
     }
 

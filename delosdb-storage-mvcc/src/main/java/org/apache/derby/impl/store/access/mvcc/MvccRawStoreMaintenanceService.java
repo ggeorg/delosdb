@@ -29,11 +29,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
+import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Page;
-import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceTableSnapshot;
 import org.apache.derby.shared.common.error.ExceptionSeverity;
@@ -43,10 +45,10 @@ import org.apache.derby.shared.common.reference.SQLState;
 /**
  * Bounded database-owned scheduler for RawStore-backed MVCC reclamation.
  *
- * <p>The service owns only scheduling, autonomous RawStore transactions, and
- * immutable evidence. The vacuum algorithm, reader horizon, logical locks,
- * physical maintenance boundary, logging, undo, commit, and recovery remain
- * owned by the already proven RawStore MVCC components.</p>
+ * <p>The service owns only scheduling, database-owned access transactions,
+ * and immutable evidence. The vacuum algorithm, reader horizon, logical
+ * locks, physical maintenance boundary, logging, undo, commit, and recovery
+ * remain owned by the established access and RawStore components.</p>
  */
 final class MvccRawStoreMaintenanceService implements AutoCloseable {
     static final String ENABLED_PROPERTY =
@@ -76,7 +78,7 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
     }
 
     private final MvccRawStoreRuntime runtime;
-    private final RawStoreFactory rawStoreFactory;
+    private final AccessFactory accessFactory;
     private final String databaseIdentity;
     private final boolean readOnly;
     private final boolean enabled;
@@ -103,12 +105,12 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
 
     MvccRawStoreMaintenanceService(
             String databaseIdentity,
-            RawStoreFactory rawStoreFactory,
+            AccessFactory accessFactory,
             MvccRawStoreRuntime runtime,
             boolean readOnly,
             Properties serviceProperties) {
         this.runtime = Objects.requireNonNull(runtime, "runtime");
-        this.rawStoreFactory = Objects.requireNonNull(rawStoreFactory, "rawStoreFactory");
+        this.accessFactory = Objects.requireNonNull(accessFactory, "accessFactory");
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
         this.readOnly = readOnly;
         this.enabled = Boolean.parseBoolean(
@@ -234,22 +236,32 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
     private TableStorageSnapshot captureTableStorageSnapshot(
             MvccRawStoreTable.Descriptor table,
             ContextManager contextManager) {
-        Transaction transaction = null;
+        TransactionManager transactionManager = null;
         boolean transactionIdle = false;
         try {
-            transaction = rawStoreFactory.startTransaction(
+            TransactionController controller = accessFactory.getAndNameTransaction(
                     contextManager, DIAGNOSTICS_TRANSACTION_NAME);
+            if (!(controller instanceof TransactionManager manager)) {
+                throw new IllegalStateException(
+                        "RawStore MVCC diagnostics require the owning access transaction");
+            }
+            transactionManager = manager;
+            Transaction transaction = transactionManager.getRawStoreXact();
             TableStorageSnapshot snapshot = inspectContainer(
                     transaction, table.metadataContainer())
                     .plus(inspectContainer(transaction, table.versionContainer()))
                     .plus(inspectContainer(transaction, table.orderedIndexContainer()));
-            transaction.commit();
+            for (ContainerKey btree : MvccRawStoreOrderedIndexGeneration.btreeContainerKeys(
+                    transactionManager, table, table.orderedIndexContainer())) {
+                snapshot = snapshot.plus(inspectContainer(transaction, btree));
+            }
+            transactionManager.commit();
             transactionIdle = true;
             return snapshot;
         } catch (StandardException failure) {
-            if (transaction != null && !transactionIdle) {
+            if (transactionManager != null && !transactionIdle) {
                 try {
-                    transaction.abort();
+                    transactionManager.abort();
                     transactionIdle = true;
                 } catch (StandardException abortFailure) {
                     failure.addSuppressed(abortFailure);
@@ -259,18 +271,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                     "Could not inspect RawStore MVCC table " + table.metadataContainer(),
                     failure);
         } finally {
-            if (transaction != null) {
-                try {
-                    if (transactionIdle) {
-                        transaction.close();
-                    } else {
-                        transaction.destroy();
-                    }
-                } catch (StandardException closeFailure) {
-                    throw new IllegalStateException(
-                            "Could not close RawStore MVCC diagnostics transaction",
-                            closeFailure);
-                }
+            if (transactionManager != null) {
+                transactionManager.destroy();
             }
         }
     }
@@ -422,6 +424,7 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
         }
         int active = activeWorkerCount.incrementAndGet();
         maximumActiveWorkerCount.accumulateAndGet(active, Math::max);
+        TransactionManager transactionManager = null;
         Transaction transaction = null;
         boolean transactionIdle = false;
         ContainerKey replacement = null;
@@ -429,9 +432,16 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
         long horizon = 0L;
         try {
             MvccRawStoreTable.Descriptor table = target.descriptor();
-            transaction = rawStoreFactory.startTransaction(contextManager, TRANSACTION_NAME);
+            TransactionController controller = accessFactory.getAndNameTransaction(
+                    contextManager, TRANSACTION_NAME);
+            if (!(controller instanceof TransactionManager manager)) {
+                throw new IllegalStateException(
+                        "RawStore MVCC maintenance requires the owning access transaction");
+            }
+            transactionManager = manager;
+            transaction = transactionManager.getRawStoreXact();
             if (!runtime.tryLockExclusive(transaction, MvccRawStoreLogicalLock.table(table))) {
-                transaction.abort();
+                transactionManager.abort();
                 transactionIdle = true;
                 skippedRunCount.incrementAndGet();
                 target.completeSkipped(trigger, "table-busy");
@@ -442,17 +452,18 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                 horizon = runtime.vacuumHorizon();
                 result = MvccRawStoreVacuum.vacuum(transaction, table, horizon);
                 if (result.requiresOrderedIndexReplacement()) {
-                    replacement = MvccRawStoreOrderedIndex.createPrivateGeneration(
-                            transaction, table);
+                    replacement = MvccRawStoreOrderedIndexGeneration.createPrivateGeneration(
+                            transactionManager, table);
                     MvccRawStoreTable.rebuildOrderedIndexForMaintenance(
-                            transaction, table, replacement);
+                            transactionManager, table, replacement);
                     ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
                             transaction, table, replacement);
                     if (replaced != null) {
-                        transaction.dropContainer(replaced);
+                        MvccRawStoreOrderedIndexGeneration.dropGeneration(
+                                transactionManager, table, replaced);
                     }
                 }
-                transaction.commit();
+                transactionManager.commit();
                 transactionIdle = true;
             }
             if (replacement != null) {
@@ -469,9 +480,9 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             target.completeSuccess(trigger, horizon, result);
         } catch (StandardException | RuntimeException failure) {
             failedRunCount.incrementAndGet();
-            if (transaction != null && !transactionIdle) {
+            if (transactionManager != null && !transactionIdle) {
                 try {
-                    transaction.abort();
+                    transactionManager.abort();
                     transactionIdle = true;
                 } catch (StandardException abortFailure) {
                     failure.addSuppressed(abortFailure);
@@ -479,17 +490,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             }
             target.completeFailure(trigger, failure);
         } finally {
-            if (transaction != null) {
-                try {
-                    if (transactionIdle) {
-                        transaction.close();
-                    } else {
-                        transaction.destroy();
-                    }
-                } catch (StandardException closeFailure) {
-                    failedRunCount.incrementAndGet();
-                    target.completeFailure(trigger, closeFailure);
-                }
+            if (transactionManager != null) {
+                transactionManager.destroy();
             }
             activeWorkerCount.decrementAndGet();
             target.finishRun();

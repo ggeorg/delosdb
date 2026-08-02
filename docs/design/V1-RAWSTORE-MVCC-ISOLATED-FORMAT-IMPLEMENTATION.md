@@ -22,7 +22,8 @@ Derby RawStore transaction:
 ```text
 metadata/directory container
 version container
-ordered-index container
+ordered-index generation directory
+one inherited Derby B-tree per SQL-orderable column
 RawStore slotted pages
 RawStore logged insert and field-update operations
 RawStore undo
@@ -51,7 +52,8 @@ with retained durable state. See `V1-RAWSTORE-MVCC-AUTHORITY-CUTOVER.md`.
 
 ## Physical format
 
-Each newly created opted-in table owns three ordinary RawStore containers.
+Each newly created opted-in table owns three direct RawStore containers plus the physical RawStore
+containers owned by its inherited Derby B-tree conglomerates.
 
 The primary metadata/directory container uses:
 
@@ -68,21 +70,19 @@ first page slot 0: format marker
 remaining records: version rows and row payload
 ```
 
-The ordered-index container uses:
+The ordered-index generation directory uses:
 
 ```text
-first page slot 0: ordered-index control row
-remaining records: physically sorted, version-aware typed key entries
+first page slot 0: generation control row
+remaining records: base-column id -> Derby B-tree conglomerate id
 ```
 
-Each non-tombstone version contributes one entry per SQL-orderable table column. BLOB, CLOB,
-LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined values remain only in the authoritative
-base version and never enter the auxiliary ordered index. Entries are ordered by column, SQL typed key,
-stable row identity, and version identity. They retain creator, begin, and end sequence fields so
-transaction-local and historical snapshot visibility match the base version. Index results are
-candidate `MvccRowId` values only; the authoritative base version chain is always reread and the
-complete SQL qualifiers are reapplied. Non-orderable qualifiers fall back to the base chain. See
-`V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
+Each SQL-orderable column owns one inherited Derby B-tree. Each non-tombstone version contributes an
+entry keyed by typed SQL value, stable row/version identity, creator transaction, begin/end sequences,
+and final `MvccRowLocation`. BLOB, CLOB, LONG VARCHAR, LONG VARCHAR FOR BIT DATA, XML, and user-defined
+values remain only in the authoritative base version. Index results are candidate `MvccRowId` values
+only; the authoritative base version chain is always reread and complete SQL qualifiers are reapplied.
+Non-orderable qualifiers fall back to the base chain. See `V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`.
 
 A version row contains format-versioned logical identity and visibility fields followed by the normal
 RawStore-encoded payload:
@@ -126,19 +126,20 @@ versions with one `MvccCommitSequence` before the single inherited RawStore comm
 
 ## CREATE and INSERT
 
-CREATE uses `Transaction.addContainer()` three times and writes the metadata control, allocator,
-version marker, and ordered-index control rows through the same RawStore transaction as the catalog
-operation. Rollback therefore removes all three containers through normal RawStore undo.
+CREATE uses `Transaction.addContainer()` for metadata, versions, and the generation directory. After
+the access manager registers the new base conglomerate, the same access transaction creates one Derby
+B-tree per orderable column and records their ids in the directory. Rollback removes the base containers,
+B-trees, and mappings through inherited access/RawStore undo.
 
 INSERT performs its physical work during statement execution:
 
 ```text
-1. ensure the table has a transactional ordered-index container
+1. ensure the table has a transactional Derby B-tree generation
 2. update the allocator row for a new MvccRowId and MvccVersionId
 3. insert an uncommitted version row
 4. insert the stable-row directory entry
-5. rewrite the version-aware index entries in physical SQL typed order
-6. retain only logical pending-version state and validated RecordHandle hints
+5. insert one entry into each orderable-column B-tree
+6. retain logical pending-version state and validated RecordHandle hints
 ```
 
 Inserted directory and version records request `Page.INSERT_UNDO_WITH_PURGE`; row payloads may use
@@ -163,12 +164,11 @@ retains them. Logical locks are visible through `SYSCS_DIAG.LOCK_TABLE`; no inde
 manager or persistent lock state exists. Physical page/record callback identities are never promoted
 to stable row locks. See `V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`.
 
-The physical table and ordered-index implementation still uses inherited serializable container
-locking as a conservative correctness boundary. Operations that need all table structures acquire
-the metadata container before the version container and the ordered-index container last. Update
-locks remain owned by the RawStore transaction until completion. This prevents allocator races and
-keeps sorted index rewrites atomic, but it is stronger than the final intended physical granularity.
-A scan truthfully reports that it is table-locked while this policy remains.
+Normal metadata, version, directory, and inherited B-tree access uses Derby record-level physical
+locking with `READ_UNCOMMITTED` physical reads. Operations which span table structures retain deterministic
+metadata-before-version-before-index ordering. The B-tree may open the base conglomerate for inherited
+lock coordination, but stable schema, row, and unique-key identities remain the semantic conflict
+authority.
 
 Page latches protect individual physical operations. Visibility remains an MVCC decision based on
 logical transaction and commit-sequence fields; neither logical locks nor container locks are version
@@ -188,11 +188,11 @@ apply current-transaction or committed-snapshot visibility
 return the decoded payload
 ```
 
-For safe single-column equality and range qualifiers, the scan controller traverses the physically
-sorted ordered-index container, de-duplicates stable row candidates, rereads each candidate through
-the same authoritative version-chain lookup, and reapplies all qualifiers. Unsupported predicate
+For safe single-column equality and range qualifiers, the scan controller opens the corresponding
+Derby B-tree with typed partial-key bounds, de-duplicates stable row candidates, rereads each candidate
+through the authoritative version-chain lookup, and reapplies all qualifiers. Unsupported predicate
 shapes use the linear directory scan. Version-chain navigation avoids a full version-container scan
-when a validated hint is current. This is still not the final optimizer cost model.
+when a validated hint is current. Final optimizer statistics and costing remain later work.
 
 ## Commit ordering
 
@@ -204,8 +204,8 @@ For a transaction with inserted versions:
 ```text
 1. acquire the publication lock
 2. reserve the next database-wide MvccCommitSequence through a forced nested-top RawStore commit
-3. stamp all pending base-version begin sequences and ordered-index entry begin sequences
-4. stamp predecessor base-version and ordered-index entry end sequences
+3. stamp all pending authoritative base-version begin sequences
+4. stamp predecessor authoritative base-version end sequences
 5. update the database-wide RawStore-owned committed high-water in the user transaction
 6. let RAMTransaction commit the inherited RawStore transaction
 7. publish the in-memory high-water only after RawStore reports success
@@ -439,11 +439,13 @@ The RawStore path acquires stable schema, row, and unique-key identities through
 lock manager. Normal table and ordered-index physical access uses `MODE_RECORD` with
 `READ_UNCOMMITTED`; MVCC visibility rejects records owned by another active transaction.
 
-Normal writers append new version entries to the published index-candidate container in their parent
-RawStore transaction. Precommit stamps the corresponding begin/end sequences, while savepoint, abort,
-WAL, and recovery use inherited RawStore behavior. Full generation rebuild and control-row publication
-remain limited to compatibility repair and history-removing vacuum; an unavailable maintenance
-replacement still causes fallback to the authoritative base version chain.
+Normal writers insert immutable key/row/version/location candidates into the published Derby B-tree
+generation in their parent access/RawStore transaction. Precommit stamps only the authoritative base
+versions; savepoint, abort, B-tree undo, WAL, and recovery remain inherited. Candidate visibility is
+always re-established from the base version chain before any row is returned.
+Full generation rebuild and control-row publication remain limited to compatibility repair and
+history-removing vacuum; an unavailable maintenance replacement still causes fallback to the
+authoritative base version chain.
 
 ```text
 :delosdb-tests:runDelosMvccRawStoreLogicalLockingTest

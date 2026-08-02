@@ -109,7 +109,7 @@ public final class MvccConglomerateFactory
         currentRuntime.ensureMetadata(xactManager);
         long containerId = reserveConglomerateId(inputContainerId);
         MvccRawStoreTable.Descriptor descriptor = MvccRawStoreTable.create(
-                xactManager.getRawStoreXact(),
+                xactManager,
                 segment,
                 containerId,
                 template,
@@ -179,7 +179,7 @@ public final class MvccConglomerateFactory
                 diagnosticsIdentity);
         runtime.startMaintenance(
                 diagnosticsIdentity,
-                context.rawStoreFactory(),
+                context.accessFactory(),
                 context.readOnly(),
                 context.serviceProperties());
         MvccRawStoreDiagnosticsDirectory.register(diagnosticsIdentity, runtime);

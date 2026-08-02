@@ -22,6 +22,7 @@ import java.util.Set;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodConglomerateProperties;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
@@ -44,6 +45,7 @@ final class MvccRawStoreTable {
         private final int[] formatIds;
         private final int[] collationIds;
         private final boolean temporary;
+        private volatile long accessConglomerateId;
         private volatile List<UniqueConstraint> uniqueConstraints;
         private volatile ContainerKey orderedIndexContainer;
 
@@ -63,6 +65,9 @@ final class MvccRawStoreTable {
             this.formatIds = formatIds.clone();
             this.collationIds = collationIds.clone();
             this.temporary = temporary;
+            this.accessConglomerateId = temporary
+                    ? ContainerHandle.DEFAULT_ASSIGN_ID
+                    : metadataContainer.getContainerId();
             this.uniqueConstraints = List.copyOf(uniqueConstraints);
         }
 
@@ -82,6 +87,7 @@ final class MvccRawStoreTable {
             orderedIndexContainer = container;
         }
 
+
         int[] formatIds() {
             return formatIds;
         }
@@ -92,6 +98,27 @@ final class MvccRawStoreTable {
 
         boolean temporary() {
             return temporary;
+        }
+
+        long accessConglomerateId() {
+            long current = accessConglomerateId;
+            if (current == ContainerHandle.DEFAULT_ASSIGN_ID) {
+                throw new IllegalStateException(
+                        "Temporary MVCC conglomerate id has not been assigned");
+            }
+            return current;
+        }
+
+        void observeAccessConglomerateId(long conglomId) {
+            if ((temporary && conglomId >= 0L) || (!temporary && conglomId < 0L)) {
+                throw new IllegalArgumentException("MVCC conglomerate id kind mismatch");
+            }
+            long current = accessConglomerateId;
+            if (current != ContainerHandle.DEFAULT_ASSIGN_ID && current != conglomId) {
+                throw new IllegalStateException(
+                        "MVCC conglomerate id already assigned: " + current);
+            }
+            accessConglomerateId = conglomId;
         }
 
         int columnCount() {
@@ -161,13 +188,14 @@ final class MvccRawStoreTable {
     }
 
     static Descriptor create(
-            Transaction rawTransaction,
+            TransactionManager transactionManager,
             int segment,
             long requestedContainerId,
             StoreDataValue[] template,
             int[] suppliedCollationIds,
             Properties properties,
             int temporaryFlag) throws StandardException {
+        Transaction rawTransaction = transactionManager.getRawStoreXact();
         if (template == null || template.length == 0) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
@@ -227,29 +255,27 @@ final class MvccRawStoreTable {
                 uniqueConstraints);
         initializeMetadataContainer(rawTransaction, descriptor);
         initializeVersionContainer(rawTransaction, descriptor);
-        MvccRawStoreOrderedIndex.initialize(
+        MvccRawStoreOrderedIndexGeneration.initializeDirectory(
                 rawTransaction, descriptor, descriptor.orderedIndexContainer());
         return descriptor;
     }
 
     static java.util.Optional<List<Long>> orderedIndexRowIdsForAt(
-            Transaction transaction,
             Descriptor table,
             org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
-            long snapshotSequence,
             MvccRawStoreTransactionContext context) throws StandardException {
         ContainerKey orderedIndex = context.orderedIndexForRead(table);
         return MvccRawStoreOrderedIndex.rowIdsForAt(
-                transaction,
+                context.transactionManager(),
                 table,
                 orderedIndex,
-                qualifiers,
-                snapshotSequence,
-                context);
+                qualifiers);
     }
 
-    static void ensureOrderedIndex(Transaction transaction, Descriptor table)
+    static void ensureOrderedIndex(
+            TransactionManager transactionManager, Descriptor table)
             throws StandardException {
+        Transaction transaction = transactionManager.getRawStoreXact();
         ContainerKey existing = MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 transaction, table, false);
         if (existing != null) {
@@ -283,8 +309,8 @@ final class MvccRawStoreTable {
                 containerId);
         table.observeOrderedIndexContainer(orderedIndex);
         try {
-            MvccRawStoreOrderedIndex.initialize(transaction, table);
-            rebuildOrderedIndex(transaction, table);
+            MvccRawStoreOrderedIndexGeneration.initialize(transactionManager, table);
+            rebuildOrderedIndex(transactionManager, table);
             MvccRawStoreTableMetadata.rewriteControlRow(transaction, table);
         } catch (StandardException | RuntimeException | Error failure) {
             table.observeOrderedIndexContainer(null);
@@ -292,8 +318,10 @@ final class MvccRawStoreTable {
         }
     }
 
-    private static void rebuildOrderedIndex(Transaction transaction, Descriptor table)
+    private static void rebuildOrderedIndex(
+            TransactionManager transactionManager, Descriptor table)
             throws StandardException {
+        Transaction transaction = transactionManager.getRawStoreXact();
         ContainerHandle container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -321,9 +349,6 @@ final class MvccRawStoreTable {
                     versions.add(new MvccRawStoreOrderedIndex.VersionInput(
                             version.rowId(),
                             version.versionId(),
-                            version.creatorTransactionId(),
-                            version.beginSequence(),
-                            version.endSequence(),
                             version.values()));
                 }
                 long pageNumber = page.getPageNumber();
@@ -337,7 +362,7 @@ final class MvccRawStoreTable {
             container.close();
         }
         MvccRawStoreOrderedIndex.rebuild(
-                transaction, table, table.orderedIndexContainer(), versions);
+                transactionManager, table, table.orderedIndexContainer(), versions);
     }
 
     static PendingVersion insert(
@@ -379,14 +404,11 @@ final class MvccRawStoreTable {
         insertRow(rawTransaction, table.metadataContainer(), directoryRow);
         ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         MvccRawStoreOrderedIndex.insertVersion(
-                rawTransaction,
+                context.transactionManager(),
                 table,
                 orderedIndex,
                 allocation.rowId(),
                 allocation.versionId(),
-                creatorTransactionId,
-                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
-                MvccRawStoreFormat.CURRENT_END_SEQUENCE,
                 values);
         PendingVersion pending = new PendingVersion(
                 table,
@@ -585,8 +607,7 @@ final class MvccRawStoreTable {
     static void stampPendingVersions(
             Transaction rawTransaction,
             List<PendingVersion> pending,
-            long commitSequence,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            long commitSequence) throws StandardException {
         List<PendingVersion> ordered = new ArrayList<>(pending);
         ordered.sort(Comparator
                 .comparingLong((PendingVersion version) ->
@@ -594,7 +615,6 @@ final class MvccRawStoreTable {
                 .thenComparingLong(version ->
                         version.table().metadataContainer().getContainerId())
                 .thenComparingLong(PendingVersion::versionId));
-        Map<Descriptor, List<PendingVersion>> sharedIndexStamps = new LinkedHashMap<>();
         for (PendingVersion version : ordered) {
             updateVersionBegin(
                     rawTransaction,
@@ -610,18 +630,6 @@ final class MvccRawStoreTable {
                         version.previousHint(),
                         commitSequence);
             }
-            if (!context.hasOrderedIndexReplacement(version.table())) {
-                sharedIndexStamps.computeIfAbsent(
-                        version.table(),
-                        ignored -> new ArrayList<>()).add(version);
-            }
-        }
-        for (Map.Entry<Descriptor, List<PendingVersion>> entry : sharedIndexStamps.entrySet()) {
-            MvccRawStoreOrderedIndexCommitStamper.stampPendingVersions(
-                    rawTransaction,
-                    entry.getKey(),
-                    entry.getValue(),
-                    commitSequence);
         }
     }
 
@@ -631,7 +639,7 @@ final class MvccRawStoreTable {
             ContainerKey target,
             MvccRawStoreTransactionContext context) throws StandardException {
         MvccRawStoreOrderedIndex.rebuild(
-                transaction,
+                context.transactionManager(),
                 table,
                 target,
                 collectIndexVersions(transaction, table, context));
@@ -644,18 +652,19 @@ final class MvccRawStoreTable {
             long transactionId,
             MvccRawStoreTransactionContext context) throws StandardException {
         MvccRawStoreOrderedIndex.rebuild(
-                transaction,
+                context.transactionManager(),
                 table,
                 target,
                 collectIndexVersions(transaction, table, context));
     }
 
     static void rebuildOrderedIndexForMaintenance(
-            Transaction transaction,
+            TransactionManager transactionManager,
             Descriptor table,
             ContainerKey target) throws StandardException {
+        Transaction transaction = transactionManager.getRawStoreXact();
         MvccRawStoreOrderedIndex.rebuild(
-                transaction,
+                transactionManager,
                 table,
                 target,
                 collectIndexVersions(transaction, table, null));
@@ -708,9 +717,6 @@ final class MvccRawStoreTable {
                     versions.add(new MvccRawStoreOrderedIndex.VersionInput(
                             version.rowId(),
                             version.versionId(),
-                            version.creatorTransactionId(),
-                            version.beginSequence(),
-                            version.endSequence(),
                             version.values()));
                 }
                 long pageNumber = page.getPageNumber();
@@ -726,17 +732,21 @@ final class MvccRawStoreTable {
         return versions;
     }
 
-    static void drop(Transaction rawTransaction, Descriptor table) throws StandardException {
+    static void drop(
+            TransactionManager transactionManager, Descriptor table) throws StandardException {
+        Transaction rawTransaction = transactionManager.getRawStoreXact();
         ContainerKey orderedIndex = MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction, table, true);
-        // Readers acquire metadata, versions, then the ordered index. Drop
-        // follows the same order so no participant waits while holding a later
-        // container in the table lock order.
-        rawTransaction.dropContainer(table.metadataContainer());
-        rawTransaction.dropContainer(table.versionContainer());
+        // Derby B-tree drop opens the base conglomerate while releasing its
+        // physical index containers. Retire the ordered-index generation while
+        // the MVCC metadata container is still present, then drop the version
+        // and metadata containers in the established table lock order.
         if (orderedIndex != null) {
-            rawTransaction.dropContainer(orderedIndex);
+            MvccRawStoreOrderedIndexGeneration.dropGeneration(
+                    transactionManager, table, orderedIndex);
         }
+        rawTransaction.dropContainer(table.versionContainer());
+        rawTransaction.dropContainer(table.metadataContainer());
     }
 
     private static void initializeMetadataContainer(Transaction rawTransaction, Descriptor descriptor)
@@ -913,14 +923,11 @@ final class MvccRawStoreTable {
                 RecordHint.of(versionHandle));
         ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         MvccRawStoreOrderedIndex.insertVersion(
-                transaction,
+                context.transactionManager(),
                 table,
                 orderedIndex,
                 rowId,
                 versionId,
-                context.transactionId(),
-                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
-                MvccRawStoreFormat.CURRENT_END_SEQUENCE,
                 values);
         PendingVersion pending = new PendingVersion(
                 table,

@@ -24,6 +24,7 @@ package org.apache.derby.iapi.store.access.conglomerate;
 import java.util.Objects;
 import java.util.Properties;
 
+import org.apache.derby.iapi.store.access.AccessFactory;
 import org.apache.derby.iapi.store.raw.RawStoreFactory;
 import org.apache.derby.iapi.store.raw.data.DataFactory;
 import org.apache.derby.io.StorageFactory;
@@ -37,6 +38,7 @@ import org.apache.derby.io.StorageFactory;
  * filesystem properties.</p>
  */
 public final class AccessMethodBootContext {
+    private final AccessFactory accessFactory;
     private final RawStoreFactory rawStoreFactory;
     private final DataFactory dataFactory;
     private final StorageFactory storageFactory;
@@ -46,6 +48,7 @@ public final class AccessMethodBootContext {
     private final Object databaseIdentity;
 
     public AccessMethodBootContext(
+            AccessFactory accessFactory,
             RawStoreFactory rawStoreFactory,
             DataFactory dataFactory,
             StorageFactory storageFactory,
@@ -53,6 +56,7 @@ public final class AccessMethodBootContext {
             boolean create,
             boolean readOnly,
             Object databaseIdentity) {
+        this.accessFactory = Objects.requireNonNull(accessFactory, "accessFactory");
         this.rawStoreFactory = Objects.requireNonNull(rawStoreFactory, "rawStoreFactory");
         this.dataFactory = Objects.requireNonNull(dataFactory, "dataFactory");
         this.storageFactory = Objects.requireNonNull(storageFactory, "storageFactory");
@@ -60,6 +64,10 @@ public final class AccessMethodBootContext {
         this.create = create;
         this.readOnly = readOnly;
         this.databaseIdentity = Objects.requireNonNull(databaseIdentity, "databaseIdentity");
+    }
+
+    public AccessFactory accessFactory() {
+        return accessFactory;
     }
 
     public RawStoreFactory rawStoreFactory() {
@@ -99,6 +107,7 @@ public final class AccessMethodBootContext {
 
     public AccessMethodBootContext withServiceProperties(Properties properties) {
         return new AccessMethodBootContext(
+                accessFactory,
                 rawStoreFactory,
                 dataFactory,
                 storageFactory,

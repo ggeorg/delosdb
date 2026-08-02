@@ -231,6 +231,23 @@ public interface Conglomerate extends Storable, StoreDataValue
     boolean isTemporary();
 
     /**
+     * Observe the access-layer identifier assigned after a conglomerate
+     * factory has returned and the access manager can resolve the new base.
+     *
+     * <p>Most access methods do not need this callback.  Implementations
+     * which create secondary structures whose metadata refers back to their
+     * base conglomerate may override it.</p>
+     *
+     * @param xactManager transaction which owns the conglomerate
+     * @param conglomId assigned access-layer conglomerate id
+     * @exception StandardException Standard exception policy.
+     */
+    default void conglomerateIdAssigned(
+            TransactionManager xactManager,
+            long conglomId) throws StandardException {
+    }
+
+    /**
      * Bulk load into the conglomerate.
      * <p>
      * Individual rows that are loaded into the conglomerate are not

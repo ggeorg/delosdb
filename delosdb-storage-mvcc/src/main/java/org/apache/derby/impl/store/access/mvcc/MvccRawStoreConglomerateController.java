@@ -121,8 +121,11 @@ final class MvccRawStoreConglomerateController
     public boolean lockRow(StoreRowLocation loc, int lockOper, boolean wait, int lockDuration)
             throws StandardException {
         ensureOpen();
-        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
-        context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId());
+        if ((lockOper & ConglomerateController.LOCK_UPD) != 0) {
+            MvccRawStoreTransactionContext context =
+                    runtime.context(transactionManager, rawTransaction);
+            context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId());
+        }
         return true;
     }
 
