@@ -384,6 +384,7 @@ final class MvccRawStoreTable {
                 values,
                 0L,
                 context);
+        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         Allocation allocation = context.reserveInsertIdentifiers(table);
         Object[] versionRow = versionRow(
                 rawTransaction,
@@ -402,7 +403,6 @@ final class MvccRawStoreTable {
                 allocation.versionId(),
                 RecordHint.of(versionHandle));
         insertRow(rawTransaction, table.metadataContainer(), directoryRow);
-        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
@@ -902,6 +902,7 @@ final class MvccRawStoreTable {
             int flags,
             StoreDataValue[] values,
             MvccRawStoreTransactionContext context) throws StandardException {
+        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         long versionId = context.reserveVersionIdentifier(table);
         Object[] versionRow = versionRow(
                 transaction,
@@ -921,7 +922,6 @@ final class MvccRawStoreTable {
                 expectedHead,
                 versionId,
                 RecordHint.of(versionHandle));
-        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
