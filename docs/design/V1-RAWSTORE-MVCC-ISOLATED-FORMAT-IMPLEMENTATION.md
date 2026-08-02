@@ -100,12 +100,16 @@ payload columns
 
 `MvccRowId` and `MvccVersionId` are durable identities. Directory rows may carry the current head's
 RawStore page/record locator and version rows may carry the predecessor's locator as optional trailing
-fields. Materialized scans detach stream-backed LOB payloads before closing the source RawStore
-container; cloned `OverflowInputStream` instances retain their owner handle and must not escape that
-boundary. These locators are validated hints only: row shape, row kind, `MvccRowId`, and `MvccVersionId`
-must match before decoding or commit stamping uses them. A missing, stale, reused, or mismatched hint
-falls back to authoritative logical-ID lookup. Older shorter rows remain valid without migration. See
-`V1-RAWSTORE-MVCC-LOOKUP-HINTS.md`.
+fields. The shared access-layer projection bitmap is carried into RawStore version fetches: identity,
+visibility, flags, and lookup-hint fields are always decoded, while only projected payload columns
+receive typed holders, physical fetches, and detached value copies. Qualifier columns remain part of
+the projection under the inherited scan contract. Full-row mutation, rebuild, and compatibility paths
+continue to decode complete payloads. Materialized scans detach any selected stream-backed LOB payloads
+before closing the source RawStore container; cloned `OverflowInputStream` instances retain their owner
+handle and must not escape that boundary. These locators are validated hints only: row shape, row kind,
+`MvccRowId`, and `MvccVersionId` must match before decoding or commit stamping uses them. A missing,
+stale, reused, or mismatched hint falls back to authoritative logical-ID lookup. Older shorter rows
+remain valid without migration. See `V1-RAWSTORE-MVCC-LOOKUP-HINTS.md`.
 
 The opt-in format now uses one database-wide RawStore metadata container for durable
 `MvccTransactionId`, durable `MvccCommitSequence`, and the committed publication high-water. The first
@@ -179,20 +183,23 @@ identity or visibility metadata.
 The direct conglomerate fetch path resolves a stable `MvccRowLocation` by:
 
 ```text
-scan directory records for MvccRowId
+use the validated stable-directory page/slot locator when present
+fall back to logical MvccRowId directory lookup on any mismatch
 read the authoritative head MvccVersionId
-try the optional validated RawStore page/record hint
+try the optional validated version page/record hint
 fall back to logical MvccVersionId lookup on any mismatch
 follow previousVersionId with the same hint/fallback rule
 apply current-transaction or committed-snapshot visibility
-return the decoded payload
+fetch and detach only the requested payload columns
 ```
 
 For safe single-column equality and range qualifiers, the scan controller opens the corresponding
 Derby B-tree with typed partial-key bounds, de-duplicates stable row candidates, rereads each candidate
-through the authoritative version-chain lookup, and reapplies all qualifiers. Unsupported predicate
-shapes use the linear directory scan. Version-chain navigation avoids a full version-container scan
-when a validated hint is current. Final optimizer statistics and costing remain later work.
+through the authoritative version-chain lookup, and reapplies all qualifiers. The scan's existing
+projection bitmap is reused for every candidate so metadata is decoded consistently without allocating
+one fetch descriptor per row. Unsupported predicate shapes use the linear directory scan with the same
+projected version fetch. Version-chain navigation avoids a full version-container scan when a validated
+hint is current. Final optimizer statistics and costing remain later work.
 
 ## Commit ordering
 

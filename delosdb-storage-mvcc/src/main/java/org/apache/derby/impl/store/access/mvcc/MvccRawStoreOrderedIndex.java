@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 
+import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.Qualifier;
@@ -149,6 +150,8 @@ final class MvccRawStoreOrderedIndex {
                 continue;
             }
             int firstColumn = columns[0];
+            MvccRawStoreVersionRows.FetchProjection projection =
+                    constraintProjection(table, columns);
             List<Candidate> candidates = candidatesForKey(
                     context.transactionManager(),
                     table,
@@ -165,6 +168,7 @@ final class MvccRawStoreOrderedIndex {
                         table,
                         candidateEntry.rowLocation(),
                         committedSequence,
+                        projection,
                         context);
                 if (candidate != null && sameKey(values, candidate.values(), columns)) {
                     throw StandardException.newException(
@@ -194,12 +198,13 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.UniqueConstraint constraint,
             MvccRawStoreTransactionContext context) throws StandardException {
         long committedSequence = context.currentCommittedSequence();
+        int[] columns = constraint.columns();
         List<MvccRawStoreTable.VisibleRow> rows = MvccRawStoreTable.scanVisibleAt(
                 transaction,
                 table,
                 committedSequence,
+                constraintProjection(table, columns),
                 context);
-        int[] columns = constraint.columns();
         for (int leftIndex = 0; leftIndex < rows.size(); leftIndex++) {
             StoreDataValue[] left = rows.get(leftIndex).values();
             if (constraint.duplicateNullsAllowed() && containsNull(left, columns)) {
@@ -472,6 +477,16 @@ final class MvccRawStoreOrderedIndex {
                 && StoreTypeUtil.compare(previousValues[column], values[column], true) == 0;
     }
 
+
+    private static MvccRawStoreVersionRows.FetchProjection constraintProjection(
+            MvccRawStoreTable.Descriptor table,
+            int[] columns) {
+        FormatableBitSet projection = new FormatableBitSet(table.columnCount());
+        for (int column : columns) {
+            projection.set(column);
+        }
+        return MvccRawStoreVersionRows.projection(table, projection);
+    }
 
     private static boolean containsNull(StoreDataValue[] values, int[] columns)
             throws StandardException {

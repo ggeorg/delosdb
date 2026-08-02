@@ -105,6 +105,72 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testProjectedScansKeepQualifierColumnsAndMaterializePayloadOnDemand()
+            throws Exception {
+        String database = databaseName("mvcc-raw-store-projected-scan");
+        String payloadOne = "payload-one-" + "x".repeat(500);
+        String payloadTwo = "payload-two-" + "y".repeat(500);
+        String payloadThree = "payload-three-" + "z".repeat(500);
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table projection_t (id int primary key, category int, "
+                                + "quantity int, payload varchar(600)) using delos_mvcc");
+                executeUpdate(setup,
+                        "insert into projection_t values (1, 7, 10, '" + payloadOne + "')");
+                executeUpdate(setup,
+                        "insert into projection_t values (2, 7, 20, '" + payloadTwo + "')");
+                executeUpdate(setup,
+                        "insert into projection_t values (3, 8, 30, '" + payloadThree + "')");
+                setup.commit();
+
+                assertRows(setup,
+                        "select id from projection_t order by id",
+                        "1",
+                        "2",
+                        "3");
+                assertIndexedRows(setup,
+                        "select id from projection_t "
+                                + "where category = 7 and quantity >= 20 order by id",
+                        "2");
+                assertIndexedRows(setup,
+                        "select id, quantity from projection_t where id = 2",
+                        "2|20");
+                assertIndexedRows(setup,
+                        "select payload from projection_t where id = 2",
+                        payloadTwo);
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                writer.setAutoCommit(false);
+                assertIndexedRows(historical,
+                        "select id from projection_t where category = 7 order by id",
+                        "1",
+                        "2");
+
+                executeUpdate(writer,
+                        "update projection_t set quantity = 25 where id = 2");
+                writer.commit();
+
+                assertIndexedRows(historical,
+                        "select id, quantity from projection_t "
+                                + "where category = 7 and quantity >= 20 order by id",
+                        "2|20");
+                historical.commit();
+                assertIndexedRows(historical,
+                        "select id, quantity from projection_t "
+                                + "where category = 7 and quantity >= 20 order by id",
+                        "2|25");
+                historical.commit();
+            }
+            shutdownDatabase(database);
+        }
+    }
+
     public void testUpdateDeleteSavepointAndHistoricalSnapshotsKeepIndexVisibility() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-history");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {

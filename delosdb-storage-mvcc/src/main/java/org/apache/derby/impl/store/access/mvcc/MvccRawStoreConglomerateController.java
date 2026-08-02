@@ -82,6 +82,7 @@ final class MvccRawStoreConglomerateController
                     rawTransaction,
                     table,
                     MvccRowLocation.from(loc).rowId(),
+                    validColumns,
                     context);
             if (visible == null) {
                 return false;

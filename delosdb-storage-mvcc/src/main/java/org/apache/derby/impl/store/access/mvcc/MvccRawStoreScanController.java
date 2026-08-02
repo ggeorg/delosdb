@@ -33,6 +33,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final Transaction rawTransaction;
     private final boolean hold;
     private final FormatableBitSet scanColumnList;
+    private final MvccRawStoreVersionRows.FetchProjection versionProjection;
     private final long snapshotSequence;
     private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease;
     private Qualifier[][] qualifiers;
@@ -60,6 +61,7 @@ final class MvccRawStoreScanController implements ScanManager {
         this.rawTransaction = rawTransaction;
         this.hold = hold;
         this.scanColumnList = scanColumnList;
+        this.versionProjection = MvccRawStoreVersionRows.projection(table, scanColumnList);
         this.qualifiers = qualifiers;
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
@@ -301,6 +303,7 @@ final class MvccRawStoreScanController implements ScanManager {
                     table,
                     mvccLocation,
                     snapshotSequence,
+                    versionProjection,
                     context);
         }
         if (visible == null || !qualifies(visible.values())) {
@@ -356,6 +359,7 @@ final class MvccRawStoreScanController implements ScanManager {
                             table,
                             candidate.rowLocation(),
                             snapshotSequence,
+                            versionProjection,
                             context);
                     if (visible != null) {
                         indexedRows.add(visible);
@@ -368,6 +372,7 @@ final class MvccRawStoreScanController implements ScanManager {
                         rawTransaction,
                         table,
                         snapshotSequence,
+                        versionProjection,
                         context);
                 orderedIndexScan = false;
             }

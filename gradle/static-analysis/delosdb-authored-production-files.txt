@@ -241,6 +241,7 @@ delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccR
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTableMetadata.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionRows.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java
 delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java
