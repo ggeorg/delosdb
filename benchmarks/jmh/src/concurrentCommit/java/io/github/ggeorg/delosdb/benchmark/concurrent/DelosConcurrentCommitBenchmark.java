@@ -20,8 +20,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -59,6 +62,7 @@ public final class DelosConcurrentCommitBenchmark {
             throw new IllegalStateException("scenario result count mismatch: expected="
                     + scenarios.size() + ", actual=" + results.size());
         }
+        validateResults(config, results);
 
         writeCsv(config.outputDirectory().resolve("results.csv"), results);
         writeJson(config.outputDirectory().resolve("results.json"), config, results);
@@ -75,6 +79,7 @@ public final class DelosConcurrentCommitBenchmark {
                         scenario,
                         config.warmupTransactionsPerWriter(),
                         config.warmupReadsPerReader(),
+                        0L,
                         DelosConcurrentWorkload.warmupInsertBase());
             }
 
@@ -84,19 +89,29 @@ public final class DelosConcurrentCommitBenchmark {
             try (Recording recording = new Recording()) {
                 enableCurrentJfrEvents(recording);
                 recording.start();
-                round = DelosConcurrentWorkload.runRound(
-                        environment,
-                        scenario,
-                        config.transactionsPerWriter(),
-                        config.readsPerReader(),
-                        DelosConcurrentWorkload.measurementInsertBase());
+                List<RoundResult> rounds = new ArrayList<>(config.measurementRounds());
+                long readerMeasurementNanos = TimeUnit.MILLISECONDS.toNanos(
+                        config.readerMeasurementMillis());
+                for (int measurementRound = 0;
+                        measurementRound < config.measurementRounds();
+                        measurementRound++) {
+                    rounds.add(DelosConcurrentWorkload.runRound(
+                            environment,
+                            scenario,
+                            config.transactionsPerWriter(),
+                            config.readsPerReader(),
+                            readerMeasurementNanos,
+                            DelosConcurrentWorkload.measurementInsertBase(measurementRound)));
+                }
+                round = RoundResult.combine(rounds);
                 recording.stop();
                 recording.dump(recordingFile);
             }
 
             SemanticDigest digest = environment.verify(
                     config.warmupTransactionsPerWriter(),
-                    config.transactionsPerWriter());
+                    config.transactionsPerWriter(),
+                    config.measurementRounds());
             JfrMetrics jfr = readJfrMetrics(recordingFile);
             if (!config.keepJfr()) {
                 Files.deleteIfExists(recordingFile);
@@ -166,6 +181,46 @@ public final class DelosConcurrentCommitBenchmark {
                 gcPauseNanos);
     }
 
+    private static void validateResults(Config config, List<Result> results) {
+        Map<String, SemanticDigest> semanticDigests = new LinkedHashMap<>();
+        long minimumReaderElapsed = Math.multiplyExact(
+                TimeUnit.MILLISECONDS.toNanos(config.readerMeasurementMillis()),
+                config.measurementRounds());
+        long toleratedReaderElapsed = minimumReaderElapsed * 8L / 10L;
+        for (Result result : results) {
+            Scenario scenario = result.scenario();
+            String semanticKey = scenario.topology().propertyValue()
+                    + '|' + scenario.operation().propertyValue()
+                    + "|w" + scenario.writers()
+                    + "|n" + scenario.rowsPerTransaction()
+                    + "|c" + scenario.resourceCapacity();
+            SemanticDigest existing = semanticDigests.putIfAbsent(semanticKey, result.digest());
+            if (existing != null && !existing.equals(result.digest())) {
+                throw new IllegalStateException(
+                        "semantic digest differs across equivalent reader/provider controls for "
+                                + semanticKey + ": first=" + existing + ", next=" + result.digest());
+            }
+            if (scenario.readers() > 0) {
+                if (result.reads().operations() < (long) scenario.readers()
+                        * config.measurementRounds()) {
+                    throw new IllegalStateException(
+                            "reader scenario did not complete at least one read per reader and round: "
+                                    + scenario);
+                }
+                if (result.readerElapsedNanos() < toleratedReaderElapsed) {
+                    throw new IllegalStateException(
+                            "reader scenario did not sustain the configured measurement duration: "
+                                    + scenario + ", elapsedNanos=" + result.readerElapsedNanos()
+                                    + ", expectedAtLeast=" + toleratedReaderElapsed);
+                }
+                if (scenario.writers() > 0 && result.overlapNanos() <= 0L) {
+                    throw new IllegalStateException(
+                            "mixed reader-writer scenario produced no measured overlap: " + scenario);
+                }
+            }
+        }
+    }
+
     private static void writeCsv(Path path, List<Result> results) throws IOException {
         try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8))) {
             writer.println(Result.csvHeader());
@@ -192,6 +247,9 @@ public final class DelosConcurrentCommitBenchmark {
             writer.println("  \"transactionsPerWriter\": " + config.transactionsPerWriter() + ',');
             writer.println("  \"warmupTransactionsPerWriter\": "
                     + config.warmupTransactionsPerWriter() + ',');
+            writer.println("  \"measurementRounds\": " + config.measurementRounds() + ',');
+            writer.println("  \"readerMeasurementMillis\": "
+                    + config.readerMeasurementMillis() + ',');
             writer.println("  \"readsPerReader\": " + config.readsPerReader() + ',');
             writer.println("  \"warmupReadsPerReader\": " + config.warmupReadsPerReader() + ',');
             writer.println("  \"databaseRoot\": \""
@@ -219,8 +277,11 @@ public final class DelosConcurrentCommitBenchmark {
             writer.println("Transactions per writer: " + config.transactionsPerWriter());
             writer.println("Warmup transactions per writer: "
                     + config.warmupTransactionsPerWriter());
-            writer.println("Reads per reader: " + config.readsPerReader());
+            writer.println("Measurement rounds: " + config.measurementRounds());
+            writer.println("Reader measurement milliseconds per round: "
+                    + config.readerMeasurementMillis());
             writer.println("Warmup reads per reader: " + config.warmupReadsPerReader());
+            writer.println("Initial reader latency capacity: " + config.readsPerReader());
             writer.println("Database root: " + config.databaseRoot());
             writer.println();
             for (Result result : results) {
@@ -285,6 +346,8 @@ public final class DelosConcurrentCommitBenchmark {
             long writerElapsedNanos,
             long readerElapsedNanos,
             long overlapNanos,
+            double writerOverlapRatio,
+            double readerOverlapRatio,
             LatencyStats writerTransactions,
             LatencyStats commits,
             LatencyStats reads,
@@ -307,6 +370,8 @@ public final class DelosConcurrentCommitBenchmark {
                     round.writerElapsedNanos(),
                     round.readerElapsedNanos(),
                     overlap(round.writerElapsedNanos(), round.readerElapsedNanos()),
+                    overlapRatio(round.writerElapsedNanos(), round.readerElapsedNanos()),
+                    overlapRatio(round.readerElapsedNanos(), round.writerElapsedNanos()),
                     writerTransactions,
                     commits,
                     reads,
@@ -316,8 +381,9 @@ public final class DelosConcurrentCommitBenchmark {
 
         static String csvHeader() {
             return "provider,topology,operation,writers,readerWorkload,readers,rowsPerTransaction,"
-                    + "writerTransactions,writerOperationsPerSecond,roundMillis,writerElapsedMillis,"
-                    + "readerElapsedMillis,overlapMillis,avgWriterTransactionMicros,"
+                    + "resourceCapacity,writerTransactions,writerOperationsPerSecond,roundMillis,"
+                    + "writerElapsedMillis,readerElapsedMillis,overlapMillis,writerOverlapRatio,"
+                    + "readerOverlapRatio,avgWriterTransactionMicros,"
                     + "p50WriterTransactionMicros,p95WriterTransactionMicros,"
                     + "p99WriterTransactionMicros,maxWriterTransactionMicros,"
                     + "avgCommitMicros,p50CommitMicros,p95CommitMicros,p99CommitMicros,maxCommitMicros,"
@@ -336,12 +402,15 @@ public final class DelosConcurrentCommitBenchmark {
                     scenario.readerWorkload().propertyValue(),
                     Integer.toString(scenario.readers()),
                     Integer.toString(scenario.rowsPerTransaction()),
+                    Integer.toString(scenario.resourceCapacity()),
                     Long.toString(writerTransactions.operations()),
                     decimal(writerOperationsPerSecond),
                     decimal(millis(roundElapsedNanos)),
                     decimal(millis(writerElapsedNanos)),
                     decimal(millis(readerElapsedNanos)),
                     decimal(millis(overlapNanos)),
+                    decimal(writerOverlapRatio),
+                    decimal(readerOverlapRatio),
                     decimal(micros(writerTransactions.averageNanos())),
                     decimal(micros(writerTransactions.p50Nanos())),
                     decimal(micros(writerTransactions.p95Nanos())),
@@ -380,6 +449,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + " reads/s=" + decimal(readerOperationsPerSecond)
                     + " read-p95=" + decimal(micros(reads.p95Nanos())) + "us"
                     + " overlap=" + decimal(millis(overlapNanos)) + "ms"
+                    + " writer-covered=" + decimal(writerOverlapRatio * 100.0d) + "%"
+                    + " reader-covered=" + decimal(readerOverlapRatio * 100.0d) + "%"
                     + " rows=" + digest.rowCount()
                     + " checksum=" + digest.checksumHex()
                     + " fileWrites=" + jfr.fileWriteCount()
@@ -400,6 +471,7 @@ public final class DelosConcurrentCommitBenchmark {
                     + scenario.readerWorkload().propertyValue() + "\",\n"
                     + next + "\"readers\": " + scenario.readers() + ",\n"
                     + next + "\"rowsPerTransaction\": " + scenario.rowsPerTransaction() + ",\n"
+                    + next + "\"resourceCapacity\": " + scenario.resourceCapacity() + ",\n"
                     + next + "\"writerTransactions\": "
                     + writerTransactions.operations() + ",\n"
                     + next + "\"writerOperationsPerSecond\": "
@@ -408,6 +480,8 @@ public final class DelosConcurrentCommitBenchmark {
                     + next + "\"writerElapsedNanos\": " + writerElapsedNanos + ",\n"
                     + next + "\"readerElapsedNanos\": " + readerElapsedNanos + ",\n"
                     + next + "\"overlapNanos\": " + overlapNanos + ",\n"
+                    + next + "\"writerOverlapRatio\": " + decimal(writerOverlapRatio) + ",\n"
+                    + next + "\"readerOverlapRatio\": " + decimal(readerOverlapRatio) + ",\n"
                     + latencyJson(next, "writerTransaction", writerTransactions) + ",\n"
                     + latencyJson(next, "commit", commits) + ",\n"
                     + next + "\"reads\": " + reads.operations() + ",\n"
@@ -444,6 +518,13 @@ public final class DelosConcurrentCommitBenchmark {
             return writerElapsedNanos == 0L || readerElapsedNanos == 0L
                     ? 0L
                     : Math.min(writerElapsedNanos, readerElapsedNanos);
+        }
+
+        private static double overlapRatio(long groupElapsedNanos, long peerElapsedNanos) {
+            if (groupElapsedNanos == 0L || peerElapsedNanos == 0L) {
+                return 0.0d;
+            }
+            return Math.min(groupElapsedNanos, peerElapsedNanos) / (double) groupElapsedNanos;
         }
 
         private static double throughput(long operations, long elapsedNanos) {

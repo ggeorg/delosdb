@@ -26,12 +26,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Coordinated writer and reader execution for one public-JDBC scenario. */
 final class DelosConcurrentWorkload {
     private static final long INSERT_WARMUP_BASE = 1_000_000_000L;
     private static final long INSERT_MEASUREMENT_BASE = 2_000_000_000L;
+    private static final long INSERT_MEASUREMENT_ROUND_STRIDE = 100_000_000_000L;
 
     private DelosConcurrentWorkload() {
     }
@@ -41,15 +43,20 @@ final class DelosConcurrentWorkload {
             Scenario scenario,
             int transactionsPerWriter,
             int readsPerReader,
+            long readerMeasurementNanos,
             long insertBase) throws Exception {
         int workers = scenario.writers() + scenario.readers();
         long[][] writerTransactionLatencies = new long[scenario.writers()][transactionsPerWriter];
         long[][] commitLatencies = new long[scenario.writers()][transactionsPerWriter];
-        long[][] readLatencies = new long[scenario.readers()][readsPerReader];
+        LatencyBuffer[] readLatencies = new LatencyBuffer[scenario.readers()];
+        for (int reader = 0; reader < readLatencies.length; reader++) {
+            readLatencies[reader] = new LatencyBuffer(readsPerReader);
+        }
         long[] writerFinished = new long[scenario.writers()];
         long[] readerFinished = new long[scenario.readers()];
         CountDownLatch ready = new CountDownLatch(workers);
         CountDownLatch start = new CountDownLatch(1);
+        AtomicLong readerDeadline = new AtomicLong();
         AtomicReference<Throwable> failure = new AtomicReference<>();
         ExecutorService executor = Executors.newFixedThreadPool(workers);
         List<Future<?>> futures = new ArrayList<>(workers);
@@ -73,6 +80,8 @@ final class DelosConcurrentWorkload {
                     environment,
                     scenario,
                     readsPerReader,
+                    readerMeasurementNanos,
+                    readerDeadline,
                     readLatencies,
                     readerFinished,
                     ready,
@@ -80,6 +89,9 @@ final class DelosConcurrentWorkload {
                     failure);
             awaitReady(ready, failure, scenario);
             long started = System.nanoTime();
+            readerDeadline.set(readerMeasurementNanos == 0L
+                    ? 0L
+                    : Math.addExact(started, readerMeasurementNanos));
             start.countDown();
             for (Future<?> future : futures) {
                 future.get();
@@ -138,7 +150,9 @@ final class DelosConcurrentWorkload {
             DelosConcurrentScenarioEnvironment environment,
             Scenario scenario,
             int readsPerReader,
-            long[][] readLatencies,
+            long readerMeasurementNanos,
+            AtomicLong readerDeadline,
+            LatencyBuffer[] readLatencies,
             long[] readerFinished,
             CountDownLatch ready,
             CountDownLatch start,
@@ -150,6 +164,8 @@ final class DelosConcurrentWorkload {
                     scenario,
                     readerId,
                     readsPerReader,
+                    readerMeasurementNanos,
+                    readerDeadline,
                     readLatencies[readerId],
                     readerFinished,
                     ready,
@@ -235,8 +251,10 @@ final class DelosConcurrentWorkload {
             DelosConcurrentScenarioEnvironment environment,
             Scenario scenario,
             int readerId,
-            int readCount,
-            long[] latencies,
+            int fixedReadCount,
+            long readerMeasurementNanos,
+            AtomicLong readerDeadline,
+            LatencyBuffer latencies,
             long[] finished,
             CountDownLatch ready,
             CountDownLatch start,
@@ -252,11 +270,10 @@ final class DelosConcurrentWorkload {
                 ready.countDown();
                 setupSignalled = true;
                 start.await();
-                for (int read = 0; read < readCount; read++) {
-                    throwIfFailed(firstFailure);
-                    long readStarted = System.nanoTime();
-                    probe.executeAndVerify();
-                    latencies[read] = System.nanoTime() - readStarted;
+                if (readerMeasurementNanos == 0L) {
+                    executeFixedReads(probe, fixedReadCount, latencies, firstFailure);
+                } else {
+                    executeTimedReads(probe, readerDeadline.get(), latencies, firstFailure);
                 }
                 probe.complete();
                 finished[readerId] = System.nanoTime();
@@ -272,6 +289,36 @@ final class DelosConcurrentWorkload {
             }
             throw unchecked("reader " + readerId + " failed", failure);
         }
+    }
+
+    private static void executeFixedReads(
+            DelosConcurrentReaderProbe probe,
+            int readCount,
+            LatencyBuffer latencies,
+            AtomicReference<Throwable> firstFailure) throws SQLException {
+        for (int read = 0; read < readCount; read++) {
+            executeRead(probe, latencies, firstFailure);
+        }
+    }
+
+    private static void executeTimedReads(
+            DelosConcurrentReaderProbe probe,
+            long deadline,
+            LatencyBuffer latencies,
+            AtomicReference<Throwable> firstFailure) throws SQLException {
+        do {
+            executeRead(probe, latencies, firstFailure);
+        } while (System.nanoTime() < deadline);
+    }
+
+    private static void executeRead(
+            DelosConcurrentReaderProbe probe,
+            LatencyBuffer latencies,
+            AtomicReference<Throwable> firstFailure) throws SQLException {
+        throwIfFailed(firstFailure);
+        long readStarted = System.nanoTime();
+        probe.executeAndVerify();
+        latencies.add(System.nanoTime() - readStarted);
     }
 
     private static void prepareBatch(
@@ -317,6 +364,21 @@ final class DelosConcurrentWorkload {
 
     private static long[] flatten(long[][] values) {
         return Arrays.stream(values).flatMapToLong(Arrays::stream).toArray();
+    }
+
+    private static long[] flatten(LatencyBuffer[] values) {
+        int length = 0;
+        for (LatencyBuffer value : values) {
+            length = Math.addExact(length, value.size());
+        }
+        long[] flattened = new long[length];
+        int offset = 0;
+        for (LatencyBuffer value : values) {
+            long[] next = value.toArray();
+            System.arraycopy(next, 0, flattened, offset, next.length);
+            offset += next.length;
+        }
+        return flattened;
     }
 
     private static long elapsedFrom(long started, long[] finished) {
@@ -384,11 +446,76 @@ final class DelosConcurrentWorkload {
                 throw new IllegalArgumentException("group elapsed times must not be negative");
             }
         }
+
+        static RoundResult combine(List<RoundResult> rounds) {
+            if (rounds.isEmpty()) {
+                throw new IllegalArgumentException("at least one round is required");
+            }
+            List<long[]> writerLatencies = new ArrayList<>(rounds.size());
+            List<long[]> commitLatencies = new ArrayList<>(rounds.size());
+            List<long[]> readLatencies = new ArrayList<>(rounds.size());
+            long elapsed = 0L;
+            long writerElapsed = 0L;
+            long readerElapsed = 0L;
+            for (RoundResult round : rounds) {
+                writerLatencies.add(round.writerTransactionLatenciesNanos());
+                commitLatencies.add(round.commitLatenciesNanos());
+                readLatencies.add(round.readLatenciesNanos());
+                elapsed = Math.addExact(elapsed, round.elapsedNanos());
+                writerElapsed = Math.addExact(writerElapsed, round.writerElapsedNanos());
+                readerElapsed = Math.addExact(readerElapsed, round.readerElapsedNanos());
+            }
+            return new RoundResult(
+                    concatenate(writerLatencies),
+                    concatenate(commitLatencies),
+                    concatenate(readLatencies),
+                    elapsed,
+                    writerElapsed,
+                    readerElapsed);
+        }
+
+        private static long[] concatenate(List<long[]> values) {
+            int length = 0;
+            for (long[] value : values) {
+                length = Math.addExact(length, value.length);
+            }
+            long[] result = new long[length];
+            int offset = 0;
+            for (long[] value : values) {
+                System.arraycopy(value, 0, result, offset, value.length);
+                offset += value.length;
+            }
+            return result;
+        }
     }
 
     record SemanticDigest(long rowCount, long checksum) {
         String checksumHex() {
             return String.format("%016x", checksum);
+        }
+    }
+
+    private static final class LatencyBuffer {
+        private long[] values;
+        private int size;
+
+        private LatencyBuffer(int expectedSize) {
+            values = new long[Math.max(16, expectedSize)];
+        }
+
+        private void add(long value) {
+            if (size == values.length) {
+                values = Arrays.copyOf(values, Math.multiplyExact(values.length, 2));
+            }
+            values[size++] = value;
+        }
+
+        private int size() {
+            return size;
+        }
+
+        private long[] toArray() {
+            return Arrays.copyOf(values, size);
         }
     }
 
@@ -404,7 +531,9 @@ final class DelosConcurrentWorkload {
         return INSERT_WARMUP_BASE;
     }
 
-    static long measurementInsertBase() {
-        return INSERT_MEASUREMENT_BASE;
+    static long measurementInsertBase(int round) {
+        return Math.addExact(
+                INSERT_MEASUREMENT_BASE,
+                Math.multiplyExact(round, INSERT_MEASUREMENT_ROUND_STRIDE));
     }
 }

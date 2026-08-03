@@ -182,13 +182,25 @@ The historical task name is retained so existing scripts remain valid:
 ./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
 ```
 
-The runner now compares heap and MVCC under the same writer and reader matrix.
-Writers and readers join one start barrier and execute fixed operation counts.
-Reports publish reader throughput and latency separately from full writer-transaction
-and commit latency, alongside JDK Flight Recorder evidence for file writes,
-contended monitor entry, thread parking, and GC pauses. Round, writer, reader,
-and overlap durations show whether the configured operation counts produced a
-meaningful concurrent interval.
+The runner compares heap and MVCC under one equivalent writer and reader matrix.
+Every scenario now uses the same seeded fixture shape, including readerless
+controls. This makes writer-only, primary-reader, and retained-snapshot results
+directly comparable instead of changing table cardinality when readers are added.
+For different-table and different-database topologies, one run also fixes the
+resource capacity across all generated scenarios.
+
+Workers join one start barrier. Writer transactions use fixed operation counts.
+Measured readers run for a fixed wall-clock duration in every measurement round,
+so primary and retained-snapshot workloads exert pressure for the same period
+instead of completing different fixed read counts. Warmup readers still use a
+bounded fixed count. Multiple measurement rounds are aggregated into one result,
+providing enough writer and reader samples for useful tail percentiles.
+
+Reports publish reader throughput and latency separately from full writer-
+transaction and commit latency, alongside JDK Flight Recorder evidence for file
+writes, contended monitor entry, thread parking, and GC pauses. Round, writer,
+reader, overlap duration, and overlap ratios show how much of each worker group's
+execution actually ran concurrently.
 
 Reader workloads are deliberately stable while writers run:
 
@@ -196,8 +208,8 @@ Reader workloads are deliberately stable while writers run:
 - `secondary` reads one seeded category through `(owner_id, id)`;
 - `range` reads a bounded seeded primary-key range;
 - `retained-snapshot` establishes a repeatable-read snapshot before the common
-  start barrier and verifies that the selected value remains unchanged while
-  writers execute.
+  start barrier and verifies that the selected value remains unchanged for the
+  configured reader measurement duration.
 
 The retained-snapshot shape is most informative with `operation=update`: heap
 may hold read locks while MVCC can preserve the old visible version. Insert
@@ -206,9 +218,11 @@ a deterministic fingerprint. Update writers mutate only seeded `value` and
 `payload` fields; reader primary, secondary, and range identities remain stable.
 
 Every scenario verifies final row count, updated-row contents where applicable,
-and a deterministic semantic checksum over all tables. The CSV and JSON reports
-include the provider, worker counts, reader workload, throughput, latency,
-overlap duration, semantic digest, and JFR totals.
+and a deterministic semantic checksum over all tables. The runner additionally
+requires equivalent reader/provider controls to produce the same digest, requires
+at least one read per reader in every measurement round, rejects reader scenarios
+that do not sustain at least 80% of the configured duration, and rejects mixed
+scenarios with zero measured overlap.
 
 A focused same-table comparison is:
 
@@ -222,15 +236,18 @@ A focused same-table comparison is:
   -Pdelosdb.concurrentCommit.readerWorkloads=primary,retained-snapshot \
   -Pdelosdb.concurrentCommit.rowsPerTransaction=1 \
   -Pdelosdb.concurrentCommit.transactionsPerWriter=20 \
-  -Pdelosdb.concurrentCommit.warmupTransactionsPerWriter=2 \
+  -Pdelosdb.concurrentCommit.warmupTransactionsPerWriter=20 \
+  -Pdelosdb.concurrentCommit.measurementRounds=5 \
+  -Pdelosdb.concurrentCommit.readerMeasurementMillis=250 \
   -Pdelosdb.concurrentCommit.readsPerReader=200 \
-  -Pdelosdb.concurrentCommit.warmupReadsPerReader=20 \
+  -Pdelosdb.concurrentCommit.warmupReadsPerReader=200 \
   -Pdelosdb.concurrentCommit.keepJfr=false
 ```
 
-That command produces 12 unique scenarios. Readerless cases are deduplicated
-across configured reader workloads. Writerless cases are likewise deduplicated
-across configured operations and row-batch sizes.
+That command produces 12 unique scenarios and aggregates five measurement
+rounds per scenario. Readerless cases are deduplicated across configured reader
+workloads. Writerless cases are likewise deduplicated across configured
+operations and row-batch sizes.
 
 Configuration uses Gradle properties:
 
@@ -244,15 +261,20 @@ delosdb.concurrentCommit.readerWorkloads
 delosdb.concurrentCommit.rowsPerTransaction
 delosdb.concurrentCommit.transactionsPerWriter
 delosdb.concurrentCommit.warmupTransactionsPerWriter
+delosdb.concurrentCommit.measurementRounds
+delosdb.concurrentCommit.readerMeasurementMillis
 delosdb.concurrentCommit.readsPerReader
 delosdb.concurrentCommit.warmupReadsPerReader
 delosdb.concurrentCommit.databaseRoot
 delosdb.concurrentCommit.keepJfr
 ```
 
-`writers` and `readers` accept zero, but each generated scenario must contain at
-least one worker. The bounded defaults cover heap and MVCC, writer-only controls,
-and mixed readers and writers. Use explicit properties for larger matrices.
+`readsPerReader` is the fixed warmup count and the initial capacity for measured
+latency storage. Measured read count is determined by
+`readerMeasurementMillis`. `writers` and `readers` accept zero, but each
+generated scenario must contain at least one worker. The bounded defaults cover
+heap and MVCC, writer-only controls, and mixed readers and writers. Use explicit
+properties for larger matrices.
 
 Reports are written under `build/reports/concurrent-commit`:
 

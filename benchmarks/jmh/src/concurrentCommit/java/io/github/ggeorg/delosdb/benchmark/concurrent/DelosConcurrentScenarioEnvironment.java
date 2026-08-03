@@ -33,25 +33,22 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
     private final List<Resource> resources;
     private final int fixtureRowsPerPartition;
     private final int partitionsInSharedTable;
-    private final boolean seeded;
 
     private DelosConcurrentScenarioEnvironment(
             Scenario scenario,
             List<Resource> resources,
             int fixtureRowsPerPartition,
-            int partitionsInSharedTable,
-            boolean seeded) {
+            int partitionsInSharedTable) {
         this.scenario = scenario;
         this.resources = resources;
         this.fixtureRowsPerPartition = fixtureRowsPerPartition;
         this.partitionsInSharedTable = partitionsInSharedTable;
-        this.seeded = seeded;
     }
 
     static DelosConcurrentScenarioEnvironment create(Path root, Scenario scenario) throws SQLException {
         int resourceCount = scenario.topology() == Topology.SAME_TABLE
                 ? 1
-                : Math.max(1, Math.max(scenario.writers(), scenario.readers()));
+                : scenario.resourceCapacity();
         int databaseCount = scenario.topology() == Topology.DIFFERENT_DATABASES
                 ? resourceCount
                 : 1;
@@ -63,10 +60,7 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
         List<Resource> resources = resources(urls, resourceCount, scenario.topology());
         createDatabasesAndTables(urls, resources, scenario);
 
-        boolean seeded = scenario.operation() == Operation.UPDATE || scenario.readers() > 0;
-        int fixtureRows = seeded
-                ? Math.max(scenario.rowsPerTransaction(), scenario.readers() > 0 ? READER_FIXTURE_ROWS : 0)
-                : 0;
+        int fixtureRows = Math.max(scenario.rowsPerTransaction(), READER_FIXTURE_ROWS);
         int sharedPartitions = scenario.topology() == Topology.SAME_TABLE
                 ? Math.max(1, scenario.writers() > 0 ? scenario.writers() : scenario.readers())
                 : 1;
@@ -74,11 +68,8 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
                 scenario,
                 List.copyOf(resources),
                 fixtureRows,
-                sharedPartitions,
-                seeded);
-        if (seeded) {
-            environment.seedFixtureRows();
-        }
+                sharedPartitions);
+        environment.seedFixtureRows();
         return environment;
     }
 
@@ -112,7 +103,8 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
 
     DelosConcurrentWorkload.SemanticDigest verify(
             int warmupTransactions,
-            int measuredTransactions) throws SQLException {
+            int measuredTransactions,
+            int measurementRounds) throws SQLException {
         long actualRows = 0L;
         long checksum = HASH_OFFSET;
         for (Resource resource : resources) {
@@ -133,7 +125,7 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
         long expectedRows = seededRows()
                 + (scenario.operation() == Operation.INSERT
                 ? (long) scenario.writers()
-                        * (warmupTransactions + measuredTransactions)
+                        * (warmupTransactions + (long) measurementRounds * measuredTransactions)
                         * scenario.rowsPerTransaction()
                 : 0L);
         if (actualRows != expectedRows) {
@@ -219,9 +211,6 @@ final class DelosConcurrentScenarioEnvironment implements AutoCloseable {
     }
 
     private long seededRows() {
-        if (!seeded) {
-            return 0L;
-        }
         long partitions = scenario.topology() == Topology.SAME_TABLE
                 ? partitionsInSharedTable
                 : resources.size();

@@ -383,6 +383,8 @@ final List<String> concurrentCommitPropertyNames = [
         'delosdb.concurrentCommit.rowsPerTransaction',
         'delosdb.concurrentCommit.transactionsPerWriter',
         'delosdb.concurrentCommit.warmupTransactionsPerWriter',
+        'delosdb.concurrentCommit.measurementRounds',
+        'delosdb.concurrentCommit.readerMeasurementMillis',
         'delosdb.concurrentCommit.readsPerReader',
         'delosdb.concurrentCommit.warmupReadsPerReader',
         'delosdb.concurrentCommit.databaseRoot',

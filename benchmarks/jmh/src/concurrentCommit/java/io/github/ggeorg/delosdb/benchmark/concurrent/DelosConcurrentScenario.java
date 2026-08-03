@@ -131,13 +131,18 @@ final class DelosConcurrentScenario {
             int writers,
             int readers,
             ReaderWorkload readerWorkload,
-            int rowsPerTransaction) {
+            int rowsPerTransaction,
+            int resourceCapacity) {
         Scenario {
             if (provider == null || topology == null || operation == null || readerWorkload == null) {
                 throw new NullPointerException("scenario enum values must not be null");
             }
             if (writers < 0 || readers < 0) {
                 throw new IllegalArgumentException("writer and reader counts must not be negative");
+            }
+            if (resourceCapacity < 1 || resourceCapacity < Math.max(writers, readers)) {
+                throw new IllegalArgumentException(
+                        "resourceCapacity must cover every configured worker: " + resourceCapacity);
             }
             if (writers == 0 && readers == 0) {
                 throw new IllegalArgumentException("a scenario requires at least one worker");
@@ -169,7 +174,8 @@ final class DelosConcurrentScenario {
                     + "-w" + writers
                     + '-' + readerWorkload.propertyValue()
                     + "-r" + readers
-                    + "-n" + rowsPerTransaction;
+                    + "-n" + rowsPerTransaction
+                    + "-c" + resourceCapacity;
         }
     }
 
@@ -183,6 +189,8 @@ final class DelosConcurrentScenario {
             List<Integer> rowsPerTransaction,
             int transactionsPerWriter,
             int warmupTransactionsPerWriter,
+            int measurementRounds,
+            int readerMeasurementMillis,
             int readsPerReader,
             int warmupReadsPerReader,
             Path outputDirectory,
@@ -201,8 +209,10 @@ final class DelosConcurrentScenario {
                     || readerWorkloads.isEmpty() || rowsPerTransaction.isEmpty()) {
                 throw new IllegalArgumentException("configuration axes must not be empty");
             }
-            if (transactionsPerWriter < 1 || readsPerReader < 1) {
-                throw new IllegalArgumentException("measurement operation counts must be positive");
+            if (transactionsPerWriter < 1 || readsPerReader < 1
+                    || measurementRounds < 1 || readerMeasurementMillis < 1) {
+                throw new IllegalArgumentException(
+                        "measurement counts, rounds, and reader duration must be positive");
             }
             if (warmupTransactionsPerWriter < 0 || warmupReadsPerReader < 0) {
                 throw new IllegalArgumentException("warmup operation counts must not be negative");
@@ -231,9 +241,11 @@ final class DelosConcurrentScenario {
                             .toList(),
                     positiveIntegers("delosdb.concurrentCommit.rowsPerTransaction", "1"),
                     positiveInteger("delosdb.concurrentCommit.transactionsPerWriter", 20),
-                    nonNegativeInteger("delosdb.concurrentCommit.warmupTransactionsPerWriter", 2),
+                    nonNegativeInteger("delosdb.concurrentCommit.warmupTransactionsPerWriter", 20),
+                    positiveInteger("delosdb.concurrentCommit.measurementRounds", 5),
+                    positiveInteger("delosdb.concurrentCommit.readerMeasurementMillis", 250),
                     positiveInteger("delosdb.concurrentCommit.readsPerReader", 200),
-                    nonNegativeInteger("delosdb.concurrentCommit.warmupReadsPerReader", 20),
+                    nonNegativeInteger("delosdb.concurrentCommit.warmupReadsPerReader", 200),
                     Path.of(System.getProperty(
                             "delosdb.concurrentCommit.outputDirectory",
                             "build/reports/concurrent-commit")),
@@ -245,6 +257,10 @@ final class DelosConcurrentScenario {
 
         List<Scenario> scenarios() {
             Set<Scenario> scenarios = new LinkedHashSet<>();
+            int resourceCapacity = Math.max(
+                    writers.stream().mapToInt(Integer::intValue).max().orElse(0),
+                    readers.stream().mapToInt(Integer::intValue).max().orElse(0));
+            resourceCapacity = Math.max(1, resourceCapacity);
             for (Provider provider : providers) {
                 for (Topology topology : topologies) {
                     for (Operation configuredOperation : operations) {
@@ -267,7 +283,8 @@ final class DelosConcurrentScenario {
                                                     writerCount,
                                                     readerCount,
                                                     readerWorkload,
-                                                    rows));
+                                                    rows,
+                                                    resourceCapacity));
                                         }
                                     }
                                 }
