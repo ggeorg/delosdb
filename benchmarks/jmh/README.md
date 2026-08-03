@@ -173,35 +173,95 @@ The standalone benchmark launcher therefore opts its JMH runner and forks into
 JDK 25 compatibility mode with `--sun-misc-unsafe-memory-access=allow`; DelosDB
 runtime processes outside this benchmark build are unaffected.
 
-## Concurrent commit benchmark
+## Concurrent reader-writer benchmark
 
-The standalone build also includes a public-JDBC concurrency runner:
+The standalone build also includes a coordinated public-JDBC concurrency runner.
+The historical task name is retained so existing scripts remain valid:
 
 ```bash
 ./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
 ```
 
-It measures commit throughput and p50/p95/p99 latency for same-table,
-different-table, and different-database writers. The runner records current
-JDK Flight Recorder events for file writes, contended monitor entry, thread
-parking, and GC pauses without importing DelosDB implementation APIs. It also
-verifies insert row counts and the final contents of every updated fixture row.
-Reported throughput includes the cost of this bounded JFR recording.
+The runner now compares heap and MVCC under the same writer and reader matrix.
+Writers and readers join one start barrier and execute fixed operation counts.
+Reports publish reader throughput and latency separately from full writer-transaction
+and commit latency, alongside JDK Flight Recorder evidence for file writes,
+contended monitor entry, thread parking, and GC pauses. Round, writer, reader,
+and overlap durations show whether the configured operation counts produced a
+meaningful concurrent interval.
+
+Reader workloads are deliberately stable while writers run:
+
+- `primary` reads one seeded primary key;
+- `secondary` reads one seeded category through `(owner_id, id)`;
+- `range` reads a bounded seeded primary-key range;
+- `retained-snapshot` establishes a repeatable-read snapshot before the common
+  start barrier and verifies that the selected value remains unchanged while
+  writers execute.
+
+The retained-snapshot shape is most informative with `operation=update`: heap
+may hold read locks while MVCC can preserve the old visible version. Insert
+writers use keys and categories outside the reader fixture, so every reader has
+a deterministic fingerprint. Update writers mutate only seeded `value` and
+`payload` fields; reader primary, secondary, and range identities remain stable.
+
+Every scenario verifies final row count, updated-row contents where applicable,
+and a deterministic semantic checksum over all tables. The CSV and JSON reports
+include the provider, worker counts, reader workload, throughput, latency,
+overlap duration, semantic digest, and JFR totals.
+
+A focused same-table comparison is:
+
+```bash
+./gradlew -p benchmarks/jmh clean runConcurrentCommitBenchmark \
+  -Pdelosdb.concurrentCommit.providers=heap,mvcc \
+  -Pdelosdb.concurrentCommit.writers=1,4 \
+  -Pdelosdb.concurrentCommit.readers=0,4 \
+  -Pdelosdb.concurrentCommit.topologies=same-table \
+  -Pdelosdb.concurrentCommit.operations=update \
+  -Pdelosdb.concurrentCommit.readerWorkloads=primary,retained-snapshot \
+  -Pdelosdb.concurrentCommit.rowsPerTransaction=1 \
+  -Pdelosdb.concurrentCommit.transactionsPerWriter=20 \
+  -Pdelosdb.concurrentCommit.warmupTransactionsPerWriter=2 \
+  -Pdelosdb.concurrentCommit.readsPerReader=200 \
+  -Pdelosdb.concurrentCommit.warmupReadsPerReader=20 \
+  -Pdelosdb.concurrentCommit.keepJfr=false
+```
+
+That command produces 12 unique scenarios. Readerless cases are deduplicated
+across configured reader workloads. Writerless cases are likewise deduplicated
+across configured operations and row-batch sizes.
 
 Configuration uses Gradle properties:
 
 ```text
+delosdb.concurrentCommit.providers
 delosdb.concurrentCommit.writers
+delosdb.concurrentCommit.readers
 delosdb.concurrentCommit.topologies
 delosdb.concurrentCommit.operations
+delosdb.concurrentCommit.readerWorkloads
 delosdb.concurrentCommit.rowsPerTransaction
 delosdb.concurrentCommit.transactionsPerWriter
 delosdb.concurrentCommit.warmupTransactionsPerWriter
+delosdb.concurrentCommit.readsPerReader
+delosdb.concurrentCommit.warmupReadsPerReader
 delosdb.concurrentCommit.databaseRoot
 delosdb.concurrentCommit.keepJfr
 ```
 
-Reports are written under `build/reports/concurrent-commit`. The benchmark is
-external validation: it is not part of the root build, the root `check`, or S0.
-The standalone benchmark build's own `check` task compiles this runner and
-verifies that it uses only the public JDBC boundary.
+`writers` and `readers` accept zero, but each generated scenario must contain at
+least one worker. The bounded defaults cover heap and MVCC, writer-only controls,
+and mixed readers and writers. Use explicit properties for larger matrices.
+
+Reports are written under `build/reports/concurrent-commit`:
+
+- `results.csv`
+- `results.json`
+- `human.txt`
+- `run-manifest.txt`
+- optional per-scenario `.jfr` recordings
+
+The benchmark is external validation. It is not part of the root build, root
+`check`, or S0. The standalone benchmark build's own `check` task compiles the
+runner and verifies that it uses only public JDBC and JDK APIs.

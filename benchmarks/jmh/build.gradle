@@ -374,12 +374,17 @@ tasks.named('compileConcurrentCommitJava', JavaCompile) {
 }
 
 final List<String> concurrentCommitPropertyNames = [
+        'delosdb.concurrentCommit.providers',
         'delosdb.concurrentCommit.writers',
+        'delosdb.concurrentCommit.readers',
         'delosdb.concurrentCommit.topologies',
         'delosdb.concurrentCommit.operations',
+        'delosdb.concurrentCommit.readerWorkloads',
         'delosdb.concurrentCommit.rowsPerTransaction',
         'delosdb.concurrentCommit.transactionsPerWriter',
         'delosdb.concurrentCommit.warmupTransactionsPerWriter',
+        'delosdb.concurrentCommit.readsPerReader',
+        'delosdb.concurrentCommit.warmupReadsPerReader',
         'delosdb.concurrentCommit.databaseRoot',
         'delosdb.concurrentCommit.keepJfr'
 ]
@@ -398,7 +403,7 @@ final File concurrentCommitManifest = new File(concurrentCommitReportDirectory, 
 
 tasks.register('writeConcurrentCommitRunManifest') {
     group = 'benchmark'
-    description = 'Writes reproducibility fingerprints for the concurrent commit benchmark.'
+    description = 'Writes reproducibility fingerprints for the concurrent reader-writer benchmark.'
     dependsOn tasks.named('verifyDelosRuntimeJars'), tasks.named('verifyJmhApiBoundary')
     inputs.files(runtimeJarFiles, concurrentCommitSourceFiles, file('build.gradle'), file('settings.gradle'))
     inputs.properties(concurrentCommitProperties)
@@ -407,7 +412,7 @@ tasks.register('writeConcurrentCommitRunManifest') {
     doLast {
         concurrentCommitManifest.parentFile.mkdirs()
         concurrentCommitManifest.withPrintWriter('UTF-8') { writer ->
-            writer.println('DelosDB concurrent commit benchmark manifest')
+            writer.println('DelosDB concurrent reader-writer benchmark manifest')
             writer.println('Required Java toolchain: 25')
             writer.println('Main class: io.github.ggeorg.delosdb.benchmark.concurrent.DelosConcurrentCommitBenchmark')
             concurrentCommitPropertyNames.each { propertyName ->
@@ -431,7 +436,7 @@ tasks.register('writeConcurrentCommitRunManifest') {
 
 tasks.register('runConcurrentCommitBenchmark', JavaExec) {
     group = 'benchmark'
-    description = 'Measures concurrent MVCC commit throughput, latency, file writes, and JVM contention.'
+    description = 'Measures heap/MVCC concurrent reader-writer throughput, latency, file writes, and JVM contention.'
     dependsOn tasks.named('compileConcurrentCommitJava'), tasks.named('writeConcurrentCommitRunManifest')
     classpath = sourceSets.concurrentCommit.runtimeClasspath
     mainClass = 'io.github.ggeorg.delosdb.benchmark.concurrent.DelosConcurrentCommitBenchmark'
