@@ -1411,6 +1411,14 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 	protected abstract int internalDeletedRecordCount();
 
 	/**
+		Read the deleted flag directly from the stored record header bytes.
+
+		This is used by sane-build consistency verification so the check does
+		not replace the page's cached {@code StoredRecordHeader} for every slot.
+	*/
+	protected abstract boolean isDeletedOnPageData(int slot);
+
+	/**
 		get record count without checking for latch
 	*/
 	protected int internalNonDeletedRecordCount()
@@ -1436,7 +1444,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 				int delCount = 0;
 				int	maxSlot = recordCount;
 				for (int slot = FIRST_SLOT_NUMBER ; slot < maxSlot; slot++) {
-					if (recordHeaderOnDemand(slot).isDeleted())
+					if (isDeletedOnPageData(slot))
 						delCount++;
 				}
 				if (delCount != deletedCount)

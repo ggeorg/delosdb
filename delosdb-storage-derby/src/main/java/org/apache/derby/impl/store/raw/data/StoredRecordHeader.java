@@ -292,6 +292,28 @@ public final class StoredRecordHeader
         return ((status & RECORD_DELETED) == RECORD_DELETED);
     }
 
+    /**
+     * Read the deleted flag directly from a stored record header.
+     *
+     * <p>The status byte is the first byte of every stored record header.
+     * This helper preserves sane-build status validation without allocating a
+     * temporary {@code StoredRecordHeader}.</p>
+     */
+    static boolean isDeleted(byte[] data, int offset)
+    {
+        int storedStatus = data[offset] & 0xff;
+
+        if (SanityManager.DEBUG &&
+                (storedStatus & ~RECORD_VALID_MASK) != 0)
+        {
+            SanityManager.THROWASSERT(
+                    "Invalid status in StoredRecordHeader = " +
+                    storedStatus);
+        }
+
+        return (storedStatus & RECORD_DELETED) == RECORD_DELETED;
+    }
+
 
     /**
      * return the size of the record header.

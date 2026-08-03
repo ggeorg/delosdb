@@ -36,12 +36,22 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private final Transaction transaction;
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
+    private final StoreDataValue candidateKind;
+    private final StoreDataValue candidateRow;
+    private final StoreDataValue candidateVersion;
+    private MvccRawStoreVersionRows.FetchProjection primaryProjection;
+    private MvccRawStoreVersionRows.Decoder primaryDecoder;
+    private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
+    private MvccRawStoreVersionRows.Decoder secondaryDecoder;
 
     MvccRawStoreVersionReader(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table) throws StandardException {
         this.transaction = transaction;
         this.table = table;
+        candidateKind = MvccRawStoreFormat.intValue(transaction, 0);
+        candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
+        candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
         this.container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -129,13 +139,23 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
         long versionId = head.versionId();
+        long firstVersionId = versionId;
         MvccRawStoreTable.RecordHint hint = head.hint();
-        Set<Long> visited = new HashSet<>();
+        Set<Long> visited = null;
+        boolean first = true;
         while (versionId != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
-            if (!visited.add(versionId)) {
-                throw new IllegalStateException(
-                        "RawStore MVCC version-chain cycle for logical row " + rowId
-                                + " at version " + versionId);
+            if (first) {
+                first = false;
+            } else {
+                if (visited == null) {
+                    visited = new HashSet<>();
+                    visited.add(firstVersionId);
+                }
+                if (!visited.add(versionId)) {
+                    throw new IllegalStateException(
+                            "RawStore MVCC version-chain cycle for logical row " + rowId
+                                    + " at version " + versionId);
+                }
             }
             MvccRawStoreTable.VersionRecord version = find(
                     rowId,
@@ -200,9 +220,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
             }
-            StoreDataValue candidateKind = MvccRawStoreFormat.intValue(transaction, 0);
-            StoreDataValue candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-            StoreDataValue candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
             page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_KIND_FIELD, candidateKind);
             page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
             page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
@@ -211,12 +228,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                     || StoreTypeUtil.getLong(candidateVersion) != versionId) {
                 return null;
             }
-            return MvccRawStoreVersionRows.decodeAtSlot(
-                    transaction,
-                    table,
-                    page,
-                    slot,
-                    projection);
+            return decoder(projection).decodeAtSlot(page, slot);
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -243,12 +255,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                         continue;
                     }
                     MvccRawStoreTable.VersionRecord version =
-                            MvccRawStoreVersionRows.decodeAtSlot(
-                                    transaction,
-                                    table,
-                                    page,
-                                    slot,
-                                    projection);
+                            decoder(projection).decodeAtSlot(page, slot);
                     if (version != null && version.versionId() == versionId) {
                         if (version.rowId() != rowId) {
                             throw new IllegalStateException(
@@ -269,6 +276,27 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                 page.unlatch();
             }
         }
+    }
+
+    private MvccRawStoreVersionRows.Decoder decoder(
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        if (primaryDecoder == null) {
+            primaryProjection = projection;
+            primaryDecoder = new MvccRawStoreVersionRows.Decoder(transaction, table, projection);
+            return primaryDecoder;
+        }
+        if (primaryProjection == projection) {
+            return primaryDecoder;
+        }
+        if (secondaryDecoder == null) {
+            secondaryProjection = projection;
+            secondaryDecoder = new MvccRawStoreVersionRows.Decoder(transaction, table, projection);
+            return secondaryDecoder;
+        }
+        if (secondaryProjection == projection) {
+            return secondaryDecoder;
+        }
+        return new MvccRawStoreVersionRows.Decoder(transaction, table, projection);
     }
 
     private static boolean visible(

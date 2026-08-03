@@ -7918,6 +7918,16 @@ public class StoredPage extends CachedPage
     }
 
     /**
+     * Read the deleted state from the stored record header without creating
+     * or replacing the cached {@link StoredRecordHeader}.
+     */
+    protected boolean isDeletedOnPageData(int slot)
+    {
+        return StoredRecordHeader.isDeleted(
+                pageData, getRecordOffset(slot));
+    }
+
+    /**
         purgeRecord from page.  Move following slots up by one.
 
         @exception StandardException    Standard Derby error policy

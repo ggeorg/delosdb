@@ -344,11 +344,11 @@ final class MvccRawStoreOrderedIndex {
                 stopKey,
                 stopOperator);
         try {
+            StoreDataValue[] row = indexRowTemplate(
+                    transactionManager.getRawStoreXact(),
+                    table,
+                    predicate.columnId());
             while (scan.next()) {
-                StoreDataValue[] row = indexRowTemplate(
-                        transactionManager.getRawStoreXact(),
-                        table,
-                        predicate.columnId());
                 scan.fetch(row);
                 long rowId = StoreTypeUtil.getLong(row[ROW_ID_FIELD]);
                 long versionId = StoreTypeUtil.getLong(row[VERSION_ID_FIELD]);
