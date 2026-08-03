@@ -13,7 +13,7 @@ The benchmark matrix contains:
 
 - prepared primary-key lookup and a key-only covered projection;
 - prepared secondary-index equality lookup, a key-only covered projection,
-  and a covered `count(*)` shape;
+  a covered `count(*)` shape, an `id + payload` projection, and a complete-row projection;
 - prepared composite range scan and a projection covered by the composite key;
 - prepared full scan;
 - prepared aggregate;
@@ -96,6 +96,58 @@ secondary pairs isolate the cost removed when only the indexed key is needed.
 The composite pair measures a projection and residual range predicate fully
 represented by `(bucket, quantity)`. The covered count shape removes JDBC row
 materialization while retaining candidate traversal and MVCC visibility work.
+
+## Focused row-materialization allocation attribution
+
+Run the secondary-index shapes with JMH's GC profiler:
+
+```bash
+./gradlew -p benchmarks/jmh clean jmh \
+  '-Pdelosdb.jmh.includes=.*(secondaryEqualityCoveredCount|secondaryEqualityCoveredLookup|secondaryEqualityLookup|secondaryEqualityPayloadLookup|secondaryEqualityFullRowLookup)' \
+  -Pdelosdb.jmh.providers=heap,mvcc \
+  -Pdelosdb.jmh.rows=1000 \
+  -Pdelosdb.jmh.payloadSizes=128,4096 \
+  -Pdelosdb.jmh.commitBatchSizes=100 \
+  -Pdelosdb.jmh.profilers=gc \
+  -Pdelosdb.jmh.warmupIterations=5 \
+  -Pdelosdb.jmh.iterations=10 \
+  -Pdelosdb.jmh.warmupTime=1s \
+  -Pdelosdb.jmh.iterationTime=1s \
+  -Pdelosdb.jmh.forks=2
+```
+
+The five shapes form one attribution ladder:
+
+```text
+covered count
+→ one covered integer per candidate
+→ two projected integers through the ordinary row path
+→ id plus payload
+→ all five table columns
+```
+
+The JMH JSON remains authoritative. When the `gc` profiler is enabled, the
+build also validates `gc.alloc.rate.norm` for every result and writes:
+
+```text
+benchmarks/jmh/build/reports/jmh/allocation-summary.txt
+```
+
+That report contains latency and normalized bytes allocated per benchmark
+operation for every provider, payload size, and query shape. It is evidence for
+choosing a safe shared row/descriptor reuse target; it is not an S0 threshold.
+
+Before any row-buffer reuse change, run the heap/MVCC ownership gate:
+
+```bash
+./gradlew \
+  :delosdb-tests:runDelosJdbcResultBufferOwnershipTest \
+  --console=plain
+```
+
+The gate proves that values retained across `ResultSet.next()`, sort, distinct,
+aggregate, join, scrollable cursor movement, and result-set closure remain
+detached from mutable execution buffers.
 
 ## Bounded standalone run
 

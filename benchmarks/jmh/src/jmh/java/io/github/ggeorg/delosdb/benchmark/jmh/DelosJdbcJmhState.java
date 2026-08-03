@@ -58,6 +58,8 @@ public class DelosJdbcJmhState {
     private PreparedStatement secondaryEqualityLookup;
     private PreparedStatement secondaryEqualityCoveredLookup;
     private PreparedStatement secondaryEqualityCoveredCount;
+    private PreparedStatement secondaryEqualityPayloadLookup;
+    private PreparedStatement secondaryEqualityFullRowLookup;
     private PreparedStatement compositeRangeScan;
     private PreparedStatement compositeRangeCoveredScan;
     private PreparedStatement fullScan;
@@ -68,6 +70,8 @@ public class DelosJdbcJmhState {
     private long[] categoryChecksums;
     private long[] categoryCoveredChecksums;
     private long[] categoryCountChecksums;
+    private long[] categoryPayloadChecksums;
+    private long[] categoryFullRowChecksums;
     private long[] bucketChecksums;
     private long[] bucketCoveredChecksums;
     private long fullScanChecksum;
@@ -172,6 +176,30 @@ public class DelosJdbcJmhState {
         return actual;
     }
 
+    long secondaryEqualityPayloadLookup() throws SQLException {
+        int category = categoryCursor;
+        categoryCursor = (category + 1) % CATEGORY_COUNT;
+        secondaryEqualityPayloadLookup.setInt(1, category);
+        long actual = queryIdAndPayload(secondaryEqualityPayloadLookup);
+        requireChecksum(
+                "secondary payload category " + category,
+                categoryPayloadChecksums[category],
+                actual);
+        return actual;
+    }
+
+    long secondaryEqualityFullRowLookup() throws SQLException {
+        int category = categoryCursor;
+        categoryCursor = (category + 1) % CATEGORY_COUNT;
+        secondaryEqualityFullRowLookup.setInt(1, category);
+        long actual = queryFullRows(secondaryEqualityFullRowLookup);
+        requireChecksum(
+                "secondary full row category " + category,
+                categoryFullRowChecksums[category],
+                actual);
+        return actual;
+    }
+
     long compositeRangeScan() throws SQLException {
         int bucket = bucketCursor;
         bucketCursor = (bucket + 1) % BUCKET_COUNT;
@@ -259,12 +287,13 @@ public class DelosJdbcJmhState {
                 int category = id % CATEGORY_COUNT;
                 int bucket = id % BUCKET_COUNT;
                 int quantity = random.nextInt(10_000);
-                generated.add(new FixtureRow(id, category, bucket, quantity));
+                String payloadValue = payload(id, payloadSize);
+                generated.add(new FixtureRow(id, category, bucket, quantity, payloadValue));
                 insert.setInt(1, id);
                 insert.setInt(2, category);
                 insert.setInt(3, bucket);
                 insert.setInt(4, quantity);
-                insert.setString(5, payload(id, payloadSize));
+                insert.setString(5, payloadValue);
                 insert.addBatch();
                 if (id % commitBatchSize == 0) {
                     insert.executeBatch();
@@ -290,6 +319,8 @@ public class DelosJdbcJmhState {
         categoryChecksums = new long[CATEGORY_COUNT];
         categoryCoveredChecksums = new long[CATEGORY_COUNT];
         categoryCountChecksums = new long[CATEGORY_COUNT];
+        categoryPayloadChecksums = new long[CATEGORY_COUNT];
+        categoryFullRowChecksums = new long[CATEGORY_COUNT];
         for (int category = 0; category < CATEGORY_COUNT; category++) {
             int selectedCategory = category;
             List<FixtureRow> selected = fixture.stream()
@@ -298,6 +329,8 @@ public class DelosJdbcJmhState {
             categoryChecksums[category] = fingerprintRows(selected);
             categoryCoveredChecksums[category] = fingerprintCategories(selected);
             categoryCountChecksums[category] = fingerprintCount(selected.size());
+            categoryPayloadChecksums[category] = fingerprintIdAndPayload(selected);
+            categoryFullRowChecksums[category] = fingerprintFullRows(selected);
         }
 
         bucketChecksums = new long[BUCKET_COUNT];
@@ -328,6 +361,11 @@ public class DelosJdbcJmhState {
                 "select category from " + TABLE + " where category = ?");
         secondaryEqualityCoveredCount = connection.prepareStatement(
                 "select count(*) from " + TABLE + " where category = ?");
+        secondaryEqualityPayloadLookup = connection.prepareStatement(
+                "select id, payload from " + TABLE + " where category = ? order by id");
+        secondaryEqualityFullRowLookup = connection.prepareStatement(
+                "select id, category, bucket, quantity, payload from " + TABLE
+                        + " where category = ? order by id");
         compositeRangeScan = connection.prepareStatement(
                 "select id, quantity from " + TABLE
                         + " where bucket = ? and quantity between 2000 and 8000 order by quantity, id");
@@ -374,6 +412,16 @@ public class DelosJdbcJmhState {
                     "covered secondary count " + category,
                     categoryCountChecksums[category],
                     queryOneColumn(secondaryEqualityCoveredCount));
+            secondaryEqualityPayloadLookup.setInt(1, category);
+            requireChecksum(
+                    "secondary payload category " + category,
+                    categoryPayloadChecksums[category],
+                    queryIdAndPayload(secondaryEqualityPayloadLookup));
+            secondaryEqualityFullRowLookup.setInt(1, category);
+            requireChecksum(
+                    "secondary full row category " + category,
+                    categoryFullRowChecksums[category],
+                    queryFullRows(secondaryEqualityFullRowLookup));
         }
 
         for (int bucket = 0; bucket < BUCKET_COUNT; bucket++) {
@@ -453,6 +501,37 @@ public class DelosJdbcJmhState {
         return finish(mix(CHECKSUM_SEED, count), 1);
     }
 
+    private static long fingerprintIdAndPayload(List<FixtureRow> selected) {
+        long checksum = CHECKSUM_SEED;
+        for (FixtureRow row : selected) {
+            checksum = mix(checksum, row.id());
+            checksum = fingerprintPayload(checksum, row.payload());
+        }
+        return finish(checksum, selected.size());
+    }
+
+    private static long fingerprintFullRows(List<FixtureRow> selected) {
+        long checksum = CHECKSUM_SEED;
+        for (FixtureRow row : selected) {
+            checksum = mix(checksum, row.id());
+            checksum = mix(checksum, row.category());
+            checksum = mix(checksum, row.bucket());
+            checksum = mix(checksum, row.quantity());
+            checksum = fingerprintPayload(checksum, row.payload());
+        }
+        return finish(checksum, selected.size());
+    }
+
+    private static long fingerprintPayload(long checksum, String value) {
+        checksum = mix(checksum, value.length());
+        if (!value.isEmpty()) {
+            checksum = mix(checksum, value.charAt(0));
+            checksum = mix(checksum, value.charAt(value.length() / 2));
+            checksum = mix(checksum, value.charAt(value.length() - 1));
+        }
+        return checksum;
+    }
+
     private static long queryOneColumn(PreparedStatement statement) throws SQLException {
         long checksum = CHECKSUM_SEED;
         int count = 0;
@@ -472,6 +551,35 @@ public class DelosJdbcJmhState {
             while (resultSet.next()) {
                 checksum = mix(checksum, resultSet.getInt(1));
                 checksum = mix(checksum, resultSet.getInt(2));
+                count++;
+            }
+        }
+        return finish(checksum, count);
+    }
+
+    private static long queryIdAndPayload(PreparedStatement statement) throws SQLException {
+        long checksum = CHECKSUM_SEED;
+        int count = 0;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                checksum = mix(checksum, resultSet.getInt(1));
+                checksum = fingerprintPayload(checksum, resultSet.getString(2));
+                count++;
+            }
+        }
+        return finish(checksum, count);
+    }
+
+    private static long queryFullRows(PreparedStatement statement) throws SQLException {
+        long checksum = CHECKSUM_SEED;
+        int count = 0;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                checksum = mix(checksum, resultSet.getInt(1));
+                checksum = mix(checksum, resultSet.getInt(2));
+                checksum = mix(checksum, resultSet.getInt(3));
+                checksum = mix(checksum, resultSet.getInt(4));
+                checksum = fingerprintPayload(checksum, resultSet.getString(5));
                 count++;
             }
         }
@@ -550,6 +658,10 @@ public class DelosJdbcJmhState {
         compositeRangeCoveredScan = null;
         failure = closePreparedStatement(compositeRangeScan, failure);
         compositeRangeScan = null;
+        failure = closePreparedStatement(secondaryEqualityFullRowLookup, failure);
+        secondaryEqualityFullRowLookup = null;
+        failure = closePreparedStatement(secondaryEqualityPayloadLookup, failure);
+        secondaryEqualityPayloadLookup = null;
         failure = closePreparedStatement(secondaryEqualityCoveredCount, failure);
         secondaryEqualityCoveredCount = null;
         failure = closePreparedStatement(secondaryEqualityCoveredLookup, failure);
@@ -599,6 +711,8 @@ public class DelosJdbcJmhState {
         categoryChecksums = null;
         categoryCoveredChecksums = null;
         categoryCountChecksums = null;
+        categoryPayloadChecksums = null;
+        categoryFullRowChecksums = null;
         bucketChecksums = null;
         bucketCoveredChecksums = null;
 
@@ -655,6 +769,7 @@ public class DelosJdbcJmhState {
         }
     }
 
-    private record FixtureRow(int id, int category, int bucket, int quantity) {
+    private record FixtureRow(
+            int id, int category, int bucket, int quantity, String payload) {
     }
 }

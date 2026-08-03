@@ -159,7 +159,9 @@ final List<String> benchmarkMethodNames = [
         'readTransactionRollback',
         'secondaryEqualityCoveredCount',
         'secondaryEqualityCoveredLookup',
-        'secondaryEqualityLookup'
+        'secondaryEqualityFullRowLookup',
+        'secondaryEqualityLookup',
+        'secondaryEqualityPayloadLookup'
 ]
 final Pattern configuredIncludePattern = regexProperty(
         'delosdb.jmh.includes', configuredIncludeExpression)
@@ -582,7 +584,8 @@ tasks.named('jmh') {
         reportDirectory.mkdirs()
         [
                 new File(reportDirectory, 'results.json'),
-                new File(reportDirectory, 'human.txt')
+                new File(reportDirectory, 'human.txt'),
+                new File(reportDirectory, 'allocation-summary.txt')
         ].each { report ->
             if (report.exists() && !report.delete()) {
                 throw new GradleException("Could not remove stale JMH report: ${report}")
@@ -680,6 +683,65 @@ tasks.named('jmh') {
         }
         if (!manifest.isFile() || manifest.length() == 0L) {
             throw new GradleException("JMH did not create a non-empty run manifest: ${manifest}")
+        }
+        boolean gcProfilerConfigured = configuredProfilers.any { profiler ->
+            String normalized = profiler.toString().trim().toLowerCase(Locale.ROOT)
+            normalized == 'gc' || normalized.startsWith('gc:')
+        }
+        if (gcProfilerConfigured) {
+            File allocationSummary = layout.buildDirectory
+                    .file('reports/jmh/allocation-summary.txt').get().asFile
+            allocationSummary.withPrintWriter('UTF-8') { writer ->
+                writer.println('DelosDB JMH allocation attribution')
+                writer.println('Metric: gc.alloc.rate.norm (bytes per benchmark operation)')
+                writer.println('Generated only when the JMH gc profiler is enabled.')
+                writer.println()
+                writer.println('benchmark,provider,rows,payloadSize,commitBatchSize,scoreUs,bytesPerOperation')
+                parsed.sort { left, right ->
+                    [left.benchmark?.toString(), left.params?.provider?.toString(),
+                     left.params?.rows?.toString(), left.params?.payloadSize?.toString(),
+                     left.params?.commitBatchSize?.toString()] <=>
+                    [right.benchmark?.toString(), right.params?.provider?.toString(),
+                     right.params?.rows?.toString(), right.params?.payloadSize?.toString(),
+                     right.params?.commitBatchSize?.toString()]
+                }.each { result ->
+                    if (!(result.secondaryMetrics instanceof Map)) {
+                        throw new GradleException(
+                                "JMH gc profiler produced no secondary metrics for ${result.benchmark}")
+                    }
+                    Map.Entry allocationMetric = result.secondaryMetrics.entrySet().find { entry ->
+                        entry.key.toString() == 'gc.alloc.rate.norm'
+                                || entry.key.toString().endsWith('.gc.alloc.rate.norm')
+                    }
+                    if (allocationMetric == null
+                            || !(allocationMetric.value instanceof Map)
+                            || !(allocationMetric.value.score instanceof Number)) {
+                        throw new GradleException(
+                                "JMH gc profiler produced no allocation-normalized score for ${result.benchmark}")
+                    }
+                    double bytesPerOperation =
+                            ((Number) allocationMetric.value.score).doubleValue()
+                    if (!Double.isFinite(bytesPerOperation) || bytesPerOperation < 0.0d) {
+                        throw new GradleException(
+                                "JMH result ${result.benchmark} has invalid allocation score: "
+                                        + bytesPerOperation)
+                    }
+                    writer.printf(
+                            Locale.ROOT,
+                            '%s,%s,%s,%s,%s,%.6f,%.3f%n',
+                            result.benchmark,
+                            result.params.provider,
+                            result.params.rows,
+                            result.params.payloadSize,
+                            result.params.commitBatchSize,
+                            ((Number) result.primaryMetric.score).doubleValue(),
+                            bytesPerOperation)
+                }
+            }
+            if (!allocationSummary.isFile() || allocationSummary.length() == 0L) {
+                throw new GradleException(
+                        "JMH did not create a non-empty allocation summary: ${allocationSummary}")
+            }
         }
     }
 }

@@ -1112,6 +1112,11 @@ registerDelosFocusedTest(
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
 
+registerDelosFocusedTest(
+        'runDelosJdbcResultBufferOwnershipTest',
+        'Proves heap/MVCC JDBC values remain detached across scan advance and result-set closure.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcResultBufferOwnershipTest.class'])
+
 
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkBaseline',

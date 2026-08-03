@@ -49,6 +49,16 @@ public class DelosJdbcJmhBenchmark {
     }
 
     @Benchmark
+    public long secondaryEqualityPayloadLookup(DelosJdbcJmhState state) throws SQLException {
+        return state.secondaryEqualityPayloadLookup();
+    }
+
+    @Benchmark
+    public long secondaryEqualityFullRowLookup(DelosJdbcJmhState state) throws SQLException {
+        return state.secondaryEqualityFullRowLookup();
+    }
+
+    @Benchmark
     public long compositeRangeScan(DelosJdbcJmhState state) throws SQLException {
         return state.compositeRangeScan();
     }
