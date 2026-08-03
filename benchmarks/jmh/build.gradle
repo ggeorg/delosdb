@@ -160,52 +160,77 @@ final String configuredIncludeExpression = nonBlankProperty(
         'delosdb.jmh.includes',
         '.*DelosJdbcJmhBenchmark.*')
 final List<String> configuredIncludes = List.of(configuredIncludeExpression)
-final String benchmarkClassName =
+final String jdbcBenchmarkClassName =
         'io.github.ggeorg.delosdb.benchmark.jmh.DelosJdbcJmhBenchmark'
-final List<String> benchmarkMethodNames = [
-        'aggregate',
-        'compositeRangeCoveredScan',
-        'compositeRangeScan',
-        'fullScan',
-        'primaryKeyCoveredLookup',
-        'primaryKeyLookup',
-        'readTransactionCommit',
-        'readTransactionRollback',
-        'secondaryEqualityCoveredCount',
-        'secondaryEqualityCoveredLookup',
-        'secondaryEqualityFullRowLookup',
-        'secondaryEqualityLookup',
-        'secondaryEqualityPayloadLookup'
+final String candidateScalingBenchmarkClassName =
+        'io.github.ggeorg.delosdb.benchmark.jmh.DelosJdbcCandidateScalingBenchmark'
+final Map<String, List<String>> benchmarkMethodsByClass = [
+        (jdbcBenchmarkClassName): [
+                'aggregate',
+                'compositeRangeCoveredScan',
+                'compositeRangeScan',
+                'fullScan',
+                'primaryKeyCoveredLookup',
+                'primaryKeyLookup',
+                'readTransactionCommit',
+                'readTransactionRollback',
+                'secondaryEqualityCoveredCount',
+                'secondaryEqualityCoveredLookup',
+                'secondaryEqualityFullRowLookup',
+                'secondaryEqualityLookup',
+                'secondaryEqualityPayloadLookup'
+        ],
+        (candidateScalingBenchmarkClassName): [
+                'coveredCountByCandidateCount'
+        ]
 ]
+final List<String> candidateCounts = ['1', '4', '16', '64', '256']
 final Pattern configuredIncludePattern = regexProperty(
         'delosdb.jmh.includes', configuredIncludeExpression)
-final Set<String> expectedBenchmarkNames = new LinkedHashSet<>(benchmarkMethodNames
-        .collect { benchmarkClassName + '.' + it }
+final Set<String> expectedBenchmarkNames = new LinkedHashSet<>(benchmarkMethodsByClass
+        .collectMany { className, methods -> methods.collect { className + '.' + it } }
         .findAll { configuredIncludePattern.matcher(it).find() })
 if (expectedBenchmarkNames.isEmpty()) {
     throw new GradleException(
             'delosdb.jmh.includes does not select any standalone DelosDB benchmark: '
                     + configuredIncludeExpression)
 }
-final File jfrAllocationReportDirectory = layout.buildDirectory
+final boolean candidateScalingSelected = expectedBenchmarkNames.any {
+    it.startsWith(candidateScalingBenchmarkClassName + '.')
+}
+final File jfrReportDirectory = layout.buildDirectory
         .dir('reports/jmh/jfr').get().asFile
+final File candidateDiagnosticsDirectory = layout.buildDirectory
+        .dir('reports/jmh/candidate-diagnostics').get().asFile
 final List<String> requestedProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
 final boolean allocationJfrEnabled = booleanProperty(
         project, 'delosdb.jmh.allocationJfr', false)
+final boolean executionJfrEnabled = booleanProperty(
+        project, 'delosdb.jmh.executionJfr', false)
 final boolean requestedJfrProfiler = requestedProfilers.any { profiler ->
     String normalized = profiler.toString().trim().toLowerCase(Locale.ROOT)
     normalized == 'jfr' || normalized.startsWith('jfr:')
 }
-if (allocationJfrEnabled && requestedJfrProfiler) {
+if ((allocationJfrEnabled || executionJfrEnabled) && requestedJfrProfiler) {
     throw new GradleException(
-            'Use delosdb.jmh.allocationJfr=true without adding a second jfr profiler explicitly')
+            'Use one DelosDB JFR attribution property without adding a second jfr profiler explicitly')
+}
+if (allocationJfrEnabled && executionJfrEnabled) {
+    throw new GradleException(
+            'delosdb.jmh.allocationJfr and delosdb.jmh.executionJfr are mutually exclusive')
 }
 final List<String> effectiveProfilers = new ArrayList<>(requestedProfilers)
 if (allocationJfrEnabled) {
     effectiveProfilers.add(
-            'jfr:dir=' + jfrAllocationReportDirectory.absolutePath
+            'jfr:dir=' + jfrReportDirectory.absolutePath
                     + ';configName=profile;stackDepth=256;postProcessor='
                     + 'io.github.ggeorg.delosdb.benchmark.jmh.DelosJfrAllocationPostProcessor')
+}
+if (executionJfrEnabled) {
+    effectiveProfilers.add(
+            'jfr:dir=' + jfrReportDirectory.absolutePath
+                    + ';configName=profile;stackDepth=256;postProcessor='
+                    + 'io.github.ggeorg.delosdb.benchmark.jmh.DelosJfrExecutionPostProcessor')
 }
 final List<String> configuredProfilers = List.copyOf(new LinkedHashSet<>(effectiveProfilers))
 final boolean jfrProfilerConfigured = configuredProfilers.any { profiler ->
@@ -215,9 +240,18 @@ final boolean jfrProfilerConfigured = configuredProfilers.any { profiler ->
 final String jmhUnsafeCompatibilityArg = '--sun-misc-unsafe-memory-access=allow'
 final List<String> configuredJvmArgs = doubleSemicolonProperty(
         project, 'delosdb.jmh.jvmArgs', [])
-final List<String> effectiveJmhJvmArgs = configuredJvmArgs.any {
-    it.startsWith('--sun-misc-unsafe-memory-access=')
-} ? configuredJvmArgs : [jmhUnsafeCompatibilityArg] + configuredJvmArgs
+final List<String> effectiveJmhJvmArgs = new ArrayList<>(configuredJvmArgs)
+if (!effectiveJmhJvmArgs.any { it.startsWith('--sun-misc-unsafe-memory-access=') }) {
+    effectiveJmhJvmArgs.add(0, jmhUnsafeCompatibilityArg)
+}
+if (candidateScalingSelected
+        && !effectiveJmhJvmArgs.any {
+            it.startsWith('-Ddelosdb.jmh.candidateDiagnosticsDirectory=')
+        }) {
+    effectiveJmhJvmArgs.add(
+            '-Ddelosdb.jmh.candidateDiagnosticsDirectory='
+                    + candidateDiagnosticsDirectory.absolutePath)
+}
 
 // Plugin 0.7.3 models benchmarkParameters as
 // MapProperty<String, ListProperty<String>>. Keep provider-backed parameter
@@ -247,9 +281,9 @@ final String configuredWarmupTime = nonBlankProperty(
 final String configuredMeasurementTime = nonBlankProperty(
         project, 'delosdb.jmh.iterationTime', '500ms')
 final int configuredForks = positiveIntProperty(project, 'delosdb.jmh.forks', 1)
-if (allocationJfrEnabled && configuredForks != 1) {
+if ((allocationJfrEnabled || executionJfrEnabled) && configuredForks != 1) {
     throw new GradleException(
-            'delosdb.jmh.allocationJfr requires delosdb.jmh.forks=1 so each diagnostic recording is unique')
+            'DelosDB JFR attribution requires delosdb.jmh.forks=1 so each diagnostic recording is unique')
 }
 final String configuredVerbosity = nonBlankProperty(
         project, 'delosdb.jmh.verbosity', 'NORMAL')
@@ -553,6 +587,7 @@ tasks.register('writeJmhRunManifest') {
     inputs.property('rows', rowCounts)
     inputs.property('payloadSizes', payloadSizes)
     inputs.property('commitBatchSizes', commitBatchSizes)
+    inputs.property('candidateCounts', candidateScalingSelected ? candidateCounts : [])
     inputs.property('includes', configuredIncludes)
     inputs.property('profilers', configuredProfilers)
     inputs.property('jvmArgs', effectiveJmhJvmArgs)
@@ -578,6 +613,9 @@ tasks.register('writeJmhRunManifest') {
             writer.println('Rows: ' + rowCounts)
             writer.println('Payload sizes: ' + payloadSizes)
             writer.println('Fixture commit batches: ' + commitBatchSizes)
+            if (candidateScalingSelected) {
+                writer.println('Candidate counts: ' + candidateCounts)
+            }
             writer.println('Includes: ' + configuredIncludes)
             writer.println('Profilers: ' + configuredProfilers)
             writer.println('JVM args: ' + effectiveJmhJvmArgs)
@@ -634,7 +672,11 @@ tasks.named('jmh') {
             }
         }
         if (jfrProfilerConfigured) {
-            delete(jfrAllocationReportDirectory)
+            delete(jfrReportDirectory)
+        }
+        if (candidateScalingSelected) {
+            delete(candidateDiagnosticsDirectory)
+            candidateDiagnosticsDirectory.mkdirs()
         }
     }
     doLast {
@@ -649,14 +691,17 @@ tasks.named('jmh') {
             throw new GradleException("JMH JSON report contains no benchmark results: ${jsonReport}")
         }
 
-        Set<String> expectedParameterNames = [
+        Set<String> baseParameterNames = [
                 'provider', 'rows', 'payloadSize', 'commitBatchSize'
         ] as Set<String>
+        Set<String> candidateScalingParameterNames = new LinkedHashSet<>(baseParameterNames)
+        candidateScalingParameterNames.add('candidateCount')
         Set<String> allowedProviders = providers as Set<String>
         Set<String> allowedRows = rowCounts as Set<String>
         Set<String> allowedPayloadSizes = payloadSizes as Set<String>
         Set<String> allowedCommitBatchSizes = commitBatchSizes as Set<String>
-        int expectedCasesPerBenchmark = providers.size()
+        Set<String> allowedCandidateCounts = candidateCounts as Set<String>
+        int baseCasesPerBenchmark = providers.size()
                 * rowCounts.size()
                 * payloadSizes.size()
                 * commitBatchSizes.size()
@@ -674,6 +719,11 @@ tasks.named('jmh') {
                 throw new GradleException(
                         "JMH result ${benchmark} did not run on JDK 25: ${result.jdkVersion}")
             }
+            boolean candidateScalingResult =
+                    benchmark.startsWith(candidateScalingBenchmarkClassName + '.')
+            Set<String> expectedParameterNames = candidateScalingResult
+                    ? candidateScalingParameterNames
+                    : baseParameterNames
             if (!(result.params instanceof Map)
                     || (result.params.keySet() as Set<String>) != expectedParameterNames) {
                 throw new GradleException(
@@ -683,14 +733,23 @@ tasks.named('jmh') {
             String rowsValue = result.params.rows?.toString()
             String payloadValue = result.params.payloadSize?.toString()
             String commitBatchValue = result.params.commitBatchSize?.toString()
+            String candidateCountValue = candidateScalingResult
+                    ? result.params.candidateCount?.toString()
+                    : null
             if (!allowedProviders.contains(providerValue)
                     || !allowedRows.contains(rowsValue)
                     || !allowedPayloadSizes.contains(payloadValue)
-                    || !allowedCommitBatchSizes.contains(commitBatchValue)) {
+                    || !allowedCommitBatchSizes.contains(commitBatchValue)
+                    || (candidateScalingResult
+                            && !allowedCandidateCounts.contains(candidateCountValue))) {
                 throw new GradleException(
                         "JMH result ${benchmark} contains an unrequested parameter case: ${result.params}")
             }
-            String caseKey = [providerValue, rowsValue, payloadValue, commitBatchValue].join('|')
+            List<String> caseParts = [providerValue, rowsValue, payloadValue, commitBatchValue]
+            if (candidateScalingResult) {
+                caseParts.add(candidateCountValue)
+            }
+            String caseKey = caseParts.join('|')
             if (!casesByBenchmark[benchmark].add(caseKey)) {
                 throw new GradleException(
                         "JMH result contains a duplicate case for ${benchmark}: ${result.params}")
@@ -717,10 +776,13 @@ tasks.named('jmh') {
         }
         expectedBenchmarkNames.each { benchmark ->
             Set<String> cases = casesByBenchmark[benchmark]
-            if (cases.size() != expectedCasesPerBenchmark) {
+            int expectedCases = benchmark.startsWith(candidateScalingBenchmarkClassName + '.')
+                    ? baseCasesPerBenchmark * candidateCounts.size()
+                    : baseCasesPerBenchmark
+            if (cases.size() != expectedCases) {
                 throw new GradleException(
                         "JMH benchmark ${benchmark} produced ${cases.size()} parameter cases; "
-                                + "expected ${expectedCasesPerBenchmark}")
+                                + "expected ${expectedCases}")
             }
         }
         if (!humanReport.isFile() || humanReport.length() == 0L) {
@@ -805,22 +867,99 @@ tasks.named('jmh') {
                         "JMH did not create a non-empty allocation summary: ${allocationSummary}")
             }
         }
+        if (candidateScalingSelected) {
+            Set<File> diagnostics = fileTree(candidateDiagnosticsDirectory) {
+                include '*.txt'
+            }.files
+            int expectedDiagnostics = baseCasesPerBenchmark * candidateCounts.size()
+            if (diagnostics.size() != expectedDiagnostics) {
+                throw new GradleException(
+                        "Candidate scaling produced ${diagnostics.size()} diagnostic files; "
+                                + "expected ${expectedDiagnostics}")
+            }
+            File summary = new File(candidateDiagnosticsDirectory, 'candidate-scaling-diagnostics.csv')
+            List<Map<String, String>> rows = diagnostics.collect { diagnostic ->
+                Map<String, String> values = [:]
+                diagnostic.eachLine('UTF-8') { line ->
+                    if (line == 'runtimeStatisticsBegin') {
+                        return
+                    }
+                    int separator = line.indexOf('=')
+                    if (separator > 0 && !values.containsKey('runtimeStatisticsBegin')) {
+                        values[line.substring(0, separator)] = line.substring(separator + 1)
+                    }
+                }
+                values
+            }
+            rows.sort { left, right ->
+                int comparison = left.provider <=> right.provider
+                if (comparison != 0) {
+                    return comparison
+                }
+                comparison = left.rows.toInteger() <=> right.rows.toInteger()
+                if (comparison != 0) {
+                    return comparison
+                }
+                comparison = left.payloadSize.toInteger() <=> right.payloadSize.toInteger()
+                if (comparison != 0) {
+                    return comparison
+                }
+                comparison = left.commitBatchSize.toInteger() <=> right.commitBatchSize.toInteger()
+                if (comparison != 0) {
+                    return comparison
+                }
+                left.candidateCount.toInteger() <=> right.candidateCount.toInteger()
+            }
+            List<String> diagnosticColumns = [
+                    'provider',
+                    'rows',
+                    'payloadSize',
+                    'commitBatchSize',
+                    'candidateCount',
+                    'mvccOrderedCandidates',
+                    'mvccCoveringCandidates',
+                    'mvccCoveredCandidates',
+                    'mvccFallbackCandidates',
+                    'mvccDirectoryPageAcquisitions',
+                    'mvccDirectoryLogicalFallbacks',
+                    'mvccVersionPageAcquisitions',
+                    'mvccVersionSlotFetches',
+                    'mvccVisibilityChecks',
+                    'mvccVersionChainSteps',
+                    'mvccVersionLogicalFallbacks'
+            ]
+            summary.withPrintWriter('UTF-8') { writer ->
+                writer.println(diagnosticColumns.join(','))
+                rows.each { values ->
+                    writer.println(diagnosticColumns.collect { values[it] }.join(','))
+                }
+            }
+            if (!summary.isFile() || summary.length() == 0L) {
+                throw new GradleException(
+                        "JMH did not create candidate-scaling diagnostics summary: ${summary}")
+            }
+        }
         if (jfrProfilerConfigured) {
-            Set<File> recordings = fileTree(jfrAllocationReportDirectory) {
+            Set<File> recordings = fileTree(jfrReportDirectory) {
                 include '**/profile.jfr'
             }.files
             if (recordings.isEmpty()) {
                 throw new GradleException(
                         "JMH JFR profiler created no profile.jfr recordings under "
-                                + jfrAllocationReportDirectory)
+                                + jfrReportDirectory)
             }
             recordings.each { recording ->
-                ['allocation-by-class.csv', 'allocation-by-site.csv', 'allocation-attribution.txt']
-                        .each { fileName ->
+                List<String> expectedReports = allocationJfrEnabled
+                        ? ['allocation-by-class.csv', 'allocation-by-site.csv',
+                           'allocation-attribution.txt']
+                        : executionJfrEnabled
+                                ? ['execution-by-site.csv', 'execution-attribution.txt']
+                                : []
+                expectedReports.each { fileName ->
                     File report = new File(recording.parentFile, fileName)
                     if (!report.isFile() || report.length() == 0L) {
                         throw new GradleException(
-                                "JFR allocation post-processor did not create: ${report}")
+                                "JFR post-processor did not create: ${report}")
                     }
                 }
             }

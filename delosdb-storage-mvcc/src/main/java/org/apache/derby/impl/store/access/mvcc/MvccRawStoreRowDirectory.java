@@ -46,12 +46,23 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRowLocation rowLocation,
             ContainerHandle container) throws StandardException {
+        return find(transaction, rowLocation, container, null);
+    }
+
+    static MvccRawStoreTable.DirectoryRecord find(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            ContainerHandle container,
+            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
         MvccRawStoreTable.DirectoryRecord hinted = findByHint(
-                transaction, rowLocation, container);
+                transaction, rowLocation, container, metrics);
         if (hinted != null) {
             return hinted;
         }
-        return findByLogicalId(transaction, rowLocation.rowId(), container);
+        if (metrics != null) {
+            metrics.directoryLogicalFallback();
+        }
+        return findByLogicalId(transaction, rowLocation.rowId(), container, metrics);
     }
 
     static Map<Long, MvccRowLocation> locations(
@@ -186,13 +197,17 @@ final class MvccRawStoreRowDirectory {
     private static MvccRawStoreTable.DirectoryRecord findByHint(
             Transaction transaction,
             MvccRowLocation rowLocation,
-            ContainerHandle container) throws StandardException {
+            ContainerHandle container,
+            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
         if (container == null || rowLocation == null || !rowLocation.hasLocatorHint()) {
             return null;
         }
         Page page = null;
         try {
             page = container.getPage(rowLocation.locatorPageId());
+            if (page != null && metrics != null) {
+                metrics.directoryPageAcquired();
+            }
             if (page == null) {
                 return null;
             }
@@ -215,7 +230,8 @@ final class MvccRawStoreRowDirectory {
     private static MvccRawStoreTable.DirectoryRecord findByLogicalId(
             Transaction transaction,
             long rowId,
-            ContainerHandle container) throws StandardException {
+            ContainerHandle container,
+            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
         if (container == null) {
             return new MvccRawStoreTable.DirectoryRecord(
                     rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
@@ -223,6 +239,9 @@ final class MvccRawStoreRowDirectory {
         Page page = null;
         try {
             page = container.getFirstPage();
+            if (page != null && metrics != null) {
+                metrics.directoryPageAcquired();
+            }
             while (page != null) {
                 int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
                         ? Page.FIRST_SLOT_NUMBER + 2
@@ -240,6 +259,9 @@ final class MvccRawStoreRowDirectory {
                 long pageNumber = page.getPageNumber();
                 page.unlatch();
                 page = container.getNextPage(pageNumber);
+                if (page != null && metrics != null) {
+                    metrics.directoryPageAcquired();
+                }
             }
             return new MvccRawStoreTable.DirectoryRecord(
                     rowId, MvccRawStoreTable.DirectoryHead.NONE, null);

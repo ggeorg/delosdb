@@ -49,6 +49,8 @@ final class MvccRawStoreScanController implements ScanManager {
     private long estimatedRowCount;
     private boolean orderedIndexScan;
     private boolean coveringIndexScan;
+    private MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics =
+            MvccRawStoreIndexedReadMetrics.EMPTY;
 
     MvccRawStoreScanController(
             MvccRawStoreRuntime runtime,
@@ -130,7 +132,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 scanType,
                 rowsVisited,
                 rowsQualified,
-                scanColumnList);
+                scanColumnList,
+                indexedReadMetrics);
     }
 
     @Override
@@ -378,6 +381,7 @@ final class MvccRawStoreScanController implements ScanManager {
                             indexedRows.add(result.row());
                         }
                     }
+                    indexedReadMetrics = reader.metrics();
                 }
                 rows = List.copyOf(indexedRows);
                 orderedIndexScan = true;
@@ -391,6 +395,7 @@ final class MvccRawStoreScanController implements ScanManager {
                         context);
                 orderedIndexScan = false;
                 coveringIndexScan = false;
+                indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
             }
         }
         nextIndex = 0;

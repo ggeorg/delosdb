@@ -38,6 +38,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     private final MvccRawStoreVersionRows.FetchProjection metadataProjection;
     private final MvccRawStoreTransactionContext context;
     private final ContainerHandle directoryContainer;
+    private final MvccRawStoreIndexedReadMetrics metrics;
     private final MvccRawStoreVersionReader versionReader;
 
     MvccRawStoreIndexedReader(
@@ -52,6 +53,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         this.projection = projection;
         this.metadataProjection = MvccRawStoreVersionRows.metadataProjection(table);
         this.context = context;
+        this.metrics = new MvccRawStoreIndexedReadMetrics();
         ContainerHandle openedDirectory = transaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -59,7 +61,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         MvccRawStoreVersionReader openedVersionReader;
         boolean opened = false;
         try {
-            openedVersionReader = new MvccRawStoreVersionReader(transaction, table);
+            openedVersionReader = new MvccRawStoreVersionReader(transaction, table, metrics);
             opened = true;
         } finally {
             if (!opened) {
@@ -73,10 +75,12 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     Result read(
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible) throws StandardException {
+        metrics.candidateVisited(coveringEligible);
         MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction,
                 candidate.rowLocation(),
-                directoryContainer);
+                directoryContainer,
+                metrics);
         if (coveringEligible) {
             MvccRawStoreTable.VersionRecord head = versionReader.findVisibleHead(
                     candidate.rowId(),
@@ -87,6 +91,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                     metadataProjection,
                     context);
             if (head != null) {
+                metrics.coveredCandidate();
                 if (head.tombstone()) {
                     return new Result(null, true);
                 }
@@ -104,6 +109,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             }
         }
 
+        metrics.fallbackCandidate();
         MvccRawStoreTable.VersionRecord visible = versionReader.findVisible(
                 candidate.rowId(),
                 directory.head(),
@@ -121,6 +127,11 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         visible.values(),
                         visible.handle()),
                 false);
+    }
+
+
+    MvccRawStoreIndexedReadMetrics.Snapshot metrics() {
+        return metrics.snapshot();
     }
 
     @Override

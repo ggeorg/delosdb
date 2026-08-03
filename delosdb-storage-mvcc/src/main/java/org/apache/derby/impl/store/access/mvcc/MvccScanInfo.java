@@ -34,27 +34,48 @@ final class MvccScanInfo implements ScanInfo {
     private static final String ROWS_QUALIFIED = "numRowsQualified";
     private static final String COLUMNS_FETCHED = "numColumnsFetched";
     private static final String COLUMNS_FETCHED_BIT_SET = "columnsFetchedBitSet";
+    private static final String ORDERED_CANDIDATES = "mvccOrderedCandidates";
+    private static final String COVERING_CANDIDATES = "mvccCoveringCandidates";
+    private static final String COVERED_CANDIDATES = "mvccCoveredCandidates";
+    private static final String FALLBACK_CANDIDATES = "mvccFallbackCandidates";
+    private static final String DIRECTORY_PAGE_ACQUISITIONS = "mvccDirectoryPageAcquisitions";
+    private static final String DIRECTORY_LOGICAL_FALLBACKS = "mvccDirectoryLogicalFallbacks";
+    private static final String VERSION_PAGE_ACQUISITIONS = "mvccVersionPageAcquisitions";
+    private static final String VERSION_SLOT_FETCHES = "mvccVersionSlotFetches";
+    private static final String VISIBILITY_CHECKS = "mvccVisibilityChecks";
+    private static final String VERSION_CHAIN_STEPS = "mvccVersionChainSteps";
+    private static final String VERSION_LOGICAL_FALLBACKS = "mvccVersionLogicalFallbacks";
 
     private final String scanType;
     private final long rowsVisited;
     private final long rowsQualified;
     private final FormatableBitSet columnsFetched;
+    private final MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics;
 
     MvccScanInfo(long rowsVisited, long rowsQualified, FormatableBitSet columnsFetched) {
-        this("delos_mvcc", rowsVisited, rowsQualified, columnsFetched);
+        this(
+                "delos_mvcc",
+                rowsVisited,
+                rowsQualified,
+                columnsFetched,
+                MvccRawStoreIndexedReadMetrics.EMPTY);
     }
 
     MvccScanInfo(
             String scanType,
             long rowsVisited,
             long rowsQualified,
-            FormatableBitSet columnsFetched) {
+            FormatableBitSet columnsFetched,
+            MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics) {
         this.scanType = java.util.Objects.requireNonNull(scanType, "scanType");
         this.rowsVisited = rowsVisited;
         this.rowsQualified = rowsQualified;
         this.columnsFetched = columnsFetched == null
                 ? null
                 : (FormatableBitSet) columnsFetched.clone();
+        this.indexedReadMetrics = java.util.Objects.requireNonNull(
+                indexedReadMetrics,
+                "indexedReadMetrics");
     }
 
     @Override
@@ -69,6 +90,39 @@ final class MvccScanInfo implements ScanInfo {
             result.setProperty(COLUMNS_FETCHED, Integer.toString(countSetBits(columnsFetched)));
             result.setProperty(COLUMNS_FETCHED_BIT_SET, columnsFetched.toString());
         }
+        result.setProperty(
+                ORDERED_CANDIDATES,
+                Long.toString(indexedReadMetrics.candidatesVisited()));
+        result.setProperty(
+                COVERING_CANDIDATES,
+                Long.toString(indexedReadMetrics.coveringCandidates()));
+        result.setProperty(
+                COVERED_CANDIDATES,
+                Long.toString(indexedReadMetrics.coveredCandidates()));
+        result.setProperty(
+                FALLBACK_CANDIDATES,
+                Long.toString(indexedReadMetrics.fallbackCandidates()));
+        result.setProperty(
+                DIRECTORY_PAGE_ACQUISITIONS,
+                Long.toString(indexedReadMetrics.directoryPageAcquisitions()));
+        result.setProperty(
+                DIRECTORY_LOGICAL_FALLBACKS,
+                Long.toString(indexedReadMetrics.directoryLogicalFallbacks()));
+        result.setProperty(
+                VERSION_PAGE_ACQUISITIONS,
+                Long.toString(indexedReadMetrics.versionPageAcquisitions()));
+        result.setProperty(
+                VERSION_SLOT_FETCHES,
+                Long.toString(indexedReadMetrics.versionSlotFetches()));
+        result.setProperty(
+                VISIBILITY_CHECKS,
+                Long.toString(indexedReadMetrics.visibilityChecks()));
+        result.setProperty(
+                VERSION_CHAIN_STEPS,
+                Long.toString(indexedReadMetrics.versionChainSteps()));
+        result.setProperty(
+                VERSION_LOGICAL_FALLBACKS,
+                Long.toString(indexedReadMetrics.versionLogicalFallbacks()));
         return result;
     }
 

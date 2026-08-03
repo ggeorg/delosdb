@@ -186,6 +186,68 @@ sites; continue to use `gc.alloc.rate.norm` as the exact normalized total per
 benchmark operation. The focused run deliberately uses one fork because each
 recording is diagnostic attribution rather than a replacement timing baseline.
 
+
+## Candidate-count scaling and CPU attribution
+
+After allocation reductions stop producing proportional latency gains, measure
+the marginal cost of each indexed candidate directly:
+
+```bash
+./gradlew -p benchmarks/jmh clean jmh \
+  '-Pdelosdb.jmh.includes=.*DelosJdbcCandidateScalingBenchmark.*' \
+  -Pdelosdb.jmh.providers=heap,mvcc \
+  -Pdelosdb.jmh.rows=1000 \
+  -Pdelosdb.jmh.payloadSizes=128 \
+  -Pdelosdb.jmh.commitBatchSizes=100 \
+  -Pdelosdb.jmh.executionJfr=true \
+  -Pdelosdb.jmh.warmupIterations=5 \
+  -Pdelosdb.jmh.iterations=10 \
+  -Pdelosdb.jmh.warmupTime=1s \
+  -Pdelosdb.jmh.iterationTime=1s \
+  -Pdelosdb.jmh.forks=1 \
+  --console=plain
+```
+
+The benchmark executes the same covered primary-index `count(*)` shape with:
+
+```text
+1, 4, 16, 64, 256 matching candidates
+```
+
+The timing slope estimates marginal candidate cost while the intercept estimates
+fixed JDBC/query cost. Heap provides the non-MVCC reference. The MVCC scan also
+publishes direct runtime-statistics counters for:
+
+```text
+ordered and covering candidates
+successful covered candidates and fallbacks
+directory-page acquisitions and logical fallbacks
+version-page acquisitions and slot fetches
+visibility checks and version-chain steps
+version logical fallbacks
+```
+
+One unmeasured diagnostic query is executed during each trial setup. The build
+validates those counters and writes:
+
+```text
+benchmarks/jmh/build/reports/jmh/candidate-diagnostics/
+benchmarks/jmh/build/reports/jmh/candidate-diagnostics/candidate-scaling-diagnostics.csv
+```
+
+When `delosdb.jmh.executionJfr=true` is enabled, the JFR post-processor writes
+beside each recording:
+
+```text
+execution-by-site.csv
+execution-attribution.txt
+```
+
+Execution samples estimate CPU attribution. JMH remains authoritative for
+elapsed time. Use this evidence to choose between current-head visibility
+acceleration and page-at-a-time candidate processing; allocation JFR percentages
+must not be interpreted as CPU percentages.
+
 ## Bounded standalone run
 
 ```bash
@@ -254,6 +316,8 @@ that JDK 25 was used, and that every primary score is finite.
 - `delosdb.jmh.timeout`
 - `delosdb.jmh.verbosity`
 - `delosdb.jmh.profilers` — comma-separated profiler names
+- `delosdb.jmh.allocationJfr` — enables the DelosDB allocation-class/site JFR post-processor; requires one fork
+- `delosdb.jmh.executionJfr` — enables the DelosDB execution-site JFR post-processor; requires one fork
 - `delosdb.jmh.jvmArgs` — separate multiple arguments with `;;`, preserving commas inside an argument
 
 The build pins JMH `1.37` and the Gradle JMH plugin `0.7.3`. JMH 1.37

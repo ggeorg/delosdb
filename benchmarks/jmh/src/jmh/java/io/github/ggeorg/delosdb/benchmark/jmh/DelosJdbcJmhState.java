@@ -60,6 +60,7 @@ public class DelosJdbcJmhState {
     private PreparedStatement secondaryEqualityCoveredCount;
     private PreparedStatement secondaryEqualityPayloadLookup;
     private PreparedStatement secondaryEqualityFullRowLookup;
+    private PreparedStatement candidateRangeCoveredCount;
     private PreparedStatement compositeRangeScan;
     private PreparedStatement compositeRangeCoveredScan;
     private PreparedStatement fullScan;
@@ -198,6 +199,50 @@ public class DelosJdbcJmhState {
                 categoryFullRowChecksums[category],
                 actual);
         return actual;
+    }
+
+
+    long candidateRangeCoveredCount(int candidateCount) throws SQLException {
+        validateCandidateCount(candidateCount);
+        candidateRangeCoveredCount.setInt(1, candidateCount);
+        long actual = queryOneColumn(candidateRangeCoveredCount);
+        requireChecksum(
+                "candidate range covered count " + candidateCount,
+                fingerprintCount(candidateCount),
+                actual);
+        return actual;
+    }
+
+    String candidateRangeRuntimeStatistics(int candidateCount) throws SQLException {
+        validateCandidateCount(candidateCount);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("call syscs_util.syscs_set_runtimestatistics(1)");
+        }
+        candidateRangeCoveredCount(candidateCount);
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(
+                     "values syscs_util.syscs_get_runtimestatistics()")) {
+            if (!resultSet.next()) {
+                throw new IllegalStateException("DelosDB runtime statistics returned no row");
+            }
+            String statistics = resultSet.getString(1);
+            if (statistics == null || statistics.isBlank()) {
+                throw new IllegalStateException("DelosDB runtime statistics are empty");
+            }
+            return statistics;
+        } finally {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("call syscs_util.syscs_set_runtimestatistics(0)");
+            }
+            connection.rollback();
+        }
+    }
+
+    private void validateCandidateCount(int candidateCount) {
+        if (candidateCount < 1 || candidateCount > rows) {
+            throw new IllegalArgumentException(
+                    "candidateCount must be between 1 and rows: " + candidateCount);
+        }
     }
 
     long compositeRangeScan() throws SQLException {
@@ -366,6 +411,8 @@ public class DelosJdbcJmhState {
         secondaryEqualityFullRowLookup = connection.prepareStatement(
                 "select id, category, bucket, quantity, payload from " + TABLE
                         + " where category = ? order by id");
+        candidateRangeCoveredCount = connection.prepareStatement(
+                "select count(*) from " + TABLE + " where id between 1 and ?");
         compositeRangeScan = connection.prepareStatement(
                 "select id, quantity from " + TABLE
                         + " where bucket = ? and quantity between 2000 and 8000 order by quantity, id");
@@ -658,6 +705,8 @@ public class DelosJdbcJmhState {
         compositeRangeCoveredScan = null;
         failure = closePreparedStatement(compositeRangeScan, failure);
         compositeRangeScan = null;
+        failure = closePreparedStatement(candidateRangeCoveredCount, failure);
+        candidateRangeCoveredCount = null;
         failure = closePreparedStatement(secondaryEqualityFullRowLookup, failure);
         secondaryEqualityFullRowLookup = null;
         failure = closePreparedStatement(secondaryEqualityPayloadLookup, failure);

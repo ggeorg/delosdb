@@ -194,9 +194,20 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                     "select category from covering_t where category = 7",
                     "7",
                     "7");
-            assertCoveringIndexedRows(connection,
+            String coveringStatistics = assertCoveringIndexedRows(connection,
                     "select count(*) from covering_t where category = 7",
                     "2");
+            assertScanMetric(coveringStatistics, "mvccOrderedCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 2L);
+            assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 4L);
+            assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
+            assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
             assertNonCoveringIndexedRows(connection,
                     "select id, category from covering_t where category = 7 order by id",
                     "1|7",
@@ -533,7 +544,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         assertEquals(expectedKeys, Set.copyOf(keys));
     }
 
-    private static void assertCoveringIndexedRows(
+    private static String assertCoveringIndexedRows(
             Connection connection,
             String sql,
             String... expectedRows) throws Exception {
@@ -542,6 +553,16 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         String statistics = runtimeStatistics(connection);
         assertTrue("expected RawStore MVCC covering ordered-index scan; statistics=" + statistics,
                 statistics.contains("delos_mvcc_rawstore_ordered_index_covering"));
+        return statistics;
+    }
+
+    private static void assertScanMetric(String statistics, String name, long expected) {
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "(?m)^\\s*" + java.util.regex.Pattern.quote(name)
+                        + "\\s*=\\s*" + expected + "\\s*$");
+        assertTrue(
+                "expected scan metric " + name + '=' + expected + "; statistics=" + statistics,
+                pattern.matcher(statistics).find());
     }
 
     private static void assertNonCoveringIndexedRows(
