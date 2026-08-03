@@ -698,12 +698,29 @@ tasks.named('jmh') {
                 writer.println()
                 writer.println('benchmark,provider,rows,payloadSize,commitBatchSize,scoreUs,bytesPerOperation')
                 parsed.sort { left, right ->
-                    [left.benchmark?.toString(), left.params?.provider?.toString(),
-                     left.params?.rows?.toString(), left.params?.payloadSize?.toString(),
-                     left.params?.commitBatchSize?.toString()] <=>
-                    [right.benchmark?.toString(), right.params?.provider?.toString(),
-                     right.params?.rows?.toString(), right.params?.payloadSize?.toString(),
-                     right.params?.commitBatchSize?.toString()]
+                    int comparison = left.benchmark.toString() <=> right.benchmark.toString()
+                    if (comparison != 0) {
+                        return comparison
+                    }
+                    comparison = left.params.provider.toString() <=> right.params.provider.toString()
+                    if (comparison != 0) {
+                        return comparison
+                    }
+                    comparison = Integer.compare(
+                            left.params.rows.toString().toInteger(),
+                            right.params.rows.toString().toInteger())
+                    if (comparison != 0) {
+                        return comparison
+                    }
+                    comparison = Integer.compare(
+                            left.params.payloadSize.toString().toInteger(),
+                            right.params.payloadSize.toString().toInteger())
+                    if (comparison != 0) {
+                        return comparison
+                    }
+                    Integer.compare(
+                            left.params.commitBatchSize.toString().toInteger(),
+                            right.params.commitBatchSize.toString().toInteger())
                 }.each { result ->
                     if (!(result.secondaryMetrics instanceof Map)) {
                         throw new GradleException(
