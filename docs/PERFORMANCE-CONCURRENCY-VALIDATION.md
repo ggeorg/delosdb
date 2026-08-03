@@ -33,8 +33,38 @@ The test module owns report-producing JDBC workloads:
 runDelosJdbcBenchmarkBaseline
 runDelosJdbcBenchmarkBatchScaling
 runDelosJdbcBenchmarkTransactions
+runDelosJdbcDeleteReinsertAttribution
 runDelosJdbcBenchmarkRowScaling
 runDelosSharedRawStorePageIoRepresentationDecisionTest
+```
+
+The focused delete/reinsert attribution lane compares heap and MVCC across:
+
+```text
+same primary key vs different primary key
+one transaction vs two transactions
+commit vs rollback
+```
+
+It reports public-JDBC source-read, delete, insert, and transaction-end phase times together with
+shared RawStore page-I/O and force deltas. Semantic verification and any restoration needed by the
+two-transaction rollback shape remain outside the timed phases. The results are diagnostic evidence,
+not an S0 threshold.
+
+```bash
+./gradlew :delosdb-tests:runDelosJdbcDeleteReinsertAttribution \
+  -Pdelosdb.benchmark.deleteReinsert.rows=1000 \
+  -Pdelosdb.benchmark.deleteReinsert.cycles=3 \
+  -Pdelosdb.benchmark.deleteReinsert.warmups=1 \
+  -Pdelosdb.benchmark.deleteReinsert.iterations=3 \
+  -Pdelosdb.benchmark.deleteReinsert.runs=2 \
+  --console=plain
+```
+
+Reports are written under:
+
+```text
+build/reports/delosdb/benchmarks/delete-reinsert
 ```
 
 ## Standalone JMH lane

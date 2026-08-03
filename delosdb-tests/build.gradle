@@ -1165,6 +1165,22 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosJdbcDeleteReinsertAttribution',
+        'Runs provider-neutral JDBC delete/reinsert phase and RawStore I/O attribution.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcDeleteReinsertAttributionTest.class'],
+        [
+                'delosdb.benchmark.deleteReinsert.databaseRoot': rootProject.layout.buildDirectory.dir('tmp/delos-jdbc-delete-reinsert').get().asFile.absolutePath,
+                'delosdb.benchmark.deleteReinsert.reportDirectory': rootProject.layout.buildDirectory.dir('reports/delosdb/benchmarks/delete-reinsert').get().asFile.absolutePath,
+                'delosdb.benchmark.deleteReinsert.rows': providers.gradleProperty('delosdb.benchmark.deleteReinsert.rows').getOrElse('1000'),
+                'delosdb.benchmark.deleteReinsert.cycles': providers.gradleProperty('delosdb.benchmark.deleteReinsert.cycles').getOrElse('3'),
+                'delosdb.benchmark.deleteReinsert.payload': providers.gradleProperty('delosdb.benchmark.deleteReinsert.payload').getOrElse('128'),
+                'delosdb.benchmark.deleteReinsert.fixtureBatch': providers.gradleProperty('delosdb.benchmark.deleteReinsert.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.deleteReinsert.warmups': providers.gradleProperty('delosdb.benchmark.deleteReinsert.warmups').getOrElse('1'),
+                'delosdb.benchmark.deleteReinsert.iterations': providers.gradleProperty('delosdb.benchmark.deleteReinsert.iterations').getOrElse('3'),
+                'delosdb.benchmark.deleteReinsert.runs': providers.gradleProperty('delosdb.benchmark.deleteReinsert.runs').getOrElse('2')
+        ])
+
+registerDelosFocusedTest(
         'runDelosJdbcBenchmarkRowScaling',
         'Runs provider-neutral adaptive JDBC row-count scaling measurements.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkRowScalingTest.class'],
