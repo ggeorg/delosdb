@@ -43,8 +43,23 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
     @Param({"1", "4", "16", "64", "256"})
     public int candidateCount;
 
+    @Override
     @Setup(Level.Trial)
-    public void captureCandidateDiagnostics() throws SQLException, IOException {
+    public void setup() throws Exception {
+        super.setup();
+        try {
+            captureCandidateDiagnostics();
+        } catch (Exception | Error failure) {
+            try {
+                super.tearDown();
+            } catch (Exception | Error cleanupFailure) {
+                failure.addSuppressed(cleanupFailure);
+            }
+            throw failure;
+        }
+    }
+
+    private void captureCandidateDiagnostics() throws SQLException, IOException {
         if (candidateCount < 1 || candidateCount > rows) {
             throw new IllegalArgumentException(
                     "candidateCount must be between 1 and rows: " + candidateCount);
