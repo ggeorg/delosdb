@@ -23,12 +23,12 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical lookup and visibility traversal for one MVCC version container. */
@@ -36,9 +36,8 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private final Transaction transaction;
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
-    private final StoreDataValue candidateKind;
-    private final StoreDataValue candidateRow;
-    private final StoreDataValue candidateVersion;
+    private final Object[] candidateIdentity;
+    private final FetchDescriptor candidateIdentityDescriptor;
     private MvccRawStoreVersionRows.FetchProjection primaryProjection;
     private MvccRawStoreVersionRows.Decoder primaryDecoder;
     private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
@@ -49,9 +48,21 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             MvccRawStoreTable.Descriptor table) throws StandardException {
         this.transaction = transaction;
         this.table = table;
-        candidateKind = MvccRawStoreFormat.intValue(transaction, 0);
-        candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-        candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
+        candidateIdentity = new Object[MvccRawStoreFormat.VERSION_ID + 1];
+        candidateIdentity[MvccRawStoreFormat.VERSION_KIND_FIELD] =
+                MvccRawStoreFormat.intValue(transaction, 0);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ROW_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        FormatableBitSet identityFields = new FormatableBitSet(candidateIdentity.length);
+        identityFields.set(MvccRawStoreFormat.VERSION_KIND_FIELD);
+        identityFields.set(MvccRawStoreFormat.VERSION_ROW_ID);
+        identityFields.set(MvccRawStoreFormat.VERSION_ID);
+        candidateIdentityDescriptor = new FetchDescriptor(
+                candidateIdentity.length,
+                identityFields,
+                null);
         this.container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -220,12 +231,24 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
             }
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_KIND_FIELD, candidateKind);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
-            if (StoreTypeUtil.getLong(candidateKind) != MvccRawStoreFormat.VERSION_KIND
-                    || StoreTypeUtil.getLong(candidateRow) != rowId
-                    || StoreTypeUtil.getLong(candidateVersion) != versionId) {
+            page.fetchFromSlot(
+                    null,
+                    slot,
+                    candidateIdentity,
+                    candidateIdentityDescriptor,
+                    true);
+            if (MvccRawStoreFormat.intAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_KIND_FIELD)
+                    != MvccRawStoreFormat.VERSION_KIND
+                    || MvccRawStoreFormat.longAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_ROW_ID)
+                    != rowId
+                    || MvccRawStoreFormat.longAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_ID)
+                    != versionId) {
                 return null;
             }
             return decoder(projection).decodeAtSlot(page, slot);
