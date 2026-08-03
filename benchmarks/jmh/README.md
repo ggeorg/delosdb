@@ -149,6 +149,43 @@ The gate proves that values retained across `ResultSet.next()`, sort, distinct,
 aggregate, join, scrollable cursor movement, and result-set closure remain
 detached from mutable execution buffers.
 
+## Focused JFR allocation-class attribution
+
+The normalized GC-profiler totals identify whether allocation is material, but
+not which classes or allocation sites own it. Run the focused JFR attribution
+only after the GC matrix demonstrates a meaningful allocation delta:
+
+```bash
+./gradlew -p benchmarks/jmh clean jmh \
+  '-Pdelosdb.jmh.includes=.*(secondaryEqualityCoveredCount|secondaryEqualityCoveredLookup|secondaryEqualityLookup|secondaryEqualityPayloadLookup)' \
+  -Pdelosdb.jmh.providers=heap,mvcc \
+  -Pdelosdb.jmh.rows=1000 \
+  -Pdelosdb.jmh.payloadSizes=128,4096 \
+  -Pdelosdb.jmh.commitBatchSizes=100 \
+  -Pdelosdb.jmh.profilers=gc \
+  -Pdelosdb.jmh.allocationJfr=true \
+  -Pdelosdb.jmh.warmupIterations=3 \
+  -Pdelosdb.jmh.iterations=5 \
+  -Pdelosdb.jmh.warmupTime=1s \
+  -Pdelosdb.jmh.iterationTime=1s \
+  -Pdelosdb.jmh.forks=1 \
+  --console=plain
+```
+
+The JFR profiler records measurement iterations only. The DelosDB
+post-processor writes the following beside each `profile.jfr` recording:
+
+```text
+allocation-by-class.csv
+allocation-by-site.csv
+allocation-attribution.txt
+```
+
+JFR allocation weights are sampled estimates. Use them to locate classes and
+sites; continue to use `gc.alloc.rate.norm` as the exact normalized total per
+benchmark operation. The focused run deliberately uses one fork because each
+recording is diagnostic attribution rather than a replacement timing baseline.
+
 ## Bounded standalone run
 
 ```bash

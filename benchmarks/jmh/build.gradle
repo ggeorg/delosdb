@@ -93,6 +93,20 @@ static String nonBlankProperty(Project project, String name, String defaultValue
     return raw
 }
 
+static boolean booleanProperty(Project project, String name, boolean defaultValue) {
+    String raw = project.findProperty(name)?.toString()?.trim()
+    if (raw == null || raw.isEmpty()) {
+        return defaultValue
+    }
+    if (raw.equalsIgnoreCase('true')) {
+        return true
+    }
+    if (raw.equalsIgnoreCase('false')) {
+        return false
+    }
+    throw new GradleException("${name} must be true or false: ${raw}")
+}
+
 static Pattern regexProperty(String name, String raw) {
     try {
         return Pattern.compile(raw)
@@ -173,7 +187,31 @@ if (expectedBenchmarkNames.isEmpty()) {
             'delosdb.jmh.includes does not select any standalone DelosDB benchmark: '
                     + configuredIncludeExpression)
 }
-final List<String> configuredProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
+final File jfrAllocationReportDirectory = layout.buildDirectory
+        .dir('reports/jmh/jfr').get().asFile
+final List<String> requestedProfilers = csvProperty(project, 'delosdb.jmh.profilers', [])
+final boolean allocationJfrEnabled = booleanProperty(
+        project, 'delosdb.jmh.allocationJfr', false)
+final boolean requestedJfrProfiler = requestedProfilers.any { profiler ->
+    String normalized = profiler.toString().trim().toLowerCase(Locale.ROOT)
+    normalized == 'jfr' || normalized.startsWith('jfr:')
+}
+if (allocationJfrEnabled && requestedJfrProfiler) {
+    throw new GradleException(
+            'Use delosdb.jmh.allocationJfr=true without adding a second jfr profiler explicitly')
+}
+final List<String> effectiveProfilers = new ArrayList<>(requestedProfilers)
+if (allocationJfrEnabled) {
+    effectiveProfilers.add(
+            'jfr:dir=' + jfrAllocationReportDirectory.absolutePath
+                    + ';configName=profile;stackDepth=256;postProcessor='
+                    + 'io.github.ggeorg.delosdb.benchmark.jmh.DelosJfrAllocationPostProcessor')
+}
+final List<String> configuredProfilers = List.copyOf(new LinkedHashSet<>(effectiveProfilers))
+final boolean jfrProfilerConfigured = configuredProfilers.any { profiler ->
+    String normalized = profiler.toString().trim().toLowerCase(Locale.ROOT)
+    normalized == 'jfr' || normalized.startsWith('jfr:')
+}
 final String jmhUnsafeCompatibilityArg = '--sun-misc-unsafe-memory-access=allow'
 final List<String> configuredJvmArgs = doubleSemicolonProperty(
         project, 'delosdb.jmh.jvmArgs', [])
@@ -209,6 +247,10 @@ final String configuredWarmupTime = nonBlankProperty(
 final String configuredMeasurementTime = nonBlankProperty(
         project, 'delosdb.jmh.iterationTime', '500ms')
 final int configuredForks = positiveIntProperty(project, 'delosdb.jmh.forks', 1)
+if (allocationJfrEnabled && configuredForks != 1) {
+    throw new GradleException(
+            'delosdb.jmh.allocationJfr requires delosdb.jmh.forks=1 so each diagnostic recording is unique')
+}
 final String configuredVerbosity = nonBlankProperty(
         project, 'delosdb.jmh.verbosity', 'NORMAL')
 final String configuredTimeout = nonBlankProperty(
@@ -591,6 +633,9 @@ tasks.named('jmh') {
                 throw new GradleException("Could not remove stale JMH report: ${report}")
             }
         }
+        if (jfrProfilerConfigured) {
+            delete(jfrAllocationReportDirectory)
+        }
     }
     doLast {
         File jsonReport = layout.buildDirectory.file('reports/jmh/results.json').get().asFile
@@ -758,6 +803,26 @@ tasks.named('jmh') {
             if (!allocationSummary.isFile() || allocationSummary.length() == 0L) {
                 throw new GradleException(
                         "JMH did not create a non-empty allocation summary: ${allocationSummary}")
+            }
+        }
+        if (jfrProfilerConfigured) {
+            Set<File> recordings = fileTree(jfrAllocationReportDirectory) {
+                include '**/profile.jfr'
+            }.files
+            if (recordings.isEmpty()) {
+                throw new GradleException(
+                        "JMH JFR profiler created no profile.jfr recordings under "
+                                + jfrAllocationReportDirectory)
+            }
+            recordings.each { recording ->
+                ['allocation-by-class.csv', 'allocation-by-site.csv', 'allocation-attribution.txt']
+                        .each { fileName ->
+                    File report = new File(recording.parentFile, fileName)
+                    if (!report.isFile() || report.length() == 0L) {
+                        throw new GradleException(
+                                "JFR allocation post-processor did not create: ${report}")
+                    }
+                }
             }
         }
     }
