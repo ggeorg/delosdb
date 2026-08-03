@@ -52,22 +52,19 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         this.projection = projection;
         this.metadataProjection = MvccRawStoreVersionRows.metadataProjection(table);
         this.context = context;
-        ContainerHandle openedDirectory = null;
-        MvccRawStoreVersionReader openedVersionReader = null;
+        ContainerHandle openedDirectory = transaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        MvccRawStoreVersionReader openedVersionReader;
+        boolean opened = false;
         try {
-            openedDirectory = transaction.openContainer(
-                    table.metadataContainer(),
-                    MvccRawStorePhysicalLocking.rowLevel(transaction),
-                    ContainerHandle.MODE_READONLY);
             openedVersionReader = new MvccRawStoreVersionReader(transaction, table);
-        } catch (StandardException | RuntimeException | Error failure) {
-            if (openedVersionReader != null) {
-                openedVersionReader.close();
-            }
-            if (openedDirectory != null) {
+            opened = true;
+        } finally {
+            if (!opened) {
                 openedDirectory.close();
             }
-            throw failure;
         }
         directoryContainer = openedDirectory;
         versionReader = openedVersionReader;
