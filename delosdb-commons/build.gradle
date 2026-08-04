@@ -26,17 +26,29 @@ sourceSets {
     }
 }
 
+def saneBuild = providers.gradleProperty('delosdb.sane')
+        .map { value ->
+            def normalized = value.trim().toLowerCase(Locale.ROOT)
+            if (!(normalized in ['true', 'false'])) {
+                throw new GradleException(
+                        "delosdb.sane must be either true or false: ${value}")
+            }
+            return normalized
+        }
+        .orElse('true')
+
 tasks.register('generateSanityState') {
     def templateFile = file('src/main/java/org/apache/derby/shared/common/sanity/SanityState.tmpl')
     def outputFile = generatedSourceRoot.map {
         it.file('org/apache/derby/shared/common/sanity/SanityState.java')
     }
     inputs.file(templateFile)
+    inputs.property('delosdb.sane', saneBuild)
     outputs.file(outputFile)
     doLast {
         def target = outputFile.get().asFile
         target.parentFile.mkdirs()
-        target.text = templateFile.text.replace('@SANE@', 'true')
+        target.text = templateFile.text.replace('@SANE@', saneBuild.get())
     }
 }
 

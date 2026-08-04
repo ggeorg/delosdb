@@ -21,6 +21,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import org.apache.derby.shared.common.sanity.SanityManager;
+
 /** Coordinates isolated engine JVMs and produces one semantic cross-engine report. */
 public final class DelosJdbcCrossEngineCoordinator {
     private static final String PREFIX = "delosdb.benchmark.crossEngine.";
@@ -34,6 +36,11 @@ public final class DelosJdbcCrossEngineCoordinator {
     }
 
     public static void main(String[] args) throws Exception {
+        if (SanityManager.DEBUG) {
+            throw new IllegalStateException(
+                    "Cross-engine performance comparison requires a release build; "
+                            + "rerun with -Pdelosdb.sane=false");
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         prepareOutput(options);
@@ -214,6 +221,7 @@ public final class DelosJdbcCrossEngineCoordinator {
                 .append("OS: ").append(System.getProperty("os.name")).append(' ')
                 .append(System.getProperty("os.arch")).append('\n')
                 .append("Child JVM heap: ").append(options.childHeap()).append('\n')
+                .append("DelosDB sane build: ").append(SanityManager.DEBUG).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Read widths: ").append(options.readWidths()).append('\n')
                 .append("Write widths: ").append(options.writeWidths()).append('\n')
