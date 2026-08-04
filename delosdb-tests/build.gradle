@@ -1119,6 +1119,12 @@ registerDelosFocusedTest(
 
 
 registerDelosFocusedTest(
+        'runDelosStoreValueOperationsDirectPathTest',
+        'Proves engine SQL values use direct shared store operations for heap and MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/StoreValueOperationsDirectPathTest.class'])
+
+
+registerDelosFocusedTest(
         'runDelosJdbcBenchmarkBaseline',
         'Runs the provider-neutral heap/MVCC JDBC performance baseline under the established JUnit runtime.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkBaselineTest.class'],

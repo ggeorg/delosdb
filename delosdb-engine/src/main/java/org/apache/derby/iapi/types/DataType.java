@@ -22,6 +22,8 @@
 package org.apache.derby.iapi.types;
 
 import org.apache.derby.iapi.store.types.StoreDataType;
+import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreValueOperations;
 
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.shared.common.error.StandardException;
@@ -62,8 +64,80 @@ import java.util.Calendar;
  *
  */
 public abstract class DataType
-    implements DataValueDescriptor, StoreDataType, Comparable
+    implements DataValueDescriptor, StoreDataType, StoreValueOperations, Comparable
 {
+    /**
+     * Bridge the SQL value implementation directly to the store-facing value
+     * operations. This avoids the ServiceLoader-backed engine bridge on every
+     * heap and MVCC field operation while preserving the SQL type system as the
+     * single value authority.
+     */
+    @Override
+    public abstract DataValueDescriptor cloneValue(boolean forceMaterialization);
+
+    @Override
+    public abstract DataValueDescriptor getNewNull();
+
+    @Override
+    public void setValue(StoreDataValue source) throws StandardException
+    {
+        setValue((DataValueDescriptor) source);
+    }
+
+    @Override
+    public final void setIntValue(int value)
+    {
+        ((SQLInteger) this).setValue(value);
+    }
+
+    @Override
+    public final void setLongValue(long value)
+    {
+        ((SQLLongint) this).setValue(value);
+    }
+
+    @Override
+    public int compare(StoreDataValue other) throws StandardException
+    {
+        return compare((DataValueDescriptor) other);
+    }
+
+    @Override
+    public int compare(StoreDataValue other, boolean nullsOrderedLow)
+        throws StandardException
+    {
+        return compare((DataValueDescriptor) other, nullsOrderedLow);
+    }
+
+    @Override
+    public boolean compare(
+        int op,
+        StoreDataValue other,
+        boolean orderedNulls,
+        boolean unknownRV)
+        throws StandardException
+    {
+        return compare(
+            op, (DataValueDescriptor) other, orderedNulls, unknownRV);
+    }
+
+    @Override
+    public boolean compare(
+        int op,
+        StoreDataValue other,
+        boolean orderedNulls,
+        boolean nullsOrderedLow,
+        boolean unknownRV)
+        throws StandardException
+    {
+        return compare(
+            op,
+            (DataValueDescriptor) other,
+            orderedNulls,
+            nullsOrderedLow,
+            unknownRV);
+    }
+
 	/*
 	 * DataValueDescriptor Interface
 	 */

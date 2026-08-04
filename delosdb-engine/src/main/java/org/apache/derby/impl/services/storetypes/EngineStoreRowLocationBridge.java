@@ -118,6 +118,66 @@ public final class EngineStoreRowLocationBridge
         }
 
         @Override
+        public void setValue(StoreDataValue source) throws StandardException
+        {
+            StoreTypeUtil.setValue(
+                storeRowLocation,
+                requireStoreRowLocation(source));
+        }
+
+        @Override
+        public int compare(StoreDataValue other) throws StandardException
+        {
+            return StoreTypeUtil.compare(
+                storeRowLocation,
+                requireStoreRowLocation(other));
+        }
+
+        @Override
+        public int compare(StoreDataValue other, boolean nullsOrderedLow)
+            throws StandardException
+        {
+            return StoreTypeUtil.compare(
+                storeRowLocation,
+                requireStoreRowLocation(other),
+                nullsOrderedLow);
+        }
+
+        @Override
+        public boolean compare(
+            int op,
+            StoreDataValue other,
+            boolean orderedNulls,
+            boolean unknownRV)
+            throws StandardException
+        {
+            return StoreTypeUtil.compare(
+                op,
+                storeRowLocation,
+                requireStoreRowLocation(other),
+                orderedNulls,
+                unknownRV);
+        }
+
+        @Override
+        public boolean compare(
+            int op,
+            StoreDataValue other,
+            boolean orderedNulls,
+            boolean nullsOrderedLow,
+            boolean unknownRV)
+            throws StandardException
+        {
+            return StoreTypeUtil.compare(
+                op,
+                storeRowLocation,
+                requireStoreRowLocation(other),
+                orderedNulls,
+                nullsOrderedLow,
+                unknownRV);
+        }
+
+        @Override
         public String getTypeName()
         {
             return "RowLocation";

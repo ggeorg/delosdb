@@ -28,7 +28,7 @@ import java.io.ObjectOutput;
 import org.apache.derby.iapi.services.io.ArrayInputStream;
 import org.apache.derby.shared.common.error.StandardException;
 
-/** Operations implemented directly by store-native metadata values. */
+/** Operations implemented directly by values crossing the store boundary. */
 public interface StoreValueOperations extends StoreDataValue
 {
     StoreDataValue cloneHolder();
