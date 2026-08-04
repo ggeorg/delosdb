@@ -33,6 +33,7 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
+import org.apache.derby.iapi.store.access.ExactKeyConglomerateController;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
@@ -65,7 +66,8 @@ import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 
 **/
 
-public class BTreeController extends OpenBTree implements ConglomerateController
+public class BTreeController extends OpenBTree
+        implements ConglomerateController, ExactKeyConglomerateController
 {
 
     transient StoreDataValue[] scratch_template = null;
@@ -1589,6 +1591,130 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	/*
 	** Methods of ConglomerateController which are not supported.
 	*/
+
+    /**
+     * Delete a fully specified B-tree row without allocating and positioning a
+     * separate scan controller.
+     *
+     * <p>SQL index rows include the base-row location as their final column, so
+     * a complete row identifies exactly one stored B-tree entry even for a
+     * non-unique logical index.</p>
+     */
+    @Override
+    public boolean deleteExact(StoreDataValue[] row) throws StandardException
+    {
+        if (isClosed())
+        {
+            if (getHold())
+            {
+                reopen();
+            }
+            else
+            {
+                throw StandardException.newException(
+                        SQLState.BTREE_IS_CLOSED, err_containerid);
+            }
+        }
+
+        if (scratch_template == null)
+        {
+            scratch_template = runtime_mem.get_template(getRawTran());
+        }
+
+        if (SanityManager.DEBUG)
+        {
+            this.isIndexableRowConsistent(row);
+        }
+
+        FetchDescriptor lockFetchDescriptor = RowUtil.getFetchDescriptorConstant(
+                scratch_template.length - 1);
+        StoreRowLocation lockRowLocation = (StoreRowLocation)
+                scratch_template[scratch_template.length - 1];
+
+        while (true)
+        {
+            LeafControlRow targetLeaf = null;
+            try
+            {
+                SearchParameters search = new SearchParameters(
+                        row,
+                        SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                        scratch_template,
+                        this,
+                        false);
+                targetLeaf = (LeafControlRow)
+                        ControlRow.get(this, BTree.ROOTPAGEID).search(search);
+
+                if (!search.resultExact
+                        || search.resultSlot <= 0
+                        || targetLeaf.page.isDeletedAtSlot(search.resultSlot))
+                {
+                    return false;
+                }
+
+                /*
+                ** Mirror the exact-key update scan's locking contract without
+                ** allocating a ScanController. Non-unique logical indexes need
+                ** the previous-key lock; every index needs the base-row update
+                ** lock represented by its final RowLocation column.
+                */
+                boolean uniqueLogicalKey =
+                        getConglomerate().nUniqueColumns
+                                < getConglomerate().nKeyFields;
+                if (!uniqueLogicalKey
+                        && !this.getLockingPolicy().lockNonScanPreviousRow(
+                                targetLeaf,
+                                search.resultSlot,
+                                lockFetchDescriptor,
+                                scratch_template,
+                                lockRowLocation,
+                                this,
+                                ConglomerateController.LOCK_UPD,
+                                TransactionManager.LOCK_COMMIT_DURATION))
+                {
+                    targetLeaf = null;
+                    continue;
+                }
+
+                if (!this.getLockingPolicy().lockNonScanRowOnPage(
+                        targetLeaf,
+                        search.resultSlot,
+                        lockFetchDescriptor,
+                        scratch_template,
+                        lockRowLocation,
+                        ConglomerateController.LOCK_UPD))
+                {
+                    targetLeaf = null;
+                    continue;
+                }
+
+                if (targetLeaf.page.isDeletedAtSlot(search.resultSlot))
+                {
+                    return false;
+                }
+
+                targetLeaf.page.deleteAtSlot(
+                        search.resultSlot, true, this.btree_undo);
+
+                if (targetLeaf.page.nonDeletedRecordCount() == 1
+                        && !(targetLeaf.getIsRoot() && targetLeaf.getLevel() == 0))
+                {
+                    this.getXactMgr().addPostCommitWork(new BTreePostCommit(
+                            this.getXactMgr().getAccessManager(),
+                            this.getConglomerate(),
+                            targetLeaf.page.getPageNumber()));
+                }
+                return true;
+            }
+            finally
+            {
+                if (targetLeaf != null)
+                {
+                    targetLeaf.release();
+                }
+            }
+        }
+    }
 
     /**
     Delete a row from the conglomerate.

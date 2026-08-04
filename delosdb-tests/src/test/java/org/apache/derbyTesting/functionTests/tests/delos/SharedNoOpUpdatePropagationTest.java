@@ -32,6 +32,105 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /** Cross-provider proof for SQL-layer actual-change propagation. */
 public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
+    public void testHeapAndMvccChangedIndexMutationsRemainTransactional() throws Exception {
+        exerciseChangedIndexMutations("heap", "");
+        exerciseChangedIndexMutations("mvcc", " using delos_mvcc");
+    }
+
+    private void exerciseChangedIndexMutations(String provider, String createSuffix)
+            throws Exception {
+        String database = databaseName(
+                "shared-index-mutation-" + provider + '-' + System.nanoTime());
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "create table index_mutation_target ("
+                                + "id int primary key, category int not null, "
+                                + "bucket int not null, quantity int not null)"
+                                + createSuffix);
+                statement.executeUpdate(
+                        "create index index_mutation_category "
+                                + "on index_mutation_target(category)");
+                statement.executeUpdate(
+                        "create index index_mutation_range "
+                                + "on index_mutation_target(bucket, quantity)");
+                statement.executeUpdate(
+                        "insert into index_mutation_target values "
+                                + "(1, 10, 1, 100), (2, 20, 2, 200), (3, 30, 3, 300)");
+            }
+            connection.commit();
+
+            assertEquals(1, executeUpdate(connection,
+                    "update index_mutation_target "
+                            + "set category = 11, quantity = 101 where id = 1"));
+            connection.rollback();
+            assertIndexedMutationRows(connection,
+                    "10|1|100",
+                    "20|2|200",
+                    "30|3|300");
+
+            assertEquals(1, executeUpdate(connection,
+                    "update index_mutation_target "
+                            + "set category = 11, quantity = 101 where id = 1"));
+            connection.commit();
+            assertRows(connection,
+                    "select id from index_mutation_target "
+                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
+                            + "where category = 10");
+            assertRows(connection,
+                    "select id, quantity from index_mutation_target "
+                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
+                            + "where category = 11",
+                    "1|101");
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from index_mutation_target where id = 2"));
+            connection.rollback();
+            assertRows(connection,
+                    "select id, quantity from index_mutation_target "
+                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
+                            + "where category = 20",
+                    "2|200");
+
+            assertEquals(1, executeUpdate(connection,
+                    "delete from index_mutation_target where id = 2"));
+            connection.commit();
+            assertRows(connection,
+                    "select id from index_mutation_target "
+                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
+                            + "where category = 20");
+            assertRows(connection,
+                    "select id from index_mutation_target "
+                            + "--DERBY-PROPERTIES index=index_mutation_range\n"
+                            + "where bucket = 2 and quantity = 200");
+
+            assertEquals(1, executeUpdate(connection,
+                    "insert into index_mutation_target values (2, 21, 2, 201)"));
+            connection.commit();
+            assertIndexedMutationRows(connection,
+                    "11|1|101",
+                    "21|2|201",
+                    "30|3|300");
+        } finally {
+            try {
+                shutdownDatabase(database);
+            } catch (Exception ignored) {
+                // The connection close above may already have stopped a failed test database.
+            }
+        }
+    }
+
+    private static void assertIndexedMutationRows(
+            Connection connection,
+            String... expectedRows) throws Exception {
+        assertRows(connection,
+                "select category, id, quantity from index_mutation_target "
+                        + "--DERBY-PROPERTIES index=index_mutation_category\n"
+                        + "order by category, id",
+                expectedRows);
+    }
+
     public void testHeapAndMvccSkipPhysicalNoOpUpdates() throws Exception {
         exerciseProvider("heap", "");
         exerciseProvider("mvcc", " using delos_mvcc");
