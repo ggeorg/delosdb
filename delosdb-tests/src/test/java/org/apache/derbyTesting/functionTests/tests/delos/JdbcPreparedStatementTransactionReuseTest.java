@@ -14,6 +14,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
+import java.util.List;
 import java.util.Random;
 
 /**
@@ -44,6 +46,75 @@ public final class JdbcPreparedStatementTransactionReuseTest extends MvccSqlTest
                 "jdbc-prepared-write-reuse-mvcc-db",
                 "JDBC_PREPARED_WRITE_REUSE_MVCC_T",
                 " using delos_mvcc");
+    }
+
+    public void testMvccSameKeyDeleteReinsertProofSurvivesSavepointAndUsesFreshIdentity()
+            throws Exception {
+        String database = databaseName("jdbc-delete-reinsert-key-proof-mvcc-db");
+        String table = "JDBC_DELETE_REINSERT_KEY_PROOF_MVCC_T";
+        long originalRowId;
+        long committedReplacementRowId;
+
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table " + table
+                    + " (id int not null primary key, payload varchar(64) not null)"
+                    + " using delos_mvcc");
+            executeUpdate(connection, "insert into " + table + " values (1, 'original')");
+            connection.commit();
+
+            List<MvccRawStoreMetadataInspection.DirectoryIdentity> initial =
+                    MvccRawStoreMetadataInspection.directories(connection, table);
+            assertEquals("initial directory count", 1, initial.size());
+            originalRowId = initial.get(0).rowId();
+
+            Savepoint savepoint = connection.setSavepoint("before_same_key_reinsert");
+            assertEquals(1, executeUpdate(connection, "delete from " + table + " where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "insert into " + table + " values (1, 'rolled-back')"));
+            connection.rollback(savepoint);
+
+            assertRows(connection, "select id, payload from " + table, "1|original");
+            List<MvccRawStoreMetadataInspection.DirectoryIdentity> afterSavepointRollback =
+                    MvccRawStoreMetadataInspection.directories(connection, table);
+            assertEquals("savepoint rollback must remove replacement directory",
+                    1, afterSavepointRollback.size());
+            assertEquals("savepoint rollback must restore original logical identity",
+                    originalRowId, afterSavepointRollback.get(0).rowId());
+
+            assertEquals(1, executeUpdate(connection, "delete from " + table + " where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "insert into " + table + " values (1, 'committed')"));
+            connection.commit();
+
+            assertRows(connection, "select id, payload from " + table, "1|committed");
+            committedReplacementRowId = newestRowId(
+                    MvccRawStoreMetadataInspection.directories(connection, table));
+            assertTrue("a new committed INSERT must allocate a fresh logical row identity",
+                    committedReplacementRowId > originalRowId);
+            connection.rollback();
+        }
+
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            reopened.setAutoCommit(false);
+            assertRows(reopened, "select id, payload from " + table, "1|committed");
+            assertEquals("reopen must preserve the committed replacement identity",
+                    committedReplacementRowId,
+                    newestRowId(MvccRawStoreMetadataInspection.directories(reopened, table)));
+            reopened.rollback();
+        }
+    }
+
+    private static long newestRowId(
+            List<MvccRawStoreMetadataInspection.DirectoryIdentity> directories) {
+        assertFalse("MVCC directory must contain the visible replacement", directories.isEmpty());
+        long newest = 0L;
+        for (MvccRawStoreMetadataInspection.DirectoryIdentity directory : directories) {
+            newest = Math.max(newest, directory.rowId());
+        }
+        return newest;
     }
 
     private static void runPreparedDeleteReinsertProof(

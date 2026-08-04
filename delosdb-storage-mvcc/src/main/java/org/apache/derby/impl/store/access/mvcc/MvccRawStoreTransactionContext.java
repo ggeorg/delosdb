@@ -13,8 +13,8 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -25,6 +25,7 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -36,6 +37,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final List<MvccRawStoreTable.PendingVersion> pending = new ArrayList<>();
+    private final List<DeletedKeyProof> deletedKeyProofs = new ArrayList<>();
     private final List<SavepointMarker> savepoints = new ArrayList<>();
     private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
@@ -261,6 +263,43 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         pending.add(version);
     }
 
+    void rememberDeletedKeyProof(
+            MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] deletedValues,
+            MvccRawStoreTable.PendingVersion tombstone) throws StandardException {
+        List<MvccRawStoreTable.UniqueConstraint> constraints = table.uniqueConstraints();
+        if (constraints.isEmpty()) {
+            return;
+        }
+        deletedKeyProofs.add(new DeletedKeyProof(
+                table,
+                deletedValues,
+                tombstone,
+                constraints));
+    }
+
+    DeletedKeyProof deletedKeyProof(
+            MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] values) throws StandardException {
+        for (int index = deletedKeyProofs.size() - 1; index >= 0; index--) {
+            DeletedKeyProof candidate = deletedKeyProofs.get(index);
+            if (!candidate.available()
+                    || !candidate.belongsTo(table)
+                    || !candidate.matchesCurrentConstraints(table.uniqueConstraints())
+                    || !candidate.matchesUniqueKeys(values)) {
+                continue;
+            }
+            return candidate;
+        }
+        return null;
+    }
+
+    void markDeletedKeyProofConsumed(
+            DeletedKeyProof proof,
+            MvccRawStoreTable.PendingVersion replacement) {
+        proof.consume(replacement);
+    }
+
     long snapshotSequence() {
         if (snapshotSequence == UNCAPTURED_SNAPSHOT) {
             snapshotLease = runtime.openSnapshotLease();
@@ -413,6 +452,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                 pending.remove(index);
             }
         }
+        reconcileDeletedKeyProofs();
 
         orderedIndexReplacements.entrySet().removeIf(entry -> {
             try {
@@ -633,6 +673,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
         vacuumBoundaries.clear();
         pending.clear();
+        deletedKeyProofs.clear();
         savepoints.clear();
         sharedLocks.clear();
         exclusiveLocks.clear();
@@ -659,6 +700,142 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private record OrderedIndexReplacement(
             MvccRawStoreTable.Descriptor table,
             ContainerKey privateContainer) {
+    }
+
+    static final class DeletedKeyProof {
+        private final MvccRawStoreTable.Descriptor table;
+        private final MvccRawStoreTable.PendingVersion tombstone;
+        private final List<MvccRawStoreTable.UniqueConstraint> constraints;
+        private final List<StoreDataValue[]> uniqueKeys;
+        private MvccRawStoreTable.PendingVersion replacement;
+
+        private DeletedKeyProof(
+                MvccRawStoreTable.Descriptor table,
+                StoreDataValue[] deletedValues,
+                MvccRawStoreTable.PendingVersion tombstone,
+                List<MvccRawStoreTable.UniqueConstraint> constraints) throws StandardException {
+            this.table = table;
+            this.tombstone = tombstone;
+            this.constraints = List.copyOf(constraints);
+            List<StoreDataValue[]> keys = new ArrayList<>(constraints.size());
+            for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
+                int[] columns = constraint.columns();
+                StoreDataValue[] key = new StoreDataValue[columns.length];
+                for (int index = 0; index < columns.length; index++) {
+                    key[index] = StoreValueCopySupport.cloneValue(
+                            deletedValues[columns[index]],
+                            true);
+                }
+                keys.add(key);
+            }
+            this.uniqueKeys = List.copyOf(keys);
+        }
+
+        boolean belongsTo(MvccRawStoreTable.Descriptor candidate) {
+            return table.metadataContainer().equals(candidate.metadataContainer())
+                    && table.versionContainer().equals(candidate.versionContainer());
+        }
+
+        MvccRawStoreTable.PendingVersion tombstone() {
+            return tombstone;
+        }
+
+        boolean available() {
+            return replacement == null;
+        }
+
+        void consume(MvccRawStoreTable.PendingVersion replacement) {
+            if (this.replacement != null) {
+                throw new IllegalStateException(
+                        "RawStore MVCC deleted-key proof was already consumed");
+            }
+            this.replacement = replacement;
+        }
+
+        void releaseReplacement() {
+            replacement = null;
+        }
+
+        MvccRawStoreTable.PendingVersion replacement() {
+            return replacement;
+        }
+
+        boolean matchesCurrentConstraints(
+                List<MvccRawStoreTable.UniqueConstraint> current) {
+            if (constraints.size() != current.size()) {
+                return false;
+            }
+            for (int index = 0; index < constraints.size(); index++) {
+                MvccRawStoreTable.UniqueConstraint expected = constraints.get(index);
+                MvccRawStoreTable.UniqueConstraint actual = current.get(index);
+                if (expected.ordinal() != actual.ordinal()
+                        || !expected.matches(
+                                actual.columns(),
+                                actual.duplicateNullsAllowed())) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        boolean matchesUniqueKeys(StoreDataValue[] values) throws StandardException {
+            if (values == null || values.length != table.columnCount()) {
+                return false;
+            }
+            for (int constraintIndex = 0;
+                    constraintIndex < constraints.size();
+                    constraintIndex++) {
+                MvccRawStoreTable.UniqueConstraint constraint =
+                        constraints.get(constraintIndex);
+                int[] columns = constraint.columns();
+                StoreDataValue[] deletedKey = uniqueKeys.get(constraintIndex);
+                if (constraint.duplicateNullsAllowed()
+                        && (containsNull(deletedKey)
+                            || MvccRawStoreTransactionContext.containsNull(values, columns))) {
+                    return false;
+                }
+                for (int index = 0; index < columns.length; index++) {
+                    if (StoreTypeUtil.compare(
+                            deletedKey[index],
+                            values[columns[index]],
+                            true) != 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static boolean containsNull(StoreDataValue[] values)
+                throws StandardException {
+            for (StoreDataValue value : values) {
+                if (StoreTypeUtil.isNull(value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private void reconcileDeletedKeyProofs() throws StandardException {
+        for (int index = deletedKeyProofs.size() - 1; index >= 0; index--) {
+            DeletedKeyProof proof = deletedKeyProofs.get(index);
+            if (!MvccRawStoreTable.pendingVersionExists(
+                    rawTransaction,
+                    proof.tombstone(),
+                    transactionId)) {
+                deletedKeyProofs.remove(index);
+                continue;
+            }
+            MvccRawStoreTable.PendingVersion replacement = proof.replacement();
+            if (replacement != null
+                    && !MvccRawStoreTable.pendingVersionExists(
+                            rawTransaction,
+                            replacement,
+                            transactionId)) {
+                proof.releaseReplacement();
+            }
+        }
     }
 
     private static final class OrderedIndexReconciliationFailure extends RuntimeException {

@@ -172,6 +172,58 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testSameKeyDeleteReinsertRetainsUniqueKeyLocks() throws Exception {
+        String database = databaseName("mvcc-raw-store-delete-reinsert-key-lock");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table delete_reinsert_key_lock_t ("
+                                + "id int primary key, "
+                                + "email varchar(64) unique, "
+                                + "code int unique) using delos_mvcc");
+                executeUpdate(setup,
+                        "insert into delete_reinsert_key_lock_t "
+                                + "values (1, 'retained@example', 100)");
+                setup.commit();
+            }
+
+            try (Connection first = openDatabase(database, false);
+                 Connection second = openDatabase(database, false)) {
+                first.setAutoCommit(false);
+                second.setAutoCommit(false);
+
+                executeUpdate(first,
+                        "delete from delete_reinsert_key_lock_t where id = 1");
+                executeUpdate(first,
+                        "insert into delete_reinsert_key_lock_t "
+                                + "values (1, 'retained@example', 100)");
+
+                ExecutorService executor = Executors.newSingleThreadExecutor();
+                try {
+                    Future<String> duplicate = executor.submit(() -> {
+                        try {
+                            executeUpdate(second,
+                                    "insert into delete_reinsert_key_lock_t "
+                                            + "values (2, 'retained@example', 200)");
+                            return "SUCCESS";
+                        } catch (SQLException expected) {
+                            return expected.getSQLState();
+                        }
+                    });
+                    assertStillWaiting(duplicate,
+                            "same-key reinsert must retain its transaction-duration unique-key lock");
+                    first.commit();
+                    assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
+                    second.rollback();
+                } finally {
+                    executor.shutdownNow();
+                }
+            }
+            shutdownDatabase(database);
+        }
+    }
+
     public void testSchemaLocksSerializeUniqueDdlAndDml() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-schema-lock");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {

@@ -390,13 +390,21 @@ final class MvccRawStoreTable {
         }
         context.beforeTableWrite(table);
         long creatorTransactionId = context.transactionId();
-        MvccRawStoreOrderedIndex.assertUnique(
-                rawTransaction,
-                table,
-                null,
-                values,
-                0L,
-                context);
+        // A preceding same-transaction delete already scanned/locked every
+        // unchanged unique key. Reuse that transaction-local proof instead of
+        // rescanning the candidate B-trees; a new logical row id is still
+        // allocated below, preserving the v1 identity contract.
+        MvccRawStoreTransactionContext.DeletedKeyProof deletedKeyProof =
+                context.deletedKeyProof(table, values);
+        if (deletedKeyProof == null) {
+            MvccRawStoreOrderedIndex.assertUnique(
+                    rawTransaction,
+                    table,
+                    null,
+                    values,
+                    0L,
+                    context);
+        }
         ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         Allocation allocation = context.reserveInsertIdentifiers(table);
         Object[] versionRow = versionRow(
@@ -443,6 +451,9 @@ final class MvccRawStoreTable {
                 versionHandle,
                 directoryLocation);
         context.addPending(pending);
+        if (deletedKeyProof != null) {
+            context.markDeletedKeyProofConsumed(deletedKeyProof, pending);
+        }
         if (destination != null) {
             destination.set(
                     allocation.rowId(),
@@ -571,7 +582,7 @@ final class MvccRawStoreTable {
                 table,
                 target.visible().values(),
                 context);
-        appendVersion(
+        PendingVersion tombstone = appendVersion(
                 rawTransaction,
                 table,
                 rowId,
@@ -581,6 +592,10 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.TOMBSTONE_FLAGS,
                 null,
                 context);
+        context.rememberDeletedKeyProof(
+                table,
+                target.visible().values(),
+                tombstone);
         return true;
     }
 
@@ -971,7 +986,12 @@ final class MvccRawStoreTable {
             int flags,
             StoreDataValue[] values,
             MvccRawStoreTransactionContext context) throws StandardException {
-        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
+        // Tombstones carry no indexable values. Avoid discovering or rebuilding
+        // the ordered-index generation for a call that insertVersion() will
+        // immediately ignore.
+        ContainerKey orderedIndex = values == null
+                ? null
+                : context.orderedIndexForWrite(table);
         long versionId = context.reserveVersionIdentifier(table);
         Object[] versionRow = versionRow(
                 transaction,
