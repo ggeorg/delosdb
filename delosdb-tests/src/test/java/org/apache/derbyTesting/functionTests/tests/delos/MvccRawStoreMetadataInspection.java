@@ -996,7 +996,7 @@ final class MvccRawStoreMetadataInspection {
         }
     }
 
-    private record RowLocationIdentity(boolean hasLocator, long pageId, int slotId) {
+    record RowLocationIdentity(boolean hasLocator, long pageId, int slotId) {
     }
 
     record OrderedIndexIdentity(

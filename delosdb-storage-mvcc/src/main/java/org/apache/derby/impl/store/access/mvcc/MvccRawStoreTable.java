@@ -1183,26 +1183,39 @@ final class MvccRawStoreTable {
                 key,
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC insert container is absent: " + key);
+        }
         Page page = null;
         try {
-            page = container.getFirstPage();
-            while (page != null) {
-                RecordHandle handle = page.insertAtSlot(
-                        page.recordCount(),
-                        row,
-                        (FormatableBitSet) null,
-                        null,
-                        insertFlags(page),
-                        OVERFLOW_THRESHOLD);
-                if (handle != null) {
-                    return handle;
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
+            // RawStore tracks the last inserted and relatively unfilled pages
+            // for every container. Use that canonical insertion path instead
+            // of walking from the first page for every version or directory
+            // append. The old scan made mutation latency grow with the total
+            // number of pages in the table.
+            page = container.getPageForInsert(0);
+            RecordHandle handle = insertOnCandidatePage(page, row);
+            if (handle != null) {
+                return handle;
             }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+
+            page = container.getPageForInsert(ContainerHandle.GET_PAGE_UNFILLED);
+            handle = insertOnCandidatePage(page, row);
+            if (handle != null) {
+                return handle;
+            }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+
             page = container.addPage();
-            RecordHandle handle = page.insertAtSlot(
+            handle = page.insertAtSlot(
                     Page.FIRST_SLOT_NUMBER,
                     row,
                     null,
@@ -1217,10 +1230,23 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
-            if (container != null) {
-                container.close();
-            }
+            container.close();
         }
+    }
+
+    private static RecordHandle insertOnCandidatePage(
+            Page page,
+            Object[] row) throws StandardException {
+        if (page == null) {
+            return null;
+        }
+        return page.insertAtSlot(
+                page.recordCount(),
+                row,
+                (FormatableBitSet) null,
+                null,
+                insertFlags(page),
+                OVERFLOW_THRESHOLD);
     }
 
     private static void updateVersionBegin(
