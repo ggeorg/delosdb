@@ -20,7 +20,10 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.List;
+
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
@@ -28,6 +31,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Shared RawStore read boundary for one ordered-index candidate batch. */
 final class MvccRawStoreIndexedReader implements AutoCloseable {
+    private static final int DIRECTORY_PAGE_BATCH_SIZE = 64;
+
     record Result(MvccRawStoreTable.VisibleRow row, boolean covered) {
     }
 
@@ -59,15 +64,118 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 ContainerHandle.MODE_READONLY);
     }
 
-    Result read(
+    List<Result> read(
+            List<MvccRawStoreOrderedIndex.Candidate> candidates,
+            boolean coveringEligible) throws StandardException {
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        Result[] results = new Result[candidates.size()];
+        int batchStart = 0;
+        while (batchStart < candidates.size()) {
+            int batchEnd = Math.min(
+                    candidates.size(),
+                    batchStart + DIRECTORY_PAGE_BATCH_SIZE);
+            readDirectoryBatch(candidates, coveringEligible, batchStart, batchEnd, results);
+            batchStart = batchEnd;
+        }
+        return List.copyOf(java.util.Arrays.asList(results));
+    }
+
+    private void readDirectoryBatch(
+            List<MvccRawStoreOrderedIndex.Candidate> candidates,
+            boolean coveringEligible,
+            int start,
+            int end,
+            Result[] results) throws StandardException {
+        int index = start;
+        while (index < end) {
+            MvccRawStoreOrderedIndex.Candidate first = candidates.get(index);
+            MvccRowLocation firstLocation = first.rowLocation();
+            if (!firstLocation.hasLocatorHint()) {
+                metrics.candidateVisited(coveringEligible);
+                results[index] = readWithDirectoryLookup(first, coveringEligible);
+                index++;
+                continue;
+            }
+
+            long pageNumber = firstLocation.locatorPageId();
+            int groupEnd = index + 1;
+            while (groupEnd < end
+                    && candidates.get(groupEnd).rowLocation().hasLocatorHint()
+                    && candidates.get(groupEnd).rowLocation().locatorPageId() == pageNumber) {
+                groupEnd++;
+            }
+            readLatchedDirectoryPage(
+                    candidates,
+                    coveringEligible,
+                    index,
+                    groupEnd,
+                    pageNumber,
+                    results);
+            index = groupEnd;
+        }
+    }
+
+    private void readLatchedDirectoryPage(
+            List<MvccRawStoreOrderedIndex.Candidate> candidates,
+            boolean coveringEligible,
+            int start,
+            int end,
+            long pageNumber,
+            Result[] results) throws StandardException {
+        MvccRawStoreTable.DirectoryRecord[] directories =
+                new MvccRawStoreTable.DirectoryRecord[end - start];
+        Page page = null;
+        try {
+            page = directoryContainer.getPage(pageNumber);
+            if (page != null) {
+                metrics.directoryPageAcquired();
+            }
+            for (int index = start; index < end; index++) {
+                metrics.candidateVisited(coveringEligible);
+                if (page == null) {
+                    continue;
+                }
+                metrics.directoryPageBatchCandidate();
+                if (index > start) {
+                    metrics.directoryPageReuseHit();
+                }
+                directories[index - start] = MvccRawStoreRowDirectory.findByHint(
+                        transaction,
+                        candidates.get(index).rowLocation(),
+                        page);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+
+        for (int index = start; index < end; index++) {
+            MvccRawStoreOrderedIndex.Candidate candidate = candidates.get(index);
+            MvccRawStoreTable.DirectoryRecord directory = directories[index - start];
+            results[index] = directory == null
+                    ? readWithDirectoryLookup(candidate, coveringEligible)
+                    : readResolved(candidate, coveringEligible, directory);
+        }
+    }
+
+    private Result readWithDirectoryLookup(
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible) throws StandardException {
-        metrics.candidateVisited(coveringEligible);
         MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction,
                 candidate.rowLocation(),
                 directoryContainer,
                 metrics);
+        return readResolved(candidate, coveringEligible, directory);
+    }
+
+    private Result readResolved(
+            MvccRawStoreOrderedIndex.Candidate candidate,
+            boolean coveringEligible,
+            MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
         if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
             MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
             if (summary.available()) {
@@ -140,7 +248,6 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         visible.handle()),
                 false);
     }
-
 
     private MvccRawStoreVersionRows.FetchProjection metadataProjection() {
         if (metadataProjection == null) {

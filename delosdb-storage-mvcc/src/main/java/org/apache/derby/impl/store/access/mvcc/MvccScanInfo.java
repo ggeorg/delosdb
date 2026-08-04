@@ -39,6 +39,9 @@ final class MvccScanInfo implements ScanInfo {
     private static final String COVERED_CANDIDATES = "mvccCoveredCandidates";
     private static final String FALLBACK_CANDIDATES = "mvccFallbackCandidates";
     private static final String DIRECTORY_PAGE_ACQUISITIONS = "mvccDirectoryPageAcquisitions";
+    private static final String DIRECTORY_PAGE_BATCH_CANDIDATES =
+            "mvccDirectoryPageBatchCandidates";
+    private static final String DIRECTORY_PAGE_REUSE_HITS = "mvccDirectoryPageReuseHits";
     private static final String DIRECTORY_LOGICAL_FALLBACKS = "mvccDirectoryLogicalFallbacks";
     private static final String DIRECTORY_HEAD_SUMMARY_CHECKS =
             "mvccDirectoryHeadSummaryChecks";
@@ -111,6 +114,12 @@ final class MvccScanInfo implements ScanInfo {
         result.setProperty(
                 DIRECTORY_PAGE_ACQUISITIONS,
                 Long.toString(indexedReadMetrics.directoryPageAcquisitions()));
+        result.setProperty(
+                DIRECTORY_PAGE_BATCH_CANDIDATES,
+                Long.toString(indexedReadMetrics.directoryPageBatchCandidates()));
+        result.setProperty(
+                DIRECTORY_PAGE_REUSE_HITS,
+                Long.toString(indexedReadMetrics.directoryPageReuseHits()));
         result.setProperty(
                 DIRECTORY_LOGICAL_FALLBACKS,
                 Long.toString(indexedReadMetrics.directoryLogicalFallbacks()));

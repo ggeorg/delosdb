@@ -32,6 +32,8 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
         "mvccCoveredCandidates",
         "mvccFallbackCandidates",
         "mvccDirectoryPageAcquisitions",
+        "mvccDirectoryPageBatchCandidates",
+        "mvccDirectoryPageReuseHits",
         "mvccDirectoryLogicalFallbacks",
         "mvccDirectoryHeadSummaryChecks",
         "mvccDirectoryHeadSummaryHits",
@@ -74,7 +76,21 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
             requireMetric(metrics, "mvccCoveringCandidates", candidateCount);
             requireMetric(metrics, "mvccCoveredCandidates", candidateCount);
             requireMetric(metrics, "mvccFallbackCandidates", 0L);
-            requireMetric(metrics, "mvccDirectoryPageAcquisitions", candidateCount);
+            long directoryPageAcquisitions = requireMetricRange(
+                    metrics,
+                    "mvccDirectoryPageAcquisitions",
+                    1L,
+                    candidateCount);
+            requireMetric(metrics, "mvccDirectoryPageBatchCandidates", candidateCount);
+            requireMetric(
+                    metrics,
+                    "mvccDirectoryPageReuseHits",
+                    candidateCount - directoryPageAcquisitions);
+            if (candidateCount > 1 && directoryPageAcquisitions >= candidateCount) {
+                throw new IllegalStateException(
+                        "Candidate diagnostics did not reuse directory pages: candidates="
+                                + candidateCount + ", acquisitions=" + directoryPageAcquisitions);
+            }
             requireMetric(metrics, "mvccDirectoryLogicalFallbacks", 0L);
             requireMetric(metrics, "mvccDirectoryHeadSummaryChecks", candidateCount);
             requireMetric(metrics, "mvccDirectoryHeadSummaryHits", candidateCount);
@@ -111,6 +127,20 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
             throw new IllegalStateException(
                     "Candidate diagnostic " + name + " expected " + expected + " but found " + actual);
         }
+    }
+
+    private static long requireMetricRange(
+            Map<String, Long> metrics,
+            String name,
+            long minimum,
+            long maximum) {
+        Long actual = metrics.get(name);
+        if (actual == null || actual.longValue() < minimum || actual.longValue() > maximum) {
+            throw new IllegalStateException(
+                    "Candidate diagnostic " + name + " expected range [" + minimum + ", "
+                            + maximum + "] but found " + actual);
+        }
+        return actual.longValue();
     }
 
     private void writeDiagnostics(String statistics, Map<String, Long> metrics) throws IOException {

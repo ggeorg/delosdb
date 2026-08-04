@@ -220,20 +220,34 @@ final class MvccRawStoreRowDirectory {
             if (page == null) {
                 return null;
             }
-            int slot = rowLocation.locatorSlotId();
-            if (!isDirectorySlot(page, slot)) {
-                return null;
-            }
-            MvccRawStoreTable.DirectoryRecord directory =
-                    MvccRawStoreTable.decodeDirectory(transaction, page, slot);
-            return directory != null && directory.rowId() == rowLocation.rowId()
-                    ? directory
-                    : null;
+            return findByHint(transaction, rowLocation, page);
         } finally {
             if (page != null) {
                 page.unlatch();
             }
         }
+    }
+
+
+    static MvccRawStoreTable.DirectoryRecord findByHint(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            Page page) throws StandardException {
+        if (page == null
+                || rowLocation == null
+                || !rowLocation.hasLocatorHint()
+                || page.getPageNumber() != rowLocation.locatorPageId()) {
+            return null;
+        }
+        int slot = rowLocation.locatorSlotId();
+        if (!isDirectorySlot(page, slot)) {
+            return null;
+        }
+        MvccRawStoreTable.DirectoryRecord directory =
+                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+        return directory != null && directory.rowId() == rowLocation.rowId()
+                ? directory
+                : null;
     }
 
     private static MvccRawStoreTable.DirectoryRecord findByLogicalId(

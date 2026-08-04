@@ -23,13 +23,15 @@ package org.apache.derby.impl.store.access.mvcc;
 /** Per-scan physical attribution for the RawStore MVCC ordered-index path. */
 final class MvccRawStoreIndexedReadMetrics {
     static final Snapshot EMPTY = new Snapshot(
-            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
 
     private long candidatesVisited;
     private long coveringCandidates;
     private long coveredCandidates;
     private long fallbackCandidates;
     private long directoryPageAcquisitions;
+    private long directoryPageBatchCandidates;
+    private long directoryPageReuseHits;
     private long directoryLogicalFallbacks;
     private long directoryHeadSummaryChecks;
     private long directoryHeadSummaryHits;
@@ -57,6 +59,14 @@ final class MvccRawStoreIndexedReadMetrics {
 
     void directoryPageAcquired() {
         directoryPageAcquisitions++;
+    }
+
+    void directoryPageBatchCandidate() {
+        directoryPageBatchCandidates++;
+    }
+
+    void directoryPageReuseHit() {
+        directoryPageReuseHits++;
     }
 
     void directoryLogicalFallback() {
@@ -102,6 +112,8 @@ final class MvccRawStoreIndexedReadMetrics {
                 coveredCandidates,
                 fallbackCandidates,
                 directoryPageAcquisitions,
+                directoryPageBatchCandidates,
+                directoryPageReuseHits,
                 directoryLogicalFallbacks,
                 directoryHeadSummaryChecks,
                 directoryHeadSummaryHits,
@@ -119,6 +131,8 @@ final class MvccRawStoreIndexedReadMetrics {
             long coveredCandidates,
             long fallbackCandidates,
             long directoryPageAcquisitions,
+            long directoryPageBatchCandidates,
+            long directoryPageReuseHits,
             long directoryLogicalFallbacks,
             long directoryHeadSummaryChecks,
             long directoryHeadSummaryHits,

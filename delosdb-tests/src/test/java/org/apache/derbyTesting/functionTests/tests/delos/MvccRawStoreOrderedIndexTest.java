@@ -201,7 +201,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
             assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
             assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 1L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageBatchCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageReuseHits", 1L);
             assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
             assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
             assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);

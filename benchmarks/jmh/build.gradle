@@ -921,6 +921,8 @@ tasks.named('jmh') {
                     'mvccCoveredCandidates',
                     'mvccFallbackCandidates',
                     'mvccDirectoryPageAcquisitions',
+                    'mvccDirectoryPageBatchCandidates',
+                    'mvccDirectoryPageReuseHits',
                     'mvccDirectoryLogicalFallbacks',
                     'mvccDirectoryHeadSummaryChecks',
                     'mvccDirectoryHeadSummaryHits',

@@ -221,7 +221,7 @@ publishes direct runtime-statistics counters for:
 ```text
 ordered and covering candidates
 successful covered candidates and fallbacks
-directory-page acquisitions and logical fallbacks
+directory-page acquisitions, batched candidates, reuse hits, and logical fallbacks
 directory-head summary checks, hits, and fallbacks
 version-page acquisitions and slot fetches
 visibility checks and version-chain steps
@@ -245,9 +245,10 @@ execution-attribution.txt
 ```
 
 Execution samples estimate CPU attribution. JMH remains authoritative for
-elapsed time. Use this evidence to choose between current-head visibility
-acceleration and page-at-a-time candidate processing; allocation JFR percentages
-must not be interpreted as CPU percentages.
+elapsed time. The current-head summary removes version-page proof from fresh
+covered candidates; the same matrix now measures whether bounded directory-page
+reuse reduces the remaining per-candidate slope. Allocation JFR percentages must
+not be interpreted as CPU percentages.
 
 ## Bounded standalone run
 
