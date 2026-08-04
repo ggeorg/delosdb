@@ -54,9 +54,11 @@ public final class HeapMvccIsolationDifferentialTest extends MvccSqlTestSupport 
                 "mvcc-isolation-rr-concurrent-db", "mvcc_isolation_t", true);
     }
 
-    public void testSerializableSuppressesPhantomsForBothProviders() throws Exception {
-        assertSerializablePhantomSuppression("heap-isolation-serializable-db", "heap_isolation_t", false);
-        assertSerializablePhantomSuppression("mvcc-isolation-serializable-db", "mvcc_isolation_t", true);
+    public void testSerializablePreservesHeapAndRejectsMvccTruthfully() throws Exception {
+        assertSerializablePhantomSuppression(
+                "heap-isolation-serializable-db", "heap_isolation_t", false);
+        assertMvccSerializableRejected(
+                "mvcc-isolation-serializable-db", "mvcc_isolation_t");
     }
 
     private void assertReadCommittedRefresh(
@@ -191,6 +193,30 @@ public final class HeapMvccIsolationDifferentialTest extends MvccSqlTestSupport 
                     "select count(*) from " + tableName + " where bucket between 10 and 40",
                     "3");
         }
+        shutdownDatabase(databaseName);
+    }
+
+
+    private void assertMvccSerializableRejected(
+            String databaseStem, String tableName) throws Exception {
+        String databaseName = databaseName(databaseStem);
+        createFixture(databaseName, tableName, true);
+
+        try (Connection connection = openDatabase(databaseName, false)) {
+            connection.setAutoCommit(false);
+            connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            try {
+                assertScalar(connection,
+                        "select count(*) from " + tableName + " where bucket between 10 and 40",
+                        "2");
+                fail("Expected delos_mvcc SERIALIZABLE to reject before execution");
+            } catch (SQLException expected) {
+                assertEquals("0A000", expected.getSQLState());
+            } finally {
+                connection.rollback();
+            }
+        }
+
         shutdownDatabase(databaseName);
     }
 

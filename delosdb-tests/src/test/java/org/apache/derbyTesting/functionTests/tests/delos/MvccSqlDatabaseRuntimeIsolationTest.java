@@ -21,20 +21,17 @@
 
 package org.apache.derbyTesting.functionTests.tests.delos;
 
-import java.io.File;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
 
 /** SQL proof that each open Derby database owns an independent MVCC runtime. */
 public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSupport {
     public void testAlternatingTwoDatabaseLifecycleKeepsMvccStateIsolated() throws Exception {
         String databaseA = databaseName("mvcc-runtime-isolation-a");
         String databaseB = databaseName("mvcc-runtime-isolation-b");
-        Path rootA = new File(databaseA).toPath().toAbsolutePath().normalize();
-        Path rootB = new File(databaseB).toPath().toAbsolutePath().normalize();
         DelosStorageDiagnostics diagnosticsA = mvccDiagnostics(databaseA);
         DelosStorageDiagnostics diagnosticsB = mvccDiagnostics(databaseB);
 
@@ -82,14 +79,13 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
                     "select id, name from runtime_b_first order by id",
                     "1|b-first");
 
-            assertStateFileOwnedBy(rootA,
-                    diagnosticsA.pageVolumeStateFileForTesting(0, aFirstContainer));
-            assertStateFileOwnedBy(rootA,
-                    diagnosticsA.pageVolumeStateFileForTesting(0, aSecondContainer));
-            assertStateFileOwnedBy(rootB,
-                    diagnosticsB.pageVolumeStateFileForTesting(0, bFirstContainer));
-            assertEquals(2, diagnosticsA.runtimeStateCountForTesting());
-            assertEquals(1, diagnosticsB.runtimeStateCountForTesting());
+            DelosStorageMaintenanceSnapshot initialA = assertRuntimeOwnsTables(
+                    diagnosticsA, aFirstContainer, aSecondContainer);
+            DelosStorageMaintenanceSnapshot initialB = assertRuntimeOwnsTables(
+                    diagnosticsB, bFirstContainer);
+            assertFalse("each database must expose a distinct RawStore MVCC runtime identity",
+                    initialA.databaseIdentity().equals(initialB.databaseIdentity()));
+            connectionA.rollback();
 
             connectionA.close();
             connectionA = null;
@@ -106,9 +102,8 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
                     "select id, name from runtime_b_first order by id",
                     "1|b-first",
                     "2|b-after-a-shutdown");
-            assertEquals(1, diagnosticsB.runtimeStateCountForTesting());
-            assertStateFileOwnedBy(rootB,
-                    diagnosticsB.pageVolumeStateFileForTesting(0, bFirstContainer));
+            assertRuntimeOwnsTables(diagnosticsB, bFirstContainer);
+            connectionB.rollback();
 
             connectionA = openDatabase(databaseA, false);
             assertTrue("reopen must activate database A's persisted MVCC runtime before diagnostics",
@@ -125,17 +120,16 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
             long reopenedAFirst = mvccContainerId(connectionA, "RUNTIME_A_FIRST");
             connectionA.rollback();
             assertEquals(aFirstContainer, reopenedAFirst);
-            assertStateFileOwnedBy(rootA,
-                    diagnosticsA.pageVolumeStateFileForTesting(0, reopenedAFirst));
-            assertEquals(2, diagnosticsA.runtimeStateCountForTesting());
-            assertEquals(1, diagnosticsB.runtimeStateCountForTesting());
+            DelosStorageMaintenanceSnapshot reopenedASnapshot = assertRuntimeOwnsTables(
+                    diagnosticsA, aFirstContainer, aSecondContainer);
+            DelosStorageMaintenanceSnapshot stillOpenBSnapshot = assertRuntimeOwnsTables(
+                    diagnosticsB, bFirstContainer);
+            assertFalse("reopened database A must not attach to database B's runtime",
+                    reopenedASnapshot.databaseIdentity().equals(
+                            stillOpenBSnapshot.databaseIdentity()));
         } finally {
-            if (connectionA != null) {
-                connectionA.close();
-            }
-            if (connectionB != null) {
-                connectionB.close();
-            }
+            rollbackAndClose(connectionA);
+            rollbackAndClose(connectionB);
         }
 
         shutdownDatabase(databaseA);
@@ -143,10 +137,14 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
 
         try (Connection reopenedA = openDatabase(databaseA, false);
                 Connection reopenedB = openDatabase(databaseB, false)) {
-            assertTrue(diagnosticsA.runtimeActiveForTesting());
-            assertTrue(diagnosticsB.runtimeActiveForTesting());
-            assertEquals(2, diagnosticsA.runtimeStateCountForTesting());
-            assertEquals(1, diagnosticsB.runtimeStateCountForTesting());
+            reopenedA.setAutoCommit(false);
+            reopenedB.setAutoCommit(false);
+            DelosStorageMaintenanceSnapshot finalA = assertRuntimeOwnsTables(
+                    diagnosticsA, aFirstContainer, aSecondContainer);
+            DelosStorageMaintenanceSnapshot finalB = assertRuntimeOwnsTables(
+                    diagnosticsB, bFirstContainer);
+            assertFalse("simultaneously reopened databases must retain distinct runtime identities",
+                    finalA.databaseIdentity().equals(finalB.databaseIdentity()));
             assertRows(reopenedA,
                     "select id, name from runtime_a_first order by id",
                     "1|a-first");
@@ -157,6 +155,8 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
                     "select id, name from runtime_b_first order by id",
                     "1|b-first",
                     "2|b-after-a-shutdown");
+            reopenedA.rollback();
+            reopenedB.rollback();
         }
 
         shutdownDatabase(databaseA);
@@ -168,28 +168,20 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
     }
 
 
-    public void testMemoryDatabaseFailsClosedBeforeLegacyMvccStorageBoot() throws Exception {
-        String database = "mvcc-memory-boot-" + System.nanoTime();
+    public void testMemoryDatabaseUsesInheritedRawStoreRuntime() throws Exception {
+        String database = "mvcc-memory-runtime-" + System.nanoTime();
         String jdbcUrl = "jdbc:derby:memory:" + database;
         try (Connection connection = DriverManager.getConnection(jdbcUrl + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection, "create table heap_control (id int primary key)");
-            connection.commit();
-
-            try {
-                executeUpdate(connection,
-                        "create table memory_mvcc (id int primary key) using delos_mvcc");
-                fail("legacy external MVCC storage must not boot for a memory database");
-            } catch (java.sql.SQLException expected) {
-                assertEquals("0A000", expected.getSQLState());
-            }
-
-            assertRows(connection,
-                    "select count(*) from sys.systables where tablename = 'MEMORY_MVCC'",
-                    "0");
+            executeUpdate(connection,
+                    "create table memory_mvcc (id int primary key, value int) using delos_mvcc");
             executeUpdate(connection, "insert into heap_control values 1");
+            executeUpdate(connection, "insert into memory_mvcc values (1, 10)");
             connection.commit();
+
             assertRows(connection, "select id from heap_control", "1");
+            assertRows(connection, "select id, value from memory_mvcc", "1|10");
             connection.rollback();
         } finally {
             try {
@@ -201,10 +193,38 @@ public final class MvccSqlDatabaseRuntimeIsolationTest extends MvccSqlTestSuppor
         }
     }
 
-    private static void assertStateFileOwnedBy(Path databaseRoot, Path stateFile) {
-        Path normalizedStateFile = stateFile.toAbsolutePath().normalize();
-        assertTrue(
-                "expected state file " + normalizedStateFile + " under " + databaseRoot,
-                normalizedStateFile.startsWith(databaseRoot));
+
+    private static void rollbackAndClose(Connection connection) throws Exception {
+        if (connection == null) {
+            return;
+        }
+        try {
+            if (!connection.getAutoCommit()) {
+                connection.rollback();
+            }
+        } finally {
+            connection.close();
+        }
+    }
+
+    private static DelosStorageMaintenanceSnapshot assertRuntimeOwnsTables(
+            DelosStorageDiagnostics diagnostics,
+            long... metadataContainerIds) {
+        DelosStorageMaintenanceSnapshot snapshot = diagnostics.databaseMaintenanceSnapshot();
+        assertTrue("database-scoped RawStore MVCC runtime must be active",
+                snapshot.runtimeActive());
+        assertEquals(DelosStorageMaintenanceSnapshot.RAWSTORE_MVCC_MODE,
+                snapshot.storageMode());
+        assertEquals(metadataContainerIds.length, snapshot.registeredTableCount());
+        assertEquals("small isolation fixtures must retain every table observation",
+                0L, snapshot.tableSnapshotDroppedCount());
+        for (long metadataContainerId : metadataContainerIds) {
+            assertTrue("runtime " + snapshot.databaseIdentity()
+                            + " must own active metadata container " + metadataContainerId,
+                    snapshot.tableSnapshots().stream().anyMatch(table ->
+                            table.active()
+                                    && table.metadataContainerId() == metadataContainerId));
+        }
+        return snapshot;
     }
 }

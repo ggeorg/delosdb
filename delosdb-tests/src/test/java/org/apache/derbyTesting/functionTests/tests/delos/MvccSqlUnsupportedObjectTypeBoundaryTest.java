@@ -124,6 +124,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             assertLobRow(connection, 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(connection, 2);
             assertMvccConsistent(diagnostics, containerId);
+            connection.rollback();
         }
 
         shutdownDatabase(databaseName);

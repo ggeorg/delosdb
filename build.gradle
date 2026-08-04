@@ -357,6 +357,7 @@ tasks.register('smokeFromJars', JavaExec) {
 
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
+def legalFiles = files('LICENSE', 'NOTICE')
 def distributionDocFiles = files(
         'README.md',
         'CONTRIBUTING.md',
