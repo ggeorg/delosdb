@@ -73,11 +73,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
     void beforeWrite() throws StandardException {
-        if (transactionManager.isGlobal()) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "RawStore-backed delos_mvcc XA participation");
-        }
+        ensureWriteSupported();
         ensureTransactionId();
     }
 
@@ -88,7 +84,19 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     void beforeRowWrite(MvccRawStoreTable.Descriptor table, long rowId)
             throws StandardException {
-        beforeTableWrite(table);
+        beforeWrite();
+        acquireRowUpdateLocks(table, rowId);
+    }
+
+    void lockRowForUpdate(MvccRawStoreTable.Descriptor table, long rowId)
+            throws StandardException {
+        ensureWriteSupported();
+        acquireRowUpdateLocks(table, rowId);
+    }
+
+    private void acquireRowUpdateLocks(MvccRawStoreTable.Descriptor table, long rowId)
+            throws StandardException {
+        acquireShared(MvccRawStoreLogicalLock.table(table));
         acquireExclusive(MvccRawStoreLogicalLock.row(table, rowId));
     }
 
@@ -598,6 +606,14 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             }
         }
         return -1;
+    }
+
+    private void ensureWriteSupported() throws StandardException {
+        if (transactionManager.isGlobal()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "RawStore-backed delos_mvcc XA participation");
+        }
     }
 
     private void ensureTransactionId() throws StandardException {

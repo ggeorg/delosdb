@@ -125,7 +125,7 @@ final class MvccRawStoreConglomerateController
         if ((lockOper & ConglomerateController.LOCK_UPD) != 0) {
             MvccRawStoreTransactionContext context =
                     runtime.context(transactionManager, rawTransaction);
-            context.beforeRowWrite(table, MvccRowLocation.from(loc).rowId());
+            context.lockRowForUpdate(table, MvccRowLocation.from(loc).rowId());
         }
         return true;
     }

@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
@@ -103,11 +104,54 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
 
             verifyTriggerAndRowCountSemantics(connection, createSuffix);
             connection.rollback();
+            configureShortLockTimeout(connection);
+            verifyNoOpUpdateLockSemantics(provider, database);
         } finally {
             try {
                 shutdownDatabase(database);
             } catch (Exception ignored) {
                 // The connection close above may already have stopped a failed test database.
+            }
+        }
+    }
+
+    private static void configureShortLockTimeout(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(
+                    "call syscs_util.syscs_set_database_property("
+                            + "'derby.locks.waitTimeout', '1')");
+        }
+        connection.commit();
+    }
+
+    private static void verifyNoOpUpdateLockSemantics(
+            String provider,
+            String database) throws Exception {
+        try (Connection holder = openDatabase(database, false);
+             Connection contender = openDatabase(database, false)) {
+            holder.setAutoCommit(false);
+            contender.setAutoCommit(false);
+
+            assertEquals("first no-op UPDATE must retain affected-row semantics for " + provider,
+                    1,
+                    executeUpdate(holder,
+                            "update update_target set quantity = quantity where id = 1"));
+
+            try {
+                executeUpdate(contender,
+                        "update update_target set quantity = quantity where id = 1");
+                fail("concurrent no-op UPDATE must wait for the existing write lock for "
+                        + provider);
+            } catch (SQLException expected) {
+                String sqlState = expected.getSQLState();
+                assertTrue("expected lock timeout or deadlock for concurrent no-op UPDATE on "
+                                + provider + ", got " + sqlState + ": " + expected,
+                        "40XL1".equals(sqlState)
+                                || "40XL2".equals(sqlState)
+                                || "40001".equals(sqlState));
+            } finally {
+                contender.rollback();
+                holder.rollback();
             }
         }
     }

@@ -42,6 +42,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.UserDataValue;
@@ -523,6 +524,16 @@ class RowChangerImpl	implements	RowChanger
 
 		if (!rowChanged)
 		{
+			/*
+			** An UPDATE remains a write operation even when every assigned value
+			** is already equal to the stored value. Preserve Derby's normal
+			** transaction-duration update lock without dirtying the base row.
+			*/
+			baseCC.lockRow(
+					baseRowLocation,
+					ConglomerateController.LOCK_UPD,
+					true,
+					TransactionManager.LOCK_COMMIT_DURATION);
 			return;
 		}
 
