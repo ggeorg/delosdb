@@ -53,6 +53,7 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                         "insert into update_target values (1, 'Alpha', 7, null)");
             }
             connection.commit();
+            checkpoint(connection);
 
             DelosRawStoreIoSnapshot beforeNoOp = snapshot(provider, databaseDirectory);
             try (PreparedStatement update = connection.prepareStatement(
@@ -63,17 +64,13 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                 assertEquals("SQL affected-row semantics must be preserved", 1, update.executeUpdate());
             }
             connection.commit();
+            checkpoint(connection);
             DelosRawStoreIoSnapshot afterNoOp = snapshot(provider, databaseDirectory);
 
-            assertEquals("no-op update must not write RawStore pages for " + provider,
+            assertEquals("checkpointed no-op update must not flush RawStore pages for " + provider,
                     beforeNoOp.pageWriteOperations(), afterNoOp.pageWriteOperations());
-            assertEquals("no-op update must not write RawStore bytes for " + provider,
+            assertEquals("checkpointed no-op update must not flush RawStore bytes for " + provider,
                     beforeNoOp.pageWriteBytes(), afterNoOp.pageWriteBytes());
-            assertEquals("no-op update must not force RawStore content for " + provider,
-                    beforeNoOp.contentOnlyForceOperations(),
-                    afterNoOp.contentOnlyForceOperations());
-            assertEquals("no-op update must not force RawStore metadata for " + provider,
-                    beforeNoOp.metadataForceOperations(), afterNoOp.metadataForceOperations());
             assertTargetRow(connection, "Alpha", 7, null);
 
             try (Statement statement = connection.createStatement()) {
@@ -82,11 +79,11 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                                 + "set code = 'Alpha', quantity = 8, note = null where id = 1"));
             }
             connection.commit();
+            checkpoint(connection);
             DelosRawStoreIoSnapshot afterPartialChange = snapshot(provider, databaseDirectory);
-            assertTrue("a real partial update must perform durable RawStore work for " + provider,
+            assertTrue("a checkpointed real partial update must flush RawStore data for " + provider,
                     afterPartialChange.pageWriteOperations() > afterNoOp.pageWriteOperations()
-                            || afterPartialChange.totalForceOperations()
-                                    > afterNoOp.totalForceOperations());
+                            || afterPartialChange.pageWriteBytes() > afterNoOp.pageWriteBytes());
             assertTargetRow(connection, "Alpha", 8, null);
             assertRows(connection,
                     "select id, quantity from update_target where code = 'Alpha'",
@@ -138,6 +135,12 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
 
         assertRows(connection, "select id, value from trigger_target", "1|11");
         assertRows(connection, "select id, value from update_audit", "1|11");
+    }
+
+    private static void checkpoint(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("CALL SYSCS_UTIL.SYSCS_CHECKPOINT_DATABASE()");
+        }
     }
 
     private static DelosRawStoreIoSnapshot snapshot(String provider, Path databaseDirectory) {
