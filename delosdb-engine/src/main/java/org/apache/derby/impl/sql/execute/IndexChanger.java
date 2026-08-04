@@ -224,8 +224,12 @@ class IndexChanger
 	private boolean indexRowChanged()
 		throws StandardException
 	{
-		int numColumns = ourIndexRow.nColumns();
-		for (int index = 1; index <= numColumns; index++)
+		/*
+		** The final index-row column is the base-row location. UPDATE keeps
+		** that location stable, so comparing it cannot affect this decision.
+		*/
+		int numKeyColumns = ourIndexRow.nColumns() - 1;
+		for (int index = 1; index <= numKeyColumns; index++)
 		{
 			DataValueDescriptor oldOrderable = ourIndexRow.getColumn(index);
 			DataValueDescriptor newOrderable = ourUpdatedIndexRow.getColumn(index);
@@ -388,10 +392,10 @@ class IndexChanger
 	  
 	  @exception StandardException		Thrown on error
 	  */
-	private void doInsert()
+	private void doInsert(ExecIndexRow indexRow)
 		 throws StandardException
 	{
-		insertAndCheckDups(ourIndexRow);
+		insertAndCheckDups(indexRow);
 	}
 
 	/**
@@ -402,7 +406,7 @@ class IndexChanger
 	  
 	  @exception StandardException		Thrown on error
 	  */
-	private void doDeferredInsert()
+	private void doDeferredInsert(ExecIndexRow indexRow)
 		 throws StandardException
 	{
 		if (rowHolder == null)
@@ -431,7 +435,7 @@ class IndexChanger
 		*/
 		if (!rowHolderPassedIn)
 		{
-			rowHolder.insert(ourIndexRow);
+			rowHolder.insert(indexRow);
 		}
 	}
 
@@ -695,7 +699,7 @@ class IndexChanger
 		{
 			setScan();
 			doDelete();
-			insertForUpdate(newBaseRow, baseRowLocation);
+			insertUpdatedIndexRowForUpdate();
 		}
 	}
 
@@ -711,7 +715,7 @@ class IndexChanger
 		 throws StandardException
 	{
 		setOurIndexRow(newRow, baseRowLocation);
-		doInsert();
+		doInsert(ourIndexRow);
 	}
 
 	/**
@@ -727,20 +731,23 @@ class IndexChanger
 
 	  @exception StandardException		Thrown on error
 	*/
-	void insertForUpdate(ExecRow newRow, RowLocation baseRowLocation)
+	private void insertUpdatedIndexRowForUpdate()
 		 throws StandardException
 	{
-		setOurIndexRow(newRow, baseRowLocation);
-		//defer inserts if its on unique or UniqueWhereNotNull index
-        if (irg.isUnique() ||
+		/*
+		** setOurUpdatedIndexRow() already materialized the replacement key for
+		** indexRowChanged(). Reuse that exact row instead of running the index
+		** projection a second time before insertion.
+		*/
+		if (irg.isUnique() ||
             irg.isUniqueWithDuplicateNulls() ||
             irg.hasDeferrableChecking())
 		{
-			doDeferredInsert();
+			doDeferredInsert(ourUpdatedIndexRow);
 		}
 		else
 		{
-			doInsert();
+			doInsert(ourUpdatedIndexRow);
 		}
 	}
 
