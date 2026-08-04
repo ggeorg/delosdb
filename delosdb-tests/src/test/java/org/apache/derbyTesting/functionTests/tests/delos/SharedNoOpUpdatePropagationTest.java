@@ -103,6 +103,7 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                     "select id from update_target where code = 'Alpha'");
 
             verifyTriggerAndRowCountSemantics(connection, createSuffix);
+            verifyMergeDefaultAndGeneratedColumnSemantics(connection, createSuffix);
             connection.rollback();
             configureShortLockTimeout(connection);
             verifyNoOpUpdateLockSemantics(provider, database);
@@ -113,6 +114,57 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                 // The connection close above may already have stopped a failed test database.
             }
         }
+    }
+
+    private static void verifyMergeDefaultAndGeneratedColumnSemantics(
+            Connection connection,
+            String createSuffix) throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create table merge_target ("
+                            + "id int primary key, match_key int, "
+                            + "generated_value int generated always as (id + match_key), "
+                            + "payload int, default_value int default 1000)"
+                            + createSuffix);
+            statement.executeUpdate(
+                    "create table merge_source (id int primary key, match_key int)"
+                            + createSuffix);
+            statement.executeUpdate(
+                    "insert into merge_target(id, match_key, payload) "
+                            + "values (1, 1, 100), (2, 2, 200)");
+            statement.executeUpdate(
+                    "insert into merge_source values (1, 1), (2, 2)");
+        }
+        connection.commit();
+
+        try (Statement statement = connection.createStatement()) {
+            assertEquals(1, statement.executeUpdate(
+                    "merge into merge_target using merge_source "
+                            + "on merge_target.match_key = merge_source.match_key "
+                            + "when matched and merge_target.payload = 200 then update "
+                            + "set default_value = 10 * merge_source.id"));
+        }
+        connection.commit();
+        assertRows(connection,
+                "select id, match_key, generated_value, default_value "
+                        + "from merge_target order by id",
+                "1|1|2|1000",
+                "2|2|4|20");
+
+        try (Statement statement = connection.createStatement()) {
+            assertEquals(2, statement.executeUpdate(
+                    "merge into merge_target using merge_source "
+                            + "on merge_target.match_key = merge_source.match_key "
+                            + "when matched then update set generated_value = default, "
+                            + "match_key = 10 * merge_source.match_key, "
+                            + "default_value = default"));
+        }
+        connection.commit();
+        assertRows(connection,
+                "select id, match_key, generated_value, default_value "
+                        + "from merge_target order by id",
+                "1|10|11|1000",
+                "2|20|22|1000");
     }
 
     private static void configureShortLockTimeout(Connection connection) throws Exception {

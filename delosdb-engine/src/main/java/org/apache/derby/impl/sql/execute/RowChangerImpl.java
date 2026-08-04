@@ -73,6 +73,7 @@ class RowChangerImpl	implements	RowChanger
 	StaticCompiledOpenConglomInfo[] indexSCOCIs;
 	IndexRowGenerator[] irgs = null;
 	private final Activation		activation;
+	private final boolean underMergeUpdate;
 	TransactionController	tc;
 	FormatableBitSet 	changedColumnBitSet;
 	private FormatableBitSet actualChangedColumnBitSet;
@@ -145,6 +146,16 @@ class RowChangerImpl	implements	RowChanger
 		this.baseRowReadList = baseRowReadList;
 		this.baseRowReadMap = baseRowReadMap;
 		this.activation = activation;
+		/*
+		** MERGE buffers and normalizes its before/after rows through a temporary
+		** result set. Those rows are not guaranteed to retain independent value
+		** ownership after DEFAULT and generated-column evaluation. Keep Derby's
+		** original changed-column propagation for that path.
+		*/
+		this.underMergeUpdate =
+				activation != null
+						&& activation.getConstantAction() instanceof UpdateConstantAction
+						&& ((UpdateConstantAction) activation.getConstantAction()).underMerge();
 
 		if (SanityManager.DEBUG)
 		{
@@ -514,8 +525,15 @@ class RowChangerImpl	implements	RowChanger
 
 		if (changedColumnBitSet != null)
 		{
-			rowChanged = prepareActualChanges(oldBaseRow, newBaseRow);
-			columnsToStore = actualChangedColumnBitSet;
+			if (underMergeUpdate)
+			{
+				prepareAssignedChanges(newBaseRow);
+			}
+			else
+			{
+				rowChanged = prepareActualChanges(oldBaseRow, newBaseRow);
+				columnsToStore = actualChangedColumnBitSet;
+			}
 		}
 		else
 		{
@@ -543,6 +561,27 @@ class RowChangerImpl	implements	RowChanger
 		}
 
 		baseCC.replace(baseRowLocation, sparseRowArray, columnsToStore);
+	}
+
+	private void prepareAssignedChanges(ExecRow newBaseRow)
+	{
+		DataValueDescriptor[] baseRowArray = newBaseRow.getRowArray();
+		int[] changedColumnArray = (partialChangedColumnIds == null)
+				? changedColumnIds
+				: partialChangedColumnIds;
+		int nextColumnToUpdate = -1;
+
+		for (int i = 0; i < changedColumnArray.length; i++)
+		{
+			nextColumnToUpdate = changedColumnBitSet.anySetBit(nextColumnToUpdate);
+			if (SanityManager.DEBUG)
+			{
+				SanityManager.ASSERT(nextColumnToUpdate >= 0,
+						"More columns in changedColumnArray than in changedColumnBitSet");
+			}
+			sparseRowArray[nextColumnToUpdate] =
+					baseRowArray[changedColumnArray[i] - 1];
+		}
 	}
 
 	private boolean prepareActualChanges(ExecRow oldBaseRow, ExecRow newBaseRow)
