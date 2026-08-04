@@ -37,7 +37,8 @@ public interface ExactKeyConglomerateController {
      * Delete the row whose complete stored key equals {@code row}.
      *
      * @return {@code true} when a live row was deleted, or {@code false} when
-     *         no live exact match exists
+     *         no live exact match exists. A false result is a definitive
+     *         missing-row result, not a request to retry through a scan.
      */
     boolean deleteExact(StoreDataValue[] row) throws StandardException;
 }

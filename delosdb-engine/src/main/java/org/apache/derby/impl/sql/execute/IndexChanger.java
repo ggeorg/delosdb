@@ -346,24 +346,35 @@ class IndexChanger
 	private void doDelete()
 		 throws StandardException
 	{
-		if (ownIndexSC)
-		{
-            ConglomerateController controller = openIndexCC();
-            if (controller instanceof ExactKeyConglomerateController exactController)
-            {
-                if (!exactController.deleteExact(ourIndexRow.getRowArray()))
-                {
-                    reportMissingIndexRow(controller);
-                }
-                return;
-            }
-
+        if (!ownIndexSC)
+        {
+            /*
+            ** The index which drives the DML statement is already positioned
+            ** by its TableScanResultSet. Fetch that activation-owned scan
+            ** before deleting through it; opening a second access path would
+            ** break scan continuation after the current key is removed.
+            */
             setScan();
-			if (! indexSC.next())
-			{
-                reportMissingIndexRow(indexSC);
-                return;
-			}
+            indexSC.delete();
+            return;
+        }
+
+        ConglomerateController controller = openIndexCC();
+        if (controller instanceof ExactKeyConglomerateController exactController)
+        {
+            if (!exactController.deleteExact(ourIndexRow.getRowArray()))
+            {
+                reportMissingIndexRow(controller);
+            }
+            return;
+        }
+
+        /* Optional capability unavailable: retain Derby's exact-range scan. */
+        setScan();
+		if (! indexSC.next())
+		{
+            reportMissingIndexRow(indexSC);
+            return;
 		}
 
         indexSC.delete();
