@@ -317,7 +317,8 @@ final class MvccRawStoreVacuum {
                     }
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
-                            && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT) {
+                            && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                            && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw corruption(
                                 "unsupported directory field count",
                                 Integer.toString(fieldCount));
@@ -333,11 +334,12 @@ final class MvccRawStoreVacuum {
                         throw corruption("unsupported directory format version",
                                 Long.toString(page.getPageNumber()) + ':' + slot);
                     }
-                    long hintPage = fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                    boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
+                    long hintPage = hasHint
                             ? longField(transaction, page, slot,
                                     MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE)
                             : 0L;
-                    int hintRecord = fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                    int hintRecord = hasHint
                             ? intField(transaction, page, slot,
                                     MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD)
                             : 0;
@@ -348,7 +350,8 @@ final class MvccRawStoreVacuum {
                                     MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID),
                             hintPage,
                             hintRecord,
-                            fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT,
+                            hasHint,
+                            fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT,
                             page.getRecordHandleAtSlot(slot)));
                 }
                 long pageNumber = page.getPageNumber();
@@ -552,6 +555,29 @@ final class MvccRawStoreVacuum {
                                 MvccRawStoreFormat.intValue(
                                         transaction,
                                         update.head().handle().getId()),
+                                null);
+                    }
+                    if (update.directory().hasSummary()) {
+                        page.updateFieldAtSlot(
+                                slot,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID,
+                                MvccRawStoreFormat.longValue(
+                                        transaction,
+                                        update.head().creatorTransactionId()),
+                                null);
+                        page.updateFieldAtSlot(
+                                slot,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
+                                MvccRawStoreFormat.longValue(
+                                        transaction,
+                                        update.head().beginSequence()),
+                                null);
+                        page.updateFieldAtSlot(
+                                slot,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS,
+                                MvccRawStoreFormat.intValue(
+                                        transaction,
+                                        update.head().flags()),
                                 null);
                     }
                 } finally {
@@ -784,6 +810,7 @@ final class MvccRawStoreVacuum {
             long headHintPage,
             int headHintRecord,
             boolean hasHint,
+            boolean hasSummary,
             RecordHandle handle) {
         boolean headHintMatches(VersionEntry head) {
             return !hasHint

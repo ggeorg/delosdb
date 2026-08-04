@@ -167,10 +167,12 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             long versionId,
+            long creatorTransactionId,
             long previousVersionId,
             RecordHint previousHint,
             int flags,
-            RecordHandle handle) {
+            RecordHandle handle,
+            MvccRowLocation directoryLocation) {
         boolean tombstone() {
             return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
         }
@@ -412,7 +414,10 @@ final class MvccRawStoreTable {
                 rawTransaction,
                 allocation.rowId(),
                 allocation.versionId(),
-                RecordHint.of(versionHandle));
+                RecordHint.of(versionHandle),
+                creatorTransactionId,
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                MvccRawStoreFormat.LIVE_FLAGS);
         RecordHandle directoryHandle = insertRow(
                 rawTransaction, table.metadataContainer(), directoryRow);
         MvccRowLocation directoryLocation = MvccRawStoreRowDirectory.location(
@@ -431,10 +436,12 @@ final class MvccRawStoreTable {
                 table,
                 allocation.rowId(),
                 allocation.versionId(),
+                creatorTransactionId,
                 MvccRawStoreFormat.NO_PREVIOUS_VERSION,
                 RecordHint.NONE,
                 MvccRawStoreFormat.LIVE_FLAGS,
-                versionHandle);
+                versionHandle,
+                directoryLocation);
         context.addPending(pending);
         if (destination != null) {
             destination.set(
@@ -667,6 +674,10 @@ final class MvccRawStoreTable {
             updateVersionBegin(
                     rawTransaction,
                     version.table(),
+                    version,
+                    commitSequence);
+            MvccRawStoreRowDirectory.stampCommittedHead(
+                    rawTransaction,
                     version,
                     commitSequence);
             if (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
@@ -980,7 +991,10 @@ final class MvccRawStoreTable {
                 expectedHead,
                 directoryLocation,
                 versionId,
-                RecordHint.of(versionHandle));
+                RecordHint.of(versionHandle),
+                context.transactionId(),
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                flags);
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
@@ -995,10 +1009,12 @@ final class MvccRawStoreTable {
                 table,
                 rowId,
                 versionId,
+                context.transactionId(),
                 previousVersion.versionId(),
                 RecordHint.of(previousVersion.handle()),
                 flags,
-                versionHandle);
+                versionHandle,
+                directoryLocation);
         context.addPending(pending);
         return pending;
     }
@@ -1388,12 +1404,14 @@ final class MvccRawStoreTable {
             int slot) throws StandardException {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
-                && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT) {
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
             throw new IllegalStateException(
                     "RawStore MVCC directory row has unsupported field count: " + fieldCount);
         }
-        boolean hasHint = fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
-        Object[] row = directoryTemplate(transaction, hasHint);
+        boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
+        boolean hasSummary = fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        Object[] row = directoryTemplate(transaction, fieldCount);
         RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND) {
@@ -1412,13 +1430,27 @@ final class MvccRawStoreTable {
                                 row,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD))
                 : RecordHint.NONE;
+        DirectoryHeadSummary summary = hasSummary
+                ? new DirectoryHeadSummary(
+                        true,
+                        MvccRawStoreFormat.longAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID),
+                        MvccRawStoreFormat.longAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE),
+                        MvccRawStoreFormat.intAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS))
+                : DirectoryHeadSummary.NONE;
         return new DirectoryRecord(
                 MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.DIRECTORY_ROW_ID),
                 new DirectoryHead(
                         MvccRawStoreFormat.longAt(
                                 row,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID),
-                        hint),
+                        hint,
+                        summary),
                 handle);
     }
 
@@ -1436,8 +1468,13 @@ final class MvccRawStoreTable {
             Transaction transaction,
             long rowId,
             long headVersionId,
-            RecordHint headHint) throws StandardException {
-        Object[] row = directoryTemplate(transaction, true);
+            RecordHint headHint,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags) throws StandardException {
+        Object[] row = directoryTemplate(
+                transaction,
+                MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT);
         row[MvccRawStoreFormat.DIRECTORY_KIND_FIELD] = MvccRawStoreFormat.intValue(
                 transaction,
                 MvccRawStoreFormat.DIRECTORY_KIND);
@@ -1451,24 +1488,36 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.longValue(transaction, headHint.pageNumber());
         row[MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD] =
                 MvccRawStoreFormat.intValue(transaction, headHint.recordId());
+        row[MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID] =
+                MvccRawStoreFormat.longValue(transaction, creatorTransactionId);
+        row[MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE] =
+                MvccRawStoreFormat.longValue(transaction, beginSequence);
+        row[MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS] =
+                MvccRawStoreFormat.intValue(transaction, flags);
         return row;
     }
 
     private static Object[] directoryTemplate(
             Transaction transaction,
-            boolean includeHint) throws StandardException {
-        Object[] row = new Object[includeHint
-                ? MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                : MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT];
+            int fieldCount) throws StandardException {
+        Object[] row = new Object[fieldCount];
         row[MvccRawStoreFormat.DIRECTORY_KIND_FIELD] = MvccRawStoreFormat.intValue(transaction, 0);
         row[MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION] = MvccRawStoreFormat.intValue(transaction, 0);
         row[MvccRawStoreFormat.DIRECTORY_ROW_ID] = MvccRawStoreFormat.longValue(transaction, 0L);
         row[MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID] =
                 MvccRawStoreFormat.longValue(transaction, 0L);
-        if (includeHint) {
+        if (fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT) {
             row[MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE] =
                     MvccRawStoreFormat.longValue(transaction, 0L);
             row[MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD] =
+                    MvccRawStoreFormat.intValue(transaction, 0);
+        }
+        if (fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+            row[MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID] =
+                    MvccRawStoreFormat.longValue(transaction, 0L);
+            row[MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE] =
+                    MvccRawStoreFormat.longValue(transaction, 0L);
+            row[MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS] =
                     MvccRawStoreFormat.intValue(transaction, 0);
         }
         return row;
@@ -1495,9 +1544,41 @@ final class MvccRawStoreTable {
         }
     }
 
-    record DirectoryHead(long versionId, RecordHint hint) {
-        static final DirectoryHead NONE =
-                new DirectoryHead(MvccRawStoreFormat.NO_PREVIOUS_VERSION, RecordHint.NONE);
+    record DirectoryHeadSummary(
+            boolean available,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags) {
+        static final DirectoryHeadSummary NONE =
+                new DirectoryHeadSummary(false, 0L, 0L, MvccRawStoreFormat.LIVE_FLAGS);
+
+        boolean visibleTo(long transactionId, long snapshotSequence) {
+            if (!available) {
+                return false;
+            }
+            if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+                return creatorTransactionId == transactionId;
+            }
+            return beginSequence <= snapshotSequence;
+        }
+
+        boolean tombstone() {
+            return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
+        }
+    }
+
+    record DirectoryHead(
+            long versionId,
+            RecordHint hint,
+            DirectoryHeadSummary summary) {
+        static final DirectoryHead NONE = new DirectoryHead(
+                MvccRawStoreFormat.NO_PREVIOUS_VERSION,
+                RecordHint.NONE,
+                DirectoryHeadSummary.NONE);
+
+        DirectoryHead(long versionId, RecordHint hint) {
+            this(versionId, hint, DirectoryHeadSummary.NONE);
+        }
     }
 
     record DirectoryRecord(long rowId, DirectoryHead head, RecordHandle handle) {

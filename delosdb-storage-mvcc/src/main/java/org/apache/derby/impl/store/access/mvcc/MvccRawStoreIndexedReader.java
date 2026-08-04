@@ -35,11 +35,11 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     private final MvccRawStoreTable.Descriptor table;
     private final long snapshotSequence;
     private final MvccRawStoreVersionRows.FetchProjection projection;
-    private final MvccRawStoreVersionRows.FetchProjection metadataProjection;
+    private MvccRawStoreVersionRows.FetchProjection metadataProjection;
     private final MvccRawStoreTransactionContext context;
     private final ContainerHandle directoryContainer;
     private final MvccRawStoreIndexedReadMetrics metrics;
-    private final MvccRawStoreVersionReader versionReader;
+    private MvccRawStoreVersionReader versionReader;
 
     MvccRawStoreIndexedReader(
             Transaction transaction,
@@ -51,25 +51,12 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         this.table = table;
         this.snapshotSequence = snapshotSequence;
         this.projection = projection;
-        this.metadataProjection = MvccRawStoreVersionRows.metadataProjection(table);
         this.context = context;
         this.metrics = new MvccRawStoreIndexedReadMetrics();
-        ContainerHandle openedDirectory = transaction.openContainer(
+        directoryContainer = transaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_READONLY);
-        MvccRawStoreVersionReader openedVersionReader;
-        boolean opened = false;
-        try {
-            openedVersionReader = new MvccRawStoreVersionReader(transaction, table, metrics);
-            opened = true;
-        } finally {
-            if (!opened) {
-                openedDirectory.close();
-            }
-        }
-        directoryContainer = openedDirectory;
-        versionReader = openedVersionReader;
     }
 
     Result read(
@@ -81,36 +68,61 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 candidate.rowLocation(),
                 directoryContainer,
                 metrics);
-        if (coveringEligible) {
-            MvccRawStoreTable.VersionRecord head = versionReader.findVisibleHead(
-                    candidate.rowId(),
-                    directory.head(),
-                    candidate.versionId(),
-                    context.transactionId(),
-                    snapshotSequence,
-                    metadataProjection,
-                    context);
-            if (head != null) {
-                metrics.coveredCandidate();
-                if (head.tombstone()) {
-                    return new Result(null, true);
+        if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
+            MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
+            if (summary.available()) {
+                metrics.directoryHeadSummaryChecked();
+                metrics.visibilityChecked();
+                if (summary.visibleTo(context.transactionId(), snapshotSequence)) {
+                    metrics.directoryHeadSummaryHit();
+                    metrics.coveredCandidate();
+                    if (summary.tombstone()) {
+                        return new Result(null, true);
+                    }
+                    StoreDataValue[] values = new StoreDataValue[table.columnCount()];
+                    values[candidate.columnId()] = StoreValueCopySupport.cloneValue(
+                            candidate.key(),
+                            true);
+                    return new Result(
+                            new MvccRawStoreTable.VisibleRow(
+                                    candidate.rowId(),
+                                    candidate.versionId(),
+                                    values,
+                                    null),
+                            true);
                 }
-                StoreDataValue[] values = new StoreDataValue[table.columnCount()];
-                values[candidate.columnId()] = StoreValueCopySupport.cloneValue(
-                        candidate.key(),
-                        true);
-                return new Result(
-                        new MvccRawStoreTable.VisibleRow(
-                                candidate.rowId(),
-                                candidate.versionId(),
-                                values,
-                                head.handle()),
-                        true);
+                metrics.directoryHeadSummaryFallback();
+            } else {
+                MvccRawStoreTable.VersionRecord head = versionReader().findVisibleHead(
+                        candidate.rowId(),
+                        directory.head(),
+                        candidate.versionId(),
+                        context.transactionId(),
+                        snapshotSequence,
+                        metadataProjection(),
+                        context);
+                if (head != null) {
+                    metrics.coveredCandidate();
+                    if (head.tombstone()) {
+                        return new Result(null, true);
+                    }
+                    StoreDataValue[] values = new StoreDataValue[table.columnCount()];
+                    values[candidate.columnId()] = StoreValueCopySupport.cloneValue(
+                            candidate.key(),
+                            true);
+                    return new Result(
+                            new MvccRawStoreTable.VisibleRow(
+                                    candidate.rowId(),
+                                    candidate.versionId(),
+                                    values,
+                                    head.handle()),
+                            true);
+                }
             }
         }
 
         metrics.fallbackCandidate();
-        MvccRawStoreTable.VersionRecord visible = versionReader.findVisible(
+        MvccRawStoreTable.VersionRecord visible = versionReader().findVisible(
                 candidate.rowId(),
                 directory.head(),
                 context.transactionId(),
@@ -129,6 +141,20 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 false);
     }
 
+
+    private MvccRawStoreVersionRows.FetchProjection metadataProjection() {
+        if (metadataProjection == null) {
+            metadataProjection = MvccRawStoreVersionRows.metadataProjection(table);
+        }
+        return metadataProjection;
+    }
+
+    private MvccRawStoreVersionReader versionReader() throws StandardException {
+        if (versionReader == null) {
+            versionReader = new MvccRawStoreVersionReader(transaction, table, metrics);
+        }
+        return versionReader;
+    }
 
     MvccRawStoreIndexedReadMetrics.Snapshot metrics() {
         return metrics.snapshot();

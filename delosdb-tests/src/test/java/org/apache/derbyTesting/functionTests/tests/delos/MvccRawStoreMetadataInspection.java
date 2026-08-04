@@ -67,8 +67,12 @@ final class MvccRawStoreMetadataInspection {
     private static final int DIRECTORY_HEAD_VERSION_ID_FIELD = 3;
     private static final int DIRECTORY_HEAD_HINT_PAGE_FIELD = 4;
     private static final int DIRECTORY_HEAD_HINT_RECORD_FIELD = 5;
+    private static final int DIRECTORY_HEAD_CREATOR_TRANSACTION_ID_FIELD = 6;
+    private static final int DIRECTORY_HEAD_BEGIN_SEQUENCE_FIELD = 7;
+    private static final int DIRECTORY_HEAD_FLAGS_FIELD = 8;
     private static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     private static final int DIRECTORY_HINT_FIELD_COUNT = 6;
+    private static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
     private static final int VERSION_KIND_FIELD = 0;
     private static final int VERSION_KIND = 5;
     private static final int VERSION_ROW_ID_FIELD = 2;
@@ -444,11 +448,12 @@ final class MvccRawStoreMetadataInspection {
                     }
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != DIRECTORY_BASE_FIELD_COUNT
-                            && fieldCount != DIRECTORY_HINT_FIELD_COUNT) {
+                            && fieldCount != DIRECTORY_HINT_FIELD_COUNT
+                            && fieldCount != DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw new AssertionError(
                                 "Unexpected RawStore MVCC directory field count: " + fieldCount);
                     }
-                    boolean hasHint = fieldCount == DIRECTORY_HINT_FIELD_COUNT;
+                    boolean hasHint = fieldCount >= DIRECTORY_HINT_FIELD_COUNT;
                     result.add(new DirectoryIdentity(
                             longField(raw, page, slot, DIRECTORY_ROW_ID_FIELD),
                             longField(raw, page, slot, DIRECTORY_HEAD_VERSION_ID_FIELD),
@@ -527,7 +532,9 @@ final class MvccRawStoreMetadataInspection {
                             || longField(raw, page, slot, DIRECTORY_ROW_ID_FIELD) != rowId) {
                         continue;
                     }
-                    if (page.fetchNumFieldsAtSlot(slot) != DIRECTORY_HINT_FIELD_COUNT) {
+                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
+                    if (fieldCount != DIRECTORY_HINT_FIELD_COUNT
+                            && fieldCount != DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw new AssertionError("Directory lookup hint is absent");
                     }
                     long headVersionId = longField(
@@ -638,6 +645,9 @@ final class MvccRawStoreMetadataInspection {
                             new SQLInteger(0),
                             new SQLInteger(0),
                             new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLInteger(0),
                             new SQLLongint(0L),
                             new SQLLongint(0L),
                             new SQLInteger(0)

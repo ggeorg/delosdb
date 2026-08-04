@@ -21,6 +21,9 @@ stable-row directory entry
     head MvccVersionId
     head version page hint
     head version record-ID hint
+    optional head creator transaction ID
+    optional head begin/commit sequence
+    optional head flags
 
 version entry
     ... existing logical identity and visibility fields ...
@@ -30,8 +33,15 @@ version entry
 ```
 
 The physical locator uses RawStore's stable record identifier, not a mutable slot number. The format
-version is unchanged because these fields are non-authoritative optional trailing fields. Rows written
-before this milestone retain the shorter valid shape and continue through logical lookup.
+version is unchanged because these fields are backward-compatible trailing fields. Rows written before
+this milestone retain the shorter valid shape and continue through logical lookup and authoritative
+version-row visibility resolution.
+
+The optional head summary repeats only the visibility fields of the directory's named current head.
+It is installed and committed in the same RawStore transaction as that head. A covered read may skip
+the version page only when the candidate version is the directory head and the summary proves that the
+head is visible to the reader. Missing summaries, historical snapshots, another transaction's
+uncommitted head, tombstone ambiguity, or any head mismatch use the existing version-row path.
 
 ## Lookup protocol
 
@@ -51,7 +61,9 @@ physical RawStore handle into permanent MVCC identity.
 
 The same rule applies during commit stamping. The transaction-local handle and persisted predecessor
 hint are fast paths only; begin- and end-sequence updates verify logical identity and fall back when a
-hint no longer names the intended record.
+hint no longer names the intended record. The directory-head begin sequence is stamped in the same
+pre-commit RawStore transaction. Rollback restores the previous directory row through ordinary
+RawStore undo.
 
 ## RawStore ownership
 

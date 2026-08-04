@@ -22,7 +22,8 @@ package org.apache.derby.impl.store.access.mvcc;
 
 /** Per-scan physical attribution for the RawStore MVCC ordered-index path. */
 final class MvccRawStoreIndexedReadMetrics {
-    static final Snapshot EMPTY = new Snapshot(0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+    static final Snapshot EMPTY = new Snapshot(
+            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
 
     private long candidatesVisited;
     private long coveringCandidates;
@@ -30,6 +31,9 @@ final class MvccRawStoreIndexedReadMetrics {
     private long fallbackCandidates;
     private long directoryPageAcquisitions;
     private long directoryLogicalFallbacks;
+    private long directoryHeadSummaryChecks;
+    private long directoryHeadSummaryHits;
+    private long directoryHeadSummaryFallbacks;
     private long versionPageAcquisitions;
     private long versionSlotFetches;
     private long visibilityChecks;
@@ -57,6 +61,18 @@ final class MvccRawStoreIndexedReadMetrics {
 
     void directoryLogicalFallback() {
         directoryLogicalFallbacks++;
+    }
+
+    void directoryHeadSummaryChecked() {
+        directoryHeadSummaryChecks++;
+    }
+
+    void directoryHeadSummaryHit() {
+        directoryHeadSummaryHits++;
+    }
+
+    void directoryHeadSummaryFallback() {
+        directoryHeadSummaryFallbacks++;
     }
 
     void versionPageAcquired() {
@@ -87,6 +103,9 @@ final class MvccRawStoreIndexedReadMetrics {
                 fallbackCandidates,
                 directoryPageAcquisitions,
                 directoryLogicalFallbacks,
+                directoryHeadSummaryChecks,
+                directoryHeadSummaryHits,
+                directoryHeadSummaryFallbacks,
                 versionPageAcquisitions,
                 versionSlotFetches,
                 visibilityChecks,
@@ -101,6 +120,9 @@ final class MvccRawStoreIndexedReadMetrics {
             long fallbackCandidates,
             long directoryPageAcquisitions,
             long directoryLogicalFallbacks,
+            long directoryHeadSummaryChecks,
+            long directoryHeadSummaryHits,
+            long directoryHeadSummaryFallbacks,
             long versionPageAcquisitions,
             long versionSlotFetches,
             long visibilityChecks,

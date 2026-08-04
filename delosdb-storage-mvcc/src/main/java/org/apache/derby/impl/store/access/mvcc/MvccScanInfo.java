@@ -40,6 +40,12 @@ final class MvccScanInfo implements ScanInfo {
     private static final String FALLBACK_CANDIDATES = "mvccFallbackCandidates";
     private static final String DIRECTORY_PAGE_ACQUISITIONS = "mvccDirectoryPageAcquisitions";
     private static final String DIRECTORY_LOGICAL_FALLBACKS = "mvccDirectoryLogicalFallbacks";
+    private static final String DIRECTORY_HEAD_SUMMARY_CHECKS =
+            "mvccDirectoryHeadSummaryChecks";
+    private static final String DIRECTORY_HEAD_SUMMARY_HITS =
+            "mvccDirectoryHeadSummaryHits";
+    private static final String DIRECTORY_HEAD_SUMMARY_FALLBACKS =
+            "mvccDirectoryHeadSummaryFallbacks";
     private static final String VERSION_PAGE_ACQUISITIONS = "mvccVersionPageAcquisitions";
     private static final String VERSION_SLOT_FETCHES = "mvccVersionSlotFetches";
     private static final String VISIBILITY_CHECKS = "mvccVisibilityChecks";
@@ -108,6 +114,15 @@ final class MvccScanInfo implements ScanInfo {
         result.setProperty(
                 DIRECTORY_LOGICAL_FALLBACKS,
                 Long.toString(indexedReadMetrics.directoryLogicalFallbacks()));
+        result.setProperty(
+                DIRECTORY_HEAD_SUMMARY_CHECKS,
+                Long.toString(indexedReadMetrics.directoryHeadSummaryChecks()));
+        result.setProperty(
+                DIRECTORY_HEAD_SUMMARY_HITS,
+                Long.toString(indexedReadMetrics.directoryHeadSummaryHits()));
+        result.setProperty(
+                DIRECTORY_HEAD_SUMMARY_FALLBACKS,
+                Long.toString(indexedReadMetrics.directoryHeadSummaryFallbacks()));
         result.setProperty(
                 VERSION_PAGE_ACQUISITIONS,
                 Long.toString(indexedReadMetrics.versionPageAcquisitions()));

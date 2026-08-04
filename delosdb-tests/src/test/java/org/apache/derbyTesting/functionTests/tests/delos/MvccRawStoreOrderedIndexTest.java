@@ -203,8 +203,11 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
             assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 2L);
             assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
-            assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 2L);
-            assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 4L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 0L);
             assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
             assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
             assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
@@ -270,6 +273,68 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "select category from covering_snapshot_t where category = 9",
                         "9");
                 historical.commit();
+            }
+            shutdownDatabase(database);
+        }
+    }
+
+    public void testDirectoryHeadSummaryHandlesOwnWritesOtherTransactionsAndRollback()
+            throws Exception {
+        String database = databaseName("mvcc-raw-store-directory-head-summary");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table head_summary_t (id int primary key, category int) "
+                                + "using delos_mvcc");
+                connection.commit();
+
+                executeUpdate(connection, "insert into head_summary_t values (1, 7)");
+                String ownWriteStatistics = assertCoveringIndexedRows(connection,
+                        "select category from head_summary_t where category = 7",
+                        "7");
+                assertScanMetric(
+                        ownWriteStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
+                assertScanMetric(
+                        ownWriteStatistics, "mvccDirectoryHeadSummaryHits", 1L);
+                assertScanMetric(ownWriteStatistics, "mvccVersionPageAcquisitions", 0L);
+                connection.rollback();
+                assertNonCoveringIndexedRows(connection,
+                        "select category from head_summary_t where category = 7");
+
+                executeUpdate(connection, "insert into head_summary_t values (1, 7)");
+                connection.commit();
+            }
+
+            try (Connection reader = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                reader.setAutoCommit(false);
+                writer.setAutoCommit(false);
+
+                executeUpdate(writer,
+                        "update head_summary_t set category = 9 where id = 1");
+
+                assertNonCoveringIndexedRows(reader,
+                        "select category from head_summary_t where category = 7",
+                        "7");
+                String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
+                        "select category from head_summary_t where category = 9");
+                assertScanMetric(
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
+                assertScanMetric(
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryHits", 0L);
+                assertScanMetric(
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 1L);
+
+                writer.rollback();
+                reader.commit();
+                String restoredStatistics = assertCoveringIndexedRows(reader,
+                        "select category from head_summary_t where category = 7",
+                        "7");
+                assertScanMetric(
+                        restoredStatistics, "mvccDirectoryHeadSummaryHits", 1L);
+                assertScanMetric(restoredStatistics, "mvccVersionPageAcquisitions", 0L);
+                reader.commit();
             }
             shutdownDatabase(database);
         }
@@ -565,7 +630,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 pattern.matcher(statistics).find());
     }
 
-    private static void assertNonCoveringIndexedRows(
+    private static String assertNonCoveringIndexedRows(
             Connection connection,
             String sql,
             String... expectedRows) throws Exception {
@@ -576,6 +641,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 statistics.contains("delos_mvcc_rawstore_ordered_index"));
         assertFalse("unexpected RawStore MVCC covering scan; statistics=" + statistics,
                 statistics.contains("delos_mvcc_rawstore_ordered_index_covering"));
+        return statistics;
     }
 
     private static void assertIndexedRows(

@@ -136,7 +136,10 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.DirectoryHead expectedHead,
             MvccRowLocation directoryLocation,
             long newHeadVersionId,
-            MvccRawStoreTable.RecordHint newHeadHint) throws StandardException {
+            MvccRawStoreTable.RecordHint newHeadHint,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags) throws StandardException {
         if (updateByHint(
                 transaction,
                 table,
@@ -144,7 +147,10 @@ final class MvccRawStoreRowDirectory {
                 expectedHead,
                 directoryLocation,
                 newHeadVersionId,
-                newHeadHint)) {
+                newHeadHint,
+                creatorTransactionId,
+                beginSequence,
+                flags)) {
             return;
         }
         ContainerHandle container = transaction.openContainer(
@@ -174,7 +180,10 @@ final class MvccRawStoreRowDirectory {
                                     transaction,
                                     rowId,
                                     newHeadVersionId,
-                                    newHeadHint),
+                                    newHeadHint,
+                                    creatorTransactionId,
+                                    beginSequence,
+                                    flags),
                             null);
                     return;
                 }
@@ -272,6 +281,143 @@ final class MvccRawStoreRowDirectory {
         }
     }
 
+    static void stampCommittedHead(
+            Transaction transaction,
+            MvccRawStoreTable.PendingVersion pending,
+            long commitSequence) throws StandardException {
+        if (stampCommittedHeadByHint(transaction, pending, commitSequence)) {
+            return;
+        }
+        ContainerHandle container = transaction.openContainer(
+                pending.table().metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    MvccRawStoreTable.DirectoryRecord directory =
+                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+                    if (directory != null && directory.rowId() == pending.rowId()) {
+                        stampCommittedHeadAtSlot(
+                                transaction,
+                                page,
+                                slot,
+                                directory,
+                                pending,
+                                commitSequence);
+                        return;
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            if (container != null) {
+                container.close();
+            }
+        }
+        throw new IllegalStateException(
+                "RawStore MVCC directory entry disappeared before commit for logical row "
+                        + pending.rowId());
+    }
+
+    private static boolean stampCommittedHeadByHint(
+            Transaction transaction,
+            MvccRawStoreTable.PendingVersion pending,
+            long commitSequence) throws StandardException {
+        MvccRowLocation location = pending.directoryLocation();
+        if (location == null || !location.hasLocatorHint()) {
+            return false;
+        }
+        ContainerHandle container = transaction.openContainer(
+                pending.table().metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            return false;
+        }
+        Page page = null;
+        try {
+            page = container.getPage(location.locatorPageId());
+            if (page == null) {
+                return false;
+            }
+            int slot = location.locatorSlotId();
+            if (!isDirectorySlot(page, slot)) {
+                return false;
+            }
+            MvccRawStoreTable.DirectoryRecord directory =
+                    MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+            if (directory == null || directory.rowId() != pending.rowId()) {
+                return false;
+            }
+            stampCommittedHeadAtSlot(
+                    transaction,
+                    page,
+                    slot,
+                    directory,
+                    pending,
+                    commitSequence);
+            return true;
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static void stampCommittedHeadAtSlot(
+            Transaction transaction,
+            Page page,
+            int slot,
+            MvccRawStoreTable.DirectoryRecord directory,
+            MvccRawStoreTable.PendingVersion pending,
+            long commitSequence) throws StandardException {
+        MvccRawStoreTable.DirectoryHead head = directory.head();
+        if (head.versionId() != pending.versionId()) {
+            // A transaction may append more than one version of the same row.
+            // Only the final pending version remains the directory head and
+            // therefore owns the persisted head summary.
+            return;
+        }
+        MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
+        if (summary.available()
+                && summary.creatorTransactionId() == pending.creatorTransactionId()
+                && summary.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                && summary.flags() == pending.flags()) {
+            page.updateFieldAtSlot(
+                    slot,
+                    MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
+                    MvccRawStoreFormat.longValue(transaction, commitSequence),
+                    null);
+            return;
+        }
+        page.updateAtSlot(
+                slot,
+                MvccRawStoreTable.directoryRow(
+                        transaction,
+                        pending.rowId(),
+                        pending.versionId(),
+                        head.hint(),
+                        pending.creatorTransactionId(),
+                        commitSequence,
+                        pending.flags()),
+                null);
+    }
+
     private static boolean updateByHint(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
@@ -279,7 +425,10 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.DirectoryHead expectedHead,
             MvccRowLocation directoryLocation,
             long newHeadVersionId,
-            MvccRawStoreTable.RecordHint newHeadHint) throws StandardException {
+            MvccRawStoreTable.RecordHint newHeadHint,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags) throws StandardException {
         if (directoryLocation == null || !directoryLocation.hasLocatorHint()) {
             return false;
         }
@@ -312,7 +461,10 @@ final class MvccRawStoreRowDirectory {
                             transaction,
                             rowId,
                             newHeadVersionId,
-                            newHeadHint),
+                            newHeadHint,
+                            creatorTransactionId,
+                            beginSequence,
+                            flags),
                     null);
             return true;
         } finally {
@@ -331,7 +483,8 @@ final class MvccRawStoreRowDirectory {
         }
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         return fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
-                || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
     }
 
     private static void validateExpectedHead(

@@ -222,6 +222,7 @@ publishes direct runtime-statistics counters for:
 ordered and covering candidates
 successful covered candidates and fallbacks
 directory-page acquisitions and logical fallbacks
+directory-head summary checks, hits, and fallbacks
 version-page acquisitions and slot fetches
 visibility checks and version-chain steps
 version logical fallbacks

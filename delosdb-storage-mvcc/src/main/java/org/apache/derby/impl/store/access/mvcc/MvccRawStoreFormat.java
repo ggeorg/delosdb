@@ -79,8 +79,12 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_HEAD_VERSION_ID = 3;
     static final int DIRECTORY_HEAD_HINT_PAGE = 4;
     static final int DIRECTORY_HEAD_HINT_RECORD = 5;
+    static final int DIRECTORY_HEAD_CREATOR_TRANSACTION_ID = 6;
+    static final int DIRECTORY_HEAD_BEGIN_SEQUENCE = 7;
+    static final int DIRECTORY_HEAD_FLAGS = 8;
     static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     static final int DIRECTORY_HINT_FIELD_COUNT = 6;
+    static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
 
     static final int VERSION_KIND_FIELD = 0;
     static final int VERSION_FORMAT_VERSION = 1;

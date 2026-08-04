@@ -33,6 +33,9 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
         "mvccFallbackCandidates",
         "mvccDirectoryPageAcquisitions",
         "mvccDirectoryLogicalFallbacks",
+        "mvccDirectoryHeadSummaryChecks",
+        "mvccDirectoryHeadSummaryHits",
+        "mvccDirectoryHeadSummaryFallbacks",
         "mvccVersionPageAcquisitions",
         "mvccVersionSlotFetches",
         "mvccVisibilityChecks",
@@ -73,8 +76,11 @@ public class DelosJdbcCandidateScalingState extends DelosJdbcJmhState {
             requireMetric(metrics, "mvccFallbackCandidates", 0L);
             requireMetric(metrics, "mvccDirectoryPageAcquisitions", candidateCount);
             requireMetric(metrics, "mvccDirectoryLogicalFallbacks", 0L);
-            requireMetric(metrics, "mvccVersionPageAcquisitions", candidateCount);
-            requireMetric(metrics, "mvccVersionSlotFetches", candidateCount * 2L);
+            requireMetric(metrics, "mvccDirectoryHeadSummaryChecks", candidateCount);
+            requireMetric(metrics, "mvccDirectoryHeadSummaryHits", candidateCount);
+            requireMetric(metrics, "mvccDirectoryHeadSummaryFallbacks", 0L);
+            requireMetric(metrics, "mvccVersionPageAcquisitions", 0L);
+            requireMetric(metrics, "mvccVersionSlotFetches", 0L);
             requireMetric(metrics, "mvccVisibilityChecks", candidateCount);
             requireMetric(metrics, "mvccVersionChainSteps", 0L);
             requireMetric(metrics, "mvccVersionLogicalFallbacks", 0L);
