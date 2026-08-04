@@ -102,6 +102,7 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                     "select id from update_target where code = 'Alpha'");
 
             verifyTriggerAndRowCountSemantics(connection, createSuffix);
+            connection.rollback();
         } finally {
             try {
                 shutdownDatabase(database);
