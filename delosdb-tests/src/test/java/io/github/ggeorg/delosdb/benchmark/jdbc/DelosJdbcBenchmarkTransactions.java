@@ -233,6 +233,10 @@ public final class DelosJdbcBenchmarkTransactions {
                     connection,
                     scenario.tableName(),
                     spec.operationsPerTransaction());
+            case UNCHANGED_UPDATE -> new UnchangedUpdateWorkload(
+                    connection,
+                    scenario.tableName(),
+                    spec.operationsPerTransaction());
             case DELETE_REINSERT -> new PreparedOperationWorkload(
                     connection,
                     scenario.prepareOperation(DelosBenchmarkOperation.DELETE_REINSERT),
@@ -257,6 +261,10 @@ public final class DelosJdbcBenchmarkTransactions {
             for (DelosBenchmarkTransactionOutcome outcome : DelosBenchmarkTransactionOutcome.values()) {
                 specs.add(new TransactionSpec(
                         DelosBenchmarkTransactionWorkload.INDEXED_UPDATE,
+                        outcome,
+                        width));
+                specs.add(new TransactionSpec(
+                        DelosBenchmarkTransactionWorkload.UNCHANGED_UPDATE,
                         outcome,
                         width));
             }
@@ -487,6 +495,97 @@ public final class DelosJdbcBenchmarkTransactions {
         @Override
         public void close() throws SQLException {
             operation.close();
+        }
+    }
+
+    private static final class UnchangedUpdateWorkload implements TransactionWorkload {
+        private final Connection connection;
+        private final int[] ids;
+        private final int[] baselineQuantities;
+        private final PreparedStatement update;
+        private final PreparedStatement select;
+
+        private UnchangedUpdateWorkload(
+                Connection connection,
+                String table,
+                int operationsPerTransaction) throws SQLException {
+            this.connection = connection;
+            this.ids = new int[operationsPerTransaction];
+            this.baselineQuantities = new int[operationsPerTransaction];
+            PreparedStatement localUpdate = null;
+            PreparedStatement localSelect = null;
+            try {
+                localUpdate = connection.prepareStatement(
+                        "update " + table + " set quantity = quantity where id = ?");
+                localSelect = connection.prepareStatement(
+                        "select quantity from " + table + " where id = ?");
+                this.update = localUpdate;
+                this.select = localSelect;
+                for (int index = 0; index < operationsPerTransaction; index++) {
+                    ids[index] = index + 1;
+                    baselineQuantities[index] = quantity(ids[index]);
+                }
+                connection.rollback();
+            } catch (SQLException failure) {
+                closeAfterFailure(failure, localSelect, localUpdate);
+                throw failure;
+            }
+        }
+
+        @Override
+        public long executeOperations() throws SQLException {
+            long fingerprint = 1L;
+            for (int id : ids) {
+                update.setInt(1, id);
+                int updated = update.executeUpdate();
+                if (updated != 1) {
+                    throw new SQLException(
+                            "Unchanged transaction update did not affect one row: id=" + id);
+                }
+                fingerprint = mix(mix(fingerprint, id), updated);
+            }
+            return fingerprint;
+        }
+
+        @Override
+        public long verifyAndRestore(
+                DelosBenchmarkTransactionOutcome outcome,
+                int transactionsPerInterval) throws SQLException {
+            long fingerprint = 1L;
+            for (int index = 0; index < ids.length; index++) {
+                int actual = quantity(ids[index]);
+                if (actual != baselineQuantities[index]) {
+                    throw new IllegalStateException(
+                            "Unchanged transaction modified id=" + ids[index]
+                                    + ": expected=" + baselineQuantities[index]
+                                    + ", actual=" + actual
+                                    + ", outcome=" + outcome);
+                }
+                fingerprint = mix(mix(fingerprint, ids[index]), actual);
+            }
+            connection.rollback();
+            return mix(fingerprint, (long) transactionsPerInterval * ids.length);
+        }
+
+        private int quantity(int id) throws SQLException {
+            select.setInt(1, id);
+            try (ResultSet resultSet = select.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException(
+                            "Unchanged transaction target row is missing: id=" + id);
+                }
+                int quantity = resultSet.getInt(1);
+                if (resultSet.next()) {
+                    throw new SQLException(
+                            "Unchanged transaction target query returned duplicate id=" + id);
+                }
+                return quantity;
+            }
+        }
+
+        @Override
+        public void close() throws SQLException {
+            closeStatements(select, update);
         }
     }
 

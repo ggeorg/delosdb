@@ -11,5 +11,6 @@ public enum DelosBenchmarkTransactionWorkload {
     EMPTY,
     PRIMARY_KEY_READ,
     INDEXED_UPDATE,
+    UNCHANGED_UPDATE,
     DELETE_REINSERT
 }

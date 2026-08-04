@@ -44,6 +44,10 @@ import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.UserDataValue;
+import org.apache.derby.iapi.types.XMLDataValue;
+
+import java.util.Objects;
 
 import org.apache.derby.iapi.types.RowLocation;
 
@@ -69,7 +73,8 @@ class RowChangerImpl	implements	RowChanger
 	IndexRowGenerator[] irgs = null;
 	private final Activation		activation;
 	TransactionController	tc;
-	FormatableBitSet 	changedColumnBitSet;	
+	FormatableBitSet 	changedColumnBitSet;
+	private FormatableBitSet actualChangedColumnBitSet;
 	FormatableBitSet 	baseRowReadList;	
 	private int[]		baseRowReadMap;	//index=heap column, value=input row column.
 	int[]		changedColumnIds;
@@ -174,11 +179,13 @@ class RowChangerImpl	implements	RowChanger
 			sparseRowArray =
 				new DataValueDescriptor[changedColumnIds[changedColumnIds.length - 1] + 1];
 			changedColumnBitSet = new FormatableBitSet(numberOfColumns);
+			actualChangedColumnBitSet = new FormatableBitSet(numberOfColumns);
 			for (int i = 0; i < changedColumnIds.length; i++)
 			{
 				// make sure changedColumnBitSet can accomodate bit 
 				// changedColumnIds[i] - 1 
 				changedColumnBitSet.grow(changedColumnIds[i]);
+				actualChangedColumnBitSet.grow(changedColumnIds[i]);
 				changedColumnBitSet.set(changedColumnIds[i] - 1);
 			}
 
@@ -501,37 +508,104 @@ class RowChangerImpl	implements	RowChanger
 						  RowLocation baseRowLocation)
 		 throws StandardException
 	{
-		if (isc != null)
-		{
-			isc.update(oldBaseRow, newBaseRow, baseRowLocation);
-		}
+		FormatableBitSet columnsToStore = changedColumnBitSet;
+		boolean rowChanged = true;
 
 		if (changedColumnBitSet != null)
 		{
-			DataValueDescriptor[] baseRowArray = newBaseRow.getRowArray();
-			int[] changedColumnArray = (partialChangedColumnIds == null) ?
-					changedColumnIds : partialChangedColumnIds;
-			int nextColumnToUpdate = -1;
-			for (int i = 0; i < changedColumnArray.length; i++)
-			{
-				int copyFrom = changedColumnArray[i] - 1;
-				nextColumnToUpdate =
-							changedColumnBitSet.anySetBit(nextColumnToUpdate);
-				if (SanityManager.DEBUG)
-				{
-					SanityManager.ASSERT(nextColumnToUpdate >= 0,
-						"More columns in changedColumnArray than in changedColumnBitSet");
-				}
-				sparseRowArray[nextColumnToUpdate] = baseRowArray[copyFrom];
-			}
+			rowChanged = prepareActualChanges(oldBaseRow, newBaseRow);
+			columnsToStore = actualChangedColumnBitSet;
 		}
 		else
 		{
 			sparseRowArray = newBaseRow.getRowArray();
 		}
-		baseCC.replace(baseRowLocation, 
-					sparseRowArray, 
-					changedColumnBitSet);
+
+		if (!rowChanged)
+		{
+			return;
+		}
+
+		if (isc != null)
+		{
+			isc.update(oldBaseRow, newBaseRow, baseRowLocation);
+		}
+
+		baseCC.replace(baseRowLocation, sparseRowArray, columnsToStore);
+	}
+
+	private boolean prepareActualChanges(ExecRow oldBaseRow, ExecRow newBaseRow)
+			throws StandardException
+	{
+		actualChangedColumnBitSet.clear();
+		DataValueDescriptor[] oldRowArray = oldBaseRow.getRowArray();
+		DataValueDescriptor[] newRowArray = newBaseRow.getRowArray();
+		int[] changedColumnArray = (partialChangedColumnIds == null)
+				? changedColumnIds
+				: partialChangedColumnIds;
+		boolean changed = false;
+
+		for (int i = 0; i < changedColumnArray.length; i++)
+		{
+			int compactColumn = changedColumnArray[i] - 1;
+			int baseColumn = changedColumnIds[i] - 1;
+			DataValueDescriptor oldValue = oldRowArray[compactColumn];
+			DataValueDescriptor newValue = newRowArray[compactColumn];
+
+			if (!storedValueChanged(oldValue, newValue))
+			{
+				continue;
+			}
+
+			actualChangedColumnBitSet.set(baseColumn);
+			sparseRowArray[baseColumn] = newValue;
+			changed = true;
+		}
+
+		return changed;
+	}
+
+	private static boolean storedValueChanged(
+			DataValueDescriptor oldValue,
+			DataValueDescriptor newValue)
+	{
+		if (oldValue == newValue)
+		{
+			return false;
+		}
+		if (oldValue == null || newValue == null)
+		{
+			return true;
+		}
+		if (oldValue.isNull() || newValue.isNull())
+		{
+			return oldValue.isNull() != newValue.isNull();
+		}
+
+		/*
+		** Stream, XML, and user-defined values retain their existing conservative
+		** update behavior.  Proving exact stored equality for those values can
+		** consume a stream or invoke application-defined equality semantics.
+		*/
+		if (oldValue.hasStream()
+				|| newValue.hasStream()
+				|| oldValue instanceof XMLDataValue
+				|| newValue instanceof XMLDataValue
+				|| oldValue instanceof UserDataValue
+				|| newValue instanceof UserDataValue)
+		{
+			return true;
+		}
+
+		try
+		{
+			return !Objects.deepEquals(oldValue.getObject(), newValue.getObject());
+		}
+		catch (StandardException ignored)
+		{
+			/* Optional no-op detection must fail open to the normal store update. */
+			return true;
+		}
 	}
 
 	/**

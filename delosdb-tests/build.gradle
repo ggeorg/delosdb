@@ -1123,6 +1123,11 @@ registerDelosFocusedTest(
         'Proves engine SQL values use direct shared store operations for heap and MVCC.',
         ['org/apache/derbyTesting/functionTests/tests/delos/StoreValueOperationsDirectPathTest.class'])
 
+registerDelosFocusedTest(
+        'runDelosSharedNoOpUpdatePropagationTest',
+        'Proves heap and MVCC skip physical no-op updates while preserving SQL row-count and trigger semantics.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/SharedNoOpUpdatePropagationTest.class'])
+
 
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkBaseline',

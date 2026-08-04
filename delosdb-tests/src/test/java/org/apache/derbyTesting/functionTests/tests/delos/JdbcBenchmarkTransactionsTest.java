@@ -49,7 +49,7 @@ public final class JdbcBenchmarkTransactionsTest extends MvccSqlTestSupport {
 
         int specsPerProviderAndRun = 2
                 + 2 * readWidths.size()
-                + 2 * writeWidths.size()
+                + 4 * writeWidths.size()
                 + 2;
         int expectedMeasurements = rows.size()
                 * DelosBenchmarkProvider.values().length
@@ -88,6 +88,8 @@ public final class JdbcBenchmarkTransactionsTest extends MvccSqlTestSupport {
                 case PRIMARY_KEY_READ -> assertTrue("configured read width",
                         readWidths.contains(measurement.operationsPerTransaction()));
                 case INDEXED_UPDATE -> assertTrue("configured indexed-update width",
+                        writeWidths.contains(measurement.operationsPerTransaction()));
+                case UNCHANGED_UPDATE -> assertTrue("configured unchanged-update width",
                         writeWidths.contains(measurement.operationsPerTransaction()));
                 case DELETE_REINSERT -> assertEquals("delete/reinsert width", 1,
                         measurement.operationsPerTransaction());

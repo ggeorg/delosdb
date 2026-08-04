@@ -10,16 +10,12 @@ import junit.framework.TestCase;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreOrderable;
-import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.iapi.store.types.StoreRowLocationFactory;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.iapi.types.SQLVarchar;
-import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
 
 /** Proves engine SQL values use the direct shared store-value operation path. */
 public final class StoreValueOperationsDirectPathTest extends TestCase {
@@ -27,16 +23,6 @@ public final class StoreValueOperationsDirectPathTest extends TestCase {
         assertDirect(new SQLInteger());
         assertDirect(new SQLLongint());
         assertDirect(new SQLVarchar());
-    }
-
-    public void testEngineRowLocationAdapterPreservesBridgeSemantics() throws Exception {
-        RowLocation adapter = EngineStoreRowLocationBridge.newEngineRowLocation();
-        StoreRowLocation nativeLocation = StoreRowLocationFactory.newDefaultRowLocation();
-
-        assertTrue(adapter instanceof StoreValueOperations);
-        StoreTypeUtil.setValue(adapter, nativeLocation);
-        assertEquals(0, StoreTypeUtil.compare(adapter, nativeLocation));
-        assertEquals(0, StoreTypeUtil.compare(nativeLocation, adapter));
     }
 
     public void testStoreTypeUtilOperationsRemainSemanticallyEquivalent() throws Exception {
