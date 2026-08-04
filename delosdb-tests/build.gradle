@@ -132,6 +132,24 @@ def gradleJUnitRuntime = configurations.create('gradleJUnitRuntime') {
     transitive = true
 }
 
+// Cross-engine comparison dependencies are resolved only for the opt-in
+// benchmark coordinator. Upstream Derby must never share a JVM/class path
+// with DelosDB because both engines intentionally expose Derby package names.
+def upstreamDerbyBenchmarkRuntime = configurations.create('upstreamDerbyBenchmarkRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
+def h2BenchmarkRuntime = configurations.create('h2BenchmarkRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
+def upstreamDerbyBenchmarkVersion = providers.gradleProperty(
+        'delosdb.benchmark.crossEngine.derbyVersion').getOrElse('10.17.1.0')
+def h2BenchmarkVersion = providers.gradleProperty(
+        'delosdb.benchmark.crossEngine.h2Version').getOrElse('2.4.240')
+
 def thirdPartyTestModules = rootProject.files(
         'tools/java/junit.jar',
         'tools/java/geronimo-spec-servlet-2.4-rc4.jar',
@@ -207,6 +225,9 @@ configurations {
 
 dependencies {
     add('gradleJUnitRuntime', 'junit:junit:4.13.2')
+    add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derby:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derbyshared:${upstreamDerbyBenchmarkVersion}")
+    add('h2BenchmarkRuntime', "com.h2database:h2:${h2BenchmarkVersion}")
 
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
@@ -1178,6 +1199,63 @@ registerDelosFocusedTest(
                 'delosdb.benchmark.transactions.iterations': providers.gradleProperty('delosdb.benchmark.transactions.iterations').getOrElse('1'),
                 'delosdb.benchmark.transactions.runs': providers.gradleProperty('delosdb.benchmark.transactions.runs').getOrElse('2')
         ])
+
+
+tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
+    group = 'benchmark'
+    description = 'Compares DelosDB heap/MVCC with upstream Derby and H2 in isolated JDK 25 JVMs.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineCoordinator'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/cross-engine'))
+
+    doFirst {
+        def javaExecutable = new File(
+                System.getProperty('java.home'),
+                'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngine.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngine.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngine.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngine.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngine.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngine.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngine.databaseRoot': rootProject.layout.buildDirectory
+                        .dir('tmp/delos-jdbc-cross-engine').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngine.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/cross-engine').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngine.rows': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.rows').getOrElse('1000'),
+                'delosdb.benchmark.crossEngine.readWidths': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.readWidths').getOrElse('1,10'),
+                'delosdb.benchmark.crossEngine.writeWidths': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.writeWidths').getOrElse('1,10'),
+                'delosdb.benchmark.crossEngine.cycles': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.cycles').getOrElse('10'),
+                'delosdb.benchmark.crossEngine.payload': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.payload').getOrElse('128'),
+                'delosdb.benchmark.crossEngine.fixtureBatch': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.crossEngine.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.warmups').getOrElse('1'),
+                'delosdb.benchmark.crossEngine.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.iterations').getOrElse('3'),
+                'delosdb.benchmark.crossEngine.runs': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.runs').getOrElse('2'),
+                'delosdb.benchmark.crossEngine.childHeap': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngine.childHeap').getOrElse('1g'),
+                'delosdb.benchmark.crossEngine.upstreamDerbyVersion':
+                        upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngine.h2Version': h2BenchmarkVersion
+        ])
+    }
+}
 
 registerDelosFocusedTest(
         'runDelosJdbcDeleteReinsertAttribution',

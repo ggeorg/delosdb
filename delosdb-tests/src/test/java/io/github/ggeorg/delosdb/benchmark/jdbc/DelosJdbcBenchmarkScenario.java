@@ -25,7 +25,8 @@ import java.util.Random;
  */
 public final class DelosJdbcBenchmarkScenario {
     private final Connection connection;
-    private final DelosBenchmarkProvider provider;
+    private final String createTableSuffix;
+    private final boolean dropExistingTable;
     private final DelosBenchmarkConfig config;
     private final String table;
     private int indexedUpdateOriginalQuantity;
@@ -35,21 +36,39 @@ public final class DelosJdbcBenchmarkScenario {
             Connection connection,
             DelosBenchmarkProvider provider,
             DelosBenchmarkConfig config) {
+        this(
+                connection,
+                Objects.requireNonNull(provider, "provider").id(),
+                provider.createTableSuffix(),
+                true,
+                config);
+    }
+
+    DelosJdbcBenchmarkScenario(
+            Connection connection,
+            String targetId,
+            String createTableSuffix,
+            boolean dropExistingTable,
+            DelosBenchmarkConfig config) {
         this.connection = Objects.requireNonNull(connection, "connection");
-        this.provider = Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(targetId, "targetId");
+        this.createTableSuffix = Objects.requireNonNull(createTableSuffix, "createTableSuffix");
+        this.dropExistingTable = dropExistingTable;
         this.config = Objects.requireNonNull(config, "config");
-        this.table = "DELOS_BENCH_" + provider.id().toUpperCase(java.util.Locale.ROOT);
+        this.table = "DELOS_BENCH_" + targetId.toUpperCase(java.util.Locale.ROOT);
     }
 
     public void prepare() throws SQLException {
         fixturePrepared = false;
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
-            dropIfPresent(statement, table);
+            if (dropExistingTable) {
+                dropIfPresent(statement, table);
+            }
             statement.executeUpdate("create table " + table
                     + " (id int not null primary key, category int not null, bucket int not null,"
                     + " quantity int not null, payload varchar(4096) not null)"
-                    + provider.createTableSuffix());
+                    + createTableSuffix);
             statement.executeUpdate("create index " + table + "_CATEGORY_IDX on " + table + " (category)");
             statement.executeUpdate("create index " + table + "_RANGE_IDX on " + table + " (bucket, quantity)");
         }
