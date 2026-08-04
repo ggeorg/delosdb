@@ -229,6 +229,43 @@ final class MvccRawStoreMetadataInspection {
         return orderedIndexMappings(raw, layout).size();
     }
 
+    static List<RowLocationIdentity> baseScanRowLocations(
+            Connection connection,
+            String tableName) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        long baseConglomerate = baseConglomerateId(connection, tableName);
+        ConglomerateController base = manager.openConglomerate(
+                baseConglomerate,
+                false,
+                0,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_READ_UNCOMMITTED);
+        ScanController scan = manager.openScan(
+                baseConglomerate,
+                false,
+                0,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_READ_UNCOMMITTED,
+                null,
+                null,
+                ScanController.NA,
+                null,
+                null,
+                ScanController.NA);
+        List<RowLocationIdentity> result = new ArrayList<>();
+        try {
+            StoreRowLocation location = base.newRowLocationTemplate();
+            while (scan.next()) {
+                scan.fetchLocation(location);
+                result.add(rowLocationIdentity((StoreDataValue) location));
+            }
+        } finally {
+            scan.close();
+            base.close();
+        }
+        return List.copyOf(result);
+    }
+
     static List<OrderedIndexIdentity> orderedIndexEntries(
             Connection connection,
             String tableName) throws Exception {

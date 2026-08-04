@@ -160,7 +160,12 @@ final class MvccRawStoreTable {
         }
     }
 
-    record VisibleRow(long rowId, long versionId, StoreDataValue[] values, RecordHandle versionHandle) {
+    record VisibleRow(
+            long rowId,
+            long versionId,
+            StoreDataValue[] values,
+            RecordHandle versionHandle,
+            MvccRowLocation directoryLocation) {
     }
 
     record PendingVersion(
@@ -477,7 +482,7 @@ final class MvccRawStoreTable {
                 context);
     }
 
-    private static VisibleRow readVisible(
+    static VisibleRow readVisible(
             Transaction rawTransaction,
             Descriptor table,
             MvccRowLocation rowLocation,
@@ -498,7 +503,9 @@ final class MvccRawStoreTable {
                 rowLocation.rowId(),
                 version.versionId(),
                 version.values(),
-                version.handle());
+                version.handle(),
+                MvccRawStoreRowDirectory.location(
+                        rowLocation.rowId(), directory.handle()));
     }
 
     static VisibleRow readVisibleAt(
@@ -525,7 +532,9 @@ final class MvccRawStoreTable {
                 rowLocation.rowId(),
                 version.versionId(),
                 version.values(),
-                version.handle());
+                version.handle(),
+                MvccRawStoreRowDirectory.location(
+                        rowLocation.rowId(), directory.handle()));
     }
 
     static boolean replace(
@@ -535,11 +544,28 @@ final class MvccRawStoreTable {
             StoreDataValue[] replacement,
             FormatableBitSet validColumns,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return replace(
+                rawTransaction,
+                table,
+                new MvccRowLocation(rowId),
+                replacement,
+                validColumns,
+                context);
+    }
+
+    static boolean replace(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            StoreDataValue[] replacement,
+            FormatableBitSet validColumns,
+            MvccRawStoreTransactionContext context) throws StandardException {
         // Reserve the database-wide transaction identity before acquiring table
         // container locks. INSERT follows the same database-metadata -> table
         // ordering, which prevents an UPDATE/DELETE lock-order inversion.
+        long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
-        MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
+        MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
         if (target == null) {
             return false;
         }
@@ -572,8 +598,21 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return delete(
+                rawTransaction,
+                table,
+                new MvccRowLocation(rowId),
+                context);
+    }
+
+    static boolean delete(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
-        MutationTarget target = mutationTarget(rawTransaction, table, rowId, context);
+        MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
         if (target == null) {
             return false;
         }
@@ -642,7 +681,9 @@ final class MvccRawStoreTable {
                                 directory.rowId(),
                                 version.versionId(),
                                 version.values(),
-                                version.handle()));
+                                version.handle(),
+                                MvccRawStoreRowDirectory.location(
+                                        directory.rowId(), directory.handle())));
                     }
                 }
                 long pageNumber = page.getPageNumber();
@@ -951,10 +992,11 @@ final class MvccRawStoreTable {
     private static MutationTarget mutationTarget(
             Transaction transaction,
             Descriptor table,
-            long rowId,
+            MvccRowLocation rowLocation,
             MvccRawStoreTransactionContext context) throws StandardException {
+        long rowId = rowLocation.rowId();
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                transaction, table, new MvccRowLocation(rowId));
+                transaction, table, rowLocation);
         VersionRecord visible = MvccRawStoreVersionReader.findVisible(
                 transaction,
                 table,

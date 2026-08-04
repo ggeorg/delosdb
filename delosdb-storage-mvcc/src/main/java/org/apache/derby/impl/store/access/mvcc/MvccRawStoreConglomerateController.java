@@ -68,7 +68,7 @@ final class MvccRawStoreConglomerateController
         return MvccRawStoreTable.delete(
                 rawTransaction,
                 table,
-                MvccRowLocation.from(loc).rowId(),
+                MvccRowLocation.from(loc),
                 context);
     }
 
@@ -81,8 +81,8 @@ final class MvccRawStoreConglomerateController
             MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
                     rawTransaction,
                     table,
-                    MvccRowLocation.from(loc).rowId(),
-                    validColumns,
+                    MvccRowLocation.from(loc),
+                    MvccRawStoreVersionRows.projection(table, validColumns),
                     context);
             if (visible == null) {
                 return false;
@@ -172,7 +172,7 @@ final class MvccRawStoreConglomerateController
         return MvccRawStoreTable.replace(
                 rawTransaction,
                 table,
-                MvccRowLocation.from(loc).rowId(),
+                MvccRowLocation.from(loc),
                 row,
                 validColumns,
                 context);

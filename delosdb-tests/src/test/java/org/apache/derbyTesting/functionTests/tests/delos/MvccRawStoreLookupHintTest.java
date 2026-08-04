@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +27,48 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+
+    public void testBaseScanRowLocationsPreserveDirectoryHintsForMutation() throws Exception {
+        String database = uniqueDatabaseName("mvcc-raw-store-scan-location-hints");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table scan_hint_t "
+                            + "(id int primary key, payload varchar(64)) using delos_mvcc");
+            try (PreparedStatement insert = connection.prepareStatement(
+                    "insert into scan_hint_t values (?, ?)")) {
+                for (int id = 1; id <= 256; id++) {
+                    insert.setInt(1, id);
+                    insert.setString(2, "payload-" + id);
+                    insert.addBatch();
+                }
+                insert.executeBatch();
+            }
+            connection.commit();
+
+            List<MvccRawStoreMetadataInspection.RowLocationIdentity> locations =
+                    MvccRawStoreMetadataInspection.baseScanRowLocations(
+                            connection,
+                            "SCAN_HINT_T");
+            assertEquals(256, locations.size());
+            for (MvccRawStoreMetadataInspection.RowLocationIdentity location : locations) {
+                assertTrue(
+                        "base scans must preserve the stable-directory locator hint",
+                        location.hasLocator());
+            }
+
+            executeUpdate(connection, "delete from scan_hint_t where id = 256");
+            executeUpdate(connection,
+                    "insert into scan_hint_t values (256, 'replacement')");
+            connection.commit();
+            assertRows(connection,
+                    "select payload from scan_hint_t where id = 256",
+                    "replacement");
+            connection.commit();
+        }
+        shutdownDatabase(database);
+    }
 
     public void testPersistedHintsMatchPhysicalRecordsAndSurviveReopen() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-lookup-hints");

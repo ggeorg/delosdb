@@ -114,7 +114,14 @@ final class MvccRawStoreScanController implements ScanManager {
         long count = 0L;
         while ((maxRowCount < 0L || count < maxRowCount) && next()) {
             StoreDataValue[] row = StoreValueCopySupport.cloneRow(current.values());
-            hashTable.putRow(true, row, new MvccRowLocation(current.rowId()));
+            MvccRowLocation location = current.directoryLocation();
+            hashTable.putRow(
+                    true,
+                    row,
+                    new MvccRowLocation(
+                            location.rowId(),
+                            location.locatorPageId(),
+                            location.locatorSlotId()));
             count++;
         }
         while (next()) {
@@ -192,7 +199,7 @@ final class MvccRawStoreScanController implements ScanManager {
         boolean deleted = MvccRawStoreTable.delete(
                 rawTransaction,
                 table,
-                current.rowId(),
+                current.directoryLocation(),
                 runtime.context(transactionManager, rawTransaction));
         currentDeleted = deleted;
         return deleted;
@@ -250,7 +257,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 if (rowlocArray[count] == null) {
                     rowlocArray[count] = new MvccRowLocation();
                 }
-                MvccRowLocation.from(rowlocArray[count]).set(current.rowId(), 0L, -1);
+                MvccRowLocation.from(rowlocArray[count]).copyFrom(
+                        current.directoryLocation());
             }
             count++;
         }
@@ -272,7 +280,7 @@ final class MvccRawStoreScanController implements ScanManager {
         if (current == null) {
             destination.restoreToNull();
         } else {
-            destination.set(current.rowId(), 0L, -1);
+            destination.copyFrom(current.directoryLocation());
         }
     }
 
@@ -340,7 +348,7 @@ final class MvccRawStoreScanController implements ScanManager {
         boolean replaced = MvccRawStoreTable.replace(
                 rawTransaction,
                 table,
-                current.rowId(),
+                current.directoryLocation(),
                 row,
                 validColumns,
                 runtime.context(transactionManager, rawTransaction));
@@ -349,7 +357,8 @@ final class MvccRawStoreScanController implements ScanManager {
                     current.rowId(),
                     current.versionId(),
                     replacement,
-                    current.versionHandle());
+                    current.versionHandle(),
+                    current.directoryLocation());
         }
         return replaced;
     }

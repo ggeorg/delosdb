@@ -196,7 +196,9 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                                     candidate.rowId(),
                                     candidate.versionId(),
                                     values,
-                                    null),
+                                    null,
+                                    MvccRawStoreRowDirectory.location(
+                                            candidate.rowId(), directory.handle())),
                             true);
                 }
                 metrics.directoryHeadSummaryFallback();
@@ -223,7 +225,9 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                                     candidate.rowId(),
                                     candidate.versionId(),
                                     values,
-                                    head.handle()),
+                                    head.handle(),
+                                    MvccRawStoreRowDirectory.location(
+                                            candidate.rowId(), directory.handle())),
                             true);
                 }
             }
@@ -245,7 +249,9 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         candidate.rowId(),
                         visible.versionId(),
                         visible.values(),
-                        visible.handle()),
+                        visible.handle(),
+                        MvccRawStoreRowDirectory.location(
+                                candidate.rowId(), directory.handle())),
                 false);
     }
 
