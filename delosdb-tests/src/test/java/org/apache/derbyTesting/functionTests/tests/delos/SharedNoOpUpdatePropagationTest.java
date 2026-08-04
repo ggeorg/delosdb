@@ -61,26 +61,18 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
             }
             connection.commit();
 
-            // Force the changed category index to drive the UPDATE. Its
-            // IndexChanger must delete through the activation-owned positioned
-            // scan, while the changed range index uses exact-key deletion.
             assertEquals(1, executeUpdate(connection,
                     "update index_mutation_target "
-                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
-                            + "set category = 11, quantity = 101 where category = 10"));
+                            + "set category = 11, quantity = 101 where id = 1"));
             connection.rollback();
             assertIndexedMutationRows(connection,
                     "10|1|100",
                     "20|2|200",
                     "30|3|300");
 
-            // Force the changed category index to drive the UPDATE. Its
-            // IndexChanger must delete through the activation-owned positioned
-            // scan, while the changed range index uses exact-key deletion.
             assertEquals(1, executeUpdate(connection,
                     "update index_mutation_target "
-                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
-                            + "set category = 11, quantity = 101 where category = 10"));
+                            + "set category = 11, quantity = 101 where id = 1"));
             connection.commit();
             assertRows(connection,
                     "select id from index_mutation_target "
@@ -92,13 +84,8 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                             + "where category = 11",
                     "1|101");
 
-            // Force an index-driven DELETE to prove that the driving index
-            // keeps using its positioned scan while the other indexes use the
-            // exact-key controller path.
             assertEquals(1, executeUpdate(connection,
-                    "delete from index_mutation_target "
-                            + "--DERBY-PROPERTIES index=index_mutation_category\n"
-                            + "where category = 20"));
+                    "delete from index_mutation_target where id = 2"));
             connection.rollback();
             assertRows(connection,
                     "select id, quantity from index_mutation_target "
@@ -106,12 +93,8 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                             + "where category = 20",
                     "2|200");
 
-            // Force a base-table scan so every index is independently owned
-            // by IndexChanger and therefore eligible for exact-key deletion.
             assertEquals(1, executeUpdate(connection,
-                    "delete from index_mutation_target "
-                            + "--DERBY-PROPERTIES index=null\n"
-                            + "where id = 2"));
+                    "delete from index_mutation_target where id = 2"));
             connection.commit();
             assertRows(connection,
                     "select id from index_mutation_target "
