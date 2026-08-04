@@ -164,7 +164,6 @@ def testRuntimeClasspath = {
             derbyTestsClassDir,
             rawStoreInternalTestSupportClassDir,
             derbyRuntimeJars,
-            generatedNativeAuthResourceDir,
             testSourceRoot,
             toursDbSourceRoot,
             thirdPartyTestModules,
@@ -456,7 +455,7 @@ tasks.register('runDerbyLangSuite', Test) {
 
     modularity.inferModulePath = false
     testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
+    classpath = rootProject.files(testRuntimeClasspath(), generatedNativeAuthResourceDir)
     useJUnit()
     include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
     failFast = derbyLangFailFast.get()
