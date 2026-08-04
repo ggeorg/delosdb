@@ -1402,6 +1402,13 @@ final class MvccRawStoreTable {
             Transaction transaction,
             Page page,
             int slot) throws StandardException {
+        int fieldCount = directoryFieldCount(page, slot);
+        Object[] row = directoryTemplate(transaction, fieldCount);
+        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
+        return decodeDirectoryRow(row, handle);
+    }
+
+    static int directoryFieldCount(Page page, int slot) throws StandardException {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
@@ -1409,10 +1416,15 @@ final class MvccRawStoreTable {
             throw new IllegalStateException(
                     "RawStore MVCC directory row has unsupported field count: " + fieldCount);
         }
+        return fieldCount;
+    }
+
+    static DirectoryRecord decodeDirectoryRow(
+            Object[] row,
+            RecordHandle handle) throws StandardException {
+        int fieldCount = row.length;
         boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
         boolean hasSummary = fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
-        Object[] row = directoryTemplate(transaction, fieldCount);
-        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND) {
             return null;
@@ -1497,7 +1509,7 @@ final class MvccRawStoreTable {
         return row;
     }
 
-    private static Object[] directoryTemplate(
+    static Object[] directoryTemplate(
             Transaction transaction,
             int fieldCount) throws StandardException {
         Object[] row = new Object[fieldCount];

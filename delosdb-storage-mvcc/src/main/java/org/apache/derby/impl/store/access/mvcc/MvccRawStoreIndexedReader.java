@@ -43,6 +43,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     private MvccRawStoreVersionRows.FetchProjection metadataProjection;
     private final MvccRawStoreTransactionContext context;
     private final ContainerHandle directoryContainer;
+    private final MvccRawStoreRowDirectory.Decoder directoryDecoder;
     private final MvccRawStoreIndexedReadMetrics metrics;
     private MvccRawStoreVersionReader versionReader;
 
@@ -62,6 +63,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_READONLY);
+        directoryDecoder = new MvccRawStoreRowDirectory.Decoder(transaction);
     }
 
     List<Result> read(
@@ -142,9 +144,9 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                     metrics.directoryPageReuseHit();
                 }
                 directories[index - start] = MvccRawStoreRowDirectory.findByHint(
-                        transaction,
                         candidates.get(index).rowLocation(),
-                        page);
+                        page,
+                        directoryDecoder);
             }
         } finally {
             if (page != null) {
