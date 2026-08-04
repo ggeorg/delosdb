@@ -22,44 +22,6 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 /** Physical addressing and mutation of the stable-row directory. */
 final class MvccRawStoreRowDirectory {
-    static final class Decoder {
-        private final Transaction transaction;
-        private Object[] baseRow;
-        private Object[] hintRow;
-        private Object[] summaryRow;
-
-        Decoder(Transaction transaction) {
-            this.transaction = transaction;
-        }
-
-        MvccRawStoreTable.DirectoryRecord decode(Page page, int slot)
-                throws StandardException {
-            int fieldCount = MvccRawStoreTable.directoryFieldCount(page, slot);
-            Object[] row = row(fieldCount);
-            RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
-            return MvccRawStoreTable.decodeDirectoryRow(row, handle);
-        }
-
-        private Object[] row(int fieldCount) throws StandardException {
-            if (fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT) {
-                if (baseRow == null) {
-                    baseRow = MvccRawStoreTable.directoryTemplate(transaction, fieldCount);
-                }
-                return baseRow;
-            }
-            if (fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT) {
-                if (hintRow == null) {
-                    hintRow = MvccRawStoreTable.directoryTemplate(transaction, fieldCount);
-                }
-                return hintRow;
-            }
-            if (summaryRow == null) {
-                summaryRow = MvccRawStoreTable.directoryTemplate(transaction, fieldCount);
-            }
-            return summaryRow;
-        }
-    }
-
     private MvccRawStoreRowDirectory() {
     }
 
@@ -271,13 +233,6 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRowLocation rowLocation,
             Page page) throws StandardException {
-        return findByHint(rowLocation, page, new Decoder(transaction));
-    }
-
-    static MvccRawStoreTable.DirectoryRecord findByHint(
-            MvccRowLocation rowLocation,
-            Page page,
-            Decoder decoder) throws StandardException {
         if (page == null
                 || rowLocation == null
                 || !rowLocation.hasLocatorHint()
@@ -288,7 +243,8 @@ final class MvccRawStoreRowDirectory {
         if (!isDirectorySlot(page, slot)) {
             return null;
         }
-        MvccRawStoreTable.DirectoryRecord directory = decoder.decode(page, slot);
+        MvccRawStoreTable.DirectoryRecord directory =
+                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
         return directory != null && directory.rowId() == rowLocation.rowId()
                 ? directory
                 : null;
