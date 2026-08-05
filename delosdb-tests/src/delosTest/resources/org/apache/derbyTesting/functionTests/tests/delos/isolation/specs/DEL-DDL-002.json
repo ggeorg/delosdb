@@ -1,6 +1,6 @@
 {
   "id": "DEL-DDL-002",
-  "description": "CREATE INDEX waits for active DML and publishes a usable index after the writer commits.",
+  "description": "CREATE INDEX waits for active heap DML, while MVCC may build after the writer statement; the published index remains correct after the writer commits.",
   "category": "ddl-concurrency",
   "providers": [
     "heap",
@@ -42,7 +42,10 @@
   },
   "permutations": [
     {
-      "name": "index-create-versus-dml",
+      "name": "index-create-versus-dml-heap",
+      "providers": [
+        "heap"
+      ],
       "operations": [
         {
           "type": "RUN",
@@ -72,6 +75,36 @@
           "step": "ddl.commit"
         }
       ]
+    },
+    {
+      "name": "index-create-after-dml-statement-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "START",
+          "step": "ddl.create",
+          "token": "createIndex"
+        },
+        {
+          "type": "AWAIT",
+          "token": "createIndex",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "ddl.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        }
+      ]
     }
   ],
   "finalAssertions": [
@@ -82,7 +115,7 @@
       ]
     },
     {
-      "sql": "select id from ddl_index_t where bucket=11",
+      "sql": "select id from ddl_index_t --DERBY-PROPERTIES index=DDL_CREATE_IDX\nwhere bucket=11",
       "rows": [
         "1"
       ]

@@ -96,9 +96,10 @@ child transaction is reset, a second named step performs the actual retry and mu
 parent deletes form a heavyweight-lock deadlock on heap, while MVCC rejects both references
 immediately and both deleting transactions roll back.
 
-DROP and TRUNCATE schedules are provider-specific for the same reason: heap repeatable-read
-transactions retain conflicting locks, while an MVCC reader does not retain the DML schema lock after
-its statement closes. Final catalog or table-state assertions remain identical.
+DROP, CREATE INDEX, and TRUNCATE schedules are provider-specific: heap transactions retain
+conflicting locks until transaction completion, while MVCC may complete the DDL after the conflicting
+statement closes. The CREATE INDEX case additionally proves that a writer committing after index
+publication maintains the new index correctly. Final catalog or table-state assertions remain identical.
 
 ## Stage 4 catalogue
 
