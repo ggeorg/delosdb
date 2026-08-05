@@ -28,8 +28,9 @@ Stage 3 adds the stable execution registry at:
 gradle/testing/delos-test-suite-registry.tsv
 ```
 
-The registry accounts for all 152 DelosDB source files in `src/delosTest/java`: 150 executable
-tests and two abstract support anchors. It assigns each executable test to one purpose suite and
+The registry accounts for all 150 executable DelosDB tests in `src/delosTest/java`. Abstract
+support anchors and shared fixtures remain in `src/delosTestSupport/java` and are covered by the
+separate provenance inventory. The registry assigns each executable test to one purpose suite and
 one execution tier. The stable inherited and DelosDB task names are now available at both the root
 and `:delosdb-tests` project. Existing one-class tasks remain temporary compatibility lanes until
 Stage 8.

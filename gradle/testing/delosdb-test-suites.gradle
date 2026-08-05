@@ -338,7 +338,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
 
     doLast {
         List<String> issues = []
-        Set<String> validRoles = ['TEST', 'SUPPORT'] as Set<String>
+        Set<String> validRoles = ['TEST'] as Set<String>
         Set<String> validSuites = ['unit', 'functional', 'concurrency', 'recovery', 'system', 'stress', 'performance', 'none'] as Set<String>
         Set<String> validTiers = ['unit', 'quick', 'full', 'nightly', 'release', 'none'] as Set<String>
 
@@ -360,15 +360,9 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 if (row.role == 'TEST' && abstractClass) {
                     issues.add("Abstract class is registered as executable: ${row.className}")
                 }
-                if (row.role == 'SUPPORT' && !abstractClass) {
-                    issues.add("Non-abstract class is registered as support: ${row.className}")
-                }
             }
             if (row.role == 'TEST' && (row.suite == 'none' || row.executionTier == 'none')) {
                 issues.add("Executable test lacks suite/tier: ${row.className}")
-            }
-            if (row.role == 'SUPPORT' && (row.suite != 'none' || row.executionTier != 'none')) {
-                issues.add("Support class must use suite/tier none: ${row.className}")
             }
             if (row.role == 'TEST') {
                 boolean compatibleTier = false
@@ -454,14 +448,14 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Map<String, Object> report = [
-                schemaVersion: 1,
+                schemaVersion: 2,
                 stage: 'Stage 3 - stable Gradle entry points',
+                registryScope: 'EXECUTABLE_DELOSDB_TESTS_ONLY',
                 registry: rootProject.relativePath(registryFile),
                 summary: [
                         sourceFiles: sourcePaths.size(),
                         registryEntries: registry.size(),
                         executableTests: registry.values().count { it.role == 'TEST' },
-                        supportClasses: registry.values().count { it.role == 'SUPPORT' },
                         issueCount: issues.unique().size()
                 ],
                 suiteCounts: suiteCounts,
