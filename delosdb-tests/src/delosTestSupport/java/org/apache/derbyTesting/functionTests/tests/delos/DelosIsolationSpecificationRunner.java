@@ -87,15 +87,26 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
         try (SystemPropertyScope ignored = provider == DelosIsolationSpecification.Provider.MVCC
                 ? setSystemProperty(MVCC_ENABLED_PROPERTY, "true")
                 : clearSystemProperty(MVCC_ENABLED_PROPERTY)) {
-            createAndSetUpDatabase(database, specification, provider);
+            Throwable failure = null;
             try {
+                createAndSetUpDatabase(database, specification, provider);
                 List<StepOutcome> outcomes = executePermutation(
                         database, specification, permutation, provider, label);
                 assertSqlStateCounts(permutation, outcomes, label);
                 assertFinalState(database, specification, provider, label);
                 executeTeardown(database, specification, provider);
+            } catch (Exception | Error caseFailure) {
+                failure = caseFailure;
+                throw caseFailure;
             } finally {
-                shutdownDatabase(database);
+                try {
+                    shutdownDatabase(database);
+                } catch (SQLException shutdownFailure) {
+                    if (failure == null) {
+                        throw shutdownFailure;
+                    }
+                    failure.addSuppressed(shutdownFailure);
+                }
             }
         }
     }
@@ -105,15 +116,29 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
             DelosIsolationSpecification specification,
             DelosIsolationSpecification.Provider provider) throws Exception {
         try (Connection connection = openDatabase(database, true)) {
-            connection.setAutoCommit(false);
+            // Keep database-property writes in their default autocommit transactions.
+            // RawStore MVCC metadata is initialized by a nested user transaction;
+            // carrying the property-conglomerate lock into CREATE TABLE would make
+            // that nested initialization wait on its own parent transaction.
             executeStatement(connection,
                     "call syscs_util.syscs_set_database_property('derby.locks.deadlockTimeout', '2')");
             executeStatement(connection,
                     "call syscs_util.syscs_set_database_property('derby.locks.waitTimeout', '8')");
-            for (String sql : specification.setup()) {
-                executeStatement(connection, expand(sql, provider));
+
+            connection.setAutoCommit(false);
+            try {
+                for (String sql : specification.setup()) {
+                    executeStatement(connection, expand(sql, provider));
+                }
+                connection.commit();
+            } catch (SQLException | RuntimeException | Error setupFailure) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    setupFailure.addSuppressed(rollbackFailure);
+                }
+                throw setupFailure;
             }
-            connection.commit();
         }
     }
 
