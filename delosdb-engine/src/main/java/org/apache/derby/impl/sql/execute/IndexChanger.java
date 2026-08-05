@@ -44,7 +44,6 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
-import org.apache.derby.iapi.store.access.ExactKeyConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -346,61 +345,44 @@ class IndexChanger
 	private void doDelete()
 		 throws StandardException
 	{
-        if (!ownIndexSC)
-        {
-            /*
-            ** The index which drives the DML statement is already positioned
-            ** by its TableScanResultSet. Fetch that activation-owned scan
-            ** before deleting through it; opening a second access path would
-            ** break scan continuation after the current key is removed.
-            */
-            setScan();
-            indexSC.delete();
-            return;
-        }
-
-        ConglomerateController controller = openIndexCC();
-        if (controller instanceof ExactKeyConglomerateController exactController)
-        {
-            if (!exactController.deleteExact(ourIndexRow.getRowArray()))
-            {
-                reportMissingIndexRow(controller);
-            }
-            return;
-        }
-
-        /* Optional capability unavailable: retain Derby's exact-range scan. */
-        setScan();
-		if (! indexSC.next())
+		if (ownIndexSC)
 		{
-            reportMissingIndexRow(indexSC);
-            return;
+			if (! indexSC.next())
+			{
+                // This means that the entry for the index does not exist, this
+                // is a serious problem with the index.  Past fixed problems
+                // like track 3703 can leave db's in the field with this problem
+                // even though the bug in the code which caused it has long 
+                // since been fixed.  Then the problem can surface months later
+                // when the customer attempts to upgrade.  By "ignoring" the
+                // missing row here the problem is automatically "fixed" and
+                // since the code is trying to delete the row anyway it doesn't
+                // seem like such a bad idea.  It also then gives a tool to 
+                // support to be able to fix some system catalog problems where
+                // they can delete the base rows by dropping the system objects
+                // like stored statements.
+
+				if (SanityManager.DEBUG)
+					SanityManager.THROWASSERT(
+                        "Index row "+RowUtil.toString(ourIndexRow)+
+                        " not found in conglomerateid " + indexCID +
+                        "Current scan = " + indexSC);
+
+                Object[] args = new Object[2];
+                args[0] = ourIndexRow.getRowArray()[ourIndexRow.getRowArray().length - 1];
+                args[1] = indexCID;
+
+                Monitor.getStream().println(MessageService.getTextMessage(
+                    SQLState.LANG_IGNORE_MISSING_INDEX_ROW_DURING_DELETE, 
+                    args));
+
+                // just return indicating the row has been deleted.
+                return;
+			}
 		}
 
         indexSC.delete();
 	}
-
-    private void reportMissingIndexRow(Object currentAccessPath)
-            throws StandardException
-    {
-        // This means that the entry for the index does not exist, this is a
-        // serious problem with the index. Past fixed problems can leave field
-        // databases with this damage. Release builds retain Derby's historical
-        // repair behavior and ignore the missing row during deletion.
-        if (SanityManager.DEBUG)
-        {
-            SanityManager.THROWASSERT(
-                    "Index row " + RowUtil.toString(ourIndexRow)
-                            + " not found in conglomerateid " + indexCID
-                            + " current access path = " + currentAccessPath);
-        }
-
-        Object[] args = new Object[2];
-        args[0] = ourIndexRow.getRowArray()[ourIndexRow.getRowArray().length - 1];
-        args[1] = indexCID;
-        Monitor.getStream().println(MessageService.getTextMessage(
-                SQLState.LANG_IGNORE_MISSING_INDEX_ROW_DURING_DELETE, args));
-    }
 
 	/**
 	  Insert a row into our indes.
@@ -687,6 +669,7 @@ class IndexChanger
 		 throws StandardException
 	{
 		setOurIndexRow(baseRow, baseRowLocation);
+		setScan();
 		doDelete();
 	}
 
@@ -714,6 +697,7 @@ class IndexChanger
 		 */
 		if (indexRowChanged())
 		{
+			setScan();
 			doDelete();
 			insertUpdatedIndexRowForUpdate();
 		}

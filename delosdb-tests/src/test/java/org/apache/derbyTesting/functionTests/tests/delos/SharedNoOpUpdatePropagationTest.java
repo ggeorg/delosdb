@@ -112,6 +112,7 @@ public final class SharedNoOpUpdatePropagationTest extends MvccSqlTestSupport {
                     "11|1|101",
                     "21|2|201",
                     "30|3|300");
+            connection.rollback();
         } finally {
             try {
                 shutdownDatabase(database);
