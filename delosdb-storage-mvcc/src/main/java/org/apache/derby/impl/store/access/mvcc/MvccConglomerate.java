@@ -54,7 +54,7 @@ public final class MvccConglomerate
                 StaticCompiledOpenConglomInfo {
     private static final long serialVersionUID = 1L;
 
-    private transient MvccRawStoreRuntime runtime;
+    private transient volatile MvccRawStoreRuntime runtime;
     private transient MvccRawStoreTable.Descriptor table;
     private ContainerKey id = new ContainerKey(0L, 0L);
     private int columnCount;
@@ -96,6 +96,7 @@ public final class MvccConglomerate
                     SQLState.NOT_IMPLEMENTED,
                     "delos_mvcc DDL in XA transactions");
         }
+        attach(xactManager);
         MvccRawStoreTable.Descriptor currentTable = requireTable();
         MvccRawStoreTransactionContext context = requireRuntime().context(
                 xactManager,
@@ -149,6 +150,7 @@ public final class MvccConglomerate
     public void conglomerateIdAssigned(
             TransactionManager xactManager,
             long conglomId) throws StandardException {
+        attach(xactManager);
         MvccRawStoreTable.Descriptor currentTable = requireTable();
         currentTable.observeAccessConglomerateId(conglomId);
         MvccRawStoreOrderedIndexGeneration.initialize(
@@ -172,7 +174,8 @@ public final class MvccConglomerate
             int lockLevel,
             LockingPolicy lockingPolicy,
             StaticCompiledOpenConglomInfo staticInfo,
-            DynamicCompiledOpenConglomInfo dynamicInfo) {
+            DynamicCompiledOpenConglomInfo dynamicInfo) throws StandardException {
+        attach(xactManager);
         return new MvccRawStoreConglomerateController(
                 requireRuntime(),
                 requireTable(),
@@ -197,6 +200,7 @@ public final class MvccConglomerate
             int stopSearchOperator,
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) throws StandardException {
+        attach(xactManager);
         return new MvccRawStoreScanController(
                 requireRuntime(),
                 requireTable(),
@@ -225,6 +229,7 @@ public final class MvccConglomerate
     public void purgeConglomerate(
             TransactionManager xactManager,
             Transaction rawtran) throws StandardException {
+        attach(xactManager);
         MvccRawStoreTable.Descriptor currentTable = requireTable();
         MvccRawStoreTransactionContext context = requireRuntime().context(
                 xactManager,
@@ -306,6 +311,7 @@ public final class MvccConglomerate
 
     @Override
     public void readExternal(ObjectInput in) throws IOException {
+        runtime = null;
         id = new ContainerKey(
                 CompressedNumber.readLong(in),
                 CompressedNumber.readLong(in));
@@ -339,6 +345,25 @@ public final class MvccConglomerate
             }
         }
         return false;
+    }
+
+    private void attach(TransactionManager xactManager) throws StandardException {
+        if (runtime != null && table != null) {
+            return;
+        }
+        org.apache.derby.iapi.store.access.conglomerate.Conglomerate current =
+                xactManager.findExistingConglomerateFromKey(id);
+        if (!(current instanceof MvccConglomerate attached)
+                || attached.runtime == null
+                || attached.table == null) {
+            throw StandardException.newException(
+                    SQLState.DATA_UNEXPECTED_EXCEPTION,
+                    new IOException(
+                            "Cannot attach delos_mvcc conglomerate " + id
+                                    + " to its RawStore runtime"));
+        }
+        table = attached.table;
+        runtime = attached.runtime;
     }
 
     private MvccRawStoreRuntime requireRuntime() {
