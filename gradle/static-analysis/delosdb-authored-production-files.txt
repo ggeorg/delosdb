@@ -15,6 +15,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/StoreCo
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrappers.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodIndexBuildLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodTransactionLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodUniqueConstraintLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java

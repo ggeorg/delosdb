@@ -15,6 +15,7 @@ import java.util.Properties;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -25,7 +26,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController
-        implements ConglomerateController, AccessMethodUniqueConstraintLifecycle {
+        implements ConglomerateController, AccessMethodIndexBuildLifecycle,
+                AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
@@ -176,6 +178,12 @@ final class MvccRawStoreConglomerateController
                 row,
                 validColumns,
                 context);
+    }
+
+    @Override
+    public void beforeIndexBuild() throws StandardException {
+        ensureOpen();
+        runtime.context(transactionManager, rawTransaction).beforeSchemaChange(table);
     }
 
     @Override

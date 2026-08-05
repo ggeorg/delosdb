@@ -1,6 +1,6 @@
 {
   "id": "DEL-DDL-002",
-  "description": "CREATE INDEX waits for active heap DML, while MVCC may build after the writer statement; the published index remains correct after the writer commits.",
+  "description": "CREATE INDEX serializes with active heap and MVCC writers; after the writer commits, the built index must contain the committed key.",
   "category": "ddl-concurrency",
   "providers": [
     "heap",
@@ -77,7 +77,7 @@
       ]
     },
     {
-      "name": "index-create-after-dml-statement-mvcc",
+      "name": "index-create-versus-dml-mvcc",
       "providers": [
         "mvcc"
       ],
@@ -92,6 +92,15 @@
           "token": "createIndex"
         },
         {
+          "type": "ASSERT_BLOCKED",
+          "token": "createIndex",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
           "type": "AWAIT",
           "token": "createIndex",
           "timeoutMillis": 10000
@@ -99,10 +108,6 @@
         {
           "type": "RUN",
           "step": "ddl.commit"
-        },
-        {
-          "type": "RUN",
-          "step": "writer.commit"
         }
       ]
     }

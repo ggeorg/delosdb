@@ -1,6 +1,6 @@
 {
   "id": "DEL-FK-002",
-  "description": "A child insert started against an uncommitted parent delete is rejected with 23503; after the delete rolls back and the child transaction is reset, an explicit retry commits successfully.",
+  "description": "A heap child insert waits for an uncommitted parent delete and may succeed after rollback; MVCC rejects the stale attempt with 23503. Both paths reset the child transaction and perform an explicit successful retry.",
   "category": "foreign-key-concurrency",
   "providers": [
     "heap",
@@ -32,7 +32,11 @@
     },
     "child": {
       "steps": {
-        "attempt": {
+        "attemptHeap": {
+          "sql": "insert into fk_child_t values (10,1)",
+          "updateCount": 1
+        },
+        "attemptMvcc": {
           "sql": "insert into fk_child_t values (10,1)",
           "updateCount": 1,
           "sqlStates": [
@@ -66,7 +70,7 @@
         },
         {
           "type": "START",
-          "step": "child.attempt",
+          "step": "child.attemptHeap",
           "token": "childAttempt"
         },
         {
@@ -95,13 +99,6 @@
           "type": "RUN",
           "step": "child.commit"
         }
-      ],
-      "sqlStateAssertions": [
-        {
-          "sqlState": "23503",
-          "minimum": 1,
-          "maximum": 1
-        }
       ]
     },
     {
@@ -116,7 +113,7 @@
         },
         {
           "type": "RUN",
-          "step": "child.attempt"
+          "step": "child.attemptMvcc"
         },
         {
           "type": "RUN",

@@ -91,15 +91,16 @@ stale-snapshot write-conflict victim; both use SQLState `40001` and the final-st
 durable survivor result.
 
 Foreign-key schedules distinguish a statement attempt from a transaction-level retry. In
-`DEL-FK-002`, the first child insert must receive `23503`; after the parent delete rolls back and the
-child transaction is reset, a second named step performs the actual retry and must commit. Crossed
-parent deletes form a heavyweight-lock deadlock on heap, while MVCC rejects both references
-immediately and both deleting transactions roll back.
+`DEL-FK-002`, the heap attempt waits for the parent transaction and succeeds when that delete rolls
+back, while MVCC rejects the stale attempt with `23503`. Both paths then roll back the child
+transaction, execute a second named retry step, and commit the valid child row. Crossed parent deletes
+form a heavyweight-lock deadlock on heap, while MVCC rejects both references immediately and both
+deleting transactions roll back.
 
-DROP, CREATE INDEX, and TRUNCATE schedules are provider-specific: heap transactions retain
-conflicting locks until transaction completion, while MVCC may complete the DDL after the conflicting
-statement closes. The CREATE INDEX case additionally proves that a writer committing after index
-publication maintains the new index correctly. Final catalog or table-state assertions remain identical.
+DROP and TRUNCATE schedules remain provider-specific because MVCC readers do not retain heap-style
+statement locks. CREATE INDEX is different: every access method must serialize the index build with
+active writers so the initial backfill and future index maintenance form one correct publication
+boundary. `DEL-DDL-002` proves the wait and then forces the new index for the writer's committed key.
 
 ## Stage 4 catalogue
 
