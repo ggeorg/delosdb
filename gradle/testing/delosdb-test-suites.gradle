@@ -338,7 +338,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
 
     doLast {
         List<String> issues = []
-        Set<String> validRoles = ['TEST'] as Set<String>
+        Set<String> validRoles = ['TEST', 'RETAINED_TRANSITIONAL'] as Set<String>
         Set<String> validSuites = ['unit', 'functional', 'concurrency', 'recovery', 'system', 'stress', 'performance', 'none'] as Set<String>
         Set<String> validTiers = ['unit', 'quick', 'full', 'nightly', 'release', 'none'] as Set<String>
 
@@ -364,6 +364,10 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             if (row.role == 'TEST' && (row.suite == 'none' || row.executionTier == 'none')) {
                 issues.add("Executable test lacks suite/tier: ${row.className}")
             }
+            if (row.role == 'RETAINED_TRANSITIONAL'
+                    && (row.suite != 'none' || row.executionTier != 'none')) {
+                issues.add("Retained transitional test must use none/none: ${row.className}")
+            }
             if (row.role == 'TEST') {
                 boolean compatibleTier = false
                 if (row.suite == 'unit') compatibleTier = row.executionTier == 'unit'
@@ -375,6 +379,23 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                     issues.add("Suite/tier mismatch for ${row.className}: ${row.suite}/${row.executionTier}")
                 }
             }
+        }
+
+        Set<String> expectedRetainedTransitionalClasses = [
+                'org.apache.derbyTesting.functionTests.tests.delos.OptimizerPredicatePushdownExecutionCheckpointTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.StorageCostIntegrationCheckpointTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.StorageInspectorConsolidationTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.StorageMetadataProviderChainTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.StorageStatisticsFoundationTest'
+        ] as Set<String>
+        Set<String> actualRetainedTransitionalClasses = registry.values().findAll {
+            it.role == 'RETAINED_TRANSITIONAL'
+        }.collect { it.className }.toSet()
+        (expectedRetainedTransitionalClasses - actualRetainedTransitionalClasses).sort().each {
+            issues.add("Required retained transitional test is missing from registry: ${it}")
+        }
+        (actualRetainedTransitionalClasses - expectedRetainedTransitionalClasses).sort().each {
+            issues.add("Unexpected retained transitional test: ${it}")
         }
 
         Set<String> expectedPerformanceClasses = [
@@ -407,9 +428,11 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         (sourcePaths - registryPaths).sort().each { issues.add("Unregistered DelosDB source: ${it}") }
         (registryPaths - sourcePaths).sort().each { issues.add("Stale DelosDB suite registry source: ${it}") }
 
+        Map<String, Integer> roleCounts = new TreeMap<>()
         Map<String, Integer> suiteCounts = new TreeMap<>()
         Map<String, Integer> tierCounts = new TreeMap<>()
         registry.values().each { row ->
+            roleCounts[row.role] = (roleCounts[row.role] ?: 0) + 1
             suiteCounts[row.suite] = (suiteCounts[row.suite] ?: 0) + 1
             tierCounts[row.executionTier] = (tierCounts[row.executionTier] ?: 0) + 1
         }
@@ -448,16 +471,18 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Map<String, Object> report = [
-                schemaVersion: 2,
+                schemaVersion: 3,
                 stage: 'Stage 3 - stable Gradle entry points',
-                registryScope: 'EXECUTABLE_DELOSDB_TESTS_ONLY',
+                registryScope: 'ACTIVE_AND_RETAINED_TRANSITIONAL_DELOSDB_TEST_SOURCES',
                 registry: rootProject.relativePath(registryFile),
                 summary: [
                         sourceFiles: sourcePaths.size(),
                         registryEntries: registry.size(),
-                        executableTests: registry.values().count { it.role == 'TEST' },
+                        activeTests: registry.values().count { it.role == 'TEST' },
+                        retainedTransitionalTests: registry.values().count { it.role == 'RETAINED_TRANSITIONAL' },
                         issueCount: issues.unique().size()
                 ],
+                roleCounts: roleCounts,
                 suiteCounts: suiteCounts,
                 executionTierCounts: tierCounts,
                 inheritedTasks: publicTasks.findAll { it.startsWith('derby') },
@@ -478,6 +503,9 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             writer.println("Registry: ${rootProject.relativePath(registryFile)}")
             writer.println()
             report.summary.each { key, value -> writer.println(String.format('%-28s %s', key + ':', value)) }
+            writer.println()
+            writer.println('Role counts')
+            roleCounts.each { key, value -> writer.println(String.format('  %-24s %s', key, value)) }
             writer.println()
             writer.println('Suite counts')
             suiteCounts.each { key, value -> writer.println(String.format('  %-16s %s', key, value)) }
