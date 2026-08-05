@@ -1347,8 +1347,8 @@ Implemented:
 4. Simple, conversion and three-session deadlocks (`DEL-DEADLOCK-001` through `004`).
 5. Update/delete traversal, secondary-key movement, row identity and READ COMMITTED re-evaluation
    (`DEL-TRAVERSAL-001` through `004`).
-6. Foreign-key contention, rollback, deadlock and snapshot cases (`DEL-FK-001` through `004`).
-7. DROP, CREATE INDEX, TRUNCATE and trigger-lifecycle conflicts (`DEL-DDL-001` through `004`).
+6. Provider-specific foreign-key contention, explicit rollback/retry, deadlock/rejection and snapshot cases (`DEL-FK-001` through `004`).
+7. Provider-specific DROP and TRUNCATE behavior plus CREATE INDEX and trigger-lifecycle conflicts (`DEL-DDL-001` through `004`).
 8. Conflicting and disjoint concurrent `MERGE` cases (`DEL-MERGE-001` and `002`).
 
 Permanent Stage 4 gates require the exact 25-case catalogue, all seven categories, complete PostgreSQL

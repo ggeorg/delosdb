@@ -1,6 +1,6 @@
 {
   "id": "DEL-FK-003",
-  "description": "Crossed parent deletes and child inserts form one foreign-key deadlock victim with consistent survivors.",
+  "description": "Crossed parent deletes form a heap foreign-key deadlock with one victim; MVCC rejects both references to concurrently deleted parents immediately, and both deleting transactions roll back cleanly.",
   "category": "foreign-key-concurrency",
   "providers": [
     "heap",
@@ -29,9 +29,13 @@
           "sql": "insert into fk_child_t values (101,2)",
           "updateCount": 1,
           "sqlStates": [
+            "23503",
             "40001"
           ],
           "successAllowed": true
+        },
+        "rollback": {
+          "action": "ROLLBACK"
         }
       }
     },
@@ -45,16 +49,23 @@
           "sql": "insert into fk_child_t values (102,1)",
           "updateCount": 1,
           "sqlStates": [
+            "23503",
             "40001"
           ],
           "successAllowed": true
+        },
+        "rollback": {
+          "action": "ROLLBACK"
         }
       }
     }
   },
   "permutations": [
     {
-      "name": "foreign-key-cycle",
+      "name": "foreign-key-cycle-heap",
+      "providers": [
+        "heap"
+      ],
       "operations": [
         {
           "type": "RUN",
@@ -89,21 +100,94 @@
           "sqlState": "40001",
           "minimum": 1,
           "maximum": 1
+        },
+        {
+          "sqlState": "23503",
+          "minimum": 0,
+          "maximum": 0
+        }
+      ]
+    },
+    {
+      "name": "concurrent-parent-delete-rejection-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "one.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "two.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "one.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "two.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "one.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "two.rollback"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 2,
+          "maximum": 2
+        },
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 0
         }
       ]
     }
   ],
   "finalAssertions": [
     {
+      "providers": [
+        "heap"
+      ],
       "sql": "select count(*) from fk_parent_t",
       "rows": [
         "1"
       ]
     },
     {
+      "providers": [
+        "heap"
+      ],
       "sql": "select count(*) from fk_child_t",
       "rows": [
         "1"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select count(*) from fk_parent_t",
+      "rows": [
+        "2"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select count(*) from fk_child_t",
+      "rows": [
+        "0"
       ]
     }
   ],

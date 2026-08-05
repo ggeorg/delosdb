@@ -273,7 +273,7 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
         } catch (SQLException failure) {
             String sqlState = failure.getSQLState();
             if (!step.acceptedSqlStates().contains(sqlState)) {
-                throw failure;
+                throw new AssertionError(label + ": unexpected SQLState " + sqlState, failure);
             }
             return new StepOutcome(label, sqlState);
         }

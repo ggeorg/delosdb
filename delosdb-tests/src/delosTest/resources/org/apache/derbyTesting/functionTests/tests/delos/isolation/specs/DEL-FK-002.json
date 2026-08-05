@@ -1,6 +1,6 @@
 {
   "id": "DEL-FK-002",
-  "description": "Rollback of a parent delete releases the waiting child insert, which then commits successfully.",
+  "description": "A child insert started against an uncommitted parent delete is rejected with 23503; after the delete rolls back and the child transaction is reset, an explicit retry commits successfully.",
   "category": "foreign-key-concurrency",
   "providers": [
     "heap",
@@ -32,7 +32,18 @@
     },
     "child": {
       "steps": {
-        "insert": {
+        "attempt": {
+          "sql": "insert into fk_child_t values (10,1)",
+          "updateCount": 1,
+          "sqlStates": [
+            "23503"
+          ],
+          "successAllowed": false
+        },
+        "rollback": {
+          "action": "ROLLBACK"
+        },
+        "retry": {
           "sql": "insert into fk_child_t values (10,1)",
           "updateCount": 1
         },
@@ -44,7 +55,10 @@
   },
   "permutations": [
     {
-      "name": "rollback-and-retry",
+      "name": "rollback-and-explicit-retry-heap",
+      "providers": [
+        "heap"
+      ],
       "operations": [
         {
           "type": "RUN",
@@ -52,12 +66,12 @@
         },
         {
           "type": "START",
-          "step": "child.insert",
-          "token": "childInsert"
+          "step": "child.attempt",
+          "token": "childAttempt"
         },
         {
           "type": "ASSERT_BLOCKED",
-          "token": "childInsert",
+          "token": "childAttempt",
           "timeoutMillis": 1200
         },
         {
@@ -66,12 +80,66 @@
         },
         {
           "type": "AWAIT",
-          "token": "childInsert",
+          "token": "childAttempt",
           "timeoutMillis": 10000
         },
         {
           "type": "RUN",
+          "step": "child.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "child.retry"
+        },
+        {
+          "type": "RUN",
           "step": "child.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    },
+    {
+      "name": "rollback-and-explicit-retry-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "parent.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "child.attempt"
+        },
+        {
+          "type": "RUN",
+          "step": "parent.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "child.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "child.retry"
+        },
+        {
+          "type": "RUN",
+          "step": "child.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
         }
       ]
     }

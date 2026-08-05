@@ -90,6 +90,16 @@ session Derby will choose. A three-session MVCC cycle may yield one lock-manager
 stale-snapshot write-conflict victim; both use SQLState `40001` and the final-state assertion proves the
 durable survivor result.
 
+Foreign-key schedules distinguish a statement attempt from a transaction-level retry. In
+`DEL-FK-002`, the first child insert must receive `23503`; after the parent delete rolls back and the
+child transaction is reset, a second named step performs the actual retry and must commit. Crossed
+parent deletes form a heavyweight-lock deadlock on heap, while MVCC rejects both references
+immediately and both deleting transactions roll back.
+
+DROP and TRUNCATE schedules are provider-specific for the same reason: heap repeatable-read
+transactions retain conflicting locks, while an MVCC reader does not retain the DML schema lock after
+its statement closes. Final catalog or table-state assertions remain identical.
+
 ## Stage 4 catalogue
 
 ```text
