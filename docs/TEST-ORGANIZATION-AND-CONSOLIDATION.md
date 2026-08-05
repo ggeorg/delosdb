@@ -1475,3 +1475,17 @@ Benchmarks and report generation are separated from correctness testing.
 The first overlay must implement **Stage 1 only: inventory and provenance**.
 
 It must not move, rename, consolidate or delete tests.
+
+## Stage 3 execution-isolation correction
+
+Stable DelosDB suite tasks preserve the execution boundary of the pre-Stage-3
+focused tasks by running one test class per worker JVM. This is required because
+Derby's monitor, test configuration, and selected system properties are
+process-global. Combining unrelated DelosDB and inherited-harness classes in one
+worker can otherwise change database path resolution and module boot state.
+
+DelosDB SQL test support resolves relative file-database paths against
+`derby.system.home` when that property is active. Diagnostics, retained-format
+markers, and direct filesystem assertions therefore target the same canonical
+database directory used by Derby.
+

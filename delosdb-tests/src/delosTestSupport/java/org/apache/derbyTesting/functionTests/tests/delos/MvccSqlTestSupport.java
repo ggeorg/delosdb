@@ -259,7 +259,14 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
     protected static Path databasePath(String databaseName) {
-        return new File(databaseName).toPath();
+        Path database = new File(databaseName).toPath();
+        if (!database.isAbsolute()) {
+            String systemHome = System.getProperty("derby.system.home");
+            if (systemHome != null && !systemHome.isBlank()) {
+                database = new File(systemHome).toPath().resolve(database);
+            }
+        }
+        return database.toAbsolutePath().normalize();
     }
 
     protected static long mvccContainerId(Connection connection, String tableName) throws SQLException {
@@ -351,7 +358,7 @@ abstract class MvccSqlTestSupport extends TestCase {
 
 
     protected static long inheritedMvccStateFileCount(String databaseName) throws IOException {
-        Path inheritedStore = new File(databaseName).toPath()
+        Path inheritedStore = databasePath(databaseName)
                 .resolve("delos_mvcc")
                 .resolve("inherited-store");
         if (!Files.exists(inheritedStore)) {

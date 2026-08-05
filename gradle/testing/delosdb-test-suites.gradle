@@ -140,6 +140,10 @@ def registerDelosSuite = { String taskName,
     tasks.register(taskName, Test) { Test task ->
         task.description = descriptionText
         configureTestTask(task, taskName, suiteRows, false)
+        // The pre-Stage-3 focused tasks executed in separate test-worker JVMs.
+        // Preserve that boundary when stable suites combine classes which use
+        // Derby process-global monitor, TestConfiguration, and system properties.
+        task.forkEvery = 1L
         task.dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
     }
 }
@@ -489,6 +493,19 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         publicTasks.each { taskName ->
             if (tasks.findByName(taskName) == null) issues.add("Stable suite task is missing: ${taskName}")
         }
+        List<String> isolatedDelosTestTasks = [
+                'delosUnitTests', 'delosFunctionalTests', 'delosConcurrencyTests',
+                'delosRecoveryTests', 'delosSystemTests', 'delosStressTests',
+                'delosQuickSmokeTests', 'delosFunctionalFullTierTests'
+        ]
+        isolatedDelosTestTasks.each { taskName ->
+            def candidate = tasks.findByName(taskName)
+            if (!(candidate instanceof Test)) {
+                issues.add("DelosDB stable Test task is missing: ${taskName}")
+            } else if (candidate.forkEvery != 1L) {
+                issues.add("DelosDB stable Test task does not preserve one-class-per-JVM isolation: ${taskName}")
+            }
+        }
         List<String> verificationLevels = [
                 'test', 'quickVerification', 'check', 'fullVerification',
                 'nightlyVerification', 'releaseVerification'
@@ -500,7 +517,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Map<String, Object> report = [
-                schemaVersion: 4,
+                schemaVersion: 5,
                 stage: 'Stage 3 - stable Gradle entry points',
                 registryScope: 'ACTIVE_AND_RETAINED_TRANSITIONAL_DELOSDB_TEST_SOURCES',
                 registry: rootProject.relativePath(registryFile),
@@ -511,6 +528,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                         activeAuthorityTests: activeAuthority.size(),
                         activeTests: registry.values().count { it.role == 'TEST' },
                         retainedTransitionalTests: registry.values().count { it.role == 'RETAINED_TRANSITIONAL' },
+                        delosClassForkIsolation: 1,
                         issueCount: issues.unique().size()
                 ],
                 roleCounts: roleCounts,
