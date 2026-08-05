@@ -63,10 +63,14 @@ start/await operations, observed heavyweight-lock blocking, accepted SQLStates, 
 assertions, and final-state queries. The catalogue executes across heap and `delos_mvcc` and across file
 and memory databases wherever the scenario is applicable.
 
+The RawStore MVCC scan boundary now consumes Derby's store isolation level: READ COMMITTED and
+weaker scans use a statement-scoped snapshot lease, while REPEATABLE READ keeps the transaction
+snapshot. This closes the previously exposed non-refreshing READ COMMITTED behavior.
+
 The runner follows PostgreSQL isolation-test methodology without copying PostgreSQL's parser, runner,
 SQL, or expected files. It observes Derby heavyweight lock waits through `SYSCS_DIAG.LOCK_TABLE`, uses
 bounded worker operations, drains multi-session deadlocks by committing whichever session completes,
-and requires exact deadlock-victim counts. Every case is inventoried and records the PostgreSQL 19beta1
+and requires exact provider-specific deadlock/write-conflict outcome bounds. Every case is inventoried and records the PostgreSQL 19beta1
 archive fingerprint, source scenario, license, adaptation type, semantic intent, DelosDB changes, and
 applicable providers. Embedded execution is the Stage 4 authority; existing DRDA system and failure-path
 suites remain the transport-equivalence authority rather than adding network-server lifecycle complexity
@@ -1349,7 +1353,8 @@ Implemented:
 
 Permanent Stage 4 gates require the exact 25-case catalogue, all seven categories, complete PostgreSQL
 provenance, explicit named permutations, observed lock waits, bounded asynchronous completion, exact
-SQLState counts, provider/storage matrix reporting, and registration in the concurrency/full lane.
+SQLState outcome bounds, provider/storage-scoped final assertions, matrix reporting, and registration
+in the concurrency/full lane.
 
 ## Stage 5 — H2-style differential fuzzing
 

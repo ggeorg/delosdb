@@ -140,6 +140,15 @@ public record DelosIsolationSpecification(
     public record SqlStateAssertion(String sqlState, int minimum, int maximum) {
     }
 
-    public record QueryAssertion(String sql, List<String> rows) {
+    public record QueryAssertion(
+            String sql,
+            List<String> rows,
+            Set<Provider> providers,
+            Set<Storage> storages) {
+
+        public boolean appliesTo(Provider provider, Storage storage) {
+            return (providers.isEmpty() || providers.contains(provider))
+                    && (storages.isEmpty() || storages.contains(storage));
+        }
     }
 }

@@ -149,6 +149,34 @@ def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
                 }
             }
 
+            List finalAssertions = spec.finalAssertions instanceof List ? spec.finalAssertions as List : []
+            finalAssertions.eachWithIndex { Object assertionValue, int assertionIndex ->
+                if (!(assertionValue instanceof Map)) {
+                    issues.add("Final assertion ${assertionIndex} is not an object for ${id}")
+                    return
+                }
+                Map assertion = assertionValue as Map
+                if (!(assertion.sql instanceof String) || !(assertion.rows instanceof List)) {
+                    issues.add("Invalid final assertion ${assertionIndex} for ${id}")
+                }
+                Set<String> assertionProviders = assertion.providers instanceof List
+                        ? splitCsv(assertion.providers.join(',')) : providers
+                Set<String> assertionStorages = assertion.storages instanceof List
+                        ? splitCsv(assertion.storages.join(',')) : storages
+                if (assertionProviders.intersect(providers).isEmpty()) {
+                    issues.add("Final assertion ${assertionIndex} has no applicable provider for ${id}")
+                }
+                if (assertionStorages.intersect(storages).isEmpty()) {
+                    issues.add("Final assertion ${assertionIndex} has no applicable storage for ${id}")
+                }
+                if (!providers.containsAll(assertionProviders)) {
+                    issues.add("Final assertion ${assertionIndex} escapes provider matrix for ${id}")
+                }
+                if (!storages.containsAll(assertionStorages)) {
+                    issues.add("Final assertion ${assertionIndex} escapes storage matrix for ${id}")
+                }
+            }
+
             List permutations = spec.permutations instanceof List ? spec.permutations as List : []
             if (permutations.isEmpty()) issues.add("No permutations for ${id}")
             permutationCount += permutations.size()

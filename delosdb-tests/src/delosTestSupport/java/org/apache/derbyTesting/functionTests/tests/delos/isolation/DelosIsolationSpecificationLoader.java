@@ -104,9 +104,21 @@ public final class DelosIsolationSpecificationLoader {
         if (root.containsKey("finalAssertions")) {
             for (Object value : arrayValue(root.get("finalAssertions"), "finalAssertions", resource)) {
                 JSONObject assertion = objectValue(value, "final assertion", resource);
+                Set<DelosIsolationSpecification.Provider> assertionProviders =
+                        assertion.containsKey("providers")
+                                ? parseProviders(arrayValue(assertion.get("providers"),
+                                        "final assertion providers", resource), resource)
+                                : Set.of();
+                Set<DelosIsolationSpecification.Storage> assertionStorages =
+                        assertion.containsKey("storages")
+                                ? parseStorages(arrayValue(assertion.get("storages"),
+                                        "final assertion storages", resource), resource)
+                                : Set.of();
                 finalAssertions.add(new DelosIsolationSpecification.QueryAssertion(
                         requiredString(assertion, "sql", resource),
-                        stringList(assertion.get("rows"), "final assertion rows", resource)));
+                        stringList(assertion.get("rows"), "final assertion rows", resource),
+                        immutableSet(assertionProviders),
+                        immutableSet(assertionStorages)));
             }
         }
 

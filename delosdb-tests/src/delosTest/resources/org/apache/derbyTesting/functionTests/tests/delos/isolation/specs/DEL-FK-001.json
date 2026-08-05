@@ -1,6 +1,6 @@
 {
   "id": "DEL-FK-001",
-  "description": "Parent delete versus child insert blocks and resolves as a foreign-key violation after delete commit.",
+  "description": "Parent delete versus child insert preserves referential integrity: heap waits for the delete outcome, while MVCC rejects the conflicting child immediately.",
   "category": "foreign-key-concurrency",
   "providers": [
     "heap",
@@ -47,7 +47,10 @@
   },
   "permutations": [
     {
-      "name": "parent-delete-child-insert",
+      "name": "parent-delete-child-insert-heap",
+      "providers": [
+        "heap"
+      ],
       "operations": [
         {
           "type": "RUN",
@@ -75,6 +78,44 @@
         {
           "type": "RUN",
           "step": "child.rollback"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    },
+    {
+      "name": "parent-delete-child-insert-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "parent.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "child.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "parent.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "child.rollback"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
         }
       ]
     }

@@ -35,7 +35,7 @@ setup and teardown SQL
 named sessions
 named steps
 explicit permutations
-final-state query assertions
+final-state query assertions, optionally scoped by provider and storage
 ```
 
 A session may set a default JDBC isolation level and provider-specific overrides. Step actions are:
@@ -85,8 +85,10 @@ A permutation may declare exact SQLState counts:
 ]
 ```
 
-Deadlock cases use this to require exactly one victim rather than assuming which session Derby will
-choose.
+Deadlock cases use this to require an exact provider-specific outcome bound without assuming which
+session Derby will choose. A three-session MVCC cycle may yield one lock-manager victim followed by one
+stale-snapshot write-conflict victim; both use SQLState `40001` and the final-state assertion proves the
+durable survivor result.
 
 ## Stage 4 catalogue
 
@@ -99,6 +101,11 @@ DEL-FK-001..004        referential-integrity contention, rollback, deadlock and 
 DEL-DDL-001..004       DROP, CREATE INDEX, TRUNCATE and trigger lifecycle conflicts
 DEL-MERGE-001..002     conflicting and disjoint concurrent MERGE
 ```
+
+The production RawStore MVCC scan boundary consumes Derby's store isolation level: READ COMMITTED
+and weaker scans acquire a fresh statement snapshot lease, while REPEATABLE READ retains the
+transaction snapshot. Provider-specific permutations capture legitimate heap-locking and MVCC
+first-committer-wins differences without weakening final-state invariants.
 
 The catalogue contains 25 stable case IDs. The static gate rejects missing cases, additional
 uninventoried cases, missing categories, stale resources, incomplete provenance, invalid operation
@@ -136,7 +143,7 @@ system and failure-path suites.
 - Bound every asynchronous wait.
 - Assert observable SQL behavior and final database state, not implementation internals.
 - Use provider-specific permutations only where heap locking and MVCC visibility differ.
-- Require exact SQLState counts for deadlocks.
+- Require exact provider-specific SQLState counts or bounded victim ranges for deadlocks.
 - Preserve a stable case ID when minimizing a regression.
 - Add provenance before adding a resource.
 - Do not copy PostgreSQL SQL or expected output wholesale.

@@ -93,7 +93,7 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
                 List<StepOutcome> outcomes = executePermutation(
                         database, specification, permutation, provider, label);
                 assertSqlStateCounts(permutation, outcomes, label);
-                assertFinalState(database, specification, provider, label);
+                assertFinalState(database, specification, provider, storage, label);
                 executeTeardown(database, specification, provider);
             } catch (Exception | Error caseFailure) {
                 failure = caseFailure;
@@ -155,8 +155,11 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
         try {
             for (DelosIsolationSpecification.Session session : specification.sessions().values()) {
                 Connection connection = openDatabase(database, false);
-                connection.setAutoCommit(false);
+                // Derby commits when the isolation level changes. Configure the
+                // isolation contract before entering the explicit transaction,
+                // matching the established heap/MVCC isolation fixtures.
                 connection.setTransactionIsolation(session.isolation(provider));
+                connection.setAutoCommit(false);
                 sessions.put(session.name(), new SessionRuntime(session, connection));
             }
 
@@ -479,6 +482,7 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
             String database,
             DelosIsolationSpecification specification,
             DelosIsolationSpecification.Provider provider,
+            DelosIsolationSpecification.Storage storage,
             String label) throws Exception {
         if (specification.finalAssertions().isEmpty()) {
             return;
@@ -486,6 +490,9 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
         try (Connection connection = openDatabase(database, false)) {
             for (DelosIsolationSpecification.QueryAssertion assertion
                     : specification.finalAssertions()) {
+                if (!assertion.appliesTo(provider, storage)) {
+                    continue;
+                }
                 String sql = expand(assertion.sql(), provider);
                 try (Statement statement = connection.createStatement();
                      ResultSet resultSet = statement.executeQuery(sql)) {

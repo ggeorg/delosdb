@@ -204,6 +204,7 @@ public final class MvccConglomerate
                 rawtran,
                 hold,
                 openMode,
+                isolationLevel,
                 scanColumnList,
                 qualifier);
     }

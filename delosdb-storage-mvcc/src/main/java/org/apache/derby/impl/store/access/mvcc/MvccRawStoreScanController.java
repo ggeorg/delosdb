@@ -59,6 +59,7 @@ final class MvccRawStoreScanController implements ScanManager {
             Transaction rawTransaction,
             boolean hold,
             int openMode,
+            int isolationLevel,
             FormatableBitSet scanColumnList,
             Qualifier[][] qualifiers) throws StandardException {
         this.runtime = runtime;
@@ -73,8 +74,18 @@ final class MvccRawStoreScanController implements ScanManager {
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
                 rawTransaction);
-        this.snapshotSequence = context.snapshotSequence();
-        this.heldSnapshotLease = hold ? context.retainSnapshotLease() : null;
+        if (usesStatementSnapshot(isolationLevel)) {
+            // READ COMMITTED and weaker isolation levels require a fresh
+            // committed horizon for every SQL scan. Keep the lease until the
+            // materialized scan closes so vacuum cannot cross that statement.
+            this.heldSnapshotLease = runtime.openSnapshotLease();
+            this.snapshotSequence = heldSnapshotLease.sequence();
+        } else {
+            // REPEATABLE READ uses the transaction-owned snapshot. A held
+            // cursor needs an additional lease if the transaction commits.
+            this.snapshotSequence = context.snapshotSequence();
+            this.heldSnapshotLease = hold ? context.retainSnapshotLease() : null;
+        }
         try {
             reload();
         } catch (StandardException | RuntimeException | Error failure) {
@@ -83,6 +94,13 @@ final class MvccRawStoreScanController implements ScanManager {
             }
             throw failure;
         }
+    }
+
+
+    private static boolean usesStatementSnapshot(int isolationLevel) {
+        return isolationLevel == TransactionController.ISOLATION_READ_UNCOMMITTED
+                || isolationLevel == TransactionController.ISOLATION_READ_COMMITTED
+                || isolationLevel == TransactionController.ISOLATION_READ_COMMITTED_NOHOLDLOCK;
     }
 
     @Override

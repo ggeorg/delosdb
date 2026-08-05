@@ -1,6 +1,6 @@
 {
   "id": "DEL-DEADLOCK-003",
-  "description": "A three-session update cycle produces exactly one victim and two durable survivor updates.",
+  "description": "A three-session update cycle produces one heap deadlock victim or the bounded MVCC deadlock/write-conflict victim set, with a consistent durable result.",
   "category": "deadlock",
   "providers": [
     "heap",
@@ -69,7 +69,10 @@
   },
   "permutations": [
     {
-      "name": "three-session-cycle",
+      "name": "three-session-cycle-heap",
+      "providers": [
+        "heap"
+      ],
       "operations": [
         {
           "type": "RUN",
@@ -120,13 +123,81 @@
           "maximum": 1
         }
       ]
+    },
+    {
+      "name": "three-session-cycle-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "one.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "two.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "three.lock"
+        },
+        {
+          "type": "START",
+          "step": "one.cycle",
+          "token": "oneCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "oneCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "two.cycle",
+          "token": "twoCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "twoCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "three.cycle",
+          "token": "threeCycle"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 15000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 2
+        }
+      ]
     }
   ],
   "finalAssertions": [
     {
+      "providers": [
+        "heap"
+      ],
       "sql": "select count(*),sum(marker) from deadlock_three_t",
       "rows": [
         "3|22"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select case when count(*)=3 and sum(marker) in (11,22) then 1 else 0 end from deadlock_three_t",
+      "rows": [
+        "1"
       ]
     }
   ],
