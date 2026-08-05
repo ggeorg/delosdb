@@ -15,12 +15,20 @@ group = rootProject.group
 apply from: rootProject.file('gradle/testing/delosdb-test-inventory.gradle')
 
 /*
- * Derby tests are compiled as one inherited test module. The Java plugin now
- * owns the real test compilation task; the old Derby task name is kept only as
- * a compatibility alias for root/pptesting wiring.
+ * Inherited Derby and DelosDB-authored tests are compiled into the same test
+ * module from physically separate provenance roots. The Java plugin owns the
+ * real test compilation task; the old Derby task name remains only as a
+ * compatibility alias for root/pptesting wiring.
  */
 
-def testSourceRoot = file('src/test/java')
+def inheritedTestSourceRoot = file('src/test/java')
+def delosTestSourceRoot = file('src/delosTest/java')
+def delosTestSupportSourceRoot = file('src/delosTestSupport/java')
+def allTestSourceRoots = [
+        inheritedTestSourceRoot,
+        delosTestSourceRoot,
+        delosTestSupportSourceRoot
+]
 
 def legacyHarnessQuarantineExcludes = [
         'org/apache/derbyTesting/functionTests/harness/RunSuite.java',
@@ -59,7 +67,7 @@ def legacyHarnessQuarantineExcludes = [
 def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/demo/toursdb')
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
-        'src/test/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -184,7 +192,7 @@ def testRuntimeClasspath = {
             derbyTestsClassDir,
             rawStoreInternalTestSupportClassDir,
             derbyRuntimeJars,
-            testSourceRoot,
+            allTestSourceRoots,
             toursDbSourceRoot,
             thirdPartyTestModules,
             gradleJUnitRuntime
@@ -257,7 +265,7 @@ sourceSets {
     }
     test {
         java {
-            setSrcDirs([testSourceRoot, toursDbSourceRoot])
+            setSrcDirs([inheritedTestSourceRoot, delosTestSourceRoot, delosTestSupportSourceRoot, toursDbSourceRoot])
             include '**/*.java'
             exclude legacyHarnessQuarantineExcludes
             // This bridge belongs to org.apache.derby.engine so it is compiled
@@ -349,7 +357,7 @@ tasks.register('generateNativeAuthenticationTestDatabase', JavaExec) {
     mainClass = 'org.apache.derby.tools.ij'
     classpath = nativeAuthenticationGeneratorClasspath()
     workingDir = generatedNativeAuthWorkDir.get().asFile
-    args file('src/test/java/org/apache/derbyTesting/functionTests/tests/lang/nast_init.sql').absolutePath
+    args new File(inheritedTestSourceRoot, 'org/apache/derbyTesting/functionTests/tests/lang/nast_init.sql').absolutePath
     outputs.upToDateWhen { false }
     outputs.file(ijOutput)
     outputs.file(ijError)

@@ -4,19 +4,23 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
 /*
- * Stage 1 of the DelosDB test-organization plan: inventory and provenance only.
+ * Stages 1 and 2 of the DelosDB test-organization plan.
  *
- * This script does not move, rename, register, consolidate, or execute tests. It
- * compares the current inherited source root with the frozen Apache Derby
- * 10.17.1.0 bootstrap manifest and reports provisional DelosDB metadata for
- * later review.
+ * Stage 1 freezes and verifies the Apache Derby 10.17.1.0 provenance baseline.
+ * Stage 2 makes authorship explicit through three physical roots while keeping
+ * the existing test module, packages, class names, focused tasks, and runtime
+ * behavior unchanged.
  */
 
-def delosTestSourceRoot = project.layout.projectDirectory.dir('src/test/java')
+def inheritedTestSourceRoot = project.layout.projectDirectory.dir('src/test/java')
+def delosTestSourceRoot = project.layout.projectDirectory.dir('src/delosTest/java')
+def delosTestSupportSourceRoot = project.layout.projectDirectory.dir('src/delosTestSupport/java')
 def derbyTestBaselineFile = rootProject.layout.projectDirectory.file(
         'gradle/testing/derby-10.17.1.0-test-baseline.tsv')
 def derbyTestAdaptationsFile = rootProject.layout.projectDirectory.file(
         'gradle/testing/derby-test-adaptations.tsv')
+def derbyTestAdaptationSupportFile = rootProject.layout.projectDirectory.file(
+        'gradle/testing/derby-test-adaptation-support.tsv')
 
 def delosTestInventoryJson = project.layout.buildDirectory.file(
         'reports/tests/delosdb-test-inventory.json')
@@ -81,10 +85,29 @@ def delosTestRelativePath = { File root, File file ->
     root.toPath().relativize(file.toPath()).toString().replace('\\', '/')
 }
 
-def delosTestOwnerCandidate = { String path, String simpleName, String provenance ->
-    if (provenance.startsWith('INHERITED_')) {
-        return 'inherited-derby'
+def delosTestPackageName = { String source ->
+    def matcher = source =~ /(?m)^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;/
+    matcher.find() ? matcher.group(1) : ''
+}
+
+def delosTestKind = { String path, String source ->
+    String simpleName = path.substring(path.lastIndexOf('/') + 1).replaceFirst(/\.java$/, '')
+    if (simpleName == 'module-info') return 'MODULE_DESCRIPTOR'
+    if (simpleName == '_Suite' || source.contains('new BaseTestSuite(')) return 'SUITE'
+    boolean testMethod = (source =~ /(?m)\bvoid\s+test[A-Z0-9_]\w*\s*\(/).find()
+    boolean junitAnnotation = (source =~ /(?m)^\s*@(?:org\.junit\.)?Test\b/).find()
+    boolean inheritedBase = source.contains('extends BaseJDBCTestCase') ||
+            source.contains('extends BaseTestCase') || source.contains('extends TestCase')
+    boolean suiteMethod = (source =~ /(?m)\bstatic\s+Test\s+suite\s*\(/).find()
+    if (testMethod || junitAnnotation || inheritedBase || suiteMethod ||
+            simpleName.endsWith('Test') || simpleName.endsWith('Tests')) {
+        return 'TEST_CLASS'
     }
+    'SUPPORT'
+}
+
+def delosTestOwnerCandidate = { String path, String simpleName, String provenance ->
+    if (provenance.startsWith('INHERITED_')) return 'inherited-derby'
     String probe = (path + ' ' + simpleName).toLowerCase(Locale.ROOT)
     if (path.startsWith('io/github/ggeorg/delosdb/benchmark/')) return 'benchmark'
     if (probe.contains('generatedclass') || probe.contains('classfile') || probe.contains('compiler')) return 'compiler'
@@ -135,7 +158,7 @@ def delosTestProviderCandidate = { String path, String simpleName, String proven
     }
     if (probe.contains('mvcc')) return ['delos_mvcc']
     if (probe.contains('heap')) return ['delos_heap']
-    ['NOT_EXPLICIT_STAGE1']
+    ['NOT_EXPLICIT_STAGE2']
 }
 
 def delosTestStorageCandidate = { String path, String simpleName ->
@@ -143,7 +166,7 @@ def delosTestStorageCandidate = { String path, String simpleName ->
     LinkedHashSet<String> values = new LinkedHashSet<>()
     if (probe.contains('memory')) values.add('memory')
     if (probe.contains('file') || probe.contains('reopen') || probe.contains('recovery') || probe.contains('wal') || probe.contains('backup') || probe.contains('restore')) values.add('file')
-    if (values.isEmpty()) values.add('NOT_EXPLICIT_STAGE1')
+    if (values.isEmpty()) values.add('NOT_EXPLICIT_STAGE2')
     values.toList()
 }
 
@@ -151,22 +174,7 @@ def delosTestConnectionCandidate = { String path, String simpleName ->
     String probe = (path + ' ' + simpleName).toLowerCase(Locale.ROOT)
     if (probe.contains('drda') || probe.contains('network') || path.contains('/derbynet/')) return ['DRDA']
     if (probe.contains('embedded')) return ['embedded']
-    ['NOT_EXPLICIT_STAGE1']
-}
-
-def delosTestKind = { String path, String source ->
-    String simpleName = path.substring(path.lastIndexOf('/') + 1).replaceFirst(/\.java$/, '')
-    if (simpleName == 'module-info') return 'MODULE_DESCRIPTOR'
-    if (simpleName == '_Suite' || source.contains('new BaseTestSuite(')) return 'SUITE'
-    boolean testMethod = (source =~ /(?m)\bvoid\s+test[A-Z0-9_]\w*\s*\(/).find()
-    boolean junitAnnotation = (source =~ /(?m)^\s*@(?:org\.junit\.)?Test\b/).find()
-    boolean inheritedBase = source.contains('extends BaseJDBCTestCase') ||
-            source.contains('extends BaseTestCase') || source.contains('extends TestCase')
-    boolean suiteMethod = (source =~ /(?m)\bstatic\s+Test\s+suite\s*\(/).find()
-    if (testMethod || junitAnnotation || inheritedBase || suiteMethod || simpleName.endsWith('Test') || simpleName.endsWith('Tests')) {
-        return 'TEST_CLASS'
-    }
-    'SUPPORT'
+    ['NOT_EXPLICIT_STAGE2']
 }
 
 def delosTestCandidateFlags = { String path, String simpleName, String source, String provenance, String packageName ->
@@ -188,78 +196,98 @@ def delosTestCandidateFlags = { String path, String simpleName, String source, S
     flags.toList()
 }
 
+def delosTestCollectFiles = { File root, String sourceRootName ->
+    if (!root.exists()) return []
+    project.fileTree(root).files.findAll { it.isFile() }.sort { File left, File right ->
+        delosTestRelativePath(root, left) <=> delosTestRelativePath(root, right)
+    }.collect { File file ->
+        [file: file, path: delosTestRelativePath(root, file), sourceRoot: sourceRootName]
+    }
+}
+
 def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory') {
     group = 'verification'
-    description = 'Generates the Stage 1 DelosDB test inventory and inherited Derby provenance reports.'
+    description = 'Generates Stage 2 DelosDB authorship and inherited Derby provenance reports.'
 
+    inputs.dir(inheritedTestSourceRoot)
     inputs.dir(delosTestSourceRoot)
+    inputs.dir(delosTestSupportSourceRoot)
     inputs.file(derbyTestBaselineFile)
     inputs.file(derbyTestAdaptationsFile)
+    inputs.file(derbyTestAdaptationSupportFile)
     outputs.files(delosTestInventoryJson, delosTestInventoryText,
             derbyTestProvenanceJson, derbyTestProvenanceText)
 
     doLast {
-        File sourceRoot = delosTestSourceRoot.asFile
+        File inheritedRoot = inheritedTestSourceRoot.asFile
+        File delosRoot = delosTestSourceRoot.asFile
+        File supportRoot = delosTestSupportSourceRoot.asFile
         File baselineSource = derbyTestBaselineFile.asFile
         File adaptationSource = derbyTestAdaptationsFile.asFile
+        File adaptationSupportSource = derbyTestAdaptationSupportFile.asFile
+
         Map<String, List<String>> baselineRows = delosTestReadTsv(baselineSource, 3)
         Map<String, List<String>> adaptationRows = delosTestReadTsv(adaptationSource, 7)
+        Map<String, List<String>> adaptationSupportRows = delosTestReadTsv(adaptationSupportSource, 6)
+        List<String> issues = []
 
-        List<File> currentFiles = project.fileTree(sourceRoot).files
-                .findAll { it.isFile() }
-                .sort { File left, File right ->
-                    delosTestRelativePath(sourceRoot, left) <=> delosTestRelativePath(sourceRoot, right)
-                }
-
+        List<Map<String, Object>> inheritedFiles = delosTestCollectFiles(inheritedRoot, 'src/test/java')
+        List<Map<String, Object>> delosFiles = delosTestCollectFiles(delosRoot, 'src/delosTest/java')
+        List<Map<String, Object>> supportFiles = delosTestCollectFiles(supportRoot, 'src/delosTestSupport/java')
         List<Map<String, Object>> provenanceFiles = []
-        LinkedHashMap<String, Map<String, Object>> currentByPath = new LinkedHashMap<>()
-        currentFiles.each { File current ->
-            String path = delosTestRelativePath(sourceRoot, current)
-            byte[] bytes = current.bytes
-            String currentSha = delosTestSha256(bytes)
-            String currentNormalizedSha = delosTestSha256(delosTestNormalizeLineEndings(bytes))
+        LinkedHashMap<String, Map<String, Object>> inheritedByPath = new LinkedHashMap<>()
+
+        inheritedFiles.each { Map<String, Object> item ->
+            String path = item.path as String
+            File file = item.file as File
+            byte[] bytes = file.bytes
+            String sha = delosTestSha256(bytes)
+            String normalizedSha = delosTestSha256(delosTestNormalizeLineEndings(bytes))
             List<String> baseline = baselineRows[path]
+            List<String> supportAddition = adaptationSupportRows[path]
             String provenance
-            if (baseline == null) {
-                provenance = 'DELOSDB_AUTHORED'
-            } else if (baseline[1] == currentSha) {
+            if (baseline != null && baseline[1] == sha) {
                 provenance = 'INHERITED_UNCHANGED'
-            } else if (baseline[2] == currentNormalizedSha) {
+            } else if (baseline != null && baseline[2] == normalizedSha) {
                 provenance = 'INHERITED_EOL_VARIANT'
-            } else {
+            } else if (baseline != null) {
                 provenance = 'INHERITED_ADAPTED'
+            } else if (supportAddition != null) {
+                provenance = 'INHERITED_ADAPTATION_SUPPORT'
+            } else {
+                provenance = 'UNEXPECTED_IN_INHERITED_ROOT'
+                issues.add("Unexpected non-baseline file in inherited test root: ${path}")
             }
             Map<String, Object> entry = [
                     path: path,
+                    sourceRoot: item.sourceRoot,
+                    sourcePath: (item.sourceRoot as String) + '/' + path,
                     provenance: provenance,
-                    bytes: current.length(),
-                    sha256: currentSha,
-                    normalizedSha256: currentNormalizedSha,
+                    bytes: file.length(),
+                    sha256: sha,
+                    normalizedSha256: normalizedSha,
                     upstreamSha256: baseline == null ? null : baseline[1],
                     upstreamNormalizedSha256: baseline == null ? null : baseline[2]
             ]
             provenanceFiles.add(entry)
-            currentByPath[path] = entry
+            inheritedByPath[path] = entry
         }
 
-        List<String> missingInheritedFiles = baselineRows.keySet()
-                .findAll { !currentByPath.containsKey(it) }
-                .sort()
-        List<String> inheritedAdaptedFiles = provenanceFiles
-                .findAll { it.provenance == 'INHERITED_ADAPTED' }
-                .collect { it.path as String }
-                .sort()
-        List<String> inheritedEolVariants = provenanceFiles
-                .findAll { it.provenance == 'INHERITED_EOL_VARIANT' }
-                .collect { it.path as String }
-                .sort()
-        List<String> delosAuthoredFiles = provenanceFiles
-                .findAll { it.provenance == 'DELOSDB_AUTHORED' }
-                .collect { it.path as String }
-                .sort()
-
-        List<String> issues = []
+        List<String> missingInheritedFiles = baselineRows.keySet().findAll {
+            !inheritedByPath.containsKey(it)
+        }.sort()
         missingInheritedFiles.each { issues.add("Missing inherited Derby test file: ${it}") }
+
+        List<String> inheritedAdaptedFiles = provenanceFiles.findAll {
+            it.provenance == 'INHERITED_ADAPTED'
+        }.collect { it.path as String }.sort()
+        List<String> inheritedEolVariants = provenanceFiles.findAll {
+            it.provenance == 'INHERITED_EOL_VARIANT'
+        }.collect { it.path as String }.sort()
+        List<String> inheritedSupportAdditions = provenanceFiles.findAll {
+            it.provenance == 'INHERITED_ADAPTATION_SUPPORT'
+        }.collect { it.path as String }.sort()
+
         inheritedAdaptedFiles.findAll { !adaptationRows.containsKey(it) }.each {
             issues.add("Undocumented inherited test adaptation: ${it}")
         }
@@ -267,7 +295,7 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
             issues.add("Stale inherited test adaptation manifest entry: ${it}")
         }
         adaptationRows.each { String path, List<String> adaptation ->
-            Map<String, Object> current = currentByPath[path]
+            Map<String, Object> current = inheritedByPath[path]
             List<String> baseline = baselineRows[path]
             if (baseline == null) {
                 issues.add("Adaptation manifest path is absent from the Derby baseline: ${path}")
@@ -275,19 +303,69 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                 issues.add("Adaptation upstream SHA-256 does not match the Derby baseline: ${path}")
             }
             if (current == null) {
-                issues.add("Adaptation manifest path is absent from the current source root: ${path}")
+                issues.add("Adaptation manifest path is absent from the inherited source root: ${path}")
             } else if (adaptation[2] != current.sha256) {
                 issues.add("Adaptation DelosDB SHA-256 does not match the current source: ${path}")
             }
         }
 
+        adaptationSupportRows.keySet().findAll { !inheritedSupportAdditions.contains(it) }.sort().each {
+            issues.add("Stale inherited adaptation-support manifest entry: ${it}")
+        }
+        adaptationSupportRows.each { String path, List<String> supportAddition ->
+            Map<String, Object> current = inheritedByPath[path]
+            if (baselineRows.containsKey(path)) {
+                issues.add("Adaptation-support path unexpectedly exists in the Derby baseline: ${path}")
+            }
+            if (current == null) {
+                issues.add("Adaptation-support path is absent from the inherited source root: ${path}")
+            } else if (supportAddition[1] != current.sha256) {
+                issues.add("Adaptation-support SHA-256 does not match the current source: ${path}")
+            }
+            if (current != null && path.endsWith('.java')) {
+                String kind = delosTestKind(path, new File(inheritedRoot, path).getText(StandardCharsets.UTF_8.name()))
+                if (kind != 'SUPPORT') {
+                    issues.add("Inherited adaptation-support entry is executable test code: ${path}")
+                }
+            }
+        }
+
+        LinkedHashMap<String, String> delosSourcePaths = new LinkedHashMap<>()
+        [delosFiles, supportFiles].each { List<Map<String, Object>> files ->
+            files.each { Map<String, Object> item ->
+                String path = item.path as String
+                File file = item.file as File
+                String existingRoot = delosSourcePaths.put(path, item.sourceRoot as String)
+                if (existingRoot != null) {
+                    issues.add("Duplicate DelosDB source path across ${existingRoot} and ${item.sourceRoot}: ${path}")
+                }
+                if (baselineRows.containsKey(path)) {
+                    issues.add("Inherited Derby baseline path exists outside src/test/java: ${item.sourceRoot}/${path}")
+                }
+                provenanceFiles.add([
+                        path: path,
+                        sourceRoot: item.sourceRoot,
+                        sourcePath: (item.sourceRoot as String) + '/' + path,
+                        provenance: 'DELOSDB_AUTHORED',
+                        bytes: file.length(),
+                        sha256: delosTestSha256(file.bytes),
+                        normalizedSha256: delosTestSha256(delosTestNormalizeLineEndings(file.bytes)),
+                        upstreamSha256: null,
+                        upstreamNormalizedSha256: null
+                ])
+            }
+        }
+
         List<Map<String, Object>> javaInventory = []
         provenanceFiles.findAll { (it.path as String).endsWith('.java') }.each { Map<String, Object> fileEntry ->
+            File sourceRoot
+            if (fileEntry.sourceRoot == 'src/test/java') sourceRoot = inheritedRoot
+            else if (fileEntry.sourceRoot == 'src/delosTest/java') sourceRoot = delosRoot
+            else sourceRoot = supportRoot
             String path = fileEntry.path as String
             File sourceFile = new File(sourceRoot, path)
             String source = sourceFile.getText(StandardCharsets.UTF_8.name())
-            def packageMatcher = source =~ /(?m)^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;/
-            String packageName = packageMatcher.find() ? packageMatcher.group(1) : ''
+            String packageName = delosTestPackageName(source)
             String simpleName = sourceFile.name.replaceFirst(/\.java$/, '')
             String className = packageName.isBlank() ? simpleName : packageName + '.' + simpleName
             String provenance = fileEntry.provenance as String
@@ -302,27 +380,60 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
             if (flags.contains('BENCHMARK_STYLE')) specialEnvironment.add('opt-in-benchmark')
             if (specialEnvironment.isEmpty()) specialEnvironment.add('none-identified')
 
+            if (fileEntry.sourceRoot == 'src/delosTest/java' && !(kind in ['TEST_CLASS', 'SUITE'])) {
+                issues.add("Non-executable support class is in src/delosTest/java: ${path}")
+            }
+            if (fileEntry.sourceRoot == 'src/delosTestSupport/java' && kind != 'SUPPORT') {
+                issues.add("Executable test or suite is in src/delosTestSupport/java: ${path}")
+            }
+
             javaInventory.add([
                     path: path,
+                    sourceRoot: fileEntry.sourceRoot,
+                    sourcePath: fileEntry.sourcePath,
                     className: className,
+                    packageName: packageName,
+                    simpleName: simpleName,
                     kind: kind,
                     provenance: provenance,
-                    classificationStatus: provenance.startsWith('INHERITED_') ? 'BASELINE_DERIVED' : 'INFERRED_STAGE1',
+                    classificationStatus: provenance.startsWith('INHERITED_') ? 'BASELINE_OR_MANIFEST_DERIVED' : 'SOURCE_ROOT_DERIVED',
                     owningSubsystem: delosTestOwnerCandidate(path, simpleName, provenance),
                     purposeTags: purposeTags,
                     executionTier: delosTestTierCandidate(path, simpleName, purposeTags),
                     providers: delosTestProviderCandidate(path, simpleName, provenance),
                     storageModes: delosTestStorageCandidate(path, simpleName),
                     connectionModes: delosTestConnectionCandidate(path, simpleName),
-                    expectedDuration: 'UNMEASURED_STAGE1',
+                    expectedDuration: 'UNMEASURED_STAGE2',
                     specialEnvironment: specialEnvironment,
-                    lastResult: 'NOT_CAPTURED_STAGE1',
-                    externalProvenance: provenance.startsWith('INHERITED_') ? 'Apache Derby 10.17.1.0' : 'NONE_IDENTIFIED',
+                    lastResult: 'NOT_CAPTURED_STAGE2',
+                    externalProvenance: provenance.startsWith('INHERITED_') ? 'Apache Derby 10.17.1.0 or documented adaptation support' : 'NONE_IDENTIFIED',
                     candidateFlags: flags
             ])
         }
         javaInventory.sort { Map<String, Object> left, Map<String, Object> right ->
-            (left.path as String) <=> (right.path as String)
+            (left.sourcePath as String) <=> (right.sourcePath as String)
+        }
+
+        List<Map<String, Object>> delosClasses = javaInventory.findAll {
+            it.provenance == 'DELOSDB_AUTHORED'
+        }
+        List<Map<String, Object>> inheritedJava = javaInventory.findAll {
+            it.sourceRoot == 'src/test/java'
+        }
+        inheritedJava.each { Map<String, Object> inherited ->
+            String source = new File(inheritedRoot, inherited.path as String).getText(StandardCharsets.UTF_8.name())
+            delosClasses.each { Map<String, Object> delos ->
+                String fqcn = delos.className as String
+                String simpleName = delos.simpleName as String
+                String packageName = delos.packageName as String
+                boolean explicitImport = (source =~ /(?m)^\s*import\s+${java.util.regex.Pattern.quote(fqcn)}\s*;/).find()
+                boolean fullyQualifiedReference = source.contains(fqcn)
+                boolean samePackageReference = inherited.packageName == packageName &&
+                        (source =~ /\b${java.util.regex.Pattern.quote(simpleName)}\b/).find()
+                if (explicitImport || fullyQualifiedReference || samePackageReference) {
+                    issues.add("Inherited source depends on DelosDB source root: ${inherited.path} -> ${delos.sourcePath}")
+                }
+            }
         }
 
         List<Map<String, Object>> executableTests = javaInventory.findAll {
@@ -331,16 +442,16 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
         Map<String, List<String>> candidates = [
                 delosdbAuthoredInInheritedPackages: javaInventory.findAll {
                     (it.candidateFlags as List).contains('DELOSDB_AUTHORED_IN_INHERITED_PACKAGE')
-                }.collect { it.path as String }.sort(),
+                }.collect { it.sourcePath as String }.sort(),
                 benchmarkStyle: javaInventory.findAll {
                     (it.candidateFlags as List).contains('BENCHMARK_STYLE')
-                }.collect { it.path as String }.sort(),
+                }.collect { it.sourcePath as String }.sort(),
                 reportOnlyReview: javaInventory.findAll {
                     (it.candidateFlags as List).contains('REPORT_ONLY_REVIEW_CANDIDATE')
-                }.collect { it.path as String }.sort(),
+                }.collect { it.sourcePath as String }.sort(),
                 milestoneOrientedNames: javaInventory.findAll {
                     (it.candidateFlags as List).contains('MILESTONE_ORIENTED_NAME')
-                }.collect { it.path as String }.sort()
+                }.collect { it.sourcePath as String }.sort()
         ]
 
         Map<String, Integer> provenanceCounts = new TreeMap<>()
@@ -351,40 +462,56 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
         Map<String, Object> summary = [
                 currentFileCount: provenanceFiles.size(),
                 upstreamFileCount: baselineRows.size(),
+                inheritedRootFileCount: inheritedFiles.size(),
                 inheritedUnchanged: provenanceCounts['INHERITED_UNCHANGED'] ?: 0,
                 inheritedAdapted: provenanceCounts['INHERITED_ADAPTED'] ?: 0,
                 inheritedLineEndingVariants: provenanceCounts['INHERITED_EOL_VARIANT'] ?: 0,
+                inheritedAdaptationSupport: provenanceCounts['INHERITED_ADAPTATION_SUPPORT'] ?: 0,
+                delosdbTestRootFiles: delosFiles.size(),
+                delosdbSupportRootFiles: supportFiles.size(),
                 delosdbAuthoredFiles: provenanceCounts['DELOSDB_AUTHORED'] ?: 0,
                 missingInheritedFiles: missingInheritedFiles.size(),
                 javaSourceCount: javaInventory.size(),
                 executableTestOrSuiteCount: executableTests.size(),
                 adaptationManifestEntries: adaptationRows.size(),
+                adaptationSupportManifestEntries: adaptationSupportRows.size(),
                 issueCount: issues.size()
         ]
 
         Map<String, Object> provenanceDocument = [
-                schemaVersion: 1,
-                stage: 'Stage 1 - inventory and provenance',
+                schemaVersion: 2,
+                stage: 'Stage 2 - authorship separation',
                 upstream: [
                         product: 'Apache Derby',
                         version: '10.17.1.0',
                         baselineManifest: rootProject.relativePath(baselineSource)
                 ],
+                sourceLayout: [
+                        inherited: 'delosdb-tests/src/test/java',
+                        delosdbTests: 'delosdb-tests/src/delosTest/java',
+                        delosdbSupport: 'delosdb-tests/src/delosTestSupport/java'
+                ],
                 adaptationManifest: rootProject.relativePath(adaptationSource),
+                adaptationSupportManifest: rootProject.relativePath(adaptationSupportSource),
                 summary: summary,
-                issues: issues,
+                issues: issues.unique().sort(),
                 missingInheritedFiles: missingInheritedFiles,
                 inheritedAdaptedFiles: inheritedAdaptedFiles,
                 inheritedLineEndingVariants: inheritedEolVariants,
-                delosdbAuthoredFiles: delosAuthoredFiles,
-                files: provenanceFiles
+                inheritedAdaptationSupportFiles: inheritedSupportAdditions,
+                delosdbAuthoredFiles: provenanceFiles.findAll {
+                    it.provenance == 'DELOSDB_AUTHORED'
+                }.collect { it.sourcePath as String }.sort(),
+                files: provenanceFiles.sort { Map<String, Object> left, Map<String, Object> right ->
+                    (left.sourcePath as String) <=> (right.sourcePath as String)
+                }
         ]
         Map<String, Object> inventoryDocument = [
-                schemaVersion: 1,
-                stage: 'Stage 1 - inventory and provenance',
-                metadataStatus: 'Provenance is authoritative; owner, tag, tier, provider, environment, and candidate fields are provisional Stage 1 classifications.',
+                schemaVersion: 2,
+                stage: 'Stage 2 - authorship separation',
+                metadataStatus: 'Source-root provenance is authoritative; owner, tag, tier, provider, environment, and candidate fields remain provisional until later plan stages.',
                 summary: summary,
-                issues: issues,
+                issues: issues.unique().sort(),
                 candidates: candidates,
                 testsAndSupport: javaInventory
         ]
@@ -403,16 +530,17 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                 JsonOutput.prettyPrint(JsonOutput.toJson(inventoryDocument)) + '\n',
                 StandardCharsets.UTF_8.name())
 
+        List<String> uniqueIssues = issues.unique().sort()
         provenanceTextFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
             writer.println('DelosDB inherited Derby test provenance')
             writer.println('Upstream: Apache Derby 10.17.1.0')
-            writer.println('Stage: Stage 1 - inventory and provenance')
+            writer.println('Stage: Stage 2 - authorship separation')
             writer.println()
-            summary.each { key, value -> writer.println(String.format('%-38s %s', key + ':', value)) }
+            summary.each { key, value -> writer.println(String.format('%-42s %s', key + ':', value)) }
             writer.println()
             writer.println('Issues')
-            if (issues.isEmpty()) writer.println('  none')
-            else issues.each { writer.println('  - ' + it) }
+            if (uniqueIssues.isEmpty()) writer.println('  none')
+            else uniqueIssues.each { writer.println('  - ' + it) }
             writer.println()
             writer.println('Inherited adaptations')
             inheritedAdaptedFiles.each { path ->
@@ -420,19 +548,22 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                 writer.println("  ${path}\t${row[3]}\t${row[4]}\t${row[6]}")
             }
             writer.println()
+            writer.println('Inherited adaptation-support additions')
+            inheritedSupportAdditions.each { path ->
+                List<String> row = adaptationSupportRows[path]
+                writer.println("  ${path}\t${row[2]}\t${row[3]}\t${row[5]}")
+            }
+            writer.println()
             writer.println('Line-ending-only variants')
             inheritedEolVariants.each { writer.println('  ' + it) }
-            writer.println()
-            writer.println('DelosDB-authored additions')
-            delosAuthoredFiles.each { writer.println('  ' + it) }
         }
 
         inventoryTextFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
             writer.println('DelosDB test inventory')
-            writer.println('Stage: Stage 1 - inventory and provenance')
-            writer.println('Metadata status: provenance is authoritative; semantic classifications are provisional Stage 1 candidates.')
+            writer.println('Stage: Stage 2 - authorship separation')
+            writer.println('Metadata status: source-root provenance is authoritative; semantic classifications remain provisional.')
             writer.println()
-            summary.each { key, value -> writer.println(String.format('%-38s %s', key + ':', value)) }
+            summary.each { key, value -> writer.println(String.format('%-42s %s', key + ':', value)) }
             writer.println()
             writer.println('Candidate groups')
             candidates.each { key, paths ->
@@ -441,10 +572,10 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                 writer.println()
             }
             writer.println('Java test/support inventory')
-            writer.println('path\tclass\tkind\tprovenance\towner\ttier\ttags\tproviders\tflags')
+            writer.println('source_path\tclass\tkind\tprovenance\towner\ttier\ttags\tproviders\tflags')
             javaInventory.each { entry ->
                 writer.println([
-                        entry.path,
+                        entry.sourcePath,
                         entry.className,
                         entry.kind,
                         entry.provenance,
@@ -459,11 +590,13 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
 
         logger.lifecycle('DelosDB test inventory: {}', inventoryTextFile)
         logger.lifecycle('Inherited Derby test provenance: {}', provenanceTextFile)
-        logger.lifecycle('Test provenance summary: unchanged={}, adapted={}, line-ending-only={}, DelosDB-authored={}, missing={}, issues={}',
+        logger.lifecycle('Test provenance summary: unchanged={}, adapted={}, line-ending-only={}, adaptation-support={}, DelosDB-tests={}, DelosDB-support={}, missing={}, issues={}',
                 summary.inheritedUnchanged,
                 summary.inheritedAdapted,
                 summary.inheritedLineEndingVariants,
-                summary.delosdbAuthoredFiles,
+                summary.inheritedAdaptationSupport,
+                summary.delosdbTestRootFiles,
+                summary.delosdbSupportRootFiles,
                 summary.missingInheritedFiles,
                 summary.issueCount)
     }
@@ -471,7 +604,7 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
 
 tasks.register('delosTestProvenanceStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies that every inherited Derby test adaptation is documented and the upstream corpus is complete.'
+    description = 'Verifies inherited Derby completeness and Stage 2 DelosDB test authorship separation.'
     dependsOn generateDelosdbTestInventory
     inputs.file(derbyTestProvenanceJson)
 
@@ -479,10 +612,10 @@ tasks.register('delosTestProvenanceStaticAnalysis') {
         Map<String, Object> report = new JsonSlurper().parse(derbyTestProvenanceJson.get().asFile) as Map<String, Object>
         List<String> issues = report.issues as List<String>
         if (!issues.isEmpty()) {
-            throw new GradleException('Inherited Derby test provenance failures (' + issues.size() + '):\n  - ' +
+            throw new GradleException('DelosDB test provenance failures (' + issues.size() + '):\n  - ' +
                     issues.join('\n  - '))
         }
-        logger.lifecycle('Inherited Derby test provenance passed. Report: {}',
+        logger.lifecycle('DelosDB Stage 2 test provenance passed. Report: {}',
                 derbyTestProvenanceText.get().asFile)
     }
 }

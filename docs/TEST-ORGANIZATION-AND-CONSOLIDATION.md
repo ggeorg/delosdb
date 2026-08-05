@@ -1,6 +1,31 @@
 # DelosDB Final Test Organization and Consolidation Plan
 
-Status: accepted implementation plan. Stage 1 is inventory and provenance only.
+Status: accepted implementation plan. Stages 1 and 2 are implemented; Stage 3 is next.
+
+## Current implementation checkpoint
+
+The implemented source boundary is:
+
+```text
+src/test/java
+    Apache Derby 10.17.1.0 inherited corpus
+    documented inherited adaptations
+    two documented adaptation-support helpers required by inherited adapted tests
+
+src/delosTest/java
+    DelosDB-authored executable tests and suites
+
+src/delosTestSupport/java
+    DelosDB-owned fixtures, harnesses, benchmark support and assertions
+```
+
+Stage 2 preserves package names, class names, focused Gradle task names and the single
+`org.apache.derby.tests` compilation output. The physical source root is now the authorship
+authority. Separate stable execution suites are introduced in Stage 3.
+
+The inherited `derbynet._Suite` and `store._Suite` no longer register DelosDB-authored tests.
+The provenance gate verifies that inherited sources do not depend on either DelosDB source root.
+
 
 ## 1. Objective
 

@@ -1,0 +1,5 @@
+# schema_version=1
+# upstream=Apache Derby 10.17.1.0
+# path	delosdb_sha256	reason	issue_or_phase	adaptation_boundary	status
+org/apache/derbyTesting/junit/DelosDbTestBaselines.java	7438a1b06a89b3e36c2e8a980e59899fcde1be97d5710b3df78588c2a246a746	DELOS_SYSTEM_ROUTINE_BASELINE_SUPPORT	7cb55cd7	Centralizes the two DelosDB system-routine permission rows used by inherited privilege adaptations.	PERMANENT
+org/apache/derbyTesting/unitTests/store/T_StoreNativeTestSupport.java	3ddd4b18482d04edea81f71fcd705ec5bf0a9576123b9fbe4e89e09e8f61dae6	STORE_NATIVE_ROW_BOUNDARY_SUPPORT	54c7e7ee	Adapts inherited store unit tests to the maintained store-native row-location and value boundary.	PERMANENT

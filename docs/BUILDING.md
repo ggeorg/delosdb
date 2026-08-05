@@ -70,11 +70,12 @@ The task graph will also run compilation and packaging prerequisites.
 
 The focused acceptance does not run the full Derby language suite.
 
-## Test inventory and provenance
+## Test inventory, provenance and authorship
 
-Stage 1 of the accepted test-organization plan is a structural inventory. It does not execute,
-move, rename, or consolidate tests. Generate the reports and verify that every inherited Derby
-adaptation is documented with:
+Stages 1 and 2 of the accepted test-organization plan freeze the inherited Derby baseline and
+separate DelosDB-authored tests physically without changing package names, class names or focused
+task behavior. Generate the reports and verify inherited completeness, documented adaptations and
+source-root independence with:
 
 ```bash
 ./gradlew :delosdb-tests:delosTestProvenanceStaticAnalysis --console=plain
@@ -89,9 +90,15 @@ delosdb-tests/build/reports/tests/inherited-derby-test-provenance.json
 delosdb-tests/build/reports/tests/inherited-derby-test-provenance.txt
 ```
 
-The Apache Derby 10.17.1.0 source baseline and explicit DelosDB adaptation manifest are tracked
-under `gradle/testing/`. Line-ending-only variants are reported separately and are not treated as
-behavioral adaptations.
+The Apache Derby 10.17.1.0 source baseline, explicit inherited adaptation manifest and the narrow
+adaptation-support manifest are tracked under `gradle/testing/`. Line-ending-only variants are
+reported separately and are not treated as behavioral adaptations. The active source roots are:
+
+```text
+delosdb-tests/src/test/java
+delosdb-tests/src/delosTest/java
+delosdb-tests/src/delosTestSupport/java
+```
 
 ## Derby compatibility
 
