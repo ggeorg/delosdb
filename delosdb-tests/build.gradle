@@ -479,56 +479,7 @@ registerDelosFocusedTest(
         'Runs the opt-in DRDA virtual-thread fairness audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class'])
 
-tasks.register('runDerbyLangSuite', Test) {
-    group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite through Gradle using the default bytecode backend.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('generateNativeAuthenticationTestJar'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = rootProject.files(generatedNativeAuthResourceDir, testRuntimeClasspath())
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'
-    failFast = derbyLangFailFast.get()
-
-    workingDir = layout.buildDirectory.dir('test-work/runDerbyLangSuite').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runDerbyLangSuite'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runDerbyLangSuite'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runDerbyLangSuite'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-        systemProperty 'derby.tests.basePort', derbyLangBasePort.get()
-        logger.lifecycle("runDerbyLangSuite using derby.tests.basePort=${derbyLangBasePort.get()} failFast=${failFast}")
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// runDerbyLangSuite is registered as a deprecated alias by the Stage 3 stable-suite registry.
 
 tasks.register('runWalRecoveryArchitectureProofTest', Test) {
     group = 'verification'
@@ -1993,3 +1944,19 @@ tasks.register('promoteDelosV1Baseline') {
         logger.lifecycle('Accepted source revision: {}', captureRevision)
     }
 }
+
+// Stage 3 stable test entry points are applied only after all legacy focused
+// tasks and special-environment fixtures have been registered.
+ext.delosdbStableTestSuiteContext = [
+        derbyTestsClassDir: derbyTestsClassDir,
+        testRuntimeClasspath: { testRuntimeClasspath() },
+        nativeAuthenticationRuntimeClasspath: {
+            rootProject.files(generatedNativeAuthResourceDir, testRuntimeClasspath())
+        },
+        derbyBasePort: derbyLangBasePort,
+        derbyFailFast: derbyLangFailFast,
+        delosV1ModularImageRoot: delosV1ModularImageRoot,
+        delosV1ModularImageReportDirectory: delosV1ModularImageReportDirectory,
+        delosV1ModularImageDatabaseRoot: delosV1ModularImageDatabaseRoot
+]
+apply from: rootProject.file('gradle/testing/delosdb-test-suites.gradle')

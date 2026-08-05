@@ -28,7 +28,7 @@ security boundaries, or repository integrity:
 Run the inherited Derby language suite only at meaningful integration or release boundaries:
 
 ```bash
-./gradlew :delosdb-tests:runDerbyLangSuite --console=plain
+./gradlew :delosdb-tests:derbyLanguageTests --console=plain
 ```
 
 See [`docs/BUILDING.md`](docs/BUILDING.md).

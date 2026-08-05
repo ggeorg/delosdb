@@ -70,15 +70,17 @@ The task graph will also run compilation and packaging prerequisites.
 
 The focused acceptance does not run the full Derby language suite.
 
-## Test inventory, provenance and authorship
+## Test inventory, provenance, authorship and stable suites
 
-Stages 1 and 2 of the accepted test-organization plan freeze the inherited Derby baseline and
-separate DelosDB-authored tests physically without changing package names, class names or focused
-task behavior. Generate the reports and verify inherited completeness, documented adaptations and
-source-root independence with:
+Stages 1 through 3 of the accepted test-organization plan freeze the inherited Derby baseline,
+separate DelosDB-authored tests physically and provide stable purpose-oriented execution tasks.
+Verify provenance and stable-suite coverage with:
 
 ```bash
-./gradlew :delosdb-tests:delosTestProvenanceStaticAnalysis --console=plain
+./gradlew \
+  :delosdb-tests:delosTestProvenanceStaticAnalysis \
+  :delosdb-tests:delosStableTestSuiteStaticAnalysis \
+  --console=plain
 ```
 
 Reports are written to:
@@ -88,6 +90,8 @@ delosdb-tests/build/reports/tests/delosdb-test-inventory.json
 delosdb-tests/build/reports/tests/delosdb-test-inventory.txt
 delosdb-tests/build/reports/tests/inherited-derby-test-provenance.json
 delosdb-tests/build/reports/tests/inherited-derby-test-provenance.txt
+delosdb-tests/build/reports/tests/delosdb-stable-test-suites.json
+delosdb-tests/build/reports/tests/delosdb-stable-test-suites.txt
 ```
 
 The Apache Derby 10.17.1.0 source baseline, explicit inherited adaptation manifest and the narrow
@@ -100,20 +104,56 @@ delosdb-tests/src/delosTest/java
 delosdb-tests/src/delosTestSupport/java
 ```
 
-## Derby compatibility
+## Stable test entry points
 
-The inherited language suite is expensive and should be reserved for stage, release, or broad SQL
-closeout:
+Inherited Derby authority:
 
-```bash
-./gradlew :delosdb-tests:runDerbyLangSuite --console=plain
+```text
+derbyUnitTests
+derbyLanguageTests
+derbyNistSql92Tests
+derbyJdbcTests
+derbyStoreTests
+derbyNetworkTests
+derbyToolsTests
+derbyUpgradeTests
+derbyAllTests
 ```
 
-A broader inherited verification lane remains available through:
+DelosDB authority:
+
+```text
+delosUnitTests
+delosFunctionalTests
+delosConcurrencyTests
+delosRecoveryTests
+delosSystemTests
+delosStressTests
+```
+
+The legacy `:delosdb-tests:runDerbyLangSuite` task remains a deprecated alias for
+`:delosdb-tests:derbyLanguageTests` until Stage 8.
+
+Verification levels:
 
 ```bash
+./gradlew test --console=plain
+./gradlew quickVerification --console=plain
+./gradlew check --console=plain
 ./gradlew fullVerification --console=plain
+./gradlew nightlyVerification --console=plain
+./gradlew releaseVerification --console=plain
 ```
+
+`test` is unit-only. `quickVerification` adds DelosDB quick smoke and runtime smoke checks. `check`
+adds the remaining DelosDB functional tests, concurrency and recovery lanes, Derby language, NIST
+SQL-92 and permanent architecture/repository gates. Quick and full-tier functional partitions are
+disjoint, so `check` executes each functional test once. `fullVerification` adds the remaining
+non-stress DelosDB system tests and principal inherited JDBC/store/network/tools suites.
+`nightlyVerification` adds stress. `releaseVerification` runs the release authority directly through
+Derby `suites.All`, every DelosDB correctness lane, permanent gates and the remaining release-only
+performance/report harnesses pending Stage 7 separation; it does not rerun the inherited suites
+individually before `suites.All`.
 
 ## Storage verification
 

@@ -83,9 +83,9 @@ Do not replace DRDA with Netty, gRPC, JSON, protobuf, or another protocol inside
 No release should be cut unless these gates are green:
 
 ```sh
-./gradlew clean fullVerification :delosdb-storage-mvcc:check
+./gradlew clean releaseVerification :delosdb-storage-mvcc:check
 ./gradlew derbyRuntimeSmoke
-./gradlew :delosdb-tests:runDerbyLangSuite
+./gradlew :delosdb-tests:derbyLanguageTests
 ./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
 ./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
 ./gradlew s0CloseoutVerification

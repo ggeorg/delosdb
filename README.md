@@ -131,7 +131,7 @@ The inherited Derby language suite is intentionally expensive and should be run 
 closeout boundaries rather than after every focused change:
 
 ```bash
-./gradlew :delosdb-tests:runDerbyLangSuite --console=plain
+./gradlew :delosdb-tests:derbyLanguageTests --console=plain
 ```
 
 See [`docs/BUILDING.md`](docs/BUILDING.md) and

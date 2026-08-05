@@ -539,26 +539,118 @@ tasks.register('derbyRuntimeSmoke') {
     dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars'
 }
 
+final List<Object> delosPermanentArchitectureDependencies = [
+        'delosModuleDependencyBoundaryStaticAnalysis',
+        'delosV1ModuleArchitectureStaticAnalysis',
+        'delosGeneratedClassStaticAnalysis',
+        'delosRepositoryIntegrityStaticAnalysis',
+        'verifyDelosRuntimeStorageProviders',
+        'delosJdk25ClassFileBytecodeVerifier'
+]
+
+def stableTestSuiteAliases = [
+        'derbyUnitTests',
+        'derbyLanguageTests',
+        'derbyNistSql92Tests',
+        'derbyJdbcTests',
+        'derbyStoreTests',
+        'derbyNetworkTests',
+        'derbyToolsTests',
+        'derbyUpgradeTests',
+        'derbyAllTests',
+        'delosUnitTests',
+        'delosFunctionalTests',
+        'delosConcurrencyTests',
+        'delosRecoveryTests',
+        'delosSystemTests',
+        'delosStressTests'
+]
+
+stableTestSuiteAliases.each { String taskName ->
+    tasks.register(taskName) {
+        group = 'verification'
+        description = "Root entry point for :delosdb-tests:${taskName}."
+        dependsOn ":delosdb-tests:${taskName}"
+    }
+}
+
 tasks.register('derbyTestSuite') {
     group = 'verification'
-    description = 'Runs the original Derby lang JUnit suite through Gradle.'
-    dependsOn ':delosdb-tests:runDerbyLangSuite'
+    description = 'Deprecated root alias for derbyLanguageTests.'
+    dependsOn tasks.named('derbyLanguageTests')
+}
+
+// Root test is intentionally narrow: module-local unit tests plus the
+// DelosDB-owned unit/contract suite. The inherited compatibility corpus is
+// reached through the named verification levels below.
+tasks.register('test') {
+    group = 'verification'
+    description = 'Runs module-local unit tests and DelosDB narrow contract tests.'
+    dependsOn tasks.named('delosUnitTests')
+}
+
+subprojects { subproject ->
+    subproject.plugins.withId('java') {
+        if (subproject.path != ':delosdb-tests') {
+            rootProject.tasks.named('test') {
+                dependsOn subproject.tasks.named('test')
+            }
+        }
+    }
+}
+
+tasks.register('quickVerification') {
+    group = 'verification'
+    description = 'Runs module unit tests, DelosDB quick smoke tests, and runtime smoke checks.'
+    dependsOn tasks.named('test'),
+            tasks.named('derbyRuntimeSmoke'),
+            ':delosdb-tests:delosQuickSmokeTests'
 }
 
 tasks.named('check') {
-    dependsOn 'derbyRuntimeSmoke'
+    dependsOn tasks.named('quickVerification'),
+            ':delosdb-tests:delosFunctionalFullTierTests',
+            tasks.named('delosConcurrencyTests'),
+            tasks.named('delosRecoveryTests'),
+            tasks.named('derbyLanguageTests'),
+            tasks.named('derbyNistSql92Tests'),
+            delosPermanentArchitectureDependencies,
+            ':delosdb-tests:delosTestProvenanceStaticAnalysis',
+            ':delosdb-tests:delosStableTestSuiteStaticAnalysis'
 }
 
 tasks.register('fullVerification') {
     group = 'verification'
-    description = 'Runs Derby-compatible runtime smoke checks and the inherited Derby lang compatibility suite.'
-    dependsOn 'derbyRuntimeSmoke', 'derbyTestSuite'
+    description = 'Runs all non-stress DelosDB tests and the principal inherited Derby compatibility suites.'
+    dependsOn tasks.named('check'),
+            tasks.named('delosSystemTests'),
+            tasks.named('derbyJdbcTests'),
+            tasks.named('derbyStoreTests'),
+            tasks.named('derbyNetworkTests'),
+            tasks.named('derbyToolsTests')
 }
 
-tasks.register('test') {
+tasks.register('nightlyVerification') {
     group = 'verification'
-    description = 'Alias for the Derby-focused verification suite.'
-    dependsOn 'fullVerification'
+    description = 'Runs full verification plus DelosDB long-running and high-contention stress tests.'
+    dependsOn tasks.named('fullVerification'), tasks.named('delosStressTests')
+}
+
+tasks.register('releaseVerification') {
+    group = 'verification'
+    description = 'Runs the complete release authority without rerunning inherited suites already covered by suites.All.'
+    dependsOn tasks.named('test'),
+            tasks.named('derbyRuntimeSmoke'),
+            tasks.named('derbyAllTests'),
+            tasks.named('delosFunctionalTests'),
+            tasks.named('delosConcurrencyTests'),
+            tasks.named('delosRecoveryTests'),
+            tasks.named('delosSystemTests'),
+            tasks.named('delosStressTests'),
+            delosPermanentArchitectureDependencies,
+            ':delosdb-tests:delosTestProvenanceStaticAnalysis',
+            ':delosdb-tests:delosStableTestSuiteStaticAnalysis',
+            ':delosdb-tests:delosPerformanceHarnessTests'
 }
 
 tasks.named('build') {
@@ -615,15 +707,10 @@ apply from: 'gradle/delosdb-generated-class-static-analysis.gradle'
 apply from: 'gradle/delosdb-repository-integrity-static-analysis.gradle'
 apply from: 'gradle/delosdb-human-maintainability-inventory.gradle'
 
-final List<Object> delosPermanentS0Dependencies = [
-        'delosModuleDependencyBoundaryStaticAnalysis',
-        'delosV1ModuleArchitectureStaticAnalysis',
-        'delosGeneratedClassStaticAnalysis',
-        'delosRepositoryIntegrityStaticAnalysis',
-        'verifyDelosRuntimeStorageProviders',
-        'delosJdk25ClassFileBytecodeVerifier',
-        ':delosdb-tests:runDelosSecurityTruthTest'
-]
+final List<Object> delosPermanentS0Dependencies =
+        delosPermanentArchitectureDependencies + [
+                ':delosdb-tests:runDelosSecurityTruthTest'
+        ]
 
 tasks.register('s0CloseoutVerification') {
     group = 'verification'

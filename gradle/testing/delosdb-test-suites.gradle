@@ -1,0 +1,509 @@
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+import org.gradle.api.provider.Provider
+import java.nio.charset.StandardCharsets
+
+/*
+ * Stage 3 of the DelosDB test-organization plan.
+ *
+ * This file introduces stable inherited-Derby and DelosDB suite entry points
+ * without changing Java test sources, assertions, packages, or execution
+ * semantics. Existing focused tasks remain temporary compatibility lanes.
+ */
+
+def context = project.ext.delosdbStableTestSuiteContext as Map<String, Object>
+def registryFile = rootProject.file('gradle/testing/delos-test-suite-registry.tsv')
+def delosSourceRoot = project.file('src/delosTest/java')
+def suiteReportJson = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.json')
+def suiteReportText = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.txt')
+
+def readRegistry = {
+    LinkedHashMap<String, Map<String, String>> rows = new LinkedHashMap<>()
+    registryFile.eachLine(StandardCharsets.UTF_8.name()) { String line ->
+        if (!line.isBlank() && !line.startsWith('#')) {
+            String[] columns = line.split('\\t', -1)
+            if (columns.length != 6) {
+                throw new GradleException(
+                        "Malformed ${registryFile}: expected 6 tab-separated columns, found ${columns.length}: ${line}")
+            }
+            Map<String, String> row = [
+                    className: columns[0],
+                    sourcePath: columns[1],
+                    role: columns[2],
+                    suite: columns[3],
+                    executionTier: columns[4],
+                    reason: columns[5]
+            ]
+            if (rows.put(row.className, row) != null) {
+                throw new GradleException("Duplicate class in ${registryFile}: ${row.className}")
+            }
+        }
+    }
+    rows
+}
+
+def registry = readRegistry()
+def rowsForSuite = { String suiteName ->
+    registry.values().findAll { it.role == 'TEST' && it.suite == suiteName }
+}
+def rowsForTier = { String tierName ->
+    registry.values().findAll { it.role == 'TEST' && it.executionTier == tierName }
+}
+def rowsForSuiteTier = { String suiteName, String tierName ->
+    registry.values().findAll {
+        it.role == 'TEST' && it.suite == suiteName && it.executionTier == tierName
+    }
+}
+def classPattern = { Map<String, String> row -> row.className.replace('.', '/') + '.class' }
+
+def configureTestTask = { Test task,
+                          String taskName,
+                          Collection<Map<String, String>> rows,
+                          boolean nativeAuthenticationResources = false ->
+    task.group = 'verification'
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    if (nativeAuthenticationResources) {
+        task.dependsOn tasks.named('generateNativeAuthenticationTestJar')
+    }
+
+    task.modularity.inferModulePath = false
+    task.testClassesDirs = files(context.derbyTestsClassDir)
+    task.classpath = nativeAuthenticationResources
+            ? (context.nativeAuthenticationRuntimeClasspath as Closure).call()
+            : (context.testRuntimeClasspath as Closure).call()
+    task.useJUnit()
+    rows.each { row -> task.include classPattern(row) }
+    task.maxParallelForks = 1
+    task.maxHeapSize = taskName in ['derbyAllTests', 'delosStressTests'] ? '2048m' : '1536m'
+    task.workingDir = layout.buildDirectory.dir("test-work/${taskName}").get().asFile
+    task.binaryResultsDirectory.set(layout.buildDirectory.dir("test-results/binary/${taskName}"))
+    task.reports {
+        junitXml.required.set(true)
+        junitXml.outputLocation.set(layout.buildDirectory.dir("test-results/${taskName}"))
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/tests/${taskName}"))
+    }
+    task.doFirst {
+        delete task.workingDir
+        task.workingDir.mkdirs()
+        task.systemProperty 'derby.tests.basePort', (context.derbyBasePort as Provider<String>).get()
+    }
+    task.testLogging {
+        events 'failed'
+        exceptionFormat = 'full'
+        showStandardStreams = true
+    }
+}
+
+def registerInheritedSuite = { String taskName,
+                                String descriptionText,
+                                List<String> includePatterns,
+                                boolean nativeAuthenticationResources = false ->
+    tasks.register(taskName, Test) { Test task ->
+        task.description = descriptionText
+        Collection<Map<String, String>> syntheticRows = includePatterns.collect { String pattern ->
+            [className: pattern.replace('/', '.').replaceFirst(/\.class$/, '')]
+        }
+        configureTestTask(task, taskName, syntheticRows, nativeAuthenticationResources)
+        task.failFast = (context.derbyFailFast as Provider<Boolean>).get()
+    }
+}
+
+def registerDelosSuite = { String taskName,
+                            String descriptionText,
+                            Collection<Map<String, String>> suiteRows ->
+    tasks.register(taskName, Test) { Test task ->
+        task.description = descriptionText
+        configureTestTask(task, taskName, suiteRows, false)
+        task.dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    }
+}
+
+registerInheritedSuite(
+        'derbyUnitTests',
+        'Runs the inherited Apache Derby JUnit unit-test suite.',
+        ['org/apache/derbyTesting/unitTests/junit/_Suite.class'])
+
+registerInheritedSuite(
+        'derbyLanguageTests',
+        'Runs the inherited Apache Derby language compatibility suite.',
+        ['org/apache/derbyTesting/functionTests/tests/lang/_Suite.class'],
+        true)
+
+tasks.named('derbyLanguageTests', Test) {
+    doFirst {
+        logger.lifecycle('derbyLanguageTests using derby.tests.basePort={} failFast={}',
+                (context.derbyBasePort as Provider<String>).get(), failFast)
+    }
+}
+
+registerInheritedSuite(
+        'derbyNistSql92Tests',
+        'Runs the inherited Derby-adapted NIST SQL-92 script corpus.',
+        ['org/apache/derbyTesting/functionTests/tests/nist/NistScripts.class'])
+
+registerInheritedSuite(
+        'derbyJdbcTests',
+        'Runs inherited Derby JDBC API and JDBC 4 suites.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/_Suite.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbc4/_Suite.class'
+        ])
+
+registerInheritedSuite(
+        'derbyStoreTests',
+        'Runs inherited Derby store, storetests, memory, and memory-database suites.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/store/_Suite.class',
+                'org/apache/derbyTesting/functionTests/tests/storetests/_Suite.class',
+                'org/apache/derbyTesting/functionTests/tests/memory/_Suite.class',
+                'org/apache/derbyTesting/functionTests/tests/memorydb/_Suite.class'
+        ])
+
+registerInheritedSuite(
+        'derbyNetworkTests',
+        'Runs the inherited Apache Derby network-server suite.',
+        ['org/apache/derbyTesting/functionTests/tests/derbynet/_Suite.class'])
+
+registerInheritedSuite(
+        'derbyToolsTests',
+        'Runs the inherited Apache Derby tools suite.',
+        ['org/apache/derbyTesting/functionTests/tests/tools/_Suite.class'])
+
+registerInheritedSuite(
+        'derbyUpgradeTests',
+        'Runs the inherited Apache Derby upgrade suite.',
+        ['org/apache/derbyTesting/functionTests/tests/upgradeTests/_Suite.class'])
+
+registerInheritedSuite(
+        'derbyAllTests',
+        'Runs the complete inherited Apache Derby suites.All authority.',
+        ['org/apache/derbyTesting/functionTests/suites/All.class'],
+        true)
+
+registerDelosSuite(
+        'delosUnitTests',
+        'Runs DelosDB-authored unit and narrow contract tests.',
+        rowsForSuite('unit'))
+
+registerDelosSuite(
+        'delosFunctionalTests',
+        'Runs DelosDB-authored SQL, storage, transaction, security, and API contract tests.',
+        rowsForSuite('functional'))
+
+registerDelosSuite(
+        'delosConcurrencyTests',
+        'Runs DelosDB-authored isolation, locking, and concurrent-execution tests.',
+        rowsForSuite('concurrency'))
+
+registerDelosSuite(
+        'delosRecoveryTests',
+        'Runs DelosDB-authored WAL, crash, restart, backup/restore, and fault-recovery tests.',
+        rowsForSuite('recovery'))
+
+registerDelosSuite(
+        'delosSystemTests',
+        'Runs DelosDB-authored DRDA, network-server, and modular-runtime tests.',
+        rowsForSuite('system'))
+
+registerDelosSuite(
+        'delosStressTests',
+        'Runs DelosDB-authored long-running and high-contention stress tests.',
+        rowsForSuite('stress'))
+
+// Internal quick lane used by root quickVerification. Public purpose-oriented
+// suites remain complete rather than silently filtering by duration.
+registerDelosSuite(
+        'delosQuickSmokeTests',
+        'Runs the Stage 3 quick-tier DelosDB SQL, storage, JDBC, and contract smoke cases.',
+        rowsForTier('quick'))
+
+tasks.named('delosQuickSmokeTests') {
+    group = null
+}
+
+// Root check composes the quick functional partition above with the remaining
+// full-tier functional cases. This covers every functional test once without
+// rerunning quick cases in the same verification graph.
+registerDelosSuite(
+        'delosFunctionalFullTierTests',
+        'Runs the Stage 3 full-tier DelosDB functional cases not already covered by quickVerification.',
+        rowsForSuiteTier('functional', 'full'))
+tasks.named('delosFunctionalFullTierTests') {
+    group = null
+}
+
+// Shared generated-class evidence paths. They are harmless for tests which do
+// not consume them and preserve the focused-task behavior when those classes
+// execute through a stable suite.
+def generatedClassContractManifest = rootProject.file(
+        'gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt')
+[tasks.named('delosUnitTests', Test)].each { provider ->
+    provider.configure {
+        systemProperty 'delosdb.compiler.contractFreeze.report',
+                layout.buildDirectory.file('reports/delosdb/compiler/generated-class-contract-freeze.txt')
+                        .get().asFile.absolutePath
+        systemProperty 'delosdb.compiler.contractBehavior.manifest',
+                generatedClassContractManifest.absolutePath
+        systemProperty 'delosdb.compiler.contractBehavior.report',
+                layout.buildDirectory.file('reports/delosdb/compiler/generated-class-contract-behavior.txt')
+                        .get().asFile.absolutePath
+        inputs.file generatedClassContractManifest
+    }
+}
+[
+        tasks.named('delosFunctionalTests', Test),
+        tasks.named('delosQuickSmokeTests', Test),
+        tasks.named('delosFunctionalFullTierTests', Test)
+].each { provider ->
+    provider.configure {
+        systemProperty 'delosdb.compiler.generatedClassProduction.report',
+                layout.buildDirectory.file('reports/delosdb/compiler/generated-class-production.txt')
+                        .get().asFile.absolutePath
+    }
+}
+
+[
+        tasks.named('delosRecoveryTests', Test),
+        tasks.named('delosSystemTests', Test),
+        tasks.named('delosStressTests', Test)
+].each { provider ->
+    provider.configure {
+        systemProperty 'delos.drda.threadMode', 'virtual'
+        systemProperty 'delos.drda.extdta.spoolThresholdBytes', '32768'
+    }
+}
+
+tasks.named('delosSystemTests', Test) {
+    dependsOn tasks.named('assembleDelosV1ModularRuntimeImage')
+    systemProperty 'delosdb.v1Baseline.modularImage.root',
+            context.delosV1ModularImageRoot.get().asFile.absolutePath
+    systemProperty 'delosdb.v1Baseline.modularImage.reportDirectory',
+            context.delosV1ModularImageReportDirectory.get().asFile.absolutePath
+    systemProperty 'delosdb.v1Baseline.modularImage.databaseRoot',
+            context.delosV1ModularImageDatabaseRoot.get().asFile.absolutePath
+}
+
+// Performance-harness classes retain their existing dedicated configuration
+// and remain outside ordinary correctness suites. releaseVerification reaches
+// them through this internal aggregate until Stage 7 moves report generation
+// fully out of JUnit.
+def performanceFocusedTasks = [
+        'runDelosHeapDiagnosticsPerformanceAuditTest',
+        'runDelosJdbcBenchmarkBaseline',
+        'runDelosJdbcBenchmarkBatchScaling',
+        'runDelosJdbcBenchmarkRowScaling',
+        'runDelosJdbcBenchmarkSurfaceValidation',
+        'runDelosJdbcBenchmarkTransactions',
+        'runDelosJdbcDeleteReinsertAttribution',
+        'runDelosSharedRawStoreMappedRegionExperimentTest',
+        'runDelosSharedRawStorePageIoRepresentationDecisionTest',
+        'runDelosV1BaselineOperationalCapture'
+]
+
+def mvccBloatRow = registry.values().find { it.className.endsWith('.MvccSqlBloatMeasurementTest') }
+if (mvccBloatRow == null) {
+    throw new GradleException('Stable suite registry is missing MvccSqlBloatMeasurementTest')
+}
+registerDelosSuite(
+        'delosMvccBloatMeasurementHarness',
+        'Runs the remaining MVCC bloat measurement harness pending Stage 7 report separation.',
+        [mvccBloatRow])
+tasks.named('delosMvccBloatMeasurementHarness') {
+    group = null
+}
+
+tasks.register('delosPerformanceHarnessTests') {
+    group = null
+    description = 'Internal Stage 3 aggregate for DelosDB JUnit performance/report harnesses.'
+    performanceFocusedTasks.each { taskName -> dependsOn tasks.named(taskName) }
+    dependsOn tasks.named('delosMvccBloatMeasurementHarness')
+}
+
+// Compatibility alias retained through Stage 8. The stable task owns all
+// execution and report locations.
+tasks.register('runDerbyLangSuite') {
+    group = 'verification'
+    description = 'Deprecated alias for derbyLanguageTests.'
+    dependsOn tasks.named('derbyLanguageTests')
+}
+
+def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
+    group = 'verification'
+    description = 'Verifies Stage 3 stable suite coverage, registry completeness, and execution-tier assignments.'
+    inputs.file registryFile
+    inputs.dir delosSourceRoot
+    outputs.file suiteReportJson
+    outputs.file suiteReportText
+
+    doLast {
+        List<String> issues = []
+        Set<String> validRoles = ['TEST', 'SUPPORT'] as Set<String>
+        Set<String> validSuites = ['unit', 'functional', 'concurrency', 'recovery', 'system', 'stress', 'performance', 'none'] as Set<String>
+        Set<String> validTiers = ['unit', 'quick', 'full', 'nightly', 'release', 'none'] as Set<String>
+
+        registry.values().each { row ->
+            if (!validRoles.contains(row.role)) issues.add("Invalid role for ${row.className}: ${row.role}")
+            if (!validSuites.contains(row.suite)) issues.add("Invalid suite for ${row.className}: ${row.suite}")
+            if (!validTiers.contains(row.executionTier)) issues.add("Invalid execution tier for ${row.className}: ${row.executionTier}")
+            File source = new File(delosSourceRoot, row.sourcePath)
+            if (!source.isFile()) {
+                issues.add("Registry source is missing: ${row.sourcePath}")
+            } else {
+                String expectedClass = row.sourcePath.replace('/', '.').replaceFirst(/\.java$/, '')
+                if (row.className != expectedClass) {
+                    issues.add("Class/source mismatch: ${row.className} != ${expectedClass}")
+                }
+                String sourceText = source.getText(StandardCharsets.UTF_8.name())
+                String simpleName = row.className.substring(row.className.lastIndexOf('.') + 1)
+                boolean abstractClass = (sourceText =~ /(?m)^\s*(?:public\s+)?abstract\s+class\s+${java.util.regex.Pattern.quote(simpleName)}\b/).find()
+                if (row.role == 'TEST' && abstractClass) {
+                    issues.add("Abstract class is registered as executable: ${row.className}")
+                }
+                if (row.role == 'SUPPORT' && !abstractClass) {
+                    issues.add("Non-abstract class is registered as support: ${row.className}")
+                }
+            }
+            if (row.role == 'TEST' && (row.suite == 'none' || row.executionTier == 'none')) {
+                issues.add("Executable test lacks suite/tier: ${row.className}")
+            }
+            if (row.role == 'SUPPORT' && (row.suite != 'none' || row.executionTier != 'none')) {
+                issues.add("Support class must use suite/tier none: ${row.className}")
+            }
+            if (row.role == 'TEST') {
+                boolean compatibleTier = false
+                if (row.suite == 'unit') compatibleTier = row.executionTier == 'unit'
+                else if (row.suite == 'functional') compatibleTier = row.executionTier in ['quick', 'full']
+                else if (row.suite in ['concurrency', 'recovery', 'system']) compatibleTier = row.executionTier == 'full'
+                else if (row.suite == 'stress') compatibleTier = row.executionTier == 'nightly'
+                else if (row.suite == 'performance') compatibleTier = row.executionTier == 'release'
+                if (!compatibleTier) {
+                    issues.add("Suite/tier mismatch for ${row.className}: ${row.suite}/${row.executionTier}")
+                }
+            }
+        }
+
+        Set<String> expectedPerformanceClasses = [
+                'org.apache.derbyTesting.functionTests.tests.delos.HeapDiagnosticsPerformanceAuditTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBaselineTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBatchScalingTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkRowScalingTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkSurfaceValidationTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkTransactionsTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.JdbcDeleteReinsertAttributionTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlBloatMeasurementTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStoreMappedRegionExperimentTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStorePageIoRepresentationDecisionTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.V1BaselineCaptureTest'
+        ] as Set<String>
+        Set<String> actualPerformanceClasses = registry.values().findAll {
+            it.role == 'TEST' && it.suite == 'performance'
+        }.collect { it.className }.toSet()
+        (expectedPerformanceClasses - actualPerformanceClasses).sort().each {
+            issues.add("Release-only performance harness is missing from registry: ${it}")
+        }
+        (actualPerformanceClasses - expectedPerformanceClasses).sort().each {
+            issues.add("Unexpected release-only performance harness: ${it}")
+        }
+
+        Set<String> sourcePaths = fileTree(delosSourceRoot) { include '**/*.java' }
+                .files.collect { delosSourceRoot.toPath().relativize(it.toPath()).toString().replace('\\', '/') }
+                .toSet()
+        Set<String> registryPaths = registry.values().collect { it.sourcePath }.toSet()
+        (sourcePaths - registryPaths).sort().each { issues.add("Unregistered DelosDB source: ${it}") }
+        (registryPaths - sourcePaths).sort().each { issues.add("Stale DelosDB suite registry source: ${it}") }
+
+        Map<String, Integer> suiteCounts = new TreeMap<>()
+        Map<String, Integer> tierCounts = new TreeMap<>()
+        registry.values().each { row ->
+            suiteCounts[row.suite] = (suiteCounts[row.suite] ?: 0) + 1
+            tierCounts[row.executionTier] = (tierCounts[row.executionTier] ?: 0) + 1
+        }
+        Set<String> quickFunctionalClasses = rowsForTier('quick').findAll {
+            it.suite == 'functional'
+        }.collect { it.className }.toSet()
+        Set<String> fullFunctionalClasses = rowsForSuiteTier('functional', 'full')
+                .collect { it.className }.toSet()
+        Set<String> allFunctionalClasses = rowsForSuite('functional')
+                .collect { it.className }.toSet()
+        if (!quickFunctionalClasses.intersect(fullFunctionalClasses).isEmpty()) {
+            issues.add('Quick/full functional partitions overlap')
+        }
+        if ((quickFunctionalClasses + fullFunctionalClasses) != allFunctionalClasses) {
+            issues.add('Quick/full functional partitions do not cover the complete functional suite')
+        }
+
+        List<String> publicTasks = [
+                'derbyUnitTests', 'derbyLanguageTests', 'derbyNistSql92Tests',
+                'derbyJdbcTests', 'derbyStoreTests', 'derbyNetworkTests',
+                'derbyToolsTests', 'derbyUpgradeTests', 'derbyAllTests',
+                'delosUnitTests', 'delosFunctionalTests', 'delosConcurrencyTests',
+                'delosRecoveryTests', 'delosSystemTests', 'delosStressTests'
+        ]
+        publicTasks.each { taskName ->
+            if (tasks.findByName(taskName) == null) issues.add("Stable suite task is missing: ${taskName}")
+        }
+        List<String> verificationLevels = [
+                'test', 'quickVerification', 'check', 'fullVerification',
+                'nightlyVerification', 'releaseVerification'
+        ]
+        verificationLevels.each { taskName ->
+            if (rootProject.tasks.findByName(taskName) == null) {
+                issues.add("Root verification level is missing: ${taskName}")
+            }
+        }
+
+        Map<String, Object> report = [
+                schemaVersion: 1,
+                stage: 'Stage 3 - stable Gradle entry points',
+                registry: rootProject.relativePath(registryFile),
+                summary: [
+                        sourceFiles: sourcePaths.size(),
+                        registryEntries: registry.size(),
+                        executableTests: registry.values().count { it.role == 'TEST' },
+                        supportClasses: registry.values().count { it.role == 'SUPPORT' },
+                        issueCount: issues.unique().size()
+                ],
+                suiteCounts: suiteCounts,
+                executionTierCounts: tierCounts,
+                inheritedTasks: publicTasks.findAll { it.startsWith('derby') },
+                delosdbTasks: publicTasks.findAll { it.startsWith('delos') },
+                verificationLevels: verificationLevels,
+                compatibilityAliases: ['runDerbyLangSuite': 'derbyLanguageTests'],
+                issues: issues.unique().sort(),
+                entries: registry.values().toList()
+        ]
+        File jsonFile = suiteReportJson.get().asFile
+        File textFile = suiteReportText.get().asFile
+        jsonFile.parentFile.mkdirs()
+        textFile.parentFile.mkdirs()
+        jsonFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(report)) + '\n', StandardCharsets.UTF_8.name())
+        textFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB stable test suites')
+            writer.println('Stage: Stage 3 - stable Gradle entry points')
+            writer.println("Registry: ${rootProject.relativePath(registryFile)}")
+            writer.println()
+            report.summary.each { key, value -> writer.println(String.format('%-28s %s', key + ':', value)) }
+            writer.println()
+            writer.println('Suite counts')
+            suiteCounts.each { key, value -> writer.println(String.format('  %-16s %s', key, value)) }
+            writer.println()
+            writer.println('Execution-tier counts')
+            tierCounts.each { key, value -> writer.println(String.format('  %-16s %s', key, value)) }
+            writer.println()
+            writer.println('Issues')
+            if (report.issues.isEmpty()) writer.println('  none')
+            else report.issues.each { writer.println('  - ' + it) }
+        }
+
+        if (!report.issues.isEmpty()) {
+            throw new GradleException('DelosDB stable suite failures (' + report.issues.size() + '):\n  - ' +
+                    report.issues.join('\n  - '))
+        }
+        logger.lifecycle('DelosDB Stage 3 stable test suites passed. Report: {}', textFile)
+    }
+}
+
+tasks.named('check') {
+    dependsOn stableSuiteAnalysis
+}

@@ -1,6 +1,6 @@
 # DelosDB Final Test Organization and Consolidation Plan
 
-Status: accepted implementation plan. Stages 1 and 2 are implemented; Stage 3 is next.
+Status: accepted implementation plan. Stages 1, 2 and 3 are implemented; Stage 4 is next.
 
 ## Current implementation checkpoint
 
@@ -20,11 +20,26 @@ src/delosTestSupport/java
 ```
 
 Stage 2 preserves package names, class names, focused Gradle task names and the single
-`org.apache.derby.tests` compilation output. The physical source root is now the authorship
-authority. Separate stable execution suites are introduced in Stage 3.
+`org.apache.derby.tests` compilation output. The physical source root is the authorship authority.
+
+Stage 3 adds the stable execution registry at:
+
+```text
+gradle/testing/delos-test-suite-registry.tsv
+```
+
+The registry accounts for all 152 DelosDB source files in `src/delosTest/java`: 150 executable
+tests and two abstract support anchors. It assigns each executable test to one purpose suite and
+one execution tier. The stable inherited and DelosDB task names are now available at both the root
+and `:delosdb-tests` project. Existing one-class tasks remain temporary compatibility lanes until
+Stage 8.
 
 The inherited `derbynet._Suite` and `store._Suite` no longer register DelosDB-authored tests.
 The provenance gate verifies that inherited sources do not depend on either DelosDB source root.
+The Stage 3 suite gate verifies complete registry coverage, valid suite/tier assignments, disjoint
+quick/full functional partitions, stable suite tasks and all six root verification levels. The root
+`check` graph runs each functional test once, and `releaseVerification` executes Derby `suites.All`
+directly rather than first rerunning the inherited component suites.
 
 
 ## 1. Objective

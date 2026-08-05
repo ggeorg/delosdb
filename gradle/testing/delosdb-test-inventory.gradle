@@ -94,6 +94,8 @@ def delosTestKind = { String path, String source ->
     String simpleName = path.substring(path.lastIndexOf('/') + 1).replaceFirst(/\.java$/, '')
     if (simpleName == 'module-info') return 'MODULE_DESCRIPTOR'
     if (simpleName == '_Suite' || source.contains('new BaseTestSuite(')) return 'SUITE'
+    boolean abstractClass = (source =~ /(?m)^\s*(?:public\s+)?abstract\s+class\s+${java.util.regex.Pattern.quote(simpleName)}\b/).find()
+    if (abstractClass) return 'SUPPORT'
     boolean testMethod = (source =~ /(?m)\bvoid\s+test[A-Z0-9_]\w*\s*\(/).find()
     boolean junitAnnotation = (source =~ /(?m)^\s*@(?:org\.junit\.)?Test\b/).find()
     boolean inheritedBase = source.contains('extends BaseJDBCTestCase') ||
