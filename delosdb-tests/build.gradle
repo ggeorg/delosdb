@@ -12,6 +12,8 @@ import java.net.ServerSocket
 version = rootProject.version
 group = rootProject.group
 
+apply from: rootProject.file('gradle/testing/delosdb-test-inventory.gradle')
+
 /*
  * Derby tests are compiled as one inherited test module. The Java plugin now
  * owns the real test compilation task; the old Derby task name is kept only as

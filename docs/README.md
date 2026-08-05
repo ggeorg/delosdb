@@ -54,6 +54,7 @@ manifests.
 | [`RESEARCH-POSITIONING.md`](RESEARCH-POSITIONING.md) | research identity and boundaries |
 | [`RESEARCH-FEATURE-PRIORITIES.md`](RESEARCH-FEATURE-PRIORITIES.md) | v1 research foundation and post-v1 order |
 | [`ALGORITHM-INVENTORY.md`](ALGORITHM-INVENTORY.md) | source-backed algorithm inventory |
+| [`TEST-ORGANIZATION-AND-CONSOLIDATION.md`](TEST-ORGANIZATION-AND-CONSOLIDATION.md) | accepted test provenance, organization, and consolidation plan |
 
 ## Design records
 
