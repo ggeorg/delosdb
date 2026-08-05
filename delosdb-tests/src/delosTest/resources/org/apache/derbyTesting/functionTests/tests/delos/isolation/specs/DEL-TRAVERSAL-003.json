@@ -1,0 +1,160 @@
+{
+  "id": "DEL-TRAVERSAL-003",
+  "description": "A stable reader keeps the old row while two committed updates preserve row identity and publish the newest version.",
+  "category": "update-delete-traversal",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table traversal_versions_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into traversal_versions_t values (1,'v0')"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "isolationByProvider": {
+        "heap": "SERIALIZABLE",
+        "mvcc": "REPEATABLE_READ"
+      },
+      "steps": {
+        "initial": {
+          "sql": "select id,payload from traversal_versions_t where id=1",
+          "rows": [
+            "1|v0"
+          ]
+        },
+        "stable": {
+          "sql": "select id,payload from traversal_versions_t where id=1",
+          "rows": [
+            "1|v0"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "steps": {
+        "v1": {
+          "sql": "update traversal_versions_t set payload='v1' where id=1",
+          "updateCount": 1
+        },
+        "commit1": {
+          "action": "COMMIT"
+        },
+        "v2": {
+          "sql": "update traversal_versions_t set payload='v2' where id=1",
+          "updateCount": 1
+        },
+        "commit2": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-reader-holds-row",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "START",
+          "step": "writer.v1",
+          "token": "firstUpdate"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "firstUpdate",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "firstUpdate",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit1"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.v2"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit2"
+        }
+      ],
+      "providers": [
+        "heap"
+      ]
+    },
+    {
+      "name": "mvcc-version-chain",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.v1"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit1"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.v2"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit2"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ],
+      "providers": [
+        "mvcc"
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,payload from traversal_versions_t",
+      "rows": [
+        "1|v2"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table traversal_versions_t"
+  ]
+}

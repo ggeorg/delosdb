@@ -1,0 +1,134 @@
+{
+  "id": "DEL-ISO-002",
+  "description": "An existing stable snapshot retains the old row version while a writer completes.",
+  "category": "snapshot-stability",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table version_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into version_t values (1, 'old')"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "initial": {
+          "sql": "select payload from version_t where id = 1",
+          "rows": [
+            "old"
+          ]
+        },
+        "stable": {
+          "sql": "select payload from version_t where id = 1",
+          "rows": [
+            "old"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "update": {
+          "sql": "update version_t set payload = 'new' where id = 1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-writer-waits-for-reader",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "START",
+          "step": "writer.update",
+          "token": "rowUpdate"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "rowUpdate",
+          "timeoutMillis": 300
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "rowUpdate",
+          "timeoutMillis": 8000
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        }
+      ]
+    },
+    {
+      "name": "mvcc-writer-commits-behind-reader",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from version_t",
+      "rows": [
+        "1|new"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table version_t"
+  ]
+}

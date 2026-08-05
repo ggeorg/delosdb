@@ -1,0 +1,97 @@
+{
+  "id": "DEL-FK-002",
+  "description": "Rollback of a parent delete releases the waiting child insert, which then commits successfully.",
+  "category": "foreign-key-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table fk_parent_t (id int primary key)${providerClause}",
+    "create table fk_child_t (id int primary key,parent_id int,constraint fk_child_parent foreign key(parent_id) references fk_parent_t(id))${providerClause}",
+    "insert into fk_parent_t values (1),(2)"
+  ],
+  "sessions": {
+    "parent": {
+      "steps": {
+        "delete": {
+          "sql": "delete from fk_parent_t where id=1",
+          "updateCount": 1
+        },
+        "rollback": {
+          "action": "ROLLBACK"
+        }
+      }
+    },
+    "child": {
+      "steps": {
+        "insert": {
+          "sql": "insert into fk_child_t values (10,1)",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "rollback-and-retry",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "parent.delete"
+        },
+        {
+          "type": "START",
+          "step": "child.insert",
+          "token": "childInsert"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "childInsert",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "parent.rollback"
+        },
+        {
+          "type": "AWAIT",
+          "token": "childInsert",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "child.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select count(*) from fk_parent_t",
+      "rows": [
+        "2"
+      ]
+    },
+    {
+      "sql": "select id,parent_id from fk_child_t",
+      "rows": [
+        "10|1"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table fk_child_t",
+    "drop table fk_parent_t"
+  ]
+}

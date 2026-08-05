@@ -1,0 +1,108 @@
+{
+  "id": "DEL-DEADLOCK-001",
+  "description": "Two transactions updating rows in opposite order produce exactly one deadlock victim.",
+  "category": "deadlock",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table deadlock_two_t (id int primary key, marker int not null)${providerClause}",
+    "insert into deadlock_two_t values (1,0),(2,0)"
+  ],
+  "sessions": {
+    "left": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_two_t set marker=10 where id=1",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_two_t set marker=marker+1 where id=2",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "right": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_two_t set marker=10 where id=2",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_two_t set marker=marker+1 where id=1",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "opposite-row-cycle",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "left.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "right.lock"
+        },
+        {
+          "type": "START",
+          "step": "left.cycle",
+          "token": "leftCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "leftCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "right.cycle",
+          "token": "rightCycle"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 12000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select count(*),sum(marker) from deadlock_two_t",
+      "rows": [
+        "2|11"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table deadlock_two_t"
+  ]
+}

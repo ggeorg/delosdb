@@ -1,0 +1,170 @@
+{
+  "id": "DEL-ISO-012",
+  "description": "A concurrent reader observes the correct version after writer rollback to savepoint.",
+  "category": "savepoint-rollback",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table savepoint_reader_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into savepoint_reader_t values (1, 'base')"
+  ],
+  "sessions": {
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "before": {
+          "sql": "update savepoint_reader_t set payload = 'before-savepoint' where id = 1",
+          "updateCount": 1
+        },
+        "savepoint": {
+          "action": "SAVEPOINT",
+          "savepoint": "writer_point"
+        },
+        "after": {
+          "sql": "update savepoint_reader_t set payload = 'after-savepoint' where id = 1",
+          "updateCount": 1
+        },
+        "rollback": {
+          "action": "ROLLBACK_TO_SAVEPOINT",
+          "savepoint": "writer_point"
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "reader": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "base": {
+          "sql": "select payload from savepoint_reader_t where id = 1",
+          "rows": [
+            "base"
+          ]
+        },
+        "committed": {
+          "sql": "select payload from savepoint_reader_t where id = 1",
+          "rows": [
+            "before-savepoint"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-reader-waits-for-savepoint-owner",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.before"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.savepoint"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.after"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.rollback"
+        },
+        {
+          "type": "START",
+          "step": "reader.committed",
+          "token": "readerQuery"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "readerQuery",
+          "timeoutMillis": 300
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "readerQuery",
+          "timeoutMillis": 8000
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    },
+    {
+      "name": "mvcc-reader-sees-base-then-committed-version",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.before"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.savepoint"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.after"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.base"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.committed"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from savepoint_reader_t",
+      "rows": [
+        "1|before-savepoint"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table savepoint_reader_t"
+  ]
+}

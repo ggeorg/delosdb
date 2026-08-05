@@ -1,6 +1,6 @@
 # DelosDB Final Test Organization and Consolidation Plan
 
-Status: accepted implementation plan. Stages 1, 2 and 3 are implemented; Stage 4 is next.
+Status: accepted implementation plan. Stages 1 through 4 are implemented; Stage 5 is next.
 
 ## Current implementation checkpoint
 
@@ -17,6 +17,9 @@ src/delosTest/java
 
 src/delosTestSupport/java
     DelosDB-owned fixtures, harnesses, benchmark support and assertions
+
+src/delosTest/resources
+    DelosDB-owned declarative test specifications and fixtures
 ```
 
 Stage 2 preserves package names, class names, focused Gradle task names and the single
@@ -28,14 +31,15 @@ Stage 3 adds the stable execution registry at:
 gradle/testing/delos-test-suite-registry.tsv
 ```
 
-The registry accounts for all 150 DelosDB executable-source files in `src/delosTest/java`.
-The frozen active authority at `gradle/testing/delos-stage3-active-test-authority.tsv` records the
-77 classes which had an explicit execution lane before Stage 3: 75 through focused Gradle tasks and
-two DelosDB-authored tests formerly registered in inherited suites (`HeapSanityCheckerTest` in
-`store._Suite` and `NetworkServerControlInaddrAnyTest` in `derbynet._Suite`). The other 73 dormant
-sources remain `RETAINED_TRANSITIONAL` with no active suite or tier until Stage 7 maps
-their assertions and either restores them against current production contracts or moves them to
-historical evidence. Abstract support anchors and shared fixtures remain in
+The Stage 3 baseline accounted for all 150 DelosDB executable-source files then present in
+`src/delosTest/java`. The explicit active authority at
+`gradle/testing/delos-stage3-active-test-authority.tsv` records the 77 classes which had an execution
+lane before Stage 3—75 through focused Gradle tasks and two DelosDB-authored tests formerly registered
+in inherited suites (`HeapSanityCheckerTest` in `store._Suite` and
+`NetworkServerControlInaddrAnyTest` in `derbynet._Suite`)—plus reviewed later additions such as the
+Stage 4 isolation runner. The 73 dormant Stage 3 sources remain `RETAINED_TRANSITIONAL` with no active
+suite or tier until Stage 7 maps their assertions and either restores them against current production
+contracts or moves them to historical evidence. Abstract support anchors and shared fixtures remain in
 `src/delosTestSupport/java` and are covered by the separate provenance inventory. Every active test
 has one purpose suite and one execution tier. The stable inherited and DelosDB task names are now
 available at both the root and `:delosdb-tests` project. Existing one-class tasks remain temporary
@@ -44,12 +48,33 @@ compatibility lanes until Stage 8.
 The inherited `derbynet._Suite` and `store._Suite` no longer register DelosDB-authored tests.
 The provenance gate verifies that inherited sources do not depend on either DelosDB source root.
 The Stage 3 suite gate verifies complete registry coverage, exact equality between the active registry
-and the frozen pre-Stage-3 authority, exact complementary retention of all dormant sources, valid
+and the explicit active authority, exact complementary retention of all dormant sources, valid
 active suite/tier assignments, disjoint quick/full functional partitions, stable suite tasks and all
 six root verification levels. `quickVerification` explicitly includes the DelosDB unit suite because
 the root module-local `test` aggregate intentionally excludes `:delosdb-tests`. The root `check` graph
 runs each active functional test once, and `releaseVerification` executes Derby `suites.All` directly
 rather than first rerunning the inherited component suites.
+
+Stage 4 adds the DelosDB-owned isolation specification format and complete first catalogue. Twenty-five
+stable case IDs cover snapshot stability, savepoint rollback, two- and three-session deadlocks,
+update/delete traversal, foreign-key concurrency, DDL conflicts, and concurrent `MERGE`. Specifications
+declare setup, teardown, sessions, named steps, provider-specific permutations, asynchronous
+start/await operations, observed heavyweight-lock blocking, accepted SQLStates, exact SQLState-count
+assertions, and final-state queries. The catalogue executes across heap and `delos_mvcc` and across file
+and memory databases wherever the scenario is applicable.
+
+The runner follows PostgreSQL isolation-test methodology without copying PostgreSQL's parser, runner,
+SQL, or expected files. It observes Derby heavyweight lock waits through `SYSCS_DIAG.LOCK_TABLE`, uses
+bounded worker operations, drains multi-session deadlocks by committing whichever session completes,
+and requires exact deadlock-victim counts. Every case is inventoried and records the PostgreSQL 19beta1
+archive fingerprint, source scenario, license, adaptation type, semantic intent, DelosDB changes, and
+applicable providers. Embedded execution is the Stage 4 authority; existing DRDA system and failure-path
+suites remain the transport-equivalence authority rather than adding network-server lifecycle complexity
+to the isolation runner.
+
+The stable registry contains 151 executable-source files: 78 active tests and 73 retained transitional
+sources. The shared support root contains 38 DelosDB-owned support classes. Stage 5 begins with H2-style
+deterministic differential fuzzing.
 
 
 ## 1. Objective
@@ -1310,14 +1335,21 @@ No deletion, rename or semantic modification.
 
 ## Stage 4 — PostgreSQL-style isolation runner
 
-1. Implement the DelosDB isolation-spec format.
-2. Add snapshot-stability cases.
-3. Add savepoint cases.
-4. Add simple and multi-session deadlocks.
-5. Add update/delete traversal cases.
-6. Add foreign-key concurrency.
-7. Add DDL conflicts.
-8. Add `MERGE` cases when applicable.
+Implemented:
+
+1. DelosDB isolation-spec format and validated loader.
+2. Snapshot-stability cases (`DEL-ISO-001` through `DEL-ISO-004`).
+3. Savepoint cases (`DEL-ISO-010` through `DEL-ISO-012`).
+4. Simple, conversion and three-session deadlocks (`DEL-DEADLOCK-001` through `004`).
+5. Update/delete traversal, secondary-key movement, row identity and READ COMMITTED re-evaluation
+   (`DEL-TRAVERSAL-001` through `004`).
+6. Foreign-key contention, rollback, deadlock and snapshot cases (`DEL-FK-001` through `004`).
+7. DROP, CREATE INDEX, TRUNCATE and trigger-lifecycle conflicts (`DEL-DDL-001` through `004`).
+8. Conflicting and disjoint concurrent `MERGE` cases (`DEL-MERGE-001` and `002`).
+
+Permanent Stage 4 gates require the exact 25-case catalogue, all seven categories, complete PostgreSQL
+provenance, explicit named permutations, observed lock waits, bounded asynchronous completion, exact
+SQLState counts, provider/storage matrix reporting, and registration in the concurrency/full lane.
 
 ## Stage 5 — H2-style differential fuzzing
 

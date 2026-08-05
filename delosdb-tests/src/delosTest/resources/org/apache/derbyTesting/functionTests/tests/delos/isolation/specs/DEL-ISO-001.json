@@ -1,0 +1,142 @@
+{
+  "id": "DEL-ISO-001",
+  "description": "A stable snapshot does not gain rows committed after snapshot creation.",
+  "category": "snapshot-stability",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table isolation_t (id int primary key, payload varchar(32), bucket int)${providerClause}",
+    "create index isolation_bucket_idx on isolation_t(bucket)",
+    "insert into isolation_t values (1, 'one', 10)",
+    "insert into isolation_t values (2, 'two', 20)"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "isolationByProvider": {
+        "heap": "SERIALIZABLE",
+        "mvcc": "REPEATABLE_READ"
+      },
+      "steps": {
+        "initial": {
+          "sql": "select count(*) from isolation_t where bucket between 10 and 40",
+          "rows": [
+            "2"
+          ]
+        },
+        "stable": {
+          "sql": "select count(*) from isolation_t where bucket between 10 and 40",
+          "rows": [
+            "2"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "insert": {
+          "sql": "insert into isolation_t values (3, 'three', 30)",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-serializable-range-lock",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "START",
+          "step": "writer.insert",
+          "token": "phantomInsert"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "phantomInsert",
+          "timeoutMillis": 300
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "phantomInsert",
+          "timeoutMillis": 8000
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        }
+      ]
+    },
+    {
+      "name": "mvcc-commit-behind-snapshot",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from isolation_t order by id",
+      "rows": [
+        "1|one",
+        "2|two",
+        "3|three"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table isolation_t"
+  ]
+}

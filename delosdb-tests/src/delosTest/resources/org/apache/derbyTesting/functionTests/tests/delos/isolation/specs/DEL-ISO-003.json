@@ -1,0 +1,94 @@
+{
+  "id": "DEL-ISO-003",
+  "description": "Commit publication cannot retroactively change a previously active MVCC transaction.",
+  "category": "snapshot-stability",
+  "providers": [
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table snapshot_anchor (id int)${providerClause}",
+    "create table snapshot_target (id int primary key, payload varchar(32))${providerClause}",
+    "insert into snapshot_anchor values (1)",
+    "insert into snapshot_target values (1, 'old')"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "establish": {
+          "sql": "select id from snapshot_anchor",
+          "rows": [
+            "1"
+          ]
+        },
+        "target": {
+          "sql": "select payload from snapshot_target where id = 1",
+          "rows": [
+            "old"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "update": {
+          "sql": "update snapshot_target set payload = 'new' where id = 1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "publication-after-transaction-start",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.establish"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.target"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from snapshot_target",
+      "rows": [
+        "1|new"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table snapshot_target",
+    "drop table snapshot_anchor"
+  ]
+}

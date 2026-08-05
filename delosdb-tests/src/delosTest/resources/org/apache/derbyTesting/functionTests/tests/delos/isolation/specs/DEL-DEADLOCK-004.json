@@ -1,0 +1,125 @@
+{
+  "id": "DEL-DEADLOCK-004",
+  "description": "Deadlock victim rollback does not corrupt an independent surviving transaction.",
+  "category": "deadlock",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table deadlock_survivor_t (id int primary key, marker int not null)${providerClause}",
+    "insert into deadlock_survivor_t values (1,0),(2,0),(3,0)"
+  ],
+  "sessions": {
+    "left": {
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_survivor_t set marker=10 where id=1",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_survivor_t set marker=marker+1 where id=2",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "right": {
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_survivor_t set marker=10 where id=2",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_survivor_t set marker=marker+1 where id=1",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "survivor": {
+      "steps": {
+        "update": {
+          "sql": "update deadlock_survivor_t set marker=9 where id=3",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "victim-and-independent-survivor",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "survivor.update"
+        },
+        {
+          "type": "RUN",
+          "step": "survivor.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "left.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "right.lock"
+        },
+        {
+          "type": "START",
+          "step": "left.cycle",
+          "token": "leftCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "leftCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "right.cycle",
+          "token": "rightCycle"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 12000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select sum(case when id<3 then marker else 0 end),max(case when id=3 then marker else 0 end) from deadlock_survivor_t",
+      "rows": [
+        "11|9"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table deadlock_survivor_t"
+  ]
+}

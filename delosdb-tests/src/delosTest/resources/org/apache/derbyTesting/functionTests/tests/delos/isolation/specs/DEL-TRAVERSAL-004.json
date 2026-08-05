@@ -1,0 +1,89 @@
+{
+  "id": "DEL-TRAVERSAL-004",
+  "description": "READ COMMITTED re-evaluates a stale predicate after a concurrent update and never deletes the moved row.",
+  "category": "update-delete-traversal",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table traversal_predicate_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into traversal_predicate_t values (1,'old')"
+  ],
+  "sessions": {
+    "updater": {
+      "steps": {
+        "update": {
+          "sql": "update traversal_predicate_t set payload='new' where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "deleter": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "deleteOld": {
+          "sql": "delete from traversal_predicate_t where payload='old'",
+          "updateCount": 0,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "read-committed-predicate-reevaluation",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "updater.update"
+        },
+        {
+          "type": "START",
+          "step": "deleter.deleteOld",
+          "token": "predicateDelete"
+        },
+        {
+          "type": "RUN",
+          "step": "updater.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "predicateDelete",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "deleter.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,payload from traversal_predicate_t",
+      "rows": [
+        "1|new"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table traversal_predicate_t"
+  ]
+}

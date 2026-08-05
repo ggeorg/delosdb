@@ -1,0 +1,92 @@
+{
+  "id": "DEL-ISO-004",
+  "description": "READ COMMITTED refreshes between statements for both storage providers.",
+  "category": "snapshot-stability",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table committed_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into committed_t values (1, 'old')"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "initial": {
+          "sql": "select payload from committed_t where id = 1",
+          "rows": [
+            "old"
+          ]
+        },
+        "refreshed": {
+          "sql": "select payload from committed_t where id = 1",
+          "rows": [
+            "new"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "update": {
+          "sql": "update committed_t set payload = 'new' where id = 1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "refresh-between-statements",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.refreshed"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from committed_t",
+      "rows": [
+        "1|new"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table committed_t"
+  ]
+}

@@ -1,0 +1,27 @@
+# DelosDB Stage 4 isolation-specification inventory.
+# case_id	resource	category	providers	storages	connections
+DEL-DDL-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DDL-001.json	ddl-concurrency	heap,mvcc	file,memory	embedded
+DEL-DDL-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DDL-002.json	ddl-concurrency	heap,mvcc	file,memory	embedded
+DEL-DDL-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DDL-003.json	ddl-concurrency	heap,mvcc	file,memory	embedded
+DEL-DDL-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DDL-004.json	ddl-concurrency	heap,mvcc	file,memory	embedded
+DEL-DEADLOCK-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DEADLOCK-001.json	deadlock	heap,mvcc	file,memory	embedded
+DEL-DEADLOCK-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DEADLOCK-002.json	deadlock	heap	file,memory	embedded
+DEL-DEADLOCK-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DEADLOCK-003.json	deadlock	heap,mvcc	file,memory	embedded
+DEL-DEADLOCK-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-DEADLOCK-004.json	deadlock	heap,mvcc	file,memory	embedded
+DEL-FK-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-FK-001.json	foreign-key-concurrency	heap,mvcc	file,memory	embedded
+DEL-FK-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-FK-002.json	foreign-key-concurrency	heap,mvcc	file,memory	embedded
+DEL-FK-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-FK-003.json	foreign-key-concurrency	heap,mvcc	file,memory	embedded
+DEL-FK-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-FK-004.json	foreign-key-concurrency	heap,mvcc	file,memory	embedded
+DEL-ISO-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-001.json	snapshot-stability	heap,mvcc	file,memory	embedded
+DEL-ISO-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-002.json	snapshot-stability	heap,mvcc	file,memory	embedded
+DEL-ISO-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-003.json	snapshot-stability	mvcc	file,memory	embedded
+DEL-ISO-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-004.json	snapshot-stability	heap,mvcc	file,memory	embedded
+DEL-ISO-010	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-010.json	savepoint-rollback	heap,mvcc	file,memory	embedded
+DEL-ISO-011	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-011.json	savepoint-rollback	heap,mvcc	file,memory	embedded
+DEL-ISO-012	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-012.json	savepoint-rollback	heap,mvcc	file,memory	embedded
+DEL-MERGE-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-MERGE-001.json	merge-concurrency	heap,mvcc	file,memory	embedded
+DEL-MERGE-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-MERGE-002.json	merge-concurrency	heap,mvcc	file,memory	embedded
+DEL-TRAVERSAL-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-TRAVERSAL-001.json	update-delete-traversal	heap,mvcc	file,memory	embedded
+DEL-TRAVERSAL-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-TRAVERSAL-002.json	update-delete-traversal	heap,mvcc	file,memory	embedded
+DEL-TRAVERSAL-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-TRAVERSAL-003.json	update-delete-traversal	heap,mvcc	file,memory	embedded
+DEL-TRAVERSAL-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-TRAVERSAL-004.json	update-delete-traversal	heap,mvcc	file,memory	embedded

@@ -1,0 +1,93 @@
+{
+  "id": "DEL-MERGE-001",
+  "description": "A MERGE update waits behind a conflicting target update and applies the source value after commit.",
+  "category": "merge-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table merge_target_t (id int primary key,payload int)${providerClause}",
+    "create table merge_source_t (id int primary key,payload int)${providerClause}",
+    "insert into merge_target_t values (1,0),(2,0)",
+    "insert into merge_source_t values (1,20),(2,30)"
+  ],
+  "sessions": {
+    "writer": {
+      "steps": {
+        "update": {
+          "sql": "update merge_target_t set payload=10 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "merger": {
+      "steps": {
+        "merge": {
+          "sql": "merge into merge_target_t using merge_source_t on merge_target_t.id=merge_source_t.id when matched and merge_target_t.id=1 then update set payload=merge_source_t.payload",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "merge-conflicting-update",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "START",
+          "step": "merger.merge",
+          "token": "mergeUpdate"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "mergeUpdate",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "mergeUpdate",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "merger.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,payload from merge_target_t order by id",
+      "rows": [
+        "1|20",
+        "2|0"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table merge_source_t",
+    "drop table merge_target_t"
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "id": "DEL-TRAVERSAL-002",
+  "description": "An old-secondary-key delete cannot remove a row moved by a concurrent committed update.",
+  "category": "update-delete-traversal",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table traversal_key_t (id int primary key, bucket int, payload varchar(32))${providerClause}",
+    "create index traversal_key_idx on traversal_key_t(bucket)",
+    "insert into traversal_key_t values (1,10,'base')"
+  ],
+  "sessions": {
+    "updater": {
+      "steps": {
+        "move": {
+          "sql": "update traversal_key_t set bucket=20 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "deleter": {
+      "steps": {
+        "oldKey": {
+          "sql": "delete from traversal_key_t where bucket=10",
+          "updateCount": 0,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "secondary-key-reevaluation",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "updater.move"
+        },
+        {
+          "type": "START",
+          "step": "deleter.oldKey",
+          "token": "oldKeyDelete"
+        },
+        {
+          "type": "RUN",
+          "step": "updater.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "oldKeyDelete",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "deleter.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,bucket,payload from traversal_key_t",
+      "rows": [
+        "1|20|base"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table traversal_key_t"
+  ]
+}

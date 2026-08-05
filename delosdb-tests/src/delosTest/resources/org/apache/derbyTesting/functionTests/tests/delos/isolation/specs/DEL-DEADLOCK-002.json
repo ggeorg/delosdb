@@ -1,0 +1,111 @@
+{
+  "id": "DEL-DEADLOCK-002",
+  "description": "Two repeatable-read readers upgrading the same row produce one conversion-deadlock victim.",
+  "category": "deadlock",
+  "providers": [
+    "heap"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table deadlock_conversion_t (id int primary key, marker int not null)",
+    "insert into deadlock_conversion_t values (1,0)"
+  ],
+  "sessions": {
+    "first": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "read": {
+          "sql": "select marker from deadlock_conversion_t where id=1",
+          "rows": [
+            "0"
+          ]
+        },
+        "upgrade": {
+          "sql": "update deadlock_conversion_t set marker=marker+1 where id=1",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "second": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "read": {
+          "sql": "select marker from deadlock_conversion_t where id=1",
+          "rows": [
+            "0"
+          ]
+        },
+        "upgrade": {
+          "sql": "update deadlock_conversion_t set marker=marker+1 where id=1",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "reader-writer-conversion",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "first.read"
+        },
+        {
+          "type": "RUN",
+          "step": "second.read"
+        },
+        {
+          "type": "START",
+          "step": "first.upgrade",
+          "token": "firstUpgrade"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "firstUpgrade",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "second.upgrade",
+          "token": "secondUpgrade"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 12000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select marker from deadlock_conversion_t where id=1",
+      "rows": [
+        "1"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table deadlock_conversion_t"
+  ]
+}

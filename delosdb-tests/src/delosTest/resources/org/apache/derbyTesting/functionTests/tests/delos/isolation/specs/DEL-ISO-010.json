@@ -1,0 +1,103 @@
+{
+  "id": "DEL-ISO-010",
+  "description": "Delete followed by rollback to savepoint restores the row.",
+  "category": "savepoint-rollback",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table savepoint_delete_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into savepoint_delete_t values (1, 'one')",
+    "insert into savepoint_delete_t values (2, 'two')",
+    "insert into savepoint_delete_t values (3, 'three')"
+  ],
+  "sessions": {
+    "transaction": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "savepoint": {
+          "action": "SAVEPOINT",
+          "savepoint": "before_delete"
+        },
+        "delete": {
+          "sql": "delete from savepoint_delete_t where id = 2",
+          "updateCount": 1
+        },
+        "deleted": {
+          "sql": "select id, payload from savepoint_delete_t order by id",
+          "rows": [
+            "1|one",
+            "3|three"
+          ]
+        },
+        "rollback": {
+          "action": "ROLLBACK_TO_SAVEPOINT",
+          "savepoint": "before_delete"
+        },
+        "restored": {
+          "sql": "select id, payload from savepoint_delete_t order by id",
+          "rows": [
+            "1|one",
+            "2|two",
+            "3|three"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "delete-rollback",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "transaction.savepoint"
+        },
+        {
+          "type": "RUN",
+          "step": "transaction.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "transaction.deleted"
+        },
+        {
+          "type": "RUN",
+          "step": "transaction.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "transaction.restored"
+        },
+        {
+          "type": "RUN",
+          "step": "transaction.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload from savepoint_delete_t order by id",
+      "rows": [
+        "1|one",
+        "2|two",
+        "3|three"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table savepoint_delete_t"
+  ]
+}

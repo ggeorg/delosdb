@@ -82,3 +82,5 @@ this public directory, source comments, tests, or release notes.
 - Public behavior, durable formats, module ownership, and supported limitations must match code and
   tests.
 - Documentation wording, headings, line counts, and exact phrases are never build authority.
+
+- [Isolation specifications](ISOLATION-SPECIFICATIONS.md) — Stage 4 declarative concurrency format, catalogue and execution rules.

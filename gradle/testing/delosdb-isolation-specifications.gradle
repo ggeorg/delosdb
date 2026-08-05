@@ -1,0 +1,372 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.nio.charset.StandardCharsets
+
+/* Stage 4: complete DelosDB-owned PostgreSQL-style isolation catalogue. */
+
+def specInventoryFile = rootProject.file('gradle/testing/delos-isolation-specifications.tsv')
+def externalProvenanceFile = rootProject.file('gradle/testing/delos-external-test-provenance.tsv')
+def specResourceRoot = project.file('src/delosTest/resources')
+def suiteRegistryFile = rootProject.file('gradle/testing/delos-test-suite-registry.tsv')
+def activeAuthorityFile = rootProject.file('gradle/testing/delos-stage3-active-test-authority.tsv')
+def isolationTestSource = project.file('src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.java')
+def isolationRunnerSource = project.file('src/delosTestSupport/java/org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationRunner.java')
+def isolationTestClass = 'org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest'
+def reportJson = layout.buildDirectory.file('reports/tests/delosdb-isolation-specifications.json')
+def reportText = layout.buildDirectory.file('reports/tests/delosdb-isolation-specifications.txt')
+
+def requiredCases = [
+        'DEL-ISO-001', 'DEL-ISO-002', 'DEL-ISO-003', 'DEL-ISO-004',
+        'DEL-ISO-010', 'DEL-ISO-011', 'DEL-ISO-012',
+        'DEL-DEADLOCK-001', 'DEL-DEADLOCK-002', 'DEL-DEADLOCK-003', 'DEL-DEADLOCK-004',
+        'DEL-TRAVERSAL-001', 'DEL-TRAVERSAL-002', 'DEL-TRAVERSAL-003', 'DEL-TRAVERSAL-004',
+        'DEL-FK-001', 'DEL-FK-002', 'DEL-FK-003', 'DEL-FK-004',
+        'DEL-DDL-001', 'DEL-DDL-002', 'DEL-DDL-003', 'DEL-DDL-004',
+        'DEL-MERGE-001', 'DEL-MERGE-002'
+] as Set<String>
+
+def requiredCategoryCounts = [
+        'snapshot-stability': 4,
+        'savepoint-rollback': 3,
+        'deadlock': 4,
+        'update-delete-traversal': 4,
+        'foreign-key-concurrency': 4,
+        'ddl-concurrency': 4,
+        'merge-concurrency': 2
+]
+
+def readTsv = { File file, int columns, List<String> issues ->
+    Map<String, List<String>> rows = [:]
+    if (!file.isFile()) {
+        issues.add("Missing manifest: ${rootProject.relativePath(file)}")
+        return rows
+    }
+    file.readLines(StandardCharsets.UTF_8.name()).eachWithIndex { String line, int index ->
+        if (line.isBlank() || line.startsWith('#')) return
+        List<String> values = line.split('\t', -1) as List<String>
+        if (values.size() != columns) {
+            issues.add("${rootProject.relativePath(file)}:${index + 1} has ${values.size()} columns; expected ${columns}")
+        } else if (rows.put(values[0], values) != null) {
+            issues.add("Duplicate manifest key ${values[0]} in ${rootProject.relativePath(file)}")
+        }
+    }
+    rows
+}
+
+def splitCsv = { Object value ->
+    value == null || value.toString().isBlank()
+            ? [] as Set<String>
+            : value.toString().split(',').collect { it.trim().toLowerCase() }.findAll { !it.isBlank() }.toSet()
+}
+
+def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the complete Stage 4 isolation specification catalogue and PostgreSQL provenance.'
+    inputs.files(specInventoryFile, externalProvenanceFile, suiteRegistryFile,
+            activeAuthorityFile, isolationTestSource, isolationRunnerSource)
+    inputs.dir(specResourceRoot)
+    outputs.files(reportJson, reportText)
+
+    doLast {
+        List<String> issues = []
+        Map<String, List<String>> inventory = readTsv(specInventoryFile, 6, issues)
+        Map<String, List<String>> provenance = readTsv(externalProvenanceFile, 9, issues)
+        Set<String> inventoryIds = inventory.keySet()
+
+        (requiredCases - inventoryIds).sort().each { issues.add("Missing required Stage 4 case: ${it}") }
+        (inventoryIds - requiredCases).sort().each { issues.add("Unexpected Stage 4 case: ${it}") }
+        (inventoryIds - provenance.keySet()).sort().each { issues.add("Missing external provenance: ${it}") }
+        (provenance.keySet() - inventoryIds).sort().each { issues.add("Stale external provenance: ${it}") }
+
+        int permutationCount = 0
+        int matrixCaseCount = 0
+        int blockingAssertionCount = 0
+        int sqlStateAssertionCount = 0
+        int drainOperationCount = 0
+        Map<String, Integer> categoryCounts = [:].withDefault { 0 }
+        List<Map<String, Object>> parsedSpecs = []
+        Set<String> inventoryResources = [] as Set<String>
+        JsonSlurper slurper = new JsonSlurper()
+
+        inventory.each { String id, List<String> row ->
+            String resource = row[1]
+            inventoryResources.add(resource)
+            File file = new File(specResourceRoot, resource)
+            if (!file.isFile()) {
+                issues.add("Missing isolation resource for ${id}: ${resource}")
+                return
+            }
+
+            Map spec
+            try {
+                spec = slurper.parse(file) as Map
+            } catch (Exception failure) {
+                issues.add("Invalid JSON for ${id}: ${failure.message}")
+                return
+            }
+            String category = spec.category?.toString()
+            Set<String> providers = splitCsv(spec.providers instanceof List ? spec.providers.join(',') : null)
+            Set<String> storages = splitCsv(spec.storages instanceof List ? spec.storages.join(',') : null)
+            Set<String> connections = splitCsv(spec.connections instanceof List ? spec.connections.join(',') : null)
+            if (spec.id != id) issues.add("Resource ID mismatch for ${id}: ${spec.id}")
+            if (category != row[2]) issues.add("Category mismatch for ${id}: ${category} != ${row[2]}")
+            if (providers != splitCsv(row[3])) issues.add("Provider mismatch for ${id}")
+            if (storages != splitCsv(row[4])) issues.add("Storage mismatch for ${id}")
+            if (connections != splitCsv(row[5])) issues.add("Connection mismatch for ${id}")
+            if (!(providers in [['heap'] as Set, ['mvcc'] as Set, ['heap', 'mvcc'] as Set])) {
+                issues.add("Invalid provider set for ${id}: ${providers}")
+            }
+            if (!storages.every { it in ['file', 'memory'] }) issues.add("Invalid storage set for ${id}: ${storages}")
+            if (connections != ['embedded'] as Set) issues.add("Stage 4 connection authority must be embedded for ${id}")
+            categoryCounts[category] = categoryCounts[category] + 1
+
+            Map sessions = spec.sessions instanceof Map ? spec.sessions as Map : [:]
+            if (sessions.isEmpty()) issues.add("No sessions for ${id}")
+            Map<String, Set<String>> sessionSteps = [:]
+            sessions.each { Object sessionNameValue, Object sessionValue ->
+                String sessionName = sessionNameValue.toString()
+                Map session = sessionValue instanceof Map ? sessionValue as Map : [:]
+                Map steps = session.steps instanceof Map ? session.steps as Map : [:]
+                if (steps.isEmpty()) issues.add("No steps for ${id}/${sessionName}")
+                sessionSteps[sessionName] = steps.keySet().collect { it.toString() }.toSet()
+                steps.each { Object stepNameValue, Object stepValue ->
+                    String stepName = stepNameValue.toString()
+                    Map step = stepValue instanceof Map ? stepValue as Map : [:]
+                    String action = (step.action ?: 'SQL').toString().toUpperCase()
+                    if (!(action in ['SQL', 'COMMIT', 'ROLLBACK', 'SAVEPOINT',
+                                     'ROLLBACK_TO_SAVEPOINT', 'RELEASE_SAVEPOINT'])) {
+                        issues.add("Invalid action ${action} for ${id}/${sessionName}.${stepName}")
+                    }
+                    if (action == 'SQL' && !(step.sql instanceof String) ) {
+                        issues.add("SQL step lacks SQL for ${id}/${sessionName}.${stepName}")
+                    }
+                    if (step.sqlStates != null && !(step.sqlStates instanceof List)) {
+                        issues.add("sqlStates must be a list for ${id}/${sessionName}.${stepName}")
+                    }
+                    if (step.successAllowed != null && !(step.successAllowed instanceof Boolean)) {
+                        issues.add("successAllowed must be Boolean for ${id}/${sessionName}.${stepName}")
+                    }
+                }
+            }
+
+            List permutations = spec.permutations instanceof List ? spec.permutations as List : []
+            if (permutations.isEmpty()) issues.add("No permutations for ${id}")
+            permutationCount += permutations.size()
+            permutations.each { Object permutationValue ->
+                if (!(permutationValue instanceof Map)) {
+                    issues.add("Permutation is not an object for ${id}")
+                    return
+                }
+                Map permutation = permutationValue as Map
+                String permutationName = permutation.name?.toString()
+                Set<String> permutationProviders = permutation.providers instanceof List
+                        ? splitCsv(permutation.providers.join(',')) : providers
+                Set<String> permutationStorages = permutation.storages instanceof List
+                        ? splitCsv(permutation.storages.join(',')) : storages
+                matrixCaseCount += permutationProviders.intersect(providers).size()
+                        * permutationStorages.intersect(storages).size()
+                        * connections.size()
+
+                Set<String> pendingTokens = [] as Set<String>
+                List operations = permutation.operations instanceof List ? permutation.operations as List : []
+                if (operations.isEmpty()) issues.add("No operations for ${id}/${permutationName}")
+                operations.each { Object operationValue ->
+                    if (!(operationValue instanceof Map)) {
+                        issues.add("Operation is not an object in ${id}/${permutationName}")
+                        return
+                    }
+                    Map operation = operationValue as Map
+                    String type = operation.type?.toString()?.toUpperCase()
+                    if (!(type in ['RUN', 'START', 'ASSERT_BLOCKED', 'AWAIT', 'DRAIN_AND_COMMIT'])) {
+                        issues.add("Invalid operation type ${type} in ${id}/${permutationName}")
+                        return
+                    }
+                    if (type in ['RUN', 'START']) {
+                        String step = operation.step?.toString()
+                        int separator = step == null ? -1 : step.indexOf('.')
+                        String sessionName = separator > 0 ? step.substring(0, separator) : ''
+                        String stepName = separator > 0 ? step.substring(separator + 1) : ''
+                        if (!sessionSteps.containsKey(sessionName)
+                                || !sessionSteps[sessionName].contains(stepName)) {
+                            issues.add("Unknown step ${step} in ${id}/${permutationName}")
+                        }
+                    }
+                    if (type == 'START') {
+                        String token = operation.token?.toString()
+                        if (token == null || token.isBlank() || !pendingTokens.add(token)) {
+                            issues.add("Invalid or duplicate async token in ${id}/${permutationName}")
+                        }
+                    } else if (type == 'ASSERT_BLOCKED') {
+                        blockingAssertionCount++
+                        String token = operation.token?.toString()
+                        if (!pendingTokens.contains(token)) {
+                            issues.add("ASSERT_BLOCKED references unknown token ${token} in ${id}/${permutationName}")
+                        }
+                    } else if (type == 'AWAIT') {
+                        String token = operation.token?.toString()
+                        if (!pendingTokens.remove(token)) {
+                            issues.add("AWAIT references unknown token ${token} in ${id}/${permutationName}")
+                        }
+                    } else if (type == 'DRAIN_AND_COMMIT') {
+                        drainOperationCount++
+                        if (pendingTokens.isEmpty()) {
+                            issues.add("DRAIN_AND_COMMIT has no pending operations in ${id}/${permutationName}")
+                        }
+                        pendingTokens.clear()
+                    }
+                }
+                if (!pendingTokens.isEmpty()) {
+                    issues.add("Unawaited async tokens ${pendingTokens} in ${id}/${permutationName}")
+                }
+
+                List stateAssertions = permutation.sqlStateAssertions instanceof List
+                        ? permutation.sqlStateAssertions as List : []
+                sqlStateAssertionCount += stateAssertions.size()
+                stateAssertions.each { Object assertionValue ->
+                    Map assertion = assertionValue instanceof Map ? assertionValue as Map : [:]
+                    if (!(assertion.sqlState instanceof String) || assertion.sqlState.toString().isBlank()) {
+                        issues.add("Invalid SQLState assertion in ${id}/${permutationName}")
+                    }
+                    if (!(assertion.minimum instanceof Number)
+                            || (assertion.maximum != null && !(assertion.maximum instanceof Number))) {
+                        issues.add("Invalid SQLState count in ${id}/${permutationName}")
+                    }
+                }
+            }
+
+            parsedSpecs.add([
+                    id: id,
+                    category: category,
+                    providers: providers.sort(),
+                    storages: storages.sort(),
+                    connections: connections.sort(),
+                    permutations: permutations.size()
+            ])
+        }
+
+        requiredCategoryCounts.each { String category, int expected ->
+            int actual = categoryCounts[category] ?: 0
+            if (actual != expected) issues.add("Category ${category} has ${actual} cases; expected ${expected}")
+        }
+        (categoryCounts.keySet() - requiredCategoryCounts.keySet()).sort().each {
+            issues.add("Unexpected isolation category: ${it}")
+        }
+
+        Set<String> actualResources = fileTree(specResourceRoot) {
+            include 'org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/*.json'
+        }.files.collect {
+            specResourceRoot.toPath().relativize(it.toPath()).toString().replace('\\', '/')
+        }.toSet()
+        (actualResources - inventoryResources).sort().each { issues.add("Uninventoried isolation resource: ${it}") }
+        (inventoryResources - actualResources).sort().each { issues.add("Stale isolation inventory resource: ${it}") }
+
+        provenance.each { String id, List<String> row ->
+            if (row[1] != 'PostgreSQL') issues.add("Unexpected source project for ${id}: ${row[1]}")
+            if (!row[2].contains('PostgreSQL 19beta1 archive sha256:')) issues.add("Unfrozen source revision for ${id}")
+            if (!row[3].startsWith('src/test/isolation/')) issues.add("Unexpected source file for ${id}: ${row[3]}")
+            if (row[4] != 'PostgreSQL License') issues.add("Unexpected source license for ${id}: ${row[4]}")
+            if (!(row[5] in ['ADAPTED_WITH_ATTRIBUTION', 'REIMPLEMENTED_FROM_SCENARIO', 'INDEPENDENT_EQUIVALENT'])) {
+                issues.add("Invalid adaptation type for ${id}: ${row[5]}")
+            }
+            if (row[6].isBlank() || row[7].isBlank()) issues.add("Incomplete semantic provenance for ${id}")
+            if (inventory[id] != null && splitCsv(row[8]) != splitCsv(inventory[id][3])) {
+                issues.add("Provenance provider mismatch for ${id}")
+            }
+        }
+
+        if (!isolationTestSource.isFile()) issues.add('Isolation test source is missing')
+        else {
+            Set<String> referenced = (isolationTestSource.getText(StandardCharsets.UTF_8.name()) =~ /DEL-[A-Z]+-\d{3}/)
+                    .findAll().collect { it.toString() }.toSet()
+            (requiredCases - referenced).sort().each { issues.add("Isolation test does not reference ${it}") }
+            (referenced - requiredCases).sort().each { issues.add("Isolation test references unknown case ${it}") }
+        }
+        if (!isolationRunnerSource.isFile()) issues.add('Isolation runner source is missing')
+        else {
+            String runner = isolationRunnerSource.getText(StandardCharsets.UTF_8.name())
+            if (!runner.contains('SYSCS_DIAG.LOCK_TABLE')) issues.add('Runner does not observe Derby heavyweight lock waits')
+            if (!runner.contains('DRAIN_AND_COMMIT')) issues.add('Runner lacks multi-session deadlock draining')
+            if (!runner.contains('assertSqlStateCounts')) issues.add('Runner lacks exact SQLState outcome assertions')
+        }
+
+        List<String> registryRows = suiteRegistryFile.readLines(StandardCharsets.UTF_8.name())
+                .findAll { !it.isBlank() && !it.startsWith('#') }
+        String registryRow = registryRows.find { it.startsWith(isolationTestClass + '\t') }
+        if (registryRow == null) issues.add('Isolation test class is missing from stable registry')
+        else {
+            String[] columns = registryRow.split('\t', -1)
+            if (columns[2] != 'TEST' || columns[3] != 'concurrency' || columns[4] != 'full') {
+                issues.add('Isolation test registry assignment must be TEST/concurrency/full')
+            }
+        }
+        List<String> authorityRows = activeAuthorityFile.readLines(StandardCharsets.UTF_8.name())
+                .findAll { !it.isBlank() && !it.startsWith('#') }
+        String authorityRow = authorityRows.find { it.startsWith(isolationTestClass + '\t') }
+        if (authorityRow == null || !authorityRow.contains('\tSTAGE4_NEW\t')) {
+            issues.add('Isolation test class lacks STAGE4_NEW active authority')
+        }
+        if (tasks.findByName('runDelosIsolationSpecificationTests') == null) {
+            issues.add('Focused isolation specification task is missing')
+        }
+        if (blockingAssertionCount < 10) issues.add("Only ${blockingAssertionCount} blocking assertions; expected at least 10")
+        if (sqlStateAssertionCount < 4) issues.add("Only ${sqlStateAssertionCount} SQLState assertions; expected at least 4")
+        if (drainOperationCount < 4) issues.add("Only ${drainOperationCount} deadlock drains; expected at least 4")
+
+        Map<String, Object> report = [
+                schemaVersion: 2,
+                stage: 'Stage 4 - complete PostgreSQL-style isolation runner and catalogue',
+                inventory: rootProject.relativePath(specInventoryFile),
+                externalProvenance: rootProject.relativePath(externalProvenanceFile),
+                summary: [
+                        specificationCount: inventory.size(),
+                        categoryCount: categoryCounts.size(),
+                        permutationCount: permutationCount,
+                        matrixCaseCount: matrixCaseCount,
+                        blockingAssertionCount: blockingAssertionCount,
+                        sqlStateAssertionCount: sqlStateAssertionCount,
+                        deadlockDrainCount: drainOperationCount,
+                        issueCount: issues.unique().size()
+                ],
+                categories: categoryCounts.sort(),
+                specifications: parsedSpecs.sort { it.id },
+                issues: issues.unique().sort()
+        ]
+        File jsonFile = reportJson.get().asFile
+        File textFile = reportText.get().asFile
+        jsonFile.parentFile.mkdirs()
+        textFile.parentFile.mkdirs()
+        jsonFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(report)) + '\n', StandardCharsets.UTF_8.name())
+        textFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
+            writer.println('DelosDB isolation specifications')
+            writer.println('Stage: Stage 4 - complete PostgreSQL-style isolation runner and catalogue')
+            writer.println()
+            report.summary.each { key, value -> writer.println(String.format('%-30s %s', key + ':', value)) }
+            writer.println()
+            writer.println('Categories')
+            report.categories.each { key, value -> writer.println("  ${key}: ${value}") }
+            writer.println()
+            writer.println('Specifications')
+            report.specifications.each { spec ->
+                writer.println("  ${spec.id} ${spec.category} providers=${spec.providers} storages=${spec.storages} permutations=${spec.permutations}")
+            }
+            writer.println()
+            writer.println('Issues')
+            if (report.issues.isEmpty()) writer.println('  none')
+            else report.issues.each { writer.println('  - ' + it) }
+        }
+
+        if (!report.issues.isEmpty()) {
+            throw new GradleException('DelosDB isolation-specification failures (' + report.issues.size() + '):\n  - '
+                    + report.issues.join('\n  - '))
+        }
+        logger.lifecycle('DelosDB Stage 4 isolation specifications passed. Report: {}', textFile)
+    }
+}
+
+tasks.named('runDelosIsolationSpecificationTests') {
+    dependsOn stage4Analysis
+}
+
+tasks.named('check') {
+    dependsOn stage4Analysis
+}

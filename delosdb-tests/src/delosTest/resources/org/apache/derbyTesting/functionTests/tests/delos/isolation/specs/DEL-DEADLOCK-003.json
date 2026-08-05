@@ -1,0 +1,136 @@
+{
+  "id": "DEL-DEADLOCK-003",
+  "description": "A three-session update cycle produces exactly one victim and two durable survivor updates.",
+  "category": "deadlock",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table deadlock_three_t (id int primary key, marker int not null)${providerClause}",
+    "insert into deadlock_three_t values (1,0),(2,0),(3,0)"
+  ],
+  "sessions": {
+    "one": {
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_three_t set marker=10 where id=1",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_three_t set marker=marker+1 where id=2",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "two": {
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_three_t set marker=10 where id=2",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_three_t set marker=marker+1 where id=3",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    },
+    "three": {
+      "steps": {
+        "lock": {
+          "sql": "update deadlock_three_t set marker=10 where id=3",
+          "updateCount": 1
+        },
+        "cycle": {
+          "sql": "update deadlock_three_t set marker=marker+1 where id=1",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "three-session-cycle",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "one.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "two.lock"
+        },
+        {
+          "type": "RUN",
+          "step": "three.lock"
+        },
+        {
+          "type": "START",
+          "step": "one.cycle",
+          "token": "oneCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "oneCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "two.cycle",
+          "token": "twoCycle"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "twoCycle",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "three.cycle",
+          "token": "threeCycle"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 15000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select count(*),sum(marker) from deadlock_three_t",
+      "rows": [
+        "3|22"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table deadlock_three_t"
+  ]
+}

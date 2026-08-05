@@ -24,6 +24,7 @@ apply from: rootProject.file('gradle/testing/delosdb-test-inventory.gradle')
 def inheritedTestSourceRoot = file('src/test/java')
 def delosTestSourceRoot = file('src/delosTest/java')
 def delosTestSupportSourceRoot = file('src/delosTestSupport/java')
+def delosTestResourceRoot = file('src/delosTest/resources')
 def allTestSourceRoots = [
         inheritedTestSourceRoot,
         delosTestSourceRoot,
@@ -193,6 +194,7 @@ def testRuntimeClasspath = {
             rawStoreInternalTestSupportClassDir,
             derbyRuntimeJars,
             allTestSourceRoots,
+            delosTestResourceRoot,
             toursDbSourceRoot,
             thirdPartyTestModules,
             gradleJUnitRuntime
@@ -455,6 +457,15 @@ def registerDelosFocusedTest = { String taskName,
 }
 
 
+
+registerDelosFocusedTest(
+        'runDelosIsolationSpecificationTests',
+        'Runs the DelosDB PostgreSQL-style isolation-specification tranche.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'])
+
+tasks.named('runDelosIsolationSpecificationTests') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
 
 registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
@@ -1960,3 +1971,4 @@ ext.delosdbStableTestSuiteContext = [
         delosV1ModularImageDatabaseRoot: delosV1ModularImageDatabaseRoot
 ]
 apply from: rootProject.file('gradle/testing/delosdb-test-suites.gradle')
+apply from: rootProject.file('gradle/testing/delosdb-isolation-specifications.gradle')

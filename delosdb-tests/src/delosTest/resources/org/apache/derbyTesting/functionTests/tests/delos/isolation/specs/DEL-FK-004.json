@@ -1,0 +1,147 @@
+{
+  "id": "DEL-FK-004",
+  "description": "A stable read-only snapshot keeps a consistent parent-child view while a child commit occurs.",
+  "category": "foreign-key-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table fk_parent_t (id int primary key)${providerClause}",
+    "create table fk_child_t (id int primary key,parent_id int,constraint fk_child_parent foreign key(parent_id) references fk_parent_t(id))${providerClause}",
+    "insert into fk_parent_t values (1),(2)",
+    "insert into fk_child_t values (10,1)"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "isolationByProvider": {
+        "heap": "SERIALIZABLE",
+        "mvcc": "REPEATABLE_READ"
+      },
+      "steps": {
+        "lockChild": {
+          "sql": "lock table fk_child_t in share mode"
+        },
+        "initial": {
+          "sql": "select count(*) from fk_parent_t p join fk_child_t c on p.id=c.parent_id",
+          "rows": [
+            "1"
+          ]
+        },
+        "stable": {
+          "sql": "select count(*) from fk_parent_t p join fk_child_t c on p.id=c.parent_id",
+          "rows": [
+            "1"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "steps": {
+        "insert": {
+          "sql": "insert into fk_child_t values (20,2)",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-range-lock",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.lockChild"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "START",
+          "step": "writer.insert",
+          "token": "newChild"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "newChild",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "newChild",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        }
+      ],
+      "providers": [
+        "heap"
+      ]
+    },
+    {
+      "name": "mvcc-commit-behind-snapshot",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initial"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ],
+      "providers": [
+        "mvcc"
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select count(*) from fk_child_t",
+      "rows": [
+        "2"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table fk_child_t",
+    "drop table fk_parent_t"
+  ]
+}

@@ -1,7 +1,9 @@
-# DelosDB Stage 3 frozen active-test authority.
+# DelosDB explicit active-test authority (Stage 3 baseline plus reviewed later additions).
 # class_name	authority_kind	authority_reference
 # PRE_STAGE3_TASK means the class had an explicit Gradle Test execution lane before Stage 3.
 # PRE_STAGE2_SUITE means Stage 2 removed a DelosDB-authored registration from an inherited suite and Stage 3 must preserve it independently.
+# STAGE4_NEW means the class is an explicitly reviewed Stage 4 addition with its own focused lane and provenance.
+org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest	STAGE4_NEW	runDelosIsolationSpecificationTests
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassContractBehaviorTest	PRE_STAGE3_TASK	runDelosGeneratedClassContractBehaviorTest
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassContractFreezeTest	PRE_STAGE3_TASK	runDelosGeneratedClassContractFreezeTest
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassProductionTest	PRE_STAGE3_TASK	runDelosGeneratedClassProductionTest

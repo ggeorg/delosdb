@@ -92,6 +92,8 @@ delosdb-tests/build/reports/tests/inherited-derby-test-provenance.json
 delosdb-tests/build/reports/tests/inherited-derby-test-provenance.txt
 delosdb-tests/build/reports/tests/delosdb-stable-test-suites.json
 delosdb-tests/build/reports/tests/delosdb-stable-test-suites.txt
+delosdb-tests/build/reports/tests/delosdb-isolation-specifications.json
+delosdb-tests/build/reports/tests/delosdb-isolation-specifications.txt
 ```
 
 The Apache Derby 10.17.1.0 source baseline, explicit inherited adaptation manifest and the narrow
@@ -102,6 +104,7 @@ reported separately and are not treated as behavioral adaptations. The active so
 delosdb-tests/src/test/java
 delosdb-tests/src/delosTest/java
 delosdb-tests/src/delosTestSupport/java
+delosdb-tests/src/delosTest/resources
 ```
 
 ## Stable test entry points
@@ -133,6 +136,23 @@ delosStressTests
 
 The legacy `:delosdb-tests:runDerbyLangSuite` task remains a deprecated alias for
 `:delosdb-tests:derbyLanguageTests` until Stage 8.
+
+The complete Stage 4 isolation catalogue has a focused entry point:
+
+```bash
+./gradlew \
+  :delosdb-tests:delosIsolationSpecStaticAnalysis \
+  :delosdb-tests:runDelosIsolationSpecificationTests \
+  --console=plain
+```
+
+Its 25 JSON specifications live under `src/delosTest/resources` and are inventoried with frozen
+PostgreSQL-methodology provenance under `gradle/testing/`. They cover snapshot stability, savepoints,
+deadlocks, update/delete traversal, foreign-key concurrency, DDL conflicts, and concurrent `MERGE`
+across applicable heap/MVCC and file/memory configurations. The runner verifies actual Derby
+heavyweight lock waits through `SYSCS_DIAG.LOCK_TABLE`; incomplete async steps alone are not accepted
+as proof of blocking. The complete catalogue is also part of `delosConcurrencyTests` and root `check`.
+See [ISOLATION-SPECIFICATIONS.md](ISOLATION-SPECIFICATIONS.md) for the format and authoring rules.
 
 Verification levels:
 

@@ -617,7 +617,8 @@ tasks.named('check') {
             tasks.named('derbyNistSql92Tests'),
             delosPermanentArchitectureDependencies,
             ':delosdb-tests:delosTestProvenanceStaticAnalysis',
-            ':delosdb-tests:delosStableTestSuiteStaticAnalysis'
+            ':delosdb-tests:delosStableTestSuiteStaticAnalysis',
+            ':delosdb-tests:delosIsolationSpecStaticAnalysis'
 }
 
 tasks.register('fullVerification') {
@@ -652,6 +653,7 @@ tasks.register('releaseVerification') {
             delosPermanentArchitectureDependencies,
             ':delosdb-tests:delosTestProvenanceStaticAnalysis',
             ':delosdb-tests:delosStableTestSuiteStaticAnalysis',
+            ':delosdb-tests:delosIsolationSpecStaticAnalysis',
             ':delosdb-tests:delosPerformanceHarnessTests'
 }
 
