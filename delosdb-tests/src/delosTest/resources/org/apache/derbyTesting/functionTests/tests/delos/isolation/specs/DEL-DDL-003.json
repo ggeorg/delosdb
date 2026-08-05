@@ -1,6 +1,6 @@
 {
   "id": "DEL-DDL-003",
-  "description": "TRUNCATE waits for a heap repeatable-read transaction, while MVCC may complete after the reader statement because snapshot readers do not retain the DML schema lock.",
+  "description": "TRUNCATE waits for a heap repeatable-read transaction. Because TRUNCATE TABLE is not supported for delos_mvcc tables, the MVCC schedule must reject it with SQLState 0A000 without changing the table.",
   "category": "ddl-concurrency",
   "providers": [
     "heap",
@@ -40,11 +40,21 @@
     },
     "ddl": {
       "steps": {
-        "truncate": {
+        "truncateHeap": {
           "sql": "truncate table ddl_truncate_t"
+        },
+        "truncateMvccUnsupported": {
+          "sql": "truncate table ddl_truncate_t",
+          "sqlStates": [
+            "0A000"
+          ],
+          "successAllowed": false
         },
         "commit": {
           "action": "COMMIT"
+        },
+        "rollback": {
+          "action": "ROLLBACK"
         }
       }
     }
@@ -62,7 +72,7 @@
         },
         {
           "type": "START",
-          "step": "ddl.truncate",
+          "step": "ddl.truncateHeap",
           "token": "truncateTable"
         },
         {
@@ -90,7 +100,7 @@
       ]
     },
     {
-      "name": "truncate-after-reader-statement-mvcc",
+      "name": "truncate-unsupported-mvcc",
       "providers": [
         "mvcc"
       ],
@@ -100,31 +110,48 @@
           "step": "reader.read"
         },
         {
-          "type": "START",
-          "step": "ddl.truncate",
-          "token": "truncateTable"
-        },
-        {
-          "type": "AWAIT",
-          "token": "truncateTable",
-          "timeoutMillis": 10000
+          "type": "RUN",
+          "step": "ddl.truncateMvccUnsupported"
         },
         {
           "type": "RUN",
-          "step": "ddl.commit"
+          "step": "reader.stable"
+        },
+        {
+          "type": "RUN",
+          "step": "ddl.rollback"
         },
         {
           "type": "RUN",
           "step": "reader.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "0A000",
+          "minimum": 1,
+          "maximum": 1
         }
       ]
     }
   ],
   "finalAssertions": [
     {
+      "providers": [
+        "heap"
+      ],
       "sql": "select count(*) from ddl_truncate_t",
       "rows": [
         "0"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select count(*) from ddl_truncate_t",
+      "rows": [
+        "3"
       ]
     }
   ],

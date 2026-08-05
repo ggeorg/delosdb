@@ -97,10 +97,13 @@ transaction, execute a second named retry step, and commit the valid child row. 
 form a heavyweight-lock deadlock on heap, while MVCC rejects both references immediately and both
 deleting transactions roll back.
 
-DROP and TRUNCATE schedules remain provider-specific because MVCC readers do not retain heap-style
-statement locks. CREATE INDEX is different: every access method must serialize the index build with
-active writers so the initial backfill and future index maintenance form one correct publication
-boundary. `DEL-DDL-002` proves the wait and then forces the new index for the writer's committed key.
+DROP schedules remain provider-specific because MVCC readers do not retain heap-style statement
+locks. `TRUNCATE TABLE` is currently supported for heap tables only: `DEL-DDL-003` proves heap
+blocking and successful truncation, while the MVCC matrix requires SQLState `0A000` and proves that
+the table remains unchanged. CREATE INDEX is different: every access method must serialize the index
+build with active writers so the initial backfill and future index maintenance form one correct
+publication boundary. `DEL-DDL-002` proves the wait and then forces the new index for the writer's
+committed key.
 
 ## Stage 4 catalogue
 
