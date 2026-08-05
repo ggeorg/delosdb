@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets
 
 def context = project.ext.delosdbStableTestSuiteContext as Map<String, Object>
 def registryFile = rootProject.file('gradle/testing/delos-test-suite-registry.tsv')
+def activeAuthorityFile = rootProject.file('gradle/testing/delos-stage3-active-test-authority.tsv')
 def delosSourceRoot = project.file('src/delosTest/java')
 def suiteReportJson = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.json')
 def suiteReportText = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.txt')
@@ -42,7 +43,31 @@ def readRegistry = {
     rows
 }
 
+
+def readActiveAuthority = {
+    LinkedHashMap<String, Map<String, String>> rows = new LinkedHashMap<>()
+    activeAuthorityFile.eachLine(StandardCharsets.UTF_8.name()) { String line ->
+        if (!line.isBlank() && !line.startsWith('#')) {
+            String[] columns = line.split('\t', -1)
+            if (columns.length != 3) {
+                throw new GradleException(
+                        "Malformed ${activeAuthorityFile}: expected 3 tab-separated columns, found ${columns.length}: ${line}")
+            }
+            Map<String, String> row = [
+                    className: columns[0],
+                    authorityKind: columns[1],
+                    authorityReference: columns[2]
+            ]
+            if (rows.put(row.className, row) != null) {
+                throw new GradleException("Duplicate class in ${activeAuthorityFile}: ${row.className}")
+            }
+        }
+    }
+    rows
+}
+
 def registry = readRegistry()
+def activeAuthority = readActiveAuthority()
 def rowsForSuite = { String suiteName ->
     registry.values().findAll { it.role == 'TEST' && it.suite == suiteName }
 }
@@ -284,10 +309,9 @@ tasks.named('delosSystemTests', Test) {
             context.delosV1ModularImageDatabaseRoot.get().asFile.absolutePath
 }
 
-// Performance-harness classes retain their existing dedicated configuration
+// Active performance-harness classes retain their existing dedicated configuration
 // and remain outside ordinary correctness suites. releaseVerification reaches
-// them through this internal aggregate until Stage 7 moves report generation
-// fully out of JUnit.
+// only the frozen pre-Stage-3 performance authority through this aggregate.
 def performanceFocusedTasks = [
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosJdbcBenchmarkBaseline',
@@ -301,23 +325,10 @@ def performanceFocusedTasks = [
         'runDelosV1BaselineOperationalCapture'
 ]
 
-def mvccBloatRow = registry.values().find { it.className.endsWith('.MvccSqlBloatMeasurementTest') }
-if (mvccBloatRow == null) {
-    throw new GradleException('Stable suite registry is missing MvccSqlBloatMeasurementTest')
-}
-registerDelosSuite(
-        'delosMvccBloatMeasurementHarness',
-        'Runs the remaining MVCC bloat measurement harness pending Stage 7 report separation.',
-        [mvccBloatRow])
-tasks.named('delosMvccBloatMeasurementHarness') {
-    group = null
-}
-
 tasks.register('delosPerformanceHarnessTests') {
     group = null
     description = 'Internal Stage 3 aggregate for DelosDB JUnit performance/report harnesses.'
     performanceFocusedTasks.each { taskName -> dependsOn tasks.named(taskName) }
-    dependsOn tasks.named('delosMvccBloatMeasurementHarness')
 }
 
 // Compatibility alias retained through Stage 8. The stable task owns all
@@ -332,6 +343,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
     group = 'verification'
     description = 'Verifies Stage 3 stable suite coverage, registry completeness, and execution-tier assignments.'
     inputs.file registryFile
+    inputs.file activeAuthorityFile
     inputs.dir delosSourceRoot
     outputs.file suiteReportJson
     outputs.file suiteReportText
@@ -381,21 +393,39 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             }
         }
 
-        Set<String> expectedRetainedTransitionalClasses = [
-                'org.apache.derbyTesting.functionTests.tests.delos.OptimizerPredicatePushdownExecutionCheckpointTest',
-                'org.apache.derbyTesting.functionTests.tests.delos.StorageCostIntegrationCheckpointTest',
-                'org.apache.derbyTesting.functionTests.tests.delos.StorageInspectorConsolidationTest',
-                'org.apache.derbyTesting.functionTests.tests.delos.StorageMetadataProviderChainTest',
-                'org.apache.derbyTesting.functionTests.tests.delos.StorageStatisticsFoundationTest'
-        ] as Set<String>
+        Set<String> expectedActiveClasses = activeAuthority.keySet() as Set<String>
+        Set<String> actualActiveClasses = registry.values().findAll {
+            it.role == 'TEST'
+        }.collect { it.className }.toSet()
+        (expectedActiveClasses - actualActiveClasses).sort().each {
+            issues.add("Frozen active-authority test is not active in the registry: ${it}")
+        }
+        (actualActiveClasses - expectedActiveClasses).sort().each {
+            issues.add("Registry activated a test outside the frozen pre-Stage-3 authority: ${it}")
+        }
+
+        Set<String> validAuthorityKinds = ['PRE_STAGE3_TASK', 'PRE_STAGE2_SUITE'] as Set<String>
+        activeAuthority.values().each { row ->
+            if (!validAuthorityKinds.contains(row.authorityKind)) {
+                issues.add("Invalid active authority kind for ${row.className}: ${row.authorityKind}")
+            }
+            if (row.authorityReference.isBlank()) {
+                issues.add("Active authority reference is blank for ${row.className}")
+            }
+            if (!registry.containsKey(row.className)) {
+                issues.add("Active authority class is missing from registry: ${row.className}")
+            }
+        }
+
+        Set<String> expectedRetainedTransitionalClasses = registry.keySet().toSet() - expectedActiveClasses
         Set<String> actualRetainedTransitionalClasses = registry.values().findAll {
             it.role == 'RETAINED_TRANSITIONAL'
         }.collect { it.className }.toSet()
         (expectedRetainedTransitionalClasses - actualRetainedTransitionalClasses).sort().each {
-            issues.add("Required retained transitional test is missing from registry: ${it}")
+            issues.add("Dormant source is not retained as transitional: ${it}")
         }
         (actualRetainedTransitionalClasses - expectedRetainedTransitionalClasses).sort().each {
-            issues.add("Unexpected retained transitional test: ${it}")
+            issues.add("Active-authority test is incorrectly retained as transitional: ${it}")
         }
 
         Set<String> expectedPerformanceClasses = [
@@ -406,7 +436,6 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkSurfaceValidationTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkTransactionsTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcDeleteReinsertAttributionTest',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlBloatMeasurementTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStoreMappedRegionExperimentTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStorePageIoRepresentationDecisionTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.V1BaselineCaptureTest'
@@ -471,13 +500,15 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Map<String, Object> report = [
-                schemaVersion: 3,
+                schemaVersion: 4,
                 stage: 'Stage 3 - stable Gradle entry points',
                 registryScope: 'ACTIVE_AND_RETAINED_TRANSITIONAL_DELOSDB_TEST_SOURCES',
                 registry: rootProject.relativePath(registryFile),
+                activeAuthority: rootProject.relativePath(activeAuthorityFile),
                 summary: [
                         sourceFiles: sourcePaths.size(),
                         registryEntries: registry.size(),
+                        activeAuthorityTests: activeAuthority.size(),
                         activeTests: registry.values().count { it.role == 'TEST' },
                         retainedTransitionalTests: registry.values().count { it.role == 'RETAINED_TRANSITIONAL' },
                         issueCount: issues.unique().size()
@@ -501,6 +532,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             writer.println('DelosDB stable test suites')
             writer.println('Stage: Stage 3 - stable Gradle entry points')
             writer.println("Registry: ${rootProject.relativePath(registryFile)}")
+            writer.println("Active authority: ${rootProject.relativePath(activeAuthorityFile)}")
             writer.println()
             report.summary.each { key, value -> writer.println(String.format('%-28s %s', key + ':', value)) }
             writer.println()

@@ -604,6 +604,7 @@ tasks.register('quickVerification') {
     description = 'Runs module unit tests, DelosDB quick smoke tests, and runtime smoke checks.'
     dependsOn tasks.named('test'),
             tasks.named('derbyRuntimeSmoke'),
+            ':delosdb-tests:delosUnitTests',
             ':delosdb-tests:delosQuickSmokeTests'
 }
 
@@ -642,6 +643,7 @@ tasks.register('releaseVerification') {
     dependsOn tasks.named('test'),
             tasks.named('derbyRuntimeSmoke'),
             tasks.named('derbyAllTests'),
+            tasks.named('delosUnitTests'),
             tasks.named('delosFunctionalTests'),
             tasks.named('delosConcurrencyTests'),
             tasks.named('delosRecoveryTests'),

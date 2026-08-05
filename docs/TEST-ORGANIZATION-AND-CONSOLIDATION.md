@@ -29,21 +29,27 @@ gradle/testing/delos-test-suite-registry.tsv
 ```
 
 The registry accounts for all 150 DelosDB executable-source files in `src/delosTest/java`.
-It classifies 145 as active tests and retains five pre-RawStore-convergence checkpoint tests as
-`RETAINED_TRANSITIONAL` with no active suite or tier until Stage 7 maps their assertions to the
-current RawStore-owned diagnostics contract. Abstract support anchors and shared fixtures remain in
+The frozen active authority at `gradle/testing/delos-stage3-active-test-authority.tsv` records the
+77 classes which had an explicit execution lane before Stage 3: 75 through focused Gradle tasks and
+two DelosDB-authored tests formerly registered in inherited suites (`HeapSanityCheckerTest` in
+`store._Suite` and `NetworkServerControlInaddrAnyTest` in `derbynet._Suite`). The other 73 dormant
+sources remain `RETAINED_TRANSITIONAL` with no active suite or tier until Stage 7 maps
+their assertions and either restores them against current production contracts or moves them to
+historical evidence. Abstract support anchors and shared fixtures remain in
 `src/delosTestSupport/java` and are covered by the separate provenance inventory. Every active test
-has one purpose suite and one execution tier. The stable inherited and DelosDB task names are now available at both the root
-and `:delosdb-tests` project. Existing one-class tasks remain temporary compatibility lanes until
-Stage 8.
+has one purpose suite and one execution tier. The stable inherited and DelosDB task names are now
+available at both the root and `:delosdb-tests` project. Existing one-class tasks remain temporary
+compatibility lanes until Stage 8.
 
 The inherited `derbynet._Suite` and `store._Suite` no longer register DelosDB-authored tests.
 The provenance gate verifies that inherited sources do not depend on either DelosDB source root.
-The Stage 3 suite gate verifies complete registry coverage, the exact five-item retained transitional
-set, valid active suite/tier assignments, disjoint quick/full functional partitions, stable suite
-tasks and all six root verification levels. The root
-`check` graph runs each functional test once, and `releaseVerification` executes Derby `suites.All`
-directly rather than first rerunning the inherited component suites.
+The Stage 3 suite gate verifies complete registry coverage, exact equality between the active registry
+and the frozen pre-Stage-3 authority, exact complementary retention of all dormant sources, valid
+active suite/tier assignments, disjoint quick/full functional partitions, stable suite tasks and all
+six root verification levels. `quickVerification` explicitly includes the DelosDB unit suite because
+the root module-local `test` aggregate intentionally excludes `:delosdb-tests`. The root `check` graph
+runs each active functional test once, and `releaseVerification` executes Derby `suites.All` directly
+rather than first rerunning the inherited component suites.
 
 
 ## 1. Objective
