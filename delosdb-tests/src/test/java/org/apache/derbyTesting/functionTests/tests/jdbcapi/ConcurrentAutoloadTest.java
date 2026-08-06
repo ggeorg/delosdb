@@ -41,7 +41,7 @@ public class ConcurrentAutoloadTest extends BaseJDBCTestCase {
 
     public void testConcurrentAutoloading() throws Exception {
 
-        if (!TestConfiguration.loadingFromJars()) {
+        if (!TestConfiguration.loadingDerbyRuntimeFromJars()) {
             // Autoloading only happens when running from jars.
             return;
         }

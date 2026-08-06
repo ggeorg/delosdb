@@ -148,7 +148,7 @@ public final class TestConfiguration {
     private final static String KEY_JMX_PORT = "jmxPort";
     
     /**
-     * True if the classes are loaded from jars.
+     * True if the inherited test harness classes are loaded from a jar.
      */
     static boolean isJars;
 	
@@ -2031,15 +2031,26 @@ public final class TestConfiguration {
     }
 	/**
 	 * <p>
-	 * Return true if we classes are being loaded from jar files. For the time
-	 * being, this simply tests that the JVMInfo class (common to the client and
-	 * the server) comes out of a jar file.
+	 * Return true if the inherited test harness is loaded from a jar. Tests
+	 * which require derbyTesting.jar, or permissions granted specifically to
+	 * that jar, use this classification.
 	 * </p>
 	 */
 	public static boolean loadingFromJars()
 	{
         return isJars;
 	}
+
+    /**
+     * Return true if the Derby production runtime is loaded from assembled
+     * jars. DelosDB deliberately supports this independently of the inherited
+     * test harness, which normally remains in an exploded classes directory.
+     */
+    public static boolean loadingDerbyRuntimeFromJars()
+    {
+        URL runtime = getURL(JVMInfo.class);
+        return runtime != null && !runtime.toExternalForm().endsWith("/");
+    }
     
     /**
      * Returns true if this JUnit test being run by the old harness.
@@ -2203,8 +2214,8 @@ public final class TestConfiguration {
      * Location of derby.jar via org.apache.derby.jdbc.EmbeddedDataSource
      * Location of derbyclient.jar via org.apache.derby.jdbc.ClientDataSource
      * 
-     * Two options are supported, either all are in jar files or
-     * all are on the classpath. Properties are set as follows:
+     * Production and test classes may be packaged independently. Properties
+     * are set as follows:
      * 
      * <P>
      * Classpath:
@@ -2270,17 +2281,13 @@ public final class TestConfiguration {
         if (BaseTestCase.getClassVersionMajor() >= 49) {
             ppTesting = getURL("org.apache.derby.PackagePrivateTestSuite");
         }
-        boolean isClasspath = testing.toExternalForm().endsWith("/");
-        if (isClasspath) {
+        boolean testingFromClasses = testing.toExternalForm().endsWith("/");
+        if (testingFromClasses) {
             // ppTesting can be null, for instance if 'classes.pptesting' is
             // not on the classpath.
             setCodebase(PACKAGE_PRIVATE_CLASSES, ppTesting);
-            isJars = false;
         }
-        else
-        {
-            isJars = true;
-        }
+        isJars = !testingFromClasses;
         
         setCodebase(DERBY_TESTING, testing);
         if (testing.getProtocol().equals("file")) {

@@ -98,7 +98,7 @@ public class AutoloadTest extends BaseJDBCTestCase
         boolean clientAutoLoad = false;
         boolean jdbc4Autoload = false;
         
-        if (JDBC.vmSupportsJDBC4() && TestConfiguration.loadingFromJars())
+        if (JDBC.vmSupportsJDBC4() && TestConfiguration.loadingDerbyRuntimeFromJars())
         {
             // test client & embedded,but the JDBC 4 auto boot is not
             // a full boot of the engine. Thus while there is no

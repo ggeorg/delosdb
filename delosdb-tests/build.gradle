@@ -486,6 +486,23 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosJarRuntimeClassificationTests',
+        'Runs inherited JDBC autoload tests against the assembled runtime jars.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/AutoloadTest.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/ConcurrentAutoloadTest.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversAllTest.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversClientTest.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/JDBCDriversEmbeddedTest.class'
+        ])
+
+tasks.named('runDelosJarRuntimeClassificationTests', Test) {
+    // Every autoload fixture must begin before DriverManager is touched.
+    forkEvery = 1L
+}
+
+
+registerDelosFocusedTest(
         'runDelosServerSchedulerTest',
         'Runs focused DRDA server scheduler, threading, fairness, and EXTDTA cleanup tests.',
         [
