@@ -109,6 +109,8 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
             try (Connection historical = openDatabase(database, false);
                  Connection staleWriter = openDatabase(database, false);
                  Connection writer = openDatabase(database, false)) {
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                staleWriter.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 historical.setAutoCommit(false);
                 staleWriter.setAutoCommit(false);
                 writer.setAutoCommit(false);

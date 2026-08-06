@@ -104,6 +104,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
 
             try (Connection reader = openDatabase(database, false);
                  Connection writer = openDatabase(database, false)) {
+                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 reader.setAutoCommit(false);
                 writer.setAutoCommit(false);
 

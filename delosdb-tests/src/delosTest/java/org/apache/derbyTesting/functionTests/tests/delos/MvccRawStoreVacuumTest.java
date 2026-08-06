@@ -54,6 +54,7 @@ public final class MvccRawStoreVacuumTest extends MvccSqlTestSupport {
             try (Connection retainedReader = openDatabase(database, false);
                  Connection writer = openDatabase(database, false);
                  Connection vacuum = openDatabase(database, false)) {
+                retainedReader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 retainedReader.setAutoCommit(false);
                 writer.setAutoCommit(false);
                 vacuum.setAutoCommit(false);
