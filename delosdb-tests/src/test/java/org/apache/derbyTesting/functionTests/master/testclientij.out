@@ -20,8 +20,8 @@ connect 'testij;create=true;territory=it' USER 'dbadmin' PASSWORD 'dbadmin';
 ij(CONNECTION1)> connect 'testij' USER 'dbadmin' PASSWORD 'dbadbmin';
 ij(CONNECTION2)> -- this is a comment, a comment in front of a select should not cause an error
 select * from sys.systables where 1=0;
-TABLEID                             |TABLENAME                                                                                                                       |&|SCHEMAID                            |&
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TABLEID                             |TABLENAME                                                                                                                       |&|SCHEMAID                            |&|STORAGEPROVIDER                                                                                                                 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ij(CONNECTION2)> -- this is a comment, a comment in front of a values clauses should not cause an error
 values(1);
 1          

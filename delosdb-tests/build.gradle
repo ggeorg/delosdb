@@ -459,6 +459,12 @@ def registerDelosFocusedTest = { String taskName,
 
 
 registerDelosFocusedTest(
+        'runDelosNetIjTest',
+        'Runs the inherited network-client ij script and DelosDB catalog-output canon.',
+        ['org/apache/derbyTesting/functionTests/tests/derbynet/NetIjTest.class'])
+
+
+registerDelosFocusedTest(
         'runDelosIsolationSpecificationTests',
         'Runs the DelosDB PostgreSQL-style isolation-specification tranche.',
         ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'])
