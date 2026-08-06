@@ -488,24 +488,13 @@ final class MvccRawStoreTable {
             MvccRowLocation rowLocation,
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
-        DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
-        VersionRecord version = MvccRawStoreVersionReader.findVisible(
+        return readVisibleAt(
                 rawTransaction,
                 table,
-                rowLocation.rowId(),
-                directory.head(),
+                rowLocation,
+                context.snapshotSequence(),
                 projection,
                 context);
-        if (version == null || version.tombstone()) {
-            return null;
-        }
-        return new VisibleRow(
-                rowLocation.rowId(),
-                version.versionId(),
-                version.values(),
-                version.handle(),
-                MvccRawStoreRowDirectory.location(
-                        rowLocation.rowId(), directory.handle()));
     }
 
     static VisibleRow readVisibleAt(
@@ -515,26 +504,41 @@ final class MvccRawStoreTable {
             long snapshotSequence,
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
-        DirectoryRecord directory = MvccRawStoreRowDirectory.find(rawTransaction, table, rowLocation);
-        VersionRecord version = MvccRawStoreVersionReader.findVisible(
-                rawTransaction,
-                table,
-                rowLocation.rowId(),
-                directory.head(),
-                context.transactionId(),
-                snapshotSequence,
-                projection,
-                context);
-        if (version == null || version.tombstone()) {
-            return null;
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
+                rawTransaction, table, rowLocation);
+        while (true) {
+            try {
+                VersionRecord version = MvccRawStoreVersionReader.findVisible(
+                        rawTransaction,
+                        table,
+                        rowLocation.rowId(),
+                        directory.head(),
+                        context.transactionId(),
+                        snapshotSequence,
+                        projection,
+                        context);
+                if (version == null || version.tombstone()) {
+                    return null;
+                }
+                return new VisibleRow(
+                        rowLocation.rowId(),
+                        version.versionId(),
+                        version.values(),
+                        version.handle(),
+                        MvccRawStoreRowDirectory.location(
+                                rowLocation.rowId(), directory.handle()));
+            } catch (MvccRawStoreVersionReader.MissingVersionException missing) {
+                // A concurrent rollback can change the directory after this read
+                // captured an uncommitted head and before it follows that head into
+                // the version container. Retry only if the head moved.
+                DirectoryRecord refreshed = MvccRawStoreRowDirectory.find(
+                        rawTransaction, table, rowLocation);
+                if (refreshed.head().versionId() == directory.head().versionId()) {
+                    throw missing;
+                }
+                directory = refreshed;
+            }
         }
-        return new VisibleRow(
-                rowLocation.rowId(),
-                version.versionId(),
-                version.values(),
-                version.handle(),
-                MvccRawStoreRowDirectory.location(
-                        rowLocation.rowId(), directory.handle()));
     }
 
     static boolean replace(

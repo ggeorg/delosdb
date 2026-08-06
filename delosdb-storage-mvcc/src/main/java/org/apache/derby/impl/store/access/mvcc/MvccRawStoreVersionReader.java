@@ -190,9 +190,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                     hint,
                     projection);
             if (version == null) {
-                throw new IllegalStateException(
-                        "RawStore MVCC version-chain entry is missing for logical row " + rowId
-                                + ": version " + versionId);
+                throw new MissingVersionException(rowId, versionId);
             }
             if (metrics != null) {
                 metrics.visibilityChecked();
@@ -377,6 +375,15 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         }
         return version.beginSequence() <= snapshotSequence
                 && snapshotSequence < version.endSequence();
+    }
+
+    static final class MissingVersionException extends IllegalStateException {
+        private static final long serialVersionUID = 1L;
+
+        private MissingVersionException(long rowId, long versionId) {
+            super("RawStore MVCC version-chain entry is missing for logical row " + rowId
+                    + ": version " + versionId);
+        }
     }
 
     @Override

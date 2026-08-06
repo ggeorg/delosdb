@@ -176,6 +176,32 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible,
             MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
+        MvccRawStoreTable.DirectoryRecord current = directory;
+        while (true) {
+            try {
+                return readResolvedAt(candidate, coveringEligible, current);
+            } catch (MvccRawStoreVersionReader.MissingVersionException missing) {
+                // RawStore rollback changes the directory before it removes the
+                // rolled-back version. The directory was read without retaining
+                // its page latch, so re-resolve only when the current head moved.
+                MvccRawStoreTable.DirectoryRecord refreshed =
+                        MvccRawStoreRowDirectory.find(
+                                transaction,
+                                candidate.rowLocation(),
+                                directoryContainer,
+                                metrics);
+                if (refreshed.head().versionId() == current.head().versionId()) {
+                    throw missing;
+                }
+                current = refreshed;
+            }
+        }
+    }
+
+    private Result readResolvedAt(
+            MvccRawStoreOrderedIndex.Candidate candidate,
+            boolean coveringEligible,
+            MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
         if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
             MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
             if (summary.available()) {
