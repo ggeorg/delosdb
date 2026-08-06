@@ -176,9 +176,16 @@ public final class MvccConglomerate
             StaticCompiledOpenConglomInfo staticInfo,
             DynamicCompiledOpenConglomInfo dynamicInfo) throws StandardException {
         attach(xactManager);
+        MvccRawStoreRuntime currentRuntime = requireRuntime();
+        MvccRawStoreTable.Descriptor currentTable = requireTable();
+        if ((openMode & TransactionController.OPENMODE_FOR_LOCK_ONLY) != 0
+                && (openMode & TransactionController.OPENMODE_FORUPDATE) != 0
+                && lockLevel == TransactionController.MODE_TABLE) {
+            currentRuntime.context(xactManager, rawtran).beforeSchemaChange(currentTable);
+        }
         return new MvccRawStoreConglomerateController(
-                requireRuntime(),
-                requireTable(),
+                currentRuntime,
+                currentTable,
                 xactManager,
                 rawtran);
     }
