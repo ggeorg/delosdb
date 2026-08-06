@@ -68,7 +68,7 @@ public record DelosStorageMaintenanceTableSnapshot(
         if (running && !active) {
             throw new IllegalArgumentException("an inactive maintenance target cannot be running");
         }
-        if (lastCompletedAtEpochMillis > 0L
+        if (!running && lastCompletedAtEpochMillis > 0L
                 && lastStartedAtEpochMillis > lastCompletedAtEpochMillis) {
             throw new IllegalArgumentException("maintenance completion precedes start");
         }

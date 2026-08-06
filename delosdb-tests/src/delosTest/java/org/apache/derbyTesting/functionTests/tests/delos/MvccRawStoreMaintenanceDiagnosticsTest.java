@@ -159,6 +159,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
 
             try (Connection reader = openDatabase(database, false);
                  Connection writer = openDatabase(database, false)) {
+                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 reader.setAutoCommit(false);
                 writer.setAutoCommit(false);
                 assertRows(reader,

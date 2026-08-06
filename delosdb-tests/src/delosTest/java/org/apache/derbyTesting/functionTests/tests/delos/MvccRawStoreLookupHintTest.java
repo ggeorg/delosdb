@@ -120,6 +120,7 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
 
             try (Connection historical = openDatabase(database, false);
                  Connection writer = openDatabase(database, false)) {
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 historical.setAutoCommit(false);
                 writer.setAutoCommit(false);
                 assertRows(historical, "select id from hint_anchor", "1");
