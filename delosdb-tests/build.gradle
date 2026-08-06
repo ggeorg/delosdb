@@ -1127,6 +1127,58 @@ registerDelosFocusedTest(
         'Runs the heap/MVCC differential SQL harness proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class'])
 
+def differentialFuzzSeed = providers.gradleProperty('delosdb.differentialFuzz.seed').getOrElse('')
+def differentialFuzzReportDirectory = layout.buildDirectory.dir('reports/tests/differential-fuzz').get().asFile.absolutePath
+
+registerDelosFocusedTest(
+        'runDelosDifferentialFuzzSmoke',
+        'Runs a small deterministic heap/MVCC indexed/unindexed differential fuzz corpus.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
+        [
+                'delosdb.differentialFuzz.seed': differentialFuzzSeed,
+                'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.smokeSeeds').getOrElse('4'),
+                'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
+        ])
+
+registerDelosFocusedTest(
+        'delosDifferentialFuzzTests',
+        'Runs the deterministic heap/MVCC indexed/unindexed differential fuzz corpus.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
+        [
+                'delosdb.differentialFuzz.seed': differentialFuzzSeed,
+                'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.seeds').getOrElse('64'),
+                'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
+        ])
+
+def differentialFuzzProvenance = rootProject.file('gradle/testing/delos-differential-fuzz-provenance.tsv')
+def differentialFuzzSource = file('src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.java')
+tasks.register('delosDifferentialFuzzStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Stage 5 H2-informed differential-fuzz provenance and replay contract.'
+    inputs.files differentialFuzzProvenance, differentialFuzzSource
+    doLast {
+        def rows = differentialFuzzProvenance.readLines('UTF-8').findAll { it && !it.startsWith('#') }
+        if (rows.size() != 1 || rows[0].split('\t', -1).size() != 9 || !rows[0].startsWith('DEL-FUZZ-001\tH2\t')) {
+            throw new GradleException('Stage 5 differential-fuzz provenance is malformed')
+        }
+        def source = differentialFuzzSource.getText('UTF-8')
+        ['MASTER_SEED', 'delosdb.differentialFuzz.seed', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
+            if (!source.contains(token)) throw new GradleException("Differential-fuzz replay contract is missing: ${token}")
+        }
+    }
+}
+
+['runDelosDifferentialFuzzSmoke', 'delosDifferentialFuzzTests'].each { taskName ->
+    tasks.named(taskName) {
+        dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
+                tasks.named('delosDifferentialFuzzStaticAnalysis')
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('delosDifferentialFuzzStaticAnalysis')
+}
+
 registerDelosFocusedTest(
         'runDelosHeapMvccIsolationDifferentialTest',
         'Runs heap/MVCC transaction-isolation differential proofs.',
