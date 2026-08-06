@@ -463,6 +463,11 @@ registerDelosFocusedTest(
         'Runs the inherited network-client ij script and DelosDB catalog-output canon.',
         ['org/apache/derbyTesting/functionTests/tests/derbynet/NetIjTest.class'])
 
+registerDelosFocusedTest(
+        'runDelosClassLoaderBootTest',
+        'Runs the inherited dual-boot class-loader test against the complete DelosDB embedded runtime closure.',
+        ['org/apache/derbyTesting/functionTests/tests/store/ClassLoaderBootTest.class'])
+
 
 registerDelosFocusedTest(
         'runDelosIsolationSpecificationTests',

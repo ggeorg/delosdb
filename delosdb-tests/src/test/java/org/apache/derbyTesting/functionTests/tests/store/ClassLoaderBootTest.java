@@ -46,12 +46,21 @@ import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
  */
 public class ClassLoaderBootTest extends BaseJDBCTestCase {
 
-    private static URL derbyClassLocation; 
-    private static URL embeddedDataSourceClassLocation; 
+    private static URL derbySharedClassLocation;
+    private static URL runtimeApiClassLocation;
+    private static URL derbyClassLocation;
+    private static URL embeddedDataSourceClassLocation;
 	static {
-        // find the location of derby jar file and derbytools jar file
+        // Find the complete embedded-runtime closure. DelosDB keeps shared and
+        // runtime API classes in separate jars, and this test class loader
+        // deliberately blocks parent delegation for org.apache.derby classes.
+        derbySharedClassLocation = getClassLocation(
+                "org.apache.derby.shared.common.error.StandardException");
+        runtimeApiClassLocation = getClassLocation(
+                "org.apache.derby.io.StorageFactory");
         derbyClassLocation = getClassLocation("org.apache.derby.database.Database");
-        embeddedDataSourceClassLocation = getClassLocation("org.apache.derby.jdbc.EmbeddedDataSource");
+        embeddedDataSourceClassLocation = getClassLocation(
+                "org.apache.derby.jdbc.EmbeddedDataSource");
 	}
     private static URL getClassLocation(String className)
     {
@@ -110,7 +119,12 @@ public class ClassLoaderBootTest extends BaseJDBCTestCase {
      */
     protected void setUp() throws Exception
     {
-        URL[] urls = new URL[]{derbyClassLocation, embeddedDataSourceClassLocation};
+        URL[] urls = new URL[]{
+                derbySharedClassLocation,
+                runtimeApiClassLocation,
+                derbyClassLocation,
+                embeddedDataSourceClassLocation
+        };
         mainLoader = getThreadLoader();
 
         loader_1 = createDerbyClassLoader(urls);
