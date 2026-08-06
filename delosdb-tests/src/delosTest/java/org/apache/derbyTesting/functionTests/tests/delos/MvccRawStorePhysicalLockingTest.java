@@ -54,9 +54,10 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                  Connection reader = openDatabase(database, false)) {
                 first.setAutoCommit(false);
                 second.setAutoCommit(false);
+                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 reader.setAutoCommit(false);
 
-                // Capture a transaction-wide snapshot before either writer.
+                // Capture an explicit repeatable-read transaction snapshot before either writer.
                 assertRows(reader,
                         "select id, value from physical_lock_t order by id",
                         "1|10",
