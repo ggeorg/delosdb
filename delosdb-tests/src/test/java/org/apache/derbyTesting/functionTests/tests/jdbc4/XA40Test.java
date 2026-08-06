@@ -20,9 +20,11 @@
 
 package org.apache.derbyTesting.functionTests.tests.jdbc4;
 
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.J2EEDataSource;
 import org.apache.derbyTesting.junit.JDBC;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 import junit.framework.*;
@@ -43,6 +45,14 @@ import org.apache.derby.iapi.jdbc.BrokeredCallableStatement;
  * Test new methods added for XA in JDBC4.
  */
 public class XA40Test extends BaseJDBCTestCase {
+
+    /** Explicit test-only allow-list for the reflected Price UDT fixture. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derbyTesting.functionTests.tests.lang.**"
+                    + ";java.base/*"
+                    + ";java.sql/java.sql.Timestamp"
+                    + ";!*";
 
     /** Default XADataSource used by the tests. */
     private XADataSource xads = null;
@@ -209,7 +219,10 @@ public class XA40Test extends BaseJDBCTestCase {
      * Create test suite for XA40Test.
      */
     public static Test suite() {
-        return TestConfiguration.defaultSuite(XA40Test.class);
+        return SystemPropertyTestSetup.singleProperty(
+                TestConfiguration.defaultSuite(XA40Test.class),
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
     
 } // End class XA40Test

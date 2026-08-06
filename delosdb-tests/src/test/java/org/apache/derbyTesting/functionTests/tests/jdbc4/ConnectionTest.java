@@ -36,9 +36,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import junit.framework.Test;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derbyTesting.functionTests.util.SQLStateConstants;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /**
@@ -53,6 +55,11 @@ import org.apache.derbyTesting.junit.TestConfiguration;
  */
 public class ConnectionTest
     extends BaseJDBCTestCase {
+
+    /** Explicit test-only allow-list for the inherited java.util.List UDT. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";java.base/*;!*";
 
     /**
      * Create a test with the given name.
@@ -438,7 +445,10 @@ public class ConnectionTest
                 TestConfiguration.clientServerDecorator(
                         TestConfiguration.connectionXADecorator(client)));
 
-        return connSuite;
+        return SystemPropertyTestSetup.singleProperty(
+                connSuite,
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
     
 } // End class BaseJDBCTestCase

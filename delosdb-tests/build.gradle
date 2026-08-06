@@ -476,6 +476,16 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
+        'runDelosDrdaApplicationUdtJdbcTests',
+        'Runs inherited JDBC application UDT tests with explicit DRDA allow-lists.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/jdbc4/ConnectionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest42.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbc4/XA40Test.class',
+                'org/apache/derbyTesting/functionTests/tests/jdbcapi/ProcedureTest.class'
+        ])
+
+registerDelosFocusedTest(
         'runDelosServerSchedulerTest',
         'Runs focused DRDA server scheduler, threading, fairness, and EXTDTA cleanup tests.',
         [

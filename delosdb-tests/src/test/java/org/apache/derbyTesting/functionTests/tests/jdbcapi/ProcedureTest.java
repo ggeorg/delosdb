@@ -39,17 +39,27 @@ import java.sql.Types;
 import junit.framework.Test;
 import org.apache.derby.iapi.types.HarmonySerialBlob;
 import org.apache.derby.iapi.types.HarmonySerialClob;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derbyTesting.functionTests.tests.lang.Price;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.JDBC;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /**
  * Tests of stored procedures.
  */
 public class ProcedureTest extends BaseJDBCTestCase {
+
+    /** Explicit test-only allow-list for the inherited Price UDT fixture. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derbyTesting.functionTests.tests.lang.**"
+                    + ";java.base/*"
+                    + ";java.sql/java.sql.Timestamp"
+                    + ";!*";
 
     /**
      * Creates a new <code>ProcedureTest</code> instance.
@@ -1036,7 +1046,10 @@ public class ProcedureTest extends BaseJDBCTestCase {
         suite.addTest(
                 TestConfiguration.clientServerDecorator(
                         baseSuite("ProcedureTest:client")));    
-        return suite;
+        return SystemPropertyTestSetup.singleProperty(
+                suite,
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
 
     /**

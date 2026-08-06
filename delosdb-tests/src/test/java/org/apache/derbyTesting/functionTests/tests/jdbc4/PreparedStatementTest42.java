@@ -38,9 +38,11 @@ import java.sql.Types;
 import junit.framework.Test;
 import org.apache.derby.iapi.types.HarmonySerialBlob;
 import org.apache.derby.iapi.types.HarmonySerialClob;
+import org.apache.derby.shared.common.security.DelosObjectInputFilters;
 import org.apache.derbyTesting.functionTests.tests.lang.Price;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.JDBC;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
@@ -49,6 +51,13 @@ import org.apache.derbyTesting.junit.TestConfiguration;
  */
 public class PreparedStatementTest42 extends BaseJDBCTestCase
 {
+    /** Explicit test-only allow-list for the inherited Price UDT fixture. */
+    private static final String DRDA_APPLICATION_UDT_TEST_FILTER =
+            DelosObjectInputFilters.RESOURCE_LIMIT_PATTERN
+                    + ";org.apache.derbyTesting.functionTests.tests.lang.**"
+                    + ";java.base/*"
+                    + ";java.sql/java.sql.Timestamp"
+                    + ";!*";
     //////////////////////////////////////////////////////////
     //
     // CONSTANTS
@@ -183,7 +192,10 @@ public class PreparedStatementTest42 extends BaseJDBCTestCase
 
         suite.addTest( TestConfiguration.defaultSuite( PreparedStatementTest42.class ) );
 
-        return suite;
+        return SystemPropertyTestSetup.singleProperty(
+                suite,
+                DelosObjectInputFilters.DRDA_FILTER_PROPERTY,
+                DRDA_APPLICATION_UDT_TEST_FILTER);
     }
     
     //////////////////////////////////////////////////////////
