@@ -1128,25 +1128,63 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class'])
 
 def differentialFuzzSeed = providers.gradleProperty('delosdb.differentialFuzz.seed').getOrElse('')
+def differentialFuzzSeedOffset = providers.gradleProperty('delosdb.differentialFuzz.seedOffset').getOrElse('0')
 def differentialFuzzReportDirectory = layout.buildDirectory.dir('reports/tests/differential-fuzz').get().asFile.absolutePath
 
 registerDelosFocusedTest(
         'runDelosDifferentialFuzzSmoke',
-        'Runs a small deterministic heap/MVCC indexed/unindexed differential fuzz corpus with generated relational and grammar queries.',
+        'Runs a small deterministic heap/MVCC indexed/unindexed differential fuzz corpus with relational, grammar, and typed-schema probes.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
                 'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.smokeSeeds').getOrElse('4'),
+                'delosdb.differentialFuzz.seedOffset': differentialFuzzSeedOffset,
                 'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
         ])
 
 registerDelosFocusedTest(
         'delosDifferentialFuzzTests',
-        'Runs the deterministic heap/MVCC indexed/unindexed differential fuzz corpus with generated relational and grammar queries.',
+        'Runs the deterministic heap/MVCC indexed/unindexed differential fuzz corpus with relational, grammar, and typed-schema probes.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
                 'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.seeds').getOrElse('64'),
+                'delosdb.differentialFuzz.seedOffset': differentialFuzzSeedOffset,
+                'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
+        ])
+
+registerDelosFocusedTest(
+        'runDelosDifferentialFuzzTypedSmoke',
+        'Runs the new Stage 5E typed-schema probes for the first four deterministic seeds without rerunning Stage 5A-D.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
+        [
+                'delosdb.differentialFuzz.seed': differentialFuzzSeed,
+                'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.smokeSeeds').getOrElse('4'),
+                'delosdb.differentialFuzz.seedOffset': differentialFuzzSeedOffset,
+                'delosdb.differentialFuzz.typedOnly': 'true',
+                'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
+        ])
+
+registerDelosFocusedTest(
+        'delosDifferentialFuzzTypedTests',
+        'Runs the new Stage 5E typed-schema probes for the established 64-seed corpus without rerunning Stage 5A-D.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
+        [
+                'delosdb.differentialFuzz.seed': differentialFuzzSeed,
+                'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.seeds').getOrElse('64'),
+                'delosdb.differentialFuzz.seedOffset': differentialFuzzSeedOffset,
+                'delosdb.differentialFuzz.typedOnly': 'true',
+                'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
+        ])
+
+registerDelosFocusedTest(
+        'delosDifferentialFuzzLongTests',
+        'Runs the next 448 deterministic Stage 5 differential seeds after the established 64-seed corpus.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
+        [
+                'delosdb.differentialFuzz.seed': differentialFuzzSeed,
+                'delosdb.differentialFuzz.seeds': providers.gradleProperty('delosdb.differentialFuzz.longSeeds').getOrElse('448'),
+                'delosdb.differentialFuzz.seedOffset': providers.gradleProperty('delosdb.differentialFuzz.longOffset').getOrElse('64'),
                 'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
         ])
 
@@ -1162,13 +1200,13 @@ tasks.register('delosDifferentialFuzzStaticAnalysis') {
             throw new GradleException('Stage 5 differential-fuzz provenance is malformed')
         }
         def source = differentialFuzzSource.getText('UTF-8')
-        ['MASTER_SEED', 'EXPRESSION_SEED_SALT', 'EXPRESSION_PROBES', 'RELATIONAL_SEED_SALT', 'RELATIONAL_PROBES', 'GRAMMAR_SEED_SALT', 'GRAMMAR_PROBES', 'randomGrammarQuery', 'minimizeGrammarQuery', 'randomExpression', 'randomPredicate', 'randomRelationalQuery', 'delosdb.differentialFuzz.seed', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
+        ['MASTER_SEED', 'EXPRESSION_SEED_SALT', 'EXPRESSION_PROBES', 'RELATIONAL_SEED_SALT', 'RELATIONAL_PROBES', 'GRAMMAR_SEED_SALT', 'GRAMMAR_PROBES', 'TYPE_SEED_SALT', 'TYPED_INITIAL_ROWS', 'TYPED_PROBES', 'SEED_OFFSET_PROPERTY', 'TYPED_ONLY_PROPERTY', 'runTypedSeed', 'small_value smallint', 'big_value bigint', 'decimal_value decimal(18,4)', 'fixed_label char(8)', 'var_label varchar(64)', 'event_date date', 'event_time time', 'event_ts timestamp', 'randomGrammarQuery', 'minimizeGrammarQuery', 'randomExpression', 'randomPredicate', 'randomRelationalQuery', 'delosdb.differentialFuzz.seed', 'delosdb.differentialFuzz.seedOffset', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
             if (!source.contains(token)) throw new GradleException("Differential-fuzz replay contract is missing: ${token}")
         }
     }
 }
 
-['runDelosDifferentialFuzzSmoke', 'delosDifferentialFuzzTests'].each { taskName ->
+['runDelosDifferentialFuzzSmoke', 'delosDifferentialFuzzTests', 'runDelosDifferentialFuzzTypedSmoke', 'delosDifferentialFuzzTypedTests', 'delosDifferentialFuzzLongTests'].each { taskName ->
     tasks.named(taskName) {
         dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
                 tasks.named('delosDifferentialFuzzStaticAnalysis')
@@ -1177,6 +1215,80 @@ tasks.register('delosDifferentialFuzzStaticAnalysis') {
 
 tasks.named('check') {
     dependsOn tasks.named('delosDifferentialFuzzStaticAnalysis')
+}
+
+def externalSemanticGapInventory = rootProject.file('gradle/testing/delos-external-semantic-gap-inventory.tsv')
+tasks.register('delosExternalSemanticGapStaticAnalysis') {
+    group = 'verification'
+    description = 'Validates the Stage 6 PostgreSQL/MariaDB semantic-gap inventory and writes its candidate summary.'
+    inputs.file externalSemanticGapInventory
+    outputs.file layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt')
+    doLast {
+        def allowedClassifications = [
+                'ALREADY_COVERED',
+                'DERBY_INHERITED_COVERAGE',
+                'DELOSDB_EXISTING_COVERAGE',
+                'REAL_SEMANTIC_GAP',
+                'NOT_APPLICABLE_TO_DELOSDB',
+                'ENGINE_SPECIFIC_REFERENCE_ONLY'
+        ] as Set
+        def allowedPriorities = ['P0', 'P1', 'P2', 'P3'] as Set
+        def rows = externalSemanticGapInventory.readLines('UTF-8')
+                .findAll { it && !it.startsWith('#') }
+                .collect { line -> line.split('\t', -1) as List }
+        def failures = []
+        if (rows.size() != 32) failures << "Expected 32 Stage 6 inventory rows, found ${rows.size()}"
+        def ids = new LinkedHashSet<String>()
+        rows.each { row ->
+            if (row.size() != 12) {
+                failures << "Malformed Stage 6 inventory row with ${row.size()} columns: ${row.join('|')}"
+                return
+            }
+            def (id, source, revision, sourceFile, license, area, classification, priority, intent, evidence, reason, action) = row
+            if (!ids.add(id)) failures << "Duplicate Stage 6 inventory id: ${id}"
+            if (!(source in ['PostgreSQL', 'MariaDB'])) failures << "Unknown Stage 6 source for ${id}: ${source}"
+            if (!allowedClassifications.contains(classification)) failures << "Unknown Stage 6 classification for ${id}: ${classification}"
+            if (!allowedPriorities.contains(priority)) failures << "Unknown Stage 6 priority for ${id}: ${priority}"
+            if ([revision, sourceFile, license, area, intent, evidence, reason, action].any { !it }) failures << "Blank Stage 6 field for ${id}"
+            if (source == 'PostgreSQL') {
+                if (revision != 'archive-sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c') failures << "Unexpected PostgreSQL archive revision for ${id}"
+                if (license != 'PostgreSQL License') failures << "Unexpected PostgreSQL license for ${id}"
+                if (!id.startsWith('PG-')) failures << "PostgreSQL id prefix mismatch: ${id}"
+            } else {
+                if (revision != 'archive-sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7') failures << "Unexpected MariaDB archive revision for ${id}"
+                if (license != 'GPLv2-only') failures << "Unexpected MariaDB license for ${id}"
+                if (!id.startsWith('MA-')) failures << "MariaDB id prefix mismatch: ${id}"
+            }
+            if (classification == 'REAL_SEMANTIC_GAP' && !action.startsWith('ADAPT_STAGE6')) failures << "Real gap lacks adaptation action: ${id}"
+            if (classification != 'REAL_SEMANTIC_GAP' && action.startsWith('ADAPT_STAGE6')) failures << "Covered/non-applicable case marked for adaptation: ${id}"
+        }
+        def sourceCounts = rows.countBy { it[1] }
+        def classCounts = rows.countBy { it[6] }
+        def realGaps = rows.findAll { it[6] == 'REAL_SEMANTIC_GAP' }
+        if (sourceCounts['PostgreSQL'] != 16 || sourceCounts['MariaDB'] != 16) failures << "Expected 16 rows per external source, found ${sourceCounts}"
+        if (realGaps.size() != 9) failures << "Expected 9 confirmed semantic gaps, found ${realGaps.size()}"
+        if (!failures.isEmpty()) throw new GradleException('DelosDB Stage 6 semantic-gap inventory failures (' + failures.size() + '):\n  - ' + failures.join('\n  - '))
+
+        def report = layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt').get().asFile
+        report.parentFile.mkdirs()
+        report.text = '''DelosDB Stage 6 external semantic-gap inventory
+''' +
+                '=============================================\n' +
+                "Total reviewed cases: ${rows.size()}\n" +
+                "PostgreSQL cases: ${sourceCounts['PostgreSQL']}\n" +
+                "MariaDB cases: ${sourceCounts['MariaDB']}\n" +
+                "Confirmed semantic gaps: ${realGaps.size()}\n" +
+                allowedClassifications.sort().collect { key -> "${key}: ${classCounts[key] ?: 0}" }.join('\n') + '\n\n' +
+                'Adaptation queue:\n' +
+                realGaps.sort { a, b -> a[7] <=> b[7] ?: a[0] <=> b[0] }.collect { row ->
+                    "${row[0]} ${row[7]} ${row[1]} ${row[5]} -> ${row[11]} :: ${row[10]}"
+                }.join('\n') + '\n'
+        logger.lifecycle('DelosDB Stage 6 semantic-gap inventory passed. Report: {}', report)
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('delosExternalSemanticGapStaticAnalysis')
 }
 
 registerDelosFocusedTest(

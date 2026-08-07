@@ -24,16 +24,23 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.io.File;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -51,12 +58,17 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
     private static final int EXPRESSION_PROBES = 6;
     private static final int RELATIONAL_PROBES = 6;
     private static final int GRAMMAR_PROBES = 4;
+    private static final int TYPED_INITIAL_ROWS = 32;
+    private static final int TYPED_PROBES = 8;
     private static final long EXPRESSION_SEED_SALT = 0x5EED5B2026L;
     private static final long RELATIONAL_SEED_SALT = 0x5EED5C2026L;
     private static final long GRAMMAR_SEED_SALT = 0x5EED5D2026L;
+    private static final long TYPE_SEED_SALT = 0x5EED5E2026L;
     private static final String REPLAY_SEED_PROPERTY = "delosdb.differentialFuzz.seed";
     private static final String SEED_COUNT_PROPERTY = "delosdb.differentialFuzz.seeds";
+    private static final String SEED_OFFSET_PROPERTY = "delosdb.differentialFuzz.seedOffset";
     private static final String REPORT_DIRECTORY_PROPERTY = "delosdb.differentialFuzz.reportDirectory";
+    private static final String TYPED_ONLY_PROPERTY = "delosdb.differentialFuzz.typedOnly";
 
     public void testDeterministicHeapMvccIndexedDifferentialFuzzing() throws Exception {
         String replaySeed = System.getProperty(REPLAY_SEED_PROPERTY, "").trim();
@@ -66,8 +78,14 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
         }
 
         int seedCount = Integer.getInteger(SEED_COUNT_PROPERTY, DEFAULT_SEEDS);
+        int seedOffset = Integer.getInteger(SEED_OFFSET_PROPERTY, 0);
         assertTrue("seed count must be between 1 and 1024", seedCount >= 1 && seedCount <= 1024);
+        assertTrue("seed offset must be between 0 and 1023", seedOffset >= 0 && seedOffset < 1024);
+        assertTrue("seed window must fit within 1024 deterministic seeds", seedOffset + seedCount <= 1024);
         Random seeds = new Random(MASTER_SEED);
+        for (int i = 0; i < seedOffset; i++) {
+            seeds.nextLong();
+        }
         for (int i = 0; i < seedCount; i++) {
             runSeed(seeds.nextLong());
         }
@@ -81,49 +99,52 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
         replay.add("expressionSeed=" + (seed ^ EXPRESSION_SEED_SALT));
         replay.add("relationalSeed=" + (seed ^ RELATIONAL_SEED_SALT));
         replay.add("grammarSeed=" + (seed ^ GRAMMAR_SEED_SALT));
+        replay.add("typeSeed=" + (seed ^ TYPE_SEED_SALT));
 
         try {
-            try (Connection setup = openDatabase(databaseName, true)) {
-                setup.setAutoCommit(false);
-                createTables(setup);
-                setup.commit();
-            }
-
-            try (Connection heapScan = openDatabase(databaseName, false);
-                 Connection heapIndex = openDatabase(databaseName, false);
-                 Connection mvccScan = openDatabase(databaseName, false);
-                 Connection mvccIndex = openDatabase(databaseName, false)) {
-                Target[] targets = {
-                        new Target("heap-unindexed", "FZ_HEAP_SCAN", heapScan),
-                        new Target("heap-indexed", "FZ_HEAP_INDEX", heapIndex),
-                        new Target("mvcc-unindexed", "FZ_MVCC_SCAN", mvccScan),
-                        new Target("mvcc-indexed", "FZ_MVCC_INDEX", mvccIndex)
-                };
-                for (Target target : targets) {
-                    target.connection.setAutoCommit(false);
+            if (!Boolean.getBoolean(TYPED_ONLY_PROPERTY)) {
+                try (Connection setup = openDatabase(databaseName, true)) {
+                    setup.setAutoCommit(false);
+                    createTables(setup);
+                    setup.commit();
                 }
 
-                Random random = new Random(seed);
-                Random expressionRandom = new Random(seed ^ EXPRESSION_SEED_SALT);
-                Random relationalRandom = new Random(seed ^ RELATIONAL_SEED_SALT);
-                Random grammarRandom = new Random(seed ^ GRAMMAR_SEED_SALT);
-                int nextId = insertFixture(targets, random, replay);
-                commit(targets);
-                assertEquivalent(
-                        targets, random, expressionRandom, relationalRandom, grammarRandom, replay, "initial fixture");
-
-                for (int mutation = 0; mutation < MUTATIONS; mutation++) {
-                    nextId = mutate(targets, random, nextId, replay, mutation);
-                    if ((mutation & 3) == 3) {
-                        assertEquivalent(
-                                targets, random, expressionRandom, relationalRandom, grammarRandom,
-                                replay, "mutation " + mutation);
+                try (Connection heapScan = openDatabase(databaseName, false);
+                     Connection heapIndex = openDatabase(databaseName, false);
+                     Connection mvccScan = openDatabase(databaseName, false);
+                     Connection mvccIndex = openDatabase(databaseName, false)) {
+                    Target[] targets = {
+                            new Target("heap-unindexed", "FZ_HEAP_SCAN", heapScan),
+                            new Target("heap-indexed", "FZ_HEAP_INDEX", heapIndex),
+                            new Target("mvcc-unindexed", "FZ_MVCC_SCAN", mvccScan),
+                            new Target("mvcc-indexed", "FZ_MVCC_INDEX", mvccIndex)
+                    };
+                    for (Target target : targets) {
+                        target.connection.setAutoCommit(false);
                     }
+
+                    Random random = new Random(seed);
+                    Random expressionRandom = new Random(seed ^ EXPRESSION_SEED_SALT);
+                    Random relationalRandom = new Random(seed ^ RELATIONAL_SEED_SALT);
+                    Random grammarRandom = new Random(seed ^ GRAMMAR_SEED_SALT);
+                    int nextId = insertFixture(targets, random, replay);
+                    commit(targets);
+                    assertEquivalent(targets, random, expressionRandom, relationalRandom, grammarRandom, replay,
+                            "initial fixture");
+
+                    for (int mutation = 0; mutation < MUTATIONS; mutation++) {
+                        nextId = mutate(targets, random, nextId, replay, mutation);
+                        if ((mutation & 3) == 3) {
+                            assertEquivalent(targets, random, expressionRandom, relationalRandom, grammarRandom,
+                                    replay, "mutation " + mutation);
+                        }
+                    }
+                    assertEquivalent(targets, random, expressionRandom, relationalRandom, grammarRandom, replay,
+                            "final state");
                 }
-                assertEquivalent(
-                        targets, random, expressionRandom, relationalRandom, grammarRandom, replay, "final state");
+                shutdownDatabase(databaseName);
             }
-            shutdownDatabase(databaseName);
+            runTypedSeed(seed, replay);
         } catch (Throwable failure) {
             Path report = writeFailure(seed, replay, failure);
             AssertionError wrapped = new AssertionError(
@@ -132,6 +153,289 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                             + "; report=" + report.toAbsolutePath(),
                     failure);
             throw wrapped;
+        }
+    }
+
+    private static void runTypedSeed(long seed, List<String> replay) throws Exception {
+        String databaseName = databaseName("differential-fuzz-types-" + Long.toUnsignedString(seed, 16));
+        try (Connection setup = openDatabase(databaseName, true)) {
+            setup.setAutoCommit(false);
+            createTypedTables(setup);
+            setup.commit();
+        }
+
+        try (Connection heapScan = openDatabase(databaseName, false);
+             Connection heapIndex = openDatabase(databaseName, false);
+             Connection mvccScan = openDatabase(databaseName, false);
+             Connection mvccIndex = openDatabase(databaseName, false)) {
+            Target[] targets = {
+                    new Target("heap-unindexed-types", "FZ_TYPE_HEAP_SCAN", heapScan),
+                    new Target("heap-indexed-types", "FZ_TYPE_HEAP_INDEX", heapIndex),
+                    new Target("mvcc-unindexed-types", "FZ_TYPE_MVCC_SCAN", mvccScan),
+                    new Target("mvcc-indexed-types", "FZ_TYPE_MVCC_INDEX", mvccIndex)
+            };
+            for (Target target : targets) {
+                target.connection.setAutoCommit(false);
+            }
+
+            Random random = new Random(seed ^ TYPE_SEED_SALT);
+            int nextId = insertTypedFixture(targets, random, replay);
+            commit(targets);
+            assertTypedEquivalent(targets, random, replay, "typed initial fixture");
+            exerciseTypedMutations(targets, random, nextId, replay);
+            assertTypedEquivalent(targets, random, replay, "typed final state");
+        }
+        shutdownDatabase(databaseName);
+    }
+
+    private static void createTypedTables(Connection connection) throws SQLException {
+        createTypedTable(connection, "FZ_TYPE_HEAP_SCAN", false, false);
+        createTypedTable(connection, "FZ_TYPE_HEAP_INDEX", false, true);
+        createTypedTable(connection, "FZ_TYPE_MVCC_SCAN", true, false);
+        createTypedTable(connection, "FZ_TYPE_MVCC_INDEX", true, true);
+    }
+
+    private static void createTypedTable(Connection connection, String table, boolean mvcc, boolean indexed)
+            throws SQLException {
+        executeUpdate(connection, "create table " + table + " ("
+                + "id int not null, small_value smallint not null, big_value bigint not null, "
+                + "decimal_value decimal(18,4) not null, fixed_label char(8), var_label varchar(64), "
+                + "event_date date, event_time time, event_ts timestamp)"
+                + (mvcc ? " using delos_mvcc" : ""));
+        if (indexed) {
+            executeUpdate(connection, "create index " + table + "_SMALL on " + table + "(small_value, id)");
+            executeUpdate(connection, "create index " + table + "_BIG on " + table + "(big_value, id)");
+            executeUpdate(connection, "create index " + table + "_DEC on " + table + "(decimal_value, id)");
+            executeUpdate(connection, "create index " + table + "_DATE on " + table + "(event_date, id)");
+            executeUpdate(connection, "create index " + table + "_VAR on " + table + "(var_label, id)");
+        }
+    }
+
+    private static int insertTypedFixture(Target[] targets, Random random, List<String> replay) throws SQLException {
+        for (int id = 1; id <= TYPED_INITIAL_ROWS; id++) {
+            TypedRow row = randomTypedRow(random, id);
+            replay.add("TYPE INSERT " + row);
+            for (Target target : targets) {
+                assertEquals("typed fixture insert count for " + target.name, 1, insertTyped(target, row));
+            }
+        }
+        return TYPED_INITIAL_ROWS + 1;
+    }
+
+    private static void exerciseTypedMutations(
+            Target[] targets, Random random, int nextId, List<String> replay) throws SQLException {
+        int id = 1 + random.nextInt(Math.max(1, nextId - 1));
+        BigDecimal delta = BigDecimal.valueOf(random.nextInt(20001) - 10000, 4);
+        String label = random.nextInt(4) == 0 ? null : "u" + random.nextInt(1000);
+        Date date = random.nextInt(5) == 0 ? null : randomDate(random);
+        Timestamp timestamp = random.nextInt(5) == 0 ? null : randomTimestamp(random);
+        replay.add("TYPE UPDATE id=" + id + " delta=" + delta + " label=" + label
+                + " date=" + date + " timestamp=" + timestamp);
+        compareMutations(targets, replay, "typed-update", target -> {
+            try (PreparedStatement statement = target.connection.prepareStatement(
+                    "update " + target.table + " set decimal_value = decimal_value + ?, "
+                            + "var_label = ?, event_date = ?, event_ts = ? where id = ?")) {
+                statement.setBigDecimal(1, delta);
+                if (label == null) {
+                    statement.setNull(2, Types.VARCHAR);
+                } else {
+                    statement.setString(2, label);
+                }
+                if (date == null) {
+                    statement.setNull(3, Types.DATE);
+                } else {
+                    statement.setDate(3, date);
+                }
+                if (timestamp == null) {
+                    statement.setNull(4, Types.TIMESTAMP);
+                } else {
+                    statement.setTimestamp(4, timestamp);
+                }
+                statement.setInt(5, id);
+                return statement.executeUpdate();
+            }
+        });
+
+        TypedRow inserted = randomTypedRow(random, nextId);
+        replay.add("TYPE INSERT MUTATION " + inserted);
+        compareMutations(targets, replay, "typed-insert", target -> insertTyped(target, inserted));
+
+        short low = (short) (random.nextInt(40001) - 20000);
+        short high = (short) Math.min(Short.MAX_VALUE, low + random.nextInt(5001));
+        replay.add("TYPE DELETE small range=" + low + ".." + high);
+        compareMutations(targets, replay, "typed-small-delete", target -> {
+            try (PreparedStatement statement = target.connection.prepareStatement(
+                    "delete from " + target.table + " where small_value between ? and ?")) {
+                statement.setShort(1, low);
+                statement.setShort(2, high);
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    private static void assertTypedEquivalent(
+            Target[] targets, Random random, List<String> replay, String checkpoint) throws SQLException {
+        compareQuery(targets, replay, checkpoint + " full rows", target -> rows(target.connection,
+                "select id, small_value, big_value, decimal_value, fixed_label, var_label, "
+                        + "event_date, event_time, event_ts from " + target.table + " order by id"));
+
+        for (int probe = 0; probe < TYPED_PROBES; probe++) {
+            switch (probe) {
+                case 0: {
+                    short low = (short) (random.nextInt(50001) - 25000);
+                    short high = (short) Math.min(Short.MAX_VALUE, low + random.nextInt(8001));
+                    replay.add("TYPE CHECK " + checkpoint + " small=" + low + ".." + high);
+                    compareQuery(targets, replay, checkpoint + " small range", target -> preparedRows(
+                            target, "select id, small_value from " + target.table
+                                    + " where small_value between ? and ? order by small_value, id",
+                            statement -> { statement.setShort(1, low); statement.setShort(2, high); }));
+                    break;
+                }
+                case 1: {
+                    long pivot = randomBoundaryLong(random);
+                    replay.add("TYPE CHECK " + checkpoint + " bigint>=" + pivot);
+                    compareQuery(targets, replay, checkpoint + " bigint", target -> preparedRows(
+                            target, "select id, big_value from " + target.table
+                                    + " where big_value >= ? order by big_value, id",
+                            statement -> statement.setLong(1, pivot)));
+                    break;
+                }
+                case 2: {
+                    BigDecimal pivot = BigDecimal.valueOf(random.nextInt(2000001) - 1000000, 4);
+                    replay.add("TYPE CHECK " + checkpoint + " decimal>=" + pivot);
+                    compareQuery(targets, replay, checkpoint + " decimal", target -> preparedRows(
+                            target, "select id, decimal_value, decimal_value + cast(1.2500 as decimal(18,4)) "
+                                    + "from " + target.table + " where decimal_value >= ? order by decimal_value, id",
+                            statement -> statement.setBigDecimal(1, pivot)));
+                    break;
+                }
+                case 3: {
+                    Date low = randomDate(random);
+                    Date high = Date.valueOf(low.toLocalDate().plusDays(120));
+                    replay.add("TYPE CHECK " + checkpoint + " date=" + low + ".." + high);
+                    compareQuery(targets, replay, checkpoint + " date", target -> preparedRows(
+                            target, "select id, event_date from " + target.table
+                                    + " where event_date between ? and ? order by event_date, id",
+                            statement -> { statement.setDate(1, low); statement.setDate(2, high); }));
+                    break;
+                }
+                case 4: {
+                    Timestamp pivot = randomTimestamp(random);
+                    replay.add("TYPE CHECK " + checkpoint + " timestamp>=" + pivot);
+                    compareQuery(targets, replay, checkpoint + " timestamp", target -> preparedRows(
+                            target, "select id, event_ts from " + target.table
+                                    + " where event_ts >= ? order by event_ts, id",
+                            statement -> statement.setTimestamp(1, pivot)));
+                    break;
+                }
+                case 5: {
+                    Time pivot = randomTime(random);
+                    replay.add("TYPE CHECK " + checkpoint + " time>=" + pivot);
+                    compareQuery(targets, replay, checkpoint + " time", target -> preparedRows(
+                            target, "select id, event_time from " + target.table
+                                    + " where event_time >= ? order by event_time, id",
+                            statement -> statement.setTime(1, pivot)));
+                    break;
+                }
+                case 6:
+                    compareQuery(targets, replay, checkpoint + " text/null", target -> rows(target.connection,
+                            "select id, fixed_label, var_label from " + target.table
+                                    + " where var_label is null or var_label >= 'm' "
+                                    + "or fixed_label between 'f2000' and 'f8000' "
+                                    + "order by var_label, fixed_label, id"));
+                    break;
+                default:
+                    compareQuery(targets, replay, checkpoint + " typed aggregate", target -> rows(target.connection,
+                            "select count(*), sum(decimal_value), min(big_value), max(big_value), "
+                                    + "min(event_date), max(event_ts) from " + target.table));
+                    break;
+            }
+        }
+        rollback(targets);
+    }
+
+    private static TypedRow randomTypedRow(Random random, int id) {
+        return new TypedRow(
+                id,
+                (short) (random.nextInt(60001) - 30000),
+                randomBoundaryLong(random),
+                BigDecimal.valueOf(random.nextInt(2000001) - 1000000, 4),
+                random.nextInt(6) == 0 ? null : "f" + random.nextInt(10000),
+                random.nextInt(5) == 0 ? null : "s" + random.nextInt(100000),
+                random.nextInt(7) == 0 ? null : randomDate(random),
+                random.nextInt(7) == 0 ? null : randomTime(random),
+                random.nextInt(7) == 0 ? null : randomTimestamp(random));
+    }
+
+    private static long randomBoundaryLong(Random random) {
+        switch (random.nextInt(8)) {
+            case 0:
+                return Long.MIN_VALUE;
+            case 1:
+                return Long.MAX_VALUE;
+            case 2:
+                return 0L;
+            case 3:
+                return random.nextLong();
+            default:
+                return random.nextInt(2000001) - 1000000L;
+        }
+    }
+
+    private static Date randomDate(Random random) {
+        return Date.valueOf(LocalDate.of(1990 + random.nextInt(46), 1 + random.nextInt(12), 1 + random.nextInt(28)));
+    }
+
+    private static Time randomTime(Random random) {
+        return Time.valueOf(LocalTime.of(random.nextInt(24), random.nextInt(60), random.nextInt(60)));
+    }
+
+    private static Timestamp randomTimestamp(Random random) {
+        return Timestamp.valueOf(LocalDateTime.of(
+                1990 + random.nextInt(46), 1 + random.nextInt(12), 1 + random.nextInt(28),
+                random.nextInt(24), random.nextInt(60), random.nextInt(60)));
+    }
+
+    private static int insertTyped(Target target, TypedRow row) throws SQLException {
+        try (PreparedStatement statement = target.connection.prepareStatement(
+                "insert into " + target.table + " values (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            statement.setInt(1, row.id);
+            statement.setShort(2, row.smallValue);
+            statement.setLong(3, row.bigValue);
+            statement.setBigDecimal(4, row.decimalValue);
+            if (row.fixedLabel == null) {
+                statement.setNull(5, Types.CHAR);
+            } else {
+                statement.setString(5, row.fixedLabel);
+            }
+            if (row.varLabel == null) {
+                statement.setNull(6, Types.VARCHAR);
+            } else {
+                statement.setString(6, row.varLabel);
+            }
+            if (row.eventDate == null) {
+                statement.setNull(7, Types.DATE);
+            } else {
+                statement.setDate(7, row.eventDate);
+            }
+            if (row.eventTime == null) {
+                statement.setNull(8, Types.TIME);
+            } else {
+                statement.setTime(8, row.eventTime);
+            }
+            if (row.eventTimestamp == null) {
+                statement.setNull(9, Types.TIMESTAMP);
+            } else {
+                statement.setTimestamp(9, row.eventTimestamp);
+            }
+            return statement.executeUpdate();
+        }
+    }
+
+    private static List<String> preparedRows(Target target, String sql, PreparedBinder binder) throws SQLException {
+        try (PreparedStatement statement = target.connection.prepareStatement(sql)) {
+            binder.bind(statement);
+            return rows(statement.executeQuery());
         }
     }
 
@@ -670,6 +974,42 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
 
     private interface Query {
         List<String> execute(Target target) throws SQLException;
+    }
+
+    private interface PreparedBinder {
+        void bind(PreparedStatement statement) throws SQLException;
+    }
+
+    private static final class TypedRow {
+        final int id;
+        final short smallValue;
+        final long bigValue;
+        final BigDecimal decimalValue;
+        final String fixedLabel;
+        final String varLabel;
+        final Date eventDate;
+        final Time eventTime;
+        final Timestamp eventTimestamp;
+
+        TypedRow(int id, short smallValue, long bigValue, BigDecimal decimalValue, String fixedLabel,
+                String varLabel, Date eventDate, Time eventTime, Timestamp eventTimestamp) {
+            this.id = id;
+            this.smallValue = smallValue;
+            this.bigValue = bigValue;
+            this.decimalValue = decimalValue;
+            this.fixedLabel = fixedLabel;
+            this.varLabel = varLabel;
+            this.eventDate = eventDate;
+            this.eventTime = eventTime;
+            this.eventTimestamp = eventTimestamp;
+        }
+
+        @Override
+        public String toString() {
+            return "id=" + id + " small=" + smallValue + " big=" + bigValue + " decimal=" + decimalValue
+                    + " fixed=" + fixedLabel + " var=" + varLabel + " date=" + eventDate
+                    + " time=" + eventTime + " timestamp=" + eventTimestamp;
+        }
     }
 
     private static final class Target {
