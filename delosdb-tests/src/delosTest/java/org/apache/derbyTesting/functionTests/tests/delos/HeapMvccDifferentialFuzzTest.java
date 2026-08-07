@@ -48,6 +48,10 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
     private static final int DEFAULT_SEEDS = 8;
     private static final int INITIAL_ROWS = 48;
     private static final int MUTATIONS = 20;
+    private static final int EXPRESSION_PROBES = 6;
+    private static final int RELATIONAL_PROBES = 6;
+    private static final long EXPRESSION_SEED_SALT = 0x5EED5B2026L;
+    private static final long RELATIONAL_SEED_SALT = 0x5EED5C2026L;
     private static final String REPLAY_SEED_PROPERTY = "delosdb.differentialFuzz.seed";
     private static final String SEED_COUNT_PROPERTY = "delosdb.differentialFuzz.seeds";
     private static final String REPORT_DIRECTORY_PROPERTY = "delosdb.differentialFuzz.reportDirectory";
@@ -72,6 +76,8 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
         List<String> replay = new ArrayList<>();
         replay.add("seed=" + seed);
         replay.add("masterSeed=" + MASTER_SEED);
+        replay.add("expressionSeed=" + (seed ^ EXPRESSION_SEED_SALT));
+        replay.add("relationalSeed=" + (seed ^ RELATIONAL_SEED_SALT));
 
         try {
             try (Connection setup = openDatabase(databaseName, true)) {
@@ -95,17 +101,20 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                 }
 
                 Random random = new Random(seed);
+                Random expressionRandom = new Random(seed ^ EXPRESSION_SEED_SALT);
+                Random relationalRandom = new Random(seed ^ RELATIONAL_SEED_SALT);
                 int nextId = insertFixture(targets, random, replay);
                 commit(targets);
-                assertEquivalent(targets, random, replay, "initial fixture");
+                assertEquivalent(targets, random, expressionRandom, relationalRandom, replay, "initial fixture");
 
                 for (int mutation = 0; mutation < MUTATIONS; mutation++) {
                     nextId = mutate(targets, random, nextId, replay, mutation);
                     if ((mutation & 3) == 3) {
-                        assertEquivalent(targets, random, replay, "mutation " + mutation);
+                        assertEquivalent(
+                                targets, random, expressionRandom, relationalRandom, replay, "mutation " + mutation);
                     }
                 }
-                assertEquivalent(targets, random, replay, "final state");
+                assertEquivalent(targets, random, expressionRandom, relationalRandom, replay, "final state");
             }
             shutdownDatabase(databaseName);
         } catch (Throwable failure) {
@@ -248,7 +257,8 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
     }
 
     private static void assertEquivalent(
-            Target[] targets, Random random, List<String> replay, String checkpoint) throws SQLException {
+            Target[] targets, Random random, Random expressionRandom, Random relationalRandom,
+            List<String> replay, String checkpoint) throws SQLException {
         compareQuery(targets, replay, checkpoint + " full rows",
                 target -> rows(target.connection,
                         "select id, grp, value_int, nullable_int, label from " + target.table + " order by id"));
@@ -285,11 +295,170 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                         "select grp, count(*), sum(value_int), min(value_int), max(value_int) from "
                                 + target.table + " group by grp order by grp"));
 
+        compareGeneratedExpressions(targets, expressionRandom, replay, checkpoint);
+        compareRelationalQueries(targets, relationalRandom, replay, checkpoint);
+
         // The comparison probes are read-only, but auto-commit is deliberately
         // disabled for the mutation workload. End the read transaction here so
         // the final successful checkpoint cannot leave a transaction active at
         // connection close.
         rollback(targets);
+    }
+
+
+    private static void compareGeneratedExpressions(
+            Target[] targets, Random random, List<String> replay, String checkpoint) throws SQLException {
+        for (int probe = 0; probe < EXPRESSION_PROBES; probe++) {
+            String expression = randomExpression(random);
+            String predicate = randomPredicate(random);
+            String sql = "select id, " + expression + " from {table} where " + predicate + " order by id";
+            replay.add("EXPR " + checkpoint + " #" + probe + " " + sql);
+            compareQuery(targets, replay, checkpoint + " expression #" + probe, target -> rows(
+                    target.connection, sql.replace("{table}", target.table)));
+        }
+
+        int add = random.nextInt(21) - 10;
+        int fallback = random.nextInt(21) - 10;
+        int groupA = random.nextInt(12);
+        int groupB = random.nextInt(12);
+        int minimum = random.nextInt(161) - 80;
+        replay.add("EXPR " + checkpoint + " prepared value_int+? coalesce(nullable_int,?) "
+                + "grp in (?,?) value_int>=? params=" + add + ',' + fallback + ','
+                + groupA + ',' + groupB + ',' + minimum);
+        compareQuery(targets, replay, checkpoint + " prepared expression", target -> {
+            try (PreparedStatement statement = target.connection.prepareStatement(
+                    "select id, value_int + ?, coalesce(nullable_int, ?) from " + target.table
+                            + " where grp in (?, ?) and value_int >= ? order by id")) {
+                statement.setInt(1, add);
+                statement.setInt(2, fallback);
+                statement.setInt(3, groupA);
+                statement.setInt(4, groupB);
+                statement.setInt(5, minimum);
+                return rows(statement.executeQuery());
+            }
+        });
+    }
+
+    private static void compareRelationalQueries(
+            Target[] targets, Random random, List<String> replay, String checkpoint) throws SQLException {
+        for (int probe = 0; probe < RELATIONAL_PROBES; probe++) {
+            String sql = randomRelationalQuery(random);
+            replay.add("REL " + checkpoint + " #" + probe + " " + sql);
+            compareQuery(targets, replay, checkpoint + " relational #" + probe,
+                    target -> rows(target.connection, sql.replace("{table}", target.table)));
+        }
+
+        int low = random.nextInt(161) - 80;
+        int high = low + random.nextInt(61);
+        int minimumCount = 1 + random.nextInt(3);
+        replay.add("REL " + checkpoint + " prepared correlated aggregate range="
+                + low + ".." + high + " minCount=" + minimumCount);
+        compareQuery(targets, replay, checkpoint + " prepared relational", target -> {
+            try (PreparedStatement statement = target.connection.prepareStatement(
+                    "select a.grp, count(*), sum(a.value_int) from " + target.table + " a "
+                            + "where exists (select 1 from " + target.table + " b "
+                            + "where b.grp = a.grp and b.value_int between ? and ?) "
+                            + "group by a.grp having count(*) >= ? order by a.grp")) {
+                statement.setInt(1, low);
+                statement.setInt(2, high);
+                statement.setInt(3, minimumCount);
+                return rows(statement.executeQuery());
+            }
+        });
+    }
+
+    private static String randomRelationalQuery(Random random) {
+        int threshold = random.nextInt(161) - 80;
+        int low = random.nextInt(161) - 80;
+        int high = low + random.nextInt(61);
+        int idLimit = 8 + random.nextInt(INITIAL_ROWS);
+        switch (random.nextInt(6)) {
+            case 0:
+                return "select a.id, b.id, a.grp, a.value_int + b.value_int from {table} a "
+                        + "inner join {table} b on a.grp = b.grp "
+                        + "where a.id < b.id and a.value_int >= " + threshold
+                        + " order by a.id, b.id";
+            case 1:
+                return "select a.id, b.id, a.grp from {table} a left outer join {table} b "
+                        + "on b.id = a.id + " + random.nextInt(3) + " and b.grp = a.grp "
+                        + "where a.id <= " + idLimit + " order by a.id, b.id";
+            case 2:
+                return "select a.id, a.grp, a.value_int from {table} a where exists "
+                        + "(select 1 from {table} b where b.grp = a.grp and b.id <> a.id "
+                        + "and b.value_int >= " + threshold + ") order by a.id";
+            case 3:
+                return "select a.id, a.grp from {table} a where a.grp in "
+                        + "(select b.grp from {table} b where b.value_int between "
+                        + low + " and " + high + ") order by a.id";
+            case 4:
+                return "select a.id, a.grp, (select count(*) from {table} b where b.grp = a.grp) "
+                        + "from {table} a where a.id <= " + idLimit + " order by a.id";
+            default:
+                return "select grp, count(*), sum(value_int), min(nullable_int), max(nullable_int) "
+                        + "from {table} where value_int >= " + threshold
+                        + " group by grp having count(*) >= " + (1 + random.nextInt(3)) + " order by grp";
+        }
+    }
+
+    private static String randomExpression(Random random) {
+        int constant = random.nextInt(21) - 10;
+        switch (random.nextInt(8)) {
+            case 0:
+                return "value_int + " + constant;
+            case 1:
+                return "value_int - " + constant;
+            case 2:
+                return "value_int * " + (1 + random.nextInt(4));
+            case 3:
+                return "abs(value_int)";
+            case 4:
+                return "coalesce(nullable_int, " + constant + ")";
+            case 5:
+                return "case when nullable_int is null then " + constant + " else nullable_int end";
+            case 6:
+                return "value_int + coalesce(nullable_int, 0)";
+            default:
+                return "cast(value_int as bigint)";
+        }
+    }
+
+    private static String randomPredicate(Random random) {
+        String left = randomAtomicPredicate(random);
+        if (random.nextInt(3) == 0) {
+            return left;
+        }
+        String right = randomAtomicPredicate(random);
+        return '(' + left + ')' + (random.nextBoolean() ? " and " : " or ") + '(' + right + ')';
+    }
+
+    private static String randomAtomicPredicate(Random random) {
+        int a = random.nextInt(12);
+        int b = random.nextInt(12);
+        int low = random.nextInt(161) - 80;
+        int high = low + random.nextInt(61);
+        switch (random.nextInt(10)) {
+            case 0:
+                return "grp = " + a;
+            case 1:
+                return "grp <> " + a;
+            case 2:
+                return "grp between " + Math.min(a, b) + " and " + Math.max(a, b);
+            case 3:
+                return "grp in (" + a + ", null, " + b + ')';
+            case 4:
+                return "value_int between " + low + " and " + high;
+            case 5:
+                return "not (value_int between " + low + " and " + high + ')';
+            case 6:
+                return "nullable_int is null";
+            case 7:
+                return "nullable_int is not null and nullable_int >= " + (random.nextInt(41) - 20);
+            case 8:
+                return "nullable_int is null or nullable_int in (" + (random.nextInt(21) - 10)
+                        + ", null, " + (random.nextInt(21) - 10) + ')';
+            default:
+                return random.nextBoolean() ? "label is null" : "label is not null and label <> 'v3'";
+        }
     }
 
     private static void compareQuery(
@@ -303,6 +472,11 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
             }
         }
         assertOutcomes(targets, outcomes, probe, replay);
+        if (outcomes[0].sqlStateClass != null) {
+            throw new AssertionError("Differential query unexpectedly failed for " + probe
+                    + " with SQLState class " + outcomes[0].sqlStateClass
+                    + "; lastStep=" + replay.get(replay.size() - 1));
+        }
     }
 
     private static void assertOutcomes(

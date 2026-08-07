@@ -1132,7 +1132,7 @@ def differentialFuzzReportDirectory = layout.buildDirectory.dir('reports/tests/d
 
 registerDelosFocusedTest(
         'runDelosDifferentialFuzzSmoke',
-        'Runs a small deterministic heap/MVCC indexed/unindexed differential fuzz corpus.',
+        'Runs a small deterministic heap/MVCC indexed/unindexed differential fuzz corpus with generated relational queries.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
@@ -1142,7 +1142,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'delosDifferentialFuzzTests',
-        'Runs the deterministic heap/MVCC indexed/unindexed differential fuzz corpus.',
+        'Runs the deterministic heap/MVCC indexed/unindexed differential fuzz corpus with generated relational queries.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
@@ -1162,7 +1162,7 @@ tasks.register('delosDifferentialFuzzStaticAnalysis') {
             throw new GradleException('Stage 5 differential-fuzz provenance is malformed')
         }
         def source = differentialFuzzSource.getText('UTF-8')
-        ['MASTER_SEED', 'delosdb.differentialFuzz.seed', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
+        ['MASTER_SEED', 'EXPRESSION_SEED_SALT', 'EXPRESSION_PROBES', 'RELATIONAL_SEED_SALT', 'RELATIONAL_PROBES', 'randomExpression', 'randomPredicate', 'randomRelationalQuery', 'delosdb.differentialFuzz.seed', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
             if (!source.contains(token)) throw new GradleException("Differential-fuzz replay contract is missing: ${token}")
         }
     }
