@@ -50,8 +50,10 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
     private static final int MUTATIONS = 20;
     private static final int EXPRESSION_PROBES = 6;
     private static final int RELATIONAL_PROBES = 6;
+    private static final int GRAMMAR_PROBES = 4;
     private static final long EXPRESSION_SEED_SALT = 0x5EED5B2026L;
     private static final long RELATIONAL_SEED_SALT = 0x5EED5C2026L;
+    private static final long GRAMMAR_SEED_SALT = 0x5EED5D2026L;
     private static final String REPLAY_SEED_PROPERTY = "delosdb.differentialFuzz.seed";
     private static final String SEED_COUNT_PROPERTY = "delosdb.differentialFuzz.seeds";
     private static final String REPORT_DIRECTORY_PROPERTY = "delosdb.differentialFuzz.reportDirectory";
@@ -78,6 +80,7 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
         replay.add("masterSeed=" + MASTER_SEED);
         replay.add("expressionSeed=" + (seed ^ EXPRESSION_SEED_SALT));
         replay.add("relationalSeed=" + (seed ^ RELATIONAL_SEED_SALT));
+        replay.add("grammarSeed=" + (seed ^ GRAMMAR_SEED_SALT));
 
         try {
             try (Connection setup = openDatabase(databaseName, true)) {
@@ -103,18 +106,22 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                 Random random = new Random(seed);
                 Random expressionRandom = new Random(seed ^ EXPRESSION_SEED_SALT);
                 Random relationalRandom = new Random(seed ^ RELATIONAL_SEED_SALT);
+                Random grammarRandom = new Random(seed ^ GRAMMAR_SEED_SALT);
                 int nextId = insertFixture(targets, random, replay);
                 commit(targets);
-                assertEquivalent(targets, random, expressionRandom, relationalRandom, replay, "initial fixture");
+                assertEquivalent(
+                        targets, random, expressionRandom, relationalRandom, grammarRandom, replay, "initial fixture");
 
                 for (int mutation = 0; mutation < MUTATIONS; mutation++) {
                     nextId = mutate(targets, random, nextId, replay, mutation);
                     if ((mutation & 3) == 3) {
                         assertEquivalent(
-                                targets, random, expressionRandom, relationalRandom, replay, "mutation " + mutation);
+                                targets, random, expressionRandom, relationalRandom, grammarRandom,
+                                replay, "mutation " + mutation);
                     }
                 }
-                assertEquivalent(targets, random, expressionRandom, relationalRandom, replay, "final state");
+                assertEquivalent(
+                        targets, random, expressionRandom, relationalRandom, grammarRandom, replay, "final state");
             }
             shutdownDatabase(databaseName);
         } catch (Throwable failure) {
@@ -257,7 +264,7 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
     }
 
     private static void assertEquivalent(
-            Target[] targets, Random random, Random expressionRandom, Random relationalRandom,
+            Target[] targets, Random random, Random expressionRandom, Random relationalRandom, Random grammarRandom,
             List<String> replay, String checkpoint) throws SQLException {
         compareQuery(targets, replay, checkpoint + " full rows",
                 target -> rows(target.connection,
@@ -297,6 +304,7 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
 
         compareGeneratedExpressions(targets, expressionRandom, replay, checkpoint);
         compareRelationalQueries(targets, relationalRandom, replay, checkpoint);
+        compareGrammarQueries(targets, grammarRandom, replay, checkpoint);
 
         // The comparison probes are read-only, but auto-commit is deliberately
         // disabled for the mutation workload. End the read transaction here so
@@ -365,6 +373,87 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                 return rows(statement.executeQuery());
             }
         });
+    }
+
+    private static void compareGrammarQueries(
+            Target[] targets, Random random, List<String> replay, String checkpoint) throws SQLException {
+        for (int probe = 0; probe < GRAMMAR_PROBES; probe++) {
+            GrammarQuery generated = randomGrammarQuery(random);
+            replay.add("GRAMMAR " + checkpoint + " #" + probe + " " + generated.sql);
+            QueryIssue issue = queryIssue(targets, generated.sql);
+            if (issue == null) {
+                continue;
+            }
+            String minimized = minimizeGrammarQuery(targets, generated, issue);
+            replay.add("GRAMMAR-MINIMIZED " + checkpoint + " #" + probe + " " + minimized);
+            throw new AssertionError("Differential grammar query failed for " + checkpoint + " #" + probe
+                    + ": " + issue.description + "; minimizedSql=" + minimized
+                    + "; originalSql=" + generated.sql);
+        }
+    }
+
+    private static GrammarQuery randomGrammarQuery(Random random) {
+        String expression = randomExpression(random);
+        String predicate = randomPredicate(random);
+        List<String> reductions = new ArrayList<>();
+        String sql;
+        switch (random.nextInt(6)) {
+            case 0:
+            case 1:
+            case 2:
+                sql = "select id, " + expression + " from {table} where " + predicate + " order by id";
+                reductions.add("select id, value_int from {table} where " + predicate + " order by id");
+                reductions.add("select id from {table} where " + predicate + " order by id");
+                reductions.add("select id from {table} order by id");
+                break;
+            case 3:
+                sql = "select grp, count(*), sum(" + expression + ") from {table} where " + predicate
+                        + " group by grp having count(*) >= " + (1 + random.nextInt(3)) + " order by grp";
+                reductions.add("select grp, count(*) from {table} where " + predicate + " group by grp order by grp");
+                reductions.add("select count(*) from {table} where " + predicate);
+                reductions.add("select count(*) from {table}");
+                break;
+            default:
+                sql = randomRelationalQuery(random);
+                reductions.add("select id from {table} where " + predicate + " order by id");
+                reductions.add("select id from {table} order by id");
+                break;
+        }
+        return new GrammarQuery(sql, reductions);
+    }
+
+    private static String minimizeGrammarQuery(Target[] targets, GrammarQuery generated, QueryIssue expectedIssue)
+            throws SQLException {
+        String best = generated.sql;
+        rollback(targets);
+        for (String candidate : generated.reductions) {
+            QueryIssue candidateIssue = queryIssue(targets, candidate);
+            rollback(targets);
+            if (expectedIssue.sameKind(candidateIssue) && candidate.length() < best.length()) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static QueryIssue queryIssue(Target[] targets, String sql) throws SQLException {
+        Outcome[] outcomes = new Outcome[targets.length];
+        for (int i = 0; i < targets.length; i++) {
+            try {
+                outcomes[i] = Outcome.rows(rows(
+                        targets[i].connection, sql.replace("{table}", targets[i].table)));
+            } catch (SQLException failure) {
+                outcomes[i] = Outcome.error(failure);
+            }
+        }
+        Outcome expected = outcomes[0];
+        for (int i = 1; i < outcomes.length; i++) {
+            if (!expected.equals(outcomes[i])) {
+                return QueryIssue.mismatch(targets[0].name + '=' + expected + ", "
+                        + targets[i].name + '=' + outcomes[i]);
+            }
+        }
+        return expected.sqlStateClass == null ? null : QueryIssue.error(expected.sqlStateClass);
     }
 
     private static String randomRelationalQuery(Random random) {
@@ -592,6 +681,41 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
             this.name = name;
             this.table = table;
             this.connection = connection;
+        }
+    }
+
+    private static final class GrammarQuery {
+        final String sql;
+        final List<String> reductions;
+
+        GrammarQuery(String sql, List<String> reductions) {
+            this.sql = sql;
+            this.reductions = reductions;
+        }
+    }
+
+    private static final class QueryIssue {
+        final boolean mismatch;
+        final String sqlStateClass;
+        final String description;
+
+        private QueryIssue(boolean mismatch, String sqlStateClass, String description) {
+            this.mismatch = mismatch;
+            this.sqlStateClass = sqlStateClass;
+            this.description = description;
+        }
+
+        static QueryIssue mismatch(String description) {
+            return new QueryIssue(true, null, "mismatch " + description);
+        }
+
+        static QueryIssue error(String sqlStateClass) {
+            return new QueryIssue(false, sqlStateClass, "unexpected SQLState class " + sqlStateClass);
+        }
+
+        boolean sameKind(QueryIssue other) {
+            return other != null && mismatch == other.mismatch
+                    && (mismatch || java.util.Objects.equals(sqlStateClass, other.sqlStateClass));
         }
     }
 
