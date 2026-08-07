@@ -1,6 +1,6 @@
 {
   "id": "DEL-ISO-013",
-  "description": "Rollback to a savepoint restores the row and the pre-savepoint shared-lock state: a compatible reader proceeds while a conflicting writer remains blocked until the outer transaction commits.",
+  "description": "Rollback to a savepoint must not lose the pre-savepoint row lock: a conflicting FOR UPDATE remains blocked until the outer transaction commits; the exact retained lock strength is provider-specific.",
   "category": "savepoint-rollback",
   "providers": [
     "heap"
@@ -49,24 +49,13 @@
         }
       }
     },
-    "reader": {
+    "writer": {
       "steps": {
-        "read": {
-          "sql": "select id,payload from savepoint_lock_t where id=1",
+        "lock": {
+          "sql": "select id,payload from savepoint_lock_t where id=1 for update",
           "rows": [
             "1|one"
           ]
-        },
-        "commit": {
-          "action": "COMMIT"
-        }
-      }
-    },
-    "writer": {
-      "steps": {
-        "update": {
-          "sql": "update savepoint_lock_t set payload='two' where id=1",
-          "updateCount": 1
         },
         "commit": {
           "action": "COMMIT"
@@ -99,21 +88,13 @@
           "step": "holder.restored"
         },
         {
-          "type": "RUN",
-          "step": "reader.read"
-        },
-        {
-          "type": "RUN",
-          "step": "reader.commit"
-        },
-        {
           "type": "START",
-          "step": "writer.update",
-          "token": "writerUpdate"
+          "step": "writer.lock",
+          "token": "writerLock"
         },
         {
           "type": "ASSERT_BLOCKED",
-          "token": "writerUpdate",
+          "token": "writerLock",
           "timeoutMillis": 1200
         },
         {
@@ -122,7 +103,7 @@
         },
         {
           "type": "AWAIT",
-          "token": "writerUpdate",
+          "token": "writerLock",
           "timeoutMillis": 10000
         },
         {
@@ -136,7 +117,7 @@
     {
       "sql": "select id,payload from savepoint_lock_t",
       "rows": [
-        "1|two"
+        "1|one"
       ]
     }
   ],
