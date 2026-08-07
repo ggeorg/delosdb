@@ -1,0 +1,160 @@
+{
+  "id": "DEL-MERGE-003",
+  "description": "A blocked MERGE must not apply a stale WHEN MATCHED branch after a concurrent update changes the target predicate; heap rechecks the row and MVCC may instead report 40001.",
+  "category": "merge-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table merge_recheck_target_t (id int primary key,status int not null,marker int not null)${providerClause}",
+    "create table merge_recheck_source_t (id int primary key)${providerClause}",
+    "insert into merge_recheck_target_t values (1,1,0)",
+    "insert into merge_recheck_source_t values (1)"
+  ],
+  "sessions": {
+    "writer": {
+      "steps": {
+        "update": {
+          "sql": "update merge_recheck_target_t set status=2 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "merger": {
+      "steps": {
+        "merge": {
+          "sql": "merge into merge_recheck_target_t t using merge_recheck_source_t s on t.id=s.id when matched and status=1 then update set status=10,marker=1 when matched and status=2 then update set status=20,marker=2",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "matched-predicate-recheck-heap",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "START",
+          "step": "merger.merge",
+          "token": "mergeRecheck"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "mergeRecheck",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "mergeRecheck",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "merger.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 0
+        }
+      ]
+    },
+    {
+      "name": "matched-predicate-recheck-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "writer.update"
+        },
+        {
+          "type": "START",
+          "step": "merger.merge",
+          "token": "mergeRecheck"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "mergeRecheck",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "mergeRecheck",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "merger.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "providers": [
+        "heap"
+      ],
+      "sql": "select id,status,marker from merge_recheck_target_t",
+      "rows": [
+        "1|20|2"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select case when (status=2 and marker=0) or (status=20 and marker=2) then 1 else 0 end from merge_recheck_target_t where id=1",
+      "rows": [
+        "1"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table merge_recheck_source_t",
+    "drop table merge_recheck_target_t"
+  ]
+}

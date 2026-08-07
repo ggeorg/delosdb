@@ -1,0 +1,147 @@
+{
+  "id": "DEL-FK-005",
+  "description": "A child insert racing an uncommitted parent primary-key move cannot commit a reference to the disappeared key.",
+  "category": "foreign-key-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table fk_move_parent_t (id int primary key, aux varchar(32) not null)${providerClause}",
+    "create table fk_move_child_t (id int primary key,parent_id int not null,constraint fk_move_child_parent foreign key(parent_id) references fk_move_parent_t(id))${providerClause}",
+    "insert into fk_move_parent_t values (1, 'one')"
+  ],
+  "sessions": {
+    "parent": {
+      "steps": {
+        "move": {
+          "sql": "update fk_move_parent_t set id=2 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "child": {
+      "steps": {
+        "insert": {
+          "sql": "insert into fk_move_child_t values (10,1)",
+          "sqlStates": [
+            "23503"
+          ],
+          "successAllowed": false
+        },
+        "rollback": {
+          "action": "ROLLBACK"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "parent-key-move-child-insert-heap",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "parent.move"
+        },
+        {
+          "type": "START",
+          "step": "child.insert",
+          "token": "childInsert"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "childInsert",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "parent.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "childInsert",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "child.rollback"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    },
+    {
+      "name": "parent-key-move-child-insert-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "parent.move"
+        },
+        {
+          "type": "START",
+          "step": "child.insert",
+          "token": "childInsert"
+        },
+        {
+          "type": "RUN",
+          "step": "parent.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "childInsert",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "child.rollback"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23503",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,aux from fk_move_parent_t",
+      "rows": [
+        "2|one"
+      ]
+    },
+    {
+      "sql": "select count(*) from fk_move_child_t",
+      "rows": [
+        "0"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table fk_move_child_t",
+    "drop table fk_move_parent_t"
+  ]
+}

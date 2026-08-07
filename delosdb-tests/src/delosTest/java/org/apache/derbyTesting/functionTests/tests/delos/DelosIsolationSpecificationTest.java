@@ -59,6 +59,10 @@ public final class DelosIsolationSpecificationTest extends MvccSqlTestSupport {
         runAll("DEL-MERGE-001", "DEL-MERGE-002");
     }
 
+    public void testStage6BPostgresConcurrencySpecifications() throws Exception {
+        runAll("DEL-ISO-013", "DEL-FK-005", "DEL-MERGE-003", "DEL-MERGE-004");
+    }
+
     private static void runAll(String... caseIds) throws Exception {
         for (String caseId : caseIds) {
             String resource = RESOURCE_ROOT + caseId + ".json";

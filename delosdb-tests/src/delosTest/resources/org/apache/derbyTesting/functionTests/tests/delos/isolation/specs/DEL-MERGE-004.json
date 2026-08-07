@@ -1,0 +1,160 @@
+{
+  "id": "DEL-MERGE-004",
+  "description": "A MERGE racing an uncommitted target DELETE must produce a serial result: heap rechecks to NOT MATCHED and inserts the source row, while MVCC may instead abort with 40001.",
+  "category": "merge-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table merge_delete_target_t (id int primary key,payload int not null)${providerClause}",
+    "create table merge_delete_source_t (id int primary key,payload int not null)${providerClause}",
+    "insert into merge_delete_target_t values (1,10)",
+    "insert into merge_delete_source_t values (1,20)"
+  ],
+  "sessions": {
+    "deleter": {
+      "steps": {
+        "delete": {
+          "sql": "delete from merge_delete_target_t where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "merger": {
+      "steps": {
+        "merge": {
+          "sql": "merge into merge_delete_target_t t using merge_delete_source_t s on t.id=s.id when matched then delete when not matched then insert (id,payload) values (s.id,s.payload)",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "delete-versus-merge-delete-heap",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "deleter.delete"
+        },
+        {
+          "type": "START",
+          "step": "merger.merge",
+          "token": "mergeDelete"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "mergeDelete",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "deleter.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "mergeDelete",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "merger.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 0
+        }
+      ]
+    },
+    {
+      "name": "delete-versus-merge-delete-mvcc",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "deleter.delete"
+        },
+        {
+          "type": "START",
+          "step": "merger.merge",
+          "token": "mergeDelete"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "mergeDelete",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "deleter.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "mergeDelete",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "merger.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "providers": [
+        "heap"
+      ],
+      "sql": "select id,payload from merge_delete_target_t",
+      "rows": [
+        "1|20"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select case when count(*)=0 or (count(*)=1 and max(case when id=1 and payload=20 then 1 else 0 end)=1) then 1 else 0 end from merge_delete_target_t",
+      "rows": [
+        "1"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table merge_delete_source_t",
+    "drop table merge_delete_target_t"
+  ]
+}

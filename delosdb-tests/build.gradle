@@ -479,6 +479,17 @@ tasks.named('runDelosIsolationSpecificationTests') {
 }
 
 registerDelosFocusedTest(
+        'runDelosStage6BPostgresConcurrencyTests',
+        'Runs the Stage 6B PostgreSQL-derived savepoint, foreign-key, and MERGE concurrency adaptations.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
+        [:],
+        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6BPostgresConcurrencySpecifications'])
+
+tasks.named('runDelosStage6BPostgresConcurrencyTests') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
         'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
         [

@@ -1,0 +1,146 @@
+{
+  "id": "DEL-ISO-013",
+  "description": "Rollback to a savepoint restores the row and the pre-savepoint shared-lock state: a compatible reader proceeds while a conflicting writer remains blocked until the outer transaction commits.",
+  "category": "savepoint-rollback",
+  "providers": [
+    "heap"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table savepoint_lock_t (id int primary key, payload varchar(32))${providerClause}",
+    "insert into savepoint_lock_t values (1, 'one')"
+  ],
+  "sessions": {
+    "holder": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "read": {
+          "sql": "select id,payload from savepoint_lock_t where id=1",
+          "rows": [
+            "1|one"
+          ]
+        },
+        "savepoint": {
+          "action": "SAVEPOINT",
+          "savepoint": "before_delete"
+        },
+        "delete": {
+          "sql": "delete from savepoint_lock_t where id=1",
+          "updateCount": 1
+        },
+        "rollback": {
+          "action": "ROLLBACK_TO_SAVEPOINT",
+          "savepoint": "before_delete"
+        },
+        "restored": {
+          "sql": "select id,payload from savepoint_lock_t where id=1",
+          "rows": [
+            "1|one"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "reader": {
+      "steps": {
+        "read": {
+          "sql": "select id,payload from savepoint_lock_t where id=1",
+          "rows": [
+            "1|one"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "steps": {
+        "update": {
+          "sql": "update savepoint_lock_t set payload='two' where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "restore-pre-savepoint-lock",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "holder.read"
+        },
+        {
+          "type": "RUN",
+          "step": "holder.savepoint"
+        },
+        {
+          "type": "RUN",
+          "step": "holder.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "holder.rollback"
+        },
+        {
+          "type": "RUN",
+          "step": "holder.restored"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.read"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        },
+        {
+          "type": "START",
+          "step": "writer.update",
+          "token": "writerUpdate"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "writerUpdate",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "holder.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "writerUpdate",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id,payload from savepoint_lock_t",
+      "rows": [
+        "1|two"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table savepoint_lock_t"
+  ]
+}
