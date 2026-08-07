@@ -444,7 +444,7 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
             case 2:
                 return "grp between " + Math.min(a, b) + " and " + Math.max(a, b);
             case 3:
-                return "grp in (" + a + ", null, " + b + ')';
+                return "grp in (" + a + ", cast(null as int), " + b + ')';
             case 4:
                 return "value_int between " + low + " and " + high;
             case 5:
@@ -455,7 +455,7 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                 return "nullable_int is not null and nullable_int >= " + (random.nextInt(41) - 20);
             case 8:
                 return "nullable_int is null or nullable_int in (" + (random.nextInt(21) - 10)
-                        + ", null, " + (random.nextInt(21) - 10) + ')';
+                        + ", cast(null as int), " + (random.nextInt(21) - 10) + ')';
             default:
                 return random.nextBoolean() ? "label is null" : "label is not null and label <> 'v3'";
         }
