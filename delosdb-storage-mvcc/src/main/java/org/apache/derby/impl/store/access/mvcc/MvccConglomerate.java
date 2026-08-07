@@ -187,7 +187,8 @@ public final class MvccConglomerate
                 currentRuntime,
                 currentTable,
                 xactManager,
-                rawtran);
+                rawtran,
+                (openMode & TransactionController.OPENMODE_FORUPDATE) != 0);
     }
 
     @Override

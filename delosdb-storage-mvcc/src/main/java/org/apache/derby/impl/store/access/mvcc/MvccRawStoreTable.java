@@ -494,7 +494,24 @@ final class MvccRawStoreTable {
                 rowLocation,
                 context.snapshotSequence(),
                 projection,
-                context);
+                context,
+                false);
+    }
+
+    static VisibleRow readVisibleForWrite(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        return readVisibleAt(
+                rawTransaction,
+                table,
+                rowLocation,
+                context.snapshotSequence(),
+                projection,
+                context,
+                true);
     }
 
     static VisibleRow readVisibleAt(
@@ -504,9 +521,30 @@ final class MvccRawStoreTable {
             long snapshotSequence,
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return readVisibleAt(
+                rawTransaction,
+                table,
+                rowLocation,
+                snapshotSequence,
+                projection,
+                context,
+                false);
+    }
+
+    private static VisibleRow readVisibleAt(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            long snapshotSequence,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreTransactionContext context,
+            boolean checkWriteVersion) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 rawTransaction, table, rowLocation);
         while (true) {
+            if (checkWriteVersion) {
+                validateWriteVersion(rowLocation, directory.head().versionId());
+            }
             try {
                 VersionRecord version = MvccRawStoreVersionReader.findVisible(
                         rawTransaction,
@@ -594,6 +632,7 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.LIVE_FLAGS,
                 values,
                 context);
+        rowLocation.setWriteVersion(0L);
         return true;
     }
 
@@ -639,6 +678,7 @@ final class MvccRawStoreTable {
                 table,
                 target.visible().values(),
                 tombstone);
+        rowLocation.setWriteVersion(0L);
         return true;
     }
 
@@ -993,6 +1033,17 @@ final class MvccRawStoreTable {
         return row;
     }
 
+    static void validateWriteVersion(
+            MvccRowLocation rowLocation,
+            long currentVersion) throws StandardException {
+        long writeVersion = rowLocation.getWriteVersion();
+        if (writeVersion != 0L && writeVersion != currentVersion) {
+            throw StandardException.newException(
+                    SQLState.DEADLOCK,
+                    "RawStore MVCC write conflict for logical row " + rowLocation.rowId());
+        }
+    }
+
     private static MutationTarget mutationTarget(
             Transaction transaction,
             Descriptor table,
@@ -1001,6 +1052,7 @@ final class MvccRawStoreTable {
         long rowId = rowLocation.rowId();
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction, table, rowLocation);
+        validateWriteVersion(rowLocation, directory.head().versionId());
         VersionRecord visible = MvccRawStoreVersionReader.findVisible(
                 transaction,
                 table,

@@ -30,4 +30,26 @@ public interface StoreRowLocation extends StoreDataValue {
     {
         return this;
     }
+
+    /**
+     * Optional transient version observed when this row location was exported
+     * for a later write. Zero means that no write observation is attached.
+     * The value is not row identity and must not change the durable row-location
+     * format.
+     */
+    default long getWriteVersion()
+    {
+        return 0L;
+    }
+
+    /** Whether this row-location implementation carries transient write versions. */
+    default boolean supportsWriteVersion()
+    {
+        return false;
+    }
+
+    /** Attach or clear the transient version used to validate a later write. */
+    default void setWriteVersion(long version)
+    {
+    }
 }

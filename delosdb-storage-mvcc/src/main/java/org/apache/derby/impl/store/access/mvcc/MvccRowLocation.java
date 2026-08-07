@@ -46,6 +46,7 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
     private long rowId;
     private long locatorPageId;
     private int locatorSlotId;
+    private long writeVersion;
 
     public MvccRowLocation() {
         clear();
@@ -88,16 +89,38 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
         this.rowId = rowId;
         this.locatorPageId = locatorPageId;
         this.locatorSlotId = locatorSlotId;
+        this.writeVersion = 0L;
     }
 
     public void copyFrom(MvccRowLocation other) {
         set(other.rowId, other.locatorPageId, other.locatorSlotId);
+        writeVersion = other.writeVersion;
+    }
+
+    @Override
+    public long getWriteVersion() {
+        return writeVersion;
+    }
+
+    @Override
+    public boolean supportsWriteVersion() {
+        return true;
+    }
+
+    @Override
+    public void setWriteVersion(long writeVersion) {
+        if (writeVersion < 0L) {
+            throw new IllegalArgumentException(
+                    "write version must be non-negative: " + writeVersion);
+        }
+        this.writeVersion = writeVersion;
     }
 
     private void clear() {
         rowId = 0L;
         locatorPageId = 0L;
         locatorSlotId = -1;
+        writeVersion = 0L;
     }
 
     public StoreDataValue recycle() {
@@ -117,7 +140,9 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
 
     @Override
     public StoreDataValue cloneValue(boolean forceMaterialization) {
-        return new MvccRowLocation(rowId, locatorPageId, locatorSlotId);
+        MvccRowLocation clone = new MvccRowLocation(rowId, locatorPageId, locatorSlotId);
+        clone.writeVersion = writeVersion;
+        return clone;
     }
 
     @Override
@@ -207,6 +232,7 @@ public final class MvccRowLocation extends StoreDataValueBase implements StoreRo
         rowId = CompressedNumber.readLong(in);
         locatorPageId = CompressedNumber.readLong(in);
         locatorSlotId = CompressedNumber.readInt(in) - 1;
+        writeVersion = 0L;
     }
 
     @Override

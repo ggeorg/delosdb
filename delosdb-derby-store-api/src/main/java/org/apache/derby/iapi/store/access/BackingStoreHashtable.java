@@ -33,6 +33,7 @@ import org.apache.derby.iapi.services.cache.ClassSize;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -161,6 +162,7 @@ public class BackingStoreHashtable
         ClassSize.estimateBaseFromCatalog(ArrayList.class);
     
     private DiskHashtable diskHashtable;
+    private boolean diskIncludesWriteVersion;
 
     /**************************************************************************
      * Constructors for This class:
@@ -579,7 +581,10 @@ public class BackingStoreHashtable
                 return false;
             }
             
-            // Want to start spilling
+            // Want to start spilling. A write version is transient row-location
+            // metadata, so preserve it in a hidden temporary column instead of
+            // changing the durable RowLocation format.
+            diskIncludesWriteVersion = supportsWriteVersion(rowLocation);
             diskRow = makeDiskRow( columnValues, rowLocation );
  
             diskHashtable = 
@@ -683,10 +688,23 @@ public class BackingStoreHashtable
         {
             return diskRow;
         }
-        else
+        if ( !diskIncludesWriteVersion )
         {
             return StoreTypeUtil.newLocatedRow( diskRow );
         }
+
+        int writeVersionColumn = diskRow.length - 2;
+        StoreRowLocation rowLocation = (StoreRowLocation) diskRow[diskRow.length - 1];
+        try
+        {
+            rowLocation.unwrapStoreRowLocation().setWriteVersion(
+                StoreTypeUtil.getLong( diskRow[writeVersionColumn] ));
+        }
+        catch (StandardException se)
+        {
+            throw new IllegalStateException("Could not restore spilled row write version", se);
+        }
+        return StoreTypeUtil.newLocatedRow( Arrays.copyOf(diskRow, writeVersionColumn), rowLocation );
     }
 
     /**
@@ -703,10 +721,32 @@ public class BackingStoreHashtable
         {
             return columnValues;
         }
-        else
+
+        StoreDataValue[] diskRow =
+            (StoreDataValue[]) StoreTypeUtil.flattenLocatedRow( columnValues, rowLocation );
+        if ( !diskIncludesWriteVersion )
         {
-            return (StoreDataValue[]) StoreTypeUtil.flattenLocatedRow( columnValues, rowLocation );
+            return diskRow;
         }
+
+        int rowLocationColumn = diskRow.length - 1;
+        diskRow = Arrays.copyOf( diskRow, diskRow.length + 1 );
+        diskRow[rowLocationColumn + 1] = diskRow[rowLocationColumn];
+        diskRow[rowLocationColumn] = StoreTypeUtil.newSQLLongint( writeVersion(rowLocation) );
+        return diskRow;
+    }
+
+    private static boolean supportsWriteVersion(StoreRowLocation rowLocation)
+    {
+        return rowLocation != null
+            && rowLocation.unwrapStoreRowLocation().supportsWriteVersion();
+    }
+
+    private static long writeVersion(StoreRowLocation rowLocation)
+    {
+        return rowLocation == null
+            ? 0L
+            : rowLocation.unwrapStoreRowLocation().getWriteVersion();
     }
 
     /**

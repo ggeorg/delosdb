@@ -132,14 +132,11 @@ final class MvccRawStoreScanController implements ScanManager {
         long count = 0L;
         while ((maxRowCount < 0L || count < maxRowCount) && next()) {
             StoreDataValue[] row = StoreValueCopySupport.cloneRow(current.values());
-            MvccRowLocation location = current.directoryLocation();
-            hashTable.putRow(
-                    true,
-                    row,
-                    new MvccRowLocation(
-                            location.rowId(),
-                            location.locatorPageId(),
-                            location.locatorSlotId()));
+            MvccRowLocation location = (MvccRowLocation) current.directoryLocation().cloneValue(false);
+            if (hashTable.includeRowLocations()) {
+                location.setWriteVersion(current.versionId());
+            }
+            hashTable.putRow(true, row, location);
             count++;
         }
         while (next()) {
@@ -214,10 +211,12 @@ final class MvccRawStoreScanController implements ScanManager {
         if (currentDeleted) {
             return false;
         }
+        MvccRowLocation location = (MvccRowLocation) current.directoryLocation().cloneValue(false);
+        location.setWriteVersion(current.versionId());
         boolean deleted = MvccRawStoreTable.delete(
                 rawTransaction,
                 table,
-                current.directoryLocation(),
+                location,
                 runtime.context(transactionManager, rawTransaction));
         currentDeleted = deleted;
         return deleted;
@@ -275,8 +274,9 @@ final class MvccRawStoreScanController implements ScanManager {
                 if (rowlocArray[count] == null) {
                     rowlocArray[count] = new MvccRowLocation();
                 }
-                MvccRowLocation.from(rowlocArray[count]).copyFrom(
-                        current.directoryLocation());
+                MvccRowLocation location = MvccRowLocation.from(rowlocArray[count]);
+                location.copyFrom(current.directoryLocation());
+                location.setWriteVersion(current.versionId());
             }
             count++;
         }
@@ -299,6 +299,7 @@ final class MvccRawStoreScanController implements ScanManager {
             destination.restoreToNull();
         } else {
             destination.copyFrom(current.directoryLocation());
+            destination.setWriteVersion(current.versionId());
         }
     }
 
@@ -363,10 +364,12 @@ final class MvccRawStoreScanController implements ScanManager {
                 current.values(),
                 row,
                 validColumns);
+        MvccRowLocation location = (MvccRowLocation) current.directoryLocation().cloneValue(false);
+        location.setWriteVersion(current.versionId());
         boolean replaced = MvccRawStoreTable.replace(
                 rawTransaction,
                 table,
-                current.directoryLocation(),
+                location,
                 row,
                 validColumns,
                 runtime.context(transactionManager, rawTransaction));

@@ -32,17 +32,20 @@ final class MvccRawStoreConglomerateController
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
+    private final boolean forUpdate;
     private boolean closed;
 
     MvccRawStoreConglomerateController(
             MvccRawStoreRuntime runtime,
             MvccRawStoreTable.Descriptor table,
             TransactionManager transactionManager,
-            Transaction rawTransaction) {
+            Transaction rawTransaction,
+            boolean forUpdate) {
         this.runtime = runtime;
         this.table = table;
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
+        this.forUpdate = forUpdate;
     }
 
     @Override
@@ -79,15 +82,24 @@ final class MvccRawStoreConglomerateController
             throws StandardException {
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        MvccRowLocation location = MvccRowLocation.from(loc);
+        boolean checkWriteVersion = forUpdate && location.getWriteVersion() != 0L;
+        if (checkWriteVersion) {
+            context.beforeRowWrite(table, location.rowId());
+        }
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-            MvccRawStoreTable.VisibleRow visible = MvccRawStoreTable.readVisible(
-                    rawTransaction,
-                    table,
-                    MvccRowLocation.from(loc),
-                    MvccRawStoreVersionRows.projection(table, validColumns),
-                    context);
+            MvccRawStoreVersionRows.FetchProjection projection =
+                    MvccRawStoreVersionRows.projection(table, validColumns);
+            MvccRawStoreTable.VisibleRow visible = checkWriteVersion
+                    ? MvccRawStoreTable.readVisibleForWrite(
+                            rawTransaction, table, location, projection, context)
+                    : MvccRawStoreTable.readVisible(
+                            rawTransaction, table, location, projection, context);
             if (visible == null) {
                 return false;
+            }
+            if (location.getWriteVersion() == 0L) {
+                location.setWriteVersion(visible.versionId());
             }
             StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);
             return true;
@@ -127,7 +139,14 @@ final class MvccRawStoreConglomerateController
         if ((lockOper & ConglomerateController.LOCK_UPD) != 0) {
             MvccRawStoreTransactionContext context =
                     runtime.context(transactionManager, rawTransaction);
-            context.lockRowForUpdate(table, MvccRowLocation.from(loc).rowId());
+            MvccRowLocation location = MvccRowLocation.from(loc);
+            context.lockRowForUpdate(table, location.rowId());
+            if (location.getWriteVersion() != 0L) {
+                MvccRawStoreTable.validateWriteVersion(
+                        location,
+                        MvccRawStoreRowDirectory.find(
+                                rawTransaction, table, location).head().versionId());
+            }
         }
         return true;
     }

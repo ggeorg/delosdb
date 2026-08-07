@@ -23,6 +23,7 @@ package org.apache.derby.iapi.types;
 
 import org.apache.derby.shared.common.error.StandardException;
 
+import org.apache.derby.iapi.services.io.CompressedNumber;
 import org.apache.derby.iapi.services.io.StoredFormatIds;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -118,6 +119,9 @@ public class SQLRef extends DataType implements RefDataValue
 			SanityManager.ASSERT(value != null, "writeExternal() is not supposed to be called for null values.");
 
 		out.writeObject(value);
+		if (value.unwrapStoreRowLocation().supportsWriteVersion())
+			CompressedNumber.writeLong(
+				out, value.unwrapStoreRowLocation().getWriteVersion());
 	}
 
 	/**
@@ -132,6 +136,8 @@ public class SQLRef extends DataType implements RefDataValue
 	public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException
 	{
 		value = RowLocationServicesRegistry.requireRowLocation(in.readObject());
+		if (value.unwrapStoreRowLocation().supportsWriteVersion())
+			value.unwrapStoreRowLocation().setWriteVersion(CompressedNumber.readLong(in));
 	}
 
 	/**
