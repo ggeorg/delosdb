@@ -499,6 +499,7 @@ class RowChangerImpl	implements	RowChanger
 	public void deleteRow(ExecRow baseRow, RowLocation baseRowLocation)
 		 throws StandardException
 	{
+		lockObservedRowForWrite(baseRowLocation);
 		if (isc != null)
 		{
 			isc.delete(baseRow, baseRowLocation);
@@ -555,12 +556,25 @@ class RowChangerImpl	implements	RowChanger
 			return;
 		}
 
+		lockObservedRowForWrite(baseRowLocation);
 		if (isc != null)
 		{
 			isc.update(oldBaseRow, newBaseRow, baseRowLocation);
 		}
 
 		baseCC.replace(baseRowLocation, sparseRowArray, columnsToStore);
+	}
+
+	private void lockObservedRowForWrite(RowLocation rowLocation) throws StandardException
+	{
+		if (rowLocation.unwrapStoreRowLocation().getWriteVersion() != 0L)
+		{
+			baseCC.lockRow(
+					rowLocation,
+					ConglomerateController.LOCK_UPD,
+					true,
+					TransactionManager.LOCK_COMMIT_DURATION);
+		}
 	}
 
 	private void prepareAssignedChanges(ExecRow newBaseRow)
