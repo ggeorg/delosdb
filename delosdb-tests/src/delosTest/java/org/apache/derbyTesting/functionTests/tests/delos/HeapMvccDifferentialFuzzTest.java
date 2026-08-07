@@ -284,6 +284,12 @@ public final class HeapMvccDifferentialFuzzTest extends MvccSqlTestSupport {
                 target -> rows(target.connection,
                         "select grp, count(*), sum(value_int), min(value_int), max(value_int) from "
                                 + target.table + " group by grp order by grp"));
+
+        // The comparison probes are read-only, but auto-commit is deliberately
+        // disabled for the mutation workload. End the read transaction here so
+        // the final successful checkpoint cannot leave a transaction active at
+        // connection close.
+        rollback(targets);
     }
 
     private static void compareQuery(
