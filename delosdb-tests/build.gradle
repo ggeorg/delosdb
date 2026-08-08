@@ -1011,6 +1011,12 @@ registerDelosFocusedTest(
 
 
 registerDelosFocusedTest(
+        'runDelosStorageMetadataContractTest',
+        'Runs the enduring provider-neutral storage metadata/reporting contract.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataContractTest.class'])
+
+
+registerDelosFocusedTest(
         'runDelosMvccSerializableSemanticsTest',
         'Runs heap SERIALIZABLE preservation and early delos_mvcc SERIALIZABLE rejection.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
