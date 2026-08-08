@@ -44,6 +44,7 @@ public final class MvccSqlTypedIndexSemanticsTest extends MvccSqlTestSupport {
             connection.commit();
 
             assertTypedQueries(connection);
+            connection.commit();
         }
 
         shutdownDatabase(databaseName);

@@ -28,9 +28,9 @@ import java.sql.SQLException;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
-/** SQL proof for delos_mvcc rows that require MVCC overflow payload pages. */
+/** SQL proof for large delos_mvcc row payloads across vacuum and reopen. */
 public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
-    public void testLongVarcharUsesOverflowPagesAndSurvivesVacuumAndReopen() throws Exception {
+    public void testLongVarcharSurvivesVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-long-row-overflow-db");
         DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String largePayload = repeated('x', 16000);
