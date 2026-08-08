@@ -17,7 +17,7 @@ def reportText = layout.buildDirectory.file('reports/tests/delosdb-isolation-spe
 
 def requiredCases = [
         'DEL-ISO-001', 'DEL-ISO-002', 'DEL-ISO-003', 'DEL-ISO-004',
-        'DEL-ISO-010', 'DEL-ISO-011', 'DEL-ISO-012', 'DEL-ISO-013',
+        'DEL-ISO-010', 'DEL-ISO-011', 'DEL-ISO-012', 'DEL-ISO-013', 'DEL-ISO-014',
         'DEL-DEADLOCK-001', 'DEL-DEADLOCK-002', 'DEL-DEADLOCK-003', 'DEL-DEADLOCK-004',
         'DEL-TRAVERSAL-001', 'DEL-TRAVERSAL-002', 'DEL-TRAVERSAL-003', 'DEL-TRAVERSAL-004',
         'DEL-FK-001', 'DEL-FK-002', 'DEL-FK-003', 'DEL-FK-004', 'DEL-FK-005',
@@ -28,6 +28,7 @@ def requiredCases = [
 def requiredCategoryCounts = [
         'snapshot-stability': 4,
         'savepoint-rollback': 4,
+        'serializable-uniqueness': 1,
         'deadlock': 4,
         'update-delete-traversal': 4,
         'foreign-key-concurrency': 5,
@@ -396,6 +397,10 @@ tasks.named('runDelosIsolationSpecificationTests') {
 }
 
 tasks.named('runDelosStage6BPostgresConcurrencyTests') {
+    dependsOn stage4Analysis
+}
+
+tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
     dependsOn stage4Analysis
 }
 

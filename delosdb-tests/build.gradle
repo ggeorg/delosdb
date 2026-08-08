@@ -490,6 +490,17 @@ tasks.named('runDelosStage6BPostgresConcurrencyTests') {
 }
 
 registerDelosFocusedTest(
+        'runDelosStage6BPostgresSerializableUniquenessTest',
+        'Runs the Stage 6B PostgreSQL-derived SERIALIZABLE empty-read/unique-key race adaptation.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
+        [:],
+        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6BPostgresSerializableUniquenessSpecification'])
+
+tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
         'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
         [

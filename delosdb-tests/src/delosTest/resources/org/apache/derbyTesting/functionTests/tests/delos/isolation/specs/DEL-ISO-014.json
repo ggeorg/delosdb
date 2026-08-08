@@ -1,0 +1,215 @@
+{
+  "id": "DEL-ISO-014",
+  "description": "Serializable transactions that both observe a unique key as absent must resolve their competing inserts as a serialization conflict, while a key committed before the second read remains an ordinary duplicate-key violation; MVCC currently rejects SERIALIZABLE before execution.",
+  "category": "serializable-uniqueness",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table serial_unique_t (id int primary key)${providerClause}"
+  ],
+  "sessions": {
+    "left": {
+      "isolation": "SERIALIZABLE",
+      "steps": {
+        "readEmpty": {
+          "sql": "select id from serial_unique_t where id=42",
+          "rows": []
+        },
+        "concurrentInsert": {
+          "sql": "insert into serial_unique_t values (42)",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "seedInsert": {
+          "sql": "insert into serial_unique_t values (42)",
+          "updateCount": 1
+        },
+        "unsupportedRead": {
+          "sql": "select id from serial_unique_t where id=42",
+          "sqlStates": [
+            "0A000"
+          ],
+          "successAllowed": false
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "right": {
+      "isolation": "SERIALIZABLE",
+      "steps": {
+        "readEmpty": {
+          "sql": "select id from serial_unique_t where id=42",
+          "rows": []
+        },
+        "concurrentInsert": {
+          "sql": "insert into serial_unique_t values (42)",
+          "updateCount": 1,
+          "sqlStates": [
+            "40001"
+          ],
+          "successAllowed": true
+        },
+        "readVisible": {
+          "sql": "select id from serial_unique_t where id=42",
+          "rows": [
+            "42"
+          ]
+        },
+        "duplicateInsert": {
+          "sql": "insert into serial_unique_t values (42)",
+          "sqlStates": [
+            "23505"
+          ],
+          "successAllowed": false
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "heap-concurrent-empty-read",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "left.readEmpty"
+        },
+        {
+          "type": "RUN",
+          "step": "right.readEmpty"
+        },
+        {
+          "type": "START",
+          "step": "left.concurrentInsert",
+          "token": "leftInsert"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "leftInsert",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "right.concurrentInsert",
+          "token": "rightInsert"
+        },
+        {
+          "type": "DRAIN_AND_COMMIT",
+          "timeoutMillis": 12000
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "40001",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    },
+    {
+      "name": "heap-visible-duplicate",
+      "providers": [
+        "heap"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "left.seedInsert"
+        },
+        {
+          "type": "RUN",
+          "step": "left.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "right.readVisible"
+        },
+        {
+          "type": "RUN",
+          "step": "right.duplicateInsert"
+        },
+        {
+          "type": "RUN",
+          "step": "right.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "23505",
+          "minimum": 1,
+          "maximum": 1
+        },
+        {
+          "sqlState": "40001",
+          "minimum": 0,
+          "maximum": 0
+        }
+      ]
+    },
+    {
+      "name": "mvcc-serializable-rejection",
+      "providers": [
+        "mvcc"
+      ],
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "left.unsupportedRead"
+        },
+        {
+          "type": "RUN",
+          "step": "left.commit"
+        }
+      ],
+      "sqlStateAssertions": [
+        {
+          "sqlState": "0A000",
+          "minimum": 1,
+          "maximum": 1
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "providers": [
+        "heap"
+      ],
+      "sql": "select id from serial_unique_t",
+      "rows": [
+        "42"
+      ]
+    },
+    {
+      "providers": [
+        "mvcc"
+      ],
+      "sql": "select count(*) from serial_unique_t",
+      "rows": [
+        "0"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table serial_unique_t"
+  ]
+}

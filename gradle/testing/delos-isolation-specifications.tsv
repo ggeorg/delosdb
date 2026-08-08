@@ -21,6 +21,7 @@ DEL-ISO-010	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DE
 DEL-ISO-011	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-011.json	savepoint-rollback	heap,mvcc	file,memory	embedded
 DEL-ISO-012	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-012.json	savepoint-rollback	heap,mvcc	file,memory	embedded
 DEL-ISO-013	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-013.json	savepoint-rollback	heap	file,memory	embedded
+DEL-ISO-014	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-014.json	serializable-uniqueness	heap,mvcc	file,memory	embedded
 DEL-MERGE-001	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-MERGE-001.json	merge-concurrency	heap,mvcc	file,memory	embedded
 DEL-MERGE-002	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-MERGE-002.json	merge-concurrency	heap,mvcc	file,memory	embedded
 DEL-MERGE-003	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-MERGE-003.json	merge-concurrency	heap,mvcc	file,memory	embedded

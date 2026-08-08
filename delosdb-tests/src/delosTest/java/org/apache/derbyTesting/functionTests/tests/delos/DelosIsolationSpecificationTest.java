@@ -63,6 +63,10 @@ public final class DelosIsolationSpecificationTest extends MvccSqlTestSupport {
         runAll("DEL-ISO-013", "DEL-FK-005", "DEL-MERGE-003", "DEL-MERGE-004");
     }
 
+    public void testStage6BPostgresSerializableUniquenessSpecification() throws Exception {
+        runAll("DEL-ISO-014");
+    }
+
     private static void runAll(String... caseIds) throws Exception {
         for (String caseId : caseIds) {
             String resource = RESOURCE_ROOT + caseId + ".json";
