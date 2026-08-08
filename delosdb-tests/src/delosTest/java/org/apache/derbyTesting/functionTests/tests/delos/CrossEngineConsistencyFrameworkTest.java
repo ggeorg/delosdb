@@ -78,10 +78,8 @@ public final class CrossEngineConsistencyFrameworkTest extends MvccSqlTestSuppor
             assertTrue("expected clean heap consistency finding", heapFinding.clean());
             assertTrue("expected heap summary to mention heap", heapFinding.summary().contains("heap"));
             assertTrue("expected clean MVCC consistency finding", mvccFinding.clean());
-            assertTrue("expected MVCC summary to include durable consistency counts",
-                    mvccFinding.summary().contains("physicalVersions")
-                            || mvccFinding.summary().contains("durableHeads")
-                            || mvccFinding.summary().contains("valid"));
+            assertTrue("expected MVCC summary to identify RawStore consistency authority",
+                    mvccFinding.summary().contains("RawStore owns consistency and recovery"));
 
             assertRows(connection,
                     "select id, name from cross_heap_t order by id",

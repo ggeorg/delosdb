@@ -28,6 +28,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
+import org.apache.derby.iapi.store.types.DelosHeapRawStoreBoundaryDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapSanityDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosHeapStorageStatistics;
@@ -162,6 +163,50 @@ public final class HeapStorageDiagnosticsContractTest extends MvccSqlTestSupport
         }
     }
 
+    public void testHeapRawStoreBoundaryRemainsReadOnlyAndDerbyCompatible() throws Exception {
+        String databaseName = databaseName("heap-rawstore-boundary-contract-db");
+        Path databaseDirectory = new File(databaseName).toPath();
+        long containerId;
+        Path containerFile;
+        long bytesBefore;
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table heap_boundary_contract_t "
+                    + "(id int primary key, name varchar(32), quantity int)");
+            executeUpdate(connection, "create index heap_boundary_contract_name_idx "
+                    + "on heap_boundary_contract_t(name)");
+            executeUpdate(connection, "insert into heap_boundary_contract_t values (1, 'alpha', 10)");
+            executeUpdate(connection, "insert into heap_boundary_contract_t values (2, 'beta', 20)");
+            executeUpdate(connection, "insert into heap_boundary_contract_t values (3, 'gamma', 30)");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, name from heap_boundary_contract_t where name >= 'beta' order by name",
+                    "2|beta", "3|gamma");
+            containerId = baseContainerId(connection, "HEAP_BOUNDARY_CONTRACT_T", "heap");
+            DelosHeapRawStoreBoundaryDiagnostics diagnostics = DelosStorageDiagnosticsRegistry
+                    .inspectHeapRawStoreBoundary(databaseDirectory, 0, containerId);
+            assertHeapRawStoreBoundary(diagnostics, containerId);
+            containerFile = diagnostics.containerFile();
+            bytesBefore = Files.size(containerFile);
+            assertEquals("heap boundary diagnostics must not rewrite the heap container",
+                    bytesBefore, diagnostics.containerBytes());
+            connection.commit();
+        }
+
+        shutdownDatabase(databaseName);
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened, "select id, name, quantity from heap_boundary_contract_t order by id",
+                    "1|alpha|10", "2|beta|20", "3|gamma|30");
+            DelosHeapRawStoreBoundaryDiagnostics diagnostics = DelosStorageDiagnosticsRegistry
+                    .inspectHeapRawStoreBoundary(databaseDirectory, 0, containerId);
+            assertHeapRawStoreBoundary(diagnostics, containerId);
+            assertEquals("heap boundary diagnostics must stay read-only across reopen",
+                    bytesBefore, Files.size(containerFile));
+        }
+    }
+
     private static void assertHeapDiagnostics(
             DelosHeapStorageDiagnostics diagnostics, long tableContainerId, long indexContainerId)
             throws Exception {
@@ -230,6 +275,28 @@ public final class HeapStorageDiagnosticsContractTest extends MvccSqlTestSupport
         assertTrue("expected clean heap storage statistics", statistics.clean());
         assertTrue("expected Derby-compatible heap observation",
                 statistics.observations().contains("heap page format remains Derby-compatible and unchanged"));
+    }
+
+    private static void assertHeapRawStoreBoundary(
+            DelosHeapRawStoreBoundaryDiagnostics diagnostics, long containerId) {
+        assertEquals(DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, diagnostics.providerId());
+        assertEquals(0, diagnostics.segment());
+        assertEquals(containerId, diagnostics.containerId());
+        assertTrue("heap boundary diagnostics must be read-only", diagnostics.readOnly());
+        assertTrue("expected heap container file", diagnostics.containerFileExists());
+        assertTrue("expected observed heap page size", diagnostics.pageSizeBytes() > 0L);
+        assertTrue("expected heap container bytes", diagnostics.containerBytes() > 0L);
+        assertTrue("expected estimated heap pages", diagnostics.estimatedPageCount() > 0L);
+        assertFalse("heap page format rewrite must remain disallowed",
+                diagnostics.heapPageFormatMutationAllowed());
+        assertFalse("raw log format rewrite must remain disallowed",
+                diagnostics.rawLogFormatMutationAllowed());
+        assertFalse("catalog mutation must remain disallowed", diagnostics.catalogMutationAllowed());
+        assertTrue("expected clean heap RawStore boundary diagnostics", diagnostics.clean());
+        assertTrue("expected Derby-compatible page-format observation", diagnostics.observations().stream()
+                .anyMatch(observation -> observation.contains("page format")));
+        assertTrue("expected Derby-compatible log-format observation", diagnostics.observations().stream()
+                .anyMatch(observation -> observation.contains("log format")));
     }
 
     private static void assertCleanHeapSanity(DelosHeapSanityDiagnostics sanity, long containerId) {

@@ -631,7 +631,7 @@ reopen, ordered-index summary inspection, and consistency checks.
 
 | Layer | Algorithm | Owner | Classification | Reference model | Proof gate |
 |---|---|---|---|---|---|
-| Derby SQL to RawStore-backed MVCC | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedOrderedIndexKeyTest#testNullValuesKeepTypedOrderedIndexKeySemanticsThroughReopen` |
+| Derby SQL to RawStore-backed MVCC | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedIndexSemanticsTest#testTypedRangesNullsAndEnvelopeShapedTextSurviveReopen` |
 | Storage API typed key boundary | stable typed NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
 
 The retired Phase 8 ordered-index page-store test is not a second authority and is no longer in the
