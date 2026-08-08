@@ -8,7 +8,6 @@ def specInventoryFile = rootProject.file('gradle/testing/delos-isolation-specifi
 def externalProvenanceFile = rootProject.file('gradle/testing/delos-external-test-provenance.tsv')
 def specResourceRoot = project.file('src/delosTest/resources')
 def suiteRegistryFile = rootProject.file('gradle/testing/delos-test-suite-registry.tsv')
-def activeAuthorityFile = rootProject.file('gradle/testing/delos-stage3-active-test-authority.tsv')
 def isolationTestSource = project.file('src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.java')
 def isolationRunnerSource = project.file('src/delosTestSupport/java/org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationRunner.java')
 def isolationTestClass = 'org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest'
@@ -64,7 +63,7 @@ def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
     group = 'verification'
     description = 'Validates the DelosDB isolation catalogue, including Stage 6 PostgreSQL semantic-gap adaptations.'
     inputs.files(specInventoryFile, externalProvenanceFile, suiteRegistryFile,
-            activeAuthorityFile, isolationTestSource, isolationRunnerSource)
+            isolationTestSource, isolationRunnerSource)
     inputs.dir(specResourceRoot)
     outputs.files(reportJson, reportText)
 
@@ -331,15 +330,9 @@ def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
         if (registryRow == null) issues.add('Isolation test class is missing from stable registry')
         else {
             String[] columns = registryRow.split('\t', -1)
-            if (columns[2] != 'TEST' || columns[3] != 'concurrency' || columns[4] != 'full') {
-                issues.add('Isolation test registry assignment must be TEST/concurrency/full')
+            if (columns.length != 5 || columns[2] != 'concurrency' || columns[3] != 'full') {
+                issues.add('Isolation test registry assignment must be concurrency/full')
             }
-        }
-        List<String> authorityRows = activeAuthorityFile.readLines(StandardCharsets.UTF_8.name())
-                .findAll { !it.isBlank() && !it.startsWith('#') }
-        String authorityRow = authorityRows.find { it.startsWith(isolationTestClass + '\t') }
-        if (authorityRow == null || !authorityRow.contains('\tSTAGE4_NEW\t')) {
-            issues.add('Isolation test class lacks STAGE4_NEW active authority')
         }
         if (tasks.findByName('runDelosIsolationSpecificationTests') == null) {
             issues.add('Focused isolation specification task is missing')
@@ -400,18 +393,6 @@ def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
 }
 
 tasks.named('runDelosIsolationSpecificationTests') {
-    dependsOn stage4Analysis
-}
-
-tasks.named('runDelosStage6BPostgresConcurrencyTests') {
-    dependsOn stage4Analysis
-}
-
-tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
-    dependsOn stage4Analysis
-}
-
-tasks.named('runDelosStage6CP1ExternalConcurrencyTests') {
     dependsOn stage4Analysis
 }
 

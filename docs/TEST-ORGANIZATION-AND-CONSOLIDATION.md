@@ -1,6 +1,6 @@
 # DelosDB Final Test Organization and Consolidation Plan
 
-Status: accepted implementation plan. Stages 1 through 4 are implemented; Stage 5 is next.
+Status: Stages 1 through 7 are implemented and green; Stage 8 Gradle cleanup is in progress.
 
 ## Current implementation checkpoint
 
@@ -25,35 +25,27 @@ src/delosTest/resources
 Stage 2 preserves package names, class names, focused Gradle task names and the single
 `org.apache.derby.tests` compilation output. The physical source root is the authorship authority.
 
-Stage 3 adds the stable execution registry at:
+Stage 3 introduced the stable execution registry at:
 
 ```text
 gradle/testing/delos-test-suite-registry.tsv
 ```
 
-The Stage 3 baseline accounted for all 150 DelosDB executable-source files then present in
-`src/delosTest/java`. The explicit active authority at
-`gradle/testing/delos-stage3-active-test-authority.tsv` records the 77 classes which had an execution
-lane before Stage 3—75 through focused Gradle tasks and two DelosDB-authored tests formerly registered
-in inherited suites (`HeapSanityCheckerTest` in `store._Suite` and
-`NetworkServerControlInaddrAnyTest` in `derbynet._Suite`)—plus reviewed later additions such as the
-Stage 4 isolation runner. The 73 dormant Stage 3 sources remain `RETAINED_TRANSITIONAL` with no active
-suite or tier until Stage 7 maps their assertions and either restores them against current production
-contracts or moves them to historical evidence. Abstract support anchors and shared fixtures remain in
-`src/delosTestSupport/java` and are covered by the separate provenance inventory. Every active test
-has one purpose suite and one execution tier. The stable inherited and DelosDB task names are now
-available at both the root and `:delosdb-tests` project. Existing one-class tasks remain temporary
-compatibility lanes until Stage 8.
+Stage 7 completed the assertion-level consolidation and closed with no dormant transitional tests.
+Stage 8 therefore makes this registry the single permanent authority for DelosDB executable test
+membership, purpose suite, and execution tier. The temporary Stage 3 active-authority mirror is
+retired instead of maintaining two class lists which must remain identical. Abstract support anchors
+and shared fixtures remain in `src/delosTestSupport/java` and continue to be covered by the separate
+provenance inventory.
 
-The inherited `derbynet._Suite` and `store._Suite` no longer register DelosDB-authored tests.
-The provenance gate verifies that inherited sources do not depend on either DelosDB source root.
-The Stage 3 suite gate verifies complete registry coverage, exact equality between the active registry
-and the explicit active authority, exact complementary retention of all dormant sources, valid
-active suite/tier assignments, disjoint quick/full functional partitions, stable suite tasks and all
-six root verification levels. `quickVerification` explicitly includes the DelosDB unit suite because
-the root module-local `test` aggregate intentionally excludes `:delosdb-tests`. The root `check` graph
-runs each active functional test once, and `releaseVerification` executes Derby `suites.All` directly
-rather than first rerunning the inherited component suites.
+The inherited `derbynet._Suite` and `store._Suite` do not register DelosDB-authored tests. The
+provenance gate verifies that inherited sources do not depend on either DelosDB source root. The
+permanent stable-suite gate verifies complete registry/source equality, valid suite/tier assignments,
+disjoint quick/full functional partitions, stable inherited and DelosDB suite tasks, and all six root
+verification levels. `quickVerification` explicitly includes the DelosDB unit suite because the root
+module-local `test` aggregate intentionally excludes `:delosdb-tests`. The root `check` graph runs each
+functional test once, and `releaseVerification` executes Derby `suites.All` directly rather than first
+rerunning the inherited component suites.
 
 Stage 4 adds the DelosDB-owned isolation specification format and complete first catalogue. Twenty-five
 stable case IDs cover snapshot stability, savepoint rollback, two- and three-session deadlocks,
@@ -76,9 +68,8 @@ applicable providers. Embedded execution is the Stage 4 authority; existing DRDA
 suites remain the transport-equivalence authority rather than adding network-server lifecycle complexity
 to the isolation runner.
 
-The stable registry contains 151 executable-source files: 78 active tests and 73 retained transitional
-sources. The shared support root contains 38 DelosDB-owned support classes. Stage 5 begins with H2-style
-deterministic differential fuzzing.
+The accepted Stage 8 registry contains 92 active executable tests and zero transitional entries.
+Removed Stage 7 assertions remain traceable through `gradle/testing/delos-stage7-test-consolidation.tsv`.
 
 
 ## 1. Objective
@@ -484,13 +475,7 @@ derbyAllTests
     -> org.apache.derbyTesting.functionTests.suites.All
 ```
 
-The existing task:
-
-```text
-runDerbyLangSuite
-```
-
-may remain temporarily as an alias for:
+The temporary `runDerbyLangSuite` compatibility alias was removed in Stage 8. Use:
 
 ```text
 derbyLanguageTests
@@ -1384,11 +1369,15 @@ in the concurrency/full lane.
 
 ## Stage 8 — Gradle cleanup
 
-1. Replace repetitive task registration with a declarative suite registry.
-2. Remove deprecated one-class task aliases.
-3. Reduce `delosdb-tests/build.gradle`.
-4. Enable permanent test-organization gates.
-5. Capture the accepted test baseline.
+1. Use the stable suite registry as the single active-test authority.
+2. Remove deprecated compatibility and campaign-specific task aliases.
+3. Reduce repetitive focused-task registration in `delosdb-tests/build.gradle`.
+4. Keep permanent test-organization gates on `check`.
+5. Treat the finalized stable registry as the accepted test baseline.
+
+Stage 8 first retires the duplicate Stage 3 active-authority file, the now-unused transitional role,
+the `runDerbyLangSuite` alias, and completed Stage 6/7 campaign-only focused lanes. Remaining focused
+tasks are audited next and retained only when they provide special environment or harness behavior.
 
 ---
 

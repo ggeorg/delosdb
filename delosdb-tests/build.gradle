@@ -490,58 +490,6 @@ tasks.named('runDelosIsolationSpecificationTests') {
 }
 
 registerDelosFocusedTest(
-        'runDelosStage6BPostgresConcurrencyTests',
-        'Runs the Stage 6B PostgreSQL-derived savepoint, foreign-key, and MERGE concurrency adaptations.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
-        [:],
-        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6BPostgresConcurrencySpecifications'])
-
-tasks.named('runDelosStage6BPostgresConcurrencyTests') {
-    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
-}
-
-registerDelosFocusedTest(
-        'runDelosStage6BPostgresSerializableUniquenessTest',
-        'Runs the Stage 6B PostgreSQL-derived SERIALIZABLE empty-read/unique-key race adaptation.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
-        [:],
-        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6BPostgresSerializableUniquenessSpecification'])
-
-tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
-    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
-}
-
-registerDelosFocusedTest(
-        'runDelosStage6CP1ExternalConcurrencyTests',
-        'Runs the Stage 6C PostgreSQL DDL-dependency and MariaDB lock-upgrade ordering adaptations.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
-        [:],
-        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6CP1ExternalConcurrencySpecifications'])
-
-tasks.named('runDelosStage6CP1ExternalConcurrencyTests') {
-    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
-}
-
-registerDelosFocusedTest(
-        'runDelosStage6BMariaDbDeadlockVictimLifecycleTest',
-        'Runs the Stage 6B MariaDB-derived deadlock-victim wake-up lifecycle adaptation.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/DelosDeadlockVictimLifecycleTest.class'])
-
-tasks.named('runDelosStage6BMariaDbDeadlockVictimLifecycleTest') {
-    dependsOn 'delosExternalSemanticGapStaticAnalysis'
-}
-
-registerDelosFocusedTest(
-        'runDelosStage6BMariaDbDdlCrashAtomicityTest',
-        'Runs the Stage 6B MariaDB-derived supported-DDL crash atomicity adaptation.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/DelosDdlCrashAtomicityTest.class'])
-
-tasks.named('runDelosStage6BMariaDbDdlCrashAtomicityTest') {
-    dependsOn 'delosExternalSemanticGapStaticAnalysis',
-            rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
-}
-
-registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
         'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
         [
@@ -590,8 +538,6 @@ registerDelosFocusedTest(
         'runDelosDrdaVirtualThreadFairnessAuditTest',
         'Runs the opt-in DRDA virtual-thread fairness audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class'])
-
-// runDerbyLangSuite is registered as a deprecated alias by the Stage 3 stable-suite registry.
 
 tasks.register('runWalRecoveryArchitectureProofTest', Test) {
     group = 'verification'
@@ -1014,23 +960,6 @@ registerDelosFocusedTest(
         'runDelosStorageMetadataContractTest',
         'Runs the enduring provider-neutral storage metadata/reporting contract.',
         ['org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataContractTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosStage7ClosureTests',
-        'Runs the final Stage 7 promoted enduring SQL, security, type, index, and consistency authorities.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/HeapObjectDeserializationFilterTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlFeatureCompletenessTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypeCoverageTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTypedIndexSemanticsTest.class'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosStage7ClosureStressTest',
-        'Runs the final Stage 7 promoted embedded MVCC concurrency stress authority.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlConcurrentStressTest.class'])
 
 
 registerDelosFocusedTest(
@@ -1638,8 +1567,6 @@ registerDelosFocusedTest(
         'runDelosOptimizerStorageCostOptInTest',
         'runDelosOptimizerPredicatePushdownProductionHookTest',
         'runDelosStorageInspectorConsolidationTest',
-        'runDelosStage7ClosureTests',
-        'runDelosStage7ClosureStressTest',
         'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'runDelosMvccTableRebuildProviderTruthTest',
@@ -2298,8 +2225,8 @@ tasks.register('promoteDelosV1Baseline') {
     }
 }
 
-// Stage 3 stable test entry points are applied only after all legacy focused
-// tasks and special-environment fixtures have been registered.
+// Permanent stable test entry points are applied after the remaining focused
+// special-environment fixtures have been registered.
 ext.delosdbStableTestSuiteContext = [
         derbyTestsClassDir: derbyTestsClassDir,
         testRuntimeClasspath: { testRuntimeClasspath() },

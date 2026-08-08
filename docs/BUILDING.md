@@ -134,9 +134,6 @@ delosSystemTests
 delosStressTests
 ```
 
-The legacy `:delosdb-tests:runDerbyLangSuite` task remains a deprecated alias for
-`:delosdb-tests:derbyLanguageTests` until Stage 8.
-
 The complete Stage 4 isolation catalogue has a focused entry point:
 
 ```bash
@@ -171,8 +168,8 @@ SQL-92 and permanent architecture/repository gates. Quick and full-tier function
 disjoint, so `check` executes each functional test once. `fullVerification` adds the remaining
 non-stress DelosDB system tests and principal inherited JDBC/store/network/tools suites.
 `nightlyVerification` adds stress. `releaseVerification` runs the release authority directly through
-Derby `suites.All`, every DelosDB correctness lane, permanent gates and the remaining release-only
-performance/report harnesses pending Stage 7 separation; it does not rerun the inherited suites
+Derby `suites.All`, every DelosDB correctness lane, permanent gates and the release-only
+performance/report harnesses; it does not rerun the inherited suites
 individually before `suites.All`.
 
 ## Storage verification

@@ -4,16 +4,15 @@ import org.gradle.api.provider.Provider
 import java.nio.charset.StandardCharsets
 
 /*
- * Stage 3 of the DelosDB test-organization plan.
+ * Permanent DelosDB test-suite entry points.
  *
- * This file introduces stable inherited-Derby and DelosDB suite entry points
- * without changing Java test sources, assertions, packages, or execution
- * semantics. Existing focused tasks remain temporary compatibility lanes.
+ * Stage 8 makes the stable registry the single authority for active DelosDB
+ * test membership, purpose suites, and execution tiers. Focused tasks remain
+ * only where they provide a justified special environment or narrow harness.
  */
 
 def context = project.ext.delosdbStableTestSuiteContext as Map<String, Object>
 def registryFile = rootProject.file('gradle/testing/delos-test-suite-registry.tsv')
-def activeAuthorityFile = rootProject.file('gradle/testing/delos-stage3-active-test-authority.tsv')
 def delosSourceRoot = project.file('src/delosTest/java')
 def suiteReportJson = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.json')
 def suiteReportText = layout.buildDirectory.file('reports/tests/delosdb-stable-test-suites.txt')
@@ -23,17 +22,16 @@ def readRegistry = {
     registryFile.eachLine(StandardCharsets.UTF_8.name()) { String line ->
         if (!line.isBlank() && !line.startsWith('#')) {
             String[] columns = line.split('\\t', -1)
-            if (columns.length != 6) {
+            if (columns.length != 5) {
                 throw new GradleException(
-                        "Malformed ${registryFile}: expected 6 tab-separated columns, found ${columns.length}: ${line}")
+                        "Malformed ${registryFile}: expected 5 tab-separated columns, found ${columns.length}: ${line}")
             }
             Map<String, String> row = [
                     className: columns[0],
                     sourcePath: columns[1],
-                    role: columns[2],
-                    suite: columns[3],
-                    executionTier: columns[4],
-                    reason: columns[5]
+                    suite: columns[2],
+                    executionTier: columns[3],
+                    reason: columns[4]
             ]
             if (rows.put(row.className, row) != null) {
                 throw new GradleException("Duplicate class in ${registryFile}: ${row.className}")
@@ -44,39 +42,17 @@ def readRegistry = {
 }
 
 
-def readActiveAuthority = {
-    LinkedHashMap<String, Map<String, String>> rows = new LinkedHashMap<>()
-    activeAuthorityFile.eachLine(StandardCharsets.UTF_8.name()) { String line ->
-        if (!line.isBlank() && !line.startsWith('#')) {
-            String[] columns = line.split('\t', -1)
-            if (columns.length != 3) {
-                throw new GradleException(
-                        "Malformed ${activeAuthorityFile}: expected 3 tab-separated columns, found ${columns.length}: ${line}")
-            }
-            Map<String, String> row = [
-                    className: columns[0],
-                    authorityKind: columns[1],
-                    authorityReference: columns[2]
-            ]
-            if (rows.put(row.className, row) != null) {
-                throw new GradleException("Duplicate class in ${activeAuthorityFile}: ${row.className}")
-            }
-        }
-    }
-    rows
-}
 
 def registry = readRegistry()
-def activeAuthority = readActiveAuthority()
 def rowsForSuite = { String suiteName ->
-    registry.values().findAll { it.role == 'TEST' && it.suite == suiteName }
+    registry.values().findAll { it.suite == suiteName }
 }
 def rowsForTier = { String tierName ->
-    registry.values().findAll { it.role == 'TEST' && it.executionTier == tierName }
+    registry.values().findAll { it.executionTier == tierName }
 }
 def rowsForSuiteTier = { String suiteName, String tierName ->
     registry.values().findAll {
-        it.role == 'TEST' && it.suite == suiteName && it.executionTier == tierName
+        it.suite == suiteName && it.executionTier == tierName
     }
 }
 def classPattern = { Map<String, String> row -> row.className.replace('.', '/') + '.class' }
@@ -244,7 +220,7 @@ registerDelosSuite(
 // suites remain complete rather than silently filtering by duration.
 registerDelosSuite(
         'delosQuickSmokeTests',
-        'Runs the Stage 3 quick-tier DelosDB SQL, storage, JDBC, and contract smoke cases.',
+        'Runs the quick-tier DelosDB SQL, storage, JDBC, and contract smoke cases.',
         rowsForTier('quick'))
 
 tasks.named('delosQuickSmokeTests') {
@@ -256,7 +232,7 @@ tasks.named('delosQuickSmokeTests') {
 // rerunning quick cases in the same verification graph.
 registerDelosSuite(
         'delosFunctionalFullTierTests',
-        'Runs the Stage 3 full-tier DelosDB functional cases not already covered by quickVerification.',
+        'Runs full-tier DelosDB functional cases not already covered by quickVerification.',
         rowsForSuiteTier('functional', 'full'))
 tasks.named('delosFunctionalFullTierTests') {
     group = null
@@ -331,35 +307,24 @@ def performanceFocusedTasks = [
 
 tasks.register('delosPerformanceHarnessTests') {
     group = null
-    description = 'Internal Stage 3 aggregate for DelosDB JUnit performance/report harnesses.'
+    description = 'Internal aggregate for DelosDB JUnit performance/report harnesses.'
     performanceFocusedTasks.each { taskName -> dependsOn tasks.named(taskName) }
-}
-
-// Compatibility alias retained through Stage 8. The stable task owns all
-// execution and report locations.
-tasks.register('runDerbyLangSuite') {
-    group = 'verification'
-    description = 'Deprecated alias for derbyLanguageTests.'
-    dependsOn tasks.named('derbyLanguageTests')
 }
 
 def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies Stage 3 stable suite coverage, registry completeness, and execution-tier assignments.'
+    description = 'Verifies permanent stable-suite coverage, registry completeness, and execution-tier assignments.'
     inputs.file registryFile
-    inputs.file activeAuthorityFile
     inputs.dir delosSourceRoot
     outputs.file suiteReportJson
     outputs.file suiteReportText
 
     doLast {
         List<String> issues = []
-        Set<String> validRoles = ['TEST', 'RETAINED_TRANSITIONAL'] as Set<String>
-        Set<String> validSuites = ['unit', 'functional', 'concurrency', 'recovery', 'system', 'stress', 'performance', 'none'] as Set<String>
-        Set<String> validTiers = ['unit', 'quick', 'full', 'nightly', 'release', 'none'] as Set<String>
+        Set<String> validSuites = ['unit', 'functional', 'concurrency', 'recovery', 'system', 'stress', 'performance'] as Set<String>
+        Set<String> validTiers = ['unit', 'quick', 'full', 'nightly', 'release'] as Set<String>
 
         registry.values().each { row ->
-            if (!validRoles.contains(row.role)) issues.add("Invalid role for ${row.className}: ${row.role}")
             if (!validSuites.contains(row.suite)) issues.add("Invalid suite for ${row.className}: ${row.suite}")
             if (!validTiers.contains(row.executionTier)) issues.add("Invalid execution tier for ${row.className}: ${row.executionTier}")
             File source = new File(delosSourceRoot, row.sourcePath)
@@ -373,63 +338,19 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 String sourceText = source.getText(StandardCharsets.UTF_8.name())
                 String simpleName = row.className.substring(row.className.lastIndexOf('.') + 1)
                 boolean abstractClass = (sourceText =~ /(?m)^\s*(?:public\s+)?abstract\s+class\s+${java.util.regex.Pattern.quote(simpleName)}\b/).find()
-                if (row.role == 'TEST' && abstractClass) {
+                if (abstractClass) {
                     issues.add("Abstract class is registered as executable: ${row.className}")
                 }
             }
-            if (row.role == 'TEST' && (row.suite == 'none' || row.executionTier == 'none')) {
-                issues.add("Executable test lacks suite/tier: ${row.className}")
+            boolean compatibleTier = false
+            if (row.suite == 'unit') compatibleTier = row.executionTier == 'unit'
+            else if (row.suite == 'functional') compatibleTier = row.executionTier in ['quick', 'full']
+            else if (row.suite in ['concurrency', 'recovery', 'system']) compatibleTier = row.executionTier == 'full'
+            else if (row.suite == 'stress') compatibleTier = row.executionTier == 'nightly'
+            else if (row.suite == 'performance') compatibleTier = row.executionTier == 'release'
+            if (!compatibleTier) {
+                issues.add("Suite/tier mismatch for ${row.className}: ${row.suite}/${row.executionTier}")
             }
-            if (row.role == 'RETAINED_TRANSITIONAL'
-                    && (row.suite != 'none' || row.executionTier != 'none')) {
-                issues.add("Retained transitional test must use none/none: ${row.className}")
-            }
-            if (row.role == 'TEST') {
-                boolean compatibleTier = false
-                if (row.suite == 'unit') compatibleTier = row.executionTier == 'unit'
-                else if (row.suite == 'functional') compatibleTier = row.executionTier in ['quick', 'full']
-                else if (row.suite in ['concurrency', 'recovery', 'system']) compatibleTier = row.executionTier == 'full'
-                else if (row.suite == 'stress') compatibleTier = row.executionTier == 'nightly'
-                else if (row.suite == 'performance') compatibleTier = row.executionTier == 'release'
-                if (!compatibleTier) {
-                    issues.add("Suite/tier mismatch for ${row.className}: ${row.suite}/${row.executionTier}")
-                }
-            }
-        }
-
-        Set<String> expectedActiveClasses = activeAuthority.keySet() as Set<String>
-        Set<String> actualActiveClasses = registry.values().findAll {
-            it.role == 'TEST'
-        }.collect { it.className }.toSet()
-        (expectedActiveClasses - actualActiveClasses).sort().each {
-            issues.add("Active-authority test is not active in the registry: ${it}")
-        }
-        (actualActiveClasses - expectedActiveClasses).sort().each {
-            issues.add("Registry activated a test outside the explicit active authority: ${it}")
-        }
-
-        Set<String> validAuthorityKinds = ['PRE_STAGE3_TASK', 'PRE_STAGE2_SUITE', 'STAGE4_NEW', 'STAGE5_NEW', 'STAGE6_NEW', 'STAGE7_NEW'] as Set<String>
-        activeAuthority.values().each { row ->
-            if (!validAuthorityKinds.contains(row.authorityKind)) {
-                issues.add("Invalid active authority kind for ${row.className}: ${row.authorityKind}")
-            }
-            if (row.authorityReference.isBlank()) {
-                issues.add("Active authority reference is blank for ${row.className}")
-            }
-            if (!registry.containsKey(row.className)) {
-                issues.add("Active authority class is missing from registry: ${row.className}")
-            }
-        }
-
-        Set<String> expectedRetainedTransitionalClasses = registry.keySet().toSet() - expectedActiveClasses
-        Set<String> actualRetainedTransitionalClasses = registry.values().findAll {
-            it.role == 'RETAINED_TRANSITIONAL'
-        }.collect { it.className }.toSet()
-        (expectedRetainedTransitionalClasses - actualRetainedTransitionalClasses).sort().each {
-            issues.add("Dormant source is not retained as transitional: ${it}")
-        }
-        (actualRetainedTransitionalClasses - expectedRetainedTransitionalClasses).sort().each {
-            issues.add("Active-authority test is incorrectly retained as transitional: ${it}")
         }
 
         Set<String> expectedPerformanceClasses = [
@@ -445,7 +366,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 'org.apache.derbyTesting.functionTests.tests.delos.V1BaselineCaptureTest'
         ] as Set<String>
         Set<String> actualPerformanceClasses = registry.values().findAll {
-            it.role == 'TEST' && it.suite == 'performance'
+            it.suite == 'performance'
         }.collect { it.className }.toSet()
         (expectedPerformanceClasses - actualPerformanceClasses).sort().each {
             issues.add("Release-only performance harness is missing from registry: ${it}")
@@ -461,11 +382,9 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         (sourcePaths - registryPaths).sort().each { issues.add("Unregistered DelosDB source: ${it}") }
         (registryPaths - sourcePaths).sort().each { issues.add("Stale DelosDB suite registry source: ${it}") }
 
-        Map<String, Integer> roleCounts = new TreeMap<>()
         Map<String, Integer> suiteCounts = new TreeMap<>()
         Map<String, Integer> tierCounts = new TreeMap<>()
         registry.values().each { row ->
-            roleCounts[row.role] = (roleCounts[row.role] ?: 0) + 1
             suiteCounts[row.suite] = (suiteCounts[row.suite] ?: 0) + 1
             tierCounts[row.executionTier] = (tierCounts[row.executionTier] ?: 0) + 1
         }
@@ -517,27 +436,22 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Map<String, Object> report = [
-                schemaVersion: 5,
-                stage: 'Stage 3 - stable Gradle entry points',
-                registryScope: 'ACTIVE_AND_RETAINED_TRANSITIONAL_DELOSDB_TEST_SOURCES',
+                schemaVersion: 6,
+                stage: 'Permanent stable Gradle entry points',
+                registryScope: 'ALL_ACTIVE_DELOSDB_TEST_SOURCES',
                 registry: rootProject.relativePath(registryFile),
-                activeAuthority: rootProject.relativePath(activeAuthorityFile),
                 summary: [
                         sourceFiles: sourcePaths.size(),
                         registryEntries: registry.size(),
-                        activeAuthorityTests: activeAuthority.size(),
-                        activeTests: registry.values().count { it.role == 'TEST' },
-                        retainedTransitionalTests: registry.values().count { it.role == 'RETAINED_TRANSITIONAL' },
+                        activeTests: registry.size(),
                         delosClassForkIsolation: 1,
                         issueCount: issues.unique().size()
                 ],
-                roleCounts: roleCounts,
                 suiteCounts: suiteCounts,
                 executionTierCounts: tierCounts,
                 inheritedTasks: publicTasks.findAll { it.startsWith('derby') },
                 delosdbTasks: publicTasks.findAll { it.startsWith('delos') },
                 verificationLevels: verificationLevels,
-                compatibilityAliases: ['runDerbyLangSuite': 'derbyLanguageTests'],
                 issues: issues.unique().sort(),
                 entries: registry.values().toList()
         ]
@@ -548,14 +462,10 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         jsonFile.setText(JsonOutput.prettyPrint(JsonOutput.toJson(report)) + '\n', StandardCharsets.UTF_8.name())
         textFile.withWriter(StandardCharsets.UTF_8.name()) { writer ->
             writer.println('DelosDB stable test suites')
-            writer.println('Stage: Stage 3 - stable Gradle entry points')
+            writer.println('Stage: Permanent stable Gradle entry points')
             writer.println("Registry: ${rootProject.relativePath(registryFile)}")
-            writer.println("Active authority: ${rootProject.relativePath(activeAuthorityFile)}")
             writer.println()
             report.summary.each { key, value -> writer.println(String.format('%-28s %s', key + ':', value)) }
-            writer.println()
-            writer.println('Role counts')
-            roleCounts.each { key, value -> writer.println(String.format('  %-24s %s', key, value)) }
             writer.println()
             writer.println('Suite counts')
             suiteCounts.each { key, value -> writer.println(String.format('  %-16s %s', key, value)) }
@@ -572,7 +482,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             throw new GradleException('DelosDB stable suite failures (' + report.issues.size() + '):\n  - ' +
                     report.issues.join('\n  - '))
         }
-        logger.lifecycle('DelosDB Stage 3 stable test suites passed. Report: {}', textFile)
+        logger.lifecycle('DelosDB stable test suites passed. Report: {}', textFile)
     }
 }
 
