@@ -135,6 +135,7 @@ public final class HeapStorageDiagnosticsContractTest extends MvccSqlTestSupport
             bytesBefore = sanity.containerFileBytes();
             assertEquals("sanity checker should not rewrite heap container file",
                     bytesBefore, Files.size(containerFile));
+            connection.commit();
         }
 
         shutdownDatabase(databaseName);
