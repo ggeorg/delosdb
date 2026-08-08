@@ -521,6 +521,16 @@ tasks.named('runDelosStage6BMariaDbDeadlockVictimLifecycleTest') {
 }
 
 registerDelosFocusedTest(
+        'runDelosStage6BMariaDbDdlCrashAtomicityTest',
+        'Runs the Stage 6B MariaDB-derived supported-DDL crash atomicity adaptation.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosDdlCrashAtomicityTest.class'])
+
+tasks.named('runDelosStage6BMariaDbDdlCrashAtomicityTest') {
+    dependsOn 'delosExternalSemanticGapStaticAnalysis',
+            rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
         'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
         [
@@ -1332,7 +1342,9 @@ tasks.register('delosExternalSemanticGapStaticAnalysis') {
             if (mode != 'INDEPENDENT_EQUIVALENT') failures << "Runtime provenance mode must be INDEPENDENT_EQUIVALENT for ${id}"
             if ([revision, sourceFile, license, intent, adaptation, providers].any { !it }) failures << "Blank Stage 6 runtime provenance field for ${id}"
         }
-        if (!runtimeIds.contains('DEL-DEADLOCK-005')) failures << 'Missing MA-006 runtime adaptation provenance: DEL-DEADLOCK-005'
+        ['DEL-DEADLOCK-005': 'MA-006', 'DEL-DDL-005': 'MA-009'].each { id, externalId ->
+            if (!runtimeIds.contains(id)) failures << "Missing ${externalId} runtime adaptation provenance: ${id}"
+        }
 
         if (!failures.isEmpty()) throw new GradleException('DelosDB Stage 6 semantic-gap inventory failures (' + failures.size() + '):\n  - ' + failures.join('\n  - '))
 
