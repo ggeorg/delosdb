@@ -141,7 +141,8 @@ Before any row-buffer reuse change, run the heap/MVCC ownership gate:
 
 ```bash
 ./gradlew \
-  :delosdb-tests:runDelosJdbcResultBufferOwnershipTest \
+  :delosdb-tests:delosFunctionalTests \
+  --tests 'org.apache.derbyTesting.functionTests.tests.delos.JdbcResultBufferOwnershipTest' \
   --console=plain
 ```
 

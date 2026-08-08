@@ -1376,8 +1376,12 @@ in the concurrency/full lane.
 5. Treat the finalized stable registry as the accepted test baseline.
 
 Stage 8 first retires the duplicate Stage 3 active-authority file, the now-unused transitional role,
-the `runDerbyLangSuite` alias, and completed Stage 6/7 campaign-only focused lanes. Remaining focused
-tasks are audited next and retained only when they provide special environment or harness behavior.
+the `runDerbyLangSuite` alias, and completed Stage 6/7 campaign-only focused lanes. Stage 8B then
+removes 30 more aliases which add no environment or harness behavior: 22 plain focused wrappers and
+the eight pre-Stage-3 inherited architecture-proof tasks. Their tests remain available through the
+permanent purpose suites and standard Gradle `--tests` filters. Remaining focused tasks are retained
+only when they still provide special JVM/runtime configuration, crash/fault setup, report generation,
+modular-image behavior, deterministic fuzz controls, or benchmark harness behavior.
 
 ---
 

@@ -468,18 +468,6 @@ def registerDelosFocusedTest = { String taskName,
 }
 
 
-
-registerDelosFocusedTest(
-        'runDelosNetIjTest',
-        'Runs the inherited network-client ij script and DelosDB catalog-output canon.',
-        ['org/apache/derbyTesting/functionTests/tests/derbynet/NetIjTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosClassLoaderBootTest',
-        'Runs the inherited dual-boot class-loader test against the complete DelosDB embedded runtime closure.',
-        ['org/apache/derbyTesting/functionTests/tests/store/ClassLoaderBootTest.class'])
-
-
 registerDelosFocusedTest(
         'runDelosIsolationSpecificationTests',
         'Runs the DelosDB PostgreSQL-style isolation-specification tranche.',
@@ -488,24 +476,6 @@ registerDelosFocusedTest(
 tasks.named('runDelosIsolationSpecificationTests') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
-
-registerDelosFocusedTest(
-        'runDelosDrdaApplicationUdtLanguageTests',
-        'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/lang/UserDefinedAggregatesTest.class',
-                'org/apache/derbyTesting/functionTests/tests/lang/UDTTest.class'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosDrdaApplicationUdtJdbcTests',
-        'Runs inherited JDBC application UDT tests with explicit DRDA allow-lists.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/jdbc4/ConnectionTest.class',
-                'org/apache/derbyTesting/functionTests/tests/jdbc4/PreparedStatementTest42.class',
-                'org/apache/derbyTesting/functionTests/tests/jdbc4/XA40Test.class',
-                'org/apache/derbyTesting/functionTests/tests/jdbcapi/ProcedureTest.class'
-        ])
 
 registerDelosFocusedTest(
         'runDelosJarRuntimeClassificationTests',
@@ -538,234 +508,6 @@ registerDelosFocusedTest(
         'runDelosDrdaVirtualThreadFairnessAuditTest',
         'Runs the opt-in DRDA virtual-thread fairness audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class'])
-
-tasks.register('runWalRecoveryArchitectureProofTest', Test) {
-    group = 'verification'
-    description = 'Runs focused WAL/restart recovery proof tests for the PostgreSQL-class storage/concurrency campaign.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/WalRecoveryArchitectureProofTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runWalRecoveryArchitectureProofTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runWalRecoveryArchitectureProofTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runWalRecoveryArchitectureProofTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runWalRecoveryArchitectureProofTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runTransactionLockingRecoveryProofTest', Test) {
-    group = 'verification'
-    description = 'Runs focused transaction, locking, checkpoint, and restart recovery boundary proof tests.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/TransactionLockingRecoveryProofTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/store/RecoveryTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runTransactionLockingRecoveryProofTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runTransactionLockingRecoveryProofTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runTransactionLockingRecoveryProofTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runTransactionLockingRecoveryProofTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runBTreeSearchRefactorProofTests', Test) {
-    group = 'verification'
-    description = 'Runs focused B-tree search, split, max-scan, and reposition proof tests before any ControlRow refactor.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/BTreeDirectionalBoundaryScanTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/store/BTreeMaxScanTest.class'
-    include 'org/apache/derbyTesting/functionTests/tests/store/IndexSplitDeadlockTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runBTreeSearchRefactorProofTests').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runBTreeSearchRefactorProofTests'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runBTreeSearchRefactorProofTests'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runBTreeSearchRefactorProofTests'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runBTreeIndexConcurrencyArchitectureProofTest', Test) {
-    group = 'verification'
-    description = 'Runs focused B-tree unique-key concurrency and rollback proof tests.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/BTreeIndexConcurrencyArchitectureProofTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runBTreeIndexConcurrencyArchitectureProofTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runBTreeIndexConcurrencyArchitectureProofTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runBTreeIndexConcurrencyArchitectureProofTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runBTreeIndexConcurrencyArchitectureProofTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-
-tasks.register('runVersionCleanupArchitectureProofTest', Test) {
-    group = 'verification'
-    description = 'Runs focused version-cleanup visibility proof tests for future MVCC work.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/VersionCleanupArchitectureProofTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runVersionCleanupArchitectureProofTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runVersionCleanupArchitectureProofTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runVersionCleanupArchitectureProofTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runVersionCleanupArchitectureProofTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-tasks.register('runExternalSortJvmPolicyProofTest', Test) {
-    group = 'verification'
-    description = 'Runs focused ORDER BY, DISTINCT, and GROUP BY proof tests for the JVM-aware external sort policy.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
-
-    modularity.inferModulePath = false
-    testClassesDirs = files(derbyTestsClassDir)
-    classpath = testRuntimeClasspath()
-    useJUnit()
-    include 'org/apache/derbyTesting/functionTests/tests/store/ExternalSortJvmPolicyProofTest.class'
-
-    workingDir = layout.buildDirectory.dir('test-work/runExternalSortJvmPolicyProofTest').get().asFile
-    maxHeapSize = '1536m'
-    binaryResultsDirectory.set(layout.buildDirectory.dir('test-results/binary/runExternalSortJvmPolicyProofTest'))
-    reports {
-        junitXml.required.set(true)
-        junitXml.outputLocation.set(layout.buildDirectory.dir('test-results/runExternalSortJvmPolicyProofTest'))
-        html.required.set(true)
-        html.outputLocation.set(layout.buildDirectory.dir('reports/tests/runExternalSortJvmPolicyProofTest'))
-    }
-
-    doFirst {
-        delete workingDir
-        workingDir.mkdirs()
-    }
-
-    testLogging {
-        events 'failed'
-        exceptionFormat = 'full'
-        showStandardStreams = true
-    }
-}
-
-
-tasks.register('runPostgresClassArchitectureProofTests') {
-    group = 'verification'
-    description = 'Runs focused proof tests for PostgreSQL-class DelosDB storage/concurrency architecture work.'
-    dependsOn 'runWalRecoveryArchitectureProofTest'
-    dependsOn 'runTransactionLockingRecoveryProofTest'
-    dependsOn 'runBTreeSearchRefactorProofTests'
-    dependsOn 'runBTreeIndexConcurrencyArchitectureProofTest'
-    dependsOn 'runVersionCleanupArchitectureProofTest'
-    dependsOn 'runExternalSortJvmPolicyProofTest'
-}
-
-tasks.register('runInheritedAlgorithmClosureProofTests') {
-    group = 'verification'
-    description = 'Runs focused closure proof tests for the inherited Derby modernization campaign.'
-    dependsOn 'runBTreeSearchRefactorProofTests'
-    dependsOn 'runTransactionLockingRecoveryProofTest'
-    dependsOn 'runExternalSortJvmPolicyProofTest'
-}
-
-
-
 
 tasks.named('classes') {
     dependsOn tasks.named('compileTestJava')
@@ -939,30 +681,6 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
-        'runDelosOptimizerStorageCostOptInTest',
-        'Runs the explicit Derby optimizer storage-cost opt-in proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/OptimizerStorageCostOptInTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosOptimizerPredicatePushdownProductionHookTest',
-        'Runs the enduring production predicate-pushdown opt-in and fail-closed read-mode proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/OptimizerPredicatePushdownProductionHookTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosStorageInspectorConsolidationTest',
-        'Runs the enduring provider-neutral heap/MVCC storage-inspection report proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StorageInspectorConsolidationTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosStorageMetadataContractTest',
-        'Runs the enduring provider-neutral storage metadata/reporting contract.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StorageMetadataContractTest.class'])
-
-
-registerDelosFocusedTest(
         'runDelosMvccSerializableSemanticsTest',
         'Runs heap SERIALIZABLE preservation and early delos_mvcc SERIALIZABLE rejection.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
@@ -1078,11 +796,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosStorageTextValidationTest',
-        'Runs the consolidated DelosDB storage text-validation contract proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StorageTextValidationTest.class'])
-
-registerDelosFocusedTest(
         'runDelosMvccRawStoreMemoryDatabaseTest',
         'Runs the complete Stage 6 named memory-database feature, isolation, and bounded-accounting proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.class'])
@@ -1103,23 +816,6 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosMvccSqlLongRowBoundaryTest',
-        'Runs the MVCC long-row overflow, in-place vacuum, and reopen lifecycle proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongRowBoundaryTest.class'])
-
-
-
-registerDelosFocusedTest(
-        'runDelosMvccLifecycleTest',
-        'Runs MVCC drop, recreate, and RawStore conglomerate-retirement proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLifecycleTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccBackupRestoreTest',
-        'Runs the RawStore-backed MVCC and heap-only backup/restore proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlBackupRestoreTest.class'])
-
-registerDelosFocusedTest(
         'runDelosMvccRetiredSidecarRejectionTest',
         'Proves backup and restore reject every artifact from the retired external delos_mvcc format.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRetiredSidecarRejectionTest.class'])
@@ -1130,29 +826,9 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class'])
 
 registerDelosFocusedTest(
-        'runDelosStorageLifecycleConsistencyReportTest',
-        'Runs the shared heap/MVCC storage lifecycle consistency report proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StorageLifecycleConsistencyReportTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosStorageSharedServiceReadinessReportTest',
-        'Runs the conservative shared-service readiness report proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StorageSharedServiceReadinessReportTest.class'])
-
-registerDelosFocusedTest(
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'Runs the heap diagnostics performance/read-only audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosHeapStorageDiagnosticsContractTest',
-        'Runs the consolidated heap diagnostics, statistics, and sanity contract.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapStorageDiagnosticsContractTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosHeapRawStoreDiagnosticCompatibilityTest',
-        'Runs inherited heap/raw-store diagnostic text compatibility assertions.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticCompatibilityTest.class'])
 
 registerDelosFocusedTest(
         'runDelosMvccLongReaderPurgeStressTest',
@@ -1357,36 +1033,9 @@ tasks.named('check') {
 }
 
 registerDelosFocusedTest(
-        'runDelosHeapMvccIsolationDifferentialTest',
-        'Runs heap/MVCC transaction-isolation differential proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosJdbcPreparedStatementTransactionReuseTest',
-        'Runs prepared DELETE/reinsert reuse across rollback and commit boundaries for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcPreparedStatementTransactionReuseTest.class'])
-
-registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosJdbcResultBufferOwnershipTest',
-        'Proves heap/MVCC JDBC values remain detached across scan advance and result-set closure.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcResultBufferOwnershipTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosStoreValueOperationsDirectPathTest',
-        'Proves engine SQL values use direct shared store operations for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/StoreValueOperationsDirectPathTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosSharedNoOpUpdatePropagationTest',
-        'Proves heap and MVCC skip physical no-op updates while preserving SQL row-count and trigger semantics.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SharedNoOpUpdatePropagationTest.class'])
-
 
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkBaseline',
@@ -1554,28 +1203,16 @@ registerDelosFocusedTest(
 
 
 registerDelosFocusedTest(
-        'runDelosMvccTableRebuildProviderTruthTest',
-        'Proves inherited table rebuilds reject rather than silently converting delos_mvcc tables to heap.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTableRebuildProviderTruthTest.class'])
-
-registerDelosFocusedTest(
         'runDelosMvccDrdaNetworkClientTest',
         'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'])
 
 [
-        'runDelosOptimizerStorageCostOptInTest',
-        'runDelosOptimizerPredicatePushdownProductionHookTest',
-        'runDelosStorageInspectorConsolidationTest',
         'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
-        'runDelosMvccTableRebuildProviderTruthTest',
-        'runDelosStorageLifecycleConsistencyReportTest',
-        'runDelosStorageSharedServiceReadinessReportTest',
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosMvccLongReaderPurgeStressTest',
         'runDelosHeapMvccDifferentialSqlHarnessTest',
-        'runDelosHeapMvccIsolationDifferentialTest',
         'runDelosMvccSqlIntegrationTest',
         'runDelosMvccDrdaNetworkClientTest',
         'runDelosMvccDrdaConcurrentNetworkClientTest',
@@ -1801,7 +1438,6 @@ def delosV1GitOutput = { List<String> command ->
         return ''
     }
 }
-
 
 
 def delosV1VerifyBundleChecksums = { File bundleRoot, String label ->

@@ -927,7 +927,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     DelosDB note: this page-slot boundary rule is shared by visible forward
     index range behavior and by the backward/max-scan boundary cases protected
     in BTreeDirectionalBoundaryScanTest and by the inherited split/reposition
-    cases grouped by runBTreeSearchRefactorProofTests.  The formerly duplicated page-local search body now lives in a single
+    cases covered by BTreeDirectionalBoundaryScanTest, BTreeMaxScanTest, and IndexSplitDeadlockTest.  The formerly duplicated page-local search body now lives in a single
     helper below; keep the focused proof task and the wider store/lang suites
     green before changing the helper semantics.
 
