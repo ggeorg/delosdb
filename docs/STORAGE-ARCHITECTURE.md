@@ -159,7 +159,7 @@ storage diagnostics and JFR events
 
 ```bash
 ./gradlew verifyDelosRuntimeStorageProviders
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
+./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
 ./gradlew :delosdb-storage-mvcc:check
 ./gradlew s0CloseoutVerification
 ```

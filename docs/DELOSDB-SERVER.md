@@ -90,7 +90,7 @@ Run:
 Focused server verification:
 
 ```sh
-./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-tests:runDelosDrdaVirtualThreadFairnessAuditTest :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew :delosdb-tests:delosSystemTests :delosdb-server:compileJava delosServerStaticAnalysis
 ```
 
 ## Not currently planned

@@ -66,7 +66,7 @@ External validation is deliberately not wired into:
 
 * `s0CloseoutVerification`
 * `:delosdb-storage-mvcc:check`
-* `:delosdb-tests:runDelosMvccSqlIntegrationTest`
+* `:delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests`
 
 This keeps compatibility and normal verification deterministic while allowing CI
 or release validation to opt into slower tools explicitly.
@@ -104,7 +104,7 @@ The stable `delosJcstressConcurrencyValidation` adapter first runs the live RawS
 network-concurrency proof:
 
 ```bash
-./gradlew :delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest
+./gradlew :delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
 ```
 
 A CI or release job may then supply an approved external jcstress command:
@@ -150,7 +150,7 @@ minimized case should first be added to the deterministic heap/MVCC differential
 SQL harness:
 
 ```bash
-./gradlew :delosdb-tests:runDelosHeapMvccDifferentialSqlHarnessTest
+./gradlew :delosdb-tests:delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
 ```
 
 The harness compares supported SQL behavior between inherited Derby heap tables

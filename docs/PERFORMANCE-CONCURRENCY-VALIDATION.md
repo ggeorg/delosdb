@@ -13,13 +13,13 @@ delosJmhMicrobenchmarks
     -> runDelosSharedRawStorePageIoRepresentationDecisionTest
 
 delosJcstressConcurrencyValidation
-    -> runDelosMvccDrdaConcurrentNetworkClientTest
+    -> delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
 
 delosTwoSidedMvccWorkloadBenchmark
-    -> runDelosHeapMvccDifferentialSqlHarnessTest
+    -> delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
 
 delosLongReaderVacuumSoak
-    -> runDelosMvccLongReaderPurgeStressTest
+    -> delosStressTests --tests '*MvccSqlLongReaderPurgeStressTest'
 ```
 
 These built-in tests verify deterministic state, live SQL/network behavior, concurrency, purge

@@ -494,21 +494,6 @@ tasks.named('runDelosJarRuntimeClassificationTests', Test) {
 }
 
 
-registerDelosFocusedTest(
-        'runDelosServerSchedulerTest',
-        'Runs focused DRDA server scheduler, threading, fairness, and EXTDTA cleanup tests.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaSessionSchedulerTest.class',
-                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaThreadingTest.class',
-                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class',
-                'org/apache/derbyTesting/functionTests/tests/derbynet/DrdaExtdtaSpoolTest.class'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosDrdaVirtualThreadFairnessAuditTest',
-        'Runs the opt-in DRDA virtual-thread fairness audit proof.',
-        ['org/apache/derbyTesting/functionTests/tests/derbynet/DrdaVirtualThreadFairnessAuditTest.class'])
-
 tasks.named('classes') {
     dependsOn tasks.named('compileTestJava')
 }
@@ -517,23 +502,6 @@ tasks.named('assemble') {
     dependsOn tasks.named('compileTestJava')
 }
 
-registerDelosFocusedTest(
-        'runDelosSharedStoragePositionalIoTest',
-        'Runs the Stage 8 shared file/memory positional-I/O and explicit-force contract.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SharedStoragePositionalIoTest.class'])
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedStoragePositionalIoTest')
-}
-
-registerDelosFocusedTest(
-        'runDelosSharedRawStoreIoDiagnosticsTest',
-        'Runs Stage 8.2 shared heap/MVCC file/memory RawStore I/O diagnostics and resource-accounting proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoDiagnosticsTest.class'])
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStoreIoDiagnosticsTest')
-}
 
 registerDelosFocusedTest(
         'runDelosSharedRawStoreIoFaultInjectionTest',
@@ -658,15 +626,6 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
-        'runDelosMvccDrdaConcurrentNetworkClientTest',
-        'Runs the concurrent DRDA/JDBC network-client stress gate for delos_mvcc.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentNetworkClientTest.class'],
-        [
-                'delos.drda.threadMode': 'virtual',
-                'delos.drda.extdta.spoolThresholdBytes': '32768'
-        ])
-
-registerDelosFocusedTest(
         'runDelosDrdaConcurrentClientStressTest',
         'Runs the mixed heap/MVCC DRDA concurrent-client stress gate.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaConcurrentClientStressTest.class'],
@@ -681,16 +640,6 @@ tasks.named('check') {
 
 
 registerDelosFocusedTest(
-        'runDelosMvccSerializableSemanticsTest',
-        'Runs heap SERIALIZABLE preservation and early delos_mvcc SERIALIZABLE rejection.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccUnsupportedTypeTruthTest',
-        'Runs early delos_mvcc JAVA_OBJECT/UserType table-definition rejection.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlUnsupportedObjectTypeBoundaryTest.class'])
-
-registerDelosFocusedTest(
         'runDelosSecurityTruthTest',
         'Runs TLS, secure XML, and fail-closed deserialization-boundary proofs.',
         [
@@ -699,146 +648,15 @@ registerDelosFocusedTest(
         ])
 
 registerDelosFocusedTest(
-        'runDelosMvccTransactionParticipationTest',
-        'Runs supported read-only/mixed access and the direct RawStore-backed MVCC XA restriction proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
-        [:],
-        [
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testSingleMvccTableAndHeapOnlyWritesRemainSupported',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testReadOnlyCrossTableAndMixedAccessRemainsSupported',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMvccXaWriteRejectsBeforeMutationWhileHeapXaRemainsSupported'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreSqlTransactionCutoverTest',
-        'Runs the Stage 5 RawStore SQL multi-table and mixed heap/MVCC transaction-authority proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionTest.class'],
-        [:],
-        [
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTablesCommitThroughOneRawStoreTransaction',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testTwoMvccTableRollbackUsesOneRawStoreUndoBoundary',
-                'org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest.testMixedHeapAndMvccWritesShareOneRawStoreTransaction'
-        ])
-
-registerDelosFocusedTest(
         'runDelosMvccRawStoreDecisionWalCrashTest',
         'Runs the Stage 5 mixed heap/MVCC recovery proof on both sides of the inherited RawStore commit.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class'])
 
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreVerticalSliceTest',
-        'Runs the isolated RawStore-owned MVCC file, memory, rollback, reopen, and crash-recovery proofs.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreRecoveryTest.class'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreDatabaseIdentityTest',
-        'Runs durable database-wide MVCC transaction-ID, commit-sequence, crash-gap, and memory RawStore proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreMultiTableTransactionTest',
-        'Runs one-outcome, savepoint, stable-snapshot, crash, and memory proofs across RawStore-backed MVCC tables.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreUpdateDeleteTest',
-        'Runs RawStore MVCC UPDATE/DELETE version-chain, snapshot, savepoint, crash, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreMixedHeapTransactionTest',
-        'Runs one-outcome commit, rollback, savepoint, crash, reopen, and memory proofs across heap and RawStore-backed MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreLookupHintTest',
-        'Runs validated RawStore page/record hint, logical fallback, legacy-row, crash, reopen, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.class'])
-
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreOrderedIndexTest',
-        'Runs RawStore-owned MVCC ordered-index equality, range, version visibility, compatibility, crash, reopen, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreUniqueConstraintTest',
-        'Runs RawStore-native MVCC primary-key and unique-constraint metadata, concurrency, recovery, reopen, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreUniqueLifecycleTest',
-        'Runs transactional RawStore-native MVCC ALTER constraint and CREATE/DROP unique-index metadata lifecycle proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreLogicalLockingTest',
-        'Runs transaction-duration RawStore MVCC stable-row, unique-key, schema, savepoint, abort, crash, reopen, and memory lock proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStorePhysicalLockingTest',
-        'Runs row-level RawStore MVCC physical concurrency, transactional shared-index mutation, ' +
-                'savepoint, crash, reopen, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreVacuumTest',
-        'Runs RawStore MVCC transaction/held-cursor horizons, hint repair, chain relinking, physical purge, rollback, crash, reopen, identity, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreMaintenanceDiagnosticsTest',
-        'Runs bounded autonomous RawStore MVCC maintenance, retained-reader retry, immutable diagnostics, database isolation, shutdown, and memory proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreMemoryDatabaseTest',
-        'Runs the complete Stage 6 named memory-database feature, isolation, and bounded-accounting proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRawStoreAuthorityCutoverTest',
-        'Runs the Stage 5 RawStore-authority cutover proof: no retained runtime boot, fail-closed retained-format detection, and non-mutating legacy access.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccTransactionalDdlTest',
-        'Runs MVCC CREATE/DROP rollback, savepoint, and DDL-plus-DML proofs.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlTransactionalDdlTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccDatabaseRuntimeIsolationTest',
-        'Runs the simultaneous multi-database MVCC runtime ownership proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlDatabaseRuntimeIsolationTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccRetiredSidecarRejectionTest',
-        'Proves backup and restore reject every artifact from the retired external delos_mvcc format.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRetiredSidecarRejectionTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMixedEngineBackupRestoreMatrixTest',
-        'Runs the mixed heap plus delos_mvcc backup/restore matrix proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MixedEngineBackupRestoreMatrixTest.class'])
 
 registerDelosFocusedTest(
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'Runs the heap diagnostics performance/read-only audit proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosMvccLongReaderPurgeStressTest',
-        'Runs the MVCC long-reader purge stress proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongReaderPurgeStressTest.class'])
-
-registerDelosFocusedTest(
-        'runDelosHeapMvccDifferentialSqlHarnessTest',
-        'Runs the heap/MVCC differential SQL harness proof.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialSqlHarnessTest.class'])
 
 def differentialFuzzSeed = providers.gradleProperty('delosdb.differentialFuzz.seed').getOrElse('')
 def differentialFuzzSeedOffset = providers.gradleProperty('delosdb.differentialFuzz.seedOffset').getOrElse('0')
@@ -1179,43 +997,9 @@ registerDelosFocusedTest(
                 'delosdb.benchmark.rowScaling.runs': providers.gradleProperty('delosdb.benchmark.rowScaling.runs').getOrElse('2')
         ])
 
-registerDelosFocusedTest(
-        'runDelosMvccSqlIntegrationTest',
-        'Runs the production RawStore-backed delos_mvcc SQL integration lane.',
-        [
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVerticalSliceTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreAuthorityCutoverTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDecisionWalCrashTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreDatabaseIdentityTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMultiTableTransactionTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUpdateDeleteTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMixedHeapTransactionTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLookupHintTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreOrderedIndexTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueConstraintTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreUniqueLifecycleTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreLogicalLockingTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStorePhysicalLockingTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class',
-                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMemoryDatabaseTest.class'
-        ])
-
-
-registerDelosFocusedTest(
-        'runDelosMvccDrdaNetworkClientTest',
-        'Runs the focused DRDA/JDBC network-client integration gate for delos_mvcc.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccDrdaNetworkClientTest.class'])
 
 [
-        'runDelosMvccTransactionalDdlTest',
-        'runDelosMvccDatabaseRuntimeIsolationTest',
         'runDelosHeapDiagnosticsPerformanceAuditTest',
-        'runDelosMvccLongReaderPurgeStressTest',
-        'runDelosHeapMvccDifferentialSqlHarnessTest',
-        'runDelosMvccSqlIntegrationTest',
-        'runDelosMvccDrdaNetworkClientTest',
-        'runDelosMvccDrdaConcurrentNetworkClientTest',
         'runDelosDrdaConcurrentClientStressTest'
 ].each { taskName ->
     tasks.named(taskName) {
@@ -1225,60 +1009,9 @@ registerDelosFocusedTest(
 
 tasks.named('check') {
     dependsOn tasks.named('runDelosSecurityTruthTest'),
-            tasks.named('runDelosMvccRawStoreDecisionWalCrashTest'),
-            tasks.named('runDelosMvccSqlIntegrationTest'),
-            tasks.named('runDelosMvccDrdaNetworkClientTest'),
-            tasks.named('runDelosMvccDrdaConcurrentNetworkClientTest'),
-            tasks.named('runDelosDrdaConcurrentClientStressTest')
+            tasks.named('runDelosMvccRawStoreDecisionWalCrashTest')
 }
 
-registerDelosFocusedTest(
-        'runDelosHeapMvccDrdaCancellationTest',
-        'Runs DRDA statement-cancellation and connection-recovery proofs for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaCancellationTest.class'],
-        [
-                'delos.drda.threadMode': 'virtual',
-                'delos.drda.extdta.spoolThresholdBytes': '32768'
-        ])
-
-registerDelosFocusedTest(
-        'runDelosHeapMvccDrdaDisconnectCleanupTest',
-        'Runs DRDA connection-abort transaction cleanup proofs for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaDisconnectCleanupTest.class'],
-        [
-                'delos.drda.threadMode': 'virtual',
-                'delos.drda.extdta.spoolThresholdBytes': '32768'
-        ])
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosHeapMvccDrdaDisconnectCleanupTest')
-}
-
-registerDelosFocusedTest(
-        'runDelosHeapMvccDrdaServerRestartTest',
-        'Runs DRDA active-transaction shutdown, database reboot, and restart proofs for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaServerRestartTest.class'],
-        [
-                'delos.drda.threadMode': 'virtual',
-                'delos.drda.extdta.spoolThresholdBytes': '32768'
-        ])
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosHeapMvccDrdaServerRestartTest')
-}
-
-registerDelosFocusedTest(
-        'runDelosHeapMvccDrdaStreamingDisconnectTest',
-        'Runs raw-socket loss during result streaming and server cleanup proofs for heap and MVCC.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDrdaStreamingDisconnectTest.class'],
-        [
-                'delos.drda.threadMode': 'virtual',
-                'delos.drda.extdta.spoolThresholdBytes': '32768'
-        ])
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosHeapMvccDrdaStreamingDisconnectTest')
-}
 
 // Phase 8.6 post-correction v1 baseline capture. This lane is intentionally
 // opt-in and remains outside check and s0CloseoutVerification because it

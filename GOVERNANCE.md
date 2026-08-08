@@ -86,8 +86,8 @@ No release should be cut unless these gates are green:
 ./gradlew clean releaseVerification :delosdb-storage-mvcc:check
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:derbyLanguageTests
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest
-./gradlew :delosdb-tests:runDelosServerSchedulerTest :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
+./gradlew :delosdb-tests:delosSystemTests :delosdb-server:compileJava delosServerStaticAnalysis
 ./gradlew s0CloseoutVerification
 ```
 

@@ -685,7 +685,7 @@ Rules:
 ## External validation algorithm lane: jcstress concurrency
 
 The stable `delosJcstressConcurrencyValidation` adapter uses the live
-`:delosdb-tests:runDelosMvccDrdaConcurrentNetworkClientTest` proof as its built-in baseline and may
+`:delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'` proof as its built-in baseline and may
 run a caller-supplied external jcstress command. The retired Phase 8 in-tree probes and their
 page-volume dependencies are absent. This lane remains `VALIDATION_ALGORITHM` and is not an S0
 dependency.
@@ -710,7 +710,7 @@ Classification: VALIDATION_ALGORITHM, HEAP_COMPATIBILITY_BOUNDARY,
 MVCC_RUNTIME_PROOF.
 
 Current proof: `HeapMvccDifferentialSqlHarnessTest` and
-`runDelosHeapMvccDifferentialSqlHarnessTest`.
+`delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'`.
 
 The harness executes matched SQL operations against an inherited Derby heap table
 and a `delos_mvcc` table, then compares normalized result sets at named

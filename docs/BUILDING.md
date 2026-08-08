@@ -36,7 +36,7 @@ Run the affected module and the smallest directly relevant proof. Examples:
 
 ```bash
 ./gradlew :delosdb-storage-mvcc:check --console=plain
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest --console=plain
+./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests --console=plain
 ./gradlew :delosdb-tests:runDelosDrdaConcurrentClientStressTest --console=plain
 ```
 
@@ -175,7 +175,7 @@ individually before `suites.All`.
 ## Storage verification
 
 ```bash
-./gradlew   :delosdb-derby-store-api:check   :delosdb-storage-derby:check   :delosdb-storage-mvcc:check   :delosdb-tests:runDelosMvccSqlIntegrationTest   --console=plain
+./gradlew   :delosdb-derby-store-api:check   :delosdb-storage-derby:check   :delosdb-storage-mvcc:check   :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests   --console=plain
 ```
 
 ## Baseline evidence capture

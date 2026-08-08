@@ -64,7 +64,7 @@ registered-table and active-worker state.
 ## Focused proofs
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreMaintenanceDiagnosticsTest
-:delosdb-tests:runDelosMvccRawStoreVacuumTest
-:delosdb-tests:runDelosMvccSqlIntegrationTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreMaintenanceDiagnosticsTest'
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreVacuumTest'
+:delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
 ```

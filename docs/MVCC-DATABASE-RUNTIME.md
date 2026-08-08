@@ -63,7 +63,7 @@ shutdown of database A cannot close database B
 ## Focused proofs
 
 ```text
-:delosdb-tests:runDelosMvccSqlIntegrationTest
-:delosdb-tests:runDelosMvccRetiredSidecarRejectionTest
-:delosdb-tests:runDelosMixedEngineBackupRestoreMatrixTest
+:delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
+:delosdb-tests:delosUnitTests --tests '*MvccRetiredSidecarRejectionTest'
+:delosdb-tests:delosRecoveryTests --tests '*MixedEngineBackupRestoreMatrixTest'
 ```

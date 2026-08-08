@@ -380,7 +380,7 @@ tables also share that same outcome and survive normal shutdown/reopen together.
 retained `delos_mvcc/inherited-store` file.
 
 The compatibility alias for the retired database-decision proof has been removed.
-`runDelosMvccRawStoreSqlTransactionCutoverTest` is the sole focused SQL transaction-authority task.
+`delosFunctionalTests --tests '*MvccSqlTransactionTest'` is the focused SQL transaction-authority command.
 
 ## Stage 5 retained production runtime retirement
 

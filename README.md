@@ -124,7 +124,7 @@ Focused generated-class acceptance:
 MVCC SQL integration:
 
 ```bash
-./gradlew :delosdb-tests:runDelosMvccSqlIntegrationTest --console=plain
+./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests --console=plain
 ```
 
 The inherited Derby language suite is intentionally expensive and should be run at meaningful

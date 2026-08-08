@@ -11,10 +11,10 @@ harness before it becomes a normal DelosDB release gate.
 ## Task
 
 ```bash
-./gradlew :delosdb-tests:runDelosHeapMvccDifferentialSqlHarnessTest
+./gradlew :delosdb-tests:delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
 ```
 
-The task is also included in `runDelosMvccSqlIntegrationTest`.
+The same class is part of the permanent `delosFunctionalTests` suite; use the standard `--tests` filter above for a focused run.
 
 ## Current proof
 

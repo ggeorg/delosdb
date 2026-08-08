@@ -85,11 +85,10 @@ be reassigned.
 The focused authority lanes are:
 
 ```text
-:delosdb-tests:runDelosMvccTransactionParticipationTest
-:delosdb-tests:runDelosMvccRawStoreSqlTransactionCutoverTest
-:delosdb-tests:runDelosMvccRawStoreMixedHeapTransactionTest
-:delosdb-tests:runDelosMvccRawStoreMultiTableTransactionTest
-:delosdb-tests:runDelosMvccTransactionalDdlTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccSqlTransactionTest'
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreMixedHeapTransactionTest'
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreMultiTableTransactionTest'
+:delosdb-tests:delosFunctionalTests --tests '*MvccSqlTransactionalDdlTest'
 :delosdb-tests:runDelosMvccRawStoreDecisionWalCrashTest
 ```
 

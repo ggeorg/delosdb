@@ -87,7 +87,7 @@ Run the affected storage module checks and a directly relevant SQL or RawStore t
 closeout coverage is:
 
 ```bash
-./gradlew   :delosdb-derby-store-api:check   :delosdb-storage-derby:check   :delosdb-storage-mvcc:check   :delosdb-tests:runDelosMvccSqlIntegrationTest   --console=plain
+./gradlew   :delosdb-derby-store-api:check   :delosdb-storage-derby:check   :delosdb-storage-mvcc:check   :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests   --console=plain
 ```
 
 Do not introduce a second persistence runtime or bypass Derby transaction ownership.
