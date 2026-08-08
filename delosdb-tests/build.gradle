@@ -512,6 +512,17 @@ tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
 }
 
 registerDelosFocusedTest(
+        'runDelosStage6CP1ExternalConcurrencyTests',
+        'Runs the Stage 6C PostgreSQL DDL-dependency and MariaDB lock-upgrade ordering adaptations.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.class'],
+        [:],
+        ['org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest.testStage6CP1ExternalConcurrencySpecifications'])
+
+tasks.named('runDelosStage6CP1ExternalConcurrencyTests') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
         'runDelosStage6BMariaDbDeadlockVictimLifecycleTest',
         'Runs the Stage 6B MariaDB-derived deadlock-victim wake-up lifecycle adaptation.',
         ['org/apache/derbyTesting/functionTests/tests/delos/DelosDeadlockVictimLifecycleTest.class'])

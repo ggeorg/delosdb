@@ -1,0 +1,134 @@
+{
+  "id": "DEL-DDL-006",
+  "description": "Concurrent CREATE INDEX and DROP TABLE serialize in either order without leaving a dependent index whose base table no longer exists.",
+  "category": "ddl-concurrency",
+  "providers": [
+    "heap",
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table ddl_dependency_t (id int primary key,bucket int)${providerClause}",
+    "insert into ddl_dependency_t values (1,10),(2,20)"
+  ],
+  "sessions": {
+    "creator": {
+      "steps": {
+        "create": {
+          "sql": "create index ddl_dependency_idx on ddl_dependency_t(bucket)"
+        },
+        "createAfterDrop": {
+          "sql": "create index ddl_dependency_idx on ddl_dependency_t(bucket)",
+          "sqlStates": [
+            "42X05",
+            "X0Y38"
+          ],
+          "successAllowed": false
+        },
+        "commit": {
+          "action": "COMMIT"
+        },
+        "rollback": {
+          "action": "ROLLBACK"
+        }
+      }
+    },
+    "dropper": {
+      "steps": {
+        "dropTable": {
+          "sql": "drop table ddl_dependency_t"
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "create-dependent-before-drop",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "creator.create"
+        },
+        {
+          "type": "START",
+          "step": "dropper.dropTable",
+          "token": "dropTable"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "dropTable",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "creator.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "dropTable",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "dropper.commit"
+        }
+      ]
+    },
+    {
+      "name": "drop-dependency-before-create",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "dropper.dropTable"
+        },
+        {
+          "type": "START",
+          "step": "creator.createAfterDrop",
+          "token": "createIndex"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "createIndex",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "dropper.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "createIndex",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "creator.rollback"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select count(*) from sys.systables t,sys.sysschemas s where t.schemaid=s.schemaid and s.schemaname='APP' and t.tablename='DDL_DEPENDENCY_T'",
+      "rows": [
+        "0"
+      ]
+    },
+    {
+      "sql": "select count(*) from sys.sysconglomerates where conglomeratename='DDL_DEPENDENCY_IDX'",
+      "rows": [
+        "0"
+      ]
+    }
+  ],
+  "teardown": []
+}

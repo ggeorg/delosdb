@@ -67,6 +67,10 @@ public final class DelosIsolationSpecificationTest extends MvccSqlTestSupport {
         runAll("DEL-ISO-014");
     }
 
+    public void testStage6CP1ExternalConcurrencySpecifications() throws Exception {
+        runAll("DEL-DDL-006", "DEL-DEADLOCK-006");
+    }
+
     private static void runAll(String... caseIds) throws Exception {
         for (String caseId : caseIds) {
             String resource = RESOURCE_ROOT + caseId + ".json";

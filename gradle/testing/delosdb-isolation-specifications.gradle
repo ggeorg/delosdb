@@ -18,10 +18,10 @@ def reportText = layout.buildDirectory.file('reports/tests/delosdb-isolation-spe
 def requiredCases = [
         'DEL-ISO-001', 'DEL-ISO-002', 'DEL-ISO-003', 'DEL-ISO-004',
         'DEL-ISO-010', 'DEL-ISO-011', 'DEL-ISO-012', 'DEL-ISO-013', 'DEL-ISO-014',
-        'DEL-DEADLOCK-001', 'DEL-DEADLOCK-002', 'DEL-DEADLOCK-003', 'DEL-DEADLOCK-004',
+        'DEL-DEADLOCK-001', 'DEL-DEADLOCK-002', 'DEL-DEADLOCK-003', 'DEL-DEADLOCK-004', 'DEL-DEADLOCK-006',
         'DEL-TRAVERSAL-001', 'DEL-TRAVERSAL-002', 'DEL-TRAVERSAL-003', 'DEL-TRAVERSAL-004',
         'DEL-FK-001', 'DEL-FK-002', 'DEL-FK-003', 'DEL-FK-004', 'DEL-FK-005',
-        'DEL-DDL-001', 'DEL-DDL-002', 'DEL-DDL-003', 'DEL-DDL-004',
+        'DEL-DDL-001', 'DEL-DDL-002', 'DEL-DDL-003', 'DEL-DDL-004', 'DEL-DDL-006',
         'DEL-MERGE-001', 'DEL-MERGE-002', 'DEL-MERGE-003', 'DEL-MERGE-004'
 ] as Set<String>
 
@@ -29,10 +29,10 @@ def requiredCategoryCounts = [
         'snapshot-stability': 4,
         'savepoint-rollback': 4,
         'serializable-uniqueness': 1,
-        'deadlock': 4,
+        'deadlock': 5,
         'update-delete-traversal': 4,
         'foreign-key-concurrency': 5,
-        'ddl-concurrency': 4,
+        'ddl-concurrency': 5,
         'merge-concurrency': 4
 ]
 
@@ -290,10 +290,17 @@ def stage4Analysis = tasks.register('delosIsolationSpecStaticAnalysis') {
         (inventoryResources - actualResources).sort().each { issues.add("Stale isolation inventory resource: ${it}") }
 
         provenance.each { String id, List<String> row ->
-            if (row[1] != 'PostgreSQL') issues.add("Unexpected source project for ${id}: ${row[1]}")
-            if (!row[2].contains('archive sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c')) issues.add("Unfrozen source revision for ${id}")
-            if (!row[3].startsWith('src/test/isolation/')) issues.add("Unexpected source file for ${id}: ${row[3]}")
-            if (row[4] != 'PostgreSQL License') issues.add("Unexpected source license for ${id}: ${row[4]}")
+            if (row[1] == 'PostgreSQL') {
+                if (!row[2].contains('archive sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c')) issues.add("Unfrozen PostgreSQL source revision for ${id}")
+                if (!row[3].startsWith('src/test/isolation/')) issues.add("Unexpected PostgreSQL source file for ${id}: ${row[3]}")
+                if (row[4] != 'PostgreSQL License') issues.add("Unexpected PostgreSQL source license for ${id}: ${row[4]}")
+            } else if (row[1] == 'MariaDB') {
+                if (!row[2].contains('archive sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7')) issues.add("Unfrozen MariaDB source revision for ${id}")
+                if (!row[3].startsWith('mysql-test/')) issues.add("Unexpected MariaDB source file for ${id}: ${row[3]}")
+                if (row[4] != 'GPLv2-only') issues.add("Unexpected MariaDB source license for ${id}: ${row[4]}")
+            } else {
+                issues.add("Unexpected source project for ${id}: ${row[1]}")
+            }
             if (!(row[5] in ['ADAPTED_WITH_ATTRIBUTION', 'REIMPLEMENTED_FROM_SCENARIO', 'INDEPENDENT_EQUIVALENT'])) {
                 issues.add("Invalid adaptation type for ${id}: ${row[5]}")
             }
@@ -401,6 +408,10 @@ tasks.named('runDelosStage6BPostgresConcurrencyTests') {
 }
 
 tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
+    dependsOn stage4Analysis
+}
+
+tasks.named('runDelosStage6CP1ExternalConcurrencyTests') {
     dependsOn stage4Analysis
 }
 

@@ -1,0 +1,110 @@
+{
+  "id": "DEL-DEADLOCK-006",
+  "description": "A transaction that already holds a shared row lock can upgrade ahead of an incompatible queued waiter; the waiter remains blocked until the upgrader commits and then resumes without an avoidable deadlock.",
+  "category": "deadlock",
+  "providers": [
+    "heap"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table deadlock_upgrade_queue_t (id int primary key,marker int not null)",
+    "insert into deadlock_upgrade_queue_t values (1,0)"
+  ],
+  "sessions": {
+    "holder": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "read": {
+          "sql": "select marker from deadlock_upgrade_queue_t where id=1",
+          "rows": [
+            "0"
+          ]
+        },
+        "upgrade": {
+          "sql": "update deadlock_upgrade_queue_t set marker=1 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "waiter": {
+      "steps": {
+        "update": {
+          "sql": "update deadlock_upgrade_queue_t set marker=2 where id=1",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "holder-upgrade-bypasses-incompatible-waiter",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "holder.read"
+        },
+        {
+          "type": "START",
+          "step": "waiter.update",
+          "token": "waiterUpdate"
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "waiterUpdate",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "START",
+          "step": "holder.upgrade",
+          "token": "holderUpgrade"
+        },
+        {
+          "type": "AWAIT",
+          "token": "holderUpgrade",
+          "timeoutMillis": 3000
+        },
+        {
+          "type": "ASSERT_BLOCKED",
+          "token": "waiterUpdate",
+          "timeoutMillis": 1200
+        },
+        {
+          "type": "RUN",
+          "step": "holder.commit"
+        },
+        {
+          "type": "AWAIT",
+          "token": "waiterUpdate",
+          "timeoutMillis": 10000
+        },
+        {
+          "type": "RUN",
+          "step": "waiter.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select marker from deadlock_upgrade_queue_t where id=1",
+      "rows": [
+        "2"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table deadlock_upgrade_queue_t"
+  ]
+}
