@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.HeapRawStoreDebugAssertionConsolidationTest
+   Derby - Class org.apache.derbyTesting.functionTests.tests.delos.HeapRawStoreDiagnosticCompatibilityTest
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,24 +18,30 @@
    limitations under the License.
 
  */
-
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import junit.framework.TestCase;
+
+import org.apache.derby.impl.store.access.conglomerate.D_DiagnosticFormatting;
 import org.apache.derby.impl.store.raw.data.D_RawPageSanityAssertions;
 
-/**
- * Verifies that heap/raw-store debug assertion consolidation preserves the
- * inherited assertion text shape while centralizing duplicate message helpers.
- */
-public final class HeapRawStoreDebugAssertionConsolidationTest extends TestCase {
-    public void testRecordIdPageChangeMessageIsStable() {
+/** Stable inherited diagnostic-text contract for heap/raw-store helper consolidation. */
+public final class HeapRawStoreDiagnosticCompatibilityTest extends TestCase {
+    public void testDiagnosticSummaryFormattingKeepsInheritedShape() {
+        assertEquals(
+                "\t# of free bytes       = 20.\t(2.5 free bytes/page).\n",
+                D_DiagnosticFormatting.summary(
+                        "# of free bytes       = ", 20, 2.5d, "free bytes/page"));
+        assertEquals(
+                "\t# of reserved bytes   = 1.\t(NA reserved bytes/page).\n",
+                D_DiagnosticFormatting.summaryOrNotApplicableForTinyRatio(
+                        "# of reserved bytes   = ", 1, 0.001d, "reserved bytes/page"));
+    }
+
+    public void testRawPageDebugAssertionMessagesStayStable() {
         assertEquals(
                 "recordId changed from 10 to 11 but page number did not change 42",
                 D_RawPageSanityAssertions.recordIdPageChangeMessage(10, 11, 42));
-    }
-
-    public void testRestoreSlotMismatchMessageIsStable() {
         assertEquals(
                 "restoreMe cannot restore to a different slot. doMe slot:3 undoMe slot: 4 recordId:99",
                 D_RawPageSanityAssertions.restoreSlotMismatchMessage(3, 4, 99));

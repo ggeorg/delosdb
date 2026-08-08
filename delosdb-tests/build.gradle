@@ -1199,6 +1199,16 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapDiagnosticsPerformanceAuditTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosHeapStorageDiagnosticsContractTest',
+        'Runs the consolidated heap diagnostics, statistics, and sanity contract.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapStorageDiagnosticsContractTest.class'])
+
+registerDelosFocusedTest(
+        'runDelosHeapRawStoreDiagnosticCompatibilityTest',
+        'Runs inherited heap/raw-store diagnostic text compatibility assertions.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/HeapRawStoreDiagnosticCompatibilityTest.class'])
+
+registerDelosFocusedTest(
         'runDelosMvccLongReaderPurgeStressTest',
         'Runs the MVCC long-reader purge stress proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlLongReaderPurgeStressTest.class'])
