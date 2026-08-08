@@ -90,8 +90,8 @@ public final class StorageMetadataContractTest extends MvccSqlTestSupport {
                 assertTrue("MVCC metadata must be read-only and clean", mvcc.readOnly() && mvcc.clean());
                 assertTrue("heap metadata should observe storage bytes",
                         heap.statistics().observedStorageBytes() > 0L);
-                assertTrue("MVCC metadata should observe storage bytes",
-                        mvcc.statistics().observedStorageBytes() > 0L);
+                assertEquals("RawStore-owned MVCC metadata must not report retired external storage-file bytes",
+                        0L, mvcc.statistics().observedStorageBytes());
                 assertTrue("heap metadata should observe pages", heap.statistics().hasPages());
                 assertTrue("MVCC metadata should observe pages", mvcc.statistics().hasPages());
                 assertEquals("provider-neutral metadata must not claim heap logical-row authority",
