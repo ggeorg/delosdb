@@ -79,6 +79,9 @@ public final class StorageInspectorConsolidationTest extends MvccSqlTestSupport 
             DelosStorageInspection mvccInspection = report.inspection(
                     DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID, 0, mvccContainerId);
 
+            assertEquals(DelosStorageDiagnosticsRegistry.HEAP_PROVIDER_ID, heapInspection.providerId());
+            assertEquals(0, heapInspection.segment());
+            assertEquals(heapContainerId, heapInspection.containerId());
             assertEquals("HEAP_FILE_OBSERVED", heapInspection.checkpointStatus());
             assertTrue("expected heap page observation", heapInspection.pageDiagnostics().pageCount() > 0L);
             assertEquals("expected clean heap inspection", 0,
@@ -87,16 +90,25 @@ public final class StorageInspectorConsolidationTest extends MvccSqlTestSupport 
             assertNotNull("expected heap container file in consolidated inspection", heapContainerFile);
             assertTrue("expected heap container file to exist: " + heapContainerFile,
                     Files.isRegularFile(heapContainerFile));
+            assertTrue("expected heap container file to be non-empty: " + heapContainerFile,
+                    Files.size(heapContainerFile) > 0L);
+            assertFalse("heap inspection files should not be empty", heapInspection.files().isEmpty());
 
+            assertEquals(DelosStorageDiagnosticsRegistry.MVCC_PROVIDER_ID, mvccInspection.providerId());
+            assertEquals(0, mvccInspection.segment());
+            assertEquals(mvccContainerId, mvccInspection.containerId());
+            assertEquals("RAWSTORE_OWNED", mvccInspection.checkpointStatus());
             assertTrue("expected MVCC page observation", mvccInspection.pageDiagnostics().pageCount() > 0L);
-            assertEquals("expected two MVCC logical rows", 2,
+            assertEquals("RawStore-backed inspection must not expose retired logical-row counters", 0,
                     mvccInspection.pageDiagnostics().logicalRowCount());
             assertEquals("expected clean MVCC inspection", 0,
                     mvccInspection.consistencyDiagnostics().errorCount());
-            assertNotNull("expected MVCC page-volume file in consolidated inspection",
+            assertNull("RawStore-backed MVCC must not expose retired page-volume state files",
                     mvccInspection.file(DelosStorageInspection.PAGE_VOLUME_FILE));
-            assertNotNull("expected MVCC checkpoint file in consolidated inspection",
+            assertNull("RawStore-backed MVCC must not expose retired checkpoint state files",
                     mvccInspection.file(DelosStorageInspection.CHECKPOINT_FILE));
+            assertTrue("RawStore-backed MVCC inspection must not expose retired external-state files",
+                    mvccInspection.files().isEmpty());
 
             assertRows(connection,
                     "select id, name from inspector_heap_t order by id",

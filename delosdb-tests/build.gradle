@@ -1005,6 +1005,12 @@ registerDelosFocusedTest(
 
 
 registerDelosFocusedTest(
+        'runDelosStorageInspectorConsolidationTest',
+        'Runs the enduring provider-neutral heap/MVCC storage-inspection report proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/StorageInspectorConsolidationTest.class'])
+
+
+registerDelosFocusedTest(
         'runDelosMvccSerializableSemanticsTest',
         'Runs heap SERIALIZABLE preservation and early delos_mvcc SERIALIZABLE rejection.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccSqlSerializableSemanticsTest.class'])
@@ -1598,6 +1604,7 @@ registerDelosFocusedTest(
 [
         'runDelosOptimizerStorageCostOptInTest',
         'runDelosOptimizerPredicatePushdownProductionHookTest',
+        'runDelosStorageInspectorConsolidationTest',
         'runDelosMvccTransactionalDdlTest',
         'runDelosMvccDatabaseRuntimeIsolationTest',
         'runDelosMvccTableRebuildProviderTruthTest',
