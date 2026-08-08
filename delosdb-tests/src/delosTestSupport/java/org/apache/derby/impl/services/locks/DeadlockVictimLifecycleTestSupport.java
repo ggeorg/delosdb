@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.services.locks.DelosDeadlockVictimLifecycleTest
+   Derby - Class org.apache.derby.impl.services.locks.DeadlockVictimLifecycleTestSupport
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -23,34 +23,26 @@ package org.apache.derby.impl.services.locks;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-import junit.framework.TestCase;
 import org.apache.derby.iapi.services.locks.C_LockFactory;
 import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.iapi.services.locks.Latch;
 import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.shared.common.reference.SQLState;
 
-/** Deadlock-victim wake-up correctness while the wait graph is changing. */
-public final class DelosDeadlockVictimLifecycleTest extends TestCase {
+/** Test-only bridge for the package-private lock-manager victim lifecycle. */
+public final class DeadlockVictimLifecycleTestSupport {
     private static final Object EXCLUSIVE = new Object();
 
-    public void testVictimWakeupSurvivesLaterGrantSignal() throws Exception {
-        assertVictimWinsWakeupRace(false);
+    private DeadlockVictimLifecycleTestSupport() {
     }
 
-    public void testVictimWakeupOverridesQueuedGrantSignal() throws Exception {
-        assertVictimWinsWakeupRace(true);
-    }
-
-    private void assertVictimWinsWakeupRace(boolean grantFirst) throws Exception {
+    public static Proof exercise(boolean grantFirst) throws Exception {
         TestPool pool = new TestPool();
         LockTable table = pool.lockTable;
         CompatibilitySpace survivor = pool.createCompatibilitySpace(null);
         CompatibilitySpace victim = pool.createCompatibilitySpace(null);
         Lockable first = new ExclusiveLockable();
         Lockable second = new ExclusiveLockable();
-
         Lock survivorFirst = table.lockObject(
                 survivor, first, EXCLUSIVE, C_LockFactory.WAIT_FOREVER);
         Lock victimFirst = table.lockObject(
@@ -59,19 +51,17 @@ public final class DelosDeadlockVictimLifecycleTest extends TestCase {
         AtomicReference<Lock> survivorSecond = new AtomicReference<>();
         AtomicReference<Throwable> survivorFailure = new AtomicReference<>();
         Thread survivorThread = lockAsync(
-                table, survivor, second, survivorSecond, survivorFailure, "delos-deadlock-survivor");
+                table, survivor, second, survivorSecond, survivorFailure,
+                "delos-deadlock-survivor");
         ActiveLock survivorWait = awaitWaiter(table, second, survivor);
 
         AtomicReference<Lock> victimSecond = new AtomicReference<>();
         AtomicReference<Throwable> victimFailure = new AtomicReference<>();
         Thread victimThread = lockAsync(
-                table, victim, first, victimSecond, victimFailure, "delos-deadlock-victim");
+                table, victim, first, victimSecond, victimFailure,
+                "delos-deadlock-victim");
         ActiveLock victimWait = awaitWaiter(table, first, victim);
 
-        // Force the portable form of the MariaDB race. The victim already owns
-        // one lock, is waiting for the next lock in the cycle, and receives
-        // both a grant-style wake-up and a deadlock-victim wake-up before it
-        // can resume. Deadlock selection must dominate either signal order.
         synchronized (victimWait) {
             if (grantFirst) {
                 victimWait.wakeUp(Constants.WAITING_LOCK_GRANT);
@@ -83,25 +73,45 @@ public final class DelosDeadlockVictimLifecycleTest extends TestCase {
         }
 
         victimThread.join(5000L);
-        assertFalse("deadlock victim remained blocked", victimThread.isAlive());
-        assertNull("deadlock victim must not acquire the cancelled later lock", victimSecond.get());
-        assertEquals(0, victimWait.getCount());
-        assertDeadlock(victimFailure.get());
+        boolean victimStayedBlocked = victimThread.isAlive();
+        int victimWaitCount = victimWait.getCount();
 
-        // A deadlock victim at the lock-manager level still owns its earlier
-        // grant until transaction rollback releases it. Releasing that grant
-        // must let the surviving waiter acquire a real lock, not a phantom one.
         table.unlock(victimFirst, 1);
         survivorThread.join(5000L);
-        assertFalse("surviving waiter did not resume", survivorThread.isAlive());
-        assertNull(survivorFailure.get());
-        assertNotNull(survivorSecond.get());
-        assertEquals(1, survivorSecond.get().getCount());
-        assertSame(survivorWait, survivorSecond.get());
-
-        table.unlock(survivorSecond.get(), 1);
+        Lock survivorGranted = survivorSecond.get();
+        boolean survivorStayedBlocked = survivorThread.isAlive();
+        boolean survivorReceivedQueuedLock = survivorGranted == survivorWait;
+        int survivorLockCount = survivorGranted == null ? 0 : survivorGranted.getCount();
+        if (survivorGranted != null) {
+            table.unlock(survivorGranted, 1);
+        }
         table.unlock(survivorFirst, 1);
-        assertFalse("lock table retained a waiter after deadlock cleanup", table.anyoneBlocked());
+
+        // If the proof failed before deadlock removal, release the survivor's
+        // first lock so the victim thread cannot leak into another test.
+        victimThread.join(1000L);
+        Lock victimGranted = victimSecond.get();
+        if (victimGranted != null) {
+            table.unlock(victimGranted, 1);
+        }
+
+        Throwable victimProblem = victimFailure.get();
+        String victimSqlState = victimProblem instanceof StandardException
+                ? ((StandardException) victimProblem).getSQLState()
+                : null;
+        Throwable survivorProblem = survivorFailure.get();
+        return new Proof(
+                victimSqlState,
+                victimProblem == null ? null : victimProblem.getClass().getName(),
+                victimStayedBlocked,
+                victimGranted != null,
+                victimWaitCount,
+                survivorStayedBlocked,
+                survivorProblem == null ? null : survivorProblem.getClass().getName(),
+                survivorGranted != null,
+                survivorReceivedQueuedLock,
+                survivorLockCount,
+                table.anyoneBlocked());
     }
 
     private static Thread lockAsync(
@@ -113,7 +123,8 @@ public final class DelosDeadlockVictimLifecycleTest extends TestCase {
             String name) {
         Thread thread = new Thread(() -> {
             try {
-                result.set(table.lockObject(space, lockable, EXCLUSIVE, C_LockFactory.WAIT_FOREVER));
+                result.set(table.lockObject(
+                        space, lockable, EXCLUSIVE, C_LockFactory.WAIT_FOREVER));
             } catch (Throwable problem) {
                 failure.set(problem);
             }
@@ -139,14 +150,21 @@ public final class DelosDeadlockVictimLifecycleTest extends TestCase {
             }
             Thread.sleep(5L);
         } while (System.nanoTime() < deadline);
-        fail("Timed out waiting for lock request");
-        return null;
+        throw new AssertionError("Timed out waiting for lock request");
     }
 
-    private static void assertDeadlock(Throwable failure) {
-        assertTrue("expected StandardException, got " + failure,
-                failure instanceof StandardException);
-        assertEquals(SQLState.DEADLOCK, ((StandardException) failure).getSQLState());
+    public record Proof(
+            String victimSqlState,
+            String victimFailureType,
+            boolean victimStayedBlocked,
+            boolean victimAcquiredLaterLock,
+            int victimWaitCount,
+            boolean survivorStayedBlocked,
+            String survivorFailureType,
+            boolean survivorAcquiredLaterLock,
+            boolean survivorReceivedQueuedLock,
+            int survivorLockCount,
+            boolean anyoneBlocked) {
     }
 
     private static final class TestPool extends AbstractPool {

@@ -2,7 +2,7 @@
 # class_name	source_path	role	suite	execution_tier	reason
 # TEST entries are exactly the explicit active authority: the frozen Stage 3 baseline plus reviewed later additions.
 # RETAINED_TRANSITIONAL entries preserve dormant source evidence pending Stage 7 assertion mapping.
-org.apache.derby.impl.services.locks.DelosDeadlockVictimLifecycleTest	org/apache/derby/impl/services/locks/DelosDeadlockVictimLifecycleTest.java	TEST	concurrency	full	Stage 6 MariaDB-derived deadlock-victim wake-up lifecycle proof
+org.apache.derbyTesting.functionTests.tests.delos.DelosDeadlockVictimLifecycleTest	org/apache/derbyTesting/functionTests/tests/delos/DelosDeadlockVictimLifecycleTest.java	TEST	concurrency	full	Stage 6 MariaDB-derived deadlock-victim wake-up lifecycle proof
 org.apache.derbyTesting.functionTests.tests.delos.CrossEngineConsistencyFrameworkTest	org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java	RETAINED_TRANSITIONAL	none	none	retained dormant source outside the frozen pre-Stage-3 active authority; pending Stage 7 assertion mapping
 org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest	org/apache/derbyTesting/functionTests/tests/delos/DelosIsolationSpecificationTest.java	TEST	concurrency	full	Stage 4 PostgreSQL-style isolation specifications across heap and delos_mvcc
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassContractBehaviorTest	org/apache/derbyTesting/functionTests/tests/delos/GeneratedClassContractBehaviorTest.java	TEST	unit	unit	narrow DelosDB contract or implementation-boundary proof

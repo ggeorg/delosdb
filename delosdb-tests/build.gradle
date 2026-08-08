@@ -69,6 +69,8 @@ def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/dem
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+def deadlockVictimLifecycleTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -204,6 +206,11 @@ def testRuntimeClasspath = {
 // A small set of inherited Derby unit tests imports store implementation
 // classes directly. Keep that access local to the test module compile instead
 // of re-exporting implementation packages from delosdb-engine.
+def delosInternalTestSupportExports = [
+        '--add-exports',
+        'org.apache.derby.engine/org.apache.derby.impl.services.locks=org.apache.derby.tests'
+]
+
 def inheritedStoreImplementationExports = [
         'org.apache.derby.impl.store.access.btree',
         'org.apache.derby.impl.store.access.btree.index',
@@ -274,6 +281,7 @@ sourceSets {
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -286,20 +294,23 @@ artifacts {
     }
 }
 
-// The RawStore fault-injection proof bridge must share org.apache.derby.engine's runtime package
-// in order to reach its package-private control seam. Compile only that source as a test patch of
-// the engine module. The resulting class is a test runtime input and is never packaged into a
-// production artifact.
+// Test-only bridges which need package-private engine seams are compiled as a patch of
+// org.apache.derby.engine. They remain test runtime inputs and are never packaged into a
+// production artifact. Keep the established task name because existing verification wiring
+// already depends on it.
 tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(deadlockVictimLifecycleTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
     }
     into rawStoreInternalTestSupportGeneratedSourceDir
 }
 
 tasks.register('compileRawStoreInternalTestSupport', JavaCompile) {
     group = 'build'
-    description = 'Compiles the package-private RawStore fault-injection proof bridge as an org.apache.derby.engine test patch.'
+    description = 'Compiles package-private engine proof bridges as an org.apache.derby.engine test patch.'
     dependsOn tasks.named('prepareRawStoreInternalTestSupportSources'), ':jars'
 
     source rawStoreInternalTestSupportGeneratedSourceDir
@@ -337,7 +348,7 @@ tasks.named('compileTestJava', JavaCompile) {
                 '--patch-module',
                 "org.apache.derby.engine=${rawStoreInternalTestSupportClassDir.get().asFile.absolutePath}",
                 '-proc:none'
-        ] + inheritedStoreImplementationExports + securityTruthTestExports
+        ] + inheritedStoreImplementationExports + delosInternalTestSupportExports + securityTruthTestExports
     }
 }
 
@@ -503,7 +514,7 @@ tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
 registerDelosFocusedTest(
         'runDelosStage6BMariaDbDeadlockVictimLifecycleTest',
         'Runs the Stage 6B MariaDB-derived deadlock-victim wake-up lifecycle adaptation.',
-        ['org/apache/derby/impl/services/locks/DelosDeadlockVictimLifecycleTest.class'])
+        ['org/apache/derbyTesting/functionTests/tests/delos/DelosDeadlockVictimLifecycleTest.class'])
 
 tasks.named('runDelosStage6BMariaDbDeadlockVictimLifecycleTest') {
     dependsOn 'delosExternalSemanticGapStaticAnalysis'
