@@ -408,7 +408,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
             issues.add("Registry activated a test outside the explicit active authority: ${it}")
         }
 
-        Set<String> validAuthorityKinds = ['PRE_STAGE3_TASK', 'PRE_STAGE2_SUITE', 'STAGE4_NEW', 'STAGE5_NEW', 'STAGE6_NEW'] as Set<String>
+        Set<String> validAuthorityKinds = ['PRE_STAGE3_TASK', 'PRE_STAGE2_SUITE', 'STAGE4_NEW', 'STAGE5_NEW', 'STAGE6_NEW', 'STAGE7_NEW'] as Set<String>
         activeAuthority.values().each { row ->
             if (!validAuthorityKinds.contains(row.authorityKind)) {
                 issues.add("Invalid active authority kind for ${row.className}: ${row.authorityKind}")

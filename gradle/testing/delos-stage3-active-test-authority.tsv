@@ -5,6 +5,7 @@
 # STAGE4_NEW means the class is an explicitly reviewed Stage 4 addition with its own focused lane and provenance.
 # STAGE5_NEW means the class is an explicitly reviewed Stage 5 addition with its own focused lane and provenance.
 # STAGE6_NEW means the class is an explicitly reviewed Stage 6 addition with its own focused lane and provenance.
+# STAGE7_NEW means a dormant transitional class promoted as the enduring authority during Stage 7 consolidation.
 org.apache.derbyTesting.functionTests.tests.delos.DelosDdlCrashAtomicityTest	STAGE6_NEW	runDelosStage6BMariaDbDdlCrashAtomicityTest
 org.apache.derbyTesting.functionTests.tests.delos.DelosDeadlockVictimLifecycleTest	STAGE6_NEW	runDelosStage6BMariaDbDeadlockVictimLifecycleTest
 org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest	STAGE4_NEW	runDelosIsolationSpecificationTests
@@ -60,6 +61,7 @@ org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionTest	PRE_STA
 org.apache.derbyTesting.functionTests.tests.delos.MvccSqlTransactionalDdlTest	PRE_STAGE3_TASK	runDelosMvccTransactionalDdlTest
 org.apache.derbyTesting.functionTests.tests.delos.MvccSqlUnsupportedObjectTypeBoundaryTest	PRE_STAGE3_TASK	runDelosMvccUnsupportedTypeTruthTest
 org.apache.derbyTesting.functionTests.tests.delos.ObjectDeserializationBoundaryTest	PRE_STAGE3_TASK	runDelosGeneratedClassProductionJdbcDrdaTest,runDelosSecurityTruthTest
+org.apache.derbyTesting.functionTests.tests.delos.OptimizerPredicatePushdownProductionHookTest	STAGE7_NEW	runDelosOptimizerPredicatePushdownProductionHookTest
 org.apache.derbyTesting.functionTests.tests.delos.OptimizerStorageCostOptInTest	PRE_STAGE3_TASK	runDelosOptimizerStorageCostOptInTest
 org.apache.derbyTesting.functionTests.tests.delos.SecurityTruthTest	PRE_STAGE3_TASK	runDelosGeneratedClassProductionJdbcDrdaTest,runDelosSecurityTruthTest
 org.apache.derbyTesting.functionTests.tests.delos.SharedNoOpUpdatePropagationTest	PRE_STAGE3_TASK	runDelosSharedNoOpUpdatePropagationTest

@@ -20,10 +20,14 @@
  */
 package org.apache.derbyTesting.functionTests.tests.delos;
 
+import java.io.File;
 import java.sql.Connection;
 import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosOptimizerPredicatePushdownDiagnostics;
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.iapi.store.types.DelosStoragePredicatePushdown;
+import org.apache.derby.iapi.store.types.DelosStoragePredicatePushdownRequest;
 
 /** SQL gate for the production optimizer predicate-consumption hook. */
 public final class OptimizerPredicatePushdownProductionHookTest extends MvccSqlTestSupport {
@@ -90,6 +94,81 @@ public final class OptimizerPredicatePushdownProductionHookTest extends MvccSqlT
             } else {
                 System.setProperty(DelosOptimizerPredicatePushdownDiagnostics.CONSUMPTION_PROPERTY_NAME, oldConsumptionMode);
             }
+        }
+    }
+
+    public void testPredicateMetadataFailsClosedOutsideCurrentCommittedMvcc() throws Exception {
+        String databaseName = databaseName("optimizer-predicate-pushdown-safety-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table opt_push_heap_t "
+                    + "(id int primary key, name varchar(32), payload varchar(64))");
+            executeUpdate(connection, "create index opt_push_heap_name_idx on opt_push_heap_t(name)");
+            executeUpdate(connection, "create table opt_push_mvcc_t "
+                    + "(id int primary key, name varchar(32), payload varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into opt_push_heap_t values (1, 'heap-alpha', 'one')");
+            connection.commit();
+            executeUpdate(connection, "insert into opt_push_mvcc_t values (1, 'mvcc-alpha', 'one')");
+            connection.commit();
+
+            long heapContainerId = baseContainerId(connection, "OPT_PUSH_HEAP_T", "heap");
+            long mvccContainerId = mvccContainerId(connection, "OPT_PUSH_MVCC_T");
+            List<String> storageCandidate = List.of("id >= 1");
+            List<String> derbyRemainder = List.of("name like 'x%'");
+
+            DelosStoragePredicatePushdown heap = DelosStorageDiagnosticsRegistry.predicatePushdown(
+                    new DelosStoragePredicatePushdownRequest(
+                            "derby_heap",
+                            new File(databaseName).toPath(),
+                            0,
+                            heapContainerId,
+                            "heap current committed",
+                            true,
+                            false,
+                            false,
+                            storageCandidate,
+                            derbyRemainder));
+            assertFalse("heap must keep Delos storage candidates as Derby remainders", heap.pushedToStorage());
+            assertEquals(List.of("id >= 1", "name like 'x%'"), heap.remainderPredicates());
+
+            DelosStoragePredicatePushdown current = DelosStorageDiagnosticsRegistry.predicatePushdown(
+                    new DelosStoragePredicatePushdownRequest(
+                            "delos_mvcc",
+                            databasePath(databaseName),
+                            0,
+                            mvccContainerId,
+                            "MVCC current committed",
+                            true,
+                            false,
+                            false,
+                            storageCandidate,
+                            derbyRemainder));
+            assertTrue("current-committed MVCC ordered predicates should remain pushable metadata",
+                    current.pushedToStorage());
+            assertEquals(storageCandidate, current.pushedPredicates());
+            assertEquals(derbyRemainder, current.remainderPredicates());
+            assertTrue(current.safeForCurrentCommittedShortcut());
+            assertFalse(current.safeForSnapshotShortcut());
+
+            for (DelosStoragePredicatePushdownRequest request : List.of(
+                    new DelosStoragePredicatePushdownRequest(
+                            "delos_mvcc", databasePath(databaseName), 0, mvccContainerId,
+                            "MVCC snapshot", false, true, false, storageCandidate, derbyRemainder),
+                    new DelosStoragePredicatePushdownRequest(
+                            "delos_mvcc", databasePath(databaseName), 0, mvccContainerId,
+                            "MVCC writer borrowed", false, false, true, storageCandidate, derbyRemainder))) {
+                DelosStoragePredicatePushdown plan = DelosStorageDiagnosticsRegistry.predicatePushdown(request);
+                assertFalse("snapshot/writer-borrowed reads must fail closed to Derby remainder evaluation",
+                        plan.pushedToStorage());
+                assertEquals(List.of("id >= 1", "name like 'x%'"), plan.remainderPredicates());
+                assertFalse("unsupported read modes must not claim the current-committed shortcut",
+                        plan.safeForCurrentCommittedShortcut());
+            }
+
+            assertRows(connection, "select id, name from opt_push_heap_t", "1|heap-alpha");
+            assertRows(connection, "select id, name from opt_push_mvcc_t", "1|mvcc-alpha");
+            connection.commit();
         }
     }
 
