@@ -1,0 +1,3 @@
+# DelosDB Stage 6 externally informed non-isolation runtime provenance.
+# case_id	source_project	source_revision	source_file	license	adaptation_mode	upstream_semantic_intent	delosdb_adaptation	providers
+DEL-DEADLOCK-005	MariaDB	MariaDB archive sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7	mysql-test/suite/innodb/t/deadlock_victim_race.test	GPLv2-only	INDEPENDENT_EQUIVALENT	A transaction selected as deadlock victim while resuming through a changing wait graph must not continue as if a cancelled later lock were held	Independently authored DelosDB lock-manager cycle forces grant/deadlock wake-up races in both signal orders and proves 40001, no phantom victim grant, survivor resume, and waiter cleanup; no MariaDB code copied	heap,mvcc

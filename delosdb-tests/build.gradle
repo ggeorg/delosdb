@@ -501,6 +501,15 @@ tasks.named('runDelosStage6BPostgresSerializableUniquenessTest') {
 }
 
 registerDelosFocusedTest(
+        'runDelosStage6BMariaDbDeadlockVictimLifecycleTest',
+        'Runs the Stage 6B MariaDB-derived deadlock-victim wake-up lifecycle adaptation.',
+        ['org/apache/derby/impl/services/locks/DelosDeadlockVictimLifecycleTest.class'])
+
+tasks.named('runDelosStage6BMariaDbDeadlockVictimLifecycleTest') {
+    dependsOn 'delosExternalSemanticGapStaticAnalysis'
+}
+
+registerDelosFocusedTest(
         'runDelosDrdaApplicationUdtLanguageTests',
         'Runs inherited application UDT language tests with explicit DRDA allow-lists.',
         [
@@ -1240,10 +1249,11 @@ tasks.named('check') {
 }
 
 def externalSemanticGapInventory = rootProject.file('gradle/testing/delos-external-semantic-gap-inventory.tsv')
+def stage6RuntimeProvenance = rootProject.file('gradle/testing/delos-stage6-runtime-provenance.tsv')
 tasks.register('delosExternalSemanticGapStaticAnalysis') {
     group = 'verification'
     description = 'Validates the Stage 6 PostgreSQL/MariaDB semantic-gap inventory and writes its candidate summary.'
-    inputs.file externalSemanticGapInventory
+    inputs.files externalSemanticGapInventory, stage6RuntimeProvenance
     outputs.file layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt')
     doLast {
         def allowedClassifications = [
@@ -1289,6 +1299,30 @@ tasks.register('delosExternalSemanticGapStaticAnalysis') {
         def realGaps = rows.findAll { it[6] == 'REAL_SEMANTIC_GAP' }
         if (sourceCounts['PostgreSQL'] != 16 || sourceCounts['MariaDB'] != 16) failures << "Expected 16 rows per external source, found ${sourceCounts}"
         if (realGaps.size() != 9) failures << "Expected 9 confirmed semantic gaps, found ${realGaps.size()}"
+        def runtimeRows = stage6RuntimeProvenance.readLines('UTF-8')
+                .findAll { it && !it.startsWith('#') }
+                .collect { line -> line.split('\t', -1) as List }
+        def runtimeIds = new LinkedHashSet<String>()
+        runtimeRows.each { row ->
+            if (row.size() != 9) {
+                failures << "Malformed Stage 6 runtime provenance row with ${row.size()} columns: ${row.join('|')}"
+                return
+            }
+            def (id, source, revision, sourceFile, license, mode, intent, adaptation, providers) = row
+            if (!runtimeIds.add(id)) failures << "Duplicate Stage 6 runtime provenance id: ${id}"
+            if (!(source in ['PostgreSQL', 'MariaDB'])) failures << "Unknown runtime provenance source for ${id}: ${source}"
+            if (source == 'PostgreSQL') {
+                if (revision != 'PostgreSQL archive sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c') failures << "Unexpected PostgreSQL runtime provenance revision for ${id}"
+                if (license != 'PostgreSQL License') failures << "Unexpected PostgreSQL runtime provenance license for ${id}"
+            } else if (source == 'MariaDB') {
+                if (revision != 'MariaDB archive sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7') failures << "Unexpected MariaDB runtime provenance revision for ${id}"
+                if (license != 'GPLv2-only') failures << "Unexpected MariaDB runtime provenance license for ${id}"
+            }
+            if (mode != 'INDEPENDENT_EQUIVALENT') failures << "Runtime provenance mode must be INDEPENDENT_EQUIVALENT for ${id}"
+            if ([revision, sourceFile, license, intent, adaptation, providers].any { !it }) failures << "Blank Stage 6 runtime provenance field for ${id}"
+        }
+        if (!runtimeIds.contains('DEL-DEADLOCK-005')) failures << 'Missing MA-006 runtime adaptation provenance: DEL-DEADLOCK-005'
+
         if (!failures.isEmpty()) throw new GradleException('DelosDB Stage 6 semantic-gap inventory failures (' + failures.size() + '):\n  - ' + failures.join('\n  - '))
 
         def report = layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt').get().asFile
@@ -1300,6 +1334,7 @@ tasks.register('delosExternalSemanticGapStaticAnalysis') {
                 "PostgreSQL cases: ${sourceCounts['PostgreSQL']}\n" +
                 "MariaDB cases: ${sourceCounts['MariaDB']}\n" +
                 "Confirmed semantic gaps: ${realGaps.size()}\n" +
+                "Stage 6 non-isolation runtime adaptations: ${runtimeRows.size()}\n" +
                 allowedClassifications.sort().collect { key -> "${key}: ${classCounts[key] ?: 0}" }.join('\n') + '\n\n' +
                 'Adaptation queue:\n' +
                 realGaps.sort { a, b -> a[7] <=> b[7] ?: a[0] <=> b[0] }.collect { row ->

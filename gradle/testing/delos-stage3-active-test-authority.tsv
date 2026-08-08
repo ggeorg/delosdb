@@ -4,6 +4,8 @@
 # PRE_STAGE2_SUITE means Stage 2 removed a DelosDB-authored registration from an inherited suite and Stage 3 must preserve it independently.
 # STAGE4_NEW means the class is an explicitly reviewed Stage 4 addition with its own focused lane and provenance.
 # STAGE5_NEW means the class is an explicitly reviewed Stage 5 addition with its own focused lane and provenance.
+# STAGE6_NEW means the class is an explicitly reviewed Stage 6 addition with its own focused lane and provenance.
+org.apache.derby.impl.services.locks.DelosDeadlockVictimLifecycleTest	STAGE6_NEW	runDelosStage6BMariaDbDeadlockVictimLifecycleTest
 org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest	STAGE4_NEW	runDelosIsolationSpecificationTests
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassContractBehaviorTest	PRE_STAGE3_TASK	runDelosGeneratedClassContractBehaviorTest
 org.apache.derbyTesting.functionTests.tests.delos.GeneratedClassContractFreezeTest	PRE_STAGE3_TASK	runDelosGeneratedClassContractFreezeTest
