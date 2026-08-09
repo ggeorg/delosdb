@@ -26,6 +26,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.util.List;
 import org.apache.derby.iapi.jdbc.EnginePreparedStatement;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.compile.StablePlanRenderer;
@@ -94,6 +95,63 @@ public final class ExplainTest extends MvccSqlTestSupport {
             } catch (SQLException expected) {
                 assertEquals("42X04", expected.getSQLState());
             }
+            connection.rollback();
+        }
+    }
+
+    public void testExplainFormatAndRecompileDeterminism() throws Exception {
+        StablePlanModel format = new StablePlanModel(
+                StablePlanModel.CURRENT_SCHEMA_VERSION,
+                "stmt-1",
+                "SELECT",
+                "APP",
+                "n0",
+                List.of(new StablePlanModel.Node(
+                        "n0", null, "SCAN", "INDEX_SCAN", "\"APP\".\"T\"",
+                        "heap", "T_V_IDX", "NESTEDLOOP", 2.5d, 3.75d,
+                        List.of("STORE:COLUMN(T.V) = PARAMETER(1)"),
+                        List.of("INDEX:COLUMN(V):ASC"), "FORCED_INDEX")),
+                false);
+        assertEquals(
+                "PLAN schemaVersion=1 statementId=stmt-1 statementType=SELECT schema=APP "
+                        + "root=n0 nodes=1 truncated=false\n"
+                        + "n0 SCAN/INDEX_SCAN relation=\"APP\".\"T\" storage=heap "
+                        + "access=T_V_IDX join=NESTEDLOOP rows=2.5 cost=3.75 "
+                        + "reason=FORCED_INDEX "
+                        + "predicates=[STORE:COLUMN(T.V) = PARAMETER(1)] "
+                        + "ordering=[INDEX:COLUMN(V):ASC]\n",
+                StablePlanRenderer.text(format));
+        assertEquals(
+                "{\"schemaVersion\":1,\"statementId\":\"stmt-1\","
+                        + "\"statementType\":\"SELECT\",\"compilationSchema\":\"APP\","
+                        + "\"rootNodeId\":\"n0\",\"nodes\":[{"
+                        + "\"id\":\"n0\",\"parentId\":null,"
+                        + "\"logicalOperation\":\"SCAN\","
+                        + "\"physicalOperation\":\"INDEX_SCAN\","
+                        + "\"relation\":\"\\\"APP\\\".\\\"T\\\"\","
+                        + "\"storageMode\":\"heap\",\"accessPath\":\"T_V_IDX\","
+                        + "\"joinStrategy\":\"NESTEDLOOP\",\"estimatedRows\":2.5,"
+                        + "\"estimatedCost\":3.75,"
+                        + "\"predicates\":[\"STORE:COLUMN(T.V) = PARAMETER(1)\"],"
+                        + "\"ordering\":[\"INDEX:COLUMN(V):ASC\"],"
+                        + "\"decisionReason\":\"FORCED_INDEX\"}],\"truncated\":false}",
+                StablePlanRenderer.json(format));
+
+        String databaseName = databaseName("explain-recompile-db");
+        String sql = "select id from explain_recompile_t where v >= 10 order by v";
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table explain_recompile_t (id int primary key, v int)");
+            executeUpdate(connection, "create index explain_recompile_v_idx on explain_recompile_t(v)");
+            connection.commit();
+
+            ExplainOutput first = explain(connection, sql);
+            executeUpdate(connection, "call syscs_util.syscs_empty_statement_cache()");
+            connection.commit();
+            ExplainOutput second = explain(connection, sql);
+            assertEquals(first.model(), second.model());
+            assertEquals(first.text(), second.text());
+            assertEquals(first.json(), second.json());
             connection.rollback();
         }
     }

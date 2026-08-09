@@ -25,7 +25,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Deterministic text and JSON renderers for {@link StablePlanModel}. */
+/**
+ * Deterministic text and JSON renderers for {@link StablePlanModel}.
+ *
+ * <p>The public rendering contract is versioned by
+ * {@link StablePlanModel#schemaVersion()}. For schema version 1 the text
+ * header/field ordering and JSON field ordering are stable. Adding, removing,
+ * renaming, or reordering rendered fields requires a plan-schema version
+ * change rather than an unversioned output change.</p>
+ */
 public final class StablePlanRenderer {
     private StablePlanRenderer() {}
 

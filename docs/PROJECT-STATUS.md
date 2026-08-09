@@ -75,7 +75,7 @@ report prose do not participate in pass/fail.
 
 ## Current phase
 
-The current implementation phase is **Phase 10.2 — EXPLAIN**.
+The current implementation phase is **Phase 10.3 — storage-aware EXPLAIN ANALYZE**.
 
 Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now exposes:
 
@@ -94,9 +94,11 @@ Successful non-DML statements can have stable statement metadata with no result-
 optimize rejection is not converted into a synthetic plan: Derby's SQLState remains the authoritative
 rejection result.
 
-Phase 10.2A implements the first SQL surface: `EXPLAIN <statement>` returns one row with deterministic
-`PLAN_TEXT` and `PLAN_JSON` CLOBs rendered from the prepared statement's same immutable model. The
-target is bound/optimized normally but is not executed; compile-time SQLStates are preserved. Phase
-10.2 still requires network/compatibility and public-format closeout before moving to EXPLAIN ANALYZE.
+Phase 10.2 is complete. `EXPLAIN <statement>` returns one row with deterministic `PLAN_TEXT` and
+`PLAN_JSON` CLOBs rendered from the prepared statement's same immutable model. The target is
+bound/optimized normally but is not executed; compile-time SQLStates are preserved. Schema-version-1
+field ordering is frozen as the public text/JSON contract. Prepared parameters, statement-cache
+recompile determinism, heap/MVCC/join/predicate/`DISTINCT_SCAN` rendering, embedded/DRDA byte parity,
+and large CLOB delivery beyond the DRDA external-data threshold have permanent coverage.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.
