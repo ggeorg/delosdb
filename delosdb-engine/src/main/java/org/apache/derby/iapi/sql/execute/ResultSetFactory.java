@@ -616,6 +616,13 @@ public interface ResultSetFactory {
 		double optimizerEstimatedCost) 
 		throws StandardException;
 
+	/** Return the one-row deterministic text/JSON EXPLAIN result. */
+	NoPutResultSet getExplainResultSet(Activation activation,
+                                      int resultSetNumber,
+                                      double optimizerEstimatedRowCount,
+                                      double optimizerEstimatedCost)
+        throws StandardException;
+
 	/**
 		A row result set forms a result set on a single, known row value.
 		It is used to turn constant rows into result sets for use in

@@ -94,7 +94,9 @@ Successful non-DML statements can have stable statement metadata with no result-
 optimize rejection is not converted into a synthetic plan: Derby's SQLState remains the authoritative
 rejection result.
 
-Phase 10.2 must render deterministic text and machine-readable EXPLAIN from this one model. It must
-not introduce another optimizer tree, execution authority, or compiler IR.
+Phase 10.2A implements the first SQL surface: `EXPLAIN <statement>` returns one row with deterministic
+`PLAN_TEXT` and `PLAN_JSON` CLOBs rendered from the prepared statement's same immutable model. The
+target is bound/optimized normally but is not executed; compile-time SQLStates are preserved. Phase
+10.2 still requires network/compatibility and public-format closeout before moving to EXPLAIN ANALYZE.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

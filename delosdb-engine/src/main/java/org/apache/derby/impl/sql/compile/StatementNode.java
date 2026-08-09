@@ -66,7 +66,7 @@ public abstract class StatementNode extends QueryTreeNode
      * @param compilationSchema compilation schema name
      * @return stable diagnostic plan model
      */
-    public final StablePlanModel buildStablePlanModel(
+    public StablePlanModel buildStablePlanModel(
             String sourceText, String compilationSchema) {
         return StablePlanModelBuilder.build(this, sourceText, compilationSchema);
     }

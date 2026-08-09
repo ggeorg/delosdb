@@ -27,13 +27,17 @@ import org.apache.derby.iapi.services.loader.GeneratedMethod;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ResultSet;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
+import org.apache.derby.iapi.sql.compile.StablePlanRenderer;
 import org.apache.derby.iapi.sql.conn.Authorizer;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.sql.execute.ResultSetFactory;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.DataValueFactory;
 /**
  * ResultSetFactory provides a wrapper around all of
  * the result sets used in this execution implementation.
@@ -698,9 +702,22 @@ public class GenericResultSetFactory implements ResultSetFactory
                         optimizerEstimatedCost));
 	}
 
-	/**
-		@see ResultSetFactory#getRowResultSet
-	 */
+	/** @see ResultSetFactory#getExplainResultSet */
+    @Override
+    public NoPutResultSet getExplainResultSet(Activation activation,
+                                              int resultSetNumber,
+                                              double optimizerEstimatedRowCount,
+                                              double optimizerEstimatedCost)
+            throws StandardException {
+        StablePlanModel plan = activation.getPreparedStatement().getStablePlanModel();
+        ExecRow row = activation.getExecutionFactory().getValueRow(2);
+        DataValueFactory dvf = activation.getLanguageConnectionContext().getDataValueFactory();
+        row.setColumn(1, dvf.getClobDataValue(StablePlanRenderer.text(plan), null));
+        row.setColumn(2, dvf.getClobDataValue(StablePlanRenderer.json(plan), null));
+        return new RowResultSet(activation, row, true, resultSetNumber,
+                optimizerEstimatedRowCount, optimizerEstimatedCost);
+    }
+
 	public NoPutResultSet getRowResultSet(Activation activation, GeneratedMethod row,
 									 boolean canCacheRow,
 									 int resultSetNumber,

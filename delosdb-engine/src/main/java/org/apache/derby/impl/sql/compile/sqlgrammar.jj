@@ -2970,6 +2970,7 @@ StatementPart(Token[] tokenHolder) throws StandardException :
         return statementNode;
     }
 |   (
+        statementNode = explainStatement() |
         statementNode = createStatements() |
         statementNode = dropStatements() |
         statementNode = spsAlterStatement() |
@@ -2984,6 +2985,21 @@ StatementPart(Token[] tokenHolder) throws StandardException :
     )
     {
         return statementNode;
+    }
+}
+
+/*
+ * <A NAME="explainStatement">explainStatement</A>
+ */
+StatementNode
+explainStatement() throws StandardException :
+{
+    StatementNode statement;
+}
+{
+    <EXPLAIN> statement = StatementPart(null)
+    {
+        return new ExplainNode(statement, getContextManager());
     }
 }
 
