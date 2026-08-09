@@ -32,8 +32,16 @@ import org.apache.derby.shared.common.reference.ClassName;
 
 /** One-row result-set node used by SQL EXPLAIN. */
 final class ExplainResultSetNode extends RowResultSetNode {
-    ExplainResultSetNode(ContextManager cm) throws StandardException {
+    private final boolean analyze;
+    private ResultSetNode analyzedSource;
+
+    ExplainResultSetNode(boolean analyze, ContextManager cm) throws StandardException {
         super(columns(cm), null, cm);
+        this.analyze = analyze;
+    }
+
+    void setAnalyzedSource(ResultSetNode analyzedSource) {
+        this.analyzedSource = analyzedSource;
     }
 
     @Override
@@ -42,11 +50,13 @@ final class ExplainResultSetNode extends RowResultSetNode {
         assignResultSetNumber();
         acb.pushGetResultSetFactoryExpression(mb);
         acb.pushThisAsActivation(mb);
+        if (analyze) analyzedSource.generate(acb, mb);
         mb.push(getResultSetNumber());
         mb.push(getCostEstimate().rowCount());
         mb.push(getCostEstimate().getEstimatedCost());
-        mb.callMethod(VMOpcode.INVOKEINTERFACE, null, "getExplainResultSet",
-                ClassName.NoPutResultSet, 4);
+        mb.callMethod(VMOpcode.INVOKEINTERFACE, null,
+                analyze ? "getExplainAnalyzeResultSet" : "getExplainResultSet",
+                ClassName.NoPutResultSet, analyze ? 5 : 4);
     }
 
     private static ResultColumnList columns(ContextManager cm) throws StandardException {

@@ -718,6 +718,18 @@ public class GenericResultSetFactory implements ResultSetFactory
                 optimizerEstimatedRowCount, optimizerEstimatedCost);
     }
 
+    /** @see ResultSetFactory#getExplainAnalyzeResultSet */
+    @Override
+    public NoPutResultSet getExplainAnalyzeResultSet(
+            Activation activation,
+            NoPutResultSet source,
+            int resultSetNumber,
+            double optimizerEstimatedRowCount,
+            double optimizerEstimatedCost) throws StandardException {
+        return new ExplainAnalyzeResultSet(activation, source, resultSetNumber,
+                optimizerEstimatedRowCount, optimizerEstimatedCost);
+    }
+
 	public NoPutResultSet getRowResultSet(Activation activation, GeneratedMethod row,
 									 boolean canCacheRow,
 									 int resultSetNumber,

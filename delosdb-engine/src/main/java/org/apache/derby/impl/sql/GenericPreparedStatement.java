@@ -101,6 +101,7 @@ public class GenericPreparedStatement
 	protected GeneratedClass activationClass; // satisfies Activation
 	protected ResultDescription resultDesc;
     private StablePlanModel stablePlanModel;
+    private int[] stablePlanResultSetNumbers;
 	protected DataTypeDescriptor[] paramTypeDescriptors;
 	private String			spsName;
 	private SQLWarning		warnings;
@@ -240,6 +241,7 @@ public class GenericPreparedStatement
         compilingStatement = true;
         setActivationClass(null);
         stablePlanModel = null;
+        stablePlanResultSetNumbers = null;
     }
 
     /**
@@ -1076,6 +1078,17 @@ recompileOutOfDatePlan:
         this.stablePlanModel = stablePlanModel;
     }
 
+    @Override
+    public int[] getStablePlanResultSetNumbers()
+    {
+        return stablePlanResultSetNumbers == null ? null : stablePlanResultSetNumbers.clone();
+    }
+
+    void setStablePlanResultSetNumbers(int[] resultSetNumbers)
+    {
+        stablePlanResultSetNumbers = resultSetNumbers == null ? null : resultSetNumbers.clone();
+    }
+
 	//
 	// ExecPreparedStatement
 	//
@@ -1223,6 +1236,8 @@ recompileOutOfDatePlan:
 		clone.activationClass = getActivationClass();
 		clone.resultDesc = resultDesc;
         clone.stablePlanModel = stablePlanModel;
+        clone.stablePlanResultSetNumbers = stablePlanResultSetNumbers == null
+                ? null : stablePlanResultSetNumbers.clone();
 		clone.paramTypeDescriptors = paramTypeDescriptors;
 		clone.executionConstants = executionConstants;
 		clone.UUIDString = UUIDString;

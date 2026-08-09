@@ -61,6 +61,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 public abstract class ResultSetNode extends QueryTreeNode
 {
 	private int					resultSetNumber;
+    private boolean resultSetNumberAssigned;
 	/* Bit map of referenced tables under this ResultSetNode */
 	private JBitSet				referencedTableMap;
 	private ResultColumnList	resultColumns;
@@ -154,7 +155,12 @@ public abstract class ResultSetNode extends QueryTreeNode
 		return resultSetNumber;
 	}
     
-    void    setResultSetNumber( int rsn ) { resultSetNumber = rsn; }
+    void    setResultSetNumber( int rsn ) {
+        resultSetNumber = rsn;
+        resultSetNumberAssigned = true;
+    }
+
+    boolean hasAssignedResultSetNumber() { return resultSetNumberAssigned; }
     
 
 	/**
@@ -206,6 +212,7 @@ public abstract class ResultSetNode extends QueryTreeNode
     void assignResultSetNumber() throws StandardException
 	{
 		resultSetNumber = getCompilerContext().getNextResultSetNumber();
+        resultSetNumberAssigned = true;
 		resultColumns.setResultSetNumber(resultSetNumber);
 	}
 

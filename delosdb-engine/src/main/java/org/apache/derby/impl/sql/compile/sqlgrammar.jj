@@ -2456,6 +2456,7 @@ TOKEN [IGNORE_CASE] :
 TOKEN [IGNORE_CASE] :
 {	/* Additional JSQL keywords -- non-SQL92 non-reserved Keywords */
 	<AFTER: "after">
+|	<ANALYZE: "analyze">
 |	<AGGREGATE: "aggregate">
 |	<BEFORE: "before">
 |	<CLASS: "class">
@@ -2995,11 +2996,12 @@ StatementNode
 explainStatement() throws StandardException :
 {
     StatementNode statement;
+    boolean analyze = false;
 }
 {
-    <EXPLAIN> statement = StatementPart(null)
+    <EXPLAIN> [ <ANALYZE> { analyze = true; } ] statement = StatementPart(null)
     {
-        return new ExplainNode(statement, getContextManager());
+        return new ExplainNode(statement, analyze, getContextManager());
     }
 }
 
@@ -15048,6 +15050,7 @@ nonReservedKeyword()  :
 	|	tok = <ABSVAL>  
 	|	tok = <ACTION>
 	|	tok = <AFTER>
+	|	tok = <ANALYZE>
 	|	tok = <AGGREGATE>
 	|	tok = <ALWAYS>
 	|	tok = <BEFORE>

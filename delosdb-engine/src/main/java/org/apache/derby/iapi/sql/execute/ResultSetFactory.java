@@ -623,6 +623,14 @@ public interface ResultSetFactory {
                                       double optimizerEstimatedCost)
         throws StandardException;
 
+	/** Execute a query and return its stable plan plus bounded runtime evidence. */
+	NoPutResultSet getExplainAnalyzeResultSet(Activation activation,
+                                             NoPutResultSet source,
+                                             int resultSetNumber,
+                                             double optimizerEstimatedRowCount,
+                                             double optimizerEstimatedCost)
+        throws StandardException;
+
 	/**
 		A row result set forms a result set on a single, known row value.
 		It is used to turn constant rows into result sets for use in

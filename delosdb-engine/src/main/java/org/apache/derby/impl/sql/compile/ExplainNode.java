@@ -24,26 +24,43 @@ package org.apache.derby.impl.sql.compile;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.shared.common.reference.SQLState;
 
-/** Compile-only wrapper for {@code EXPLAIN <statement>}. */
+/** Wrapper for compile-only EXPLAIN and query-only EXPLAIN ANALYZE. */
 final class ExplainNode extends CursorNode {
     private final StatementNode explained;
+    private final boolean analyze;
 
-    ExplainNode(StatementNode explained, ContextManager cm) throws StandardException {
-        super("EXPLAIN", new ExplainResultSetNode(cm), null, null, null, null, false,
+    ExplainNode(StatementNode explained, boolean analyze, ContextManager cm)
+            throws StandardException {
+        super(analyze ? "EXPLAIN ANALYZE" : "EXPLAIN",
+                new ExplainResultSetNode(analyze, cm), null, null, null, null, false,
                 READ_ONLY, null, false, cm);
+        if (analyze && !(explained instanceof CursorNode)) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED, "EXPLAIN ANALYZE for non-query statements");
+        }
         this.explained = explained;
+        this.analyze = analyze;
     }
 
     @Override
     public void bindStatement() throws StandardException {
         explained.bindStatement();
+        if (analyze && ((CursorNode) explained).getUpdateMode() != READ_ONLY) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED, "EXPLAIN ANALYZE for updatable queries");
+        }
         super.bindStatement();
     }
 
     @Override
     public void optimizeStatement() throws StandardException {
         explained.optimizeStatement();
+        if (analyze) {
+            ((ExplainResultSetNode) resultSet).setAnalyzedSource(
+                    ((CursorNode) explained).resultSet);
+        }
         super.optimizeStatement();
     }
 
@@ -54,17 +71,28 @@ final class ExplainNode extends CursorNode {
 
     @Override
     public StablePlanModel buildStablePlanModel(String sourceText, String compilationSchema) {
-        return explained.buildStablePlanModel(explainedSource(sourceText), compilationSchema);
+        return explained.buildStablePlanModel(
+                explainedSource(sourceText, analyze), compilationSchema);
     }
 
-    private static String explainedSource(String source) {
+    @Override
+    public int[] buildStablePlanResultSetNumbers() {
+        return analyze ? StablePlanModelBuilder.resultSetNumbers(explained) : null;
+    }
+
+    private static String explainedSource(String source, boolean analyze) {
         if (source == null) return "";
-        int start = 0;
+        int start = skipKeyword(source, 0, "EXPLAIN");
+        if (analyze) start = skipKeyword(source, start, "ANALYZE");
+        return source.substring(start);
+    }
+
+    private static int skipKeyword(String source, int start, String keyword) {
         while (start < source.length() && Character.isWhitespace(source.charAt(start))) start++;
-        if (source.regionMatches(true, start, "EXPLAIN", 0, 7)) {
-            start += 7;
+        if (source.regionMatches(true, start, keyword, 0, keyword.length())) {
+            start += keyword.length();
             while (start < source.length() && Character.isWhitespace(source.charAt(start))) start++;
         }
-        return source.substring(start);
+        return start;
     }
 }

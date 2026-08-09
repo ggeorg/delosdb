@@ -551,6 +551,7 @@ public class GenericStatement
                             qt.buildStablePlanModel(getSource(), compilationSchema.getDescriptorName());
 
 					GeneratedClass ac = qt.generate(preparedStmt.getByteCodeSaver());
+                    int[] stablePlanResultSetNumbers = qt.buildStablePlanResultSetNumbers();
 
 					generateTime = getCurrentTimeMillis(lcc);
 					/* endTimestamp only meaningful if generateTime is meaningful.
@@ -592,6 +593,7 @@ public class GenericStatement
 					preparedStmt.setSPSName(qt.getSPSName());
 					preparedStmt.completeCompile(qt);
                     preparedStmt.setStablePlanModel(stablePlanModel);
+                    preparedStmt.setStablePlanResultSetNumbers(stablePlanResultSetNumbers);
 					preparedStmt.setCompileTimeWarnings(cc.getWarnings());
 
                     // Schedule updates of any stale index statistics we may

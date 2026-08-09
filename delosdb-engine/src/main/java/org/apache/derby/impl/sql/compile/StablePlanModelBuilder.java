@@ -47,7 +47,15 @@ final class StablePlanModelBuilder {
 
     private final List<StablePlanModel.Node> nodes = new ArrayList<>();
     private final IdentityHashMap<ResultSetNode, String> seen = new IdentityHashMap<>();
+    private final List<Integer> resultSetNumbers;
+    private final boolean describeNodes;
+    private int nodeCount;
     private boolean truncated;
+
+    private StablePlanModelBuilder(boolean describeNodes, boolean captureResultSetNumbers) {
+        this.describeNodes = describeNodes;
+        resultSetNumbers = captureResultSetNumbers ? new ArrayList<>() : null;
+    }
 
     static StablePlanModel build(
             StatementNode statement, String sourceText, String compilationSchema) {
@@ -57,8 +65,8 @@ final class StablePlanModelBuilder {
         String statementId = UUID.nameUUIDFromBytes(
                 (schema + '\u0000' + source).getBytes(StandardCharsets.UTF_8)).toString();
 
-        StablePlanModelBuilder builder = new StablePlanModelBuilder();
-        ResultSetNode root = statement instanceof DMLStatementNode dml ? dml.resultSet : null;
+        StablePlanModelBuilder builder = new StablePlanModelBuilder(true, false);
+        ResultSetNode root = root(statement);
         String rootNodeId = root == null ? null : builder.visit(root, null);
 
         return new StablePlanModel(
@@ -71,6 +79,18 @@ final class StablePlanModelBuilder {
                 builder.truncated);
     }
 
+    static int[] resultSetNumbers(StatementNode statement) {
+        StablePlanModelBuilder builder = new StablePlanModelBuilder(false, true);
+        builder.visit(root(statement), null);
+        int[] result = new int[builder.resultSetNumbers.size()];
+        for (int i = 0; i < result.length; i++) result[i] = builder.resultSetNumbers.get(i);
+        return result;
+    }
+
+    private static ResultSetNode root(StatementNode statement) {
+        return statement instanceof DMLStatementNode dml ? dml.resultSet : null;
+    }
+
     private String visit(ResultSetNode node, String parentId) {
         if (node == null) {
             return null;
@@ -80,14 +100,17 @@ final class StablePlanModelBuilder {
         if (existing != null) {
             return existing;
         }
-        if (nodes.size() >= MAX_NODES) {
+        if (nodeCount >= MAX_NODES) {
             truncated = true;
             return null;
         }
 
-        String id = "n" + nodes.size();
+        String id = "n" + nodeCount++;
         seen.put(node, id);
-        nodes.add(describe(node, id, parentId));
+        if (describeNodes) nodes.add(describe(node, id, parentId));
+        if (resultSetNumbers != null) {
+            resultSetNumbers.add(node.hasAssignedResultSetNumber() ? node.getResultSetNumber() : -1);
+        }
 
         if (node instanceof IndexToBaseRowNode indexToBaseRow) {
             visit(indexToBaseRow.source, id);

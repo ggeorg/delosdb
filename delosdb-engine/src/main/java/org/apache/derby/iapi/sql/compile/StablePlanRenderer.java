@@ -147,7 +147,7 @@ public final class StablePlanRenderer {
         return out.append(']');
     }
 
-    private static StringBuilder jsonString(StringBuilder out, String value) {
+    static StringBuilder jsonString(StringBuilder out, String value) {
         out.append('"');
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);

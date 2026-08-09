@@ -71,6 +71,11 @@ public abstract class StatementNode extends QueryTreeNode
         return StablePlanModelBuilder.build(this, sourceText, compilationSchema);
     }
 
+    /** Build runtime result-set identities aligned with stable plan node order. */
+    public int[] buildStablePlanResultSetNumbers() {
+        return null;
+    }
+
 	/**
 	 * By default, assume StatementNodes are atomic.
 	 * The rare statements that aren't atomic (e.g.

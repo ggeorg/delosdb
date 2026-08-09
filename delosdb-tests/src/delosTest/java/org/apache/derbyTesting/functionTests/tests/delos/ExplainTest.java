@@ -30,8 +30,10 @@ import java.util.List;
 import org.apache.derby.iapi.jdbc.EnginePreparedStatement;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.compile.StablePlanRenderer;
+import org.apache.derby.iapi.sql.compile.StablePlanExecutionRenderer;
+import org.apache.derby.iapi.sql.execute.StablePlanExecutionEvidence;
 
-/** Phase 10.2 proof for deterministic SQL EXPLAIN over StablePlanModel. */
+/** Phase 10.2/10.3 proof for deterministic EXPLAIN and query execution evidence. */
 public final class ExplainTest extends MvccSqlTestSupport {
     public void testExplainRendersSameHeapAndMvccPreparedPlan() throws Exception {
         String databaseName = databaseName("explain-plan-db");
@@ -137,6 +139,38 @@ public final class ExplainTest extends MvccSqlTestSupport {
                         + "\"decisionReason\":\"FORCED_INDEX\"}],\"truncated\":false}",
                 StablePlanRenderer.json(format));
 
+        StablePlanExecutionEvidence evidence = new StablePlanExecutionEvidence(
+                1,
+                "stmt-1",
+                2,
+                List.of(new StablePlanExecutionEvidence.Node(
+                        "n0",
+                        true,
+                        1,
+                        3,
+                        1,
+                        List.of(
+                                new StablePlanExecutionEvidence.Metric("ROWS_VISITED", 3),
+                                new StablePlanExecutionEvidence.Metric("ROWS_QUALIFIED", 2)))),
+                false);
+        assertEquals(
+                StablePlanRenderer.text(format)
+                        + "EXECUTION schemaVersion=1 statementId=stmt-1 "
+                        + "rootRowsReturned=2 nodes=1 truncated=false\n"
+                        + "n0 observed=true opens=1 rowsSeen=3 rowsFiltered=1 "
+                        + "storage=[ROWS_VISITED=3,ROWS_QUALIFIED=2]\n",
+                StablePlanExecutionRenderer.text(format, evidence));
+        assertEquals(
+                "{\"plan\":" + StablePlanRenderer.json(format)
+                        + ",\"execution\":{\"schemaVersion\":1,"
+                        + "\"statementId\":\"stmt-1\",\"rootRowsReturned\":2,"
+                        + "\"nodes\":[{\"nodeId\":\"n0\",\"observed\":true,"
+                        + "\"opens\":1,\"rowsSeen\":3,\"rowsFiltered\":1,"
+                        + "\"storageMetrics\":[{\"name\":\"ROWS_VISITED\",\"value\":3},"
+                        + "{\"name\":\"ROWS_QUALIFIED\",\"value\":2}]}],"
+                        + "\"truncated\":false}}",
+                StablePlanExecutionRenderer.json(format, evidence));
+
         String databaseName = databaseName("explain-recompile-db");
         String sql = "select id from explain_recompile_t where v >= 10 order by v";
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -152,6 +186,102 @@ public final class ExplainTest extends MvccSqlTestSupport {
             assertEquals(first.model(), second.model());
             assertEquals(first.text(), second.text());
             assertEquals(first.json(), second.json());
+            connection.rollback();
+        }
+    }
+
+    public void testExplainAnalyzeExecutesSelectWithHeapAndMvccEvidence() throws Exception {
+        String databaseName = databaseName("explain-analyze-storage-db");
+        String heap = "select id from explain_analyze_heap_t --DERBY-PROPERTIES index=null\n"
+                + "where v >= 20";
+        String mvcc = "select id from explain_analyze_mvcc_t --DERBY-PROPERTIES index=null\n"
+                + "where v >= 20";
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table explain_analyze_heap_t (id int primary key, v int)");
+            executeUpdate(connection,
+                    "create table explain_analyze_mvcc_t (id int primary key, v int) "
+                            + "using delos_mvcc");
+            executeUpdate(connection,
+                    "insert into explain_analyze_heap_t values (1, 10), (2, 20), (3, 30)");
+            executeUpdate(connection,
+                    "insert into explain_analyze_mvcc_t values (1, 10), (2, 20), (3, 30)");
+            connection.commit();
+
+            ExplainOutput heapOutput = analyze(connection, heap);
+            assertTrue(heapOutput.text().contains("rootRowsReturned=2"));
+            assertTrue(heapOutput.text().contains("storage=heap"));
+            assertTrue(heapOutput.text().contains("ROWS_VISITED="));
+            assertTrue(heapOutput.text().contains("ROWS_QUALIFIED="));
+            assertTrue(heapOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(heapOutput.json().contains("\"name\":\"PAGES_VISITED\""));
+
+            ExplainOutput mvccOutput = analyze(connection, mvcc);
+            assertTrue(mvccOutput.text().contains("rootRowsReturned=2"));
+            assertTrue(mvccOutput.text().contains("storage=delos_mvcc"));
+            assertTrue(mvccOutput.text().contains("ROWS_VISITED="));
+            assertTrue(mvccOutput.text().contains("MVCC_VISIBILITY_CHECKS="));
+            assertTrue(mvccOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(mvccOutput.json().contains("\"name\":\"MVCC_VERSION_CHAIN_STEPS\""));
+            connection.rollback();
+        }
+    }
+
+    public void testExplainAnalyzeParametersAndMutationBoundary() throws Exception {
+        String databaseName = databaseName("explain-analyze-boundary-db");
+        String sql = "select id from explain_analyze_parameter_t where analyze >= ? order by id";
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table explain_analyze_parameter_t (id int primary key, analyze int)");
+            executeUpdate(connection,
+                    "insert into explain_analyze_parameter_t values (1, 10), (2, 20), (3, 30)");
+            connection.commit();
+
+            try (PreparedStatement statement = connection.prepareStatement("explain analyze " + sql)) {
+                StablePlanModel direct;
+                try (PreparedStatement plain = connection.prepareStatement(sql)) {
+                    direct = stablePlan(plain);
+                }
+                assertEquals(direct, stablePlan(statement));
+                statement.setInt(1, 20);
+                try (ResultSet rs = statement.executeQuery()) {
+                    assertTrue(rs.next());
+                    assertTrue(rs.getString(1).contains("rootRowsReturned=2"));
+                    assertTrue(rs.getString(2).contains("\"rootRowsReturned\":2"));
+                    assertFalse(rs.next());
+                }
+            }
+
+            try {
+                connection.prepareStatement(
+                        "explain analyze update explain_analyze_parameter_t set analyze = 99 where id = 1");
+                fail("EXPLAIN ANALYZE must reject mutation in Phase 10.3A");
+            } catch (SQLException expected) {
+                assertEquals("0A000", expected.getSQLState());
+            }
+            try {
+                connection.prepareStatement("explain analyze create table explain_analyze_ddl_t(i int)");
+                fail("EXPLAIN ANALYZE must reject DDL in Phase 10.3A");
+            } catch (SQLException expected) {
+                assertEquals("0A000", expected.getSQLState());
+            }
+            try {
+                connection.prepareStatement(
+                        "explain analyze select * from explain_analyze_parameter_t for update");
+                fail("EXPLAIN ANALYZE must reject updatable cursors in Phase 10.3A");
+            } catch (SQLException expected) {
+                assertEquals("0A000", expected.getSQLState());
+            }
+            try (Statement query = connection.createStatement();
+                    ResultSet rs = query.executeQuery(
+                            "select analyze from explain_analyze_parameter_t where id = 1")) {
+                assertTrue(rs.next());
+                assertEquals(10, rs.getInt(1));
+            }
             connection.rollback();
         }
     }
@@ -190,6 +320,33 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 assertTrue(json.startsWith("{\"schemaVersion\":1,"));
                 assertTrue(json.endsWith("}"));
                 return new ExplainOutput(model, text, json);
+            }
+        }
+    }
+
+    private static ExplainOutput analyze(Connection connection, String sql) throws Exception {
+        StablePlanModel direct;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            direct = stablePlan(statement);
+        }
+        try (PreparedStatement statement = connection.prepareStatement("explain analyze " + sql)) {
+            assertEquals(direct, stablePlan(statement));
+            try (ResultSet rs = statement.executeQuery()) {
+                assertEquals(2, rs.getMetaData().getColumnCount());
+                assertEquals("PLAN_TEXT", rs.getMetaData().getColumnLabel(1));
+                assertEquals("PLAN_JSON", rs.getMetaData().getColumnLabel(2));
+                assertEquals(Types.CLOB, rs.getMetaData().getColumnType(1));
+                assertEquals(Types.CLOB, rs.getMetaData().getColumnType(2));
+                assertTrue(rs.next());
+                String text = rs.getString(1);
+                String json = rs.getString(2);
+                assertFalse(rs.next());
+                assertTrue(text.startsWith("PLAN schemaVersion=1 "));
+                assertTrue(text.contains("\nEXECUTION schemaVersion=1 "));
+                assertTrue(json.startsWith("{\"plan\":{\"schemaVersion\":1,"));
+                assertTrue(json.contains("\"execution\":{\"schemaVersion\":1,"));
+                assertTrue(json.endsWith("}}"));
+                return new ExplainOutput(stablePlan(statement), text, json);
             }
         }
     }

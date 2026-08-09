@@ -98,6 +98,9 @@ public interface ExecPreparedStatement
      */
     StablePlanModel getStablePlanModel();
 
+    /** Return generated result-set numbers aligned with stable plan node order. */
+    int[] getStablePlanResultSetNumbers();
+
     /**
      * <p>
      * Checks whether this PreparedStatement is up to date and its activation

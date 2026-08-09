@@ -36,7 +36,7 @@ import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
-/** Phase 10.2 embedded/DRDA and large-output compatibility proof for EXPLAIN. */
+/** Phase 10.2/10.3 embedded/DRDA compatibility proof for EXPLAIN surfaces. */
 public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
     public ExplainCompatibilityTest(String name) {
         super(name);
@@ -72,6 +72,39 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
             assertSameExplain(network, embedded,
                     "select distinct note from explain_compat_heap_t",
                     "DISTINCT/DISTINCT_SCAN");
+            network.rollback();
+            embedded.rollback();
+        }
+    }
+
+    public void testExplainAnalyzePayloadParity() throws Exception {
+        assertNetworkClient();
+        try (Connection embedded = openEmbedded("explain-compat-embedded-analyze")) {
+            Connection network = getConnection();
+            setupAnalyzeSchema(network);
+            setupAnalyzeSchema(embedded);
+
+            assertSameAnalyze(network, embedded,
+                    "select id from explain_analyze_compat_heap_t "
+                            + "--DERBY-PROPERTIES index=null\n"
+                            + "where v >= 20",
+                    "storage=heap", "rootRowsReturned=2", "ROWS_VISITED");
+            assertSameAnalyze(network, embedded,
+                    "select id from explain_analyze_compat_mvcc_t "
+                            + "--DERBY-PROPERTIES index=null\n"
+                            + "where v >= 20",
+                    "storage=delos_mvcc", "rootRowsReturned=2",
+                    "MVCC_VISIBILITY_CHECKS", "MVCC_VERSION_CHAIN_STEPS");
+
+            String parameterSql =
+                    "explain analyze select id from explain_analyze_compat_heap_t where v >= ?";
+            try (PreparedStatement remote = network.prepareStatement(parameterSql);
+                    PreparedStatement local = embedded.prepareStatement(parameterSql)) {
+                assertEquals(Types.INTEGER, remote.getParameterMetaData().getParameterType(1));
+                remote.setInt(1, 20);
+                local.setInt(1, 20);
+                assertEquals(readExplain(local), readExplain(remote));
+            }
             network.rollback();
             embedded.rollback();
         }
@@ -138,6 +171,20 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         connection.commit();
     }
 
+    private static void setupAnalyzeSchema(Connection connection) throws SQLException {
+        connection.setAutoCommit(false);
+        executeUpdate(connection,
+                "create table explain_analyze_compat_heap_t (id int primary key, v int)");
+        executeUpdate(connection,
+                "create table explain_analyze_compat_mvcc_t (id int primary key, v int) "
+                        + "using delos_mvcc");
+        executeUpdate(connection,
+                "insert into explain_analyze_compat_heap_t values (1, 10), (2, 20), (3, 30)");
+        executeUpdate(connection,
+                "insert into explain_analyze_compat_mvcc_t values (1, 10), (2, 20), (3, 30)");
+        connection.commit();
+    }
+
     private static ExplainOutput parameterScenario(Connection connection) throws Exception {
         connection.setAutoCommit(false);
         executeUpdate(connection, "create table explain_compat_param_t (id int primary key, v int)");
@@ -173,6 +220,23 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         assertContains(remote, fragments);
         assertEquals("PLAN_TEXT differs across embedded/DRDA for " + sql, local.text(), remote.text());
         assertEquals("PLAN_JSON differs across embedded/DRDA for " + sql, local.json(), remote.json());
+    }
+
+    private static void assertSameAnalyze(
+            Connection network, Connection embedded, String sql, String... fragments) throws Exception {
+        ExplainOutput remote = analyze(network, sql);
+        ExplainOutput local = analyze(embedded, sql);
+        assertContains(remote, fragments);
+        assertEquals("ANALYZE PLAN_TEXT differs across embedded/DRDA for " + sql,
+                local.text(), remote.text());
+        assertEquals("ANALYZE PLAN_JSON differs across embedded/DRDA for " + sql,
+                local.json(), remote.json());
+    }
+
+    private static ExplainOutput analyze(Connection connection, String sql) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement("explain analyze " + sql)) {
+            return readExplain(statement);
+        }
     }
 
     private static ExplainOutput explain(Connection connection, String sql) throws Exception {
