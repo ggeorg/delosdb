@@ -62,13 +62,14 @@ public final class StablePlanExecutionEvidenceBuilder {
             RealNoPutResultSetStatistics runtime = runtimeNodes.get(resultSetNumber);
             if (resultSetNumber < 0 || runtime == null) {
                 evidence.add(new StablePlanExecutionEvidence.Node(
-                        plan.nodes().get(i).id(), false, 0, 0, 0, 0, 0, 0, 0, List.of()));
+                        plan.nodes().get(i).id(), false, 0, null, 0, 0, 0, 0, 0, 0, List.of()));
                 continue;
             }
             evidence.add(new StablePlanExecutionEvidence.Node(
                     plan.nodes().get(i).id(),
                     true,
                     runtime.numOpens,
+                    actualRows(runtime),
                     runtime.rowsSeen,
                     runtime.rowsFiltered,
                     runtime.getTotalTime(),
@@ -83,6 +84,40 @@ public final class StablePlanExecutionEvidenceBuilder {
                 rootRowsReturned,
                 evidence,
                 truncated);
+    }
+
+    private static Long actualRows(RealNoPutResultSetStatistics runtime) {
+        return switch (runtime) {
+            case RealJoinResultSetStatistics value -> (long) value.rowsReturned;
+            case RealSortStatistics value -> (long) value.rowsReturned;
+            case RealUnionResultSetStatistics value -> (long) value.rowsReturned;
+            case RealSetOpResultSetStatistics value -> (long) value.rowsReturned;
+            case RealRowResultSetStatistics value -> (long) value.rowsReturned;
+            case RealGroupedAggregateStatistics value -> (long) value.rowsReturned;
+            default -> derivedActualRows(runtime);
+        };
+    }
+
+    private static Long derivedActualRows(RealNoPutResultSetStatistics runtime) {
+        return switch (runtime) {
+            case RealRowCountStatistics value -> (long) value.rowsSeen;
+            case RealScalarAggregateStatistics value -> (long) value.numOpens;
+            case RealTableScanStatistics value -> (long) value.rowsSeen - value.rowsFiltered;
+            case RealHashScanStatistics value -> (long) value.rowsSeen;
+            case RealIndexRowToBaseRowStatistics value ->
+                    (long) value.rowsSeen - value.rowsFiltered;
+            case RealProjectRestrictStatistics value ->
+                    (long) value.rowsSeen - value.rowsFiltered;
+            case RealWindowResultSetStatistics value ->
+                    (long) value.rowsSeen - value.rowsFiltered;
+            case RealVTIStatistics value -> (long) value.rowsSeen;
+            case RealNormalizeResultSetStatistics value -> (long) value.rowsSeen;
+            case RealMaterializedResultSetStatistics value -> (long) value.rowsSeen;
+            case RealScrollInsensitiveResultSetStatistics value -> (long) value.rowsSeen;
+            case RealAnyResultSetStatistics value -> (long) value.rowsSeen;
+            case RealOnceResultSetStatistics value -> (long) value.rowsSeen;
+            default -> null;
+        };
     }
 
     private static void index(

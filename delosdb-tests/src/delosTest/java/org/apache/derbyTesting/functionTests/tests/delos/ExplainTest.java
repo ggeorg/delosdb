@@ -147,6 +147,7 @@ public final class ExplainTest extends MvccSqlTestSupport {
                         "n0",
                         true,
                         1,
+                        2L,
                         3,
                         1,
                         9,
@@ -159,24 +160,36 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 false);
         assertEquals(
                 StablePlanRenderer.text(format)
-                        + "EXECUTION schemaVersion=2 statementId=stmt-1 "
+                        + "EXECUTION schemaVersion=3 statementId=stmt-1 "
                         + "rootRowsReturned=2 nodes=1 truncated=false\n"
-                        + "n0 observed=true opens=1 rowsSeen=3 rowsFiltered=1 "
+                        + "n0 observed=true opens=1 actualRows=2 rowsSeen=3 rowsFiltered=1 "
                         + "elapsedMillis=9 openMillis=2 nextMillis=6 closeMillis=1 "
                         + "storage=[ROWS_VISITED=3,ROWS_QUALIFIED=2]\n",
                 StablePlanExecutionRenderer.text(format, evidence));
         assertEquals(
                 "{\"plan\":" + StablePlanRenderer.json(format)
-                        + ",\"execution\":{\"schemaVersion\":2,"
+                        + ",\"execution\":{\"schemaVersion\":3,"
                         + "\"statementId\":\"stmt-1\",\"rootRowsReturned\":2,"
                         + "\"nodes\":[{\"nodeId\":\"n0\",\"observed\":true,"
-                        + "\"opens\":1,\"rowsSeen\":3,\"rowsFiltered\":1,"
+                        + "\"opens\":1,\"actualRows\":2,\"rowsSeen\":3,\"rowsFiltered\":1,"
                         + "\"elapsedMillis\":9,\"openMillis\":2,\"nextMillis\":6,"
                         + "\"closeMillis\":1,"
                         + "\"storageMetrics\":[{\"name\":\"ROWS_VISITED\",\"value\":3},"
                         + "{\"name\":\"ROWS_QUALIFIED\",\"value\":2}]}],"
                         + "\"truncated\":false}}",
                 StablePlanExecutionRenderer.json(format, evidence));
+
+        StablePlanExecutionEvidence unknownRows = new StablePlanExecutionEvidence(
+                StablePlanExecutionEvidence.CURRENT_SCHEMA_VERSION,
+                "stmt-1",
+                2,
+                List.of(new StablePlanExecutionEvidence.Node(
+                        "n0", true, 1, null, 3, 1, 9, 2, 6, 1, List.of())),
+                false);
+        assertTrue(StablePlanExecutionRenderer.text(format, unknownRows)
+                .contains("actualRows=null"));
+        assertTrue(StablePlanExecutionRenderer.json(format, unknownRows)
+                .contains("\"actualRows\":null"));
 
         String databaseName = databaseName("explain-recompile-db");
         String sql = "select id from explain_recompile_t where v >= 10 order by v";
@@ -219,24 +232,77 @@ public final class ExplainTest extends MvccSqlTestSupport {
 
             ExplainOutput heapOutput = analyze(connection, heap);
             assertTrue(heapOutput.text().contains("rootRowsReturned=2"));
+            assertTrue(heapOutput.text().contains("actualRows=2"));
             assertTrue(heapOutput.text().contains("storage=heap"));
             assertTrue(heapOutput.text().contains("ROWS_VISITED="));
             assertTrue(heapOutput.text().contains("ROWS_QUALIFIED="));
             assertTrue(heapOutput.text().contains("elapsedMillis="));
             assertTrue(heapOutput.text().contains("nextMillis="));
             assertTrue(heapOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(heapOutput.json().contains("\"actualRows\":2"));
             assertTrue(heapOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(heapOutput.json().contains("\"name\":\"PAGES_VISITED\""));
 
             ExplainOutput mvccOutput = analyze(connection, mvcc);
             assertTrue(mvccOutput.text().contains("rootRowsReturned=2"));
+            assertTrue(mvccOutput.text().contains("actualRows=2"));
             assertTrue(mvccOutput.text().contains("storage=delos_mvcc"));
             assertTrue(mvccOutput.text().contains("ROWS_VISITED="));
             assertTrue(mvccOutput.text().contains("MVCC_VISIBILITY_CHECKS="));
             assertTrue(mvccOutput.text().contains("elapsedMillis="));
             assertTrue(mvccOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(mvccOutput.json().contains("\"actualRows\":2"));
             assertTrue(mvccOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(mvccOutput.json().contains("\"name\":\"MVCC_VERSION_CHAIN_STEPS\""));
+            connection.rollback();
+        }
+    }
+
+    public void testExplainAnalyzeActualRowsAcrossOperatorFamilies() throws Exception {
+        String databaseName = databaseName("explain-analyze-actual-rows-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table explain_analyze_rows_t (id int primary key, g int, v int)");
+            executeUpdate(connection,
+                    "create table explain_analyze_join_t (id int primary key, marker int)");
+            executeUpdate(connection,
+                    "insert into explain_analyze_rows_t values "
+                            + "(1, 1, 10), (2, 1, 20), (3, 2, 30)");
+            executeUpdate(connection,
+                    "insert into explain_analyze_join_t values (1, 100), (2, 200), (4, 400)");
+            connection.commit();
+
+            assertActualRows(connection,
+                    "select id from explain_analyze_rows_t --DERBY-PROPERTIES index=null\n"
+                            + "where v >= 20",
+                    "TABLE_SCAN", 2);
+            assertActualRows(connection,
+                    "select id from explain_analyze_rows_t order by v",
+                    "ORDER_BY", 3);
+            assertActualRows(connection,
+                    "select id from explain_analyze_rows_t order by id "
+                            + "offset 1 rows fetch next 1 row only",
+                    "ROW_COUNT", 1);
+            assertActualRows(connection,
+                    "select r.id from explain_analyze_rows_t r "
+                            + "join explain_analyze_join_t j on r.id = j.id",
+                    "JOIN", 2);
+            assertActualRows(connection,
+                    "select g, count(*) from explain_analyze_rows_t group by g",
+                    "GROUP_BY", 2);
+            assertActualRows(connection,
+                    "select count(*) from explain_analyze_rows_t",
+                    "GROUP_BY", 1);
+            assertActualRows(connection,
+                    "select id from explain_analyze_rows_t where id <= 2 "
+                            + "union all select id from explain_analyze_rows_t where id = 3",
+                    "UNION", 3);
+            assertActualRows(connection,
+                    "select g from explain_analyze_rows_t "
+                            + "intersect select g from explain_analyze_rows_t where id <> 2",
+                    "INTERSECT_OR_EXCEPT", 2);
             connection.rollback();
         }
     }
@@ -298,6 +364,31 @@ public final class ExplainTest extends MvccSqlTestSupport {
         }
     }
 
+    private static void assertActualRows(
+            Connection connection, String sql, String physicalOperation, long expected)
+            throws Exception {
+        ExplainOutput output = analyze(connection, sql);
+        StablePlanModel.Node node = null;
+        for (StablePlanModel.Node candidate : output.model().nodes()) {
+            if (physicalOperation.equals(candidate.physicalOperation())) {
+                node = candidate;
+                break;
+            }
+        }
+        assertNotNull("missing " + physicalOperation + " node for " + sql, node);
+        String prefix = node.id() + " observed=true ";
+        int start = output.text().indexOf(prefix);
+        assertTrue("missing execution evidence for " + physicalOperation + " in " + sql, start >= 0);
+        int end = output.text().indexOf('\n', start);
+        String line = output.text().substring(start, end < 0 ? output.text().length() : end);
+        assertTrue("wrong actualRows for " + physicalOperation + " in " + sql + ": " + line,
+                line.contains(" actualRows=" + expected + " "));
+        assertTrue(output.json().contains(
+                "\"nodeId\":\"" + node.id() + "\",\"observed\":true,"
+                        + "\"opens\":"));
+        assertTrue(output.json().contains("\"actualRows\":" + expected));
+    }
+
     private static void assertExplainMatchesDirectPlan(
             Connection connection, String sql, String storageMode, String indexName) throws Exception {
         StablePlanModel direct;
@@ -354,9 +445,9 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 String json = rs.getString(2);
                 assertFalse(rs.next());
                 assertTrue(text.startsWith("PLAN schemaVersion=1 "));
-                assertTrue(text.contains("\nEXECUTION schemaVersion=2 "));
+                assertTrue(text.contains("\nEXECUTION schemaVersion=3 "));
                 assertTrue(json.startsWith("{\"plan\":{\"schemaVersion\":1,"));
-                assertTrue(json.contains("\"execution\":{\"schemaVersion\":2,"));
+                assertTrue(json.contains("\"execution\":{\"schemaVersion\":3,"));
                 assertTrue(json.endsWith("}}"));
                 return new ExplainOutput(stablePlan(statement), text, json);
             }

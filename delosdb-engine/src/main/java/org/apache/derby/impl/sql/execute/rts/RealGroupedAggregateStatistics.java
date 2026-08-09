@@ -47,6 +47,7 @@ public class RealGroupedAggregateStatistics
 
 	/* Leave these fields public for object inspectors */
 	public int rowsInput;
+	public int rowsReturned;
 	public boolean hasDistinctAggregate;
 	public boolean inSortedOrder;
 	public ResultSetStatistics childResultSetStatistics;
@@ -68,6 +69,7 @@ public class RealGroupedAggregateStatistics
 						long closeTime,
 						int resultSetNumber,
 						int rowsInput,
+						int rowsReturned,
 						boolean hasDistinctAggregate,
 						boolean inSortedOrder,
 						Properties sortProperties,
@@ -89,6 +91,7 @@ public class RealGroupedAggregateStatistics
 			optimizerEstimatedCost
 			);
 		this.rowsInput = rowsInput;
+		this.rowsReturned = rowsReturned;
 		this.hasDistinctAggregate = hasDistinctAggregate;
 		this.inSortedOrder = inSortedOrder;
 		this.childResultSetStatistics = childResultSetStatistics;

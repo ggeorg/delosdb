@@ -31,17 +31,18 @@ public record StablePlanExecutionEvidence(
         List<Node> nodes,
         boolean truncated) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     public StablePlanExecutionEvidence {
         nodes = List.copyOf(nodes);
     }
 
-    /** Runtime evidence for one stable plan node. */
+    /** Runtime evidence for one stable plan node; actualRows is operator output rows. */
     public record Node(
             String nodeId,
             boolean observed,
             int opens,
+            Long actualRows,
             long rowsSeen,
             long rowsFiltered,
             long elapsedMillis,

@@ -88,12 +88,12 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
                     "select id from explain_analyze_compat_heap_t "
                             + "--DERBY-PROPERTIES index=null\n"
                             + "where v >= 20",
-                    "storage=heap", "rootRowsReturned=2", "ROWS_VISITED");
+                    "storage=heap", "rootRowsReturned=2", "actualRows=2", "ROWS_VISITED");
             assertSameAnalyze(network, embedded,
                     "select id from explain_analyze_compat_mvcc_t "
                             + "--DERBY-PROPERTIES index=null\n"
                             + "where v >= 20",
-                    "storage=delos_mvcc", "rootRowsReturned=2",
+                    "storage=delos_mvcc", "rootRowsReturned=2", "actualRows=2",
                     "MVCC_VISIBILITY_CHECKS", "MVCC_VERSION_CHAIN_STEPS");
 
             String parameterSql =
@@ -241,12 +241,14 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
     }
 
     private static void assertTimingFields(ExplainOutput output) {
-        assertTrue(output.text().contains("EXECUTION schemaVersion=2 "));
+        assertTrue(output.text().contains("EXECUTION schemaVersion=3 "));
+        assertTrue(output.text().contains(" actualRows="));
         assertTrue(output.text().contains(" elapsedMillis="));
         assertTrue(output.text().contains(" openMillis="));
         assertTrue(output.text().contains(" nextMillis="));
         assertTrue(output.text().contains(" closeMillis="));
-        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":2,"));
+        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":3,"));
+        assertTrue(output.json().contains("\"actualRows\":"));
         assertTrue(output.json().contains("\"elapsedMillis\":"));
         assertTrue(output.json().contains("\"openMillis\":"));
         assertTrue(output.json().contains("\"nextMillis\":"));

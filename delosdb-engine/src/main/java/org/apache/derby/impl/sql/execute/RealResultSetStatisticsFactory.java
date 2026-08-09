@@ -501,6 +501,7 @@ public class RealResultSetStatisticsFactory
 											gars.closeTime,
 											gars.resultSetNumber,
 											gars.rowsInput,
+											gars.rowsReturned,
 											gars.hasDistinctAggregate,
 											gars.isInSortedOrder,
 											gars.sortProperties,

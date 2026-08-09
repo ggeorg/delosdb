@@ -50,6 +50,7 @@ public final class StablePlanExecutionRenderer {
                     .append(" observed=").append(node.observed());
             if (node.observed()) {
                 out.append(" opens=").append(node.opens())
+                        .append(" actualRows=").append(node.actualRows())
                         .append(" rowsSeen=").append(node.rowsSeen())
                         .append(" rowsFiltered=").append(node.rowsFiltered())
                         .append(" elapsedMillis=").append(node.elapsedMillis())
@@ -93,6 +94,7 @@ public final class StablePlanExecutionRenderer {
         stringField(out, "nodeId", node.nodeId()).append(',');
         booleanField(out, "observed", node.observed()).append(',');
         field(out, "opens", node.opens()).append(',');
+        nullableField(out, "actualRows", node.actualRows()).append(',');
         field(out, "rowsSeen", node.rowsSeen()).append(',');
         field(out, "rowsFiltered", node.rowsFiltered()).append(',');
         field(out, "elapsedMillis", node.elapsedMillis()).append(',');
@@ -114,6 +116,11 @@ public final class StablePlanExecutionRenderer {
     private static StringBuilder stringField(StringBuilder out, String name, String value) {
         StablePlanRenderer.jsonString(out, name).append(':');
         return value == null ? out.append("null") : StablePlanRenderer.jsonString(out, value);
+    }
+
+    private static StringBuilder nullableField(StringBuilder out, String name, Long value) {
+        StablePlanRenderer.jsonString(out, name).append(':');
+        return value == null ? out.append("null") : out.append(value);
     }
 
     private static StringBuilder field(StringBuilder out, String name, long value) {
