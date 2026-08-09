@@ -31,7 +31,7 @@ public record StablePlanExecutionEvidence(
         List<Node> nodes,
         boolean truncated) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 3;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
 
     public StablePlanExecutionEvidence {
         nodes = List.copyOf(nodes);

@@ -105,8 +105,10 @@ Phase 10.3A is complete. Query-only `EXPLAIN ANALYZE` executes the selected quer
 bounded runtime counters and heap/`delos_mvcc` scan evidence to stable plan-node ids through generated
 result-set identity. Phase 10.3B is complete: Derby's existing result-set timing counters are enabled only
 for `EXPLAIN ANALYZE`, without changing connection-wide statistics timing or adding per-row instrumentation
-to ordinary execution. Phase 10.3C is the current tranche: execution-evidence schema version 3 adds
-nullable authoritative per-operator `actualRows`, using only runtime counters that genuinely represent output
-rows instead of assuming that `rowsSeen` always means rows produced; unsupported operators report `null`.
+to ordinary execution. Phase 10.3C is complete: execution-evidence schema version 3 adds nullable
+authoritative per-operator `actualRows`, using only runtime counters that genuinely represent output rows.
+Phase 10.3D is the current tranche: schema version 4 co-locates the stable plan's existing `estimatedRows`
+with `actualRows` in EXPLAIN ANALYZE and classifies each observed node as `MATCH`, `UNDER_ESTIMATE`,
+`OVER_ESTIMATE`, or `UNKNOWN`, without ratios, thresholds, or new execution instrumentation.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

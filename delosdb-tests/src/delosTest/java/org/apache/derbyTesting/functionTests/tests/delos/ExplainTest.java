@@ -160,18 +160,19 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 false);
         assertEquals(
                 StablePlanRenderer.text(format)
-                        + "EXECUTION schemaVersion=3 statementId=stmt-1 "
+                        + "EXECUTION schemaVersion=4 statementId=stmt-1 "
                         + "rootRowsReturned=2 nodes=1 truncated=false\n"
-                        + "n0 observed=true opens=1 actualRows=2 rowsSeen=3 rowsFiltered=1 "
+                        + "n0 observed=true opens=1 estimatedRows=2.5 actualRows=2 estimateComparison=OVER_ESTIMATE rowsSeen=3 rowsFiltered=1 "
                         + "elapsedMillis=9 openMillis=2 nextMillis=6 closeMillis=1 "
                         + "storage=[ROWS_VISITED=3,ROWS_QUALIFIED=2]\n",
                 StablePlanExecutionRenderer.text(format, evidence));
         assertEquals(
                 "{\"plan\":" + StablePlanRenderer.json(format)
-                        + ",\"execution\":{\"schemaVersion\":3,"
+                        + ",\"execution\":{\"schemaVersion\":4,"
                         + "\"statementId\":\"stmt-1\",\"rootRowsReturned\":2,"
                         + "\"nodes\":[{\"nodeId\":\"n0\",\"observed\":true,"
-                        + "\"opens\":1,\"actualRows\":2,\"rowsSeen\":3,\"rowsFiltered\":1,"
+                        + "\"opens\":1,\"estimatedRows\":2.5,\"actualRows\":2,"
+                        + "\"estimateComparison\":\"OVER_ESTIMATE\",\"rowsSeen\":3,\"rowsFiltered\":1,"
                         + "\"elapsedMillis\":9,\"openMillis\":2,\"nextMillis\":6,"
                         + "\"closeMillis\":1,"
                         + "\"storageMetrics\":[{\"name\":\"ROWS_VISITED\",\"value\":3},"
@@ -187,9 +188,9 @@ public final class ExplainTest extends MvccSqlTestSupport {
                         "n0", true, 1, null, 3, 1, 9, 2, 6, 1, List.of())),
                 false);
         assertTrue(StablePlanExecutionRenderer.text(format, unknownRows)
-                .contains("actualRows=null"));
+                .contains("estimatedRows=2.5 actualRows=null estimateComparison=UNKNOWN"));
         assertTrue(StablePlanExecutionRenderer.json(format, unknownRows)
-                .contains("\"actualRows\":null"));
+                .contains("\"estimatedRows\":2.5,\"actualRows\":null,\"estimateComparison\":\"UNKNOWN\""));
 
         String databaseName = databaseName("explain-recompile-db");
         String sql = "select id from explain_recompile_t where v >= 10 order by v";
@@ -232,26 +233,30 @@ public final class ExplainTest extends MvccSqlTestSupport {
 
             ExplainOutput heapOutput = analyze(connection, heap);
             assertTrue(heapOutput.text().contains("rootRowsReturned=2"));
-            assertTrue(heapOutput.text().contains("actualRows=2"));
+            assertTrue(heapOutput.text().contains("estimatedRows="));
+            assertTrue(heapOutput.text().contains("actualRows=2 estimateComparison="));
             assertTrue(heapOutput.text().contains("storage=heap"));
             assertTrue(heapOutput.text().contains("ROWS_VISITED="));
             assertTrue(heapOutput.text().contains("ROWS_QUALIFIED="));
             assertTrue(heapOutput.text().contains("elapsedMillis="));
             assertTrue(heapOutput.text().contains("nextMillis="));
             assertTrue(heapOutput.json().contains("\"rootRowsReturned\":2"));
-            assertTrue(heapOutput.json().contains("\"actualRows\":2"));
+            assertTrue(heapOutput.json().contains("\"estimatedRows\":"));
+            assertTrue(heapOutput.json().contains("\"actualRows\":2,\"estimateComparison\":\""));
             assertTrue(heapOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(heapOutput.json().contains("\"name\":\"PAGES_VISITED\""));
 
             ExplainOutput mvccOutput = analyze(connection, mvcc);
             assertTrue(mvccOutput.text().contains("rootRowsReturned=2"));
-            assertTrue(mvccOutput.text().contains("actualRows=2"));
+            assertTrue(mvccOutput.text().contains("estimatedRows="));
+            assertTrue(mvccOutput.text().contains("actualRows=2 estimateComparison="));
             assertTrue(mvccOutput.text().contains("storage=delos_mvcc"));
             assertTrue(mvccOutput.text().contains("ROWS_VISITED="));
             assertTrue(mvccOutput.text().contains("MVCC_VISIBILITY_CHECKS="));
             assertTrue(mvccOutput.text().contains("elapsedMillis="));
             assertTrue(mvccOutput.json().contains("\"rootRowsReturned\":2"));
-            assertTrue(mvccOutput.json().contains("\"actualRows\":2"));
+            assertTrue(mvccOutput.json().contains("\"estimatedRows\":"));
+            assertTrue(mvccOutput.json().contains("\"actualRows\":2,\"estimateComparison\":\""));
             assertTrue(mvccOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(mvccOutput.json().contains("\"name\":\"MVCC_VERSION_CHAIN_STEPS\""));
             connection.rollback();
@@ -445,9 +450,9 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 String json = rs.getString(2);
                 assertFalse(rs.next());
                 assertTrue(text.startsWith("PLAN schemaVersion=1 "));
-                assertTrue(text.contains("\nEXECUTION schemaVersion=3 "));
+                assertTrue(text.contains("\nEXECUTION schemaVersion=4 "));
                 assertTrue(json.startsWith("{\"plan\":{\"schemaVersion\":1,"));
-                assertTrue(json.contains("\"execution\":{\"schemaVersion\":3,"));
+                assertTrue(json.contains("\"execution\":{\"schemaVersion\":4,"));
                 assertTrue(json.endsWith("}}"));
                 return new ExplainOutput(stablePlan(statement), text, json);
             }

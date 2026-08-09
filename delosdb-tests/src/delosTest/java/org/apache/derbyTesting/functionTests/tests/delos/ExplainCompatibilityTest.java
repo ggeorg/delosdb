@@ -241,14 +241,18 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
     }
 
     private static void assertTimingFields(ExplainOutput output) {
-        assertTrue(output.text().contains("EXECUTION schemaVersion=3 "));
+        assertTrue(output.text().contains("EXECUTION schemaVersion=4 "));
+        assertTrue(output.text().contains(" estimatedRows="));
         assertTrue(output.text().contains(" actualRows="));
+        assertTrue(output.text().contains(" estimateComparison="));
         assertTrue(output.text().contains(" elapsedMillis="));
         assertTrue(output.text().contains(" openMillis="));
         assertTrue(output.text().contains(" nextMillis="));
         assertTrue(output.text().contains(" closeMillis="));
-        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":3,"));
+        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":4,"));
+        assertTrue(output.json().contains("\"estimatedRows\":"));
         assertTrue(output.json().contains("\"actualRows\":"));
+        assertTrue(output.json().contains("\"estimateComparison\":\""));
         assertTrue(output.json().contains("\"elapsedMillis\":"));
         assertTrue(output.json().contains("\"openMillis\":"));
         assertTrue(output.json().contains("\"nextMillis\":"));

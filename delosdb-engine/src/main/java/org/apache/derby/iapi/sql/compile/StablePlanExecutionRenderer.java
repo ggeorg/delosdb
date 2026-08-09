@@ -49,8 +49,12 @@ public final class StablePlanExecutionRenderer {
                     .append(node.nodeId())
                     .append(" observed=").append(node.observed());
             if (node.observed()) {
+                Double estimatedRows = validEstimate(planNode.estimatedRows());
                 out.append(" opens=").append(node.opens())
+                        .append(" estimatedRows=").append(estimatedRows)
                         .append(" actualRows=").append(node.actualRows())
+                        .append(" estimateComparison=")
+                        .append(estimateComparison(estimatedRows, node.actualRows()))
                         .append(" rowsSeen=").append(node.rowsSeen())
                         .append(" rowsFiltered=").append(node.rowsFiltered())
                         .append(" elapsedMillis=").append(node.elapsedMillis())
@@ -82,19 +86,24 @@ public final class StablePlanExecutionRenderer {
         out.append("\"nodes\":[");
         for (int i = 0; i < evidence.nodes().size(); i++) {
             if (i > 0) out.append(',');
-            nodeJson(out, evidence.nodes().get(i));
+            nodeJson(out, plan.nodes().get(i), evidence.nodes().get(i));
         }
         out.append("],");
         booleanField(out, "truncated", evidence.truncated());
         return out.append("}}").toString();
     }
 
-    private static void nodeJson(StringBuilder out, StablePlanExecutionEvidence.Node node) {
+    private static void nodeJson(
+            StringBuilder out, StablePlanModel.Node planNode, StablePlanExecutionEvidence.Node node) {
+        Double estimatedRows = validEstimate(planNode.estimatedRows());
         out.append('{');
         stringField(out, "nodeId", node.nodeId()).append(',');
         booleanField(out, "observed", node.observed()).append(',');
         field(out, "opens", node.opens()).append(',');
+        nullableField(out, "estimatedRows", estimatedRows).append(',');
         nullableField(out, "actualRows", node.actualRows()).append(',');
+        stringField(out, "estimateComparison",
+                estimateComparison(estimatedRows, node.actualRows())).append(',');
         field(out, "rowsSeen", node.rowsSeen()).append(',');
         field(out, "rowsFiltered", node.rowsFiltered()).append(',');
         field(out, "elapsedMillis", node.elapsedMillis()).append(',');
@@ -118,9 +127,21 @@ public final class StablePlanExecutionRenderer {
         return value == null ? out.append("null") : StablePlanRenderer.jsonString(out, value);
     }
 
-    private static StringBuilder nullableField(StringBuilder out, String name, Long value) {
+    private static StringBuilder nullableField(StringBuilder out, String name, Number value) {
         StablePlanRenderer.jsonString(out, name).append(':');
         return value == null ? out.append("null") : out.append(value);
+    }
+
+    private static Double validEstimate(Double value) {
+        return value == null || !Double.isFinite(value) || value < 0 ? null : value;
+    }
+
+    private static String estimateComparison(Double estimatedRows, Long actualRows) {
+        if (estimatedRows == null || actualRows == null) return "UNKNOWN";
+        int comparison = Double.compare(actualRows.doubleValue(), estimatedRows);
+        return comparison > 0
+                ? "UNDER_ESTIMATE"
+                : comparison < 0 ? "OVER_ESTIMATE" : "MATCH";
     }
 
     private static StringBuilder field(StringBuilder out, String name, long value) {
