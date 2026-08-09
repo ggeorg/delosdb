@@ -239,7 +239,7 @@ public final class ExplainTest extends MvccSqlTestSupport {
             executeUpdate(connection,
                     "create table explain_analyze_heap_t (id int primary key, v int)");
             executeUpdate(connection,
-                    "create table explain_analyze_mvcc_t (id int primary key, v int) "
+                    "create table explain_analyze_mvcc_t (id int, v int) "
                             + "using delos_mvcc");
             executeUpdate(connection,
                     "insert into explain_analyze_heap_t values (1, 10), (2, 20), (3, 30)");
