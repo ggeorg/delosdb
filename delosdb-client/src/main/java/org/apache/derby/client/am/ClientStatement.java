@@ -2608,7 +2608,8 @@ public class ClientStatement implements Statement, StatementCallbackInterface{
 
 
         if (firstToken.equalsIgnoreCase("select") || // captures <subselect> production
-                firstToken.equalsIgnoreCase("values")) // captures <values-clause> production
+                firstToken.equalsIgnoreCase("values") || // captures <values-clause> production
+                firstToken.equalsIgnoreCase("explain"))
         {
             sqlMode_ = isQuery__;
         } else if (firstToken.equalsIgnoreCase("call")) // captures CALL...and ?=CALL...
