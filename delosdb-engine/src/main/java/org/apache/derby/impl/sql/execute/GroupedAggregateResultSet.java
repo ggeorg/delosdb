@@ -406,7 +406,10 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 		// If the aggregation was performed using the SortObserver, the
 		// result row from the sorter is complete and ready to return:
 		if (usingAggregateObserver)
+		{
+			rowsReturned++;
 			return finishAggregation(nextRow);
+		}
 
 		/* Drain and merge rows until we find new distinct values for the grouping columns. */
 		while (nextRow != null)
@@ -456,7 +459,6 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 			if (finishedResults.size() > 0)
 			{
 				nextTime += getElapsedMillis(beginTime);
-				rowsReturned++;
                                 return makeCurrent(finishedResults.remove(0));
 			}
 
@@ -471,6 +473,7 @@ class GroupedAggregateResultSet extends GenericAggregateResultSet
 		throws StandardException
 	{
 		ExecRow resultRow = (ExecRow)row;
+		rowsReturned++;
 		setCurrentRow(resultRow);
 		return resultRow;
 	}
