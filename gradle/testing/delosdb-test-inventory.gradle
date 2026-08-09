@@ -21,6 +21,12 @@ def derbyTestAdaptationsFile = rootProject.layout.projectDirectory.file(
         'gradle/testing/derby-test-adaptations.tsv')
 def derbyTestAdaptationSupportFile = rootProject.layout.projectDirectory.file(
         'gradle/testing/derby-test-adaptation-support.tsv')
+def externalRuntimeProvenanceFile = rootProject.layout.projectDirectory.file(
+        'gradle/testing/delos-external-runtime-provenance.tsv')
+def externalIsolationProvenanceFile = rootProject.layout.projectDirectory.file(
+        'gradle/testing/delos-external-test-provenance.tsv')
+def stableTestRegistryFile = rootProject.layout.projectDirectory.file(
+        'gradle/testing/delos-test-suite-registry.tsv')
 
 def delosTestInventoryJson = project.layout.buildDirectory.file(
         'reports/tests/delosdb-test-inventory.json')
@@ -209,7 +215,7 @@ def delosTestCollectFiles = { File root, String sourceRootName ->
 
 def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory') {
     group = 'verification'
-    description = 'Generates Stage 2 DelosDB authorship and inherited Derby provenance reports.'
+    description = 'Generates permanent DelosDB authorship, inherited Derby, and external-runtime provenance reports.'
 
     inputs.dir(inheritedTestSourceRoot)
     inputs.dir(delosTestSourceRoot)
@@ -217,6 +223,9 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
     inputs.file(derbyTestBaselineFile)
     inputs.file(derbyTestAdaptationsFile)
     inputs.file(derbyTestAdaptationSupportFile)
+    inputs.file(externalRuntimeProvenanceFile)
+    inputs.file(externalIsolationProvenanceFile)
+    inputs.file(stableTestRegistryFile)
     outputs.files(delosTestInventoryJson, delosTestInventoryText,
             derbyTestProvenanceJson, derbyTestProvenanceText)
 
@@ -227,11 +236,55 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
         File baselineSource = derbyTestBaselineFile.asFile
         File adaptationSource = derbyTestAdaptationsFile.asFile
         File adaptationSupportSource = derbyTestAdaptationSupportFile.asFile
+        File externalRuntimeSource = externalRuntimeProvenanceFile.asFile
+        File externalIsolationSource = externalIsolationProvenanceFile.asFile
+        File stableRegistrySource = stableTestRegistryFile.asFile
 
         Map<String, List<String>> baselineRows = delosTestReadTsv(baselineSource, 3)
         Map<String, List<String>> adaptationRows = delosTestReadTsv(adaptationSource, 7)
         Map<String, List<String>> adaptationSupportRows = delosTestReadTsv(adaptationSupportSource, 6)
+        Map<String, List<String>> externalRuntimeRows = delosTestReadTsv(externalRuntimeSource, 9)
+        Map<String, List<String>> stableRegistryRows = delosTestReadTsv(stableRegistrySource, 5)
         List<String> issues = []
+
+        Set<String> expectedExternalRuntimeClasses = [
+                'org.apache.derbyTesting.functionTests.tests.delos.HeapMvccDifferentialFuzzTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.DelosDdlCrashAtomicityTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.DelosDeadlockVictimLifecycleTest'
+        ] as Set<String>
+        if (externalRuntimeRows.keySet() != expectedExternalRuntimeClasses) {
+            issues.add('External-runtime provenance classes do not match the permanent authority set')
+        }
+        externalRuntimeRows.each { String className, List<String> row ->
+            String sourceProject = row[1]
+            String revision = row[2]
+            String sourceFile = row[3]
+            String license = row[4]
+            String mode = row[5]
+            if (!stableRegistryRows.containsKey(className)) {
+                issues.add("External-runtime provenance class is absent from stable registry: ${className}")
+            }
+            if (row.any { it.isBlank() }) {
+                issues.add("Blank external-runtime provenance field for ${className}")
+            }
+            if (mode != 'INDEPENDENT_EQUIVALENT') {
+                issues.add("External-runtime provenance mode must be INDEPENDENT_EQUIVALENT for ${className}")
+            }
+            if (sourceProject == 'H2') {
+                if (revision != 'H2 master archive sha256:e4e85863d3d1c21d64b73e1a1dd18671c898614e0200a3ffa7e2aedb1d112604') issues.add("Unexpected H2 revision for ${className}")
+                if (license != 'MPL 2.0 / EPL 1.0') issues.add("Unexpected H2 license for ${className}")
+                if (!sourceFile.startsWith('h2/')) issues.add("Unexpected H2 source path for ${className}: ${sourceFile}")
+            } else if (sourceProject == 'MariaDB') {
+                if (revision != 'MariaDB archive sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7') issues.add("Unexpected MariaDB revision for ${className}")
+                if (license != 'GPLv2-only') issues.add("Unexpected MariaDB license for ${className}")
+                if (!sourceFile.startsWith('mysql-test/')) issues.add("Unexpected MariaDB source path for ${className}: ${sourceFile}")
+            } else {
+                issues.add("Unknown external-runtime provenance source for ${className}: ${sourceProject}")
+            }
+        }
+        if (!externalIsolationSource.isFile()) {
+            issues.add('External isolation-spec provenance manifest is missing')
+        }
 
         List<Map<String, Object>> inheritedFiles = delosTestCollectFiles(inheritedRoot, 'src/test/java')
         List<Map<String, Object>> delosFiles = delosTestCollectFiles(delosRoot, 'src/delosTest/java')
@@ -408,12 +461,22 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                     expectedDuration: 'UNMEASURED_STAGE2',
                     specialEnvironment: specialEnvironment,
                     lastResult: 'NOT_CAPTURED_STAGE2',
-                    externalProvenance: provenance.startsWith('INHERITED_') ? 'Apache Derby 10.17.1.0 or documented adaptation support' : 'NONE_IDENTIFIED',
+                    externalProvenance: provenance.startsWith('INHERITED_')
+                            ? 'Apache Derby 10.17.1.0 or documented adaptation support'
+                            : (externalRuntimeRows.containsKey(className)
+                                    ? rootProject.relativePath(externalRuntimeSource)
+                                    : (className == 'org.apache.derbyTesting.functionTests.tests.delos.DelosIsolationSpecificationTest'
+                                            ? rootProject.relativePath(externalIsolationSource)
+                                            : 'NONE_IDENTIFIED')),
                     candidateFlags: flags
             ])
         }
         javaInventory.sort { Map<String, Object> left, Map<String, Object> right ->
             (left.sourcePath as String) <=> (right.sourcePath as String)
+        }
+        Set<String> javaClasses = javaInventory.collect { it.className as String }.toSet()
+        (externalRuntimeRows.keySet() - javaClasses).sort().each {
+            issues.add("External-runtime provenance class is absent from test sources: ${it}")
         }
 
         List<Map<String, Object>> delosClasses = javaInventory.findAll {
@@ -477,6 +540,7 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
                 executableTestOrSuiteCount: executableTests.size(),
                 adaptationManifestEntries: adaptationRows.size(),
                 adaptationSupportManifestEntries: adaptationSupportRows.size(),
+                externalRuntimeProvenanceEntries: externalRuntimeRows.size(),
                 issueCount: issues.size()
         ]
 
@@ -606,7 +670,7 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
 
 tasks.register('delosTestProvenanceStaticAnalysis') {
     group = 'verification'
-    description = 'Verifies inherited Derby completeness and Stage 2 DelosDB test authorship separation.'
+    description = 'Verifies inherited Derby completeness, DelosDB authorship separation, and permanent external-runtime provenance.'
     dependsOn generateDelosdbTestInventory
     inputs.file(derbyTestProvenanceJson)
 
@@ -617,7 +681,7 @@ tasks.register('delosTestProvenanceStaticAnalysis') {
             throw new GradleException('DelosDB test provenance failures (' + issues.size() + '):\n  - ' +
                     issues.join('\n  - '))
         }
-        logger.lifecycle('DelosDB Stage 2 test provenance passed. Report: {}',
+        logger.lifecycle('DelosDB test provenance passed. Report: {}',
                 derbyTestProvenanceText.get().asFile)
     }
 }

@@ -508,10 +508,6 @@ registerDelosFocusedTest(
         'Runs Stage 8.3 deterministic database-scoped RawStore I/O fault-injection and replay proofs.',
         ['org/apache/derbyTesting/functionTests/tests/delos/SharedRawStoreIoFaultInjectionTest.class'])
 
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStoreIoFaultInjectionTest')
-}
-
 registerDelosFocusedTest(
         'runDelosSharedRawStorePageIoRepresentationDecisionTest',
         'Runs the Stage 8.7.2 byte-array, heap-segment, and native-mirror state-equivalence and diagnostic benchmark decision proof.',
@@ -524,10 +520,6 @@ tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest') {
                     .get().asFile.absolutePath
     outputs.file layout.buildDirectory.file(
             'reports/delosdb/stage8.7.2-page-io-representation-decision.txt')
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStorePageIoRepresentationDecisionTest')
 }
 
 registerDelosFocusedTest(
@@ -544,10 +536,6 @@ tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest') {
             'reports/delosdb/stage8.6-mapped-region-experiment.txt')
 }
 
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSharedRawStoreMappedRegionExperimentTest')
-}
-
 registerDelosFocusedTest(
         'runDelosGeneratedClassContractFreezeTest',
         'Runs the stable reflection-based generation-contract and digest proof.',
@@ -561,10 +549,6 @@ tasks.named('runDelosGeneratedClassContractFreezeTest') {
     outputs.file layout.buildDirectory.file(
             'reports/delosdb/compiler/generated-class-contract-freeze.txt')
     outputs.upToDateWhen { false }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosGeneratedClassContractFreezeTest')
 }
 
 registerDelosFocusedTest(
@@ -587,10 +571,6 @@ tasks.named('runDelosGeneratedClassContractBehaviorTest') {
     outputs.upToDateWhen { false }
 }
 
-tasks.named('check') {
-    dependsOn tasks.named('runDelosGeneratedClassContractBehaviorTest')
-}
-
 
 registerDelosFocusedTest(
         'runDelosGeneratedClassProductionTest',
@@ -606,11 +586,6 @@ tasks.named('runDelosGeneratedClassProductionTest') {
     outputs.file layout.buildDirectory.file(
             'reports/delosdb/compiler/generated-class-production.txt')
     outputs.upToDateWhen { false }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named(
-            'runDelosGeneratedClassProductionTest')
 }
 
 registerDelosFocusedTest(
@@ -686,7 +661,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'runDelosDifferentialFuzzTypedSmoke',
-        'Runs the new Stage 5E typed-schema probes for the first four deterministic seeds without rerunning Stage 5A-D.',
+        'Runs typed-schema probes for the first four deterministic differential-fuzz seeds.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
@@ -698,7 +673,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'delosDifferentialFuzzTypedTests',
-        'Runs the new Stage 5E typed-schema probes for the established 64-seed corpus without rerunning Stage 5A-D.',
+        'Runs typed-schema probes for the established 64-seed deterministic differential-fuzz corpus.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
@@ -710,7 +685,7 @@ registerDelosFocusedTest(
 
 registerDelosFocusedTest(
         'delosDifferentialFuzzLongTests',
-        'Runs the next 448 deterministic Stage 5 differential seeds after the established 64-seed corpus.',
+        'Runs the next 448 deterministic differential-fuzz seeds after the established 64-seed corpus.',
         ['org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.class'],
         [
                 'delosdb.differentialFuzz.seed': differentialFuzzSeed,
@@ -719,135 +694,10 @@ registerDelosFocusedTest(
                 'delosdb.differentialFuzz.reportDirectory': differentialFuzzReportDirectory
         ])
 
-def differentialFuzzProvenance = rootProject.file('gradle/testing/delos-differential-fuzz-provenance.tsv')
-def differentialFuzzSource = file('src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/HeapMvccDifferentialFuzzTest.java')
-tasks.register('delosDifferentialFuzzStaticAnalysis') {
-    group = 'verification'
-    description = 'Validates the Stage 5 H2-informed differential-fuzz provenance and replay contract.'
-    inputs.files differentialFuzzProvenance, differentialFuzzSource
-    doLast {
-        def rows = differentialFuzzProvenance.readLines('UTF-8').findAll { it && !it.startsWith('#') }
-        if (rows.size() != 1 || rows[0].split('\t', -1).size() != 9 || !rows[0].startsWith('DEL-FUZZ-001\tH2\t')) {
-            throw new GradleException('Stage 5 differential-fuzz provenance is malformed')
-        }
-        def source = differentialFuzzSource.getText('UTF-8')
-        ['MASTER_SEED', 'EXPRESSION_SEED_SALT', 'EXPRESSION_PROBES', 'RELATIONAL_SEED_SALT', 'RELATIONAL_PROBES', 'GRAMMAR_SEED_SALT', 'GRAMMAR_PROBES', 'TYPE_SEED_SALT', 'TYPED_INITIAL_ROWS', 'TYPED_PROBES', 'SEED_OFFSET_PROPERTY', 'TYPED_ONLY_PROPERTY', 'runTypedSeed', 'small_value smallint', 'big_value bigint', 'decimal_value decimal(18,4)', 'fixed_label char(8)', 'var_label varchar(64)', 'event_date date', 'event_time time', 'event_ts timestamp', 'randomGrammarQuery', 'minimizeGrammarQuery', 'randomExpression', 'randomPredicate', 'randomRelationalQuery', 'delosdb.differentialFuzz.seed', 'delosdb.differentialFuzz.seedOffset', 'writeFailure', 'heap-unindexed', 'mvcc-indexed'].each { token ->
-            if (!source.contains(token)) throw new GradleException("Differential-fuzz replay contract is missing: ${token}")
-        }
-    }
-}
-
 ['runDelosDifferentialFuzzSmoke', 'delosDifferentialFuzzTests', 'runDelosDifferentialFuzzTypedSmoke', 'delosDifferentialFuzzTypedTests', 'delosDifferentialFuzzLongTests'].each { taskName ->
     tasks.named(taskName) {
-        dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders'),
-                tasks.named('delosDifferentialFuzzStaticAnalysis')
+        dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
     }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('delosDifferentialFuzzStaticAnalysis')
-}
-
-def externalSemanticGapInventory = rootProject.file('gradle/testing/delos-external-semantic-gap-inventory.tsv')
-def stage6RuntimeProvenance = rootProject.file('gradle/testing/delos-stage6-runtime-provenance.tsv')
-tasks.register('delosExternalSemanticGapStaticAnalysis') {
-    group = 'verification'
-    description = 'Validates the Stage 6 PostgreSQL/MariaDB semantic-gap inventory and writes its candidate summary.'
-    inputs.files externalSemanticGapInventory, stage6RuntimeProvenance
-    outputs.file layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt')
-    doLast {
-        def allowedClassifications = [
-                'ALREADY_COVERED',
-                'DERBY_INHERITED_COVERAGE',
-                'DELOSDB_EXISTING_COVERAGE',
-                'REAL_SEMANTIC_GAP',
-                'NOT_APPLICABLE_TO_DELOSDB',
-                'ENGINE_SPECIFIC_REFERENCE_ONLY'
-        ] as Set
-        def allowedPriorities = ['P0', 'P1', 'P2', 'P3'] as Set
-        def rows = externalSemanticGapInventory.readLines('UTF-8')
-                .findAll { it && !it.startsWith('#') }
-                .collect { line -> line.split('\t', -1) as List }
-        def failures = []
-        if (rows.size() != 32) failures << "Expected 32 Stage 6 inventory rows, found ${rows.size()}"
-        def ids = new LinkedHashSet<String>()
-        rows.each { row ->
-            if (row.size() != 12) {
-                failures << "Malformed Stage 6 inventory row with ${row.size()} columns: ${row.join('|')}"
-                return
-            }
-            def (id, source, revision, sourceFile, license, area, classification, priority, intent, evidence, reason, action) = row
-            if (!ids.add(id)) failures << "Duplicate Stage 6 inventory id: ${id}"
-            if (!(source in ['PostgreSQL', 'MariaDB'])) failures << "Unknown Stage 6 source for ${id}: ${source}"
-            if (!allowedClassifications.contains(classification)) failures << "Unknown Stage 6 classification for ${id}: ${classification}"
-            if (!allowedPriorities.contains(priority)) failures << "Unknown Stage 6 priority for ${id}: ${priority}"
-            if ([revision, sourceFile, license, area, intent, evidence, reason, action].any { !it }) failures << "Blank Stage 6 field for ${id}"
-            if (source == 'PostgreSQL') {
-                if (revision != 'archive-sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c') failures << "Unexpected PostgreSQL archive revision for ${id}"
-                if (license != 'PostgreSQL License') failures << "Unexpected PostgreSQL license for ${id}"
-                if (!id.startsWith('PG-')) failures << "PostgreSQL id prefix mismatch: ${id}"
-            } else {
-                if (revision != 'archive-sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7') failures << "Unexpected MariaDB archive revision for ${id}"
-                if (license != 'GPLv2-only') failures << "Unexpected MariaDB license for ${id}"
-                if (!id.startsWith('MA-')) failures << "MariaDB id prefix mismatch: ${id}"
-            }
-            if (classification == 'REAL_SEMANTIC_GAP' && !action.startsWith('ADAPT_STAGE6')) failures << "Real gap lacks adaptation action: ${id}"
-            if (classification != 'REAL_SEMANTIC_GAP' && action.startsWith('ADAPT_STAGE6')) failures << "Covered/non-applicable case marked for adaptation: ${id}"
-        }
-        def sourceCounts = rows.countBy { it[1] }
-        def classCounts = rows.countBy { it[6] }
-        def realGaps = rows.findAll { it[6] == 'REAL_SEMANTIC_GAP' }
-        if (sourceCounts['PostgreSQL'] != 16 || sourceCounts['MariaDB'] != 16) failures << "Expected 16 rows per external source, found ${sourceCounts}"
-        if (realGaps.size() != 9) failures << "Expected 9 confirmed semantic gaps, found ${realGaps.size()}"
-        def runtimeRows = stage6RuntimeProvenance.readLines('UTF-8')
-                .findAll { it && !it.startsWith('#') }
-                .collect { line -> line.split('\t', -1) as List }
-        def runtimeIds = new LinkedHashSet<String>()
-        runtimeRows.each { row ->
-            if (row.size() != 9) {
-                failures << "Malformed Stage 6 runtime provenance row with ${row.size()} columns: ${row.join('|')}"
-                return
-            }
-            def (id, source, revision, sourceFile, license, mode, intent, adaptation, providers) = row
-            if (!runtimeIds.add(id)) failures << "Duplicate Stage 6 runtime provenance id: ${id}"
-            if (!(source in ['PostgreSQL', 'MariaDB'])) failures << "Unknown runtime provenance source for ${id}: ${source}"
-            if (source == 'PostgreSQL') {
-                if (revision != 'PostgreSQL archive sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c') failures << "Unexpected PostgreSQL runtime provenance revision for ${id}"
-                if (license != 'PostgreSQL License') failures << "Unexpected PostgreSQL runtime provenance license for ${id}"
-            } else if (source == 'MariaDB') {
-                if (revision != 'MariaDB archive sha256:00f922a5b4fc101dea913637a783645ca2c97cf9e13bc7823fa54b380ae8edf7') failures << "Unexpected MariaDB runtime provenance revision for ${id}"
-                if (license != 'GPLv2-only') failures << "Unexpected MariaDB runtime provenance license for ${id}"
-            }
-            if (mode != 'INDEPENDENT_EQUIVALENT') failures << "Runtime provenance mode must be INDEPENDENT_EQUIVALENT for ${id}"
-            if ([revision, sourceFile, license, intent, adaptation, providers].any { !it }) failures << "Blank Stage 6 runtime provenance field for ${id}"
-        }
-        ['DEL-DEADLOCK-005': 'MA-006', 'DEL-DDL-005': 'MA-009'].each { id, externalId ->
-            if (!runtimeIds.contains(id)) failures << "Missing ${externalId} runtime adaptation provenance: ${id}"
-        }
-
-        if (!failures.isEmpty()) throw new GradleException('DelosDB Stage 6 semantic-gap inventory failures (' + failures.size() + '):\n  - ' + failures.join('\n  - '))
-
-        def report = layout.buildDirectory.file('reports/tests/delos-external-semantic-gap-inventory.txt').get().asFile
-        report.parentFile.mkdirs()
-        report.text = '''DelosDB Stage 6 external semantic-gap inventory
-''' +
-                '=============================================\n' +
-                "Total reviewed cases: ${rows.size()}\n" +
-                "PostgreSQL cases: ${sourceCounts['PostgreSQL']}\n" +
-                "MariaDB cases: ${sourceCounts['MariaDB']}\n" +
-                "Confirmed semantic gaps: ${realGaps.size()}\n" +
-                "Stage 6 non-isolation runtime adaptations: ${runtimeRows.size()}\n" +
-                allowedClassifications.sort().collect { key -> "${key}: ${classCounts[key] ?: 0}" }.join('\n') + '\n\n' +
-                'Adaptation queue:\n' +
-                realGaps.sort { a, b -> a[7] <=> b[7] ?: a[0] <=> b[0] }.collect { row ->
-                    "${row[0]} ${row[7]} ${row[1]} ${row[5]} -> ${row[11]} :: ${row[10]}"
-                }.join('\n') + '\n'
-        logger.lifecycle('DelosDB Stage 6 semantic-gap inventory passed. Report: {}', report)
-    }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('delosExternalSemanticGapStaticAnalysis')
 }
 
 registerDelosFocusedTest(
@@ -1005,11 +855,6 @@ registerDelosFocusedTest(
     tasks.named(taskName) {
         dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
     }
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDelosSecurityTruthTest'),
-            tasks.named('runDelosMvccRawStoreDecisionWalCrashTest')
 }
 
 

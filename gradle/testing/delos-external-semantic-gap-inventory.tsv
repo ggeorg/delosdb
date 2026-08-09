@@ -1,4 +1,4 @@
-# DelosDB Stage 6 external semantic-gap inventory.
+# Historical DelosDB Stage 6 external semantic-gap review inventory; permanent executable provenance is tracked separately.
 # Sources are used as design/test references only; foreign test code is not copied.
 # case_id	source_project	source_revision	source_file	license	area	classification	priority	upstream_semantic_intent	delosdb_evidence	gap_or_reason	next_action
 PG-001	PostgreSQL	archive-sha256:bfdc93ea2dd6be601320f7fc4b56a164b55d5ade0fa9eaa9a30984c6335ddd2c	src/test/isolation/specs/delete-abort-savept.spec	PostgreSQL License	savepoint-locking	REAL_SEMANTIC_GAP	P0	Rollback to a savepoint after upgrading a row lock must not lose the pre-savepoint conflict protection; the exact post-rollback lock strength is engine-specific.	DEL-ISO-010/011/012 verify data/version rollback but not retained conflict protection after a savepoint lock upgrade.	Pre-savepoint conflict protection across savepoint rollback is not directly proven.	ADAPT_STAGE6B

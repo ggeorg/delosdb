@@ -172,6 +172,11 @@ Derby `suites.All`, every DelosDB correctness lane, permanent gates and the rele
 performance/report harnesses; it does not rerun the inherited suites
 individually before `suites.All`.
 
+The test module's own `:delosdb-tests:check` is intentionally structural: it compiles the test tree and
+runs the permanent provenance, stable-registry, and isolation-catalogue analyses. Expensive fault
+campaigns, page-I/O/mapped-region decision reports, generated-class acceptance, fuzz corpora, and
+performance/baseline capture are explicit lanes rather than hidden `check` dependencies.
+
 ## Storage verification
 
 ```bash

@@ -1384,6 +1384,11 @@ suites and standard Gradle `--tests` filters. The remaining focused registration
 justified special harnesses: isolation-spec execution, fork-isolated runtime classification, security
 S0, crash/fault and baseline evidence, generated-class acceptance, deterministic fuzz controls,
 performance harnesses, and modular-runtime capture.
+Stage 8D removes the last deprecated root compatibility alias, detaches expensive campaign/experiment
+evidence from `:delosdb-tests:check`, and folds the surviving H2/MariaDB runtime-test provenance into
+the permanent provenance authority. The module `check` task now owns only compilation plus permanent
+test-organization/provenance gates; fault campaigns, representation experiments, generated-class
+acceptance, fuzz corpora, benchmarks, and baseline capture remain explicit opt-in or closeout lanes.
 
 ---
 

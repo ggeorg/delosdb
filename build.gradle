@@ -574,12 +574,6 @@ stableTestSuiteAliases.each { String taskName ->
     }
 }
 
-tasks.register('derbyTestSuite') {
-    group = 'verification'
-    description = 'Deprecated root alias for derbyLanguageTests.'
-    dependsOn tasks.named('derbyLanguageTests')
-}
-
 // Root test is intentionally narrow: module-local unit tests plus the
 // DelosDB-owned unit/contract suite. The inherited compatibility corpus is
 // reached through the named verification levels below.
