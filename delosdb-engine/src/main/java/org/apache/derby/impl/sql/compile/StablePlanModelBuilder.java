@@ -390,33 +390,12 @@ final class StablePlanModelBuilder {
 
     private static Operation operation(
             ResultSetNode node, ConglomerateDescriptor conglomerate) {
-        if (node instanceof IndexToBaseRowNode) return Operation.INDEX_TO_BASE_ROW;
         if (node instanceof FromBaseTable baseTable) {
             if (baseTable.isDistinctScan()) return Operation.DISTINCT_SCAN;
             if (conglomerate == null) return Operation.SCAN;
             return conglomerate.isIndex() ? Operation.INDEX_SCAN : Operation.TABLE_SCAN;
         }
-        if (node instanceof HalfOuterJoinNode) return Operation.OUTER_JOIN;
-        if (node instanceof JoinNode) return Operation.JOIN;
-        if (node instanceof ProjectRestrictNode) return Operation.PROJECT_RESTRICT;
-        if (node instanceof GroupByNode) return Operation.GROUP_BY;
-        if (node instanceof DistinctNode) return Operation.DISTINCT;
-        if (node instanceof OrderByNode) return Operation.ORDER_BY;
-        if (node instanceof RowCountNode) return Operation.ROW_COUNT;
-        if (node instanceof UnionNode) return Operation.UNION;
-        if (node instanceof IntersectOrExceptNode) return Operation.INTERSECT_OR_EXCEPT;
-        if (node instanceof RowResultSetNode) return Operation.ROW_VALUES;
-        if (node instanceof WindowResultSetNode) return Operation.WINDOW;
-        if (node instanceof HashTableNode) return Operation.HASH_TABLE;
-        if (node instanceof MaterializeResultSetNode) return Operation.MATERIALIZE;
-        if (node instanceof MaterializeSubqueryNode) return Operation.MATERIALIZED_SUBQUERY;
-        if (node instanceof NormalizeResultSetNode) return Operation.NORMALIZE;
-        if (node instanceof ScrollInsensitiveResultSetNode) return Operation.SCROLL_INSENSITIVE;
-        if (node instanceof FromVTI) return Operation.VTI_SCAN;
-        if (node instanceof CurrentOfNode) return Operation.CURRENT_OF;
-        if (node instanceof FromSubquery) return Operation.SUBQUERY;
-        if (node instanceof SelectNode) return Operation.QUERY_BLOCK;
-        return Operation.GENERIC;
+        return Operation.forNode(node);
     }
 
     private static String normalize(String value) {
@@ -424,39 +403,59 @@ final class StablePlanModelBuilder {
     }
 
     private enum Operation {
-        INDEX_TO_BASE_ROW("SCAN", "INDEX_TO_BASE_ROW"),
+        INDEX_TO_BASE_ROW("SCAN", "INDEX_TO_BASE_ROW", IndexToBaseRowNode.class),
         DISTINCT_SCAN("DISTINCT", "DISTINCT_SCAN"),
         INDEX_SCAN("SCAN", "INDEX_SCAN"),
         TABLE_SCAN("SCAN", "TABLE_SCAN"),
         SCAN("SCAN", "SCAN"),
-        OUTER_JOIN("JOIN", "OUTER_JOIN"),
-        JOIN("JOIN", "JOIN"),
-        PROJECT_RESTRICT("PROJECT_FILTER", "PROJECT_RESTRICT"),
-        GROUP_BY("AGGREGATE", "GROUP_BY"),
-        DISTINCT("DISTINCT", "DISTINCT"),
-        ORDER_BY("SORT", "ORDER_BY"),
-        ROW_COUNT("LIMIT", "ROW_COUNT"),
-        UNION("SET_OPERATION", "UNION"),
-        INTERSECT_OR_EXCEPT("SET_OPERATION", "INTERSECT_OR_EXCEPT"),
-        ROW_VALUES("VALUES", "ROW_VALUES"),
-        WINDOW("WINDOW", "WINDOW"),
-        HASH_TABLE("MATERIALIZE", "HASH_TABLE"),
-        MATERIALIZE("MATERIALIZE", "MATERIALIZE"),
-        MATERIALIZED_SUBQUERY("MATERIALIZE", "MATERIALIZED_SUBQUERY"),
-        NORMALIZE("NORMALIZE", "NORMALIZE"),
-        SCROLL_INSENSITIVE("SCROLL", "SCROLL_INSENSITIVE"),
-        VTI_SCAN("SCAN", "VTI_SCAN"),
-        CURRENT_OF("SCAN", "CURRENT_OF"),
-        SUBQUERY("SUBQUERY", "SUBQUERY"),
-        QUERY_BLOCK("QUERY", "QUERY_BLOCK"),
+        OUTER_JOIN("JOIN", "OUTER_JOIN", HalfOuterJoinNode.class),
+        JOIN("JOIN", "JOIN", JoinNode.class),
+        PROJECT_RESTRICT("PROJECT_FILTER", "PROJECT_RESTRICT", ProjectRestrictNode.class),
+        GROUP_BY("AGGREGATE", "GROUP_BY", GroupByNode.class),
+        DISTINCT("DISTINCT", "DISTINCT", DistinctNode.class),
+        ORDER_BY("SORT", "ORDER_BY", OrderByNode.class),
+        ROW_COUNT("LIMIT", "ROW_COUNT", RowCountNode.class),
+        UNION("SET_OPERATION", "UNION", UnionNode.class),
+        INTERSECT_OR_EXCEPT("SET_OPERATION", "INTERSECT_OR_EXCEPT", IntersectOrExceptNode.class),
+        ROW_VALUES("VALUES", "ROW_VALUES", RowResultSetNode.class),
+        WINDOW("WINDOW", "WINDOW", WindowResultSetNode.class),
+        HASH_TABLE("MATERIALIZE", "HASH_TABLE", HashTableNode.class),
+        MATERIALIZE("MATERIALIZE", "MATERIALIZE", MaterializeResultSetNode.class),
+        MATERIALIZED_SUBQUERY("MATERIALIZE", "MATERIALIZED_SUBQUERY", MaterializeSubqueryNode.class),
+        NORMALIZE("NORMALIZE", "NORMALIZE", NormalizeResultSetNode.class),
+        SCROLL_INSENSITIVE("SCROLL", "SCROLL_INSENSITIVE", ScrollInsensitiveResultSetNode.class),
+        VTI_SCAN("SCAN", "VTI_SCAN", FromVTI.class),
+        CURRENT_OF("SCAN", "CURRENT_OF", CurrentOfNode.class),
+        SUBQUERY("SUBQUERY", "SUBQUERY", FromSubquery.class),
+        QUERY_BLOCK("QUERY", "QUERY_BLOCK", SelectNode.class),
         GENERIC("RESULT_SET", "GENERIC");
+
+        private static final Operation[] NODE_TYPES = {
+                INDEX_TO_BASE_ROW, OUTER_JOIN, JOIN, PROJECT_RESTRICT, GROUP_BY,
+                DISTINCT, ORDER_BY, ROW_COUNT, UNION, INTERSECT_OR_EXCEPT,
+                ROW_VALUES, WINDOW, HASH_TABLE, MATERIALIZE, MATERIALIZED_SUBQUERY,
+                NORMALIZE, SCROLL_INSENSITIVE, VTI_SCAN, CURRENT_OF, SUBQUERY, QUERY_BLOCK
+        };
 
         private final String logical;
         private final String physical;
+        private final Class<? extends ResultSetNode> nodeType;
 
         Operation(String logical, String physical) {
+            this(logical, physical, null);
+        }
+
+        Operation(String logical, String physical, Class<? extends ResultSetNode> nodeType) {
             this.logical = logical;
             this.physical = physical;
+            this.nodeType = nodeType;
+        }
+
+        private static Operation forNode(ResultSetNode node) {
+            for (Operation operation : NODE_TYPES) {
+                if (operation.nodeType.isInstance(node)) return operation;
+            }
+            return GENERIC;
         }
 
         String logical() { return logical; }
