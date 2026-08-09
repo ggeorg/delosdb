@@ -90,9 +90,10 @@ It must not become:
 - a runtime compiler backend selector;
 - an excuse to bypass `JavaFactory` / `ClassBuilder` / `MethodBuilder`.
 
-Phase 10.1 begins from the current clean baseline. Its first foundation slice retains a bounded,
-immutable representation of Derby's already-selected optimized plan on the prepared statement, with
-deterministic node identity, operation, storage/access-path, join-strategy, and estimate fields.
-Predicate placement, ordering, and fallback/rejection reasons remain the next 10.1 slice.
+Phase 10.1A is complete. The current 10.1B slice fills the existing schema-version-1 predicate,
+ordering, and decision fields from Derby's selected compiler structures: store/residual/requalification
+placement, explicit ORDER BY and selected-index ordering, forced/cost-selected access decisions,
+non-covering index fetch, required sort/filter, and join-strategy decisions. Unsupported expression
+shapes remain bounded generic `EXPRESSION` entries rather than private AST dumps.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

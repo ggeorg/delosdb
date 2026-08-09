@@ -28,7 +28,7 @@ import java.util.Map;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.jdbc.EnginePreparedStatement;
 
-/** Phase 10.1 foundation proof for the immutable selected-plan model. */
+/** Phase 10.1 proof for the immutable selected-plan model and stable semantics. */
 public final class StablePlanModelTest extends MvccSqlTestSupport {
     public void testStablePlanCapturesHeapAndMvccIndexChoice() throws Exception {
         String databaseName = databaseName("stable-plan-storage-db");
@@ -95,11 +95,65 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
                     .orElseThrow(() -> new AssertionError("selected plan must expose a JOIN node"));
             assertNotNull(join.joinStrategy());
             assertFalse(join.joinStrategy().isBlank());
+            assertEquals("COST_SELECTED_JOIN_STRATEGY", join.decisionReason());
+            connection.commit();
+        }
+    }
+
+    public void testStablePlanCapturesPredicatePlacementOrderingAndDecisionReasons() throws Exception {
+        String databaseName = databaseName("stable-plan-semantics-db");
+        String forcedIndexSql = "select id from plan_semantics_t --DERBY-PROPERTIES index=plan_semantics_v_idx\n"
+                + "where v = 20 and upper(note) = 'B'";
+        String forcedTableSortSql = "select id from plan_semantics_t --DERBY-PROPERTIES index=NULL\n"
+                + "where v >= 10 order by v desc";
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table plan_semantics_t (id int primary key, v int, note varchar(16))");
+            executeUpdate(connection, "create index plan_semantics_v_idx on plan_semantics_t(v)");
+            executeUpdate(connection,
+                    "insert into plan_semantics_t values (1, 10, 'A'), (2, 20, 'B'), (3, 30, 'C')");
+            connection.commit();
+
+            StablePlanModel forcedIndex = plan(connection, forcedIndexSql);
+            StablePlanModel forcedTableSort = plan(connection, forcedTableSortSql, 3);
+
+            StablePlanModel.Node indexScan = node(forcedIndex, "INDEX_SCAN");
+            assertEquals("FORCED_INDEX", indexScan.decisionReason());
+            assertTrue(indexScan.ordering().contains("INDEX:COLUMN(V):ASC"));
+            assertTrue("forced non-covering index must explain the base-row fetch",
+                    forcedIndex.nodes().stream()
+                            .anyMatch(n -> "INDEX_NOT_COVERING".equals(n.decisionReason())));
+            assertTrue("index equality must be placed at the store",
+                    allPredicates(forcedIndex).stream()
+                            .anyMatch(p -> p.startsWith("STORE")
+                                    && p.contains("V)")
+                                    && p.contains("LITERAL(INTEGER)")));
+            assertTrue("method predicate must remain above the store",
+                    allPredicates(forcedIndex).stream()
+                            .anyMatch(p -> (p.startsWith("RESIDUAL") || p.startsWith("FILTER"))
+                                    && p.contains("EXPRESSION")));
+
+            StablePlanModel.Node tableScan = node(forcedTableSort, "TABLE_SCAN");
+            assertEquals("FORCED_TABLE_SCAN", tableScan.decisionReason());
+            StablePlanModel.Node sort = node(forcedTableSort, "ORDER_BY");
+            assertEquals("SORT_REQUIRED", sort.decisionReason());
+            assertTrue("ORDER BY semantics must be stable",
+                    sort.ordering().stream().anyMatch(order ->
+                            order.startsWith("ORDER_BY:")
+                                    && order.contains("V)")
+                                    && order.endsWith(":DESC:NULLS_HIGH")));
             connection.commit();
         }
     }
 
     private static StablePlanModel plan(Connection connection, String sql) throws Exception {
+        return plan(connection, sql, 1);
+    }
+
+    private static StablePlanModel plan(Connection connection, String sql, int expectedRows)
+            throws Exception {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             if (!(statement instanceof EnginePreparedStatement engineStatement)) {
                 throw new AssertionError("engine prepared statement required for stable-plan inspection");
@@ -115,9 +169,21 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
                     rows++;
                 }
             }
-            assertEquals("plan inspection must not alter query results", 1, rows);
+            assertEquals("plan inspection must not alter query results", expectedRows, rows);
             return model;
         }
+    }
+
+    private static StablePlanModel.Node node(StablePlanModel model, String physicalOperation) {
+        return model.nodes().stream()
+                .filter(candidate -> physicalOperation.equals(candidate.physicalOperation()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "missing plan node " + physicalOperation + " in " + model.nodes()));
+    }
+
+    private static java.util.List<String> allPredicates(StablePlanModel model) {
+        return model.nodes().stream().flatMap(node -> node.predicates().stream()).toList();
     }
 
     private static void assertPlanShape(StablePlanModel model, String statementType) {
