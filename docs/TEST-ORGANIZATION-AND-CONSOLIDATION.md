@@ -68,7 +68,7 @@ applicable providers. Embedded execution is the Stage 4 authority; existing DRDA
 suites remain the transport-equivalence authority rather than adding network-server lifecycle complexity
 to the isolation runner.
 
-The accepted Stage 8 registry contains 92 active executable tests and zero transitional entries.
+The post-Stage-8 registry contains 93 active executable tests and zero transitional entries; Phase 10.1 adds the selected-plan model authority.
 Removed Stage 7 assertions remain traceable through `gradle/testing/delos-stage7-test-consolidation.tsv`.
 
 

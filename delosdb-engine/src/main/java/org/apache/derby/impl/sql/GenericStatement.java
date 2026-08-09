@@ -34,6 +34,7 @@ import org.apache.derby.iapi.sql.PreparedStatement;
 import org.apache.derby.iapi.sql.Statement;
 import org.apache.derby.iapi.sql.compile.CompilerContext;
 import org.apache.derby.iapi.sql.compile.Parser;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.compile.Visitable;
 import org.apache.derby.iapi.sql.compile.ASTVisitor;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
@@ -546,6 +547,9 @@ public class GenericStatement
 						}
 					}
 
+                    StablePlanModel stablePlanModel =
+                            qt.buildStablePlanModel(getSource(), compilationSchema.getDescriptorName());
+
 					GeneratedClass ac = qt.generate(preparedStmt.getByteCodeSaver());
 
 					generateTime = getCurrentTimeMillis(lcc);
@@ -587,6 +591,7 @@ public class GenericStatement
 												);
 					preparedStmt.setSPSName(qt.getSPSName());
 					preparedStmt.completeCompile(qt);
+                    preparedStmt.setStablePlanModel(stablePlanModel);
 					preparedStmt.setCompileTimeWarnings(cc.getWarnings());
 
                     // Schedule updates of any stale index statistics we may

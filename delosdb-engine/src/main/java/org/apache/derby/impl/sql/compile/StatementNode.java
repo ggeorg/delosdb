@@ -30,6 +30,7 @@ import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.loader.GeneratedClass;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.sql.ResultDescription;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.store.access.ConglomerateController;
@@ -56,6 +57,18 @@ public abstract class StatementNode extends QueryTreeNode
 
     StatementNode(ContextManager cm) {
         super(cm);
+    }
+
+    /**
+     * Build the bounded read-only representation of the already-optimized plan.
+     *
+     * @param sourceText exact statement source used for compilation identity
+     * @param compilationSchema compilation schema name
+     * @return stable diagnostic plan model
+     */
+    public final StablePlanModel buildStablePlanModel(
+            String sourceText, String compilationSchema) {
+        return StablePlanModelBuilder.build(this, sourceText, compilationSchema);
     }
 
 	/**

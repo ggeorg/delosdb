@@ -48,6 +48,7 @@ import org.apache.derby.iapi.sql.ResultDescription;
 import org.apache.derby.iapi.sql.ResultSet;
 import org.apache.derby.iapi.sql.Statement;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.conn.StatementContext;
 import org.apache.derby.iapi.sql.depend.DependencyManager;
 import org.apache.derby.iapi.sql.depend.Provider;
@@ -99,6 +100,7 @@ public class GenericPreparedStatement
 	public Statement statement;
 	protected GeneratedClass activationClass; // satisfies Activation
 	protected ResultDescription resultDesc;
+    private StablePlanModel stablePlanModel;
 	protected DataTypeDescriptor[] paramTypeDescriptors;
 	private String			spsName;
 	private SQLWarning		warnings;
@@ -237,6 +239,7 @@ public class GenericPreparedStatement
     final synchronized void beginCompiling() {
         compilingStatement = true;
         setActivationClass(null);
+        stablePlanModel = null;
     }
 
     /**
@@ -1061,6 +1064,18 @@ recompileOutOfDatePlan:
 		activationClass = ac;
 	}
 
+    /** Return the immutable diagnostic model of the last successful optimization. */
+    @Override
+    public StablePlanModel getStablePlanModel()
+    {
+        return stablePlanModel;
+    }
+
+    void setStablePlanModel(StablePlanModel stablePlanModel)
+    {
+        this.stablePlanModel = stablePlanModel;
+    }
+
 	//
 	// ExecPreparedStatement
 	//
@@ -1207,6 +1222,7 @@ recompileOutOfDatePlan:
 
 		clone.activationClass = getActivationClass();
 		clone.resultDesc = resultDesc;
+        clone.stablePlanModel = stablePlanModel;
 		clone.paramTypeDescriptors = paramTypeDescriptors;
 		clone.executionConstants = executionConstants;
 		clone.UUIDString = UUIDString;

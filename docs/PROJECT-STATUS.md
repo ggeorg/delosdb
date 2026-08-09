@@ -73,9 +73,9 @@ Run them through:
 Historical stage tasks and exact-text gates were retired. Comments, Markdown, roadmap wording, and
 report prose do not participate in pass/fail.
 
-## Next phase
+## Current phase
 
-The next implementation phase is **Phase 10.1 — Stable Plan Model**.
+The current implementation phase is **Phase 10.1 — Stable Plan Model**.
 
 The plan model should expose the optimizer's existing decision through a deterministic, readable
 representation containing stable statement/node identity, operation, access path, storage mode,
@@ -90,5 +90,9 @@ It must not become:
 - a runtime compiler backend selector;
 - an excuse to bypass `JavaFactory` / `ClassBuilder` / `MethodBuilder`.
 
-Phase 10.1 begins from the current clean baseline. Repository-integrity stages are closed and should
-not be reopened as an endless cleanup program.
+Phase 10.1 begins from the current clean baseline. Its first foundation slice retains a bounded,
+immutable representation of Derby's already-selected optimized plan on the prepared statement, with
+deterministic node identity, operation, storage/access-path, join-strategy, and estimate fields.
+Predicate placement, ordering, and fallback/rejection reasons remain the next 10.1 slice.
+
+Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

@@ -26,6 +26,7 @@ import org.apache.derby.iapi.services.loader.GeneratedClass;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 
 import org.apache.derby.iapi.sql.PreparedStatement;
 
@@ -88,6 +89,14 @@ public interface ExecPreparedStatement
 	 *	(probably when a stored prepared statement is loading)
 	 */
 	GeneratedClass getActivationClass() throws StandardException;
+
+    /**
+     * Return the immutable diagnostic description of the optimizer decision
+     * retained by the most recent successful compilation.
+     *
+     * @return stable plan model, or {@code null} before successful compilation
+     */
+    StablePlanModel getStablePlanModel();
 
     /**
      * <p>
