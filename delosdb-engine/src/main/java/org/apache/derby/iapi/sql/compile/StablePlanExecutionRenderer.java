@@ -50,12 +50,18 @@ public final class StablePlanExecutionRenderer {
                     .append(" observed=").append(node.observed());
             if (node.observed()) {
                 Double estimatedRows = validEstimate(planNode.estimatedRows());
+                String mvccReadPath = mvccReadPath(planNode, node);
                 out.append(" opens=").append(node.opens())
                         .append(" estimatedRows=").append(estimatedRows)
                         .append(" actualRows=").append(node.actualRows())
                         .append(" estimateComparison=")
-                        .append(estimateComparison(estimatedRows, node.actualRows()))
-                        .append(" rowsSeen=").append(node.rowsSeen())
+                        .append(estimateComparison(estimatedRows, node.actualRows()));
+                if (mvccReadPath != null) {
+                    out.append(" mvccReadPath=").append(mvccReadPath)
+                            .append(" mvccVersionTraversal=")
+                            .append(mvccVersionTraversal(node, mvccReadPath));
+                }
+                out.append(" rowsSeen=").append(node.rowsSeen())
                         .append(" rowsFiltered=").append(node.rowsFiltered())
                         .append(" elapsedMillis=").append(node.elapsedMillis())
                         .append(" openMillis=").append(node.openMillis())
@@ -104,6 +110,12 @@ public final class StablePlanExecutionRenderer {
         nullableField(out, "actualRows", node.actualRows()).append(',');
         stringField(out, "estimateComparison",
                 estimateComparison(estimatedRows, node.actualRows())).append(',');
+        String mvccReadPath = mvccReadPath(planNode, node);
+        if (mvccReadPath != null) {
+            stringField(out, "mvccReadPath", mvccReadPath).append(',');
+            stringField(out, "mvccVersionTraversal",
+                    mvccVersionTraversal(node, mvccReadPath)).append(',');
+        }
         field(out, "rowsSeen", node.rowsSeen()).append(',');
         field(out, "rowsFiltered", node.rowsFiltered()).append(',');
         field(out, "elapsedMillis", node.elapsedMillis()).append(',');
@@ -130,6 +142,43 @@ public final class StablePlanExecutionRenderer {
     private static StringBuilder nullableField(StringBuilder out, String name, Number value) {
         StablePlanRenderer.jsonString(out, name).append(':');
         return value == null ? out.append("null") : out.append(value);
+    }
+
+
+    private static String mvccReadPath(
+            StablePlanModel.Node planNode, StablePlanExecutionEvidence.Node node) {
+        if (!"delos_mvcc".equals(planNode.storageMode())) return null;
+        long candidates = metric(node, "MVCC_ORDERED_CANDIDATES");
+        if (candidates < 0) return null;
+        if (candidates == 0) {
+            return "BASE_TABLE".equals(planNode.accessPath())
+                    ? "TABLE_SCAN"
+                    : "NO_CANDIDATES";
+        }
+        long covered = metric(node, "MVCC_COVERED_CANDIDATES");
+        long fallback = metric(node, "MVCC_FALLBACK_CANDIDATES");
+        if (covered < 0 || fallback < 0 || covered + fallback != candidates) return "UNKNOWN";
+        if (covered > 0 && fallback > 0) return "MIXED";
+        return covered > 0 ? "COVERED" : "FALLBACK";
+    }
+
+    private static String mvccVersionTraversal(
+            StablePlanExecutionEvidence.Node node, String readPath) {
+        if ("TABLE_SCAN".equals(readPath)) return "NOT_MEASURED";
+        long candidates = metric(node, "MVCC_ORDERED_CANDIDATES");
+        if (candidates == 0) return "NONE";
+        long fallback = metric(node, "MVCC_FALLBACK_CANDIDATES");
+        long steps = metric(node, "MVCC_VERSION_CHAIN_STEPS");
+        if (fallback < 0 || steps < fallback) return "UNKNOWN";
+        if (fallback == 0) return steps == 0 ? "NONE" : "UNKNOWN";
+        return steps == fallback ? "HEAD_ONLY" : "HISTORICAL";
+    }
+
+    private static long metric(StablePlanExecutionEvidence.Node node, String name) {
+        for (StablePlanExecutionEvidence.Metric metric : node.storageMetrics()) {
+            if (name.equals(metric.name())) return metric.value();
+        }
+        return -1;
     }
 
     private static Double validEstimate(Double value) {

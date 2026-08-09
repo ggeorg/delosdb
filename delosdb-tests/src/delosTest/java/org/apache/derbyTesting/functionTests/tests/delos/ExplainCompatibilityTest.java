@@ -94,6 +94,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
                             + "--DERBY-PROPERTIES index=null\n"
                             + "where v >= 20",
                     "storage=delos_mvcc", "rootRowsReturned=2", "actualRows=2",
+                    "mvccReadPath=TABLE_SCAN", "mvccVersionTraversal=NOT_MEASURED",
                     "MVCC_VISIBILITY_CHECKS", "MVCC_VERSION_CHAIN_STEPS");
 
             String parameterSql =
@@ -241,7 +242,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
     }
 
     private static void assertTimingFields(ExplainOutput output) {
-        assertTrue(output.text().contains("EXECUTION schemaVersion=4 "));
+        assertTrue(output.text().contains("EXECUTION schemaVersion=5 "));
         assertTrue(output.text().contains(" estimatedRows="));
         assertTrue(output.text().contains(" actualRows="));
         assertTrue(output.text().contains(" estimateComparison="));
@@ -249,7 +250,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         assertTrue(output.text().contains(" openMillis="));
         assertTrue(output.text().contains(" nextMillis="));
         assertTrue(output.text().contains(" closeMillis="));
-        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":4,"));
+        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":5,"));
         assertTrue(output.json().contains("\"estimatedRows\":"));
         assertTrue(output.json().contains("\"actualRows\":"));
         assertTrue(output.json().contains("\"estimateComparison\":\""));

@@ -107,8 +107,11 @@ result-set identity. Phase 10.3B is complete: Derby's existing result-set timing
 for `EXPLAIN ANALYZE`, without changing connection-wide statistics timing or adding per-row instrumentation
 to ordinary execution. Phase 10.3C is complete: execution-evidence schema version 3 adds nullable
 authoritative per-operator `actualRows`, using only runtime counters that genuinely represent output rows.
-Phase 10.3D is the current tranche: schema version 4 co-locates the stable plan's existing `estimatedRows`
-with `actualRows` in EXPLAIN ANALYZE and classifies each observed node as `MATCH`, `UNDER_ESTIMATE`,
-`OVER_ESTIMATE`, or `UNKNOWN`, without ratios, thresholds, or new execution instrumentation.
+Phase 10.3D is complete: schema version 4 co-locates the stable plan's existing `estimatedRows` with
+`actualRows` and classifies each observed node as `MATCH`, `UNDER_ESTIMATE`, `OVER_ESTIMATE`, or
+`UNKNOWN`. Phase 10.3E is the current tranche: execution schema version 5 derives exact MVCC read-path and
+version-traversal diagnostics from the stable plan plus existing ordered-index scan counters. Plain MVCC table
+scans are explicitly `NOT_MEASURED` for version traversal because the ordered-index metrics do not cover that
+path; no new storage or execution instrumentation is added.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.
