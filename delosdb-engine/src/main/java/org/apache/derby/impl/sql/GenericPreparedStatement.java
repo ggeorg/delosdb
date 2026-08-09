@@ -102,6 +102,7 @@ public class GenericPreparedStatement
 	protected ResultDescription resultDesc;
     private StablePlanModel stablePlanModel;
     private int[] stablePlanResultSetNumbers;
+    private boolean explainAnalyze;
 	protected DataTypeDescriptor[] paramTypeDescriptors;
 	private String			spsName;
 	private SQLWarning		warnings;
@@ -242,6 +243,7 @@ public class GenericPreparedStatement
         setActivationClass(null);
         stablePlanModel = null;
         stablePlanResultSetNumbers = null;
+        explainAnalyze = false;
     }
 
     /**
@@ -1089,6 +1091,17 @@ recompileOutOfDatePlan:
         stablePlanResultSetNumbers = resultSetNumbers == null ? null : resultSetNumbers.clone();
     }
 
+    @Override
+    public boolean isExplainAnalyze()
+    {
+        return explainAnalyze;
+    }
+
+    void setExplainAnalyze(boolean explainAnalyze)
+    {
+        this.explainAnalyze = explainAnalyze;
+    }
+
 	//
 	// ExecPreparedStatement
 	//
@@ -1238,6 +1251,7 @@ recompileOutOfDatePlan:
         clone.stablePlanModel = stablePlanModel;
         clone.stablePlanResultSetNumbers = stablePlanResultSetNumbers == null
                 ? null : stablePlanResultSetNumbers.clone();
+        clone.explainAnalyze = explainAnalyze;
 		clone.paramTypeDescriptors = paramTypeDescriptors;
 		clone.executionConstants = executionConstants;
 		clone.UUIDString = UUIDString;

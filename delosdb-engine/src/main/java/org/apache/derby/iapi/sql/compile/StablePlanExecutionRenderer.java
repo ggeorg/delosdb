@@ -51,7 +51,11 @@ public final class StablePlanExecutionRenderer {
             if (node.observed()) {
                 out.append(" opens=").append(node.opens())
                         .append(" rowsSeen=").append(node.rowsSeen())
-                        .append(" rowsFiltered=").append(node.rowsFiltered());
+                        .append(" rowsFiltered=").append(node.rowsFiltered())
+                        .append(" elapsedMillis=").append(node.elapsedMillis())
+                        .append(" openMillis=").append(node.openMillis())
+                        .append(" nextMillis=").append(node.nextMillis())
+                        .append(" closeMillis=").append(node.closeMillis());
                 if (!node.storageMetrics().isEmpty()) {
                     out.append(" storage=[");
                     for (int metric = 0; metric < node.storageMetrics().size(); metric++) {
@@ -91,6 +95,10 @@ public final class StablePlanExecutionRenderer {
         field(out, "opens", node.opens()).append(',');
         field(out, "rowsSeen", node.rowsSeen()).append(',');
         field(out, "rowsFiltered", node.rowsFiltered()).append(',');
+        field(out, "elapsedMillis", node.elapsedMillis()).append(',');
+        field(out, "openMillis", node.openMillis()).append(',');
+        field(out, "nextMillis", node.nextMillis()).append(',');
+        field(out, "closeMillis", node.closeMillis()).append(',');
         out.append("\"storageMetrics\":[");
         for (int i = 0; i < node.storageMetrics().size(); i++) {
             if (i > 0) out.append(',');

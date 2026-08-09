@@ -140,7 +140,7 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 StablePlanRenderer.json(format));
 
         StablePlanExecutionEvidence evidence = new StablePlanExecutionEvidence(
-                1,
+                StablePlanExecutionEvidence.CURRENT_SCHEMA_VERSION,
                 "stmt-1",
                 2,
                 List.of(new StablePlanExecutionEvidence.Node(
@@ -149,23 +149,30 @@ public final class ExplainTest extends MvccSqlTestSupport {
                         1,
                         3,
                         1,
+                        9,
+                        2,
+                        6,
+                        1,
                         List.of(
                                 new StablePlanExecutionEvidence.Metric("ROWS_VISITED", 3),
                                 new StablePlanExecutionEvidence.Metric("ROWS_QUALIFIED", 2)))),
                 false);
         assertEquals(
                 StablePlanRenderer.text(format)
-                        + "EXECUTION schemaVersion=1 statementId=stmt-1 "
+                        + "EXECUTION schemaVersion=2 statementId=stmt-1 "
                         + "rootRowsReturned=2 nodes=1 truncated=false\n"
                         + "n0 observed=true opens=1 rowsSeen=3 rowsFiltered=1 "
+                        + "elapsedMillis=9 openMillis=2 nextMillis=6 closeMillis=1 "
                         + "storage=[ROWS_VISITED=3,ROWS_QUALIFIED=2]\n",
                 StablePlanExecutionRenderer.text(format, evidence));
         assertEquals(
                 "{\"plan\":" + StablePlanRenderer.json(format)
-                        + ",\"execution\":{\"schemaVersion\":1,"
+                        + ",\"execution\":{\"schemaVersion\":2,"
                         + "\"statementId\":\"stmt-1\",\"rootRowsReturned\":2,"
                         + "\"nodes\":[{\"nodeId\":\"n0\",\"observed\":true,"
                         + "\"opens\":1,\"rowsSeen\":3,\"rowsFiltered\":1,"
+                        + "\"elapsedMillis\":9,\"openMillis\":2,\"nextMillis\":6,"
+                        + "\"closeMillis\":1,"
                         + "\"storageMetrics\":[{\"name\":\"ROWS_VISITED\",\"value\":3},"
                         + "{\"name\":\"ROWS_QUALIFIED\",\"value\":2}]}],"
                         + "\"truncated\":false}}",
@@ -215,7 +222,10 @@ public final class ExplainTest extends MvccSqlTestSupport {
             assertTrue(heapOutput.text().contains("storage=heap"));
             assertTrue(heapOutput.text().contains("ROWS_VISITED="));
             assertTrue(heapOutput.text().contains("ROWS_QUALIFIED="));
+            assertTrue(heapOutput.text().contains("elapsedMillis="));
+            assertTrue(heapOutput.text().contains("nextMillis="));
             assertTrue(heapOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(heapOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(heapOutput.json().contains("\"name\":\"PAGES_VISITED\""));
 
             ExplainOutput mvccOutput = analyze(connection, mvcc);
@@ -223,7 +233,9 @@ public final class ExplainTest extends MvccSqlTestSupport {
             assertTrue(mvccOutput.text().contains("storage=delos_mvcc"));
             assertTrue(mvccOutput.text().contains("ROWS_VISITED="));
             assertTrue(mvccOutput.text().contains("MVCC_VISIBILITY_CHECKS="));
+            assertTrue(mvccOutput.text().contains("elapsedMillis="));
             assertTrue(mvccOutput.json().contains("\"rootRowsReturned\":2"));
+            assertTrue(mvccOutput.json().contains("\"elapsedMillis\":"));
             assertTrue(mvccOutput.json().contains("\"name\":\"MVCC_VERSION_CHAIN_STEPS\""));
             connection.rollback();
         }
@@ -342,9 +354,9 @@ public final class ExplainTest extends MvccSqlTestSupport {
                 String json = rs.getString(2);
                 assertFalse(rs.next());
                 assertTrue(text.startsWith("PLAN schemaVersion=1 "));
-                assertTrue(text.contains("\nEXECUTION schemaVersion=1 "));
+                assertTrue(text.contains("\nEXECUTION schemaVersion=2 "));
                 assertTrue(json.startsWith("{\"plan\":{\"schemaVersion\":1,"));
-                assertTrue(json.contains("\"execution\":{\"schemaVersion\":1,"));
+                assertTrue(json.contains("\"execution\":{\"schemaVersion\":2,"));
                 assertTrue(json.endsWith("}}"));
                 return new ExplainOutput(stablePlan(statement), text, json);
             }

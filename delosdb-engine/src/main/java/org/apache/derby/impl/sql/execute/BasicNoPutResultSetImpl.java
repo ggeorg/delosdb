@@ -120,7 +120,9 @@ implements NoPutResultSet
 							double optimizerEstimatedCost)
 	{
 		this.activation = activation;
-		if (statisticsTimingOn = getLanguageConnectionContext().getStatisticsTiming())
+        statisticsTimingOn = getLanguageConnectionContext().getStatisticsTiming()
+                || activation.getPreparedStatement().isExplainAnalyze();
+		if (statisticsTimingOn)
 		    beginTime = startExecutionTime = getCurrentTimeMillis();
 		this.resultDescription = resultDescription;
 		this.optimizerEstimatedRowCount = optimizerEstimatedRowCount;

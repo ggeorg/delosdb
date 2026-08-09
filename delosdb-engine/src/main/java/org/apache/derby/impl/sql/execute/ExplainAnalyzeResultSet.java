@@ -26,6 +26,7 @@ import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.sql.execute.ResultSetStatistics;
+import org.apache.derby.iapi.sql.execute.ResultSetStatisticsFactory;
 import org.apache.derby.iapi.sql.execute.StablePlanExecutionEvidence;
 import org.apache.derby.iapi.sql.compile.StablePlanExecutionRenderer;
 import org.apache.derby.iapi.types.DataValueFactory;
@@ -52,17 +53,19 @@ final class ExplainAnalyzeResultSet extends RowResultSet {
     @Override
     public void openCore() throws StandardException {
         long rootRowsReturned = 0;
-        ResultSetStatistics statistics;
+        ResultSetStatisticsFactory statisticsFactory = activation.getExecutionFactory()
+                .getResultSetStatisticsFactory();
         source.openCore();
         try {
             while (source.getNextRowCore() != null) {
                 rootRowsReturned++;
             }
-            statistics = activation.getExecutionFactory()
-                    .getResultSetStatisticsFactory().getResultSetStatistics(source);
+            // Materialize scan information while scan controllers are still authoritative.
+            statisticsFactory.getResultSetStatistics(source);
         } finally {
             source.close();
         }
+        ResultSetStatistics statistics = statisticsFactory.getResultSetStatistics(source);
 
         StablePlanModel plan = activation.getPreparedStatement().getStablePlanModel();
         StablePlanExecutionEvidence evidence = StablePlanExecutionEvidenceBuilder.build(

@@ -31,7 +31,7 @@ public record StablePlanExecutionEvidence(
         List<Node> nodes,
         boolean truncated) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
 
     public StablePlanExecutionEvidence {
         nodes = List.copyOf(nodes);
@@ -44,6 +44,10 @@ public record StablePlanExecutionEvidence(
             int opens,
             long rowsSeen,
             long rowsFiltered,
+            long elapsedMillis,
+            long openMillis,
+            long nextMillis,
+            long closeMillis,
             List<Metric> storageMetrics) {
 
         public Node {

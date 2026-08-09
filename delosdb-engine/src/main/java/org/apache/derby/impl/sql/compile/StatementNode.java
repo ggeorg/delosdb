@@ -76,6 +76,11 @@ public abstract class StatementNode extends QueryTreeNode
         return null;
     }
 
+    /** Whether this prepared statement must collect EXPLAIN ANALYZE operator timing. */
+    public boolean isExplainAnalyze() {
+        return false;
+    }
+
 	/**
 	 * By default, assume StatementNodes are atomic.
 	 * The rare statements that aren't atomic (e.g.

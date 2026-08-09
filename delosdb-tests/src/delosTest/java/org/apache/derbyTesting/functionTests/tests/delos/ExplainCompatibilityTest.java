@@ -103,7 +103,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
                 assertEquals(Types.INTEGER, remote.getParameterMetaData().getParameterType(1));
                 remote.setInt(1, 20);
                 local.setInt(1, 20);
-                assertEquals(readExplain(local), readExplain(remote));
+                assertSameAnalyzePayload(readExplain(local), readExplain(remote), parameterSql);
             }
             network.rollback();
             embedded.rollback();
@@ -227,10 +227,34 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         ExplainOutput remote = analyze(network, sql);
         ExplainOutput local = analyze(embedded, sql);
         assertContains(remote, fragments);
+        assertSameAnalyzePayload(local, remote, sql);
+    }
+
+    private static void assertSameAnalyzePayload(
+            ExplainOutput local, ExplainOutput remote, String sql) {
+        assertTimingFields(local);
+        assertTimingFields(remote);
         assertEquals("ANALYZE PLAN_TEXT differs across embedded/DRDA for " + sql,
-                local.text(), remote.text());
+                normalizeTiming(local.text()), normalizeTiming(remote.text()));
         assertEquals("ANALYZE PLAN_JSON differs across embedded/DRDA for " + sql,
-                local.json(), remote.json());
+                normalizeTiming(local.json()), normalizeTiming(remote.json()));
+    }
+
+    private static void assertTimingFields(ExplainOutput output) {
+        assertTrue(output.text().contains("EXECUTION schemaVersion=2 "));
+        assertTrue(output.text().contains(" elapsedMillis="));
+        assertTrue(output.text().contains(" openMillis="));
+        assertTrue(output.text().contains(" nextMillis="));
+        assertTrue(output.text().contains(" closeMillis="));
+        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":2,"));
+        assertTrue(output.json().contains("\"elapsedMillis\":"));
+        assertTrue(output.json().contains("\"openMillis\":"));
+        assertTrue(output.json().contains("\"nextMillis\":"));
+        assertTrue(output.json().contains("\"closeMillis\":"));
+    }
+
+    private static String normalizeTiming(String value) {
+        return value.replaceAll("(elapsedMillis|openMillis|nextMillis|closeMillis)(=|\":)\\d+", "$1$2<TIME>");
     }
 
     private static ExplainOutput analyze(Connection connection, String sql) throws Exception {

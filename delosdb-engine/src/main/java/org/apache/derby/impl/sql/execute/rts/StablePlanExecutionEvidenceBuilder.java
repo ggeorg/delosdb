@@ -62,7 +62,7 @@ public final class StablePlanExecutionEvidenceBuilder {
             RealNoPutResultSetStatistics runtime = runtimeNodes.get(resultSetNumber);
             if (resultSetNumber < 0 || runtime == null) {
                 evidence.add(new StablePlanExecutionEvidence.Node(
-                        plan.nodes().get(i).id(), false, 0, 0, 0, List.of()));
+                        plan.nodes().get(i).id(), false, 0, 0, 0, 0, 0, 0, 0, List.of()));
                 continue;
             }
             evidence.add(new StablePlanExecutionEvidence.Node(
@@ -71,6 +71,10 @@ public final class StablePlanExecutionEvidenceBuilder {
                     runtime.numOpens,
                     runtime.rowsSeen,
                     runtime.rowsFiltered,
+                    runtime.getTotalTime(),
+                    runtime.openTime,
+                    runtime.nextTime,
+                    runtime.closeTime,
                     storageMetrics(runtime)));
         }
         return new StablePlanExecutionEvidence(

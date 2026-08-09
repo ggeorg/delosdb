@@ -101,6 +101,9 @@ public interface ExecPreparedStatement
     /** Return generated result-set numbers aligned with stable plan node order. */
     int[] getStablePlanResultSetNumbers();
 
+    /** Return whether this statement is EXPLAIN ANALYZE and requires operator timing. */
+    boolean isExplainAnalyze();
+
     /**
      * <p>
      * Checks whether this PreparedStatement is up to date and its activation

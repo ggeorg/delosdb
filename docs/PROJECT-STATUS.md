@@ -101,4 +101,10 @@ field ordering is frozen as the public text/JSON contract. Prepared parameters, 
 recompile determinism, heap/MVCC/join/predicate/`DISTINCT_SCAN` rendering, embedded/DRDA byte parity,
 and large CLOB delivery beyond the DRDA external-data threshold have permanent coverage.
 
+Phase 10.3A is complete. Query-only `EXPLAIN ANALYZE` executes the selected query once and correlates
+bounded runtime counters and heap/`delos_mvcc` scan evidence to stable plan-node ids through generated
+result-set identity. Phase 10.3B is the current tranche: it reuses Derby's existing result-set timing
+counters only for `EXPLAIN ANALYZE`, without enabling connection-wide statistics timing or adding
+per-row instrumentation to ordinary execution.
+
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

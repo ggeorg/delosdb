@@ -594,6 +594,7 @@ public class GenericStatement
 					preparedStmt.completeCompile(qt);
                     preparedStmt.setStablePlanModel(stablePlanModel);
                     preparedStmt.setStablePlanResultSetNumbers(stablePlanResultSetNumbers);
+                    preparedStmt.setExplainAnalyze(qt.isExplainAnalyze());
 					preparedStmt.setCompileTimeWarnings(cc.getWarnings());
 
                     // Schedule updates of any stale index statistics we may

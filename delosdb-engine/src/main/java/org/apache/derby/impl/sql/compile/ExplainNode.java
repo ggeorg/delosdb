@@ -80,6 +80,11 @@ final class ExplainNode extends CursorNode {
         return analyze ? StablePlanModelBuilder.resultSetNumbers(explained) : null;
     }
 
+    @Override
+    public boolean isExplainAnalyze() {
+        return analyze;
+    }
+
     private static String explainedSource(String source, boolean analyze) {
         if (source == null) return "";
         int start = skipKeyword(source, 0, "EXPLAIN");
