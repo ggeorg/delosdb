@@ -40,6 +40,7 @@ import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.TableDescriptor;
 import org.apache.derby.iapi.sql.execute.ConstantAction;
 import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -114,6 +115,10 @@ abstract class DDLSingleTableConstantAction extends DDLConstantAction
             TransactionController tc,
             long baseConglomerateId,
             UniqueConstraintOperation operation) throws StandardException {
+        StaticCompiledOpenConglomInfo info = tc.getStaticCompiledConglomInfo(baseConglomerateId);
+        if (!(info.getConglom() instanceof AccessMethodUniqueConstraintLifecycle.SupportedConglomerate)) {
+            return;
+        }
         ConglomerateController controller = tc.openConglomerate(
                 baseConglomerateId,
                 false,

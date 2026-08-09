@@ -22,6 +22,10 @@ import org.apache.derby.shared.common.error.StandardException;
  * ordinary mutations in the caller's existing store transaction.</p>
  */
 public interface AccessMethodUniqueConstraintLifecycle {
+    /** Marker for conglomerates whose controllers implement this lifecycle. */
+    interface SupportedConglomerate {
+    }
+
     /** Validate a definition before SQL DDL creates catalog or index state. */
     void validateUniqueConstraintDefinition(
             int[] baseColumnPositions,

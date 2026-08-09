@@ -26,6 +26,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.types.VariableSizeDataValue;
 
 import org.apache.derby.iapi.sql.PreparedStatement;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
 import org.apache.derby.iapi.sql.Activation;
 import org.apache.derby.iapi.sql.ParameterValueSet;
@@ -1980,5 +1981,9 @@ public class EmbedPreparedStatement extends EmbedStatement
 
     public final long getVersionCounter() throws SQLException {
         return preparedStatement.getVersionCounter();
+    }
+
+    public final StablePlanModel getStablePlanModel() throws SQLException {
+        return ((ExecPreparedStatement) preparedStatement).getStablePlanModel();
     }
 }

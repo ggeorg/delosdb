@@ -107,6 +107,11 @@ def registerInheritedSuite = { String taskName,
         }
         configureTestTask(task, taskName, syntheticRows, nativeAuthenticationResources)
         task.failFast = (context.derbyFailFast as Provider<Boolean>).get()
+        task.doFirst {
+            if (!task.filter.commandLineIncludePatterns.empty) {
+                task.setIncludes([] as Set<String>)
+            }
+        }
     }
 }
 

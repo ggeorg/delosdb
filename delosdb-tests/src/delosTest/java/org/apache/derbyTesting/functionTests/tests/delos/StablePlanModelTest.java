@@ -21,13 +21,12 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
-import org.apache.derby.impl.jdbc.EmbedConnection;
-import org.apache.derby.iapi.sql.execute.ExecPreparedStatement;
+import org.apache.derby.iapi.jdbc.EnginePreparedStatement;
 
 /** Phase 10.1 foundation proof for the immutable selected-plan model. */
 public final class StablePlanModelTest extends MvccSqlTestSupport {
@@ -101,25 +100,24 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
     }
 
     private static StablePlanModel plan(Connection connection, String sql) throws Exception {
-        if (!(connection instanceof EmbedConnection embedded)) {
-            throw new AssertionError("embedded connection required for stable-plan inspection");
-        }
-        ExecPreparedStatement prepared = (ExecPreparedStatement)
-                embedded.getLanguageConnection().prepareInternalStatement(sql);
-        StablePlanModel model = prepared.getStablePlanModel();
-        if (model == null) {
-            throw new AssertionError("compiled statement did not retain a stable plan model");
-        }
-
-        int rows = 0;
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(sql)) {
-            while (resultSet.next()) {
-                rows++;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (!(statement instanceof EnginePreparedStatement engineStatement)) {
+                throw new AssertionError("engine prepared statement required for stable-plan inspection");
             }
+            StablePlanModel model = engineStatement.getStablePlanModel();
+            if (model == null) {
+                throw new AssertionError("compiled statement did not retain a stable plan model");
+            }
+
+            int rows = 0;
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    rows++;
+                }
+            }
+            assertEquals("plan inspection must not alter query results", 1, rows);
+            return model;
         }
-        assertEquals("plan inspection must not alter query results", 1, rows);
-        return model;
     }
 
     private static void assertPlanShape(StablePlanModel model, String statementType) {

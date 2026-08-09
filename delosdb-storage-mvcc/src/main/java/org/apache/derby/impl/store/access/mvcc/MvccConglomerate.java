@@ -36,6 +36,7 @@ import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerKey;
@@ -51,7 +52,8 @@ import org.apache.derby.shared.common.reference.SQLState;
 public final class MvccConglomerate
         extends StoreDataValueBase
         implements org.apache.derby.iapi.store.access.conglomerate.Conglomerate,
-                StaticCompiledOpenConglomInfo {
+                StaticCompiledOpenConglomInfo,
+                AccessMethodUniqueConstraintLifecycle.SupportedConglomerate {
     private static final long serialVersionUID = 1L;
 
     private transient volatile MvccRawStoreRuntime runtime;

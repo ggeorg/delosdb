@@ -22,6 +22,7 @@ package org.apache.derby.iapi.jdbc;
 
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 
 /**
  * Additional methods the embedded engine exposes on its 
@@ -40,6 +41,12 @@ public interface EnginePreparedStatement extends PreparedStatement, EngineStatem
      * @throws SQLException on error
      */
     public long getVersionCounter() throws SQLException;
+
+    /**
+     * Return the immutable selected-plan model retained by the compiled
+     * statement, or {@code null} when no successful compilation owns one.
+     */
+    public StablePlanModel getStablePlanModel() throws SQLException;
     
     ////////////////////////////////////////////////////////////////////
     //

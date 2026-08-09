@@ -26,6 +26,7 @@ import java.io.Reader;
 import java.net.URL;
 import java.sql.*;
 import java.util.Calendar;
+import org.apache.derby.iapi.sql.compile.StablePlanModel;
 
 /**
  * A brokered {@code PreparedStatement} that forwards calls off to a real
@@ -745,5 +746,9 @@ public class BrokeredPreparedStatement extends BrokeredStatement
     public final long getVersionCounter() throws SQLException {
         return ((EnginePreparedStatement)getPreparedStatement()).
                 getVersionCounter();
+    }
+
+    public final StablePlanModel getStablePlanModel() throws SQLException {
+        return ((EnginePreparedStatement) getPreparedStatement()).getStablePlanModel();
     }
 }
