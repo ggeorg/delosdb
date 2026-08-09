@@ -28,7 +28,9 @@ import java.util.List;
  * statement.
  *
  * <p>The model is diagnostic state only. It does not participate in plan
- * selection, generated-class construction, or execution.</p>
+ * selection, generated-class construction, or execution. Statements without
+ * an optimizer-selected result-set tree retain statement metadata with a null
+ * root and an empty node list.</p>
  */
 public record StablePlanModel(
         int schemaVersion,

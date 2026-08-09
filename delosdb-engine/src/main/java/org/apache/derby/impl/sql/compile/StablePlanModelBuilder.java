@@ -96,6 +96,12 @@ final class StablePlanModelBuilder {
         } else if (node instanceof TableOperatorNode operator) {
             visit(operator.leftResultSet, id);
             visit(operator.rightResultSet, id);
+        } else if (node instanceof FromSubquery fromSubquery) {
+            visit(fromSubquery.getSubquery(), id);
+        } else if (node instanceof SelectNode select) {
+            for (ResultSetNode child : select.getFromList()) {
+                visit(child, id);
+            }
         }
         return id;
     }
@@ -268,7 +274,9 @@ final class StablePlanModelBuilder {
             return "COST_SELECTED_JOIN_STRATEGY";
         }
         if (!(node instanceof FromBaseTable baseTable)) {
-            return null;
+            return operation(node, conglomerate) == Operation.GENERIC
+                    ? "UNCLASSIFIED_RESULT_SET"
+                    : null;
         }
 
         Properties properties = baseTable.getProperties();
@@ -406,6 +414,7 @@ final class StablePlanModelBuilder {
         if (node instanceof FromVTI) return Operation.VTI_SCAN;
         if (node instanceof CurrentOfNode) return Operation.CURRENT_OF;
         if (node instanceof FromSubquery) return Operation.SUBQUERY;
+        if (node instanceof SelectNode) return Operation.QUERY_BLOCK;
         return Operation.GENERIC;
     }
 
@@ -437,6 +446,7 @@ final class StablePlanModelBuilder {
         VTI_SCAN("SCAN", "VTI_SCAN"),
         CURRENT_OF("SCAN", "CURRENT_OF"),
         SUBQUERY("SUBQUERY", "SUBQUERY"),
+        QUERY_BLOCK("QUERY", "QUERY_BLOCK"),
         GENERIC("RESULT_SET", "GENERIC");
 
         private final String logical;

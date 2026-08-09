@@ -75,25 +75,26 @@ report prose do not participate in pass/fail.
 
 ## Current phase
 
-The current implementation phase is **Phase 10.1 — Stable Plan Model**.
+The current implementation phase is **Phase 10.2 — EXPLAIN**.
 
-The plan model should expose the optimizer's existing decision through a deterministic, readable
-representation containing stable statement/node identity, operation, access path, storage mode,
-join/index strategy, estimates, predicates, and rejection/fallback reasons.
+Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now exposes:
 
-It must not become:
+- deterministic statement and node identity;
+- logical/physical operations;
+- heap vs `delos_mvcc` storage mode and selected access path;
+- join strategy, row estimates, and cost estimates;
+- store/residual/requalification/filter predicate placement;
+- explicit ORDER BY and selected-index ordering;
+- forced/cost-selected access and join decisions, non-covering index fetch, required sort/filter;
+- core `VALUES`, aggregate, distinct, set-operation, row-limit, derived-table, INSERT, UPDATE, and
+  DELETE shapes;
+- bounded `GENERIC` / `UNCLASSIFIED_RESULT_SET` fallback for genuinely unknown result-set nodes.
 
-- a second parser or binder;
-- a second optimizer;
-- a second execution plan authority;
-- another generated-class intermediate representation;
-- a runtime compiler backend selector;
-- an excuse to bypass `JavaFactory` / `ClassBuilder` / `MethodBuilder`.
+Successful non-DML statements can have stable statement metadata with no result-set plan. Parse/bind/
+optimize rejection is not converted into a synthetic plan: Derby's SQLState remains the authoritative
+rejection result.
 
-Phase 10.1A is complete. The current 10.1B slice fills the existing schema-version-1 predicate,
-ordering, and decision fields from Derby's selected compiler structures: store/residual/requalification
-placement, explicit ORDER BY and selected-index ordering, forced/cost-selected access decisions,
-non-covering index fetch, required sort/filter, and join-strategy decisions. Unsupported expression
-shapes remain bounded generic `EXPRESSION` entries rather than private AST dumps.
+Phase 10.2 must render deterministic text and machine-readable EXPLAIN from this one model. It must
+not introduce another optimizer tree, execution authority, or compiler IR.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

@@ -23,6 +23,7 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.derby.iapi.sql.compile.StablePlanModel;
@@ -148,6 +149,85 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testStablePlanCoversCoreStatementShapesAndRejectionBoundary() throws Exception {
+        String databaseName = databaseName("stable-plan-shapes-db");
+
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table plan_shape_t (id int primary key, v int, note varchar(16))");
+            executeUpdate(connection,
+                    "insert into plan_shape_t values (1, 10, 'A'), (2, 20, 'B'), (3, 30, 'C')");
+            connection.commit();
+
+            StablePlanModel values = plan(connection, "values (1), (2)", 2);
+            assertPlanShape(values, "SELECT");
+            assertNode(values, "ROW_VALUES");
+
+            StablePlanModel aggregate = plan(
+                    connection, "select v, count(*) from plan_shape_t group by v", 3);
+            assertPlanShape(aggregate, "SELECT");
+            assertNode(aggregate, "GROUP_BY");
+
+            StablePlanModel distinct = plan(connection, "select distinct note from plan_shape_t", 3);
+            assertPlanShape(distinct, "SELECT");
+            assertNode(distinct, "DISTINCT");
+
+            StablePlanModel union = plan(connection,
+                    "select id from plan_shape_t where id = 1 "
+                            + "union select id from plan_shape_t where id = 2",
+                    2);
+            assertPlanShape(union, "SELECT");
+            assertNode(union, "UNION");
+
+            StablePlanModel limited = plan(
+                    connection, "select id from plan_shape_t fetch first 1 rows only", 1);
+            assertPlanShape(limited, "SELECT");
+            assertNode(limited, "ROW_COUNT");
+
+            StablePlanModel derived = plan(connection,
+                    "select d.v from (select v, count(*) as c from plan_shape_t group by v) d "
+                            + "where d.c > 0",
+                    3);
+            assertPlanShape(derived, "SELECT");
+            assertNode(derived, "GROUP_BY");
+            assertTrue("derived plan must retain its underlying table access",
+                    derived.nodes().stream().anyMatch(node ->
+                            "TABLE_SCAN".equals(node.physicalOperation())
+                                    || "INDEX_SCAN".equals(node.physicalOperation())));
+
+            StablePlanModel insert = updatePlan(
+                    connection, "insert into plan_shape_t values (4, 40, 'D')", 1);
+            assertPlanShape(insert, "INSERT");
+            assertNoGenericNodes(insert);
+
+            StablePlanModel update = updatePlan(
+                    connection, "update plan_shape_t set v = v + 1 where id = 4", 1);
+            assertPlanShape(update, "UPDATE");
+            assertNoGenericNodes(update);
+
+            StablePlanModel delete = updatePlan(
+                    connection, "delete from plan_shape_t where id = 4", 1);
+            assertPlanShape(delete, "DELETE");
+            assertNoGenericNodes(delete);
+
+            StablePlanModel ddl = preparedPlan(
+                    connection, "create table plan_shape_ddl_t (id int)");
+            assertEquals("CREATE TABLE", ddl.statementType());
+            assertEquals("APP", ddl.compilationSchema());
+            assertNull("DDL has no optimizer-selected result-set root", ddl.rootNodeId());
+            assertTrue("DDL has no optimizer-selected result-set nodes", ddl.nodes().isEmpty());
+
+            try {
+                connection.prepareStatement("select missing_column from plan_shape_t");
+                fail("invalid statement should be rejected before a stable selected plan exists");
+            } catch (SQLException expected) {
+                assertEquals("42X04", expected.getSQLState());
+            }
+            connection.rollback();
+        }
+    }
+
     private static StablePlanModel plan(Connection connection, String sql) throws Exception {
         return plan(connection, sql, 1);
     }
@@ -155,13 +235,7 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
     private static StablePlanModel plan(Connection connection, String sql, int expectedRows)
             throws Exception {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            if (!(statement instanceof EnginePreparedStatement engineStatement)) {
-                throw new AssertionError("engine prepared statement required for stable-plan inspection");
-            }
-            StablePlanModel model = engineStatement.getStablePlanModel();
-            if (model == null) {
-                throw new AssertionError("compiled statement did not retain a stable plan model");
-            }
+            StablePlanModel model = stablePlan(statement);
 
             int rows = 0;
             try (ResultSet resultSet = statement.executeQuery()) {
@@ -172,6 +246,45 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
             assertEquals("plan inspection must not alter query results", expectedRows, rows);
             return model;
         }
+    }
+
+    private static StablePlanModel updatePlan(
+            Connection connection, String sql, int expectedUpdateCount) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            StablePlanModel model = stablePlan(statement);
+            assertEquals("plan inspection must not alter update count",
+                    expectedUpdateCount, statement.executeUpdate());
+            return model;
+        }
+    }
+
+    private static StablePlanModel preparedPlan(Connection connection, String sql) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            return stablePlan(statement);
+        }
+    }
+
+    private static StablePlanModel stablePlan(PreparedStatement statement) throws Exception {
+        if (!(statement instanceof EnginePreparedStatement engineStatement)) {
+            throw new AssertionError("engine prepared statement required for stable-plan inspection");
+        }
+        StablePlanModel model = engineStatement.getStablePlanModel();
+        if (model == null) {
+            throw new AssertionError("compiled statement did not retain a stable plan model");
+        }
+        return model;
+    }
+
+    private static void assertNode(StablePlanModel model, String physicalOperation) {
+        node(model, physicalOperation);
+        assertNoGenericNodes(model);
+    }
+
+    private static void assertNoGenericNodes(StablePlanModel model) {
+        assertFalse("supported plan shape must not fall back to GENERIC: " + model.nodes(),
+                model.nodes().stream().anyMatch(node ->
+                        "GENERIC".equals(node.physicalOperation())
+                                || "UNCLASSIFIED_RESULT_SET".equals(node.decisionReason())));
     }
 
     private static StablePlanModel.Node node(StablePlanModel model, String physicalOperation) {
