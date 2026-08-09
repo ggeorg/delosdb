@@ -4618,6 +4618,11 @@ class FromBaseTable extends FromTable
 		distinctScan = true;
 	}
 
+    boolean isDistinctScan()
+    {
+        return distinctScan;
+    }
+
 
 	/**
 	 * @see ResultSetNode#adjustForSortElimination

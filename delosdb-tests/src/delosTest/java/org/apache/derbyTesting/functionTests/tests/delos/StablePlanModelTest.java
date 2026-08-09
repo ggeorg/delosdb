@@ -157,7 +157,8 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
             executeUpdate(connection,
                     "create table plan_shape_t (id int primary key, v int, note varchar(16))");
             executeUpdate(connection,
-                    "insert into plan_shape_t values (1, 10, 'A'), (2, 20, 'B'), (3, 30, 'C')");
+                    "insert into plan_shape_t values "
+                            + "(1, 10, 'A'), (2, 20, 'B'), (3, 30, 'C'), (9, 10, 'A')");
             connection.commit();
 
             StablePlanModel values = plan(connection, "values (1), (2)", 2);
@@ -171,7 +172,7 @@ public final class StablePlanModelTest extends MvccSqlTestSupport {
 
             StablePlanModel distinct = plan(connection, "select distinct note from plan_shape_t", 3);
             assertPlanShape(distinct, "SELECT");
-            assertNode(distinct, "DISTINCT");
+            assertNode(distinct, "DISTINCT_SCAN");
 
             StablePlanModel union = plan(connection,
                     "select id from plan_shape_t where id = 1 "

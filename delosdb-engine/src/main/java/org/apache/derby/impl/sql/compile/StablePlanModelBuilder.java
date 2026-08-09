@@ -391,7 +391,8 @@ final class StablePlanModelBuilder {
     private static Operation operation(
             ResultSetNode node, ConglomerateDescriptor conglomerate) {
         if (node instanceof IndexToBaseRowNode) return Operation.INDEX_TO_BASE_ROW;
-        if (node instanceof FromBaseTable) {
+        if (node instanceof FromBaseTable baseTable) {
+            if (baseTable.isDistinctScan()) return Operation.DISTINCT_SCAN;
             if (conglomerate == null) return Operation.SCAN;
             return conglomerate.isIndex() ? Operation.INDEX_SCAN : Operation.TABLE_SCAN;
         }
@@ -424,6 +425,7 @@ final class StablePlanModelBuilder {
 
     private enum Operation {
         INDEX_TO_BASE_ROW("SCAN", "INDEX_TO_BASE_ROW"),
+        DISTINCT_SCAN("DISTINCT", "DISTINCT_SCAN"),
         INDEX_SCAN("SCAN", "INDEX_SCAN"),
         TABLE_SCAN("SCAN", "TABLE_SCAN"),
         SCAN("SCAN", "SCAN"),

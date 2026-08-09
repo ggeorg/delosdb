@@ -87,7 +87,7 @@ Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now e
 - explicit ORDER BY and selected-index ordering;
 - forced/cost-selected access and join decisions, non-covering index fetch, required sort/filter;
 - core `VALUES`, aggregate, distinct, set-operation, row-limit, derived-table, INSERT, UPDATE, and
-  DELETE shapes;
+  DELETE shapes, including store-level `DISTINCT_SCAN` when duplicate elimination is scan-owned;
 - bounded `GENERIC` / `UNCLASSIFIED_RESULT_SET` fallback for genuinely unknown result-set nodes.
 
 Successful non-DML statements can have stable statement metadata with no result-set plan. Parse/bind/
