@@ -25,10 +25,14 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+    private static final String RESERVATION_BLOCK_PROPERTY =
+            "delosdb.mvcc.rawStoreIdentityReservationBlockSize";
 
     public void testTwoTableCommitRollbackAndSavepointUseOneRawStoreOutcome() throws Exception {
         String database = databaseName("mvcc-raw-store-multi-table-outcome");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope reservation =
+                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 createTables(connection, "multi_a", "multi_b");
@@ -94,7 +98,9 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
 
     public void testTransactionSnapshotIsStableAcrossRawStoreTables() throws Exception {
         String database = databaseName("mvcc-raw-store-multi-table-snapshot");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope reservation =
+                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 createTables(setup, "snapshot_a", "snapshot_b");
@@ -130,6 +136,8 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
         String database = "mvcc_raw_store_multi_table_memory_"
                 + Long.toUnsignedString(System.nanoTime());
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope reservation =
+                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1");
              Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
@@ -162,7 +170,9 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope reservation =
+                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 createTables(setup, "crash_a", "crash_b");
@@ -174,6 +184,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 javaExecutable(),
                 "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
+                "-D" + RESERVATION_BLOCK_PROPERTY + "=1",
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
@@ -188,7 +199,9 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope reservation =
+                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
             try (Connection recovered = openDatabase(database, false)) {
                 recovered.setAutoCommit(false);
                 if (expectCommitted) {

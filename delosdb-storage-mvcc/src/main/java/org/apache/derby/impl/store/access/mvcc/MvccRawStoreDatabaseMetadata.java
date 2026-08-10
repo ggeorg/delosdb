@@ -107,12 +107,12 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    long reserveTransactionId(Transaction parent) throws StandardException {
-        return reserve(parent, NEXT_TRANSACTION_ID_FIELD, "transaction ID");
+    long reserveTransactionIds(Transaction parent, int count) throws StandardException {
+        return reserve(parent, NEXT_TRANSACTION_ID_FIELD, count, "transaction ID");
     }
 
-    long reserveCommitSequence(Transaction parent) throws StandardException {
-        return reserve(parent, NEXT_COMMIT_SEQUENCE_FIELD, "commit sequence");
+    long reserveCommitSequences(Transaction parent, int count) throws StandardException {
+        return reserve(parent, NEXT_COMMIT_SEQUENCE_FIELD, count, "commit sequence");
     }
 
     void stageCommittedHighWater(Transaction parent, long commitSequence) throws StandardException {
@@ -154,11 +154,18 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    private long reserve(Transaction parent, int field, String label) throws StandardException {
+    private long reserve(
+            Transaction parent,
+            int field,
+            int count,
+            String label) throws StandardException {
         if (!(parent instanceof RawTransaction rawParent)) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "RawStore MVCC " + label + " allocation requires a raw transaction");
+        }
+        if (count <= 0) {
+            throw new IllegalArgumentException("RawStore MVCC reservation count must be positive");
         }
 
         RawTransaction nested = rawParent.startNestedTopTransaction();
@@ -179,14 +186,14 @@ final class MvccRawStoreDatabaseMetadata {
                 StoreDataValue value = MvccRawStoreFormat.longValue(nested, 0L);
                 page.fetchFieldFromSlot(Page.FIRST_SLOT_NUMBER, field, value);
                 reserved = StoreTypeUtil.getLong(value);
-                if (reserved <= 0L || reserved == Long.MAX_VALUE) {
+                if (reserved <= 0L || reserved > Long.MAX_VALUE - count) {
                     throw new IllegalStateException(
                             "RawStore MVCC " + label + " allocator is invalid or exhausted: " + reserved);
                 }
                 page.updateFieldAtSlot(
                         Page.FIRST_SLOT_NUMBER,
                         field,
-                        MvccRawStoreFormat.longValue(nested, reserved + 1L),
+                        MvccRawStoreFormat.longValue(nested, reserved + count),
                         null);
             } finally {
                 if (page != null) {
@@ -200,7 +207,7 @@ final class MvccRawStoreDatabaseMetadata {
                 throw new IllegalStateException(
                         "RawStore MVCC " + label + " reservation produced no commit record");
             }
-            // Nested top transactions commit independently but do not force by default.
+            // Every value in the range is safe to return only after the range itself is durable.
             nested.getLogFactory().flush(commitInstant);
             return reserved;
         } catch (StandardException | RuntimeException | Error failure) {
