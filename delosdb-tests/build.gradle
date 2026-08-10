@@ -769,10 +769,25 @@ tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
             'reports/delosdb/benchmarks/cross-engine'))
 
     doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (!(saneValue in ['true', 'false'])) {
+            throw new GradleException(
+                    "delosdb.sane must be either true or false: ${saneValue}")
+        }
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Cross-engine performance comparison requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
         def javaExecutable = new File(
                 System.getProperty('java.home'),
                 'bin/java').absolutePath
         systemProperties([
+                'delosdb.benchmark.crossEngine.sane': saneValue,
                 'delosdb.benchmark.crossEngine.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngine.javaExecutable': javaExecutable,
                 'delosdb.benchmark.crossEngine.benchmarkClasses':
