@@ -38,7 +38,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,iterations,"
-                    + "measuredTransactions,measuredOperations,elapsedNanos,transactionsPerSecond,"
+                    + "measuredTransactions,measuredOperations,retryableRollbacks,elapsedNanos,transactionsPerSecond,"
                     + "averageTransactionLatencyNanos,semanticFingerprint,run";
 
     private DelosJdbcCrossEngineConcurrency() {
@@ -119,8 +119,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .start();
         int status = process.waitFor();
         if (status != 0) {
+            List<String> lines = Files.exists(log) ? Files.readAllLines(log) : List.of();
+            int from = Math.max(0, lines.size() - 40);
             throw new IllegalStateException("Concurrency worker failed: target=" + target.id()
-                    + ", run=" + run + ", exit=" + status + ", log=" + log);
+                    + ", run=" + run + ", exit=" + status + ", log=" + log
+                    + (lines.isEmpty() ? "" : "\n" + String.join("\n", lines.subList(from, lines.size()))));
         }
     }
 
@@ -174,10 +177,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "warmup " + warmup);
                 }
                 long elapsed = 0L;
+                long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
                 for (int iteration = 0; iteration < options.iterations(); iteration++) {
                     Interval interval = concurrentCase.runInterval();
                     elapsed = Math.addExact(elapsed, interval.elapsedNanos());
+                    retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
                     measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
                             "measured iteration " + iteration);
                 }
@@ -191,7 +196,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
                         options.transactionsPerClient(), config.rowCount(), config.payloadSize(),
                         config.commitBatchSize(), options.warmups(), options.iterations(),
-                        measuredTransactions, measuredOperations, elapsed,
+                        measuredTransactions, measuredOperations, retryableRollbacks, elapsed,
                         measuredTransactions * 1_000_000_000.0 / elapsed,
                         (double) elapsed / measuredTransactions,
                         Objects.requireNonNull(measuredSemantic), options.run());
@@ -257,7 +262,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         private Interval runInterval() throws Exception {
             CountDownLatch ready = new CountDownLatch(spec.clients());
             CountDownLatch start = new CountDownLatch(1);
-            List<Future<Long>> futures = new ArrayList<>(spec.clients());
+            List<Future<ClientRun>> futures = new ArrayList<>(spec.clients());
             for (Client client : clients) {
                 futures.add(executor.submit(() -> {
                     ready.countDown();
@@ -274,11 +279,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             long started = System.nanoTime();
             start.countDown();
             long executionFingerprint = 1L;
+            long retryableRollbacks = 0L;
             Throwable failure = null;
-            for (Future<Long> future : futures) {
+            for (Future<ClientRun> future : futures) {
                 try {
-                    executionFingerprint = mix(executionFingerprint,
-                            future.get(options.caseTimeoutSeconds(), TimeUnit.SECONDS));
+                    ClientRun clientRun = future.get(options.caseTimeoutSeconds(), TimeUnit.SECONDS);
+                    executionFingerprint = mix(executionFingerprint, clientRun.fingerprint());
+                    retryableRollbacks = Math.addExact(retryableRollbacks, clientRun.retryableRollbacks());
                 } catch (Throwable clientFailure) {
                     failure = preserve(failure, clientFailure);
                 }
@@ -288,7 +295,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throwFailure(failure);
             }
             long stateFingerprint = verifyAndRestore();
-            return new Interval(elapsed, mix(executionFingerprint, stateFingerprint));
+            return new Interval(elapsed, mix(executionFingerprint, stateFingerprint), retryableRollbacks);
         }
 
         private long verifyAndRestore() throws SQLException {
@@ -390,37 +397,57 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
 
-        private long runTransactions(int transactions, int operationsPerTransaction) throws SQLException {
+        private ClientRun runTransactions(int transactions, int operationsPerTransaction) throws SQLException {
             long fingerprint = 1L;
+            long retryableRollbacks = 0L;
             for (int transaction = 0; transaction < transactions; transaction++) {
-                for (int operation = 0; operation < operationsPerTransaction; operation++) {
-                    if (workload == Workload.PRIMARY_KEY_READ) {
-                        read.setInt(1, id);
-                        try (ResultSet resultSet = read.executeQuery()) {
-                            if (!resultSet.next()) {
-                                throw new SQLException("Concurrent read row missing: id=" + id);
+                int attempts = 0;
+                while (true) {
+                    long transactionFingerprint = 1L;
+                    try {
+                        for (int operation = 0; operation < operationsPerTransaction; operation++) {
+                            if (workload == Workload.PRIMARY_KEY_READ) {
+                                read.setInt(1, id);
+                                try (ResultSet resultSet = read.executeQuery()) {
+                                    if (!resultSet.next()) {
+                                        throw new SQLException("Concurrent read row missing: id=" + id);
+                                    }
+                                    int quantity = resultSet.getInt(1);
+                                    if (quantity != expectedReadQuantity) {
+                                        throw new SQLException("Concurrent read value changed: id=" + id
+                                                + ", expected=" + expectedReadQuantity + ", actual=" + quantity);
+                                    }
+                                    transactionFingerprint = mix(transactionFingerprint, quantity);
+                                    if (resultSet.next()) {
+                                        throw new SQLException("Concurrent read returned duplicate id=" + id);
+                                    }
+                                }
+                            } else {
+                                update.setInt(1, id);
+                                if (update.executeUpdate() != 1) {
+                                    throw new SQLException("Concurrent update did not affect one row: id=" + id);
+                                }
                             }
-                            int quantity = resultSet.getInt(1);
-                            if (quantity != expectedReadQuantity) {
-                                throw new SQLException("Concurrent read value changed: id=" + id
-                                        + ", expected=" + expectedReadQuantity + ", actual=" + quantity);
-                            }
-                            fingerprint = mix(fingerprint, quantity);
-                            if (resultSet.next()) {
-                                throw new SQLException("Concurrent read returned duplicate id=" + id);
-                            }
+                            transactionFingerprint = mix(transactionFingerprint, id);
                         }
-                    } else {
-                        update.setInt(1, id);
-                        if (update.executeUpdate() != 1) {
-                            throw new SQLException("Concurrent update did not affect one row: id=" + id);
+                        connection.commit();
+                        fingerprint = mix(fingerprint, transactionFingerprint);
+                        break;
+                    } catch (SQLException failure) {
+                        try {
+                            connection.rollback();
+                        } catch (SQLException rollbackFailure) {
+                            failure.addSuppressed(rollbackFailure);
+                            throw failure;
                         }
+                        if (!isRetryableRollback(failure) || ++attempts >= 1000) {
+                            throw failure;
+                        }
+                        retryableRollbacks++;
                     }
-                    fingerprint = mix(fingerprint, id);
                 }
-                connection.commit();
             }
-            return fingerprint;
+            return new ClientRun(fingerprint, retryableRollbacks);
         }
 
         @Override
@@ -806,6 +833,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         throw new IllegalStateException("Unexpected concurrency benchmark failure", failure);
     }
 
+    private static boolean isRetryableRollback(SQLException failure) {
+        String sqlState = failure.getSQLState();
+        return sqlState != null && sqlState.startsWith("40");
+    }
+
     private static void closeStatement(PreparedStatement statement, Throwable primary) {
         if (statement == null) {
             return;
@@ -901,7 +933,10 @@ public final class DelosJdbcCrossEngineConcurrency {
     private record Spec(Workload workload, int clients, int operationsPerTransaction) {
     }
 
-    private record Interval(long elapsedNanos, long semanticFingerprint) {
+    private record ClientRun(long fingerprint, long retryableRollbacks) {
+    }
+
+    private record Interval(long elapsedNanos, long semanticFingerprint, long retryableRollbacks) {
     }
 
     private record Measurement(
@@ -920,6 +955,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int iterations,
             long measuredTransactions,
             long measuredOperations,
+            long retryableRollbacks,
             long elapsedNanos,
             double transactionsPerSecond,
             double averageTransactionLatencyNanos,
@@ -932,7 +968,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.toString(payloadSize), Integer.toString(fixtureCommitBatchSize),
                     Integer.toString(warmups), Integer.toString(iterations),
                     Long.toString(measuredTransactions), Long.toString(measuredOperations),
-                    Long.toString(elapsedNanos), format(transactionsPerSecond),
+                    Long.toString(retryableRollbacks), Long.toString(elapsedNanos), format(transactionsPerSecond),
                     format(averageTransactionLatencyNanos), Long.toString(semanticFingerprint),
                     Integer.toString(run));
         }
@@ -954,6 +990,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int iterations,
             long measuredTransactions,
             long measuredOperations,
+            long retryableRollbacks,
             long elapsedNanos,
             double transactionsPerSecond,
             double averageTransactionLatencyNanos,
@@ -961,16 +998,17 @@ public final class DelosJdbcCrossEngineConcurrency {
             int run) {
         static Row parse(String line) {
             String[] fields = line.split(",", -1);
-            if (fields.length != 20) {
+            if (fields.length != 21) {
                 throw new IllegalArgumentException(
-                        "Expected 20 concurrency CSV fields, found " + fields.length + ": " + line);
+                        "Expected 21 concurrency CSV fields, found " + fields.length + ": " + line);
             }
             return new Row(fields[0], fields[1], fields[2], fields[3], Workload.valueOf(fields[4]),
                     Integer.parseInt(fields[5]), Integer.parseInt(fields[6]), Integer.parseInt(fields[7]),
                     Integer.parseInt(fields[8]), Integer.parseInt(fields[9]), Integer.parseInt(fields[10]),
                     Integer.parseInt(fields[11]), Integer.parseInt(fields[12]), Long.parseLong(fields[13]),
-                    Long.parseLong(fields[14]), Long.parseLong(fields[15]), Double.parseDouble(fields[16]),
-                    Double.parseDouble(fields[17]), Long.parseLong(fields[18]), Integer.parseInt(fields[19]));
+                    Long.parseLong(fields[14]), Long.parseLong(fields[15]), Long.parseLong(fields[16]),
+                    Double.parseDouble(fields[17]), Double.parseDouble(fields[18]), Long.parseLong(fields[19]),
+                    Integer.parseInt(fields[20]));
         }
 
         ShapeKey shape() {
@@ -981,7 +1019,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             return new Measurement(target, product, productVersion, driverVersion, workload, clients,
                     operationsPerTransaction, transactionsPerClient, rowCount, payloadSize,
                     fixtureCommitBatchSize, warmups, iterations, measuredTransactions, measuredOperations,
-                    elapsedNanos, transactionsPerSecond, averageTransactionLatencyNanos,
+                    retryableRollbacks, elapsedNanos, transactionsPerSecond, averageTransactionLatencyNanos,
                     semanticFingerprint, run).csv();
         }
     }
