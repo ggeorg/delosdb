@@ -158,6 +158,21 @@ final class MvccRawStoreOrderedIndex {
         if (constraints.isEmpty()) {
             return;
         }
+        // An UPDATE which preserves every native unique key cannot create a
+        // duplicate. Keep the metadata refresh above, but avoid key locking,
+        // candidate B-tree scans, and version reads for that common case.
+        if (previousValues != null) {
+            boolean uniqueKeyChanged = false;
+            for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
+                if (!sameKey(previousValues, values, constraint.columns())) {
+                    uniqueKeyChanged = true;
+                    break;
+                }
+            }
+            if (!uniqueKeyChanged) {
+                return;
+            }
+        }
         context.lockUniqueKeys(table, constraints, previousValues, values);
         ContainerKey directoryKey = context.orderedIndexForWrite(table);
         long committedSequence = context.currentCommittedSequence();
