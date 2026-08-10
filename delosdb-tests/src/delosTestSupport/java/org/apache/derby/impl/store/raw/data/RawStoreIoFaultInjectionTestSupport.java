@@ -41,6 +41,15 @@ public final class RawStoreIoFaultInjectionTestSupport {
                 haltStatus);
     }
 
+    /** Record RawStore I/O events without injecting a failure. */
+    public static void installRecording(String databaseIdentity, String scheduleId) {
+        DelosRawStoreIoFaultInjectionDirectory.installThrowForTesting(
+                databaseIdentity,
+                scheduleId,
+                DelosRawStoreIoFaultInjector.Point.AFTER_PAGE_WRITE.name(),
+                Long.MAX_VALUE);
+    }
+
     public static void clear(String databaseIdentity) {
         DelosRawStoreIoFaultInjectionDirectory.clearForTesting(databaseIdentity);
     }

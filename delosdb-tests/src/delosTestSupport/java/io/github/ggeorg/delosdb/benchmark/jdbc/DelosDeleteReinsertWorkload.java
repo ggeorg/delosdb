@@ -11,9 +11,17 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.impl.store.raw.data.RawStoreIoFaultInjectionTestSupport;
+import org.apache.derbyTesting.functionTests.tests.delos.DelosDeleteReinsertPageTopologyTestSupport;
 
 /** Prepared public-JDBC delete/reinsert workload with phase and RawStore I/O attribution. */
 final class DelosDeleteReinsertWorkload implements AutoCloseable {
@@ -72,6 +80,99 @@ final class DelosDeleteReinsertWorkload implements AutoCloseable {
             closeAfterFailure(failure, localVerify, localInsert, localDelete, localSource);
             throw failure;
         }
+    }
+
+    List<PageTopologyObservation> capturePageTopology(
+            DelosDeleteReinsertPageTopologyTestSupport.Layout layout) throws SQLException {
+        RowValue row = read(currentId);
+        int originalId = currentId;
+        int targetId = keyMode == DelosJdbcDeleteReinsertAttribution.KeyMode.SAME_KEY
+                ? originalId
+                : (originalId == firstId ? alternateId : firstId);
+        List<PageTopologyObservation> observations = new ArrayList<>();
+
+        observations.add(recordPageTopology(
+                "DELETE", layout, () -> delete(originalId)));
+        if (transactionBoundary
+                == DelosJdbcDeleteReinsertAttribution.TransactionBoundary.TWO_TRANSACTIONS) {
+            observations.add(recordPageTopology(
+                    "DELETE_TRANSACTION_END", layout, connection::commit));
+        }
+        observations.add(recordPageTopology(
+                "INSERT", layout, () -> insert(targetId, row)));
+        observations.add(recordPageTopology(
+                "FINAL_TRANSACTION_END",
+                layout,
+                outcome == DelosBenchmarkTransactionOutcome.COMMIT
+                        ? connection::commit
+                        : connection::rollback));
+
+        verifyAndRestore(originalId, targetId, row);
+        return List.copyOf(observations);
+    }
+
+    private PageTopologyObservation recordPageTopology(
+            String phase,
+            DelosDeleteReinsertPageTopologyTestSupport.Layout layout,
+            SqlAction action) throws SQLException {
+        DelosRawStoreIoSnapshot before = rawStoreSnapshot();
+        String databaseIdentity = before.databaseIdentity();
+        RawStoreIoFaultInjectionTestSupport.installRecording(
+                databaseIdentity, "delete-reinsert-page-topology-" + phase);
+        RawStoreIoFaultInjectionTestSupport.Evidence evidence;
+        DelosRawStoreIoSnapshot after;
+        try {
+            action.run();
+            after = rawStoreSnapshot();
+            evidence = RawStoreIoFaultInjectionTestSupport.evidence(databaseIdentity);
+        } finally {
+            RawStoreIoFaultInjectionTestSupport.clear(databaseIdentity);
+        }
+        if (evidence.discardedHits() != 0L) {
+            throw new IllegalStateException(
+                    "RawStore page-topology recorder overflowed in " + phase
+                            + ": discarded=" + evidence.discardedHits());
+        }
+
+        boolean mvcc = provider == DelosBenchmarkProvider.MVCC;
+        EnumMap<DelosDeleteReinsertPageTopologyTestSupport.Role, MutableTopology> byRole =
+                new EnumMap<>(DelosDeleteReinsertPageTopologyTestSupport.Role.class);
+        MutableTopology all = new MutableTopology();
+        for (RawStoreIoFaultInjectionTestSupport.HitEvidence hit : evidence.hits()) {
+            if (!"AFTER_PAGE_WRITE".equals(hit.point())) {
+                continue;
+            }
+            PageIdentity page = new PageIdentity(
+                    hit.segmentId(), hit.containerId(), hit.pageNumber());
+            all.add(page, hit.length());
+            DelosDeleteReinsertPageTopologyTestSupport.Role role =
+                    layout.role(hit.containerId(), mvcc);
+            byRole.computeIfAbsent(role, ignored -> new MutableTopology())
+                    .add(page, hit.length());
+        }
+
+        RoleTopology allTopology = all.freeze(
+                DelosDeleteReinsertPageTopologyTestSupport.Role.ALL);
+        long expectedWrites = IoDelta.delta(
+                before.pageWriteOperations(), after.pageWriteOperations());
+        long expectedBytes = IoDelta.delta(before.pageWriteBytes(), after.pageWriteBytes());
+        if (allTopology.pageWrites() != expectedWrites
+                || allTopology.pageWriteBytes() != expectedBytes) {
+            throw new IllegalStateException(
+                    "RawStore page-topology mismatch in " + phase
+                            + ": recordedWrites=" + allTopology.pageWrites()
+                            + ", counterWrites=" + expectedWrites
+                            + ", recordedBytes=" + allTopology.pageWriteBytes()
+                            + ", counterBytes=" + expectedBytes);
+        }
+
+        List<RoleTopology> roles = new ArrayList<>();
+        roles.add(allTopology);
+        for (Map.Entry<DelosDeleteReinsertPageTopologyTestSupport.Role, MutableTopology> entry
+                : byRole.entrySet()) {
+            roles.add(entry.getValue().freeze(entry.getKey()));
+        }
+        return new PageTopologyObservation(phase, List.copyOf(roles));
     }
 
     CycleObservation execute(boolean measured) throws SQLException {
@@ -308,6 +409,48 @@ final class DelosDeleteReinsertWorkload implements AutoCloseable {
             }
             return after - before;
         }
+    }
+
+    @FunctionalInterface
+    private interface SqlAction {
+        void run() throws SQLException;
+    }
+
+    record PageTopologyObservation(String phase, List<RoleTopology> roles) {
+    }
+
+    record RoleTopology(
+            DelosDeleteReinsertPageTopologyTestSupport.Role role,
+            long pageWrites,
+            long distinctPages,
+            long repeatedWrites,
+            long pageWriteBytes) {
+    }
+
+    private static final class MutableTopology {
+        private long pageWrites;
+        private long pageWriteBytes;
+        private final Set<PageIdentity> pages = new HashSet<>();
+
+        private void add(PageIdentity page, int bytes) {
+            pageWrites++;
+            pageWriteBytes += bytes;
+            pages.add(page);
+        }
+
+        private RoleTopology freeze(
+                DelosDeleteReinsertPageTopologyTestSupport.Role role) {
+            long distinctPages = pages.size();
+            return new RoleTopology(
+                    role,
+                    pageWrites,
+                    distinctPages,
+                    pageWrites - distinctPages,
+                    pageWriteBytes);
+        }
+    }
+
+    private record PageIdentity(long segmentId, long containerId, long pageNumber) {
     }
 
     private record RowValue(int category, int bucket, int quantity, String payload) {

@@ -190,6 +190,26 @@ final class MvccRawStoreMetadataInspection {
         return layout.orderedIndexContainerId();
     }
 
+    static PhysicalLayout physicalLayout(Connection connection, String tableName) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        Serializable value = manager.getProperty(CONTAINER_PROPERTY);
+        if (value == null) {
+            throw new AssertionError("RawStore MVCC database metadata property is absent");
+        }
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = manager.getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        List<Long> btrees = orderedIndexMappings(raw, layout).stream()
+                .map(OrderedIndexMapping::btreeConglomerate)
+                .toList();
+        return new PhysicalLayout(
+                Long.parseLong(value.toString()),
+                metadataContainerId,
+                layout.versionContainerId(),
+                layout.orderedIndexContainerId(),
+                btrees);
+    }
+
     static boolean containerExists(Connection connection, long containerId) throws Exception {
         if (containerId <= 0L) {
             return false;
@@ -1007,6 +1027,17 @@ final class MvccRawStoreMetadataInspection {
             boolean hasDirectoryLocator,
             long directoryPage,
             int directorySlot) {
+    }
+
+    record PhysicalLayout(
+            long databaseMetadataContainerId,
+            long tableMetadataContainerId,
+            long versionContainerId,
+            long orderedIndexDirectoryContainerId,
+            List<Long> orderedIndexBtreeContainerIds) {
+        PhysicalLayout {
+            orderedIndexBtreeContainerIds = List.copyOf(orderedIndexBtreeContainerIds);
+        }
     }
 
     record UniqueConstraintIdentity(

@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.apache.derbyTesting.functionTests.tests.delos.DelosDeleteReinsertPageTopologyTestSupport;
+
 /** Provider-neutral delete/reinsert phase-attribution benchmark driver. */
 public final class DelosJdbcDeleteReinsertAttribution {
     private static final long SEED = 0x5DE10DBL;
@@ -68,6 +70,7 @@ public final class DelosJdbcDeleteReinsertAttribution {
         DelosBenchmarkSupport.prepareOutput(options.databaseRoot(), options.reportDirectory());
 
         List<DelosDeleteReinsertAttributionMeasurement> measurements = new ArrayList<>();
+        List<PageTopologyMeasurement> topology = new ArrayList<>();
         Map<SemanticKey, Long> expectedSemantics = new HashMap<>();
         for (int run = 1; run <= options.runs(); run++) {
             for (int rows : options.rowCounts()) {
@@ -78,10 +81,12 @@ public final class DelosJdbcDeleteReinsertAttribution {
                         Math.min(options.fixtureCommitBatchSize(), rows));
                 for (DelosBenchmarkProvider provider : providersForRun(run)) {
                     for (ScenarioSpec spec : specsForRun(run)) {
-                        DelosDeleteReinsertAttributionMeasurement measurement = measure(
+                        ScenarioMeasurement observed = measure(
                                 options, config, provider, spec, run);
-                        measurements.add(measurement);
-                        requireStableSemantics(expectedSemantics, measurement, spec);
+                        measurements.add(observed.measurement());
+                        topology.addAll(observed.topology());
+                        requireStableSemantics(
+                                expectedSemantics, observed.measurement(), spec);
                     }
                 }
             }
@@ -101,11 +106,12 @@ public final class DelosJdbcDeleteReinsertAttribution {
                 options.warmups(),
                 options.iterations(),
                 options.runs(),
-                measurements);
+                measurements,
+                topology);
         return List.copyOf(measurements);
     }
 
-    private static DelosDeleteReinsertAttributionMeasurement measure(
+    private static ScenarioMeasurement measure(
             Options options,
             DelosBenchmarkConfig config,
             DelosBenchmarkProvider provider,
@@ -147,8 +153,33 @@ public final class DelosJdbcDeleteReinsertAttribution {
                                 semanticFingerprint, observation.semanticFingerprint());
                     }
                 }
-                return totals.measurement(
+                DelosDeleteReinsertAttributionMeasurement measurement = totals.measurement(
                         options, config, provider, spec, semanticFingerprint, run);
+                DelosDeleteReinsertPageTopologyTestSupport.Layout layout =
+                        DelosDeleteReinsertPageTopologyTestSupport.inspect(
+                                connection,
+                                scenario.tableName(),
+                                provider == DelosBenchmarkProvider.MVCC);
+                List<PageTopologyMeasurement> topology = new ArrayList<>();
+                for (DelosDeleteReinsertWorkload.PageTopologyObservation phase
+                        : workload.capturePageTopology(layout)) {
+                    for (DelosDeleteReinsertWorkload.RoleTopology role : phase.roles()) {
+                        topology.add(new PageTopologyMeasurement(
+                                provider,
+                                spec.keyMode(),
+                                spec.transactionBoundary(),
+                                spec.outcome(),
+                                config.rowCount(),
+                                run,
+                                phase.phase(),
+                                role.role(),
+                                role.pageWrites(),
+                                role.distinctPages(),
+                                role.repeatedWrites(),
+                                role.pageWriteBytes()));
+                    }
+                }
+                return new ScenarioMeasurement(measurement, List.copyOf(topology));
             }
         });
     }
@@ -273,6 +304,26 @@ public final class DelosJdbcDeleteReinsertAttribution {
                     semanticFingerprint,
                     run);
         }
+    }
+
+    record PageTopologyMeasurement(
+            DelosBenchmarkProvider provider,
+            KeyMode keyMode,
+            TransactionBoundary transactionBoundary,
+            DelosBenchmarkTransactionOutcome outcome,
+            int rowCount,
+            int run,
+            String phase,
+            DelosDeleteReinsertPageTopologyTestSupport.Role role,
+            long pageWrites,
+            long distinctPages,
+            long repeatedWrites,
+            long pageWriteBytes) {
+    }
+
+    private record ScenarioMeasurement(
+            DelosDeleteReinsertAttributionMeasurement measurement,
+            List<PageTopologyMeasurement> topology) {
     }
 
     private record ScenarioSpec(

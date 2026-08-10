@@ -115,9 +115,14 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
         Path csv = reportDirectory.resolve("delete-reinsert-results.csv");
         Path json = reportDirectory.resolve("delete-reinsert-results.json");
         Path summary = reportDirectory.resolve("delete-reinsert-summary.txt");
+        Path topology = reportDirectory.resolve("delete-reinsert-page-topology.csv");
+        Path topologySummary = reportDirectory.resolve(
+                "delete-reinsert-page-topology-summary.txt");
         assertTrue(Files.size(csv) > 0L);
         assertTrue(Files.size(json) > 0L);
         assertTrue(Files.size(summary) > 0L);
+        assertTrue(Files.size(topology) > 0L);
+        assertTrue(Files.size(topologySummary) > 0L);
         assertTrue(Files.readString(csv).startsWith(
                 "provider,keyMode,transactionBoundary,outcome,cyclesPerIteration,"));
         String jsonText = Files.readString(json);
@@ -125,6 +130,18 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
         assertTrue(jsonText.contains("\"deleteExecuteNanos\":"));
         assertTrue(jsonText.contains("\"insertExecuteNanos\":"));
         assertTrue(jsonText.contains("\"contentOnlyForceOperations\":"));
+        String topologyText = Files.readString(topology);
+        assertTrue(topologyText.startsWith(
+                "provider,keyMode,transactionBoundary,outcome,rowCount,run,phase,role,"));
+        assertTrue(topologyText.contains(",ALL,"));
+        assertTrue(topologyText.contains("heap,"));
+        assertTrue(topologyText.contains("mvcc,"));
+        String topologySummaryText = Files.readString(topologySummary);
+        assertTrue(topologySummaryText.contains(
+                "Untimed post-measurement topology cycle per scenario/run: true"));
+        assertTrue(topologySummaryText.contains(
+                "Distinct page key: (segmentId, containerId, pageNumber)"));
+
         String summaryText = Files.readString(summary);
         assertTrue(summaryText.contains(
                 "Semantic verification/restoration outside timed phases: true"));
@@ -132,6 +149,8 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
                 "TWO_TRANSACTIONS + ROLLBACK semantics: delete commits, insert rolls back"));
         assertTrue(summaryText.contains(
                 "Phase timers are diagnostic attribution, not an S0 threshold"));
+        assertTrue(summaryText.contains(
+                "Physical-page topology capture is untimed and runs after measured cycles: true"));
     }
 
     private record MeasurementKey(

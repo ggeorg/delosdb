@@ -24,7 +24,9 @@ final class DelosDeleteReinsertReports {
             int warmups,
             int iterations,
             int runs,
-            List<DelosDeleteReinsertAttributionMeasurement> measurements) throws IOException {
+            List<DelosDeleteReinsertAttributionMeasurement> measurements,
+            List<DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement> topology)
+            throws IOException {
         DelosBenchmarkSupport.writeUtf8(
                 reportDirectory.resolve("delete-reinsert-results.csv"),
                 csv(measurements));
@@ -34,6 +36,12 @@ final class DelosDeleteReinsertReports {
         DelosBenchmarkSupport.writeUtf8(
                 reportDirectory.resolve("delete-reinsert-summary.txt"),
                 summary(rowCounts, cyclesPerIteration, warmups, iterations, runs, measurements));
+        DelosBenchmarkSupport.writeUtf8(
+                reportDirectory.resolve("delete-reinsert-page-topology.csv"),
+                pageTopologyCsv(topology));
+        DelosBenchmarkSupport.writeUtf8(
+                reportDirectory.resolve("delete-reinsert-page-topology-summary.txt"),
+                pageTopologySummary(topology));
     }
 
     private static String csv(List<DelosDeleteReinsertAttributionMeasurement> values) {
@@ -122,6 +130,58 @@ final class DelosDeleteReinsertReports {
         return out.append("]\n").toString();
     }
 
+    private static String pageTopologyCsv(
+            List<DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement> values) {
+        StringBuilder out = new StringBuilder(
+                "provider,keyMode,transactionBoundary,outcome,rowCount,run,phase,role,"
+                        + "pageWrites,distinctPages,repeatedWrites,pageWriteBytes\n");
+        for (DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement value : values) {
+            out.append(value.provider().id()).append(',')
+                    .append(value.keyMode()).append(',')
+                    .append(value.transactionBoundary()).append(',')
+                    .append(value.outcome()).append(',')
+                    .append(value.rowCount()).append(',')
+                    .append(value.run()).append(',')
+                    .append(value.phase()).append(',')
+                    .append(value.role()).append(',')
+                    .append(value.pageWrites()).append(',')
+                    .append(value.distinctPages()).append(',')
+                    .append(value.repeatedWrites()).append(',')
+                    .append(value.pageWriteBytes()).append('\n');
+        }
+        return out.toString();
+    }
+
+    private static String pageTopologySummary(
+            List<DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement> values) {
+        StringBuilder out = new StringBuilder();
+        out.append("DelosDB JDBC delete/reinsert physical-page topology\n")
+                .append("=================================================\n\n")
+                .append("Untimed post-measurement topology cycle per scenario/run: true\n")
+                .append("Successful AFTER_PAGE_WRITE events only: true\n")
+                .append("Distinct page key: (segmentId, containerId, pageNumber)\n")
+                .append("Recorder overflow is fatal: true\n\n");
+        for (DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement value : values) {
+            if (value.role()
+                    != org.apache.derbyTesting.functionTests.tests.delos
+                            .DelosDeleteReinsertPageTopologyTestSupport.Role.ALL) {
+                continue;
+            }
+            out.append(value.provider().id()).append(' ')
+                    .append(value.keyMode()).append(' ')
+                    .append(value.transactionBoundary()).append(' ')
+                    .append(value.outcome()).append(" rows=").append(value.rowCount())
+                    .append(" run=").append(value.run())
+                    .append(" phase=").append(value.phase())
+                    .append(" writes=").append(value.pageWrites())
+                    .append(" distinct-pages=").append(value.distinctPages())
+                    .append(" repeated-writes=").append(value.repeatedWrites())
+                    .append(" bytes=").append(value.pageWriteBytes())
+                    .append('\n');
+        }
+        return out.toString();
+    }
+
     private static String summary(
             List<Integer> rowCounts,
             int cyclesPerIteration,
@@ -142,6 +202,7 @@ final class DelosDeleteReinsertReports {
                 .append("insert execution, final transaction end\n")
                 .append("Semantic verification/restoration outside timed phases: true\n")
                 .append("RawStore I/O deltas exclude semantic verification/restoration: true\n")
+                .append("Physical-page topology capture is untimed and runs after measured cycles: true\n")
                 .append("TWO_TRANSACTIONS + ROLLBACK semantics: delete commits, insert rolls back, ")
                 .append("source row is restored outside timed phases\n")
                 .append("Phase timers are diagnostic attribution, not an S0 threshold\n\n");
