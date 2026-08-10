@@ -24,7 +24,6 @@ final class DelosDeleteReinsertReports {
             int warmups,
             int iterations,
             int runs,
-            DelosJdbcDeleteReinsertAttribution.OrderedIndexPolicy orderedIndexPolicy,
             List<DelosDeleteReinsertAttributionMeasurement> measurements,
             List<DelosJdbcDeleteReinsertAttribution.PageTopologyMeasurement> topology)
             throws IOException {
@@ -36,14 +35,7 @@ final class DelosDeleteReinsertReports {
                 json(measurements));
         DelosBenchmarkSupport.writeUtf8(
                 reportDirectory.resolve("delete-reinsert-summary.txt"),
-                summary(
-                        rowCounts,
-                        cyclesPerIteration,
-                        warmups,
-                        iterations,
-                        runs,
-                        orderedIndexPolicy,
-                        measurements));
+                summary(rowCounts, cyclesPerIteration, warmups, iterations, runs, measurements));
         DelosBenchmarkSupport.writeUtf8(
                 reportDirectory.resolve("delete-reinsert-page-topology.csv"),
                 pageTopologyCsv(topology));
@@ -198,7 +190,6 @@ final class DelosDeleteReinsertReports {
             int warmups,
             int iterations,
             int runs,
-            DelosJdbcDeleteReinsertAttribution.OrderedIndexPolicy orderedIndexPolicy,
             List<DelosDeleteReinsertAttributionMeasurement> values) {
         StringBuilder out = new StringBuilder();
         out.append("DelosDB JDBC delete/reinsert attribution\n")
@@ -209,8 +200,6 @@ final class DelosDeleteReinsertReports {
                 .append("Warmups: ").append(warmups).append('\n')
                 .append("Iterations: ").append(iterations).append('\n')
                 .append("Runs: ").append(runs).append('\n')
-                .append("MVCC internal ordered-index policy: ")
-                .append(orderedIndexPolicy).append('\n')
                 .append("Timed phases: source read, delete execution, optional delete transaction end, ")
                 .append("insert execution, final transaction end\n")
                 .append("Semantic verification/restoration outside timed phases: true\n")

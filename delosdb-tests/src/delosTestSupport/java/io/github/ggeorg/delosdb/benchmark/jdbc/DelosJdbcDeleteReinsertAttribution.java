@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.apache.derby.impl.store.access.mvcc.MvccOrderedIndexBreadthTestSupport;
 import org.apache.derbyTesting.functionTests.tests.delos.DelosDeleteReinsertPageTopologyTestSupport;
 
 /** Provider-neutral delete/reinsert phase-attribution benchmark driver. */
@@ -26,12 +25,6 @@ public final class DelosJdbcDeleteReinsertAttribution {
     public enum KeyMode {
         SAME_KEY,
         DIFFERENT_KEY
-    }
-
-    /** Internal MVCC candidate-index breadth used only by this benchmark experiment. */
-    public enum OrderedIndexPolicy {
-        ALL_ORDERABLE,
-        UNIQUE_PROBE_ONLY
     }
 
     /** Whether delete and insert share one transaction boundary. */
@@ -62,8 +55,7 @@ public final class DelosJdbcDeleteReinsertAttribution {
             int fixtureCommitBatchSize,
             int warmups,
             int iterations,
-            int runs,
-            OrderedIndexPolicy orderedIndexPolicy) throws Exception {
+            int runs) throws Exception {
         Options options = new Options(
                 databaseRoot,
                 reportDirectory,
@@ -73,8 +65,7 @@ public final class DelosJdbcDeleteReinsertAttribution {
                 fixtureCommitBatchSize,
                 warmups,
                 iterations,
-                runs,
-                orderedIndexPolicy);
+                runs);
         options.validate();
         DelosBenchmarkSupport.prepareOutput(options.databaseRoot(), options.reportDirectory());
 
@@ -115,7 +106,6 @@ public final class DelosJdbcDeleteReinsertAttribution {
                 options.warmups(),
                 options.iterations(),
                 options.runs(),
-                options.orderedIndexPolicy(),
                 measurements,
                 topology);
         return List.copyOf(measurements);
@@ -137,20 +127,6 @@ public final class DelosJdbcDeleteReinsertAttribution {
             DelosJdbcBenchmarkScenario scenario =
                     new DelosJdbcBenchmarkScenario(connection, provider, config);
             scenario.prepare();
-            if (provider == DelosBenchmarkProvider.MVCC
-                    && options.orderedIndexPolicy() == OrderedIndexPolicy.UNIQUE_PROBE_ONLY) {
-                DelosDeleteReinsertPageTopologyTestSupport.Layout initialLayout =
-                        DelosDeleteReinsertPageTopologyTestSupport.inspect(
-                                connection, scenario.tableName(), true);
-                int disabled = MvccOrderedIndexBreadthTestSupport.retainUniqueProbeIndexes(
-                        connection, initialLayout.baseContainerId());
-                if (disabled != 4) {
-                    throw new IllegalStateException(
-                            "Expected four non-unique MVCC candidate B-trees to be disabled, got "
-                                    + disabled);
-                }
-                connection.commit();
-            }
             try (DelosDeleteReinsertWorkload workload = new DelosDeleteReinsertWorkload(
                     connection,
                     provider,
@@ -372,8 +348,7 @@ public final class DelosJdbcDeleteReinsertAttribution {
             int fixtureCommitBatchSize,
             int warmups,
             int iterations,
-            int runs,
-            OrderedIndexPolicy orderedIndexPolicy) {
+            int runs) {
         private void validate() {
             if (databaseRoot == null || reportDirectory == null) {
                 throw new IllegalArgumentException("databaseRoot and reportDirectory are required");
@@ -401,9 +376,6 @@ public final class DelosJdbcDeleteReinsertAttribution {
             }
             if (runs < 1 || runs > 100) {
                 throw new IllegalArgumentException("runs must be between 1 and 100");
-            }
-            if (orderedIndexPolicy == null) {
-                throw new IllegalArgumentException("orderedIndexPolicy is required");
             }
         }
     }

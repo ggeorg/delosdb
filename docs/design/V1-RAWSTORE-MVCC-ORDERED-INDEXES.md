@@ -18,7 +18,7 @@ A table owns:
 metadata and stable-row directory container
 version container
 ordered-index generation directory
-one Derby B-tree per SQL-orderable base-table column
+one compatibility B-tree slot per SQL-orderable base-table column
 ```
 
 The generation directory is an ordinary RawStore container. Each mapping row records:
@@ -40,8 +40,9 @@ to the logical directory scan.
 
 ## Physical B-tree layout
 
-An inserted row contributes one entry to every orderable-column B-tree. A later version contributes
-an entry only when that column's indexed value differs from its predecessor:
+An inserted row contributes entries only to first-column B-trees used by native primary/unique
+constraint probes. A later version contributes an entry only when such a probe key differs from its
+predecessor:
 
 ```text
 typed Derby key
@@ -50,7 +51,9 @@ MvccVersionId
 MvccRowLocation
 ```
 
-The fields are ordered as one immutable B-tree key. The typed SQL key is first, enabling bounded
+The generation directory retains the existing per-orderable-column mapping shape for format
+compatibility, but ordinary non-probe B-trees are dormant and receive no version entries. The fields
+of an active probe entry are ordered as one immutable B-tree key. The typed SQL key is first, enabling bounded
 partial-key scans. Stable row/version identity distinguishes historical candidates. `MvccRowLocation` is last because
 Derby B2I requires the base-row location in the final field; its logical identity remains the stable
 row id while its optional page/slot values address the stable-directory record directly.
@@ -97,8 +100,8 @@ finds its replacement or observes a committed delete.
 
 ## Equality, range, and uniqueness lookup
 
-Safe single-column equality and range predicates open the corresponding B-tree with typed partial-key
-bounds:
+Safe single-column equality and range predicates may use a maintained native-uniqueness probe B-tree
+with typed partial-key bounds:
 
 ```text
 equality:          [key, key]
@@ -119,8 +122,9 @@ B-tree candidate (MvccRowId, MvccVersionId, validated directory locator)
 Native unique constraints probe the first constrained column's exact key range and then compare every
 constraint column against authoritative visible rows. If the first-column B-tree is disabled because a
 key exceeded Derby's physical B-tree capacity, uniqueness enforcement uses the same authoritative
-visible-row scan. Unsupported qualifier shapes and qualifiers on non-orderable or disabled columns fall
-back to the full stable-row directory scan.
+visible-row scan. Unsupported qualifier shapes and qualifiers on non-probe, non-orderable, or disabled columns fall
+back to an inherited SQL index when the optimizer selected one, otherwise to the full stable-row
+directory scan.
 
 ## Generation replacement and compatibility
 
@@ -142,8 +146,8 @@ and temporary B-trees use the same inherited access and RawStore lifecycle.
 The executable proof covers:
 
 ```text
-one inherited Derby B-tree per orderable column
-large-page VARCHAR/VARBIT candidate storage
+constraint-driven native uniqueness probe maintenance
+non-unique equality/range fallback without hidden candidate writes
 oversized-key column fallback without rejecting the base-table insert
 bounded equality and range lookup
 transaction-local INSERT/UPDATE visibility

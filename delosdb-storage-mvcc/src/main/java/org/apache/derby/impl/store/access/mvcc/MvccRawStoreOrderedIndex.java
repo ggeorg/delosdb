@@ -33,9 +33,10 @@ import org.apache.derby.shared.common.reference.SQLState;
  * Version-aware candidate indexes backed by Derby's existing RawStore B-tree.
  *
  * <p>The published ordered-index container is a small generation directory.
- * It contains one Derby B-tree conglomerate id for every orderable base-table
- * column.  The B-trees narrow predicates to logical row ids; the authoritative
- * MVCC version chain always rechecks visibility and remaining qualifiers.</p>
+ * Its inherited Derby B-trees retain the on-disk per-orderable-column layout,
+ * but normal version maintenance populates only first columns used to narrow
+ * native unique-key probes. Other predicates fall back to SQL indexes or the
+ * authoritative MVCC scan.</p>
  */
 final class MvccRawStoreOrderedIndex {
     static final int KEY_FIELD = 0;
@@ -71,7 +72,7 @@ final class MvccRawStoreOrderedIndex {
                 table,
                 directoryKey);
         for (int column = 0; column < table.columnCount(); column++) {
-            if (!indexesColumn(table, column)
+            if (!maintainsColumn(table, column)
                     || indexedValueUnchanged(previousValues, values, column)) {
                 continue;
             }
@@ -271,7 +272,7 @@ final class MvccRawStoreOrderedIndex {
             return Optional.empty();
         }
         MvccRawStoreOrderedIndexPredicate.Predicate predicate = optionalPredicate.get();
-        if (!indexesColumn(table, predicate.columnId()) || directoryKey == null) {
+        if (!maintainsColumn(table, predicate.columnId()) || directoryKey == null) {
             return Optional.empty();
         }
         long[] btrees = MvccRawStoreOrderedIndexGeneration.readBtreeConglomerates(
@@ -387,7 +388,7 @@ final class MvccRawStoreOrderedIndex {
                     "RawStore MVCC ordered-index value count mismatch");
         }
         for (int column = 0; column < table.columnCount(); column++) {
-            if (!indexesColumn(table, column)
+            if (!maintainsColumn(table, column)
                     || MvccRawStoreOrderedIndexGeneration.isDisabled(btrees[column])) {
                 continue;
             }
@@ -493,6 +494,19 @@ final class MvccRawStoreOrderedIndex {
             return false;
         }
         return isOrderableFormat(table.formatIds()[columnId]);
+    }
+
+    static boolean maintainsColumn(MvccRawStoreTable.Descriptor table, int columnId) {
+        if (!indexesColumn(table, columnId)) {
+            return false;
+        }
+        for (MvccRawStoreTable.UniqueConstraint constraint : table.uniqueConstraints()) {
+            int[] columns = constraint.columns();
+            if (columns.length > 0 && columns[0] == columnId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static boolean requiresLargePage(MvccRawStoreTable.Descriptor table, int columnId) {

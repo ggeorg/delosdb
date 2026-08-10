@@ -22,6 +22,7 @@ import java.util.List;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
@@ -177,6 +178,27 @@ final class MvccRawStoreMetadataInspection {
                 TransactionController.ISOLATION_READ_COMMITTED);
         try {
             controller.insert(row);
+        } finally {
+            controller.close();
+        }
+    }
+
+    static void addNativeUniqueConstraint(
+            Connection connection,
+            String tableName,
+            int... columns) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        ConglomerateController controller = manager.openConglomerate(
+                baseConglomerateId(connection, tableName),
+                false,
+                TransactionController.OPENMODE_FORUPDATE,
+                TransactionController.MODE_TABLE,
+                TransactionController.ISOLATION_READ_COMMITTED);
+        try {
+            if (!(controller instanceof AccessMethodUniqueConstraintLifecycle lifecycle)) {
+                throw new AssertionError("MVCC base controller lacks native unique lifecycle");
+            }
+            lifecycle.addUniqueConstraint(columns, true, false);
         } finally {
             controller.close();
         }

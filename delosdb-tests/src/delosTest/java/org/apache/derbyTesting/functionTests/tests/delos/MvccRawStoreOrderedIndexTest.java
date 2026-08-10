@@ -49,6 +49,10 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(connection,
                         "create table indexed_t (id int, name varchar(64), score int, "
                                 + "padding varchar(600)) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 1, 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 2, 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 3, 0);
                 for (int id : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 10}) {
                     String padding = "pad-" + id + '-' + "x".repeat(400);
                     executeUpdate(connection, "insert into indexed_t values ("
@@ -69,7 +73,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         connection,
                         "INDEXED_T");
                 assertTrue("ordered-index container must be persisted", indexContainer > 0L);
-                assertEquals("one Derby B-tree per orderable column",
+                assertEquals("one compatibility B-tree slot per orderable column",
                         4,
                         MvccRawStoreMetadataInspection.orderedIndexBtreeCount(
                                 connection,
@@ -106,6 +110,35 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testOrdinaryNonUniqueColumnsDoNotReceiveHiddenCandidates() throws Exception {
+        String database = databaseName("mvcc-raw-store-ordered-index-policy");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table policy_t (id int primary key, category int, payload varchar(600)) "
+                            + "using delos_mvcc");
+            executeUpdate(connection, "insert into policy_t values (1, 7, 'one')");
+            executeUpdate(connection, "insert into policy_t values (2, 7, 'two')");
+            connection.commit();
+
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "POLICY_T");
+            assertEquals(2, entries.size());
+            assertTrue(entries.stream().allMatch(entry -> entry.columnId() == 0));
+
+            executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
+            assertRows(connection,
+                    "select id from policy_t where category = 7 order by id",
+                    "1",
+                    "2");
+            assertFalse(runtimeStatistics(connection).contains(
+                    "delos_mvcc_rawstore_ordered_index"));
+            connection.commit();
+        }
+        shutdownDatabase(database);
+    }
+
     public void testProjectedScansKeepQualifierColumnsAndMaterializePayloadOnDemand()
             throws Exception {
         String database = databaseName("mvcc-raw-store-projected-scan");
@@ -118,6 +151,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(setup,
                         "create table projection_t (id int primary key, category int, "
                                 + "quantity int, payload varchar(600)) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "PROJECTION_T", 1, 0);
                 executeUpdate(setup,
                         "insert into projection_t values (1, 7, 10, '" + payloadOne + "')");
                 executeUpdate(setup,
@@ -182,6 +216,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             executeUpdate(connection,
                     "create table covering_t (id int primary key, category int, "
                             + "payload varchar(600)) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "COVERING_T", 1, 0);
             executeUpdate(connection,
                     "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
             executeUpdate(connection,
@@ -251,6 +286,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(setup,
                         "create table covering_snapshot_t (id int primary key, category int) "
                                 + "using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                        setup, "COVERING_SNAPSHOT_T", 1, 0);
                 executeUpdate(setup,
                         "insert into covering_snapshot_t values (1, 7)");
                 setup.commit();
@@ -291,6 +328,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(connection,
                         "create table head_summary_t (id int primary key, category int) "
                                 + "using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                        connection, "HEAD_SUMMARY_T", 1, 0);
                 connection.commit();
 
                 executeUpdate(connection, "insert into head_summary_t values (1, 7)");
@@ -357,6 +396,10 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             executeUpdate(connection,
                     "create table oversize_t (id int primary key, payload varchar(32672)) "
                             + "using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                    connection, "PAGE_SIZED_T", 1, 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                    connection, "OVERSIZE_T", 1, 0);
 
             insertWideRow(connection, "page_sized_t", pageSizedPayload);
             insertWideRow(connection, "oversize_t", oversizePayload);
@@ -385,6 +428,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(setup, "create table index_anchor (id int) using delos_mvcc");
                 executeUpdate(setup,
                         "create table index_history (id int, name varchar(64), score int) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 1, 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 2, 0);
                 executeUpdate(setup, "insert into index_anchor values (1)");
                 executeUpdate(setup, "insert into index_history values (1, 'old', 10)");
                 executeUpdate(setup, "insert into index_history values (2, 'delete-old', 20)");
@@ -465,6 +511,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
                         "create table legacy_index_t (id int, name varchar(64)) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "LEGACY_INDEX_T", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "LEGACY_INDEX_T", 1, 0);
                 executeUpdate(connection, "insert into legacy_index_t values (1, 'one')");
                 executeUpdate(connection, "insert into legacy_index_t values (2, 'two')");
                 connection.commit();
@@ -512,6 +560,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table memory_index_t (id int, name varchar(64), score int) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "MEMORY_INDEX_T", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "MEMORY_INDEX_T", 2, 0);
             executeUpdate(connection, "insert into memory_index_t values (1, 'one', 10)");
             executeUpdate(connection, "insert into memory_index_t values (2, 'two', 20)");
             connection.commit();
@@ -539,6 +589,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(setup,
                         "create table index_delta (id int, name varchar(64), quantity int) "
                                 + "using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 1, 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 2, 0);
                 executeUpdate(setup, "insert into index_delta values (1, 'one', 10)");
                 setup.commit();
             }
@@ -718,6 +771,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
                         "create table crash_index_t (id int, name varchar(64), score int) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 2, 0);
                 executeUpdate(setup, "insert into crash_index_t values (1, 'old', 10)");
                 executeUpdate(setup, "insert into crash_index_t values (2, 'delete-old', 20)");
                 setup.commit();

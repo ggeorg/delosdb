@@ -23,7 +23,7 @@ Derby RawStore transaction:
 metadata/directory container
 version container
 ordered-index generation directory
-one inherited Derby B-tree per SQL-orderable column
+one compatibility Derby B-tree slot per SQL-orderable column
 RawStore slotted pages
 RawStore logged insert and field-update operations
 RawStore undo
@@ -136,7 +136,8 @@ versions with one `MvccCommitSequence` before the single inherited RawStore comm
 
 CREATE uses `Transaction.addContainer()` for metadata, versions, and the generation directory. After
 the access manager registers the new base conglomerate, the same access transaction creates one Derby
-B-tree per orderable column and records their ids in the directory. Rollback removes the base containers,
+compatibility B-tree slot per orderable column and records their ids in the directory; normal
+version maintenance populates only first columns required for native primary/unique-key probes. Rollback removes the base containers,
 B-trees, and mappings through inherited access/RawStore undo.
 
 INSERT performs its physical work during statement execution:

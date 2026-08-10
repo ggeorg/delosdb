@@ -150,6 +150,7 @@ final class MvccRawStoreTableMetadata {
         updated.add(candidate);
         rewriteControlRow(transaction, table, updated);
         table.observeUniqueConstraints(updated);
+        context.refreshOrderedIndexReplacement(table);
     }
 
     static void dropUniqueConstraint(
@@ -186,6 +187,7 @@ final class MvccRawStoreTableMetadata {
         }
         rewriteControlRow(transaction, table, updated);
         table.observeUniqueConstraints(updated);
+        context.refreshOrderedIndexReplacement(table);
     }
 
     static List<UniqueConstraint> refreshUniqueConstraints(

@@ -254,6 +254,18 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                 new OrderedIndexReplacement(table, privateContainer));
     }
 
+    void refreshOrderedIndexReplacement(MvccRawStoreTable.Descriptor table)
+            throws StandardException {
+        OrderedIndexReplacement replacement = orderedIndexReplacements.get(
+                table.metadataContainer().getContainerId());
+        if (replacement == null) {
+            prepareOrderedIndexReplacement(table);
+            return;
+        }
+        MvccRawStoreTable.rebuildOrderedIndexForTransaction(
+                rawTransaction, table, replacement.privateContainer(), this);
+    }
+
     boolean hasOrderedIndexReplacement(MvccRawStoreTable.Descriptor table) {
         return orderedIndexReplacements.containsKey(
                 table.metadataContainer().getContainerId());
