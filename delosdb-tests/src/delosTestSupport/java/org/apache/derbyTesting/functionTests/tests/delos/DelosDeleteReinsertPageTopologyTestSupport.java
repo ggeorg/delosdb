@@ -33,11 +33,16 @@ public final class DelosDeleteReinsertPageTopologyTestSupport {
         }
         LanguageConnectionContext lcc = embedded.getLanguageConnection();
         TransactionController controller = lcc.getTransactionExecute();
-        if (!(controller instanceof TransactionManager manager)
-                || !(manager.getRawStoreXact() instanceof RawTransaction rawTransaction)) {
-            throw new SQLException("RawStore transaction required for page-cache flush");
+        if (!(controller instanceof TransactionManager manager)) {
+            throw new SQLException("RawStore transaction manager required for page-cache flush");
         }
+
+        RawTransaction rawTransaction;
         try {
+            if (!(manager.getRawStoreXact() instanceof RawTransaction raw)) {
+                throw new SQLException("RawStore transaction required for page-cache flush");
+            }
+            rawTransaction = raw;
             rawTransaction.getDataFactory().checkpoint();
         } catch (StandardException failure) {
             throw new SQLException("RawStore page-cache flush failed", failure);
