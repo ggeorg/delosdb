@@ -660,7 +660,6 @@ final class MvccRawStoreTable {
             return false;
         }
         MvccRawStoreOrderedIndex.lockUniqueKeysForDelete(
-                rawTransaction,
                 table,
                 target.visible().values(),
                 context);

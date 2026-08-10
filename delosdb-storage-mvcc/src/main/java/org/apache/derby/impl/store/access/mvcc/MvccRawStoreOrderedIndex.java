@@ -153,8 +153,7 @@ final class MvccRawStoreOrderedIndex {
         if (values == null || values.length != table.columnCount()) {
             throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
         }
-        List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
+        List<MvccRawStoreTable.UniqueConstraint> constraints = table.uniqueConstraints();
         if (constraints.isEmpty()) {
             return;
         }
@@ -217,12 +216,10 @@ final class MvccRawStoreOrderedIndex {
     }
 
     static void lockUniqueKeysForDelete(
-            Transaction transaction,
             MvccRawStoreTable.Descriptor table,
             StoreDataValue[] previousValues,
             MvccRawStoreTransactionContext context) throws StandardException {
-        List<MvccRawStoreTable.UniqueConstraint> constraints =
-                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
+        List<MvccRawStoreTable.UniqueConstraint> constraints = table.uniqueConstraints();
         if (!constraints.isEmpty()) {
             context.lockUniqueKeys(table, constraints, previousValues);
         }
