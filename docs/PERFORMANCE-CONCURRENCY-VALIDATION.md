@@ -48,12 +48,16 @@ commit vs rollback
 
 It reports public-JDBC source-read, delete, insert, and transaction-end phase times together with
 shared RawStore page-I/O and force deltas. After the timed samples, one untimed topology cycle per
-scenario/run records successful RawStore page writes and groups them by `(segment, container, page)`.
-The topology report separates total writes, distinct pages, repeated rewrites, and bytes by heap table/
-B-tree or MVCC database metadata, metadata/directory, version storage, ordered-index directory/B-tree, and
-other containers. Recorder overflow is a hard failure, so truncated topology evidence is never accepted.
-Semantic verification and any restoration needed by the two-transaction rollback shape remain outside
-the timed phases. The results are diagnostic evidence, not an S0 threshold.
+scenario/run attributes page dirtiness by synchronously cleaning the RawStore page cache around each
+phase while the existing RawStore I/O fault seam records successful physical page writes. The pre-phase
+clean establishes a clean cache; the post-phase clean turns pages dirtied by that phase into deterministic
+write evidence without contaminating the timed samples. The topology report separates total writes,
+distinct pages, repeated rewrites, and bytes by heap table/B-tree or MVCC database metadata,
+metadata/directory, version storage, ordered-index directory/B-tree, and other containers. RawStore counter
+deltas must exactly match the recorded write count/bytes for every phase, recorder overflow is fatal, and
+an all-zero topology report is rejected. Semantic verification and any restoration needed by the
+two-transaction rollback shape remain outside the timed phases. The results are diagnostic evidence, not
+an S0 threshold.
 
 ```bash
 ./gradlew :delosdb-tests:runDelosJdbcDeleteReinsertAttribution \

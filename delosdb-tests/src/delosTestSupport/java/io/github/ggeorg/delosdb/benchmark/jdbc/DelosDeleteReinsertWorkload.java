@@ -115,6 +115,7 @@ final class DelosDeleteReinsertWorkload implements AutoCloseable {
             String phase,
             DelosDeleteReinsertPageTopologyTestSupport.Layout layout,
             SqlAction action) throws SQLException {
+        DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(connection);
         DelosRawStoreIoSnapshot before = rawStoreSnapshot();
         String databaseIdentity = before.databaseIdentity();
         RawStoreIoFaultInjectionTestSupport.installRecording(
@@ -123,6 +124,7 @@ final class DelosDeleteReinsertWorkload implements AutoCloseable {
         DelosRawStoreIoSnapshot after;
         try {
             action.run();
+            DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(connection);
             after = rawStoreSnapshot();
             evidence = RawStoreIoFaultInjectionTestSupport.evidence(databaseIdentity);
         } finally {

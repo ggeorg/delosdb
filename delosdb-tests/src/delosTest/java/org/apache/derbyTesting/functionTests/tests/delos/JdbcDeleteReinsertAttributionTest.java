@@ -136,9 +136,24 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
         assertTrue(topologyText.contains(",ALL,"));
         assertTrue(topologyText.contains("heap,"));
         assertTrue(topologyText.contains("mvcc,"));
+        boolean heapTopologyWrites = false;
+        boolean mvccTopologyWrites = false;
+        for (String line : topologyText.split("\\R")) {
+            String[] fields = line.split(",", -1);
+            if (fields.length >= 10 && Long.parseLong(fields[8]) > 0L) {
+                heapTopologyWrites |= "heap".equals(fields[0]);
+                mvccTopologyWrites |= "mvcc".equals(fields[0]);
+            }
+        }
+        assertTrue("heap physical-page topology must record writes", heapTopologyWrites);
+        assertTrue("MVCC physical-page topology must record writes", mvccTopologyWrites);
         String topologySummaryText = Files.readString(topologySummary);
         assertTrue(topologySummaryText.contains(
                 "Untimed post-measurement topology cycle per scenario/run: true"));
+        assertTrue(topologySummaryText.contains(
+                "Page cache is clean before each untimed phase: true"));
+        assertTrue(topologySummaryText.contains(
+                "Page cache is synchronously cleaned after each untimed phase: true"));
         assertTrue(topologySummaryText.contains(
                 "Distinct page key: (segmentId, containerId, pageNumber)"));
 
@@ -151,6 +166,8 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
                 "Phase timers are diagnostic attribution, not an S0 threshold"));
         assertTrue(summaryText.contains(
                 "Physical-page topology capture is untimed and runs after measured cycles: true"));
+        assertTrue(summaryText.contains(
+                "Topology phases synchronously clean the RawStore page cache: true"));
     }
 
     private record MeasurementKey(

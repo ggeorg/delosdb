@@ -158,6 +158,8 @@ final class DelosDeleteReinsertReports {
         out.append("DelosDB JDBC delete/reinsert physical-page topology\n")
                 .append("=================================================\n\n")
                 .append("Untimed post-measurement topology cycle per scenario/run: true\n")
+                .append("Page cache is clean before each untimed phase: true\n")
+                .append("Page cache is synchronously cleaned after each untimed phase: true\n")
                 .append("Successful AFTER_PAGE_WRITE events only: true\n")
                 .append("Distinct page key: (segmentId, containerId, pageNumber)\n")
                 .append("Recorder overflow is fatal: true\n\n");
@@ -203,6 +205,7 @@ final class DelosDeleteReinsertReports {
                 .append("Semantic verification/restoration outside timed phases: true\n")
                 .append("RawStore I/O deltas exclude semantic verification/restoration: true\n")
                 .append("Physical-page topology capture is untimed and runs after measured cycles: true\n")
+                .append("Topology phases synchronously clean the RawStore page cache: true\n")
                 .append("TWO_TRANSACTIONS + ROLLBACK semantics: delete commits, insert rolls back, ")
                 .append("source row is restored outside timed phases\n")
                 .append("Phase timers are diagnostic attribution, not an S0 threshold\n\n");

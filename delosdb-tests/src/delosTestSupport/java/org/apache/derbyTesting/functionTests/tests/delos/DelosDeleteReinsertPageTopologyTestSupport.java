@@ -8,14 +8,39 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
+import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
+import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.impl.jdbc.EmbedConnection;
+import org.apache.derby.shared.common.error.StandardException;
+
 /** Test-source-only physical-container classification for delete/reinsert attribution. */
 public final class DelosDeleteReinsertPageTopologyTestSupport {
     private DelosDeleteReinsertPageTopologyTestSupport() {
+    }
+
+    public static void flushPageCache(Connection connection) throws SQLException {
+        if (!(connection instanceof EmbedConnection embedded)) {
+            throw new SQLException(
+                    "Embedded connection required for RawStore page-cache flush");
+        }
+        LanguageConnectionContext lcc = embedded.getLanguageConnection();
+        TransactionController controller = lcc.getTransactionExecute();
+        if (!(controller instanceof TransactionManager manager)) {
+            throw new SQLException(
+                    "Derby transaction manager required for RawStore page-cache flush");
+        }
+        try {
+            manager.getRawStoreXact().getDataFactory().checkpoint();
+        } catch (StandardException failure) {
+            throw new SQLException("RawStore page-cache flush failed", failure);
+        }
     }
 
     public static Layout inspect(Connection connection, String tableName, boolean mvcc)
