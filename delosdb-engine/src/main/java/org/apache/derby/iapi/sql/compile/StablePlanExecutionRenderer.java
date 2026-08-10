@@ -25,10 +25,18 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.derby.iapi.sql.execute.StablePlanExecutionEvidence;
 
-/** Deterministic renderer for a stable plan plus correlated execution evidence. */
+/**
+ * Renderer for one retained stable plan plus its correlated execution evidence.
+ *
+ * <p>Deterministic plan/cardinality/storage fields are shared by text and JSON.
+ * Timing and MVCC snapshot sequence remain execution-specific values. Derived
+ * estimate and MVCC summaries are computed only while rendering and never feed
+ * back into optimizer, executor, or storage state.</p>
+ */
 public final class StablePlanExecutionRenderer {
     private StablePlanExecutionRenderer() {}
 
+    /** Returns the human-readable plan followed by correlated execution evidence. */
     public static String text(StablePlanModel plan, StablePlanExecutionEvidence evidence) {
         StringBuilder out = new StringBuilder(StablePlanRenderer.text(plan));
         out.append("EXECUTION schemaVersion=").append(evidence.schemaVersion())
@@ -85,6 +93,7 @@ public final class StablePlanExecutionRenderer {
         return out.toString();
     }
 
+    /** Returns the machine-readable plan and execution evidence in one JSON object. */
     public static String json(StablePlanModel plan, StablePlanExecutionEvidence evidence) {
         String planJson = StablePlanRenderer.json(plan);
         StringBuilder out = new StringBuilder(planJson.length() + 256);

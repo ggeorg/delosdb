@@ -150,7 +150,16 @@ security truth
 These checks use executable or structural evidence. Historical stage scripts, Markdown wording,
 comments, exact report prose, and task self-inspection are not architecture authority.
 
-## Next readable-engine layer
+## Readable-engine diagnostics
 
-Phase 10.1 may introduce a stable plan representation above the existing optimizer decision and below
-public `EXPLAIN`. It must describe the current compiler and execution path rather than duplicate it.
+Phase 10 now exposes the selected optimizer plan through immutable `StablePlanModel`, deterministic
+`EXPLAIN`, and bounded query-only `EXPLAIN ANALYZE`. Execution evidence is correlated to stable plan
+node ids through generated `resultSetNumber` identity and reuses existing Derby runtime statistics plus
+heap/MVCC scan information. It does not reconstruct a plan from runtime classes or feed diagnostics back
+into optimizer/executor state.
+
+For MVCC scans, ANALYZE can expose the exact scan snapshot sequence and concise read-path/version
+traversal diagnostics where existing counters prove them. Unmeasured paths remain explicitly
+`NOT_MEASURED` or `UNKNOWN` rather than adding profiling work to ordinary row loops.
+
+See [`READABLE-ENGINE.md`](READABLE-ENGINE.md) for the SQL contract and one production end-to-end trace.

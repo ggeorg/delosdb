@@ -27,9 +27,14 @@ import java.util.List;
  * Bounded, immutable description of the optimizer plan selected for a prepared
  * statement.
  *
- * <p>The model is diagnostic state only. It does not participate in plan
- * selection, generated-class construction, or execution. Statements without
- * an optimizer-selected result-set tree retain statement metadata with a null
+ * <p>The model is captured after optimization and before generated activation
+ * construction. It is diagnostic state only: it does not participate in plan
+ * selection, generated-class construction, or execution. Text and JSON
+ * EXPLAIN output are both rendered from this same value.</p>
+ *
+ * <p>Node identity is deterministic pre-order identity for the selected plan.
+ * The model contains no compiler-node references. Statements without an
+ * optimizer-selected result-set tree retain statement metadata with a null
  * root and an empty node list.</p>
  */
 public record StablePlanModel(

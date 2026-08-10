@@ -5,8 +5,9 @@ It preserves Derby-compatible SQL, JDBC, catalogs, heap behavior, database forma
 modernizing selected internals through explicit, tested boundaries.
 
 DelosDB is pre-1.0. The current repository has completed RawStore convergence, JDK 25 generated-class
-modernization, and the repository-integrity campaign. The next implementation phase is the stable
-plan model for readable `EXPLAIN` and storage-aware execution evidence.
+modernization, repository-integrity consolidation, and the Phase 10 readable-engine implementation
+through storage-aware `EXPLAIN ANALYZE`. Phase 10.4 is tracing that implementation end to end and
+turning the accepted model into public documentation, executable demonstrations, and teaching material.
 
 ## Architecture
 
@@ -39,6 +40,7 @@ JavaFactory / ClassBuilder / MethodBuilder / LocalField
 There is no external ASM dependency, fallback backend, or runtime backend selector.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+[`docs/READABLE-ENGINE.md`](docs/READABLE-ENGINE.md),
 [`docs/STORAGE-ARCHITECTURE.md`](docs/STORAGE-ARCHITECTURE.md), and
 [`docs/design/V1-GENERATED-CLASS-ARCHITECTURE.md`](docs/design/V1-GENERATED-CLASS-ARCHITECTURE.md).
 
@@ -90,8 +92,10 @@ Completed foundations include:
 - repository-wide dead-code, duplicate, catch, complexity, and gate consolidation;
 - seven permanent S0 authorities based on executable or structural evidence.
 
-The next phase is **Phase 10.1 — Stable Plan Model**. It must remain a readable representation of the
-existing optimizer decision, not a second optimizer, compiler, generated-class IR, or backend.
+Phase 10.1-10.3 are complete: DelosDB now has one stable selected-plan model, deterministic `EXPLAIN`,
+and bounded query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison, MVCC
+read-path diagnostics, and exact scan snapshot identity. Phase 10.4 makes that production path readable
+through one executable end-to-end trace rather than adding another diagnostic authority.
 
 See [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -125,6 +129,12 @@ MVCC SQL integration:
 
 ```bash
 ./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests --console=plain
+```
+
+Readable-engine demonstration:
+
+```bash
+./gradlew readableEngineDemo --console=plain
 ```
 
 The inherited Derby language suite is intentionally expensive and should be run at meaningful

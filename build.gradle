@@ -329,6 +329,7 @@ tasks.named('assemble') {
 // Shared smoke SQL script used by root runtime smoke tasks and binary distribution staging.
 // Keep this declaration before tasks that reference it during Gradle configuration.
 def smokeSqlFile = file('examples/smoke.sql')
+def readableEngineSqlFile = file('examples/readable-engine.sql')
 
 
 tasks.register('sysinfoFromJars', JavaExec) {
@@ -351,6 +352,20 @@ tasks.register('smokeFromJars', JavaExec) {
     workingDir = projectDir
     doFirst {
         delete file('build/smoke-db')
+    }
+}
+
+
+tasks.register('readableEngineDemo', JavaExec) {
+    dependsOn 'jars'
+    group = 'demonstration'
+    description = 'Runs the end-to-end EXPLAIN and EXPLAIN ANALYZE readable-engine demonstration.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', readableEngineSqlFile.absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/readable-engine-demo')
     }
 }
 
@@ -383,6 +398,9 @@ tasks.register('prepareBinaryDistribution', Copy) {
         into 'lib'
     }
     from(smokeSqlFile) {
+        into 'examples'
+    }
+    from(readableEngineSqlFile) {
         into 'examples'
     }
     doFirst {

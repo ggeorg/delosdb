@@ -23,7 +23,14 @@ package org.apache.derby.iapi.sql.execute;
 
 import java.util.List;
 
-/** Bounded immutable execution evidence correlated with stable plan-node ids. */
+/**
+ * Bounded immutable execution evidence correlated with stable plan-node ids.
+ *
+ * <p>The evidence is built after an EXPLAIN ANALYZE query has executed through
+ * its real result-set tree. Runtime statistics are matched to the retained
+ * stable plan through generated result-set identity rather than runtime Java
+ * class names. The evidence never participates in query execution.</p>
+ */
 public record StablePlanExecutionEvidence(
         int schemaVersion,
         String statementId,
@@ -37,8 +44,12 @@ public record StablePlanExecutionEvidence(
         nodes = List.copyOf(nodes);
     }
 
-    /** Runtime evidence for one stable plan node; actualRows is operator output rows.
-     * mvccSnapshotSequence is the execution-specific visibility snapshot when available. */
+    /**
+     * Runtime evidence for one stable plan node. {@code actualRows} is operator
+     * output rows when Derby has an authoritative output counter; null means the
+     * value is not safely derivable. {@code mvccSnapshotSequence} is the exact
+     * execution-specific visibility snapshot already owned by an MVCC scan.
+     */
     public record Node(
             String nodeId,
             boolean observed,

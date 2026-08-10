@@ -29,19 +29,19 @@ backend selection, and fallback generation are absent.
 
 ## Repository-integrity closeout
 
-The permanent baseline is version 19:
+The permanent baseline is version 23:
 
 ```text
 Dead private production methods:          0
 Dead private production fields:           0
-Exact duplicate production groups:       48
-Methods in duplicate groups:             115
-Estimated exact duplicate lines:        1009
-Production methods >= 100 lines:          443
-Production complexity >= 20:              169
-Production classes >= 1000 lines:          137
+Exact duplicate production groups:       44
+Methods in duplicate groups:             105
+Estimated exact duplicate lines:         960
+Production methods >= 100 lines:          442
+Production complexity >= 20:              168
+Production classes >= 1000 lines:          136
 Production silent empty catches:            102
-Production generic catches:                 434
+Production generic catches:                 410
 Compiler authority violations:                0
 Compiler compromise candidates:               0
 Java parse errors:                             0
@@ -75,7 +75,7 @@ report prose do not participate in pass/fail.
 
 ## Current phase
 
-The current implementation phase is **Phase 10.3 — storage-aware EXPLAIN ANALYZE**.
+The current implementation phase is **Phase 10.4 — trace, demonstrations, Javadocs, and labs**.
 
 Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now exposes:
 
@@ -101,19 +101,20 @@ field ordering is frozen as the public text/JSON contract. Prepared parameters, 
 recompile determinism, heap/MVCC/join/predicate/`DISTINCT_SCAN` rendering, embedded/DRDA byte parity,
 and large CLOB delivery beyond the DRDA external-data threshold have permanent coverage.
 
-Phase 10.3A is complete. Query-only `EXPLAIN ANALYZE` executes the selected query once and correlates
+Phase 10.3 is complete. Query-only `EXPLAIN ANALYZE` executes the selected query once and correlates
 bounded runtime counters and heap/`delos_mvcc` scan evidence to stable plan-node ids through generated
-result-set identity. Phase 10.3B is complete: Derby's existing result-set timing counters are enabled only
-for `EXPLAIN ANALYZE`, without changing connection-wide statistics timing or adding per-row instrumentation
-to ordinary execution. Phase 10.3C is complete: execution-evidence schema version 3 adds nullable
-authoritative per-operator `actualRows`, using only runtime counters that genuinely represent output rows.
-Phase 10.3D is complete: schema version 4 co-locates the stable plan's existing `estimatedRows` with
-`actualRows` and classifies each observed node as `MATCH`, `UNDER_ESTIMATE`, `OVER_ESTIMATE`, or
-`UNKNOWN`. Phase 10.3E is complete: execution schema version 5 derives exact MVCC read-path and version-traversal
-diagnostics from the stable plan plus existing ordered-index scan counters. Plain MVCC table scans remain
-explicitly `NOT_MEASURED` for version traversal because those counters do not cover that path. Phase 10.3F is
-the current final tranche: schema version 6 exposes the exact MVCC snapshot sequence already owned by each scan
-controller, without adding visibility counters or row-loop instrumentation. Snapshot identity is execution-specific
-and is normalized alongside timing only for embedded/DRDA compatibility.
+result-set identity. Derby's existing timing authority is enabled only for ANALYZE; schema version 3 added
+nullable authoritative per-operator `actualRows`; schema version 4 added deterministic actual-vs-estimated
+classification; schema version 5 added exact MVCC read-path/version-traversal summaries where existing
+counters prove them; and schema version 6 added the exact snapshot sequence already owned by each MVCC
+scan. Plain MVCC table scans remain explicitly `NOT_MEASURED` for version traversal rather than paying for
+new hot-loop instrumentation. Timing and snapshot sequence are the only execution-specific fields normalized
+for embedded/DRDA parity.
+
+Phase 10.4A is the current tranche. One Gradle-owned SQL demonstration now serves as the shared trace for
+public docs and teaching material: parse/bind/optimize, stable plan capture, JDK 25 activation generation,
+real result-set execution, MVCC scan/snapshot ownership, immutable runtime evidence, and text/JSON CLOB
+rendering. Phase 10.4 changes documentation and demonstration surfaces; it does not create another plan or
+execution authority.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

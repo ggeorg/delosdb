@@ -14,6 +14,7 @@ manifests.
 |---|---|
 | [`PROJECT-STATUS.md`](PROJECT-STATUS.md) | current completed work, metrics, and next phase |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | SQL-to-result, generated-class, transaction, and storage architecture |
+| [`READABLE-ENGINE.md`](READABLE-ENGINE.md) | stable plans, EXPLAIN, EXPLAIN ANALYZE, and the end-to-end trace |
 | [`BUILDING.md`](BUILDING.md) | supported build and verification workflow |
 | [`STATIC-GATE-POLICY.md`](STATIC-GATE-POLICY.md) | seven permanent S0 authorities and gate rules |
 | [`DERBY-COMPATIBILITY.md`](DERBY-COMPATIBILITY.md) | compatibility boundaries and deliberate differences |

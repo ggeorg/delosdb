@@ -13,6 +13,7 @@ Current status:
 - legacy Ant files and path-sensitive sample layouts are not part of the
   supported DelosDB build workflow
 
-Future DelosDB demos should be created separately as modern, Gradle-owned,
-small executable examples. The inherited demos should only be compiled once we
+Modern DelosDB product demonstrations live outside this inherited source tree. The first supported
+example is `../examples/readable-engine.sql`, executed through the root `readableEngineDemo` Gradle
+task and shipped in the binary distribution. The inherited demos should only be compiled once we
 choose to maintain them as supported examples.

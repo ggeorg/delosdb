@@ -33,7 +33,15 @@ import org.apache.derby.iapi.types.DataValueFactory;
 import org.apache.derby.impl.sql.execute.rts.StablePlanExecutionEvidenceBuilder;
 import org.apache.derby.shared.common.error.StandardException;
 
-/** Executes a query once and returns one row containing its stable plan plus runtime evidence. */
+/**
+ * Executes the explained query once and returns one diagnostic row.
+ *
+ * <p>The source is the normal generated query result-set tree. Scan information
+ * is materialized while scan controllers still own authoritative state, then
+ * the source is closed so final open/next/close timing can be captured. The
+ * resulting runtime-statistics tree is correlated with the prepared statement's
+ * retained stable plan and rendered as PLAN_TEXT and PLAN_JSON CLOBs.</p>
+ */
 final class ExplainAnalyzeResultSet extends RowResultSet {
     private final NoPutResultSet source;
     private ExecRow resultRow;

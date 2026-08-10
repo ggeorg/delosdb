@@ -30,6 +30,18 @@ Build runtime jars:
 
 Runtime jars are written under `build/libs/`.
 
+## Readable-engine demonstration
+
+Run the shipped EXPLAIN/EXPLAIN ANALYZE example through the assembled runtime jars:
+
+```bash
+./gradlew readableEngineDemo --console=plain
+```
+
+The task uses [`../examples/readable-engine.sql`](../examples/readable-engine.sql) and recreates its
+disposable database under `build/readable-engine-demo` on each run. See
+[`READABLE-ENGINE.md`](READABLE-ENGINE.md) for the production trace behind the output.
+
 ## Focused iteration
 
 Run the affected module and the smallest directly relevant proof. Examples:
