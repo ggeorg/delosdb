@@ -148,13 +148,11 @@ public final class StablePlanExecutionRenderer {
     private static String mvccReadPath(
             StablePlanModel.Node planNode, StablePlanExecutionEvidence.Node node) {
         if (!"delos_mvcc".equals(planNode.storageMode())) return null;
+        if ("TABLE_SCAN".equals(planNode.physicalOperation())) return "TABLE_SCAN";
+        if (!"INDEX_SCAN".equals(planNode.physicalOperation())) return null;
         long candidates = metric(node, "MVCC_ORDERED_CANDIDATES");
         if (candidates < 0) return null;
-        if (candidates == 0) {
-            return "BASE_TABLE".equals(planNode.accessPath())
-                    ? "TABLE_SCAN"
-                    : "NO_CANDIDATES";
-        }
+        if (candidates == 0) return "NO_CANDIDATES";
         long covered = metric(node, "MVCC_COVERED_CANDIDATES");
         long fallback = metric(node, "MVCC_FALLBACK_CANDIDATES");
         if (covered < 0 || fallback < 0 || covered + fallback != candidates) return "UNKNOWN";
