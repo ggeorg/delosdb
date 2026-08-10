@@ -56,6 +56,9 @@ public final class StablePlanExecutionRenderer {
                         .append(" actualRows=").append(node.actualRows())
                         .append(" estimateComparison=")
                         .append(estimateComparison(estimatedRows, node.actualRows()));
+                if (node.mvccSnapshotSequence() != null) {
+                    out.append(" mvccSnapshotSequence=").append(node.mvccSnapshotSequence());
+                }
                 if (mvccReadPath != null) {
                     out.append(" mvccReadPath=").append(mvccReadPath)
                             .append(" mvccVersionTraversal=")
@@ -110,6 +113,9 @@ public final class StablePlanExecutionRenderer {
         nullableField(out, "actualRows", node.actualRows()).append(',');
         stringField(out, "estimateComparison",
                 estimateComparison(estimatedRows, node.actualRows())).append(',');
+        if (node.mvccSnapshotSequence() != null) {
+            field(out, "mvccSnapshotSequence", node.mvccSnapshotSequence()).append(',');
+        }
         String mvccReadPath = mvccReadPath(planNode, node);
         if (mvccReadPath != null) {
             stringField(out, "mvccReadPath", mvccReadPath).append(',');

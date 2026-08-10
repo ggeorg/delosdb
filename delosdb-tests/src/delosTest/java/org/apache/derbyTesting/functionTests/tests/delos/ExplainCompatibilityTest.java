@@ -94,6 +94,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
                             + "--DERBY-PROPERTIES index=null\n"
                             + "where v >= 20",
                     "storage=delos_mvcc", "rootRowsReturned=2", "actualRows=2",
+                    "mvccSnapshotSequence=",
                     "mvccReadPath=TABLE_SCAN", "mvccVersionTraversal=NOT_MEASURED",
                     "MVCC_VISIBILITY_CHECKS", "MVCC_VERSION_CHAIN_STEPS");
 
@@ -236,13 +237,13 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         assertTimingFields(local);
         assertTimingFields(remote);
         assertEquals("ANALYZE PLAN_TEXT differs across embedded/DRDA for " + sql,
-                normalizeTiming(local.text()), normalizeTiming(remote.text()));
+                normalizeExecutionSpecific(local.text()), normalizeExecutionSpecific(remote.text()));
         assertEquals("ANALYZE PLAN_JSON differs across embedded/DRDA for " + sql,
-                normalizeTiming(local.json()), normalizeTiming(remote.json()));
+                normalizeExecutionSpecific(local.json()), normalizeExecutionSpecific(remote.json()));
     }
 
     private static void assertTimingFields(ExplainOutput output) {
-        assertTrue(output.text().contains("EXECUTION schemaVersion=5 "));
+        assertTrue(output.text().contains("EXECUTION schemaVersion=6 "));
         assertTrue(output.text().contains(" estimatedRows="));
         assertTrue(output.text().contains(" actualRows="));
         assertTrue(output.text().contains(" estimateComparison="));
@@ -250,7 +251,7 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         assertTrue(output.text().contains(" openMillis="));
         assertTrue(output.text().contains(" nextMillis="));
         assertTrue(output.text().contains(" closeMillis="));
-        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":5,"));
+        assertTrue(output.json().contains("\"execution\":{\"schemaVersion\":6,"));
         assertTrue(output.json().contains("\"estimatedRows\":"));
         assertTrue(output.json().contains("\"actualRows\":"));
         assertTrue(output.json().contains("\"estimateComparison\":\""));
@@ -260,8 +261,10 @@ public final class ExplainCompatibilityTest extends BaseJDBCTestCase {
         assertTrue(output.json().contains("\"closeMillis\":"));
     }
 
-    private static String normalizeTiming(String value) {
-        return value.replaceAll("(elapsedMillis|openMillis|nextMillis|closeMillis)(=|\":)\\d+", "$1$2<TIME>");
+    private static String normalizeExecutionSpecific(String value) {
+        return value
+                .replaceAll("(elapsedMillis|openMillis|nextMillis|closeMillis)(=|\":)\\d+", "$1$2<TIME>")
+                .replaceAll("(mvccSnapshotSequence)(=|\":)\\d+", "$1$2<SNAPSHOT>");
     }
 
     private static ExplainOutput analyze(Connection connection, String sql) throws Exception {

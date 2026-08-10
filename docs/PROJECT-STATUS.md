@@ -109,9 +109,11 @@ to ordinary execution. Phase 10.3C is complete: execution-evidence schema versio
 authoritative per-operator `actualRows`, using only runtime counters that genuinely represent output rows.
 Phase 10.3D is complete: schema version 4 co-locates the stable plan's existing `estimatedRows` with
 `actualRows` and classifies each observed node as `MATCH`, `UNDER_ESTIMATE`, `OVER_ESTIMATE`, or
-`UNKNOWN`. Phase 10.3E is the current tranche: execution schema version 5 derives exact MVCC read-path and
-version-traversal diagnostics from the stable plan plus existing ordered-index scan counters. Plain MVCC table
-scans are explicitly `NOT_MEASURED` for version traversal because the ordered-index metrics do not cover that
-path; no new storage or execution instrumentation is added.
+`UNKNOWN`. Phase 10.3E is complete: execution schema version 5 derives exact MVCC read-path and version-traversal
+diagnostics from the stable plan plus existing ordered-index scan counters. Plain MVCC table scans remain
+explicitly `NOT_MEASURED` for version traversal because those counters do not cover that path. Phase 10.3F is
+the current final tranche: schema version 6 exposes the exact MVCC snapshot sequence already owned by each scan
+controller, without adding visibility counters or row-loop instrumentation. Snapshot identity is execution-specific
+and is normalized alongside timing only for embedded/DRDA compatibility.
 
 Repository-integrity stages are closed and should not be reopened as an endless cleanup program.

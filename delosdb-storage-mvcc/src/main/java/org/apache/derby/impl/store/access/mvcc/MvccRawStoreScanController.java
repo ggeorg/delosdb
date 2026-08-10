@@ -155,7 +155,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 rowsVisited,
                 rowsQualified,
                 scanColumnList,
-                indexedReadMetrics);
+                indexedReadMetrics,
+                snapshotSequence);
     }
 
     @Override

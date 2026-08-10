@@ -31,13 +31,14 @@ public record StablePlanExecutionEvidence(
         List<Node> nodes,
         boolean truncated) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
 
     public StablePlanExecutionEvidence {
         nodes = List.copyOf(nodes);
     }
 
-    /** Runtime evidence for one stable plan node; actualRows is operator output rows. */
+    /** Runtime evidence for one stable plan node; actualRows is operator output rows.
+     * mvccSnapshotSequence is the execution-specific visibility snapshot when available. */
     public record Node(
             String nodeId,
             boolean observed,
@@ -49,6 +50,7 @@ public record StablePlanExecutionEvidence(
             long openMillis,
             long nextMillis,
             long closeMillis,
+            Long mvccSnapshotSequence,
             List<Metric> storageMetrics) {
 
         public Node {

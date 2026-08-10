@@ -62,7 +62,7 @@ public final class StablePlanExecutionEvidenceBuilder {
             RealNoPutResultSetStatistics runtime = runtimeNodes.get(resultSetNumber);
             if (resultSetNumber < 0 || runtime == null) {
                 evidence.add(new StablePlanExecutionEvidence.Node(
-                        plan.nodes().get(i).id(), false, 0, null, 0, 0, 0, 0, 0, 0, List.of()));
+                        plan.nodes().get(i).id(), false, 0, null, 0, 0, 0, 0, 0, 0, null, List.of()));
                 continue;
             }
             evidence.add(new StablePlanExecutionEvidence.Node(
@@ -76,6 +76,7 @@ public final class StablePlanExecutionEvidenceBuilder {
                     runtime.openTime,
                     runtime.nextTime,
                     runtime.closeTime,
+                    mvccSnapshotSequence(runtime),
                     storageMetrics(runtime)));
         }
         return new StablePlanExecutionEvidence(
@@ -135,6 +136,18 @@ public final class StablePlanExecutionEvidenceBuilder {
         for (ResultSetStatistics child : basic.getChildren()) {
             index(child, wantedResultSets, runtimeNodes);
         }
+    }
+
+
+    private static Long mvccSnapshotSequence(RealNoPutResultSetStatistics runtime) {
+        Properties properties = runtime instanceof RealTableScanStatistics scan
+                ? scan.scanProperties
+                : runtime instanceof RealHashScanStatistics scan ? scan.scanProperties : null;
+        if (properties == null) return null;
+        String value = properties.getProperty("mvccSnapshotSequence");
+        if (value == null) return null;
+        long sequence = Long.parseLong(value);
+        return sequence < 0 ? null : sequence;
     }
 
     private static List<StablePlanExecutionEvidence.Metric> storageMetrics(

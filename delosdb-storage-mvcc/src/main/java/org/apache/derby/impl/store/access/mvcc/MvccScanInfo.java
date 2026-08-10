@@ -54,28 +54,22 @@ final class MvccScanInfo implements ScanInfo {
     private static final String VISIBILITY_CHECKS = "mvccVisibilityChecks";
     private static final String VERSION_CHAIN_STEPS = "mvccVersionChainSteps";
     private static final String VERSION_LOGICAL_FALLBACKS = "mvccVersionLogicalFallbacks";
+    private static final String SNAPSHOT_SEQUENCE = "mvccSnapshotSequence";
 
     private final String scanType;
     private final long rowsVisited;
     private final long rowsQualified;
     private final FormatableBitSet columnsFetched;
     private final MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics;
-
-    MvccScanInfo(long rowsVisited, long rowsQualified, FormatableBitSet columnsFetched) {
-        this(
-                "delos_mvcc",
-                rowsVisited,
-                rowsQualified,
-                columnsFetched,
-                MvccRawStoreIndexedReadMetrics.EMPTY);
-    }
+    private final long snapshotSequence;
 
     MvccScanInfo(
             String scanType,
             long rowsVisited,
             long rowsQualified,
             FormatableBitSet columnsFetched,
-            MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics) {
+            MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics,
+            long snapshotSequence) {
         this.scanType = java.util.Objects.requireNonNull(scanType, "scanType");
         this.rowsVisited = rowsVisited;
         this.rowsQualified = rowsQualified;
@@ -85,6 +79,7 @@ final class MvccScanInfo implements ScanInfo {
         this.indexedReadMetrics = java.util.Objects.requireNonNull(
                 indexedReadMetrics,
                 "indexedReadMetrics");
+        this.snapshotSequence = snapshotSequence;
     }
 
     @Override
@@ -147,6 +142,7 @@ final class MvccScanInfo implements ScanInfo {
         result.setProperty(
                 VERSION_LOGICAL_FALLBACKS,
                 Long.toString(indexedReadMetrics.versionLogicalFallbacks()));
+        result.setProperty(SNAPSHOT_SEQUENCE, Long.toString(snapshotSequence));
         return result;
     }
 
