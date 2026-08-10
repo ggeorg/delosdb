@@ -29,6 +29,12 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
         int cycles = JdbcBenchmarkTestProperties.integer(PREFIX + "cycles", 3);
         int iterations = JdbcBenchmarkTestProperties.integer(PREFIX + "iterations", 3);
         int runs = JdbcBenchmarkTestProperties.integer(PREFIX + "runs", 2);
+        DelosJdbcDeleteReinsertAttribution.OrderedIndexPolicy orderedIndexPolicy =
+                DelosJdbcDeleteReinsertAttribution.OrderedIndexPolicy.valueOf(
+                        System.getProperty(
+                                PREFIX + "orderedIndexPolicy",
+                                DelosJdbcDeleteReinsertAttribution.OrderedIndexPolicy
+                                        .ALL_ORDERABLE.name()));
 
         List<DelosDeleteReinsertAttributionMeasurement> measurements =
                 DelosJdbcDeleteReinsertAttribution.run(
@@ -40,7 +46,8 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
                         JdbcBenchmarkTestProperties.integer(PREFIX + "fixtureBatch", 100),
                         JdbcBenchmarkTestProperties.integer(PREFIX + "warmups", 1),
                         iterations,
-                        runs);
+                        runs,
+                        orderedIndexPolicy);
 
         int expectedMeasurements = rows.size()
                 * DelosBenchmarkProvider.values().length
@@ -163,6 +170,8 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
                 "Distinct page key: (segmentId, containerId, pageNumber)"));
 
         String summaryText = Files.readString(summary);
+        assertTrue(summaryText.contains(
+                "MVCC internal ordered-index policy: " + orderedIndexPolicy));
         assertTrue(summaryText.contains(
                 "Semantic verification/restoration outside timed phases: true"));
         assertTrue(summaryText.contains(

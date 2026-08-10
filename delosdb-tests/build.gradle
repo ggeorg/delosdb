@@ -841,7 +841,9 @@ registerDelosFocusedTest(
                 'delosdb.benchmark.deleteReinsert.fixtureBatch': providers.gradleProperty('delosdb.benchmark.deleteReinsert.fixtureBatch').getOrElse('100'),
                 'delosdb.benchmark.deleteReinsert.warmups': providers.gradleProperty('delosdb.benchmark.deleteReinsert.warmups').getOrElse('1'),
                 'delosdb.benchmark.deleteReinsert.iterations': providers.gradleProperty('delosdb.benchmark.deleteReinsert.iterations').getOrElse('3'),
-                'delosdb.benchmark.deleteReinsert.runs': providers.gradleProperty('delosdb.benchmark.deleteReinsert.runs').getOrElse('2')
+                'delosdb.benchmark.deleteReinsert.runs': providers.gradleProperty('delosdb.benchmark.deleteReinsert.runs').getOrElse('2'),
+                'delosdb.benchmark.deleteReinsert.orderedIndexPolicy': providers.gradleProperty(
+                        'delosdb.benchmark.deleteReinsert.orderedIndexPolicy').getOrElse('ALL_ORDERABLE')
         ])
 
 registerDelosFocusedTest(
