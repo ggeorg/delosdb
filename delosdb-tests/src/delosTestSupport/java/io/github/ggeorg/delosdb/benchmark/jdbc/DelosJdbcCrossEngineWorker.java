@@ -45,8 +45,9 @@ public final class DelosJdbcCrossEngineWorker {
     private static void run(Options options) throws Exception {
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
+        int schedulePhase = (options.run() - 1) & 3;
         List<Integer> rowCounts = new ArrayList<>(options.rowCounts());
-        if ((options.run() & 1) == 0) {
+        if ((schedulePhase & 1) != 0) {
             Collections.reverse(rowCounts);
         }
         for (int rows : rowCounts) {
@@ -238,7 +239,8 @@ public final class DelosJdbcCrossEngineWorker {
                     outcome,
                     1));
         }
-        if ((options.run() & 1) == 0) {
+        int schedulePhase = (options.run() - 1) & 3;
+        if (schedulePhase == 1 || schedulePhase == 2) {
             Collections.reverse(specs);
         }
         return List.copyOf(specs);

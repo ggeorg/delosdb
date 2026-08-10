@@ -44,8 +44,9 @@ public final class DelosJdbcCrossEngineCoordinator {
         prepareOutput(options);
 
         for (int run = 1; run <= options.runs(); run++) {
+            int schedulePhase = (run - 1) & 3;
             List<Target> targets = new ArrayList<>(List.of(Target.values()));
-            if ((run & 1) == 0) {
+            if ((schedulePhase & 2) != 0) {
                 Collections.reverse(targets);
             }
             for (Target target : targets) {
@@ -261,10 +262,10 @@ public final class DelosJdbcCrossEngineCoordinator {
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append('\n')
                 .append("One isolated JVM per engine and run: true\n")
-                .append("Engine order alternates by run: true\n")
-                .append("Row-count order alternates by run: true\n")
-                .append("Workload order alternates by run: true\n")
-                .append("Even run count required for balanced order exposure: true\n")
+                .append("Order schedule: four-run orthogonal cycle NNN, NRR, RNR, RRN "
+                        + "(engine,row-count,workload)\n")
+                .append("Engine/row-count/workload order pairwise orthogonal: true\n")
+                .append("Run count must be a multiple of four: true\n")
                 .append("Dispersion report: median, Q1, Q3, IQR, MAD, min, max, IQR/median, MAD/median, max/min\n")
                 .append("Transaction timing includes commit or rollback: true\n")
                 .append("Fixture setup and semantic restoration outside timing: true\n")
@@ -613,9 +614,9 @@ public final class DelosJdbcCrossEngineCoordinator {
                     || warmups < 0 || iterations < 1) {
                 throw new IllegalArgumentException("Invalid cross-engine benchmark numeric option");
             }
-            if (runs < 2 || (runs & 1) != 0) {
+            if (runs < 4 || (runs & 3) != 0) {
                 throw new IllegalArgumentException(
-                        "runs must be an even number of at least 2 for balanced benchmark order");
+                        "runs must be a multiple of 4 for orthogonal benchmark order");
             }
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");

@@ -109,9 +109,10 @@ archived-oracle tests. The accepted historical baseline remains immutable eviden
 ## Cross-engine JDBC comparison quality controls
 
 `./gradlew :delosdb-tests:runDelosJdbcCrossEngineComparison -Pdelosdb.sane=false` runs DelosDB heap,
-DelosDB MVCC, upstream Derby, and H2 in isolated child JVMs. Engine order, row-count order, and workload
-order alternate by run, so the benchmark requires an even run count (default `4`) to balance order
-exposure. Semantic fingerprints must match across every engine and run before reports are accepted.
+DelosDB MVCC, upstream Derby, and H2 in isolated child JVMs. Benchmark order follows a four-run
+orthogonal cycle across engine, row-count, and workload order (`NNN`, `NRR`, `RNR`, `RRN`), so every
+pair of order dimensions sees all four combinations once per cycle. The benchmark therefore requires
+a run count that is a multiple of four (default `4`). Semantic fingerprints must match across every engine and run before reports are accepted.
 
 The raw `cross-engine-results.csv` remains authoritative evidence. `cross-engine-ratios.csv` reports median
 latency ratios, while `cross-engine-dispersion.csv` reports median, quartiles, IQR, MAD, min/max, and
