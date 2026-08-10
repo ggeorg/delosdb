@@ -534,19 +534,22 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 assertTrue(MvccRawStoreMetadataInspection.orderedIndexContainerId(
                         connection,
                         "LEGACY_INDEX_T") > 0L);
-                assertIndexedRows(connection,
+                executeUpdate(
+                        connection,
+                        "call syscs_util.syscs_set_runtimestatistics(1)");
+                assertRows(connection,
                         "select id, name from legacy_index_t where name = 'two-v2'",
                         "2|two-v2");
+                assertFalse(
+                        "pre-constraint metadata must fall back instead of rebuilding "
+                                + "non-unique hidden candidates",
+                        runtimeStatistics(connection).contains(
+                                "delos_mvcc_rawstore_ordered_index"));
                 List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> rebuiltEntries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(
                                 connection,
                                 "LEGACY_INDEX_T");
-                assertEquals(6, rebuiltEntries.size());
-                assertTrue(
-                        "lazy rebuild must populate direct directory locators",
-                        rebuiltEntries.stream().allMatch(
-                                MvccRawStoreMetadataInspection.OrderedIndexIdentity::
-                                        hasDirectoryLocator));
+                assertTrue(rebuiltEntries.isEmpty());
                 connection.commit();
             }
             shutdownDatabase(database);
