@@ -133,9 +133,11 @@ authoritative versions, publishes the new generation through the table control r
 B-trees and directory in the same access transaction.
 
 Tables created before the ordered-index field remain readable through the base scan. A legacy flat
-candidate generation is also recognized as non-authoritative compatibility state. The first later write
-transactionally builds a Derby B-tree generation before applying the mutation. There is no boot-time
-filesystem migration and no dual durability path.
+candidate generation is also recognized as non-authoritative compatibility state. The first later
+INSERT/UPDATE transactionally materializes the current Derby B-tree generation, preserving the
+first-write compatibility upgrade even when that mutation changes no maintained candidate key.
+Current-format tables discover the generation lazily only when candidate maintenance is required.
+There is no boot-time filesystem migration and no dual durability path.
 
 Temporary MVCC conglomerates receive their access-layer identity after the factory returns; B-tree
 creation is therefore deferred until the access manager has registered the base conglomerate. Persistent

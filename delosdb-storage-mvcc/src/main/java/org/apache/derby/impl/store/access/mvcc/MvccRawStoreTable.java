@@ -410,7 +410,6 @@ final class MvccRawStoreTable {
                     0L,
                     context);
         }
-        ContainerKey orderedIndex = context.orderedIndexForWrite(table);
         Allocation allocation = context.reserveInsertIdentifiers(table);
         Object[] versionRow = versionRow(
                 rawTransaction,
@@ -438,7 +437,6 @@ final class MvccRawStoreTable {
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
-                orderedIndex,
                 allocation.rowId(),
                 allocation.versionId(),
                 directoryLocation,
@@ -1084,12 +1082,6 @@ final class MvccRawStoreTable {
             int flags,
             StoreDataValue[] values,
             MvccRawStoreTransactionContext context) throws StandardException {
-        // Tombstones carry no indexable values. Avoid discovering or rebuilding
-        // the ordered-index generation for a call that insertVersion() will
-        // immediately ignore.
-        ContainerKey orderedIndex = values == null
-                ? null
-                : context.orderedIndexForWrite(table);
         long versionId = context.reserveVersionIdentifier(table);
         Object[] versionRow = versionRow(
                 transaction,
@@ -1116,7 +1108,6 @@ final class MvccRawStoreTable {
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
-                orderedIndex,
                 rowId,
                 versionId,
                 directoryLocation,

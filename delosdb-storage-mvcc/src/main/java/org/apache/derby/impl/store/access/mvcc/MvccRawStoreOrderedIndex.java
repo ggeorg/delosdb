@@ -52,7 +52,6 @@ final class MvccRawStoreOrderedIndex {
     static void insertVersion(
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
-            ContainerKey directoryKey,
             long rowId,
             long versionId,
             MvccRowLocation rowLocation,
@@ -67,14 +66,17 @@ final class MvccRawStoreOrderedIndex {
             throw new IllegalArgumentException(
                     "RawStore MVCC ordered-index value count mismatch");
         }
-        long[] btrees = MvccRawStoreOrderedIndexGeneration.requireBtreeConglomerates(
-                transactionManager,
-                table,
-                directoryKey);
+        ContainerKey directoryKey = null;
+        long[] btrees = null;
         for (int column = 0; column < table.columnCount(); column++) {
             if (!maintainsColumn(table, column)
                     || indexedValueUnchanged(previousValues, values, column)) {
                 continue;
+            }
+            if (btrees == null) {
+                directoryKey = context.orderedIndexForWrite(table);
+                btrees = MvccRawStoreOrderedIndexGeneration.requireBtreeConglomerates(
+                        transactionManager, table, directoryKey);
             }
             if (MvccRawStoreOrderedIndexGeneration.isDisabled(btrees[column])) {
                 continue;
@@ -103,6 +105,12 @@ final class MvccRawStoreOrderedIndex {
                         btrees,
                         column);
             }
+        }
+        // Pre-index compatibility tables have no published generation at all.
+        // Preserve their first-write transactional upgrade even when the
+        // current mutation has no maintained candidate key to insert.
+        if (btrees == null && table.orderedIndexContainer() == null) {
+            context.orderedIndexForWrite(table);
         }
     }
 
