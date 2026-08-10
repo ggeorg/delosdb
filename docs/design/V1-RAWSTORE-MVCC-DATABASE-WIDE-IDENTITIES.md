@@ -40,24 +40,21 @@ separate WAL, or static process-wide allocator.
 
 ## Durable transaction IDs
 
-The first write performed by a RawStore-backed MVCC transaction takes one `MvccTransactionId` from a
-small database-runtime reservation block. When that in-memory block is empty, DelosDB refills it in one
+The first write performed by a RawStore-backed MVCC transaction reserves one `MvccTransactionId` in a
 RawStore nested top transaction:
 
 ```text
 open the database metadata container for update
-read next unreserved MvccTransactionId
-advance it by the bounded reservation-block size
+read next MvccTransactionId
+write next value
 commit the nested top transaction
 force the nested RawStore commit record
-return identities from the now-durable block
+return the reserved identity
 ```
 
-The default block contains 64 identities and is tunable only for focused validation through
-`delosdb.mvcc.rawStoreIdentityReservationBlockSize`. Every identity is therefore durably reserved before
-it can be stored in an uncommitted version row, while the force cost is amortized across the block.
-Reservation remains independent of the user transaction outcome. A rollback, shutdown, or process
-failure can leave unused numbers in a reserved block, but reboot cannot reuse them:
+The reserved ID is then stored in each uncommitted version row created by that user transaction.
+Reservation is independent of the user transaction outcome. A rollback or process failure can consume
+an unused number, but reboot cannot reuse it:
 
 ```text
 numeric gaps are allowed
@@ -69,9 +66,8 @@ No RawStore `XactId` is persisted as the MVCC identity.
 ## Durable commit sequences
 
 Immediately before the inherited user RawStore commit, the transaction participant holds the existing
-commit-publication boundary and takes one `MvccCommitSequence` from an independently durable reservation
-block. An empty block is refilled with the same forced nested-top RawStore mechanism before any sequence
-from that block can be returned. It then performs normal logged updates inside the user transaction:
+commit-publication boundary and reserves one `MvccCommitSequence` through the same nested-top RawStore
+mechanism. It then performs normal logged updates inside the user transaction:
 
 ```text
 stamp created version rows with the reserved sequence
@@ -81,9 +77,8 @@ write the one inherited RawStore commit record
 publish the in-memory high-water
 ```
 
-The allocator block advance is independently durable, so a failed user commit or unused tail of a
-reserved block may leave sequence gaps. The committed high-water is not advanced unless the user
-transaction's RawStore commit succeeds.
+The allocator increment is independently durable, so a failed user commit may leave a sequence gap.
+The committed high-water is not advanced unless the user transaction's RawStore commit succeeds.
 After reboot, the runtime reconstructs the published high-water from the committed database metadata
 row.
 

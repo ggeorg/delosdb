@@ -45,7 +45,7 @@ The first RawStore-backed MVCC mutation then:
 
 ```text
 registers RawStore-owned MVCC participation
-takes the database-wide MvccTransactionId from an already durable bounded reservation block
+reserves the database-wide MvccTransactionId
 attaches one MvccRawStoreTransactionContext to RAMTransaction
 ```
 
@@ -55,7 +55,7 @@ The transaction lifecycle is:
 ```text
 close statement controllers
 MVCC lifecycle beforeCommit
-    -> take one MvccCommitSequence from an already durable bounded reservation block
+    -> reserve one MvccCommitSequence
     -> stamp all pending MVCC versions
     -> stage committed high-water
 RawStore commit

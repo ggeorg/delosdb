@@ -26,15 +26,11 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final String RESERVATION_BLOCK_PROPERTY =
-            "delosdb.mvcc.rawStoreIdentityReservationBlockSize";
     private static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
 
     public void testUpdateDeleteCommitRollbackSavepointAndReopen() throws Exception {
         String database = databaseName("mvcc-raw-store-update-delete-file");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
@@ -97,9 +93,7 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
 
     public void testHistoricalSnapshotTraversesReplacementAndTombstoneChains() throws Exception {
         String database = databaseName("mvcc-raw-store-update-delete-snapshot");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -161,8 +155,6 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
         String database = "mvcc_raw_store_update_delete_memory_"
                 + Long.toUnsignedString(System.nanoTime());
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1");
              Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
@@ -250,9 +242,7 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -268,7 +258,6 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
                 javaExecutable(),
                 "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
-                "-D" + RESERVATION_BLOCK_PROPERTY + "=1",
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
@@ -284,8 +273,6 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1");
              Connection recovered = openDatabase(database, false)) {
             if (expectCommitted) {
                 assertRows(recovered,

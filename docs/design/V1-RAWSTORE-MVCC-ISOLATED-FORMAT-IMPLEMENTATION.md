@@ -214,7 +214,7 @@ For a transaction with inserted versions:
 
 ```text
 1. acquire the publication lock
-2. take the next database-wide MvccCommitSequence from an already durable bounded reservation block
+2. reserve the next database-wide MvccCommitSequence through a forced nested-top RawStore commit
 3. stamp all pending authoritative base-version begin sequences
 4. stamp predecessor authoritative base-version end sequences
 5. update the database-wide RawStore-owned committed high-water in the user transaction

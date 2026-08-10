@@ -24,14 +24,10 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final String RESERVATION_BLOCK_PROPERTY =
-            "delosdb.mvcc.rawStoreIdentityReservationBlockSize";
 
     public void testRollbackAndRebootDoNotReuseDatabaseWideIdentities() throws Exception {
         String database = databaseName("mvcc-raw-store-database-identities");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "4")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
@@ -42,13 +38,13 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_mvcc_t values (1, 'rolled-back')");
                 connection.rollback();
-                assertCounters(connection, 5L, 1L, 0L);
+                assertCounters(connection, 2L, 1L, 0L);
                 assertRows(connection, "select id from identity_mvcc_t");
                 connection.commit();
 
                 executeUpdate(connection, "insert into identity_mvcc_t values (2, 'first-commit')");
                 connection.commit();
-                assertCounters(connection, 5L, 5L, 1L);
+                assertCounters(connection, 3L, 2L, 1L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_MVCC_T",
@@ -61,11 +57,11 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 reopened.setAutoCommit(false);
                 executeUpdate(reopened, "insert into identity_mvcc_t values (3, 'after-reboot')");
                 reopened.commit();
-                assertCounters(reopened, 9L, 9L, 5L);
+                assertCounters(reopened, 4L, 3L, 2L);
                 assertVersionIdentities(
                         reopened,
                         "IDENTITY_MVCC_T",
-                        new long[][] {{2L, 1L}, {5L, 5L}});
+                        new long[][] {{2L, 1L}, {3L, 2L}});
                 reopened.commit();
             }
             shutdownDatabase(database);
@@ -74,9 +70,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
     public void testSeparateTablesShareOneDatabaseWideIdentitySequence() throws Exception {
         String database = databaseName("mvcc-raw-store-database-identity-tables");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection, "create table identity_table_a (id int) using delos_mvcc");
@@ -112,9 +106,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "4")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -128,7 +120,6 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 javaExecutable(),
                 "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + "=after-stamp-before-raw-commit",
-                "-D" + RESERVATION_BLOCK_PROPERTY + "=4",
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
@@ -143,22 +134,20 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("worker must halt before RawStore commit; output=" + output, 91, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "4")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection recovered = openDatabase(database, false)) {
                 recovered.setAutoCommit(false);
-                assertCounters(recovered, 5L, 5L, 0L);
+                assertCounters(recovered, 2L, 2L, 0L);
                 assertRows(recovered, "select id from identity_crash_t");
                 recovered.commit();
 
                 executeUpdate(recovered, "insert into identity_crash_t values (2, 'after-gap')");
                 recovered.commit();
-                assertCounters(recovered, 9L, 9L, 5L);
+                assertCounters(recovered, 3L, 3L, 2L);
                 assertVersionIdentities(
                         recovered,
                         "IDENTITY_CRASH_T",
-                        new long[][] {{5L, 5L}});
+                        new long[][] {{2L, 2L}});
                 recovered.commit();
             }
             shutdownDatabase(database);
@@ -170,9 +159,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         String second = databaseName("mvcc-raw-store-database-identity-b");
         String memory = "mvcc_raw_store_database_identity_memory";
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope reservation =
-                     setSystemProperty(RESERVATION_BLOCK_PROPERTY, "1")) {
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection firstConnection = openDatabase(first, true);
                  Connection secondConnection = openDatabase(second, true)) {
                 firstConnection.setAutoCommit(false);

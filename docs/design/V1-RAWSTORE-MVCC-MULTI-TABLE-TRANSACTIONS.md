@@ -28,11 +28,10 @@ XA, nested update transactions, UPDATE, DELETE, indexes, or vacuum.
 context owns one durable transaction identity and one pending-version list whose entries retain their
 own table descriptor. It no longer binds the transaction to one table.
 
-The first RawStore-backed MVCC write takes one database-wide `MvccTransactionId` from an already
-durable bounded reservation block. Every inserted version in every participating table receives that
-same identity. Precommit takes one database-wide `MvccCommitSequence` from its independently durable
-bounded reservation block and stamps all surviving pending versions with that sequence before the
-parent RawStore commit.
+The first RawStore-backed MVCC write reserves one database-wide `MvccTransactionId`. Every inserted
+version in every participating table receives that same identity. Precommit reserves one database-wide
+`MvccCommitSequence` and stamps all surviving pending versions with that sequence before the parent
+RawStore commit.
 
 Version stamping is ordered by metadata-container segment, metadata-container ID, and logical version
 ID. Physical `RecordHandle` values remain transaction-local hints and each pending entry retains the
@@ -67,7 +66,7 @@ statement execution
     -> RawStore mutations in table B
 
 precommit
-    -> take one MvccCommitSequence from the durable reservation block
+    -> reserve one MvccCommitSequence
     -> stamp all pending versions in deterministic table order
     -> stage one database-wide committed high-water
 

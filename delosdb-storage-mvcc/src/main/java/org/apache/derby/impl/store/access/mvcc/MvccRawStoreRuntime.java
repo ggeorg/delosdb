@@ -51,10 +51,6 @@ final class MvccRawStoreRuntime {
             "after-vacuum-before-raw-commit";
     static final String AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION =
             "after-vacuum-raw-commit-before-publication";
-    static final String IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY =
-            "delosdb.mvcc.rawStoreIdentityReservationBlockSize";
-    private static final int DEFAULT_IDENTITY_RESERVATION_BLOCK_SIZE = 64;
-    private static final int MAX_IDENTITY_RESERVATION_BLOCK_SIZE = 65_536;
 
     private final Object databaseIdentity;
     private final LockFactory lockFactory;
@@ -71,11 +67,6 @@ final class MvccRawStoreRuntime {
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
-    private final int identityReservationBlockSize = configuredIdentityReservationBlockSize();
-    private long nextTransactionId;
-    private long transactionIdLimit;
-    private long nextCommitSequence;
-    private long commitSequenceLimit;
     private volatile String diagnosticIdentity = "<unbound>";
     private volatile MvccRawStoreMaintenanceService maintenanceService;
 
@@ -186,13 +177,8 @@ final class MvccRawStoreRuntime {
                 C_LockFactory.TIMED_WAIT);
     }
 
-    synchronized long reserveTransactionId(Transaction rawTransaction) throws StandardException {
-        if (nextTransactionId >= transactionIdLimit) {
-            nextTransactionId = metadata.reserveTransactionIds(
-                    rawTransaction, identityReservationBlockSize);
-            transactionIdLimit = nextTransactionId + identityReservationBlockSize;
-        }
-        long transactionId = nextTransactionId++;
+    long reserveTransactionId(Transaction rawTransaction) throws StandardException {
+        long transactionId = metadata.reserveTransactionId(rawTransaction);
         if (!activeTransactionIds.add(transactionId)) {
             throw new IllegalStateException(
                     "RawStore MVCC transaction identity is already active: " + transactionId);
@@ -330,12 +316,7 @@ final class MvccRawStoreRuntime {
     long reserveCommitSequence(Transaction rawTransaction) throws StandardException {
         commitPublicationLock.lock();
         try {
-            if (nextCommitSequence >= commitSequenceLimit) {
-                nextCommitSequence = metadata.reserveCommitSequences(
-                        rawTransaction, identityReservationBlockSize);
-                commitSequenceLimit = nextCommitSequence + identityReservationBlockSize;
-            }
-            return nextCommitSequence++;
+            return metadata.reserveCommitSequence(rawTransaction);
         } catch (StandardException | RuntimeException | Error failure) {
             commitPublicationLock.unlock();
             throw failure;
@@ -548,29 +529,6 @@ final class MvccRawStoreRuntime {
                 closed = true;
                 writeLock.unlock();
             }
-        }
-    }
-
-    private static int configuredIdentityReservationBlockSize() {
-        String configured = System.getProperty(IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY);
-        if (configured == null || configured.isBlank()) {
-            return DEFAULT_IDENTITY_RESERVATION_BLOCK_SIZE;
-        }
-        try {
-            int value = Integer.parseInt(configured);
-            if (value <= 0 || value > MAX_IDENTITY_RESERVATION_BLOCK_SIZE) {
-                throw new IllegalArgumentException(
-                        IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY
-                                + " must be between 1 and "
-                                + MAX_IDENTITY_RESERVATION_BLOCK_SIZE);
-            }
-            return value;
-        } catch (NumberFormatException failure) {
-            throw new IllegalArgumentException(
-                    IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY
-                            + " must be an integer: "
-                            + configured,
-                    failure);
         }
     }
 

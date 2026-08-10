@@ -132,10 +132,6 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
                 "TWO_TRANSACTIONS + ROLLBACK semantics: delete commits, insert rolls back"));
         assertTrue(summaryText.contains(
                 "Phase timers are diagnostic attribution, not an S0 threshold"));
-        assertTrue(summaryText.contains(
-                "MVCC identity reservation block size: "
-                        + System.getProperty(
-                                "delosdb.mvcc.rawStoreIdentityReservationBlockSize")));
     }
 
     private record MeasurementKey(
