@@ -16,7 +16,6 @@ import java.util.Set;
 
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -32,12 +31,8 @@ public final class DelosDeleteReinsertPageTopologyTestSupport {
         }
         LanguageConnectionContext lcc = embedded.getLanguageConnection();
         TransactionController controller = lcc.getTransactionExecute();
-        if (!(controller instanceof TransactionManager manager)) {
-            throw new SQLException(
-                    "Derby transaction manager required for RawStore page-cache flush");
-        }
         try {
-            manager.getRawStoreXact().getDataFactory().checkpoint();
+            controller.getAccessManager().checkpoint();
         } catch (StandardException failure) {
             throw new SQLException("RawStore page-cache flush failed", failure);
         }
