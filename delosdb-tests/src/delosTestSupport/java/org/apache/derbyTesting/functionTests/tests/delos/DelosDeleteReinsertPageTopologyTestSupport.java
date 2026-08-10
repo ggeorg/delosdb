@@ -108,6 +108,7 @@ public final class DelosDeleteReinsertPageTopologyTestSupport {
         MVCC_VERSION,
         MVCC_ORDERED_INDEX_DIRECTORY,
         MVCC_ORDERED_INDEX_BTREE,
+        MVCC_SQL_BTREE,
         OTHER
     }
 
@@ -146,6 +147,9 @@ public final class DelosDeleteReinsertPageTopologyTestSupport {
             }
             if (orderedIndexBtreeContainerIds.contains(containerId)) {
                 return Role.MVCC_ORDERED_INDEX_BTREE;
+            }
+            if (catalogIndexContainerIds.contains(containerId)) {
+                return Role.MVCC_SQL_BTREE;
             }
             return Role.OTHER;
         }
