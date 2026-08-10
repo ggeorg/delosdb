@@ -75,7 +75,7 @@ report prose do not participate in pass/fail.
 
 ## Current phase
 
-The current implementation phase is **Phase 10.4 — trace, demonstrations, Javadocs, and labs**.
+The current implementation phase is **Phase 11 — Product Completeness**.
 
 Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now exposes:
 
@@ -111,10 +111,15 @@ scan. Plain MVCC table scans remain explicitly `NOT_MEASURED` for version traver
 new hot-loop instrumentation. Timing and snapshot sequence are the only execution-specific fields normalized
 for embedded/DRDA parity.
 
-Phase 10.4A is the current tranche. One Gradle-owned SQL demonstration now serves as the shared trace for
-public docs and teaching material: parse/bind/optimize, stable plan capture, JDK 25 activation generation,
-real result-set execution, MVCC scan/snapshot ownership, immutable runtime evidence, and text/JSON CLOB
-rendering. Phase 10.4 changes documentation and demonstration surfaces; it does not create another plan or
-execution authority.
+Phase 10.4 is complete. One Gradle-owned SQL demonstration serves as the shared trace for public docs and
+teaching material: parse/bind/optimize, stable plan capture, JDK 25 activation generation, real result-set
+execution, MVCC scan/snapshot ownership, immutable runtime evidence, and text/JSON CLOB rendering. The
+Phase 10 closeout added no second plan, execution authority, optimizer behavior, storage behavior, or
+profiling path.
 
-Repository-integrity stages are closed and should not be reopened as an endless cleanup program.
+Phase 11 now owns remaining v1 product-completeness work: explicit heap/MVCC and embedded/DRDA parity,
+large-value and streaming lifecycle, bounded resources and physical-space reuse, DRDA lifecycle, and
+corresponding executable documentation.
+
+Repository-integrity stages and Phase 10 are closed and should not be reopened as endless cleanup or
+diagnostic-expansion programs.

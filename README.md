@@ -5,9 +5,9 @@ It preserves Derby-compatible SQL, JDBC, catalogs, heap behavior, database forma
 modernizing selected internals through explicit, tested boundaries.
 
 DelosDB is pre-1.0. The current repository has completed RawStore convergence, JDK 25 generated-class
-modernization, repository-integrity consolidation, and the Phase 10 readable-engine implementation
-through storage-aware `EXPLAIN ANALYZE`. Phase 10.4 is tracing that implementation end to end and
-turning the accepted model into public documentation, executable demonstrations, and teaching material.
+modernization, repository-integrity consolidation, and Phase 10's readable engine: stable selected-plan
+modeling, deterministic `EXPLAIN`, storage-aware `EXPLAIN ANALYZE`, and one executable end-to-end trace.
+Phase 11 product completeness is now the active v1 program.
 
 ## Architecture
 
@@ -92,10 +92,10 @@ Completed foundations include:
 - repository-wide dead-code, duplicate, catch, complexity, and gate consolidation;
 - seven permanent S0 authorities based on executable or structural evidence.
 
-Phase 10.1-10.3 are complete: DelosDB now has one stable selected-plan model, deterministic `EXPLAIN`,
-and bounded query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison, MVCC
-read-path diagnostics, and exact scan snapshot identity. Phase 10.4 makes that production path readable
-through one executable end-to-end trace rather than adding another diagnostic authority.
+Phase 10 is complete: DelosDB has one stable selected-plan model, deterministic `EXPLAIN`, bounded
+query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison, MVCC read-path
+diagnostics and exact scan snapshot identity, plus one executable end-to-end trace shared by public
+documentation and teaching material. Phase 11 product completeness is current.
 
 See [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
