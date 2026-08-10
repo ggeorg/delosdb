@@ -169,7 +169,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     verifier, options.target().id(), options.target().createTableSuffix(), false, config);
             scenario.prepare();
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
-                    options, spec, database, verifier, scenario.tableName())) {
+                    options, spec, database, verifier, scenario.tableName(), config.rowCount())) {
                 Long expectedSemantic = null;
                 for (int warmup = 0; warmup < options.warmups(); warmup++) {
                     Interval interval = concurrentCase.runInterval();
@@ -234,12 +234,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 Spec spec,
                 Path database,
                 Connection verifier,
-                String table) throws SQLException {
+                String table,
+                int rowCount) throws SQLException {
             this.options = options;
             this.spec = spec;
             this.verifier = verifier;
             this.table = table;
-            this.ids = targetIds(spec);
+            this.ids = targetIds(spec, rowCount);
             this.baseline = new int[ids.length];
             for (int index = 0; index < ids.length; index++) {
                 baseline[index] = quantity(verifier, table, ids[index]);
@@ -493,11 +494,16 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
-    private static int[] targetIds(Spec spec) {
+    private static int[] targetIds(Spec spec, int rowCount) {
         if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
+            if (spec.clients() > rowCount) {
+                throw new IllegalArgumentException(
+                        "disjoint concurrency clients exceed fixture rows: clients="
+                                + spec.clients() + ", rows=" + rowCount);
+            }
             int[] ids = new int[spec.clients()];
             for (int index = 0; index < ids.length; index++) {
-                ids[index] = index + 1;
+                ids[index] = 1 + (int) (((long) index * rowCount) / ids.length);
             }
             return ids;
         }
@@ -710,6 +716,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Transactions per client/interval: ").append(options.transactionsPerClient()).append('\n')
                 .append("Workloads: PRIMARY_KEY_READ, DISJOINT_INDEXED_UPDATE, CONTENDED_INDEXED_UPDATE\n")
                 .append("Each client owns one JDBC connection and reused prepared statement.\n")
+                .append("Disjoint-update client rows are evenly spread across the fixture.\n")
                 .append("Timed interval: synchronized client execution through final commit.\n")
                 .append("Semantic verification/restoration outside timed interval: true\n")
                 .append("Fresh database per target/run/matrix cell: true\n")
