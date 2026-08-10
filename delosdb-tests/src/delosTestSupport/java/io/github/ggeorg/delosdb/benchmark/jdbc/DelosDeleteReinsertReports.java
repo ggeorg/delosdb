@@ -14,6 +14,8 @@ import java.util.Locale;
 
 /** CSV, JSON, and human-readable reports for delete/reinsert attribution. */
 final class DelosDeleteReinsertReports {
+    private static final String IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY =
+            "delosdb.mvcc.rawStoreIdentityReservationBlockSize";
     private DelosDeleteReinsertReports() {
     }
 
@@ -138,6 +140,9 @@ final class DelosDeleteReinsertReports {
                 .append("Warmups: ").append(warmups).append('\n')
                 .append("Iterations: ").append(iterations).append('\n')
                 .append("Runs: ").append(runs).append('\n')
+                .append("MVCC identity reservation block size: ")
+                .append(System.getProperty(IDENTITY_RESERVATION_BLOCK_SIZE_PROPERTY))
+                .append('\n')
                 .append("Timed phases: source read, delete execution, optional delete transaction end, ")
                 .append("insert execution, final transaction end\n")
                 .append("Semantic verification/restoration outside timed phases: true\n")
