@@ -138,7 +138,12 @@ public final class JdbcDeleteReinsertAttributionTest extends MvccSqlTestSupport 
         assertTrue(topologyText.contains("mvcc,"));
         boolean heapTopologyWrites = false;
         boolean mvccTopologyWrites = false;
+        boolean header = true;
         for (String line : topologyText.split("\\R")) {
+            if (header) {
+                header = false;
+                continue;
+            }
             String[] fields = line.split(",", -1);
             if (fields.length >= 10 && Long.parseLong(fields[8]) > 0L) {
                 heapTopologyWrites |= "heap".equals(fields[0]);
