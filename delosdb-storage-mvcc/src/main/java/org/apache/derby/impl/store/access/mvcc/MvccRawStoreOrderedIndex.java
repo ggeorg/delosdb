@@ -153,7 +153,8 @@ final class MvccRawStoreOrderedIndex {
         if (values == null || values.length != table.columnCount()) {
             throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
         }
-        List<MvccRawStoreTable.UniqueConstraint> constraints = table.uniqueConstraints();
+        List<MvccRawStoreTable.UniqueConstraint> constraints =
+                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
         if (constraints.isEmpty()) {
             return;
         }
@@ -181,13 +182,35 @@ final class MvccRawStoreOrderedIndex {
                     if (candidateRowId == currentRowId) {
                         continue;
                     }
-                    MvccRawStoreTable.VisibleRow candidate = MvccRawStoreTable.readVisibleAt(
+                    MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                             transaction,
                             table,
-                            candidateEntry.rowLocation(),
+                            candidateEntry.rowLocation());
+                    MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
+                    if (summary.available()
+                            && summary.visibleTo(context.transactionId(), committedSequence)
+                            && summary.tombstone()) {
+                        continue;
+                    }
+                    MvccRawStoreTable.VersionRecord visible = MvccRawStoreVersionReader.findVisible(
+                            transaction,
+                            table,
+                            candidateRowId,
+                            directory.head(),
+                            context.transactionId(),
                             committedSequence,
                             projection,
                             context);
+                    MvccRawStoreTable.VisibleRow candidate = visible == null || visible.tombstone()
+                            ? null
+                            : new MvccRawStoreTable.VisibleRow(
+                                    candidateRowId,
+                                    visible.versionId(),
+                                    visible.values(),
+                                    visible.handle(),
+                                    MvccRawStoreRowDirectory.location(
+                                            candidateRowId,
+                                            directory.handle()));
                     rejectDuplicate(
                             table,
                             constraint,
@@ -216,10 +239,12 @@ final class MvccRawStoreOrderedIndex {
     }
 
     static void lockUniqueKeysForDelete(
+            Transaction transaction,
             MvccRawStoreTable.Descriptor table,
             StoreDataValue[] previousValues,
             MvccRawStoreTransactionContext context) throws StandardException {
-        List<MvccRawStoreTable.UniqueConstraint> constraints = table.uniqueConstraints();
+        List<MvccRawStoreTable.UniqueConstraint> constraints =
+                MvccRawStoreTableMetadata.refreshUniqueConstraints(transaction, table, false);
         if (!constraints.isEmpty()) {
             context.lockUniqueKeys(table, constraints, previousValues);
         }

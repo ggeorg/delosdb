@@ -660,6 +660,7 @@ final class MvccRawStoreTable {
             return false;
         }
         MvccRawStoreOrderedIndex.lockUniqueKeysForDelete(
+                rawTransaction,
                 table,
                 target.visible().values(),
                 context);
@@ -1051,14 +1052,40 @@ final class MvccRawStoreTable {
         long rowId = rowLocation.rowId();
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction, table, rowLocation);
+        long writeVersion = rowLocation.getWriteVersion();
         validateWriteVersion(rowLocation, directory.head().versionId());
-        VersionRecord visible = MvccRawStoreVersionReader.findVisible(
-                transaction,
-                table,
-                rowId,
-                directory.head(),
-                null,
-                context);
+        VersionRecord visible;
+        if (writeVersion != 0L) {
+            // The caller observed this exact version before requesting the
+            // write. The exclusive row lock plus the head-version check above
+            // proves that it is still the mutation head, so repeating the
+            // general visibility-chain search cannot change the answer.
+            visible = MvccRawStoreVersionReader.find(
+                    transaction,
+                    table,
+                    rowId,
+                    writeVersion,
+                    directory.head().hint(),
+                    null);
+            if (visible == null) {
+                // Preserve the existing missing-version/corruption semantics.
+                visible = MvccRawStoreVersionReader.findVisible(
+                        transaction,
+                        table,
+                        rowId,
+                        directory.head(),
+                        null,
+                        context);
+            }
+        } else {
+            visible = MvccRawStoreVersionReader.findVisible(
+                    transaction,
+                    table,
+                    rowId,
+                    directory.head(),
+                    null,
+                    context);
+        }
         if (visible == null || visible.tombstone()) {
             return null;
         }

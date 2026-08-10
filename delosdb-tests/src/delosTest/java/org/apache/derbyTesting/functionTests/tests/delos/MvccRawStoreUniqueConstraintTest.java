@@ -165,6 +165,39 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
         shutdownDatabase(database);
     }
 
+    public void testCommittedDeleteAndKeyChangeReleaseUniqueCandidates() throws Exception {
+        String database = databaseName("mvcc-raw-store-unique-candidate-release");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table unique_reuse "
+                            + "(id int primary key, email varchar(64) unique) using delos_mvcc");
+            executeUpdate(connection, "insert into unique_reuse values (1, 'one@example')");
+            executeUpdate(connection, "insert into unique_reuse values (2, 'two@example')");
+            connection.commit();
+
+            executeUpdate(connection, "delete from unique_reuse where id = 1");
+            connection.commit();
+            executeUpdate(connection, "insert into unique_reuse values (1, 'one@example')");
+            connection.commit();
+
+            executeUpdate(connection,
+                    "update unique_reuse set email = 'two-v2@example' where id = 2");
+            connection.commit();
+            executeUpdate(connection, "insert into unique_reuse values (3, 'two@example')");
+            connection.commit();
+
+            assertRows(connection,
+                    "select id, email from unique_reuse order by id",
+                    "1|one@example",
+                    "2|two-v2@example",
+                    "3|two@example");
+            connection.commit();
+        }
+        shutdownDatabase(database);
+    }
+
     public void testConcurrentUniqueWritersSerializeAtTheRawStoreUniqueKey() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-concurrent");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {

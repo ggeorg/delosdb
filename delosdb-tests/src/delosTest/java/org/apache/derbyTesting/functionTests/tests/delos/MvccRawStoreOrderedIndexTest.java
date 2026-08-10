@@ -507,23 +507,29 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
     public void testPreIndexCompatibilityLazyRebuildAndMemoryUseSameRawStorePath() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-compat");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
                         "create table legacy_index_t (id int, name varchar(64)) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "LEGACY_INDEX_T", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "LEGACY_INDEX_T", 1, 0);
-                executeUpdate(connection, "insert into legacy_index_t values (1, 'one')");
-                executeUpdate(connection, "insert into legacy_index_t values (2, 'two')");
-                connection.commit();
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 0);
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 1, 0);
+                executeUpdate(setup, "insert into legacy_index_t values (1, 'one')");
+                executeUpdate(setup, "insert into legacy_index_t values (2, 'two')");
+                setup.commit();
 
                 MvccRawStoreMetadataInspection.removeOrderedIndexForCompatibility(
-                        connection,
+                        setup,
                         "LEGACY_INDEX_T");
-                connection.commit();
+                setup.commit();
                 assertEquals(0L, MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        connection,
+                        setup,
                         "LEGACY_INDEX_T"));
+                setup.commit();
+            }
+            shutdownDatabase(database);
+
+            try (Connection connection = openDatabase(database, false)) {
+                connection.setAutoCommit(false);
                 assertRows(connection,
                         "select id, name from legacy_index_t where id = 2",
                         "2|two");
