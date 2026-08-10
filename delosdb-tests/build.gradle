@@ -803,7 +803,7 @@ tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
                 'delosdb.benchmark.crossEngine.iterations': providers.gradleProperty(
                         'delosdb.benchmark.crossEngine.iterations').getOrElse('3'),
                 'delosdb.benchmark.crossEngine.runs': providers.gradleProperty(
-                        'delosdb.benchmark.crossEngine.runs').getOrElse('2'),
+                        'delosdb.benchmark.crossEngine.runs').getOrElse('4'),
                 'delosdb.benchmark.crossEngine.childHeap': providers.gradleProperty(
                         'delosdb.benchmark.crossEngine.childHeap').getOrElse('1g'),
                 'delosdb.benchmark.crossEngine.upstreamDerbyVersion':

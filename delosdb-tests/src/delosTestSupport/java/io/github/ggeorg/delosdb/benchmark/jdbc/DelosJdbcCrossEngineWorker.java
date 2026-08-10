@@ -45,7 +45,11 @@ public final class DelosJdbcCrossEngineWorker {
     private static void run(Options options) throws Exception {
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
-        for (int rows : options.rowCounts()) {
+        List<Integer> rowCounts = new ArrayList<>(options.rowCounts());
+        if ((options.run() & 1) == 0) {
+            Collections.reverse(rowCounts);
+        }
+        for (int rows : rowCounts) {
             DelosBenchmarkConfig config = new DelosBenchmarkConfig(
                     rows,
                     options.payloadSize(),

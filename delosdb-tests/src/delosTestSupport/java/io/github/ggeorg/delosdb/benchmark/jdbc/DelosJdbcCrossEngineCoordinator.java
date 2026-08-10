@@ -59,6 +59,7 @@ public final class DelosJdbcCrossEngineCoordinator {
         validate(options, rows);
         writeMergedCsv(options, rows);
         writeRatioCsv(options, rows);
+        writeDispersionCsv(options, rows);
         writeSummary(options, rows);
     }
 
@@ -206,6 +207,38 @@ public final class DelosJdbcCrossEngineCoordinator {
                 StandardCharsets.UTF_8);
     }
 
+    private static void writeDispersionCsv(Options options, List<Row> rows) throws IOException {
+        Map<ShapeTargetKey, Distribution> distributions = distributions(rows);
+        StringBuilder out = new StringBuilder(
+                "rowCount,workload,outcome,operationsPerTransaction,target,runs,medianNanos,"
+                        + "q1Nanos,q3Nanos,iqrNanos,madNanos,minNanos,maxNanos,"
+                        + "iqrToMedian,madToMedian,maxToMin\n");
+        for (Map.Entry<ShapeTargetKey, Distribution> entry : distributions.entrySet()) {
+            ShapeTargetKey key = entry.getKey();
+            Distribution value = entry.getValue();
+            out.append(key.shape().rowCount()).append(',')
+                    .append(key.shape().workload()).append(',')
+                    .append(key.shape().outcome()).append(',')
+                    .append(key.shape().operationsPerTransaction()).append(',')
+                    .append(key.target().id()).append(',')
+                    .append(value.count()).append(',')
+                    .append(format(value.median())).append(',')
+                    .append(format(value.q1())).append(',')
+                    .append(format(value.q3())).append(',')
+                    .append(format(value.iqr())).append(',')
+                    .append(format(value.mad())).append(',')
+                    .append(format(value.min())).append(',')
+                    .append(format(value.max())).append(',')
+                    .append(format(ratio(value.iqr(), value.median()))).append(',')
+                    .append(format(ratio(value.mad(), value.median()))).append(',')
+                    .append(format(ratio(value.max(), value.min()))).append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve("cross-engine-dispersion.csv"),
+                out.toString(),
+                StandardCharsets.UTF_8);
+    }
+
     private static void writeSummary(Options options, List<Row> rows) throws IOException {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medians(rows);
         Map<Target, Product> products = new EnumMap<>(Target.class);
@@ -231,6 +264,10 @@ public final class DelosJdbcCrossEngineCoordinator {
                 .append("Runs: ").append(options.runs()).append('\n')
                 .append("One isolated JVM per engine and run: true\n")
                 .append("Engine order alternates by run: true\n")
+                .append("Row-count order alternates by run: true\n")
+                .append("Workload order alternates by run: true\n")
+                .append("Even run count required for balanced order exposure: true\n")
+                .append("Dispersion report: median, Q1, Q3, IQR, MAD, min, max, IQR/median, MAD/median, max/min\n")
                 .append("Transaction timing includes commit or rollback: true\n")
                 .append("Fixture setup and semantic restoration outside timing: true\n")
                 .append("H2 durability setting: WRITE_DELAY=0\n")
@@ -277,6 +314,16 @@ public final class DelosJdbcCrossEngineCoordinator {
     }
 
     private static Map<ShapeKey, EnumMap<Target, Double>> medians(List<Row> rows) {
+        Map<ShapeKey, EnumMap<Target, Double>> medians = new java.util.LinkedHashMap<>();
+        for (Map.Entry<ShapeTargetKey, Distribution> entry : distributions(rows).entrySet()) {
+            ShapeTargetKey key = entry.getKey();
+            medians.computeIfAbsent(key.shape(), ignored -> new EnumMap<>(Target.class))
+                    .put(key.target(), entry.getValue().median());
+        }
+        return medians;
+    }
+
+    private static Map<ShapeTargetKey, Distribution> distributions(List<Row> rows) {
         Map<ShapeTargetKey, List<Double>> grouped = new HashMap<>();
         for (Row row : rows) {
             ShapeKey shape = new ShapeKey(
@@ -295,22 +342,50 @@ public final class DelosJdbcCrossEngineCoordinator {
                 .thenComparingInt(key -> key.shape().operationsPerTransaction())
                 .thenComparing(ShapeTargetKey::target));
 
-        Map<ShapeKey, EnumMap<Target, Double>> medians = new java.util.LinkedHashMap<>();
+        Map<ShapeTargetKey, Distribution> result = new java.util.LinkedHashMap<>();
         for (ShapeTargetKey key : ordered) {
-            medians.computeIfAbsent(key.shape(), ignored -> new EnumMap<>(Target.class))
-                    .put(key.target(), median(grouped.get(key)));
+            result.put(key, distribution(grouped.get(key)));
         }
-        return medians;
+        return result;
     }
 
-    private static double median(List<Double> values) {
+    private static Distribution distribution(List<Double> values) {
         List<Double> ordered = new ArrayList<>(values);
         ordered.sort(Double::compareTo);
+        double median = median(ordered, 0, ordered.size());
         int middle = ordered.size() / 2;
-        if ((ordered.size() & 1) == 1) {
+        double q1 = median(ordered, 0, middle);
+        double q3 = median(ordered, (ordered.size() + 1) / 2, ordered.size());
+        List<Double> deviations = new ArrayList<>(ordered.size());
+        for (double value : ordered) {
+            deviations.add(Math.abs(value - median));
+        }
+        deviations.sort(Double::compareTo);
+        return new Distribution(
+                ordered.size(),
+                median,
+                q1,
+                q3,
+                q3 - q1,
+                median(deviations, 0, deviations.size()),
+                ordered.getFirst(),
+                ordered.getLast());
+    }
+
+    private static double median(List<Double> ordered, int from, int to) {
+        int size = to - from;
+        if (size < 1) {
+            throw new IllegalArgumentException("Median requires at least one value");
+        }
+        int middle = from + size / 2;
+        if ((size & 1) == 1) {
             return ordered.get(middle);
         }
         return (ordered.get(middle - 1) + ordered.get(middle)) / 2.0;
+    }
+
+    private static double ratio(double numerator, double denominator) {
+        return denominator == 0.0 ? Double.NaN : numerator / denominator;
     }
 
     private static double require(EnumMap<Target, Double> values, Target target, ShapeKey key) {
@@ -388,6 +463,17 @@ public final class DelosJdbcCrossEngineCoordinator {
     }
 
     private record ShapeTargetKey(ShapeKey shape, Target target) {
+    }
+
+    private record Distribution(
+            int count,
+            double median,
+            double q1,
+            double q3,
+            double iqr,
+            double mad,
+            double min,
+            double max) {
     }
 
     private record Row(
@@ -504,7 +590,7 @@ public final class DelosJdbcCrossEngineCoordinator {
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "1")),
                     Integer.parseInt(System.getProperty(PREFIX + "iterations", "3")),
-                    Integer.parseInt(System.getProperty(PREFIX + "runs", "2")),
+                    Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
                     System.getProperty(PREFIX + "childHeap", "1g"),
                     required(PREFIX + "upstreamDerbyVersion"),
                     required(PREFIX + "h2Version"));
@@ -526,8 +612,12 @@ public final class DelosJdbcCrossEngineCoordinator {
             parsePositive(readWidths, "readWidths", 1);
             parsePositive(writeWidths, "writeWidths", 1);
             if (cycles < 1 || payload < 16 || fixtureBatch < 1
-                    || warmups < 0 || iterations < 1 || runs < 1) {
+                    || warmups < 0 || iterations < 1) {
                 throw new IllegalArgumentException("Invalid cross-engine benchmark numeric option");
+            }
+            if (runs < 2 || (runs & 1) != 0) {
+                throw new IllegalArgumentException(
+                        "runs must be an even number of at least 2 for balanced benchmark order");
             }
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");

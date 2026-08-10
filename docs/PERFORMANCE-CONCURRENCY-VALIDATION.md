@@ -105,3 +105,15 @@ archived-oracle tests. The accepted historical baseline remains immutable eviden
 - No performance threshold belongs in S0.
 - Compare identical JDK, JVM arguments, runtime artifacts, and parameters.
 - A behavior change requires a separate correctness and compatibility proof.
+
+## Cross-engine JDBC comparison quality controls
+
+`./gradlew :delosdb-tests:runDelosJdbcCrossEngineComparison -Pdelosdb.sane=false` runs DelosDB heap,
+DelosDB MVCC, upstream Derby, and H2 in isolated child JVMs. Engine order, row-count order, and workload
+order alternate by run, so the benchmark requires an even run count (default `4`) to balance order
+exposure. Semantic fingerprints must match across every engine and run before reports are accepted.
+
+The raw `cross-engine-results.csv` remains authoritative evidence. `cross-engine-ratios.csv` reports median
+latency ratios, while `cross-engine-dispersion.csv` reports median, quartiles, IQR, MAD, min/max, and
+normalized robust spread for every engine/workload shape. Use the dispersion report before treating small
+ratio differences as meaningful.
