@@ -770,48 +770,24 @@ final class MvccRawStoreTable {
                 .thenComparingLong(version ->
                         version.table().metadataContainer().getContainerId())
                 .thenComparingLong(PendingVersion::versionId));
-
-        ContainerKey openTable = null;
-        ContainerHandle versionContainer = null;
-        try {
-            for (PendingVersion version : ordered) {
-                if (!version.table().metadataContainer().equals(openTable)) {
-                    if (versionContainer != null) {
-                        versionContainer.close();
-                    }
-                    openTable = version.table().metadataContainer();
-                    versionContainer = rawTransaction.openContainer(
-                            version.table().versionContainer(),
-                            MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
-                            ContainerHandle.MODE_FORUPDATE);
-                    if (versionContainer == null) {
-                        throw new IllegalStateException(
-                                "RawStore MVCC version container is absent: "
-                                        + version.table().versionContainer());
-                    }
-                }
-                updateVersionBegin(
+        for (PendingVersion version : ordered) {
+            updateVersionBegin(
+                    rawTransaction,
+                    version.table(),
+                    version,
+                    commitSequence);
+            MvccRawStoreRowDirectory.stampCommittedHead(
+                    rawTransaction,
+                    version,
+                    commitSequence);
+            if (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
+                updateVersionEnd(
                         rawTransaction,
-                        versionContainer,
-                        version,
+                        version.table(),
+                        version.rowId(),
+                        version.previousVersionId(),
+                        version.previousHint(),
                         commitSequence);
-                MvccRawStoreRowDirectory.stampCommittedHead(
-                        rawTransaction,
-                        version,
-                        commitSequence);
-                if (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
-                    updateVersionEnd(
-                            rawTransaction,
-                            versionContainer,
-                            version.rowId(),
-                            version.previousVersionId(),
-                            version.previousHint(),
-                            commitSequence);
-                }
-            }
-        } finally {
-            if (versionContainer != null) {
-                versionContainer.close();
             }
         }
     }
@@ -1331,9 +1307,13 @@ final class MvccRawStoreTable {
 
     private static void updateVersionBegin(
             Transaction transaction,
-            ContainerHandle container,
+            Descriptor table,
             PendingVersion pending,
             long commitSequence) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.versionContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
         Page page = null;
         try {
             RecordHandle handle = pending.handle();
@@ -1374,10 +1354,11 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
+            container.close();
         }
         updateVersionBeginByLogicalId(
                 transaction,
-                container,
+                table,
                 pending.rowId(),
                 pending.versionId(),
                 commitSequence);
@@ -1385,10 +1366,14 @@ final class MvccRawStoreTable {
 
     private static void updateVersionBeginByLogicalId(
             Transaction transaction,
-            ContainerHandle container,
+            Descriptor table,
             long rowId,
             long versionId,
             long commitSequence) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                table.versionContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
         Page page = null;
         try {
             page = container.getFirstPage();
@@ -1422,20 +1407,21 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
+            container.close();
         }
         throw new IllegalStateException("RawStore MVCC version disappeared before commit: " + versionId);
     }
 
     private static void updateVersionEnd(
             Transaction transaction,
-            ContainerHandle container,
+            Descriptor table,
             long rowId,
             long versionId,
             RecordHint hint,
             long commitSequence) throws StandardException {
         if (updateVersionEndByHint(
                 transaction,
-                container,
+                table,
                 rowId,
                 versionId,
                 hint,
@@ -1443,6 +1429,10 @@ final class MvccRawStoreTable {
             return;
         }
 
+        ContainerHandle container = transaction.openContainer(
+                table.versionContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
         Page page = null;
         try {
             page = container.getFirstPage();
@@ -1472,6 +1462,7 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
+            container.close();
         }
         throw new IllegalStateException(
                 "RawStore MVCC predecessor version disappeared before commit: " + versionId);
@@ -1479,12 +1470,19 @@ final class MvccRawStoreTable {
 
     private static boolean updateVersionEndByHint(
             Transaction transaction,
-            ContainerHandle container,
+            Descriptor table,
             long rowId,
             long versionId,
             RecordHint hint,
             long commitSequence) throws StandardException {
         if (!hint.valid()) {
+            return false;
+        }
+        ContainerHandle container = transaction.openContainer(
+                table.versionContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
             return false;
         }
         Page page = null;
@@ -1518,6 +1516,7 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
+            container.close();
         }
     }
 
