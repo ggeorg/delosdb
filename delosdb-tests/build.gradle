@@ -226,6 +226,8 @@ def delosInternalTestSupportExports = [
         '--add-exports',
         'org.apache.derby.engine/org.apache.derby.impl.services.locks=org.apache.derby.tests',
         '--add-exports',
+        'org.apache.derby.engine/org.apache.derby.impl.services.storetypes=org.apache.derby.tests',
+        '--add-exports',
         'org.apache.derby.engine/org.apache.derby.impl.store.access.mvcc=org.apache.derby.tests'
 ]
 
