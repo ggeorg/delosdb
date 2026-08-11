@@ -220,7 +220,10 @@ public final class MvccConglomerate
                 openMode,
                 isolationLevel,
                 scanColumnList,
-                qualifier);
+                qualifier,
+                dynamicInfo instanceof MvccDynamicCompiledOpenConglomInfo compiled
+                        ? compiled
+                        : null);
     }
 
     @Override
@@ -398,7 +401,31 @@ public final class MvccConglomerate
         return StandardException.newException(SQLState.STORE_FEATURE_NOT_IMPLEMENTED);
     }
 
-    private static final class MvccDynamicCompiledOpenConglomInfo
+    static final class MvccDynamicCompiledOpenConglomInfo
             implements DynamicCompiledOpenConglomInfo {
+        private long orderedIndexBtree = Long.MIN_VALUE;
+        private StaticCompiledOpenConglomInfo orderedIndexStaticInfo;
+        private DynamicCompiledOpenConglomInfo orderedIndexDynamicInfo;
+
+        void prepareOrderedIndex(
+                TransactionManager transactionManager,
+                long btreeConglomerate) throws StandardException {
+            if (orderedIndexBtree == btreeConglomerate) {
+                return;
+            }
+            orderedIndexStaticInfo =
+                    transactionManager.getStaticCompiledConglomInfo(btreeConglomerate);
+            orderedIndexDynamicInfo =
+                    transactionManager.getDynamicCompiledConglomInfo(btreeConglomerate);
+            orderedIndexBtree = btreeConglomerate;
+        }
+
+        StaticCompiledOpenConglomInfo orderedIndexStaticInfo() {
+            return orderedIndexStaticInfo;
+        }
+
+        DynamicCompiledOpenConglomInfo orderedIndexDynamicInfo() {
+            return orderedIndexDynamicInfo;
+        }
     }
 }

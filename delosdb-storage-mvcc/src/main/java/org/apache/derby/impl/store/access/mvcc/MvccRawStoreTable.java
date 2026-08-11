@@ -316,14 +316,17 @@ final class MvccRawStoreTable {
             orderedIndexCandidatesForAt(
                     Descriptor table,
                     org.apache.derby.iapi.store.access.Qualifier[][] qualifiers,
-                    MvccRawStoreTransactionContext context) throws StandardException {
+                    MvccRawStoreTransactionContext context,
+                    MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo)
+                    throws StandardException {
         ContainerKey orderedIndex = context.orderedIndexForRead(table);
         return MvccRawStoreOrderedIndex.candidatesForAt(
                 context.transactionManager(),
                 table,
                 orderedIndex,
                 qualifiers,
-                context);
+                context,
+                compiledInfo);
     }
 
     static void ensureOrderedIndex(

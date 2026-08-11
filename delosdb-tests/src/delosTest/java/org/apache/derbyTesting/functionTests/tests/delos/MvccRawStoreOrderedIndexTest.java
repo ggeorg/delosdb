@@ -63,6 +63,18 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 assertIndexedRows(connection,
                         "select id, name from indexed_t where id = 6",
                         "6|name-6");
+                try (PreparedStatement lookup = connection.prepareStatement(
+                        "select name from indexed_t where id = ?")) {
+                    for (int id : new int[] {6, 4, 6}) {
+                        lookup.setInt(1, id);
+                        try (ResultSet resultSet = lookup.executeQuery()) {
+                            assertTrue(resultSet.next());
+                            assertEquals("name-" + id, resultSet.getString(1));
+                            assertFalse(resultSet.next());
+                        }
+                        connection.commit();
+                    }
+                }
                 assertIndexedRows(connection,
                         "select id, score from indexed_t where score >= 30 and score < 60 order by score",
                         "3|30",

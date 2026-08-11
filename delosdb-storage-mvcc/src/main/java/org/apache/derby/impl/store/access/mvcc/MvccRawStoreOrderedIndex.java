@@ -273,7 +273,9 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.Descriptor table,
             ContainerKey directoryKey,
             Qualifier[][] qualifiers,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            MvccRawStoreTransactionContext context,
+            MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo)
+            throws StandardException {
         Optional<MvccRawStoreOrderedIndexPredicate.Predicate> optionalPredicate =
                 MvccRawStoreOrderedIndexPredicate.from(qualifiers);
         if (optionalPredicate.isEmpty()) {
@@ -294,7 +296,8 @@ final class MvccRawStoreOrderedIndex {
                 transactionManager,
                 table,
                 btree,
-                predicate));
+                predicate,
+                compiledInfo));
     }
 
 
@@ -323,6 +326,21 @@ final class MvccRawStoreOrderedIndex {
             MvccRawStoreTable.Descriptor table,
             long btreeConglomerate,
             MvccRawStoreOrderedIndexPredicate.Predicate predicate) throws StandardException {
+        return scanCandidates(
+                transactionManager,
+                table,
+                btreeConglomerate,
+                predicate,
+                null);
+    }
+
+    private static List<Candidate> scanCandidates(
+            TransactionManager transactionManager,
+            MvccRawStoreTable.Descriptor table,
+            long btreeConglomerate,
+            MvccRawStoreOrderedIndexPredicate.Predicate predicate,
+            MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo)
+            throws StandardException {
         StoreDataValue[] startKey = predicate.lowerBound() == null
                 ? null
                 : new StoreDataValue[] {StoreValueCopySupport.cloneValue(predicate.lowerBound())};
@@ -336,18 +354,36 @@ final class MvccRawStoreOrderedIndex {
                 ? ScanController.NA
                 : (predicate.upperInclusive() ? ScanController.GT : ScanController.GE);
         LinkedHashMap<Long, Candidate> candidates = new LinkedHashMap<>();
-        ScanController scan = transactionManager.openScan(
-                btreeConglomerate,
-                false,
-                0,
-                TransactionController.MODE_RECORD,
-                TransactionController.ISOLATION_READ_UNCOMMITTED,
-                null,
-                startKey,
-                startOperator,
-                null,
-                stopKey,
-                stopOperator);
+        ScanController scan;
+        if (compiledInfo == null) {
+            scan = transactionManager.openScan(
+                    btreeConglomerate,
+                    false,
+                    0,
+                    TransactionController.MODE_RECORD,
+                    TransactionController.ISOLATION_READ_UNCOMMITTED,
+                    null,
+                    startKey,
+                    startOperator,
+                    null,
+                    stopKey,
+                    stopOperator);
+        } else {
+            compiledInfo.prepareOrderedIndex(transactionManager, btreeConglomerate);
+            scan = transactionManager.openCompiledScan(
+                    false,
+                    0,
+                    TransactionController.MODE_RECORD,
+                    TransactionController.ISOLATION_READ_UNCOMMITTED,
+                    null,
+                    startKey,
+                    startOperator,
+                    null,
+                    stopKey,
+                    stopOperator,
+                    compiledInfo.orderedIndexStaticInfo(),
+                    compiledInfo.orderedIndexDynamicInfo());
+        }
         try {
             StoreDataValue[] row = indexRowTemplate(
                     transactionManager.getRawStoreXact(),

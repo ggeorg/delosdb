@@ -36,6 +36,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final boolean forUpdate;
     private final FormatableBitSet scanColumnList;
     private final MvccRawStoreVersionRows.FetchProjection versionProjection;
+    private final MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo;
     private final long snapshotSequence;
     private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease;
     private final boolean readCommittedUpdateRecheck;
@@ -62,7 +63,9 @@ final class MvccRawStoreScanController implements ScanManager {
             int openMode,
             int isolationLevel,
             FormatableBitSet scanColumnList,
-            Qualifier[][] qualifiers) throws StandardException {
+            Qualifier[][] qualifiers,
+            MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo)
+            throws StandardException {
         this.runtime = runtime;
         this.table = table;
         this.transactionManager = transactionManager;
@@ -72,6 +75,7 @@ final class MvccRawStoreScanController implements ScanManager {
         this.scanColumnList = scanColumnList;
         this.versionProjection = MvccRawStoreVersionRows.projection(table, scanColumnList);
         this.qualifiers = qualifiers;
+        this.compiledInfo = compiledInfo;
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
                 rawTransaction);
@@ -418,7 +422,8 @@ final class MvccRawStoreScanController implements ScanManager {
                     MvccRawStoreTable.orderedIndexCandidatesForAt(
                             table,
                             qualifiers,
-                            context);
+                            context,
+                            compiledInfo);
             if (candidates.isPresent()) {
                 List<MvccRawStoreOrderedIndex.Candidate> candidateRows = candidates.get();
                 List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
