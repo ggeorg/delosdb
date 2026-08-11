@@ -181,9 +181,12 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "select id from projection_t "
                                 + "where category = 7 and quantity >= 20 order by id",
                         "2");
-                assertIndexedRows(setup,
+                String hintedReadStatistics = assertNonCoveringIndexedRows(setup,
                         "select id, quantity from projection_t where id = 2",
                         "2|20");
+                assertScanMetric(hintedReadStatistics, "mvccVersionPageAcquisitions", 1L);
+                assertScanMetric(hintedReadStatistics, "mvccVersionSlotFetches", 1L);
+                assertScanMetric(hintedReadStatistics, "mvccVersionLogicalFallbacks", 0L);
                 assertIndexedRows(setup,
                         "select payload from projection_t where id = 2",
                         payloadTwo);
