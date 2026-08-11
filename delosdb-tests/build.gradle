@@ -848,6 +848,125 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
 }
 
 
+def primaryKeyReadJfrProfiles = [
+        [task: 'runDelosHeapPrimaryKeyReadJfr', target: 'delos_heap',
+         runtimeClasspath: rootProject.files(derbyRuntimeJars)],
+        [task: 'runDelosMvccPrimaryKeyReadJfr', target: 'delos_mvcc',
+         runtimeClasspath: rootProject.files(derbyRuntimeJars)],
+        [task: 'runUpstreamDerbyPrimaryKeyReadJfr', target: 'upstream_derby',
+         runtimeClasspath: upstreamDerbyBenchmarkRuntime],
+        [task: 'runH2PrimaryKeyReadJfr', target: 'h2',
+         runtimeClasspath: h2BenchmarkRuntime]
+]
+def primaryKeyReadJfrTasks = primaryKeyReadJfrProfiles.collect { profile ->
+    tasks.register(profile.task, JavaExec) {
+        group = 'benchmark'
+        description = "Profiles ${profile.target} 8-client PRIMARY_KEY_READ x10 with JFR."
+        dependsOn tasks.named('compileTestJava'), ':jars'
+
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir, profile.runtimeClasspath)
+        args 'worker'
+        outputs.upToDateWhen { false }
+        def reportDir = rootProject.layout.buildDirectory.dir(
+                "reports/delosdb/benchmarks/jdbc-primary-key-read-jfr/${profile.target}")
+        outputs.dir(reportDir)
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true')
+                    .trim()
+                    .toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Primary-key-read JFR profiling requires a release build; ' +
+                                'rerun with -Pdelosdb.sane=false')
+            }
+            def output = reportDir.get().asFile
+            project.delete(output)
+            output.mkdirs()
+            def databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-primary-key-read-jfr/${profile.target}").get().asFile
+            project.delete(databaseRoot)
+            def transactionsPerClient = providers.gradleProperty(
+                    'delosdb.benchmark.primaryKeyReadJfr.transactionsPerClient').getOrElse('50000')
+            def jfrFile = new File(output, "${profile.target}-pk-read-8c-x10.jfr")
+            new File(output, 'profile-manifest.txt').text =
+                    "DelosDB embedded primary-key-read JFR attribution\n" +
+                            "Question: where does CPU time go in the shared embedded PK-read path?\n" +
+                            "Hypothesis: the Delos heap-vs-upstream-Derby gap is larger than the residual " +
+                            "MVCC-vs-heap gap and should be attributed before further MVCC-specific work.\n" +
+                            "Project version: ${rootProject.version}\n" +
+                            "JDK: ${System.getProperty('java.runtime.version')}\n" +
+                            "OS: ${System.getProperty('os.name')} ${System.getProperty('os.version')} " +
+                            "${System.getProperty('os.arch')}\n" +
+                            "Processors: ${Runtime.getRuntime().availableProcessors()}\n" +
+                            "target=${profile.target}\n" +
+                            "workload=PRIMARY_KEY_READ\n" +
+                            "clients=8\n" +
+                            "operationsPerTransaction=10\n" +
+                            "transactionsPerClient=${transactionsPerClient}\n" +
+                            "rows=10000\n" +
+                            "payloadBytes=128\n" +
+                            "warmups=2\n" +
+                            "iterations=1\n" +
+                            "isolation=TRANSACTION_READ_COMMITTED\n" +
+                            "jfrSettings=profile\n" +
+                            "Expected invariant: successful PK reads with the existing semantic fingerprint.\n" +
+                            "Limitation: JFR-enabled throughput is attribution evidence, not acceptance TPS.\n"
+            jvmArgs '-Xms1g', '-Xmx1g', '-XX:+AlwaysPreTouch',
+                    "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile," +
+                            'dumponexit=true,maxsize=256m'
+            systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.target': profile.target,
+                    'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': output.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': transactionsPerClient,
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+    }
+}
+
+for (int i = 1; i < primaryKeyReadJfrTasks.size(); i++) {
+    primaryKeyReadJfrTasks[i].configure {
+        mustRunAfter(primaryKeyReadJfrTasks[i - 1])
+    }
+}
+
+tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
+    group = 'benchmark'
+    description = 'Profiles Delos heap/MVCC, upstream Derby, and H2 on 8-client PRIMARY_KEY_READ x10.'
+    dependsOn primaryKeyReadJfrTasks
+    def reportDir = rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/jdbc-primary-key-read-jfr')
+    outputs.file(reportDir.map { it.file('profile-matrix.txt') })
+
+    doLast {
+        def output = reportDir.get().asFile
+        output.mkdirs()
+        new File(output, 'profile-matrix.txt').text =
+                'DelosDB embedded PRIMARY_KEY_READ JFR attribution matrix\n' +
+                        'Targets: delos_heap, delos_mvcc, upstream_derby, h2\n' +
+                        'Shape: 8 clients, 10 PK reads/transaction, READ_COMMITTED\n' +
+                        'Recordings: one JFR per target using JDK profile settings\n' +
+                        'Interpretation: attribute CPU/allocation/locking; do not compare JFR TPS as release TPS.\n'
+    }
+}
+
+
 tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
     group = 'benchmark'
     description = 'Profiles the 8-client disjoint Delos MVCC commit/publication path with JFR.'
@@ -915,7 +1034,7 @@ tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
