@@ -869,10 +869,15 @@ tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
         def databaseRoot = rootProject.layout.buildDirectory
                 .dir('tmp/delos-mvcc-commit-publication-jfr').get().asFile
         project.delete(databaseRoot)
-        def jfrFile = new File(output, 'delos-mvcc-disjoint-8c-x1.jfr')
+        def blockSize = providers.gradleProperty(
+                'delosdb.benchmark.mvccCommitPublicationJfr.commitSequenceBlockSize').getOrElse('64')
+        def jfrFile = new File(output, "delos-mvcc-disjoint-8c-x1-block${blockSize}.jfr")
+        new File(output, 'commit-sequence-reservation.txt').text =
+                "commitSequenceBlockSize=${blockSize}\n"
         jvmArgs '-Xms1g', '-Xmx1g', '-XX:+AlwaysPreTouch',
                 "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile,dumponexit=true,maxsize=512m"
         systemProperties([
+                'delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize': blockSize,
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':

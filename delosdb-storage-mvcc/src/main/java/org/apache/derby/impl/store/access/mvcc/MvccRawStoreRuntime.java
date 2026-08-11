@@ -43,6 +43,8 @@ import org.apache.derby.shared.common.error.StandardException;
 final class MvccRawStoreRuntime {
     static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+    static final String COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY =
+            "delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -67,6 +69,9 @@ final class MvccRawStoreRuntime {
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final int commitSequenceReservationBlockSize;
+    private long nextCommitSequence;
+    private long commitSequenceReservationLimit;
     private volatile String diagnosticIdentity = "<unbound>";
     private volatile MvccRawStoreMaintenanceService maintenanceService;
 
@@ -83,6 +88,21 @@ final class MvccRawStoreRuntime {
                 rawStoreIoMetrics, "rawStoreIoMetrics");
         this.diagnosticIdentity = Objects.requireNonNull(
                 diagnosticIdentity, "diagnosticIdentity");
+        String blockSize = System.getProperty(
+                COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY, "1");
+        try {
+            commitSequenceReservationBlockSize = Integer.parseInt(blockSize);
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException(
+                    COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY
+                            + " must be a positive integer: " + blockSize,
+                    failure);
+        }
+        if (commitSequenceReservationBlockSize <= 0) {
+            throw new IllegalArgumentException(
+                    COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY
+                            + " must be positive: " + blockSize);
+        }
     }
 
     Object databaseIdentity() {
@@ -316,7 +336,13 @@ final class MvccRawStoreRuntime {
     long reserveCommitSequence(Transaction rawTransaction) throws StandardException {
         commitPublicationLock.lock();
         try {
-            return metadata.reserveCommitSequence(rawTransaction);
+            if (nextCommitSequence == commitSequenceReservationLimit) {
+                nextCommitSequence = metadata.reserveCommitSequences(
+                        rawTransaction, commitSequenceReservationBlockSize);
+                commitSequenceReservationLimit = Math.addExact(
+                        nextCommitSequence, commitSequenceReservationBlockSize);
+            }
+            return nextCommitSequence++;
         } catch (StandardException | RuntimeException | Error failure) {
             commitPublicationLock.unlock();
             throw failure;
