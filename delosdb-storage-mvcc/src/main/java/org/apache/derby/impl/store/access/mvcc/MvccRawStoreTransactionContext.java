@@ -102,6 +102,28 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         acquireExclusive(MvccRawStoreLogicalLock.row(table, rowId));
     }
 
+    void lockRowForReadCommittedUpdate(
+            MvccRawStoreTable.Descriptor table, MvccRowLocation location)
+            throws StandardException {
+        lockRowForUpdate(table, location.rowId());
+        MvccRawStoreTable.DirectoryHead head = MvccRawStoreRowDirectory.find(
+                rawTransaction, table, location).head();
+        MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
+        long creatorTransactionId = summary.creatorTransactionId();
+        long beginSequence = summary.beginSequence();
+        if (!summary.available()) {
+            MvccRawStoreTable.VersionRecord version = MvccRawStoreVersionReader.find(
+                    rawTransaction, table, location.rowId(), head.versionId(), head.hint(),
+                    MvccRawStoreVersionRows.metadataProjection(table));
+            creatorTransactionId = version.creatorTransactionId();
+            beginSequence = version.beginSequence();
+        }
+        if (creatorTransactionId != transactionId
+                && beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            runtime.awaitPublication(beginSequence);
+        }
+    }
+
     void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireExclusive(MvccRawStoreLogicalLock.table(table));

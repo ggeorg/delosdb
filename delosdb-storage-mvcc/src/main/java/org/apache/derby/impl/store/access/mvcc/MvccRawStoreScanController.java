@@ -344,7 +344,8 @@ final class MvccRawStoreScanController implements ScanManager {
             MvccRawStoreTable.VisibleRow candidate) throws StandardException {
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager, rawTransaction);
-        context.lockRowForUpdate(table, candidate.rowId());
+        context.lockRowForReadCommittedUpdate(
+                table, (MvccRowLocation) candidate.directoryLocation());
         try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
              MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
             return MvccRawStoreTable.readVisibleAt(

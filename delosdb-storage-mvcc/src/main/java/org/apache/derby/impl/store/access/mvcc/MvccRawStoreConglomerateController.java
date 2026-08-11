@@ -97,7 +97,7 @@ final class MvccRawStoreConglomerateController
             // the secondary index and no MVCC write-version attached yet. Wait
             // on the stable logical row before returning the base row so both
             // restriction and SET-expression evaluation use the post-wait value.
-            context.lockRowForUpdate(table, location.rowId());
+            context.lockRowForReadCommittedUpdate(table, location);
         } else if (checkWriteVersion) {
             context.beforeRowWrite(table, location.rowId());
         }

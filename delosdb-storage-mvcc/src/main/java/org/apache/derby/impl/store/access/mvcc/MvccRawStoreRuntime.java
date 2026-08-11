@@ -404,6 +404,20 @@ final class MvccRawStoreRuntime {
         }
     }
 
+    void awaitPublication(long sequence) {
+        if (sequence <= publishedHighWater.get()) {
+            return;
+        }
+        commitPublicationLock.lock();
+        try {
+            while (publishedHighWater.get() < sequence) {
+                commitPublicationAdvanced.awaitUninterruptibly();
+            }
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
     void abandonConcurrentCommitSequence(long sequence) {
         if (!concurrentCommitPublication || sequence <= 0L) {
             return;
