@@ -251,7 +251,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 for (int client = 0; client < spec.clients(); client++) {
                     Connection connection = DriverManager.getConnection(options.target().jdbcUrl(database));
                     connection.setAutoCommit(false);
-                    clients.add(new Client(connection, table, spec, client, baseline[0]));
+                    int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
+                    clients.add(new Client(connection, table, spec, ids[targetIndex], baseline[targetIndex]));
                 }
             } catch (SQLException failure) {
                 closeClients(failure);
@@ -300,38 +301,47 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         private long verifyAndRestore() throws SQLException {
-            long fingerprint = mix(spec.clients(), spec.operationsPerTransaction());
-            int increment = Math.multiplyExact(options.transactionsPerClient(), spec.operationsPerTransaction());
-            for (int index = 0; index < ids.length; index++) {
-                int expected = baseline[index];
-                if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
-                    expected += increment;
-                } else if (spec.workload() == Workload.CONTENDED_INDEXED_UPDATE) {
-                    expected += Math.multiplyExact(spec.clients(), increment);
+            try {
+                long fingerprint = mix(spec.clients(), spec.operationsPerTransaction());
+                int increment = Math.multiplyExact(options.transactionsPerClient(), spec.operationsPerTransaction());
+                for (int index = 0; index < ids.length; index++) {
+                    int expected = baseline[index];
+                    if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
+                        expected += increment;
+                    } else if (spec.workload() == Workload.CONTENDED_INDEXED_UPDATE) {
+                        expected += Math.multiplyExact(spec.clients(), increment);
+                    }
+                    int actual = quantity(verifier, table, ids[index]);
+                    if (actual != expected) {
+                        throw new IllegalStateException("Concurrent semantic drift for " + spec
+                                + ", id=" + ids[index] + ": expected=" + expected + ", actual=" + actual);
+                    }
+                    fingerprint = mix(mix(fingerprint, ids[index]), actual);
                 }
-                int actual = quantity(verifier, table, ids[index]);
-                if (actual != expected) {
-                    throw new IllegalStateException("Concurrent semantic drift for " + spec
-                            + ", id=" + ids[index] + ": expected=" + expected + ", actual=" + actual);
-                }
-                fingerprint = mix(mix(fingerprint, ids[index]), actual);
-            }
-            if (spec.workload() != Workload.PRIMARY_KEY_READ) {
-                try (PreparedStatement restore = verifier.prepareStatement(
-                        "update " + table + " set quantity = ? where id = ?")) {
-                    for (int index = 0; index < ids.length; index++) {
-                        restore.setInt(1, baseline[index]);
-                        restore.setInt(2, ids[index]);
-                        if (restore.executeUpdate() != 1) {
-                            throw new SQLException("Concurrent restore did not affect one row: id=" + ids[index]);
+                if (spec.workload() != Workload.PRIMARY_KEY_READ) {
+                    try (PreparedStatement restore = verifier.prepareStatement(
+                            "update " + table + " set quantity = ? where id = ?")) {
+                        for (int index = 0; index < ids.length; index++) {
+                            restore.setInt(1, baseline[index]);
+                            restore.setInt(2, ids[index]);
+                            if (restore.executeUpdate() != 1) {
+                                throw new SQLException("Concurrent restore did not affect one row: id=" + ids[index]);
+                            }
                         }
                     }
+                    verifier.commit();
+                } else {
+                    verifier.rollback();
                 }
-                verifier.commit();
-            } else {
-                verifier.rollback();
+                return fingerprint;
+            } catch (SQLException | RuntimeException | Error failure) {
+                try {
+                    verifier.rollback();
+                } catch (SQLException rollbackFailure) {
+                    failure.addSuppressed(rollbackFailure);
+                }
+                throw failure;
             }
-            return fingerprint;
         }
 
         @Override
@@ -373,11 +383,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final PreparedStatement update;
 
         private Client(
-                Connection connection, String table, Spec spec, int client, int expectedReadQuantity)
+                Connection connection, String table, Spec spec, int id, int expectedReadQuantity)
                 throws SQLException {
             this.connection = connection;
             this.workload = spec.workload();
-            this.id = workload == Workload.DISJOINT_INDEXED_UPDATE ? client + 1 : 1;
+            this.id = id;
             this.expectedReadQuantity = expectedReadQuantity;
             PreparedStatement localRead = null;
             PreparedStatement localUpdate = null;
