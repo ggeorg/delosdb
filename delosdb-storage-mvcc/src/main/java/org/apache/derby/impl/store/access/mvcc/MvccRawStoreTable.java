@@ -582,8 +582,7 @@ final class MvccRawStoreTable {
                         directory.head(),
                         context.transactionId(),
                         snapshotSequence,
-                        projection,
-                        context);
+                        projection);
                 if (version == null || version.tombstone()) {
                     return null;
                 }
@@ -760,8 +759,7 @@ final class MvccRawStoreTable {
                             directory.head(),
                             context.transactionId(),
                             snapshotSequence,
-                            projection,
-                            context);
+                            projection);
                     if (version != null && !version.tombstone()) {
                         rows.add(new VisibleRow(
                                 directory.rowId(),

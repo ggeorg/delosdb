@@ -235,8 +235,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         candidate.versionId(),
                         context.transactionId(),
                         snapshotSequence,
-                        metadataProjection(),
-                        context);
+                        metadataProjection());
                 if (head != null) {
                     metrics.coveredCandidate();
                     if (head.tombstone()) {
@@ -265,8 +264,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 directory.head(),
                 context.transactionId(),
                 snapshotSequence,
-                projection,
-                context);
+                projection);
         if (visible == null || visible.tombstone()) {
             return new Result(null, false);
         }

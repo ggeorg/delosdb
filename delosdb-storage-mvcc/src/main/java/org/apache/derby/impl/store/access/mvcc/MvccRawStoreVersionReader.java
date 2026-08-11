@@ -92,8 +92,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                 head,
                 context.transactionId(),
                 context.snapshotSequence(),
-                projection,
-                context);
+                projection);
     }
 
     static MvccRawStoreTable.VersionRecord findVisible(
@@ -103,8 +102,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             MvccRawStoreTable.DirectoryHead head,
             long transactionId,
             long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         try (MvccRawStoreVersionReader reader =
                      new MvccRawStoreVersionReader(transaction, table)) {
             return reader.findVisible(
@@ -112,8 +110,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                     head,
                     transactionId,
                     snapshotSequence,
-                    projection,
-                    context);
+                    projection);
         }
     }
 
@@ -136,8 +133,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             long expectedVersionId,
             long transactionId,
             long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         if (head.versionId() != expectedVersionId) {
             return null;
         }
@@ -152,7 +148,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         if (metrics != null) {
             metrics.visibilityChecked();
         }
-        return visible(version, transactionId, snapshotSequence, context) ? version : null;
+        return visible(version, transactionId, snapshotSequence) ? version : null;
     }
 
     MvccRawStoreTable.VersionRecord findVisible(
@@ -160,8 +156,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             MvccRawStoreTable.DirectoryHead head,
             long transactionId,
             long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         long versionId = head.versionId();
         long firstVersionId = versionId;
         MvccRawStoreTable.RecordHint hint = head.hint();
@@ -195,7 +190,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (metrics != null) {
                 metrics.visibilityChecked();
             }
-            if (visible(version, transactionId, snapshotSequence, context)) {
+            if (visible(version, transactionId, snapshotSequence)) {
                 return version;
             }
             versionId = version.previousVersionId();
@@ -361,15 +356,13 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         return new MvccRawStoreVersionRows.Decoder(transaction, table, projection);
     }
 
-    private static boolean visible(
+    // Snapshots are contiguous published commit-sequence frontiers. A foreign
+    // uncommitted version is rejected below, and a precommit-stamped version
+    // cannot enter a snapshot until its sequence is published.
+    static boolean visible(
             MvccRawStoreTable.VersionRecord version,
             long transactionId,
-            long snapshotSequence,
-            MvccRawStoreTransactionContext context) {
-        if (version.creatorTransactionId() != transactionId
-                && context.isTransactionActive(version.creatorTransactionId())) {
-            return false;
-        }
+            long snapshotSequence) {
         if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             return version.creatorTransactionId() == transactionId;
         }

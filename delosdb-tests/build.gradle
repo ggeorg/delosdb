@@ -71,6 +71,8 @@ def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
+def mvccVisibilityTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -222,7 +224,9 @@ def testRuntimeClasspath = {
 // of re-exporting implementation packages from delosdb-engine.
 def delosInternalTestSupportExports = [
         '--add-exports',
-        'org.apache.derby.engine/org.apache.derby.impl.services.locks=org.apache.derby.tests'
+        'org.apache.derby.engine/org.apache.derby.impl.services.locks=org.apache.derby.tests',
+        '--add-exports',
+        'org.apache.derby.engine/org.apache.derby.impl.store.access.mvcc=org.apache.derby.tests'
 ]
 
 def inheritedStoreImplementationExports = [
@@ -298,6 +302,7 @@ sourceSets {
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -320,6 +325,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     }
     from(deadlockVictimLifecycleTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
+    }
+    from(mvccVisibilityTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/mvcc'
     }
     into rawStoreInternalTestSupportGeneratedSourceDir
 }

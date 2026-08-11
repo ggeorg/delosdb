@@ -206,7 +206,7 @@ final class MvccRawStoreOrderedIndex {
                     }
                     MvccRawStoreTable.VersionRecord visible = MvccRawStoreVersionReader.findVisible(
                             transaction, table, candidateRowId, directory.head(), context.transactionId(),
-                            committedSequence, projection, context);
+                            committedSequence, projection);
                     MvccRawStoreTable.VisibleRow candidate = visible == null || visible.tombstone()
                             ? null
                             : new MvccRawStoreTable.VisibleRow(

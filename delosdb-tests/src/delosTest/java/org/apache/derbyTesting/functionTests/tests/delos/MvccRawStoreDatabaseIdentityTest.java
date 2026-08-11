@@ -22,12 +22,33 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.derby.impl.store.access.mvcc.MvccRawStoreVisibilityTestSupport;
+
 /** Durable database-wide MvccTransactionId and MvccCommitSequence proof. */
 public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+
+    public void testCommitSequenceVisibilityDoesNotRequireActiveTransactionProbe() {
+        long uncommitted = MvccRawStoreVisibilityTestSupport.uncommittedSequence();
+
+        assertTrue("own uncommitted version must be visible",
+                MvccRawStoreVisibilityTestSupport.visible(7L, uncommitted, Long.MAX_VALUE, 7L, 10L));
+        assertFalse("another transaction's uncommitted version must be invisible",
+                MvccRawStoreVisibilityTestSupport.visible(7L, uncommitted, Long.MAX_VALUE, 8L, 10L));
+
+        assertFalse("precommit-stamped unpublished version must be newer than the snapshot",
+                MvccRawStoreVisibilityTestSupport.visible(7L, 11L, Long.MAX_VALUE, 8L, 10L));
+        assertTrue("published version must become visible at its commit sequence",
+                MvccRawStoreVisibilityTestSupport.visible(7L, 11L, Long.MAX_VALUE, 8L, 11L));
+
+        assertTrue("predecessor must remain visible before replacement publication",
+                MvccRawStoreVisibilityTestSupport.visible(6L, 5L, 11L, 8L, 10L));
+        assertFalse("predecessor must become invisible at replacement publication",
+                MvccRawStoreVisibilityTestSupport.visible(6L, 5L, 11L, 8L, 11L));
+    }
 
     public void testRollbackAndRebootDoNotReuseDatabaseWideIdentities() throws Exception {
         String database = databaseName("mvcc-raw-store-database-identities");
