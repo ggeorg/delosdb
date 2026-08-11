@@ -209,15 +209,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         if (replacement != null) {
             return replacement.privateContainer();
         }
-        ContainerKey published = MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
+        return MvccRawStoreTableMetadata.discoverOrderedIndexContainer(
                 rawTransaction,
                 table,
                 false);
-        return published != null
-                        && MvccRawStoreOrderedIndexGeneration.hasBtreeGeneration(
-                                transactionManager, table, published)
-                ? published
-                : null;
     }
 
     ContainerKey orderedIndexForWrite(MvccRawStoreTable.Descriptor table)
