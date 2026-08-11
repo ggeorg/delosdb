@@ -202,33 +202,60 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible,
             MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
-        if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
+        if (directory.head().versionId() == candidate.versionId()) {
             MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
             if (summary.available()) {
                 metrics.directoryHeadSummaryChecked();
                 metrics.visibilityChecked();
                 if (summary.visibleTo(context.transactionId(), snapshotSequence)) {
+                    // If this head is visible now, any successor installed after
+                    // the directory latch was released is either uncommitted or
+                    // has a commit sequence newer than this snapshot. The
+                    // current head therefore remains visible for this read; only
+                    // the hinted version identity and requested payload need to
+                    // be fetched from the version container.
                     metrics.directoryHeadSummaryHit();
-                    metrics.coveredCandidate();
                     if (summary.tombstone()) {
-                        return new Result(null, true);
+                        return new Result(null, coveringEligible);
                     }
-                    StoreDataValue[] values = new StoreDataValue[table.columnCount()];
-                    values[candidate.columnId()] = StoreValueCopySupport.cloneValue(
-                            candidate.key(),
-                            true);
-                    return new Result(
-                            new MvccRawStoreTable.VisibleRow(
+                    if (coveringEligible) {
+                        metrics.coveredCandidate();
+                        StoreDataValue[] values = new StoreDataValue[table.columnCount()];
+                        values[candidate.columnId()] = StoreValueCopySupport.cloneValue(
+                                candidate.key(),
+                                true);
+                        return new Result(
+                                new MvccRawStoreTable.VisibleRow(
+                                        candidate.rowId(),
+                                        candidate.versionId(),
+                                        values,
+                                        null,
+                                        MvccRawStoreRowDirectory.location(
+                                                candidate.rowId(), directory.handle())),
+                                true);
+                    }
+                    MvccRawStoreVersionRows.HeadPayload payload =
+                            versionReader().findHeadPayload(
                                     candidate.rowId(),
+                                    directory.head(),
                                     candidate.versionId(),
-                                    values,
-                                    null,
-                                    MvccRawStoreRowDirectory.location(
-                                            candidate.rowId(), directory.handle())),
-                            true);
+                                    projection);
+                    if (payload != null) {
+                        metrics.fallbackCandidate();
+                        return new Result(
+                                new MvccRawStoreTable.VisibleRow(
+                                        candidate.rowId(),
+                                        candidate.versionId(),
+                                        payload.values(),
+                                        payload.handle(),
+                                        MvccRawStoreRowDirectory.location(
+                                                candidate.rowId(), directory.handle())),
+                                false);
+                    }
+                } else {
+                    metrics.directoryHeadSummaryFallback();
                 }
-                metrics.directoryHeadSummaryFallback();
-            } else {
+            } else if (coveringEligible) {
                 MvccRawStoreTable.VersionRecord head = versionReader().findVisibleHead(
                         candidate.rowId(),
                         directory.head(),
