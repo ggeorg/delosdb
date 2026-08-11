@@ -49,8 +49,6 @@ final class MvccRawStoreRuntime {
             "delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize";
     static final String CONCURRENT_COMMIT_PUBLICATION_PROPERTY =
             "delosdb.mvcc.rawStoreConcurrentCommitPublication";
-    static final String READ_COMMITTED_UPDATE_RECHECK_PROPERTY =
-            "delosdb.mvcc.rawStoreReadCommittedUpdateRecheck";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -78,7 +76,6 @@ final class MvccRawStoreRuntime {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final int commitSequenceReservationBlockSize;
     private final boolean concurrentCommitPublication;
-    private final boolean readCommittedUpdateRecheck;
     private final TreeSet<Long> terminalCommitSequences = new TreeSet<>();
     private long nextCommitSequence;
     private long commitSequenceReservationLimit;
@@ -116,8 +113,6 @@ final class MvccRawStoreRuntime {
         }
         concurrentCommitPublication = Boolean.parseBoolean(System.getProperty(
                 CONCURRENT_COMMIT_PUBLICATION_PROPERTY, "true"));
-        readCommittedUpdateRecheck = Boolean.parseBoolean(System.getProperty(
-                READ_COMMITTED_UPDATE_RECHECK_PROPERTY, "false"));
     }
 
     Object databaseIdentity() {
@@ -377,10 +372,6 @@ final class MvccRawStoreRuntime {
         return concurrentCommitPublication;
     }
 
-    boolean readCommittedUpdateRecheck() {
-        return readCommittedUpdateRecheck;
-    }
-
     void stageCommittedHighWater(Transaction rawTransaction, long sequence)
             throws StandardException {
         metadata.stageCommittedHighWater(rawTransaction, sequence);
@@ -396,20 +387,6 @@ final class MvccRawStoreRuntime {
         try {
             retireTransaction(transactionId);
             finishConcurrentCommitSequence(sequence);
-            while (publishedHighWater.get() < sequence) {
-                commitPublicationAdvanced.awaitUninterruptibly();
-            }
-        } finally {
-            commitPublicationLock.unlock();
-        }
-    }
-
-    void awaitPublication(long sequence) {
-        if (sequence <= publishedHighWater.get()) {
-            return;
-        }
-        commitPublicationLock.lock();
-        try {
             while (publishedHighWater.get() < sequence) {
                 commitPublicationAdvanced.awaitUninterruptibly();
             }

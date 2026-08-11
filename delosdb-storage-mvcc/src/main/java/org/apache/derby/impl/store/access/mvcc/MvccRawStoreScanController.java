@@ -76,9 +76,7 @@ final class MvccRawStoreScanController implements ScanManager {
                 transactionManager,
                 rawTransaction);
         boolean statementSnapshot = usesStatementSnapshot(isolationLevel);
-        this.readCommittedUpdateRecheck = forUpdate
-                && statementSnapshot
-                && runtime.readCommittedUpdateRecheck();
+        this.readCommittedUpdateRecheck = forUpdate && statementSnapshot;
         if (statementSnapshot) {
             // READ COMMITTED and weaker isolation levels require a fresh
             // committed horizon for every SQL scan. Keep the lease until the
@@ -346,15 +344,12 @@ final class MvccRawStoreScanController implements ScanManager {
                 transactionManager, rawTransaction);
         context.lockRowForReadCommittedUpdate(
                 table, (MvccRowLocation) candidate.directoryLocation());
-        try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
-             MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-            return MvccRawStoreTable.readVisibleAt(
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            return MvccRawStoreTable.readLockedCurrentForWrite(
                     rawTransaction,
                     table,
-                    candidate.directoryLocation(),
-                    lease.sequence(),
-                    versionProjection,
-                    context);
+                    (MvccRowLocation) candidate.directoryLocation(),
+                    versionProjection);
         }
     }
 
@@ -403,7 +398,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 location,
                 row,
                 validColumns,
-                runtime.context(transactionManager, rawTransaction));
+                runtime.context(transactionManager, rawTransaction),
+                readCommittedUpdateRecheck);
         if (replaced) {
             current = new MvccRawStoreTable.VisibleRow(
                     current.rowId(),

@@ -31,14 +31,10 @@ import java.util.concurrent.TimeUnit;
 public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
-    private static final String READ_COMMITTED_UPDATE_RECHECK_PROPERTY =
-            "delosdb.mvcc.rawStoreReadCommittedUpdateRecheck";
 
     public void testStableRowLocksHoldThroughCommitAndRollback() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-row-lock");
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope recheck = setSystemProperty(
-                     READ_COMMITTED_UPDATE_RECHECK_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,

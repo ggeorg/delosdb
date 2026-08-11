@@ -512,6 +512,37 @@ final class MvccRawStoreTable {
                 true);
     }
 
+    // Caller must hold the transaction-duration logical row X-lock. That lock
+    // proves any previous row writer has completed RawStore commit/rollback, so
+    // READ COMMITTED recheck may consume the physical head even when ordered
+    // database publication still trails it.
+    static VisibleRow readLockedCurrentForWrite(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
+                rawTransaction, table, rowLocation);
+        validateWriteVersion(rowLocation, directory.head().versionId());
+        VersionRecord version = MvccRawStoreVersionReader.find(
+                rawTransaction,
+                table,
+                rowLocation.rowId(),
+                directory.head().versionId(),
+                directory.head().hint(),
+                projection);
+        if (version == null || version.tombstone()) {
+            return null;
+        }
+        return new VisibleRow(
+                rowLocation.rowId(),
+                version.versionId(),
+                version.values(),
+                version.handle(),
+                MvccRawStoreRowDirectory.location(
+                        rowLocation.rowId(), directory.handle()));
+    }
+
     static VisibleRow readVisibleAt(
             Transaction rawTransaction,
             Descriptor table,
@@ -600,12 +631,25 @@ final class MvccRawStoreTable {
             StoreDataValue[] replacement,
             FormatableBitSet validColumns,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return replace(
+                rawTransaction, table, rowLocation, replacement, validColumns, context, false);
+    }
+
+    static boolean replace(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            StoreDataValue[] replacement,
+            FormatableBitSet validColumns,
+            MvccRawStoreTransactionContext context,
+            boolean useLockedCurrentHead) throws StandardException {
         // Reserve the database-wide transaction identity before acquiring table
         // container locks. INSERT follows the same database-metadata -> table
         // ordering, which prevents an UPDATE/DELETE lock-order inversion.
         long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
-        MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
+        MutationTarget target = mutationTarget(
+                rawTransaction, table, rowLocation, context, useLockedCurrentHead);
         if (target == null) {
             return false;
         }
@@ -1047,17 +1091,34 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             MvccRawStoreTransactionContext context) throws StandardException {
+        return mutationTarget(transaction, table, rowLocation, context, false);
+    }
+
+    private static MutationTarget mutationTarget(
+            Transaction transaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreTransactionContext context,
+            boolean useLockedCurrentHead) throws StandardException {
         long rowId = rowLocation.rowId();
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction, table, rowLocation);
         validateWriteVersion(rowLocation, directory.head().versionId());
-        VersionRecord visible = MvccRawStoreVersionReader.findVisible(
-                transaction,
-                table,
-                rowId,
-                directory.head(),
-                null,
-                context);
+        VersionRecord visible = useLockedCurrentHead
+                ? MvccRawStoreVersionReader.find(
+                        transaction,
+                        table,
+                        rowId,
+                        directory.head().versionId(),
+                        directory.head().hint(),
+                        null)
+                : MvccRawStoreVersionReader.findVisible(
+                        transaction,
+                        table,
+                        rowId,
+                        directory.head(),
+                        null,
+                        context);
         if (visible == null || visible.tombstone()) {
             return null;
         }

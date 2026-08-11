@@ -60,7 +60,7 @@ final class MvccRawStoreConglomerateController
 
     @Override
     public void enableReadCommittedUpdateRecheck() {
-        readCommittedUpdateRecheck = runtime.readCommittedUpdateRecheck();
+        readCommittedUpdateRecheck = true;
     }
 
     @Override
@@ -105,10 +105,9 @@ final class MvccRawStoreConglomerateController
                 MvccRawStoreVersionRows.projection(table, validColumns);
         MvccRawStoreTable.VisibleRow visible;
         if (readCommittedRecheck) {
-            try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
-                 MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-                visible = MvccRawStoreTable.readVisibleAt(
-                        rawTransaction, table, location, lease.sequence(), projection, context);
+            try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+                visible = MvccRawStoreTable.readLockedCurrentForWrite(
+                        rawTransaction, table, location, projection);
             }
         } else {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
@@ -219,7 +218,8 @@ final class MvccRawStoreConglomerateController
                 MvccRowLocation.from(loc),
                 row,
                 validColumns,
-                context);
+                context,
+                forUpdate && readCommittedUpdateRecheck);
     }
 
     @Override
