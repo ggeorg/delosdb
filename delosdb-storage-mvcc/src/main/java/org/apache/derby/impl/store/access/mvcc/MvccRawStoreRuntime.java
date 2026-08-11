@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -45,6 +46,8 @@ final class MvccRawStoreRuntime {
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     static final String COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY =
             "delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize";
+    static final String CONCURRENT_COMMIT_PUBLICATION_PROPERTY =
+            "delosdb.mvcc.rawStoreConcurrentCommitPublication";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -70,8 +73,11 @@ final class MvccRawStoreRuntime {
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final int commitSequenceReservationBlockSize;
+    private final boolean concurrentCommitPublication;
+    private final TreeSet<Long> terminalCommitSequences = new TreeSet<>();
     private long nextCommitSequence;
     private long commitSequenceReservationLimit;
+    private long nextPublicationSequence = 1L;
     private volatile String diagnosticIdentity = "<unbound>";
     private volatile MvccRawStoreMaintenanceService maintenanceService;
 
@@ -103,6 +109,8 @@ final class MvccRawStoreRuntime {
                     COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY
                             + " must be positive: " + blockSize);
         }
+        concurrentCommitPublication = Boolean.parseBoolean(System.getProperty(
+                CONCURRENT_COMMIT_PUBLICATION_PROPERTY, "false"));
     }
 
     Object databaseIdentity() {
@@ -161,7 +169,8 @@ final class MvccRawStoreRuntime {
     }
 
     void ensureMetadata(TransactionManager transactionManager) throws StandardException {
-        long committedHighWater = metadata.ensureInitialized(transactionManager);
+        long committedHighWater = metadata.ensureInitialized(
+                transactionManager, concurrentCommitPublication);
         if (committedHighWater >= 0L) {
             observeCommittedHighWater(committedHighWater);
         }
@@ -338,15 +347,27 @@ final class MvccRawStoreRuntime {
         try {
             if (nextCommitSequence == commitSequenceReservationLimit) {
                 nextCommitSequence = metadata.reserveCommitSequences(
-                        rawTransaction, commitSequenceReservationBlockSize);
+                        rawTransaction,
+                        commitSequenceReservationBlockSize,
+                        concurrentCommitPublication);
                 commitSequenceReservationLimit = Math.addExact(
                         nextCommitSequence, commitSequenceReservationBlockSize);
             }
-            return nextCommitSequence++;
+            long sequence = nextCommitSequence++;
+            if (concurrentCommitPublication) {
+                commitPublicationLock.unlock();
+            }
+            return sequence;
         } catch (StandardException | RuntimeException | Error failure) {
-            commitPublicationLock.unlock();
+            if (commitPublicationLock.isHeldByCurrentThread()) {
+                commitPublicationLock.unlock();
+            }
             throw failure;
         }
+    }
+
+    boolean concurrentCommitPublication() {
+        return concurrentCommitPublication;
     }
 
     void stageCommittedHighWater(Transaction rawTransaction, long sequence)
@@ -359,6 +380,38 @@ final class MvccRawStoreRuntime {
         commitPublicationLock.unlock();
     }
 
+    void publishConcurrentCommit(long transactionId, long sequence) {
+        commitPublicationLock.lock();
+        try {
+            retireTransaction(transactionId);
+            finishConcurrentCommitSequence(sequence);
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    void abandonConcurrentCommitSequence(long sequence) {
+        if (!concurrentCommitPublication || sequence <= 0L) {
+            return;
+        }
+        commitPublicationLock.lock();
+        try {
+            finishConcurrentCommitSequence(sequence);
+        } finally {
+            commitPublicationLock.unlock();
+        }
+    }
+
+    private void finishConcurrentCommitSequence(long sequence) {
+        if (sequence < nextPublicationSequence || !terminalCommitSequences.add(sequence)) {
+            return;
+        }
+        while (terminalCommitSequences.remove(nextPublicationSequence)) {
+            nextPublicationSequence++;
+        }
+        publishedHighWater.set(nextPublicationSequence - 1L);
+    }
+
     void unlockWithoutPublication() {
         if (commitPublicationLock.isHeldByCurrentThread()) {
             commitPublicationLock.unlock();
@@ -366,7 +419,20 @@ final class MvccRawStoreRuntime {
     }
 
     void observeCommittedHighWater(long sequence) {
-        publishedHighWater.accumulateAndGet(sequence, Math::max);
+        if (!concurrentCommitPublication) {
+            publishedHighWater.accumulateAndGet(sequence, Math::max);
+            return;
+        }
+        commitPublicationLock.lock();
+        try {
+            if (sequence > publishedHighWater.get()) {
+                publishedHighWater.set(sequence);
+                nextPublicationSequence = sequence + 1L;
+                terminalCommitSequences.headSet(nextPublicationSequence).clear();
+            }
+        } finally {
+            commitPublicationLock.unlock();
+        }
     }
 
 

@@ -50,7 +50,8 @@ final class MvccRawStoreDatabaseMetadata {
 
     private volatile ContainerKey containerKey;
 
-    long ensureInitialized(TransactionManager parent) throws StandardException {
+    long ensureInitialized(
+            TransactionManager parent, boolean useReservedRecoveryCeiling) throws StandardException {
         ContainerKey existing = containerKey;
         if (existing != null) {
             return -1L;
@@ -93,7 +94,8 @@ final class MvccRawStoreDatabaseMetadata {
 
                 long committedHighWater = validateAndReadHighWater(
                         childManager.getRawStoreXact(),
-                        key);
+                        key,
+                        useReservedRecoveryCeiling);
                 child.commit();
                 committed = true;
                 containerKey = key;
@@ -111,11 +113,18 @@ final class MvccRawStoreDatabaseMetadata {
         return reserve(parent, NEXT_TRANSACTION_ID_FIELD, "transaction ID");
     }
 
-    long reserveCommitSequences(Transaction parent, int count) throws StandardException {
+    long reserveCommitSequences(
+            Transaction parent, int count, boolean advanceRecoveryPublicationCeiling)
+            throws StandardException {
         if (count <= 0) {
             throw new IllegalArgumentException("commit sequence reservation count must be positive");
         }
-        return reserve(parent, NEXT_COMMIT_SEQUENCE_FIELD, count, "commit sequence");
+        return reserve(
+                parent,
+                NEXT_COMMIT_SEQUENCE_FIELD,
+                count,
+                "commit sequence",
+                advanceRecoveryPublicationCeiling);
     }
 
     void stageCommittedHighWater(Transaction parent, long commitSequence) throws StandardException {
@@ -158,11 +167,15 @@ final class MvccRawStoreDatabaseMetadata {
     }
 
     private long reserve(Transaction parent, int field, String label) throws StandardException {
-        return reserve(parent, field, 1, label);
+        return reserve(parent, field, 1, label, false);
     }
 
-    private long reserve(Transaction parent, int field, int count, String label)
-            throws StandardException {
+    private long reserve(
+            Transaction parent,
+            int field,
+            int count,
+            String label,
+            boolean advanceRecoveryPublicationCeiling) throws StandardException {
         if (!(parent instanceof RawTransaction rawParent)) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
@@ -196,6 +209,21 @@ final class MvccRawStoreDatabaseMetadata {
                         field,
                         MvccRawStoreFormat.longValue(nested, reserved + count),
                         null);
+                if (advanceRecoveryPublicationCeiling) {
+                    long ceiling = reserved + count - 1L;
+                    StoreDataValue highWater = MvccRawStoreFormat.longValue(nested, 0L);
+                    page.fetchFieldFromSlot(
+                            Page.FIRST_SLOT_NUMBER,
+                            COMMITTED_HIGH_WATER_FIELD,
+                            highWater);
+                    if (ceiling > StoreTypeUtil.getLong(highWater)) {
+                        page.updateFieldAtSlot(
+                                Page.FIRST_SLOT_NUMBER,
+                                COMMITTED_HIGH_WATER_FIELD,
+                                MvccRawStoreFormat.longValue(nested, ceiling),
+                                null);
+                    }
+                }
             } finally {
                 if (page != null) {
                     page.unlatch();
@@ -255,8 +283,10 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    private static long validateAndReadHighWater(Transaction transaction, ContainerKey key)
-            throws StandardException {
+    private static long validateAndReadHighWater(
+            Transaction transaction,
+            ContainerKey key,
+            boolean useReservedRecoveryCeiling) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 key,
                 lockingPolicy(transaction),
@@ -278,7 +308,20 @@ final class MvccRawStoreDatabaseMetadata {
                 throw new IllegalStateException(
                         "RawStore MVCC committed high-water is invalid: " + value);
             }
-            return value;
+            if (!useReservedRecoveryCeiling) {
+                return value;
+            }
+            StoreDataValue nextCommit = MvccRawStoreFormat.longValue(transaction, 0L);
+            page.fetchFieldFromSlot(
+                    Page.FIRST_SLOT_NUMBER,
+                    NEXT_COMMIT_SEQUENCE_FIELD,
+                    nextCommit);
+            long next = StoreTypeUtil.getLong(nextCommit);
+            if (next <= 0L) {
+                throw new IllegalStateException(
+                        "RawStore MVCC next commit sequence is invalid: " + next);
+            }
+            return Math.max(value, next - 1L);
         } finally {
             if (page != null) {
                 page.unlatch();

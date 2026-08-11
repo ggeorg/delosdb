@@ -363,7 +363,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
 
         reservedCommitSequence = runtime.reserveCommitSequence(rawTransaction);
-        publicationLockHeld = true;
+        publicationLockHeld = !runtime.concurrentCommitPublication();
         try {
             stageAllocatorHighWaters();
             MvccRawStoreTable.stampPendingVersions(
@@ -371,7 +371,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     committableVersions,
                     reservedCommitSequence);
             publishOrderedIndexReplacements(committableIndexes);
-            runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
+            if (publicationLockHeld) {
+                runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
+            }
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_STAMP_BEFORE_RAW_COMMIT,
                     91);
@@ -382,8 +384,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             }
         } catch (StandardException | RuntimeException | Error failure) {
             runtime.unlockWithoutPublication();
+            if (publicationLockHeld) {
+                reservedCommitSequence = 0L;
+            }
             publicationLockHeld = false;
-            reservedCommitSequence = 0L;
             throw failure;
         }
     }
@@ -401,7 +405,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     MvccRawStoreRuntime.AFTER_VACUUM_RAW_COMMIT_BEFORE_PUBLICATION,
                     94);
         }
-        if (publicationLockHeld) {
+        if (reservedCommitSequence > 0L) {
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
@@ -415,7 +419,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             // still active. Retire the identity before releasing publication.
             runtime.retireTransaction(transactionId);
             runtime.publishAndUnlock(reservedCommitSequence);
+        } else if (reservedCommitSequence > 0L && runtime.concurrentCommitPublication()) {
+            runtime.publishConcurrentCommit(transactionId, reservedCommitSequence);
         }
+        reservedCommitSequence = 0L;
         clearLocalState();
         committedCreates.forEach(runtime::registerTable);
         runtime.afterUserCommit(committedVersions);
@@ -426,7 +433,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     public void commitFailed(CommitMode mode, Throwable failure) {
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
-        reservedCommitSequence = 0L;
+        if (!runtime.concurrentCommitPublication()) {
+            reservedCommitSequence = 0L;
+        }
     }
 
     @Override
@@ -437,6 +446,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterAbort() {
+        abandonConcurrentCommitSequence();
         clearLocalState();
     }
 
@@ -540,6 +550,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterDestroy() {
+        abandonConcurrentCommitSequence();
         clearLocalState();
     }
 
@@ -671,6 +682,13 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private void ensureTransactionId() throws StandardException {
         if (transactionId == 0L) {
             transactionId = runtime.reserveTransactionId(rawTransaction);
+        }
+    }
+
+    private void abandonConcurrentCommitSequence() {
+        if (reservedCommitSequence > 0L && runtime.concurrentCommitPublication()) {
+            runtime.abandonConcurrentCommitSequence(reservedCommitSequence);
+            reservedCommitSequence = 0L;
         }
     }
 
