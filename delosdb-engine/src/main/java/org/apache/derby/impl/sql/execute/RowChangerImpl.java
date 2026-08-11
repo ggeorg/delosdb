@@ -42,6 +42,7 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.transaction.TransactionControl;
 import org.apache.derby.iapi.types.DataValueDescriptor;
@@ -395,6 +396,14 @@ class RowChangerImpl	implements	RowChanger
 			if (activation != null)
 				activation.checkStatementValidity();
 			throw se;
+		}
+
+		if ((isolationLevel == TransactionController.ISOLATION_READ_UNCOMMITTED
+				|| isolationLevel == TransactionController.ISOLATION_READ_COMMITTED
+				|| isolationLevel == TransactionController.ISOLATION_READ_COMMITTED_NOHOLDLOCK)
+				&& baseCC instanceof AccessMethodReadCommittedUpdateRecheck recheck)
+		{
+			recheck.enableReadCommittedUpdateRecheck();
 		}
 
 		/* Save the ConglomerateController off in the activation

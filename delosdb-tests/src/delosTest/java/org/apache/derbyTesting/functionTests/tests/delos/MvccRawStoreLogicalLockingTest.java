@@ -81,6 +81,26 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                     assertEquals("SUCCESS", readCommittedWriter.get(15, TimeUnit.SECONDS));
                     assertRows(observer, "select value from row_lock_t where id = 1", "12");
 
+                    executeUpdate(first, "update row_lock_t set value = 30 where id = 1");
+                    first.commit();
+                    executeUpdate(first, "update row_lock_t set value = 31 where id = 1");
+                    Future<String> noLongerQualifies = executor.submit(() -> {
+                        try {
+                            int count = executeUpdate(second,
+                                    "update row_lock_t set value = 99 "
+                                            + "where id = 1 and value = 30");
+                            second.commit();
+                            return "COUNT=" + count;
+                        } catch (SQLException failure) {
+                            return failure.getSQLState();
+                        }
+                    });
+                    assertStillWaiting(noLongerQualifies,
+                            "READ COMMITTED writer must wait before re-qualifying the row");
+                    first.commit();
+                    assertEquals("COUNT=0", noLongerQualifies.get(15, TimeUnit.SECONDS));
+                    assertRows(observer, "select value from row_lock_t where id = 1", "31");
+
                     first.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                     second.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                     assertRows(second, "select id from row_lock_anchor", "1");

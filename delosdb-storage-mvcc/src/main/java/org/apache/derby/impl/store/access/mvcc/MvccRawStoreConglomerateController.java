@@ -16,6 +16,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -27,12 +28,13 @@ import org.apache.derby.shared.common.error.StandardException;
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController
         implements ConglomerateController, AccessMethodIndexBuildLifecycle,
-                AccessMethodUniqueConstraintLifecycle {
+                AccessMethodReadCommittedUpdateRecheck, AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final boolean forUpdate;
+    private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
     MvccRawStoreConglomerateController(
@@ -54,6 +56,11 @@ final class MvccRawStoreConglomerateController
             closed = true;
             transactionManager.closeMe(this);
         }
+    }
+
+    @Override
+    public void enableReadCommittedUpdateRecheck() {
+        readCommittedUpdateRecheck = runtime.readCommittedUpdateRecheck();
     }
 
     @Override
@@ -87,23 +94,34 @@ final class MvccRawStoreConglomerateController
         if (checkWriteVersion) {
             context.beforeRowWrite(table, location.rowId());
         }
-        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-            MvccRawStoreVersionRows.FetchProjection projection =
-                    MvccRawStoreVersionRows.projection(table, validColumns);
-            MvccRawStoreTable.VisibleRow visible = checkWriteVersion
-                    ? MvccRawStoreTable.readVisibleForWrite(
-                            rawTransaction, table, location, projection, context)
-                    : MvccRawStoreTable.readVisible(
-                            rawTransaction, table, location, projection, context);
-            if (visible == null) {
-                return false;
+        MvccRawStoreVersionRows.FetchProjection projection =
+                MvccRawStoreVersionRows.projection(table, validColumns);
+        MvccRawStoreTable.VisibleRow visible;
+        if (checkWriteVersion && readCommittedUpdateRecheck) {
+            try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
+                 MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+                visible = MvccRawStoreTable.readVisibleAt(
+                        rawTransaction, table, location, lease.sequence(), projection, context);
             }
-            if (location.getWriteVersion() == 0L) {
-                location.setWriteVersion(visible.versionId());
+        } else {
+            try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+                visible = checkWriteVersion
+                        ? MvccRawStoreTable.readVisibleForWrite(
+                                rawTransaction, table, location, projection, context)
+                        : MvccRawStoreTable.readVisible(
+                                rawTransaction, table, location, projection, context);
             }
-            StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);
-            return true;
         }
+        if (visible == null) {
+            return false;
+        }
+        if (checkWriteVersion && readCommittedUpdateRecheck) {
+            location.setWriteVersion(visible.versionId());
+        } else if (location.getWriteVersion() == 0L) {
+            location.setWriteVersion(visible.versionId());
+        }
+        StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);
+        return true;
     }
 
     @Override
