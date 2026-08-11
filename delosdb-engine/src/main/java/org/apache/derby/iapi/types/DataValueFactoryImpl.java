@@ -1141,6 +1141,10 @@ public final class DataValueFactoryImpl implements DataValueFactory, ModuleContr
     }
 
     private static DataValueDescriptor newMvccRowLocation() {
+        return MvccRowLocationPrototypeHolder.PROTOTYPE.getNewNull();
+    }
+
+    private static RowLocation loadMvccRowLocationPrototype() {
         try {
             Class<?> rowLocationClass = Class.forName(
                     MVCC_ROW_LOCATION_CLASS,
@@ -1152,6 +1156,10 @@ public final class DataValueFactoryImpl implements DataValueFactory, ModuleContr
             throw new IllegalStateException(
                     "Unable to create MVCC row location value", error);
         }
+    }
+
+    private static final class MvccRowLocationPrototypeHolder {
+        private static final RowLocation PROTOTYPE = loadMvccRowLocationPrototype();
     }
 
         // RESOLVE: This is here to find the LocaleFinder (i.e. the Database)

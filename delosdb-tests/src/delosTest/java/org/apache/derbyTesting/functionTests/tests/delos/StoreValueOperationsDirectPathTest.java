@@ -8,12 +8,14 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import junit.framework.TestCase;
 
+import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreOrderable;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.store.types.StoreValueOperations;
 import org.apache.derby.iapi.types.DataValueDescriptor;
+import org.apache.derby.iapi.types.DataValueFactoryImpl;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
@@ -39,6 +41,20 @@ public final class StoreValueOperationsDirectPathTest extends TestCase {
         assertEquals(
                 "org.apache.derby.impl.store.access.heap.HeapRowLocation",
                 storeRowLocation.getClass().getName());
+    }
+
+    public void testMvccRowLocationPrototypeCreatesDirectNullValues() {
+        DataValueDescriptor first = DataValueFactoryImpl.getNullDVDWithUCS_BASICcollation(
+                StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID);
+        DataValueDescriptor second = DataValueFactoryImpl.getNullDVDWithUCS_BASICcollation(
+                StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID);
+
+        assertMvccRowLocation(first);
+        assertMvccRowLocation(second);
+        assertNotSame(first, second);
+        assertNotSame(
+                EngineStoreRowLocationBridge.requireStoreRowLocation(first),
+                EngineStoreRowLocationBridge.requireStoreRowLocation(second));
     }
 
     public void testStoreTypeUtilOperationsRemainSemanticallyEquivalent() throws Exception {
@@ -70,6 +86,17 @@ public final class StoreValueOperationsDirectPathTest extends TestCase {
         assertTrue(StoreTypeUtil.isNull(nullValue));
         StoreTypeUtil.restoreToNull(right);
         assertTrue(StoreTypeUtil.isNull(right));
+    }
+
+    private static void assertMvccRowLocation(DataValueDescriptor value) {
+        assertTrue(value instanceof RowLocation);
+        StoreRowLocation storeRowLocation =
+                EngineStoreRowLocationBridge.requireStoreRowLocation(value);
+        assertTrue(storeRowLocation instanceof StoreValueOperations);
+        assertEquals(
+                "org.apache.derby.impl.store.access.mvcc.MvccRowLocation",
+                storeRowLocation.getClass().getName());
+        assertEquals(StoredFormatIds.ACCESS_MVCC_ROW_LOCATION_V1_ID, value.getTypeFormatId());
     }
 
     private static void assertDirect(DataValueDescriptor value) {
