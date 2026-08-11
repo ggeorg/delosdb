@@ -1570,7 +1570,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || iterations < 1 || caseTimeoutSeconds < 1 || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }
-            if (runs < 4 || (runs & 3) != 0) {
+            if (target == null && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");
             }
             if (childHeap.isBlank()) {

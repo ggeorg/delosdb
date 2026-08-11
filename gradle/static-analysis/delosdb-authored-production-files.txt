@@ -81,7 +81,6 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosSto
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSpaceDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatisticsReport.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageTableDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageText.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageVisibilityDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java
