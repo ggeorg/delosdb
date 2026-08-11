@@ -169,15 +169,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "select id from projection_t "
                                 + "where category = 7 and quantity >= 20 order by id",
                         "2");
-                String currentHeadStatistics = assertNonCoveringIndexedRows(setup,
+                assertIndexedRows(setup,
                         "select id, quantity from projection_t where id = 2",
                         "2|20");
-                assertScanMetric(
-                        currentHeadStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
-                assertScanMetric(
-                        currentHeadStatistics, "mvccDirectoryHeadSummaryHits", 1L);
-                assertScanMetric(currentHeadStatistics, "mvccVersionSlotFetches", 1L);
-                assertScanMetric(currentHeadStatistics, "mvccVersionChainSteps", 0L);
                 assertIndexedRows(setup,
                         "select payload from projection_t where id = 2",
                         payloadTwo);
@@ -347,13 +341,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 assertScanMetric(
                         ownWriteStatistics, "mvccDirectoryHeadSummaryHits", 1L);
                 assertScanMetric(ownWriteStatistics, "mvccVersionPageAcquisitions", 0L);
-                String ownPayloadStatistics = assertNonCoveringIndexedRows(connection,
-                        "select id, category from head_summary_t where category = 7",
-                        "1|7");
-                assertScanMetric(
-                        ownPayloadStatistics, "mvccDirectoryHeadSummaryHits", 1L);
-                assertScanMetric(ownPayloadStatistics, "mvccVersionSlotFetches", 1L);
-                assertScanMetric(ownPayloadStatistics, "mvccVersionChainSteps", 0L);
                 connection.rollback();
                 assertNonCoveringIndexedRows(connection,
                         "select category from head_summary_t where category = 7");

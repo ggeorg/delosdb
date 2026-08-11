@@ -37,14 +37,12 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
     private final MvccRawStoreIndexedReadMetrics metrics;
-    private Object[] candidateIdentity;
-    private FetchDescriptor candidateIdentityDescriptor;
+    private final Object[] candidateIdentity;
+    private final FetchDescriptor candidateIdentityDescriptor;
     private MvccRawStoreVersionRows.FetchProjection primaryProjection;
     private MvccRawStoreVersionRows.Decoder primaryDecoder;
     private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
     private MvccRawStoreVersionRows.Decoder secondaryDecoder;
-    private MvccRawStoreVersionRows.FetchProjection headProjection;
-    private MvccRawStoreVersionRows.HeadDecoder headDecoder;
 
     MvccRawStoreVersionReader(
             Transaction transaction,
@@ -59,6 +57,21 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         this.transaction = transaction;
         this.table = table;
         this.metrics = metrics;
+        candidateIdentity = new Object[MvccRawStoreFormat.VERSION_ID + 1];
+        candidateIdentity[MvccRawStoreFormat.VERSION_KIND_FIELD] =
+                MvccRawStoreFormat.intValue(transaction, 0);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ROW_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        FormatableBitSet identityFields = new FormatableBitSet(candidateIdentity.length);
+        identityFields.set(MvccRawStoreFormat.VERSION_KIND_FIELD);
+        identityFields.set(MvccRawStoreFormat.VERSION_ROW_ID);
+        identityFields.set(MvccRawStoreFormat.VERSION_ID);
+        candidateIdentityDescriptor = new FetchDescriptor(
+                candidateIdentity.length,
+                identityFields,
+                null);
         this.container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -136,49 +149,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             metrics.visibilityChecked();
         }
         return visible(version, transactionId, snapshotSequence) ? version : null;
-    }
-
-    MvccRawStoreVersionRows.HeadPayload findHeadPayload(
-            long rowId,
-            MvccRawStoreTable.DirectoryHead head,
-            long expectedVersionId,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        if (container == null
-                || head.versionId() != expectedVersionId
-                || !head.hint().valid()) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(head.hint().pageNumber());
-            if (page != null && metrics != null) {
-                metrics.versionPageAcquired();
-            }
-            if (page == null) {
-                return null;
-            }
-            RecordHandle handle = page.getRecordHandle(head.hint().recordId());
-            if (handle == null) {
-                return null;
-            }
-            int slot = page.getSlotNumber(handle);
-            if (page.isDeletedAtSlot(slot)) {
-                return null;
-            }
-            MvccRawStoreVersionRows.HeadPayload payload = headDecoder(projection).decodeAtSlot(
-                    page,
-                    slot,
-                    rowId,
-                    expectedVersionId);
-            if (metrics != null) {
-                metrics.versionSlotFetched();
-            }
-            return payload;
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-        }
     }
 
     MvccRawStoreTable.VersionRecord findVisible(
@@ -279,7 +249,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
             }
-            ensureCandidateIdentity();
             page.fetchFromSlot(
                     null,
                     slot,
@@ -366,27 +335,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         }
     }
 
-    private void ensureCandidateIdentity() throws StandardException {
-        if (candidateIdentity != null) {
-            return;
-        }
-        candidateIdentity = new Object[MvccRawStoreFormat.VERSION_ID + 1];
-        candidateIdentity[MvccRawStoreFormat.VERSION_KIND_FIELD] =
-                MvccRawStoreFormat.intValue(transaction, 0);
-        candidateIdentity[MvccRawStoreFormat.VERSION_ROW_ID] =
-                MvccRawStoreFormat.longValue(transaction, 0L);
-        candidateIdentity[MvccRawStoreFormat.VERSION_ID] =
-                MvccRawStoreFormat.longValue(transaction, 0L);
-        FormatableBitSet identityFields = new FormatableBitSet(candidateIdentity.length);
-        identityFields.set(MvccRawStoreFormat.VERSION_KIND_FIELD);
-        identityFields.set(MvccRawStoreFormat.VERSION_ROW_ID);
-        identityFields.set(MvccRawStoreFormat.VERSION_ID);
-        candidateIdentityDescriptor = new FetchDescriptor(
-                candidateIdentity.length,
-                identityFields,
-                null);
-    }
-
     private MvccRawStoreVersionRows.Decoder decoder(
             MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         if (primaryDecoder == null) {
@@ -406,18 +354,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             return secondaryDecoder;
         }
         return new MvccRawStoreVersionRows.Decoder(transaction, table, projection);
-    }
-
-    private MvccRawStoreVersionRows.HeadDecoder headDecoder(
-            MvccRawStoreVersionRows.FetchProjection projection) {
-        if (headDecoder == null || headProjection != projection) {
-            headProjection = projection;
-            headDecoder = new MvccRawStoreVersionRows.HeadDecoder(
-                    transaction,
-                    table,
-                    projection);
-        }
-        return headDecoder;
     }
 
     // Snapshots are contiguous published commit-sequence frontiers. A foreign

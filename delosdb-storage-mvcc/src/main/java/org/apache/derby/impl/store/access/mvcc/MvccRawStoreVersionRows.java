@@ -148,88 +148,6 @@ final class MvccRawStoreVersionRows {
         }
     }
 
-    record HeadPayload(StoreDataValue[] values, RecordHandle handle) {
-    }
-
-    static final class HeadDecoder {
-        private final Transaction transaction;
-        private final MvccRawStoreTable.Descriptor table;
-        private final FetchProjection projection;
-        private Object[] baseRow;
-        private Object[] hintRow;
-        private FetchDescriptor baseDescriptor;
-        private FetchDescriptor hintDescriptor;
-
-        HeadDecoder(
-                Transaction transaction,
-                MvccRawStoreTable.Descriptor table,
-                FetchProjection projection) {
-            this.transaction = transaction;
-            this.table = table;
-            this.projection = projection;
-        }
-
-        HeadPayload decodeAtSlot(
-                Page page,
-                int slot,
-                long expectedRowId,
-                long expectedVersionId) throws StandardException {
-            int fieldCount = page.fetchNumFieldsAtSlot(slot);
-            int baseFieldCount = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
-            int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
-            if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
-                return null;
-            }
-            boolean includeHint = fieldCount == hintFieldCount;
-            Object[] row = row(includeHint);
-            RecordHandle handle = page.fetchFromSlot(
-                    null,
-                    slot,
-                    row,
-                    descriptor(includeHint, fieldCount),
-                    false);
-            if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.VERSION_KIND_FIELD)
-                            != MvccRawStoreFormat.VERSION_KIND
-                    || MvccRawStoreFormat.intAt(
-                                    row,
-                                    MvccRawStoreFormat.VERSION_FORMAT_VERSION)
-                            != MvccRawStoreFormat.FORMAT_VERSION
-                    || MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_ROW_ID)
-                            != expectedRowId
-                    || MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_ID)
-                            != expectedVersionId) {
-                return null;
-            }
-            return new HeadPayload(payloadValues(row, table, projection), handle);
-        }
-
-        private Object[] row(boolean includeHint) throws StandardException {
-            if (includeHint) {
-                if (hintRow == null) {
-                    hintRow = headTemplate(transaction, table, true, projection);
-                }
-                return hintRow;
-            }
-            if (baseRow == null) {
-                baseRow = headTemplate(transaction, table, false, projection);
-            }
-            return baseRow;
-        }
-
-        private FetchDescriptor descriptor(boolean includeHint, int fieldCount) {
-            if (includeHint) {
-                if (hintDescriptor == null) {
-                    hintDescriptor = headDescriptor(table, projection, fieldCount);
-                }
-                return hintDescriptor;
-            }
-            if (baseDescriptor == null) {
-                baseDescriptor = headDescriptor(table, projection, fieldCount);
-            }
-            return baseDescriptor;
-        }
-    }
-
     private MvccRawStoreVersionRows() {
     }
 
@@ -297,7 +215,18 @@ final class MvccRawStoreVersionRows {
             MvccRawStoreTable.Descriptor table,
             RecordHandle handle,
             FetchProjection projection) throws StandardException {
-        StoreDataValue[] values = payloadValues(row, table, projection);
+        StoreDataValue[] values = projection != null && !projection.includesPayload()
+                ? null
+                : new StoreDataValue[table.columnCount()];
+        if (values != null) {
+            for (int index = 0; index < values.length; index++) {
+                if (projection == null || projection.includes(index)) {
+                    values[index] = StoreValueCopySupport.cloneValue(
+                            (StoreDataValue) row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index],
+                            true);
+                }
+            }
+        }
         boolean hasHint = row.length == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
         MvccRawStoreTable.RecordHint previousHint = hasHint
                 ? new MvccRawStoreTable.RecordHint(
@@ -319,67 +248,6 @@ final class MvccRawStoreVersionRows {
                 MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.VERSION_FLAGS),
                 values,
                 handle);
-    }
-
-    private static StoreDataValue[] payloadValues(
-            Object[] row,
-            MvccRawStoreTable.Descriptor table,
-            FetchProjection projection) throws StandardException {
-        StoreDataValue[] values = projection != null && !projection.includesPayload()
-                ? null
-                : new StoreDataValue[table.columnCount()];
-        if (values != null) {
-            for (int index = 0; index < values.length; index++) {
-                if (projection == null || projection.includes(index)) {
-                    values[index] = StoreValueCopySupport.cloneValue(
-                            (StoreDataValue) row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index],
-                            true);
-                }
-            }
-        }
-        return values;
-    }
-
-    private static Object[] headTemplate(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            boolean includeHint,
-            FetchProjection projection) throws StandardException {
-        Object[] row = new Object[includeHint
-                ? MvccRawStoreFormat.versionHintFieldCount(table.columnCount())
-                : MvccRawStoreFormat.versionBaseFieldCount(table.columnCount())];
-        row[MvccRawStoreFormat.VERSION_KIND_FIELD] = MvccRawStoreFormat.intValue(transaction, 0);
-        row[MvccRawStoreFormat.VERSION_FORMAT_VERSION] = MvccRawStoreFormat.intValue(transaction, 0);
-        row[MvccRawStoreFormat.VERSION_ROW_ID] = MvccRawStoreFormat.longValue(transaction, 0L);
-        row[MvccRawStoreFormat.VERSION_ID] = MvccRawStoreFormat.longValue(transaction, 0L);
-        for (int index = 0; index < table.columnCount(); index++) {
-            if (projection == null || projection.includes(index)) {
-                row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index] =
-                        MvccRawStoreFormat.nullValue(
-                                transaction,
-                                table.formatId(index),
-                                table.collationId(index));
-            }
-        }
-        return row;
-    }
-
-    private static FetchDescriptor headDescriptor(
-            MvccRawStoreTable.Descriptor table,
-            FetchProjection projection,
-            int fieldCount) {
-        FormatableBitSet fields = new FormatableBitSet(fieldCount);
-        for (int field = MvccRawStoreFormat.VERSION_KIND_FIELD;
-                field <= MvccRawStoreFormat.VERSION_ID;
-                field++) {
-            fields.set(field);
-        }
-        for (int column = 0; column < table.columnCount(); column++) {
-            if (projection == null || projection.includes(column)) {
-                fields.set(MvccRawStoreFormat.VERSION_PAYLOAD_START + column);
-            }
-        }
-        return new FetchDescriptor(fieldCount, fields, null);
     }
 
     private static Object[] template(
