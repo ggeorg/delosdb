@@ -90,14 +90,21 @@ final class MvccRawStoreConglomerateController
         ensureOpen();
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
         MvccRowLocation location = MvccRowLocation.from(loc);
+        boolean readCommittedRecheck = forUpdate && readCommittedUpdateRecheck;
         boolean checkWriteVersion = forUpdate && location.getWriteVersion() != 0L;
-        if (checkWriteVersion) {
+        if (readCommittedRecheck) {
+            // Index-to-base-row update plans arrive here with a RowLocation from
+            // the secondary index and no MVCC write-version attached yet. Wait
+            // on the stable logical row before returning the base row so both
+            // restriction and SET-expression evaluation use the post-wait value.
+            context.lockRowForUpdate(table, location.rowId());
+        } else if (checkWriteVersion) {
             context.beforeRowWrite(table, location.rowId());
         }
         MvccRawStoreVersionRows.FetchProjection projection =
                 MvccRawStoreVersionRows.projection(table, validColumns);
         MvccRawStoreTable.VisibleRow visible;
-        if (checkWriteVersion && readCommittedUpdateRecheck) {
+        if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
                  MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
                 visible = MvccRawStoreTable.readVisibleAt(
@@ -115,9 +122,7 @@ final class MvccRawStoreConglomerateController
         if (visible == null) {
             return false;
         }
-        if (checkWriteVersion && readCommittedUpdateRecheck) {
-            location.setWriteVersion(visible.versionId());
-        } else if (location.getWriteVersion() == 0L) {
+        if (readCommittedRecheck || location.getWriteVersion() == 0L) {
             location.setWriteVersion(visible.versionId());
         }
         StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);

@@ -75,11 +75,9 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosSto
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredicatePushdownRequest.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageProviderIds.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageRow.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageScan.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessItem.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessLevel.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSharedServiceReadinessReport.java
-delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSpaceDiagnostics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatistics.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosStorageStatisticsReport.java
@@ -129,7 +127,6 @@ delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/cost/pack
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/BuiltInBTreeIndexProvider.java
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/BuiltInIndexProviders.java
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/DerbyBTreeIndexAccess.java
-delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/IndexMetadataBridge.java
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/IndexProviderRegistry.java
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/IndexProviderResolver.java
 delosdb-engine/src/main/java/io/github/ggeorg/delosdb/engine/extension/index/package-info.java

@@ -792,14 +792,6 @@ public final class DelosRepositoryIntegrityAudit {
         return value == null ? 1 : value + 1;
     }
 
-    private static boolean hasAnnotation(
-            List<? extends AnnotationTree> annotations, String simpleName) {
-        return annotations.stream().map(annotation ->
-                        annotation.getAnnotationType().toString())
-                .anyMatch(name -> name.equals(simpleName)
-                        || name.endsWith("." + simpleName));
-    }
-
     private static String normalize(String value) {
         return value.replaceAll("\\s+", " ").trim();
     }
