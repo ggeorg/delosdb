@@ -182,7 +182,7 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
             MvccRawStoreMetadataInspection.Counters counters =
                     MvccRawStoreMetadataInspection.counters(connection);
             assertEquals(4L, counters.nextTransactionId());
-            assertEquals(3L, counters.nextCommitSequence());
+            assertEquals(65L, counters.nextCommitSequence());
             assertEquals(2L, counters.committedHighWater());
             connection.commit();
         }

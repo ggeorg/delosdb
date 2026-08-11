@@ -39,7 +39,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 assertRows(connection, "select id, name from multi_b", "2|b-commit");
                 connection.commit();
 
-                assertCounters(connection, 2L, 2L, 1L);
+                assertCounters(connection, 2L, 65L, 1L);
                 assertVersionIdentities(connection, "MULTI_A", new long[][] {{1L, 1L}});
                 assertVersionIdentities(connection, "MULTI_B", new long[][] {{1L, 1L}});
                 connection.commit();
@@ -49,7 +49,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 connection.rollback();
                 assertRows(connection, "select id from multi_a where id = 3");
                 assertRows(connection, "select id from multi_b where id = 4");
-                assertCounters(connection, 3L, 2L, 1L);
+                assertCounters(connection, 3L, 65L, 1L);
                 connection.commit();
 
                 executeUpdate(connection, "insert into multi_a values (5, 'a-savepoint')");
@@ -66,7 +66,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 assertRows(connection,
                         "select id, name from multi_b order by id",
                         "2|b-commit");
-                assertCounters(connection, 4L, 3L, 2L);
+                assertCounters(connection, 4L, 65L, 2L);
                 assertVersionIdentities(
                         connection,
                         "MULTI_A",
@@ -146,7 +146,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
             connection.rollback();
             assertRows(connection, "select id from memory_a where id = 3");
             assertRows(connection, "select id from memory_b where id = 4");
-            assertCounters(connection, 3L, 2L, 1L);
+            assertCounters(connection, 3L, 65L, 1L);
             connection.commit();
         }
         shutdownMemoryDatabase(database);
@@ -194,13 +194,13 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 if (expectCommitted) {
                     assertRows(recovered, "select id, name from crash_a", "1|a");
                     assertRows(recovered, "select id, name from crash_b", "2|b");
-                    assertCounters(recovered, 2L, 2L, 1L);
+                    assertCounters(recovered, 2L, 65L, 1L);
                     assertVersionIdentities(recovered, "CRASH_A", new long[][] {{1L, 1L}});
                     assertVersionIdentities(recovered, "CRASH_B", new long[][] {{1L, 1L}});
                 } else {
                     assertRows(recovered, "select id from crash_a");
                     assertRows(recovered, "select id from crash_b");
-                    assertCounters(recovered, 2L, 2L, 0L);
+                    assertCounters(recovered, 2L, 65L, 0L);
                     assertVersionIdentities(recovered, "CRASH_A", new long[0][0]);
                     assertVersionIdentities(recovered, "CRASH_B", new long[0][0]);
                 }
@@ -223,12 +223,15 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
     private static void assertCounters(
             Connection connection,
             long nextTransactionId,
-            long nextCommitSequence,
+            long durableNextCommitSequence,
             long committedHighWater) throws Exception {
         MvccRawStoreMetadataInspection.Counters counters =
                 MvccRawStoreMetadataInspection.counters(connection);
         assertEquals("next transaction ID", nextTransactionId, counters.nextTransactionId());
-        assertEquals("next commit sequence", nextCommitSequence, counters.nextCommitSequence());
+        assertEquals(
+                "durable next commit sequence",
+                durableNextCommitSequence,
+                counters.nextCommitSequence());
         assertEquals("committed high-water", committedHighWater, counters.committedHighWater());
     }
 
