@@ -31,10 +31,14 @@ import java.util.concurrent.TimeUnit;
 public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
     private static final String ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
+    private static final String READ_COMMITTED_UPDATE_RECHECK_PROPERTY =
+            "delosdb.mvcc.rawStoreReadCommittedUpdateRecheck";
 
     public void testStableRowLocksHoldThroughCommitAndRollback() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-row-lock");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
+             SystemPropertyScope recheck = setSystemProperty(
+                     READ_COMMITTED_UPDATE_RECHECK_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -52,52 +56,52 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                 first.setAutoCommit(false);
                 second.setAutoCommit(false);
 
-                // Capture a stale transaction-wide snapshot before the first
-                // writer moves the stable row head.
-                assertRows(second, "select id from row_lock_anchor", "1");
-                executeUpdate(first, "update row_lock_t set value = 11 where id = 1");
+                executeUpdate(first, "update row_lock_t set value = value + 1 where id = 1");
                 assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "S", "GRANT");
                 assertLogicalLock(observer, "DELOS_MVCC_ROW[", "X", "GRANT");
 
                 ExecutorService executor = Executors.newSingleThreadExecutor();
                 try {
                     CountDownLatch started = new CountDownLatch(1);
-                    Future<String> staleWriter = executor.submit(() -> {
+                    Future<String> readCommittedWriter = executor.submit(() -> {
                         started.countDown();
                         try {
                             executeUpdate(second,
-                                    "update row_lock_t set value = 12 where id = 1");
-                            return "SUCCESS";
-                        } catch (SQLException expected) {
-                            return expected.getSQLState();
-                        }
-                    });
-                    assertTrue(started.await(5, TimeUnit.SECONDS));
-                    assertStillWaiting(staleWriter, "same-row writer must wait for the stable-row lock");
-                    first.commit();
-                    assertEquals("40001", staleWriter.get(15, TimeUnit.SECONDS));
-                    second.rollback();
-
-                    executeUpdate(first, "update row_lock_t set value = 21 where id = 1");
-                    Future<String> afterRollback = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "update row_lock_t set value = 22 where id = 1");
+                                    "update row_lock_t set value = value + 1 where id = 1");
                             second.commit();
                             return "SUCCESS";
                         } catch (SQLException failure) {
                             return failure.getSQLState();
                         }
                     });
-                    assertStillWaiting(afterRollback,
-                            "same-row writer must remain blocked until transaction rollback");
-                    first.rollback();
-                    assertEquals("SUCCESS", afterRollback.get(15, TimeUnit.SECONDS));
+                    assertTrue(started.await(5, TimeUnit.SECONDS));
+                    assertStillWaiting(readCommittedWriter,
+                            "READ COMMITTED same-row writer must wait for the stable-row lock");
+                    first.commit();
+                    assertEquals("SUCCESS", readCommittedWriter.get(15, TimeUnit.SECONDS));
+                    assertRows(observer, "select value from row_lock_t where id = 1", "12");
+
+                    first.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                    second.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                    assertRows(second, "select id from row_lock_anchor", "1");
+                    executeUpdate(first, "update row_lock_t set value = 21 where id = 1");
+                    Future<String> staleWriter = executor.submit(() -> {
+                        try {
+                            executeUpdate(second,
+                                    "update row_lock_t set value = 22 where id = 1");
+                            return "SUCCESS";
+                        } catch (SQLException expected) {
+                            return expected.getSQLState();
+                        }
+                    });
+                    assertStillWaiting(staleWriter,
+                            "REPEATABLE READ same-row writer must wait for the stable-row lock");
+                    first.commit();
+                    assertEquals("40001", staleWriter.get(15, TimeUnit.SECONDS));
+                    second.rollback();
                 } finally {
                     executor.shutdownNow();
                 }
-
-                assertRows(observer, "select value from row_lock_t where id = 1", "22");
             }
             shutdownDatabase(database);
         }

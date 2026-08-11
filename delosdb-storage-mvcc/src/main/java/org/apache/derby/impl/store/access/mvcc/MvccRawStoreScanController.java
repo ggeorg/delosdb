@@ -38,6 +38,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final MvccRawStoreVersionRows.FetchProjection versionProjection;
     private final long snapshotSequence;
     private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease;
+    private final boolean readCommittedUpdateRecheck;
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;
     private int nextIndex;
@@ -74,7 +75,11 @@ final class MvccRawStoreScanController implements ScanManager {
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
                 rawTransaction);
-        if (usesStatementSnapshot(isolationLevel)) {
+        boolean statementSnapshot = usesStatementSnapshot(isolationLevel);
+        this.readCommittedUpdateRecheck = forUpdate
+                && statementSnapshot
+                && runtime.readCommittedUpdateRecheck();
+        if (statementSnapshot) {
             // READ COMMITTED and weaker isolation levels require a fresh
             // committed horizon for every SQL scan. Keep the lease until the
             // materialized scan closes so vacuum cannot cross that statement.
@@ -317,6 +322,12 @@ final class MvccRawStoreScanController implements ScanManager {
             MvccRawStoreTable.VisibleRow candidate = rows.get(nextIndex++);
             rowsVisited++;
             if (qualifies(candidate.values())) {
+                if (readCommittedUpdateRecheck) {
+                    candidate = lockAndRefresh(candidate);
+                    if (candidate == null || !qualifies(candidate.values())) {
+                        continue;
+                    }
+                }
                 rowsQualified++;
                 current = candidate;
                 currentDeleted = false;
@@ -326,6 +337,24 @@ final class MvccRawStoreScanController implements ScanManager {
         current = null;
         currentDeleted = false;
         return false;
+    }
+
+
+    private MvccRawStoreTable.VisibleRow lockAndRefresh(
+            MvccRawStoreTable.VisibleRow candidate) throws StandardException {
+        MvccRawStoreTransactionContext context = runtime.context(
+                transactionManager, rawTransaction);
+        context.lockRowForUpdate(table, candidate.rowId());
+        try (MvccRawStoreRuntime.SnapshotLease lease = runtime.openSnapshotLease();
+             MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            return MvccRawStoreTable.readVisibleAt(
+                    rawTransaction,
+                    table,
+                    candidate.directoryLocation(),
+                    lease.sequence(),
+                    versionProjection,
+                    context);
+        }
     }
 
     @Override

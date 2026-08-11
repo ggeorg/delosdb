@@ -915,6 +915,67 @@ tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
 }
 
 
+
+tasks.register('runDelosMvccReadCommittedContentionCanary', JavaExec) {
+    group = 'benchmark'
+    description = 'Measures the 8-client READ COMMITTED same-row MVCC update recheck canary.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/mvcc-read-committed-contention-canary')
+    outputs.dir(reportDir)
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'MVCC READ COMMITTED contention canary requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def output = reportDir.get().asFile
+        project.delete(output)
+        output.mkdirs()
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-mvcc-read-committed-contention-canary').get().asFile
+        project.delete(databaseRoot)
+        systemProperties([
+                'delosdb.mvcc.rawStoreReadCommittedUpdateRecheck': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2',
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': output.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1,10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'CONTENDED_INDEXED_UPDATE',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.mvccReadCommittedContentionCanary.transactionsPerClient').getOrElse('5000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
 tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
     group = 'benchmark'
     description = 'Compares DelosDB DRDA heap/MVCC with PostgreSQL and MariaDB through TCP/JDBC containers.'
