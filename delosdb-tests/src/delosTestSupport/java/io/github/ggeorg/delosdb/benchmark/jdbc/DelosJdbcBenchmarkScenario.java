@@ -350,11 +350,13 @@ public final class DelosJdbcBenchmarkScenario {
     }
 
     private static void dropIfPresent(Statement statement, String table) throws SQLException {
-        try {
-            statement.executeUpdate("drop table " + table);
-        } catch (SQLException e) {
-            if (!"42Y55".equals(e.getSQLState())) {
-                throw e;
+        try (ResultSet tables = statement.getConnection().getMetaData()
+                .getTables(null, null, null, new String[] {"TABLE"})) {
+            while (tables.next()) {
+                if (table.equalsIgnoreCase(tables.getString("TABLE_NAME"))) {
+                    statement.executeUpdate("drop table " + table);
+                    return;
+                }
             }
         }
     }

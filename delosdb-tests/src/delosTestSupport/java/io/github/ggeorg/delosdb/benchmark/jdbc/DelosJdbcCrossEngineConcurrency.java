@@ -6,7 +6,9 @@
  */
 package io.github.ggeorg.delosdb.benchmark.jdbc;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,11 +18,13 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,7 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-/** Four-engine JDBC concurrency comparison with deterministic semantic verification. */
+/** JDBC concurrency comparison with deterministic semantic verification. */
 public final class DelosJdbcCrossEngineConcurrency {
     private static final String PREFIX = "delosdb.benchmark.crossEngineConcurrency.";
     private static final long SEED = 0x5DE10DBL;
@@ -67,13 +71,29 @@ public final class DelosJdbcCrossEngineConcurrency {
         Files.createDirectories(options.reportDirectory().resolve("logs"));
         Files.createDirectories(options.databaseRoot());
 
+        if (options.containerMode()) {
+            prepareContainerEnvironment(options);
+        }
+
         for (int run = 1; run <= options.runs(); run++) {
-            List<Target> targets = new ArrayList<>(List.of(Target.values()));
+            List<Target> targets = new ArrayList<>(options.targetValues());
             if (((run - 1) & 2) != 0) {
                 Collections.reverse(targets);
             }
             for (Target target : targets) {
-                launchWorker(options, target, run);
+                if (target.isContainer()) {
+                    try (ContainerServer server = startContainer(options, target, run)) {
+                        try {
+                            launchWorker(options, target, run, server.endpoint());
+                        } catch (Throwable failure) {
+                            failure.addSuppressed(new IllegalStateException(
+                                    "Container log for " + target.id() + ":\n" + server.logs()));
+                            throw failure;
+                        }
+                    }
+                } else {
+                    launchWorker(options, target, run, null);
+                }
             }
         }
 
@@ -84,9 +104,13 @@ public final class DelosJdbcCrossEngineConcurrency {
         writeScalingCsv(options, rows);
         writeDispersionCsv(options, rows);
         writeSummary(options, rows);
+        if (options.containerMode()) {
+            writeContainerSemanticEvidence(options, rows);
+        }
     }
 
-    private static void launchWorker(Options options, Target target, int run) throws Exception {
+    private static void launchWorker(
+            Options options, Target target, int run, ServerEndpoint endpoint) throws Exception {
         List<String> command = new ArrayList<>();
         command.add(options.javaExecutable().toString());
         command.add("-Xms" + options.childHeap());
@@ -107,6 +131,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "warmups", options.warmups());
         addProperty(command, "iterations", options.iterations());
         addProperty(command, "caseTimeoutSeconds", options.caseTimeoutSeconds());
+        if (endpoint != null) {
+            addProperty(command, "remoteJdbcUrl", endpoint.jdbcUrl());
+            addProperty(command, "remoteUser", endpoint.user());
+            addProperty(command, "remotePassword", endpoint.password());
+        }
         command.add(DelosJdbcCrossEngineConcurrency.class.getName());
         command.add("worker");
 
@@ -131,6 +160,257 @@ public final class DelosJdbcCrossEngineConcurrency {
         command.add("-D" + PREFIX + name + '=' + value);
     }
 
+    private static void prepareContainerEnvironment(Options options) throws Exception {
+        CommandResult docker = runCommand(options.containerStartupTimeoutSeconds(),
+                List.of("docker", "version", "--format", "{{.Server.Version}}"));
+        if (docker.exitCode() != 0) {
+            throw new IllegalStateException("Docker is required for server-container benchmarks:\n"
+                    + docker.output());
+        }
+        Map<String, String> images = new LinkedHashMap<>();
+        for (Target target : options.targetValues()) {
+            if (target.isContainer()) {
+                String image = target.containerImage(options);
+                if (!images.containsKey(image)) {
+                    images.put(image, ensureImage(options, image));
+                }
+            }
+        }
+        writeContainerManifest(options, docker.output().trim(), images);
+    }
+
+    private static String ensureImage(Options options, String image) throws Exception {
+        CommandResult inspect = runCommand(20,
+                List.of("docker", "image", "inspect", "--format", "{{.Id}} {{join .RepoDigests \",\"}}", image));
+        if (inspect.exitCode() != 0) {
+            CommandResult pull = runCommand(Math.max(120, options.containerStartupTimeoutSeconds()),
+                    List.of("docker", "pull", image));
+            if (pull.exitCode() != 0) {
+                throw new IllegalStateException("Could not pull benchmark image " + image + ":\n" + pull.output());
+            }
+            inspect = runCommand(20,
+                    List.of("docker", "image", "inspect", "--format", "{{.Id}} {{join .RepoDigests \",\"}}", image));
+        }
+        if (inspect.exitCode() != 0) {
+            throw new IllegalStateException("Could not inspect benchmark image " + image + ":\n"
+                    + inspect.output());
+        }
+        return inspect.output().trim();
+    }
+
+    private static ContainerServer startContainer(Options options, Target target, int run) throws Exception {
+        int port = freePort();
+        String name = "delos-bench-" + target.id().replace('_', '-') + '-'
+                + ProcessHandle.current().pid() + '-' + run;
+        runCommand(20, List.of("docker", "rm", "-f", name));
+        List<String> command = new ArrayList<>(List.of(
+                "docker", "run", "-d", "--rm", "--name", name,
+                "-p", "127.0.0.1:" + port + ':' + target.containerPort()));
+        switch (target) {
+            case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> {
+                command.add("--mount");
+                command.add("type=bind,src=" + options.delosRuntimeDirectory().toAbsolutePath().normalize()
+                        + ",dst=/opt/delos/lib,readonly");
+                command.add("--workdir");
+                command.add("/var/lib/delosdb");
+                command.add(target.containerImage(options));
+                command.addAll(List.of(
+                        "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
+                        "-XX:+AlwaysPreTouch", "-cp", "/opt/delos/lib/*",
+                        "org.apache.derby.drda.NetworkServerControl", "start",
+                        "-h", "0.0.0.0", "-p", Integer.toString(target.containerPort())));
+            }
+            case POSTGRESQL -> {
+                command.addAll(List.of(
+                        "-e", "POSTGRES_USER=delosbench",
+                        "-e", "POSTGRES_PASSWORD=delosbench",
+                        "-e", "POSTGRES_DB=delosbench",
+                        target.containerImage(options)));
+            }
+            case MARIADB -> {
+                command.addAll(List.of(
+                        "-e", "MARIADB_ROOT_PASSWORD=delosbench-root",
+                        "-e", "MARIADB_USER=delosbench",
+                        "-e", "MARIADB_PASSWORD=delosbench",
+                        "-e", "MARIADB_DATABASE=delosbench",
+                        target.containerImage(options)));
+            }
+            default -> throw new IllegalArgumentException("Not a container target: " + target);
+        }
+
+        CommandResult started = runCommand(Math.max(30, options.containerStartupTimeoutSeconds()), command);
+        if (started.exitCode() != 0) {
+            throw new IllegalStateException("Could not start " + target.id() + " container:\n" + started.output());
+        }
+        ServerEndpoint endpoint = target.endpoint(port);
+        ContainerServer server = new ContainerServer(name, endpoint);
+        try {
+            awaitReady(options, target, endpoint);
+            return server;
+        } catch (Throwable failure) {
+            failure.addSuppressed(new IllegalStateException("Container log:\n" + server.logs()));
+            server.close();
+            throw failure;
+        }
+    }
+
+    private static void awaitReady(Options options, Target target, ServerEndpoint endpoint) throws Exception {
+        long deadline = System.nanoTime()
+                + TimeUnit.SECONDS.toNanos(options.containerStartupTimeoutSeconds());
+        SQLException lastFailure = null;
+        while (System.nanoTime() < deadline) {
+            try (Connection connection = connect(endpoint, target)) {
+                if (connection.isValid(2)) {
+                    return;
+                }
+            } catch (SQLException failure) {
+                lastFailure = failure;
+            }
+            Thread.sleep(250L);
+        }
+        throw new IllegalStateException("Timed out waiting for " + target.id() + " at " + endpoint.jdbcUrl(),
+                lastFailure);
+    }
+
+    private static Connection connect(ServerEndpoint endpoint, Target target) throws SQLException {
+        Connection connection = endpoint.user().isBlank()
+                ? DriverManager.getConnection(endpoint.jdbcUrl())
+                : DriverManager.getConnection(endpoint.jdbcUrl(), endpoint.user(), endpoint.password());
+        connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        return connection;
+    }
+
+    private static Connection connect(Options options, Path database) throws SQLException {
+        String url = options.target().jdbcUrl(database, options);
+        Connection connection = options.remoteUser().isBlank()
+                ? DriverManager.getConnection(url)
+                : DriverManager.getConnection(url, options.remoteUser(), options.remotePassword());
+        if (options.target().isContainer()) {
+            connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        }
+        return connection;
+    }
+
+    private static int freePort() throws IOException {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            socket.setReuseAddress(true);
+            return socket.getLocalPort();
+        }
+    }
+
+    private static CommandResult runCommand(int timeoutSeconds, List<String> command) throws Exception {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        Thread reader = Thread.ofPlatform().start(() -> {
+            try {
+                process.getInputStream().transferTo(output);
+            } catch (IOException ignored) {
+            }
+        });
+        boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroyForcibly();
+            process.waitFor(10, TimeUnit.SECONDS);
+        }
+        reader.join(10_000L);
+        String text = output.toString(StandardCharsets.UTF_8);
+        if (!completed) {
+            return new CommandResult(124, text + "\nTimed out: " + String.join(" ", command));
+        }
+        return new CommandResult(process.exitValue(), text);
+    }
+
+    private static void writeContainerManifest(
+            Options options, String dockerVersion, Map<String, String> images) throws IOException {
+        java.nio.file.FileStore fileStore = Files.getFileStore(options.projectDirectory());
+        StringBuilder out = new StringBuilder()
+                .append("DelosDB server-container concurrency comparison manifest\n")
+                .append("Captured: ").append(Instant.now()).append('\n')
+                .append("Question: compare DelosDB DRDA heap/MVCC with PostgreSQL and MariaDB through "
+                        + "equivalent TCP/JDBC boundaries.\n")
+                .append("Targets: ").append(options.targets()).append('\n')
+                .append("Project version: ").append(options.projectVersion()).append('\n')
+                .append("Client JDK: ").append(System.getProperty("java.runtime.version")).append('\n')
+                .append("OS: ").append(System.getProperty("os.name")).append(' ')
+                .append(System.getProperty("os.version")).append(' ')
+                .append(System.getProperty("os.arch")).append('\n')
+                .append("Docker server: ").append(dockerVersion).append('\n')
+                .append("Client processors: ").append(Runtime.getRuntime().availableProcessors()).append('\n')
+                .append("Client max heap bytes: ").append(Runtime.getRuntime().maxMemory()).append('\n')
+                .append("Project filesystem: ").append(fileStore.name()).append(" type=").append(fileStore.type())
+                .append(" totalBytes=").append(fileStore.getTotalSpace())
+                .append(" usableBytes=").append(fileStore.getUsableSpace()).append('\n')
+                .append("Isolation: TRANSACTION_READ_COMMITTED\n")
+                .append("Durability: engine defaults retained; no fsync/synchronous-commit weakening\n")
+                .append("Client topology: host JDK process outside each database container, "
+                        + "JDBC over localhost TCP publishing\n")
+                .append("Container lifecycle: fresh database container per target/run; fresh table per matrix cell\n")
+                .append("Rows: ").append(options.rows()).append('\n')
+                .append("Clients: ").append(options.clients()).append('\n')
+                .append("Operations per transaction: ").append(options.widths()).append('\n')
+                .append("Transactions per client: ").append(options.transactionsPerClient()).append('\n')
+                .append("Payload bytes: ").append(options.payload()).append('\n')
+                .append("Fixture batch: ").append(options.fixtureBatch()).append('\n')
+                .append("Warmups: ").append(options.warmups()).append('\n')
+                .append("Iterations: ").append(options.iterations()).append('\n')
+                .append("Runs: ").append(options.runs()).append('\n')
+                .append("PostgreSQL JDBC: ").append(options.postgresqlDriverVersion()).append('\n')
+                .append("MariaDB Connector/J: ").append(options.mariadbDriverVersion()).append('\n')
+                .append("Analysis schema: cross-engine-concurrency-v1\n")
+                .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
+                .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
+                .append("different server architectures remain part of the measured product models.\n")
+                .append("Raw results: cross-engine-concurrency-results.csv; ratios/scaling/dispersion CSV; summary\n");
+        for (Map.Entry<String, String> image : images.entrySet()) {
+            out.append("Image: ").append(image.getKey()).append(" -> ").append(image.getValue()).append('\n');
+        }
+        for (String jar : List.of("derby.jar", "derbynet.jar", "derbyclient.jar", "derbyshared.jar")) {
+            Path file = options.delosRuntimeDirectory().resolve(jar);
+            if (Files.isRegularFile(file)) {
+                out.append("Delos artifact: ").append(jar).append(" sha256=").append(sha256(file)).append('\n');
+            }
+        }
+        Files.writeString(options.reportDirectory().resolve("server-container-manifest.txt"),
+                out.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static void writeContainerSemanticEvidence(Options options, List<Row> rows) throws IOException {
+        Map<ShapeKey, Long> fingerprints = new java.util.LinkedHashMap<>();
+        for (Row row : rows) {
+            fingerprints.putIfAbsent(row.shape(), row.semanticFingerprint());
+        }
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            StringBuilder evidence = new StringBuilder();
+            for (Map.Entry<ShapeKey, Long> entry : fingerprints.entrySet()) {
+                String token = entry.getKey().csv() + '=' + entry.getValue() + '\n';
+                digest.update(token.getBytes(StandardCharsets.UTF_8));
+                evidence.append(token);
+            }
+            evidence.append("semanticShapes=").append(fingerprints.size()).append('\n')
+                    .append("sha256=").append(java.util.HexFormat.of().formatHex(digest.digest())).append('\n');
+            Files.writeString(options.reportDirectory().resolve("server-container-semantic-checksum.txt"),
+                    evidence.toString(), StandardCharsets.UTF_8);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    private static String sha256(Path file) throws IOException {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                for (int count; (count = input.read(buffer)) >= 0;) {
+                    digest.update(buffer, 0, count);
+                }
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
     private static void runWorker(Options options) throws Exception {
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
@@ -152,21 +432,24 @@ public final class DelosJdbcCrossEngineConcurrency {
         Path database = options.databaseRoot().resolve(options.target().id())
                 .resolve("run-" + options.run()).resolve("rows-" + config.rowCount()).resolve(specId);
 
-        deleteRecursively(database);
-        Files.createDirectories(database.getParent());
-        if (options.target() == Target.H2) {
-            Files.createDirectories(database);
+        if (!options.target().isContainer()) {
+            deleteRecursively(database);
+            Files.createDirectories(database.getParent());
+            if (options.target() == Target.H2) {
+                Files.createDirectories(database);
+            }
         }
 
         Throwable failure = null;
         Measurement measurement = null;
-        try (Connection verifier = DriverManager.getConnection(options.target().jdbcUrl(database))) {
+        try (Connection verifier = connect(options, database)) {
             DatabaseMetaData metadata = verifier.getMetaData();
             String product = csvSafe(metadata.getDatabaseProductName());
             String productVersion = csvSafe(metadata.getDatabaseProductVersion());
             String driverVersion = csvSafe(metadata.getDriverVersion());
             DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(
-                    verifier, options.target().id(), options.target().createTableSuffix(), false, config);
+                    verifier, options.target().id(), options.target().createTableSuffix(),
+                    options.target().isContainer(), config);
             scenario.prepare();
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
                     options, spec, database, verifier, scenario.tableName(), config.rowCount())) {
@@ -205,13 +488,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             failure = operationFailure;
         }
 
-        if (options.target().isDerby() && Files.exists(database)) {
+        if (options.target().isEmbeddedDerby() && Files.exists(database)) {
             failure = shutdownDerby(database, failure);
         }
-        try {
-            deleteRecursively(database);
-        } catch (Throwable cleanupFailure) {
-            failure = preserve(failure, cleanupFailure);
+        if (!options.target().isContainer()) {
+            try {
+                deleteRecursively(database);
+            } catch (Throwable cleanupFailure) {
+                failure = preserve(failure, cleanupFailure);
+            }
         }
         if (failure != null) {
             throwFailure(failure);
@@ -249,7 +534,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.clients = new ArrayList<>(spec.clients());
             try {
                 for (int client = 0; client < spec.clients(); client++) {
-                    Connection connection = DriverManager.getConnection(options.target().jdbcUrl(database));
+                    Connection connection = connect(options, database);
                     connection.setAutoCommit(false);
                     int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
                     clients.add(new Client(connection, table, spec, ids[targetIndex], baseline[targetIndex]));
@@ -581,7 +866,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static List<Row> loadRows(Options options) throws IOException {
         List<Row> rows = new ArrayList<>();
         for (int run = 1; run <= options.runs(); run++) {
-            for (Target target : Target.values()) {
+            for (Target target : options.targetValues()) {
                 Path file = options.reportDirectory().resolve("workers")
                         .resolve(target.id() + "-run-" + run + ".csv");
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
@@ -605,7 +890,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static void validateRows(Options options, List<Row> rows) {
-        int expected = Target.values().length * options.runs() * options.rowCounts().size()
+        int expected = options.targetValues().size() * options.runs() * options.rowCounts().size()
                 * options.clientValues().size() * options.widthValues().size() * Workload.values().length;
         if (rows.size() != expected) {
             throw new IllegalStateException(
@@ -633,30 +918,51 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static void writeRatioCsv(Options options, List<Row> rows) throws IOException {
-        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(rows);
-        StringBuilder out = new StringBuilder(
-                "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,delosMvccMedianTps,"
-                        + "upstreamDerbyMedianTps,h2MedianTps,delosHeapToDerby,delosMvccToDerby,"
-                        + "delosHeapToH2,delosMvccToH2\n");
-        for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
-            ShapeKey key = entry.getKey();
-            EnumMap<Target, Double> values = entry.getValue();
-            double heap = require(values, Target.DELOS_HEAP, key);
-            double mvcc = require(values, Target.DELOS_MVCC, key);
-            double derby = require(values, Target.UPSTREAM_DERBY, key);
-            double h2 = require(values, Target.H2, key);
-            out.append(key.csv()).append(',')
-                    .append(format(heap)).append(',').append(format(mvcc)).append(',')
-                    .append(format(derby)).append(',').append(format(h2)).append(',')
-                    .append(format(heap / derby)).append(',').append(format(mvcc / derby)).append(',')
-                    .append(format(heap / h2)).append(',').append(format(mvcc / h2)).append('\n');
+        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
+        StringBuilder out;
+        if (options.containerMode()) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapDrdaMedianTps,"
+                            + "delosMvccDrdaMedianTps,postgresqlMedianTps,mariadbMedianTps,"
+                            + "delosHeapToPostgresql,delosMvccToPostgresql,delosHeapToMariadb,delosMvccToMariadb\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP_DRDA, key);
+                double mvcc = require(values, Target.DELOS_MVCC_DRDA, key);
+                double postgres = require(values, Target.POSTGRESQL, key);
+                double mariadb = require(values, Target.MARIADB, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(mvcc)).append(',')
+                        .append(format(postgres)).append(',').append(format(mariadb)).append(',')
+                        .append(format(heap / postgres)).append(',').append(format(mvcc / postgres)).append(',')
+                        .append(format(heap / mariadb)).append(',').append(format(mvcc / mariadb)).append('\n');
+            }
+        } else {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,delosMvccMedianTps,"
+                            + "upstreamDerbyMedianTps,h2MedianTps,delosHeapToDerby,delosMvccToDerby,"
+                            + "delosHeapToH2,delosMvccToH2\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP, key);
+                double mvcc = require(values, Target.DELOS_MVCC, key);
+                double derby = require(values, Target.UPSTREAM_DERBY, key);
+                double h2 = require(values, Target.H2, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(mvcc)).append(',')
+                        .append(format(derby)).append(',').append(format(h2)).append(',')
+                        .append(format(heap / derby)).append(',').append(format(mvcc / derby)).append(',')
+                        .append(format(heap / h2)).append(',').append(format(mvcc / h2)).append('\n');
+            }
         }
         Files.writeString(options.reportDirectory().resolve("cross-engine-concurrency-ratios.csv"),
                 out.toString(), StandardCharsets.UTF_8);
     }
 
     private static void writeScalingCsv(Options options, List<Row> rows) throws IOException {
-        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(rows);
+        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         Map<BaselineKey, EnumMap<Target, Double>> baselines = new HashMap<>();
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             if (entry.getKey().clients() == 1) {
@@ -672,7 +978,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (baseline == null) {
                 throw new IllegalStateException("Missing one-client concurrency baseline for " + key);
             }
-            for (Target target : Target.values()) {
+            for (Target target : options.targetValues()) {
                 double tps = require(entry.getValue(), target, key);
                 double one = require(baseline, target, key);
                 double speedup = tps / one;
@@ -717,9 +1023,12 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static void writeSummary(Options options, List<Row> rows) throws IOException {
-        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(rows);
+        Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         StringBuilder out = new StringBuilder();
-        out.append("DelosDB JDBC four-engine concurrency comparison\n")
+        out.append(options.containerMode()
+                        ? "DelosDB JDBC server-container concurrency comparison\n"
+                        : "DelosDB JDBC four-engine concurrency comparison\n")
+                .append("Targets: ").append(options.targets()).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Clients: ").append(options.clients()).append('\n')
                 .append("Operations per transaction: ").append(options.widths()).append('\n')
@@ -729,26 +1038,28 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Disjoint-update client rows are evenly spread across the fixture.\n")
                 .append("Timed interval: synchronized client execution through final commit.\n")
                 .append("Semantic verification/restoration outside timed interval: true\n")
-                .append("Fresh database per target/run/matrix cell: true\n")
+                .append(options.containerMode()
+                        ? "Fresh database container per target/run; fresh table per matrix cell: true\n"
+                        : "Fresh database per target/run/matrix cell: true\n")
                 .append("Target and matrix order orthogonalized across four-run blocks: true\n")
                 .append("Warmups: ").append(options.warmups()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append("\n\n");
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             ShapeKey key = entry.getKey();
-            out.append(String.format(Locale.ROOT,
-                    "%7d %-25s clients=%-2d ops/tx=%-2d heap=%11.2f mvcc=%11.2f derby=%11.2f h2=%11.2f tx/s%n",
-                    key.rowCount(), key.workload(), key.clients(), key.operationsPerTransaction(),
-                    require(entry.getValue(), Target.DELOS_HEAP, key),
-                    require(entry.getValue(), Target.DELOS_MVCC, key),
-                    require(entry.getValue(), Target.UPSTREAM_DERBY, key),
-                    require(entry.getValue(), Target.H2, key)));
+            out.append(String.format(Locale.ROOT, "%7d %-25s clients=%-2d ops/tx=%-2d",
+                    key.rowCount(), key.workload(), key.clients(), key.operationsPerTransaction()));
+            for (Target target : options.targetValues()) {
+                out.append(String.format(Locale.ROOT, " %s=%11.2f",
+                        target.id(), require(entry.getValue(), target, key)));
+            }
+            out.append(" tx/s\n");
         }
         Files.writeString(options.reportDirectory().resolve("cross-engine-concurrency-summary.txt"),
                 out.toString(), StandardCharsets.UTF_8);
     }
 
-    private static Map<ShapeKey, EnumMap<Target, Double>> medianThroughput(List<Row> rows) {
+    private static Map<ShapeKey, EnumMap<Target, Double>> medianThroughput(Options options, List<Row> rows) {
         Map<ShapeTargetKey, List<Double>> grouped = new HashMap<>();
         for (Row row : rows) {
             grouped.computeIfAbsent(new ShapeTargetKey(row.shape(), Target.parse(row.target())),
@@ -761,7 +1072,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Map<ShapeKey, EnumMap<Target, Double>> result = new java.util.LinkedHashMap<>();
         for (ShapeKey shape : shapes) {
             EnumMap<Target, Double> values = new EnumMap<>(Target.class);
-            for (Target target : Target.values()) {
+            for (Target target : options.targetValues()) {
                 List<Double> samples = grouped.get(new ShapeTargetKey(shape, target));
                 if (samples != null) {
                     values.put(target, median(samples));
@@ -907,7 +1218,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         DELOS_HEAP("delos_heap", ""),
         DELOS_MVCC("delos_mvcc", " using delos_mvcc"),
         UPSTREAM_DERBY("upstream_derby", ""),
-        H2("h2", "");
+        H2("h2", ""),
+        DELOS_HEAP_DRDA("delos_heap_drda", ""),
+        DELOS_MVCC_DRDA("delos_mvcc_drda", " using delos_mvcc"),
+        POSTGRESQL("postgresql", ""),
+        MARIADB("mariadb", "");
 
         private final String id;
         private final String createTableSuffix;
@@ -925,11 +1240,52 @@ public final class DelosJdbcCrossEngineConcurrency {
             return createTableSuffix;
         }
 
-        boolean isDerby() {
-            return this != H2;
+        boolean isEmbeddedDerby() {
+            return this == DELOS_HEAP || this == DELOS_MVCC || this == UPSTREAM_DERBY;
         }
 
-        String jdbcUrl(Path database) {
+        boolean isContainer() {
+            return this == DELOS_HEAP_DRDA || this == DELOS_MVCC_DRDA
+                    || this == POSTGRESQL || this == MARIADB;
+        }
+
+        int containerPort() {
+            return switch (this) {
+                case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> 1527;
+                case POSTGRESQL -> 5432;
+                case MARIADB -> 3306;
+                default -> throw new IllegalStateException("Not a container target: " + this);
+            };
+        }
+
+        String containerImage(Options options) {
+            return switch (this) {
+                case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> options.delosServerImage();
+                case POSTGRESQL -> options.postgresqlImage();
+                case MARIADB -> options.mariadbImage();
+                default -> throw new IllegalStateException("Not a container target: " + this);
+            };
+        }
+
+        ServerEndpoint endpoint(int hostPort) {
+            return switch (this) {
+                case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> new ServerEndpoint(
+                        "jdbc:derby://127.0.0.1:" + hostPort + "/delosbench;create=true", "", "");
+                case POSTGRESQL -> new ServerEndpoint(
+                        "jdbc:postgresql://127.0.0.1:" + hostPort + "/delosbench", "delosbench", "delosbench");
+                case MARIADB -> new ServerEndpoint(
+                        "jdbc:mariadb://127.0.0.1:" + hostPort + "/delosbench", "delosbench", "delosbench");
+                default -> throw new IllegalStateException("Not a container target: " + this);
+            };
+        }
+
+        String jdbcUrl(Path database, Options options) {
+            if (isContainer()) {
+                if (options.remoteJdbcUrl().isBlank()) {
+                    throw new IllegalStateException("Missing remote JDBC URL for " + id);
+                }
+                return options.remoteJdbcUrl();
+            }
             if (this == H2) {
                 return "jdbc:h2:file:" + database.resolve("database").toAbsolutePath().normalize()
                         + ";WRITE_DELAY=0;DB_CLOSE_ON_EXIT=FALSE";
@@ -944,6 +1300,47 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             throw new IllegalArgumentException("Unknown concurrency target: " + value);
+        }
+    }
+
+    private record ServerEndpoint(String jdbcUrl, String user, String password) {
+    }
+
+    private record CommandResult(int exitCode, String output) {
+    }
+
+    private static final class ContainerServer implements AutoCloseable {
+        private final String name;
+        private final ServerEndpoint endpoint;
+        private boolean closed;
+
+        private ContainerServer(String name, ServerEndpoint endpoint) {
+            this.name = name;
+            this.endpoint = endpoint;
+        }
+
+        ServerEndpoint endpoint() {
+            return endpoint;
+        }
+
+        String logs() {
+            try {
+                return runCommand(20, List.of("docker", "logs", "--tail", "80", name)).output();
+            } catch (Exception failure) {
+                return "Could not read container logs: " + failure;
+            }
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                runCommand(30, List.of("docker", "rm", "-f", name));
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -1068,6 +1465,20 @@ public final class DelosJdbcCrossEngineConcurrency {
             String delosClasspath,
             String upstreamDerbyClasspath,
             String h2Classpath,
+            String delosClientClasspath,
+            String postgresqlClasspath,
+            String mariadbClasspath,
+            String targets,
+            Path delosRuntimeDirectory,
+            String delosServerImage,
+            String postgresqlImage,
+            String mariadbImage,
+            String postgresqlDriverVersion,
+            String mariadbDriverVersion,
+            String projectVersion,
+            String remoteJdbcUrl,
+            String remoteUser,
+            String remotePassword,
             Path databaseRoot,
             Path reportDirectory,
             String rows,
@@ -1080,6 +1491,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int iterations,
             int runs,
             int caseTimeoutSeconds,
+            int containerStartupTimeoutSeconds,
             String childHeap,
             Target target,
             int run) {
@@ -1092,6 +1504,20 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "delosClasspath", "."),
                     System.getProperty(PREFIX + "upstreamDerbyClasspath", "."),
                     System.getProperty(PREFIX + "h2Classpath", "."),
+                    System.getProperty(PREFIX + "delosClientClasspath", "."),
+                    System.getProperty(PREFIX + "postgresqlClasspath", "."),
+                    System.getProperty(PREFIX + "mariadbClasspath", "."),
+                    System.getProperty(PREFIX + "targets", "delos_heap,delos_mvcc,upstream_derby,h2"),
+                    path(PREFIX + "delosRuntimeDirectory", "build/libs"),
+                    System.getProperty(PREFIX + "delosServerImage", "eclipse-temurin:25.0.3_9-jre-noble"),
+                    System.getProperty(PREFIX + "postgresqlImage", "postgres:18.4"),
+                    System.getProperty(PREFIX + "mariadbImage", "mariadb:12.3.2"),
+                    System.getProperty(PREFIX + "postgresqlDriverVersion", "42.7.13"),
+                    System.getProperty(PREFIX + "mariadbDriverVersion", "3.5.10"),
+                    System.getProperty(PREFIX + "projectVersion", "unknown"),
+                    System.getProperty(PREFIX + "remoteJdbcUrl", ""),
+                    System.getProperty(PREFIX + "remoteUser", ""),
+                    System.getProperty(PREFIX + "remotePassword", ""),
                     path(PREFIX + "databaseRoot", "build/tmp/delos-jdbc-cross-engine-concurrency"),
                     path(PREFIX + "reportDirectory", "build/reports/delosdb/benchmarks/cross-engine-concurrency"),
                     System.getProperty(PREFIX + "rows", "10000"),
@@ -1104,6 +1530,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.parseInt(System.getProperty(PREFIX + "iterations", "3")),
                     Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
                     Integer.parseInt(System.getProperty(PREFIX + "caseTimeoutSeconds", "120")),
+                    Integer.parseInt(System.getProperty(PREFIX + "containerStartupTimeoutSeconds", "90")),
                     System.getProperty(PREFIX + "childHeap", "1g"),
                     targetValue == null ? null : Target.parse(targetValue),
                     Integer.parseInt(System.getProperty(PREFIX + "run", "0")));
@@ -1112,6 +1539,14 @@ public final class DelosJdbcCrossEngineConcurrency {
         void validate() {
             if (!Files.isRegularFile(javaExecutable)) {
                 throw new IllegalArgumentException("Java executable does not exist: " + javaExecutable);
+            }
+            List<Target> configuredTargets = targetValues();
+            List<Target> embedded = List.of(Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2);
+            List<Target> container = List.of(
+                    Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.POSTGRESQL, Target.MARIADB);
+            if (!configuredTargets.equals(embedded) && !configuredTargets.equals(container)) {
+                throw new IllegalArgumentException("targets must be exactly " + embedded + " or " + container
+                        + ": " + configuredTargets);
             }
             parsePositive(rows, "rows", 100);
             parsePositive(clients, "clients", 1);
@@ -1125,7 +1560,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || payload < 16 || fixtureBatch < 1 || warmups < 0
-                    || iterations < 1 || caseTimeoutSeconds < 1) {
+                    || iterations < 1 || caseTimeoutSeconds < 1 || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }
             if (runs < 4 || (runs & 3) != 0) {
@@ -1134,8 +1569,23 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");
             }
-            if (target != null && run < 1) {
-                throw new IllegalArgumentException("worker run must be positive");
+            if (containerMode()) {
+                if (!Files.isDirectory(delosRuntimeDirectory)) {
+                    throw new IllegalArgumentException("Delos runtime directory does not exist: "
+                            + delosRuntimeDirectory);
+                }
+                if (delosClientClasspath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()
+                        || delosServerImage.isBlank() || postgresqlImage.isBlank() || mariadbImage.isBlank()) {
+                    throw new IllegalArgumentException("Container benchmark classpaths and images are required");
+                }
+            }
+            if (target != null) {
+                if (run < 1) {
+                    throw new IllegalArgumentException("worker run must be positive");
+                }
+                if (target.isContainer() && remoteJdbcUrl.isBlank()) {
+                    throw new IllegalArgumentException("remoteJdbcUrl is required for " + target.id());
+                }
             }
         }
 
@@ -1151,11 +1601,30 @@ public final class DelosJdbcCrossEngineConcurrency {
             return integerList(widths);
         }
 
+        List<Target> targetValues() {
+            List<Target> values = new ArrayList<>();
+            for (String token : targets.split(",")) {
+                Target value = Target.parse(token.trim());
+                if (values.contains(value)) {
+                    throw new IllegalArgumentException("Duplicate target: " + value.id());
+                }
+                values.add(value);
+            }
+            return List.copyOf(values);
+        }
+
+        boolean containerMode() {
+            return targetValues().stream().anyMatch(Target::isContainer);
+        }
+
         String classpath(Target value) {
             return switch (value) {
                 case DELOS_HEAP, DELOS_MVCC -> delosClasspath;
                 case UPSTREAM_DERBY -> upstreamDerbyClasspath;
                 case H2 -> h2Classpath;
+                case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> delosClientClasspath;
+                case POSTGRESQL -> postgresqlClasspath;
+                case MARIADB -> mariadbClasspath;
             };
         }
 
@@ -1171,4 +1640,5 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
     }
+
 }
