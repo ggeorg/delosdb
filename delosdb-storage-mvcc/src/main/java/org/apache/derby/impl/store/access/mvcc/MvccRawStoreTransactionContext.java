@@ -43,6 +43,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
     private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
     private final Map<Long, OrderedIndexReplacement> orderedIndexReplacements = new LinkedHashMap<>();
+    private final Set<MvccRawStoreTable.Descriptor> orderedIndexGenerationInvalidations =
+            new HashSet<>();
     private final Map<ContainerKey, MvccRawStoreTable.Descriptor> createdTables =
             new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreTable.Descriptor> droppedTables =
@@ -111,6 +113,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireExclusive(MvccRawStoreLogicalLock.table(table));
+        orderedIndexGenerationInvalidations.add(table);
+        table.invalidateOrderedIndexGeneration();
     }
 
     void markCreatedTable(MvccRawStoreTable.Descriptor table) {
@@ -216,6 +220,38 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                         rawTransaction,
                         table,
                         false);
+    }
+
+    long orderedIndexBtreeForRead(
+            MvccRawStoreTable.Descriptor table,
+            ContainerKey directoryKey,
+            int column) throws StandardException {
+        if (directoryKey == null) {
+            return 0L;
+        }
+        OrderedIndexReplacement replacement = orderedIndexReplacements.get(
+                table.metadataContainer().getContainerId());
+        if (replacement == null) {
+            MvccRawStoreTable.Descriptor.OrderedIndexGeneration observed =
+                    table.orderedIndexGeneration(directoryKey);
+            if (observed != null) {
+                return observed.btree(column);
+            }
+        }
+
+        long[] btrees = MvccRawStoreOrderedIndexGeneration.readBtreeConglomerates(
+                rawTransaction,
+                table,
+                directoryKey);
+        if (btrees == null) {
+            return 0L;
+        }
+        if (replacement == null
+                && !orderedIndexGenerationInvalidations.contains(table)
+                && directoryKey.equals(table.orderedIndexContainer())) {
+            table.observeOrderedIndexGeneration(directoryKey, btrees);
+        }
+        return btrees[column];
     }
 
     ContainerKey orderedIndexForWrite(MvccRawStoreTable.Descriptor table)
@@ -713,6 +749,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         exclusiveLocks.clear();
         allocatorReservations.clear();
         orderedIndexReplacements.clear();
+        for (MvccRawStoreTable.Descriptor table : orderedIndexGenerationInvalidations) {
+            table.invalidateOrderedIndexGeneration();
+        }
+        orderedIndexGenerationInvalidations.clear();
         createdTables.clear();
         droppedTables.clear();
         transactionId = 0L;

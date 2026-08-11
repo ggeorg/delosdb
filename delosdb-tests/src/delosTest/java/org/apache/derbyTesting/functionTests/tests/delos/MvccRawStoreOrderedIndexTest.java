@@ -401,19 +401,38 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
                     connection, "OVERSIZE_T", 1, 0);
 
-            insertWideRow(connection, "page_sized_t", pageSizedPayload);
-            insertWideRow(connection, "oversize_t", oversizePayload);
+            insertWideRow(connection, "page_sized_t", 1, pageSizedPayload);
+            insertWideRow(connection, "oversize_t", 1, "small");
+            connection.commit();
+
+            assertPreparedLookup(
+                    connection,
+                    "select id from oversize_t where payload = ?",
+                    "small",
+                    1,
+                    true);
+            connection.commit();
+
+            insertWideRow(connection, "oversize_t", 2, oversizePayload);
             connection.commit();
 
             assertPreparedLookup(
                     connection,
                     "select id from page_sized_t where payload = ?",
                     pageSizedPayload,
+                    1,
                     true);
             assertPreparedLookup(
                     connection,
                     "select id from oversize_t where payload = ?",
                     oversizePayload,
+                    2,
+                    false);
+            assertPreparedLookup(
+                    connection,
+                    "select id from oversize_t where payload = ?",
+                    "small",
+                    1,
                     false);
             connection.commit();
         }
@@ -726,10 +745,11 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
     private static void insertWideRow(
             Connection connection,
             String table,
+            int id,
             String payload) throws Exception {
         try (PreparedStatement insert = connection.prepareStatement(
                 "insert into " + table + " values (?, ?)")) {
-            insert.setInt(1, 1);
+            insert.setInt(1, id);
             insert.setString(2, payload);
             assertEquals(1, insert.executeUpdate());
         }
@@ -739,13 +759,14 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             Connection connection,
             String sql,
             String payload,
+            int expectedId,
             boolean expectOrderedIndex) throws Exception {
         executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
         try (PreparedStatement lookup = connection.prepareStatement(sql)) {
             lookup.setString(1, payload);
             try (ResultSet resultSet = lookup.executeQuery()) {
                 assertTrue(resultSet.next());
-                assertEquals(1, resultSet.getInt(1));
+                assertEquals(expectedId, resultSet.getInt(1));
                 assertFalse(resultSet.next());
             }
         }

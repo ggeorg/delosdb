@@ -272,7 +272,8 @@ final class MvccRawStoreOrderedIndex {
             TransactionManager transactionManager,
             MvccRawStoreTable.Descriptor table,
             ContainerKey directoryKey,
-            Qualifier[][] qualifiers) throws StandardException {
+            Qualifier[][] qualifiers,
+            MvccRawStoreTransactionContext context) throws StandardException {
         Optional<MvccRawStoreOrderedIndexPredicate.Predicate> optionalPredicate =
                 MvccRawStoreOrderedIndexPredicate.from(qualifiers);
         if (optionalPredicate.isEmpty()) {
@@ -282,21 +283,17 @@ final class MvccRawStoreOrderedIndex {
         if (!maintainsColumn(table, predicate.columnId()) || directoryKey == null) {
             return Optional.empty();
         }
-        long[] btrees = MvccRawStoreOrderedIndexGeneration.readBtreeConglomerates(
-                transactionManager.getRawStoreXact(),
+        long btree = context.orderedIndexBtreeForRead(
                 table,
-                directoryKey);
-        if (btrees == null || btrees[predicate.columnId()] == 0L) {
-            return Optional.empty();
-        }
-        if (MvccRawStoreOrderedIndexGeneration.isDisabled(
-                btrees[predicate.columnId()])) {
+                directoryKey,
+                predicate.columnId());
+        if (btree == 0L || MvccRawStoreOrderedIndexGeneration.isDisabled(btree)) {
             return Optional.empty();
         }
         return Optional.of(scanCandidates(
                 transactionManager,
                 table,
-                btrees[predicate.columnId()],
+                btree,
                 predicate));
     }
 

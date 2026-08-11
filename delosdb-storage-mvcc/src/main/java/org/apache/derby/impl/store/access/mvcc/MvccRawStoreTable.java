@@ -46,6 +46,7 @@ final class MvccRawStoreTable {
         private volatile long accessConglomerateId;
         private volatile List<UniqueConstraint> uniqueConstraints;
         private volatile ContainerKey orderedIndexContainer;
+        private volatile OrderedIndexGeneration orderedIndexGeneration;
 
         Descriptor(
                 ContainerKey metadataContainer,
@@ -82,9 +83,47 @@ final class MvccRawStoreTable {
         }
 
         void observeOrderedIndexContainer(ContainerKey container) {
+            ContainerKey previous = orderedIndexContainer;
             orderedIndexContainer = container;
+            if (!java.util.Objects.equals(previous, container)) {
+                orderedIndexGeneration = null;
+            }
         }
 
+        OrderedIndexGeneration orderedIndexGeneration(ContainerKey container) {
+            OrderedIndexGeneration current = orderedIndexGeneration;
+            return current != null && current.belongsTo(container) ? current : null;
+        }
+
+        void observeOrderedIndexGeneration(ContainerKey container, long[] btrees) {
+            if (container != null
+                    && btrees != null
+                    && container.equals(orderedIndexContainer)) {
+                orderedIndexGeneration = new OrderedIndexGeneration(container, btrees);
+            }
+        }
+
+        void invalidateOrderedIndexGeneration() {
+            orderedIndexGeneration = null;
+        }
+
+        static final class OrderedIndexGeneration {
+            private final ContainerKey container;
+            private final long[] btrees;
+
+            private OrderedIndexGeneration(ContainerKey container, long[] btrees) {
+                this.container = container;
+                this.btrees = btrees.clone();
+            }
+
+            private boolean belongsTo(ContainerKey candidate) {
+                return container.equals(candidate);
+            }
+
+            long btree(int column) {
+                return btrees[column];
+            }
+        }
 
         int[] formatIds() {
             return formatIds;
@@ -283,7 +322,8 @@ final class MvccRawStoreTable {
                 context.transactionManager(),
                 table,
                 orderedIndex,
-                qualifiers);
+                qualifiers,
+                context);
     }
 
     static void ensureOrderedIndex(
