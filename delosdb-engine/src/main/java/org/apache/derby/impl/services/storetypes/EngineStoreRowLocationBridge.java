@@ -199,11 +199,6 @@ public final class EngineStoreRowLocationBridge
 
         private StoreRowLocation newNullStoreRowLocation()
         {
-            if (!isMvccRowLocation(storeRowLocation))
-            {
-                return StoreRowLocationFactory.newDefaultRowLocation();
-            }
-
             try
             {
                 StoreDataValue nullValue = StoreTypeUtil.getNewNull(storeRowLocation);
@@ -212,13 +207,13 @@ public final class EngineStoreRowLocationBridge
                     return rowLocation;
                 }
                 throw new IllegalStateException(
-                    "MVCC row-location null value is not a StoreRowLocation: "
+                    "Row-location null value is not a StoreRowLocation: "
                     + nullValue.getClass().getName());
             }
             catch (StandardException se)
             {
                 throw new IllegalStateException(
-                    "Could not create null MVCC row location", se);
+                    "Could not create null store row location", se);
             }
         }
 
