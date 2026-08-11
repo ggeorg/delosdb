@@ -31,6 +31,8 @@ import org.apache.derby.iapi.services.monitor.ModuleControl;
 import org.apache.derby.iapi.services.monitor.ModuleFactory;
 import org.apache.derby.iapi.services.monitor.Monitor;
 
+import org.apache.derby.iapi.store.types.StoreValueOperations;
+
 import org.apache.derby.shared.common.reference.Attribute;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -1141,25 +1143,36 @@ public final class DataValueFactoryImpl implements DataValueFactory, ModuleContr
     }
 
     private static DataValueDescriptor newMvccRowLocation() {
-        return MvccRowLocationPrototypeHolder.PROTOTYPE.getNewNull();
+        try {
+            return RowLocationServicesRegistry.requireRowLocation(
+                    MvccRowLocationPrototypeHolder.PROTOTYPE.getNewNull());
+        } catch (StandardException se) {
+            throw new IllegalStateException(
+                    "Unable to create MVCC row location value", se);
+        }
     }
 
-    private static RowLocation loadMvccRowLocationPrototype() {
+    private static StoreValueOperations loadMvccRowLocationPrototype() {
         try {
             Class<?> rowLocationClass = Class.forName(
                     MVCC_ROW_LOCATION_CLASS,
                     true,
                     DataValueFactoryImpl.class.getClassLoader());
             Object rowLocation = rowLocationClass.getDeclaredConstructor().newInstance();
-            return RowLocationServicesRegistry.requireRowLocation(rowLocation);
+            if (rowLocation instanceof StoreValueOperations operations) {
+                return operations;
+            }
+            throw new IllegalStateException(
+                    MVCC_ROW_LOCATION_CLASS + " does not implement StoreValueOperations");
         } catch (ReflectiveOperationException | LinkageError error) {
             throw new IllegalStateException(
-                    "Unable to create MVCC row location value", error);
+                    "Unable to resolve MVCC row location value", error);
         }
     }
 
     private static final class MvccRowLocationPrototypeHolder {
-        private static final RowLocation PROTOTYPE = loadMvccRowLocationPrototype();
+        private static final StoreValueOperations PROTOTYPE =
+                loadMvccRowLocationPrototype();
     }
 
         // RESOLVE: This is here to find the LocaleFinder (i.e. the Database)
