@@ -152,12 +152,9 @@ final class MvccRawStoreOrderedIndex {
     }
 
     static void assertUnique(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            StoreDataValue[] previousValues,
-            StoreDataValue[] values,
-            long currentRowId,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            Transaction transaction, MvccRawStoreTable.Descriptor table,
+            StoreDataValue[] previousValues, StoreDataValue[] values,
+            long currentRowId, MvccRawStoreTransactionContext context) throws StandardException {
         if (values == null || values.length != table.columnCount()) {
             throw new IllegalArgumentException("RawStore MVCC unique-key row width mismatch");
         }
@@ -166,9 +163,8 @@ final class MvccRawStoreOrderedIndex {
         if (constraints.isEmpty()) {
             return;
         }
-        // An UPDATE which preserves every native unique key cannot create a
-        // duplicate. Keep the metadata refresh above, but avoid key locking,
-        // candidate B-tree scans, and version reads for that common case.
+        // An unchanged native unique key cannot create a duplicate. Keep the
+        // metadata refresh but avoid locking, candidate scans, and version reads.
         if (previousValues != null) {
             boolean uniqueKeyChanged = false;
             for (MvccRawStoreTable.UniqueConstraint constraint : constraints) {
@@ -191,14 +187,9 @@ final class MvccRawStoreOrderedIndex {
                 continue;
             }
             int firstColumn = columns[0];
-            MvccRawStoreVersionRows.FetchProjection projection =
-                    constraintProjection(table, columns);
+            MvccRawStoreVersionRows.FetchProjection projection = constraintProjection(table, columns);
             Optional<List<Candidate>> candidates = candidatesForKey(
-                    context.transactionManager(),
-                    table,
-                    directoryKey,
-                    firstColumn,
-                    values[firstColumn]);
+                    context.transactionManager(), table, directoryKey, firstColumn, values[firstColumn]);
             if (candidates.isPresent()) {
                 for (Candidate candidateEntry : candidates.get()) {
                     long candidateRowId = candidateEntry.rowId();
@@ -206,9 +197,7 @@ final class MvccRawStoreOrderedIndex {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                            transaction,
-                            table,
-                            candidateEntry.rowLocation());
+                            transaction, table, candidateEntry.rowLocation());
                     MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
                     if (summary.available()
                             && summary.visibleTo(context.transactionId(), committedSequence)
@@ -216,46 +205,19 @@ final class MvccRawStoreOrderedIndex {
                         continue;
                     }
                     MvccRawStoreTable.VersionRecord visible = MvccRawStoreVersionReader.findVisible(
-                            transaction,
-                            table,
-                            candidateRowId,
-                            directory.head(),
-                            context.transactionId(),
-                            committedSequence,
-                            projection,
-                            context);
+                            transaction, table, candidateRowId, directory.head(), context.transactionId(),
+                            committedSequence, projection, context);
                     MvccRawStoreTable.VisibleRow candidate = visible == null || visible.tombstone()
                             ? null
                             : new MvccRawStoreTable.VisibleRow(
-                                    candidateRowId,
-                                    visible.versionId(),
-                                    visible.values(),
-                                    visible.handle(),
-                                    MvccRawStoreRowDirectory.location(
-                                            candidateRowId,
-                                            directory.handle()));
-                    rejectDuplicate(
-                            table,
-                            constraint,
-                            values,
-                            columns,
-                            currentRowId,
-                            candidate);
+                                    candidateRowId, visible.versionId(), visible.values(), visible.handle(),
+                                    MvccRawStoreRowDirectory.location(candidateRowId, directory.handle()));
+                    rejectDuplicate(table, constraint, values, columns, currentRowId, candidate);
                 }
             } else {
                 for (MvccRawStoreTable.VisibleRow candidate : MvccRawStoreTable.scanVisibleAt(
-                        transaction,
-                        table,
-                        committedSequence,
-                        projection,
-                        context)) {
-                    rejectDuplicate(
-                            table,
-                            constraint,
-                            values,
-                            columns,
-                            currentRowId,
-                            candidate);
+                        transaction, table, committedSequence, projection, context)) {
+                    rejectDuplicate(table, constraint, values, columns, currentRowId, candidate);
                 }
             }
         }

@@ -89,7 +89,7 @@ final class MvccRawStoreRuntime {
         this.diagnosticIdentity = Objects.requireNonNull(
                 diagnosticIdentity, "diagnosticIdentity");
         String blockSize = System.getProperty(
-                COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY, "1");
+                COMMIT_SEQUENCE_RESERVATION_BLOCK_SIZE_PROPERTY, "64");
         try {
             commitSequenceReservationBlockSize = Integer.parseInt(blockSize);
         } catch (NumberFormatException failure) {

@@ -44,7 +44,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_mvcc_t values (2, 'first-commit')");
                 connection.commit();
-                assertCounters(connection, 3L, 2L, 1L);
+                assertCounters(connection, 3L, 65L, 1L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_MVCC_T",
@@ -57,11 +57,11 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 reopened.setAutoCommit(false);
                 executeUpdate(reopened, "insert into identity_mvcc_t values (3, 'after-reboot')");
                 reopened.commit();
-                assertCounters(reopened, 4L, 3L, 2L);
+                assertCounters(reopened, 4L, 129L, 65L);
                 assertVersionIdentities(
                         reopened,
                         "IDENTITY_MVCC_T",
-                        new long[][] {{2L, 1L}, {3L, 2L}});
+                        new long[][] {{2L, 1L}, {3L, 65L}});
                 reopened.commit();
             }
             shutdownDatabase(database);
@@ -80,7 +80,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_table_a values 1");
                 connection.commit();
-                assertCounters(connection, 2L, 2L, 1L);
+                assertCounters(connection, 2L, 65L, 1L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_TABLE_A",
@@ -89,7 +89,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_table_b values 2");
                 connection.commit();
-                assertCounters(connection, 3L, 3L, 2L);
+                assertCounters(connection, 3L, 65L, 2L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_TABLE_B",
@@ -137,17 +137,17 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection recovered = openDatabase(database, false)) {
                 recovered.setAutoCommit(false);
-                assertCounters(recovered, 2L, 2L, 0L);
+                assertCounters(recovered, 2L, 65L, 0L);
                 assertRows(recovered, "select id from identity_crash_t");
                 recovered.commit();
 
                 executeUpdate(recovered, "insert into identity_crash_t values (2, 'after-gap')");
                 recovered.commit();
-                assertCounters(recovered, 3L, 3L, 2L);
+                assertCounters(recovered, 3L, 129L, 65L);
                 assertVersionIdentities(
                         recovered,
                         "IDENTITY_CRASH_T",
-                        new long[][] {{2L, 2L}});
+                        new long[][] {{2L, 65L}});
                 recovered.commit();
             }
             shutdownDatabase(database);
@@ -171,7 +171,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(firstConnection, "insert into identity_a values 1");
                 firstConnection.commit();
-                assertCounters(firstConnection, 2L, 2L, 1L);
+                assertCounters(firstConnection, 2L, 65L, 1L);
                 firstConnection.commit();
                 assertCounters(secondConnection, 1L, 1L, 0L);
                 secondConnection.commit();
@@ -188,7 +188,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 memoryConnection.rollback();
                 executeUpdate(memoryConnection, "insert into identity_memory values 2");
                 memoryConnection.commit();
-                assertCounters(memoryConnection, 3L, 2L, 1L);
+                assertCounters(memoryConnection, 3L, 65L, 1L);
                 assertVersionIdentities(
                         memoryConnection,
                         "IDENTITY_MEMORY",

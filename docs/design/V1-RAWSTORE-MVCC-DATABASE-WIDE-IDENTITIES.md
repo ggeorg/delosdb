@@ -66,8 +66,9 @@ No RawStore `XactId` is persisted as the MVCC identity.
 ## Durable commit sequences
 
 Immediately before the inherited user RawStore commit, the transaction participant holds the existing
-commit-publication boundary and reserves one `MvccCommitSequence` through the same nested-top RawStore
-mechanism. It then performs normal logged updates inside the user transaction:
+commit-publication boundary and consumes one `MvccCommitSequence` from a durably reserved block. The
+runtime reserves 64 consecutive sequences at a time through the same nested-top RawStore mechanism,
+then performs normal logged updates inside each user transaction:
 
 ```text
 stamp created version rows with the reserved sequence
@@ -77,8 +78,10 @@ write the one inherited RawStore commit record
 publish the in-memory high-water
 ```
 
-The allocator increment is independently durable, so a failed user commit may leave a sequence gap.
-The committed high-water is not advanced unless the user transaction's RawStore commit succeeds.
+Each block reservation is independently durable before any value from the block is returned. Unused
+values are allowed gaps and are never reused: after reboot the runtime reserves a fresh block starting
+at the durable next-unreserved sequence. A failed user commit may likewise leave a consumed sequence
+gap. The committed high-water is not advanced unless the user transaction's RawStore commit succeeds.
 After reboot, the runtime reconstructs the published high-water from the committed database metadata
 row.
 
@@ -92,7 +95,7 @@ The executable proof distinguishes allocator durability from transaction outcome
 | Failure boundary | Durable counter state | Durable row state |
 | --- | --- | --- |
 | user rollback after transaction-ID reservation | transaction-ID gap retained | row absent |
-| halt after ID/sequence reservation and version stamping, before user RawStore commit | both gaps retained; committed high-water unchanged | row absent |
+| halt after ID/sequence-block reservation and version stamping, before user RawStore commit | reserved block and transaction-ID gap retained; committed high-water unchanged | row absent |
 | halt after user RawStore commit, before in-memory publication | counters and committed high-water retained | row present |
 
 This preserves one database transaction outcome while guaranteeing that durable MVCC identities are
