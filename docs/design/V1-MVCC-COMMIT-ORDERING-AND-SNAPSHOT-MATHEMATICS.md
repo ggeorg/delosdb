@@ -3,119 +3,105 @@
 ## Status
 
 ```text
-local transactions: approved design proof
+local transactions: approved ordered-publication protocol
 commitNoSync:        same logical publication rule; durability mode remains RawStore-owned
-XA prepare/commit:   unresolved; MVCC participation must remain fail-closed
+XA prepare/commit:   unresolved; MVCC participation remains fail-closed
 ```
 
 This proof defines correctness semantics. It does not freeze the Java callback API.
 
 ## Problem
 
-A commit sequence cannot be treated as visible merely because it was reserved.
-
-The following schedule is invalid if snapshot visibility uses only numeric comparison:
+A commit sequence cannot become visible merely because it was reserved or because its RawStore
+commit completed. With concurrent physical commits, completion may be out of sequence:
 
 ```text
-A reserves 10 and stalls before commit
-B reserves 11 and commits
-snapshot S opens at 11
-A later commits with 10
+A reserves 10 and stalls
+B reserves 11 and physically commits
+snapshot S opens
+A later physically commits
 ```
 
-If S later accepts every version with `beginSequence <= 11`, A becomes visible to a snapshot opened
-before A committed. Snapshot stability is violated.
+If S captured 11 before sequence 10 reached a terminal state, A could later become visible to a
+snapshot opened before A completed. Snapshot stability would be violated.
 
 ## Definitions
 
 For one database:
 
 ```text
-P  = published committed high-water sequence
-CS = commit sequence reserved for one finalizing transaction
-S  = snapshot sequence captured at snapshot creation
+P   = contiguous published high-water visible to new snapshots
+CS  = commit sequence assigned to one finalizing transaction
+NPS = next sequence required before P may advance
+RC  = durable recovery publication ceiling
+S   = snapshot sequence captured at snapshot creation
 ```
 
-A local transaction has these semantic states:
-
-```text
-ACTIVE
-FINALIZING
-COMMITTED
-ABORTED
-```
-
-A version has:
-
-```text
-creator transaction identity
-begin commit sequence, absent while uncommitted
-ending transaction identity, when being ended
-end commit sequence, absent while current or uncommitted
-```
-
-Logical MVCC transaction and version identities are stable DelosDB identities. RawStore internal
-`XactId` values are not persisted as those identities.
+A commit sequence becomes terminal when its user RawStore transaction either commits or is abandoned.
+Sequence density is not required: aborted transactions and unused durable reservations create safe
+gaps.
 
 ## Approved local-transaction rule
 
-One database-scoped commit-publication boundary serializes local MVCC commit finalization and
-snapshot capture.
+Physical commit work may run concurrently. Visibility publication remains ordered.
 
-Conceptually:
+### Commit-sequence reservation
+
+The runtime durably reserves commit sequences in blocks of 64. Reservation advances both the durable
+next-unreserved sequence and the recovery publication ceiling before any value from the block is
+returned.
 
 ```text
-commitPublicationLock
-publishedHighWater = P
+reserve block 65..128
+RC = 128
 ```
+
+Unused values are never reused after reboot.
 
 ### Commit protocol
 
-For a local transaction containing MVCC work:
+For a local transaction containing MVCC writes:
 
 ```text
-1. acquire commitPublicationLock
-2. verify the transaction may commit
-3. reserve CS where CS > P
-4. within the user RawStore transaction:
+1. briefly acquire the publication lock
+2. consume CS from the current durable block
+3. release the publication lock
+4. inside the user RawStore transaction:
        stamp created versions with begin = CS
        stamp ended versions with end = CS
-       stamp transactional derived-index journal records with CS
-       update RawStore-owned committed high-water metadata to CS
-5. perform the normal RawStore commit
-6. only after successful RawStore commit:
-       publish in-memory P = CS
-7. release commitPublicationLock
+       publish transaction-private ordered-index replacements
+       stage allocator high-waters
+5. perform the normal RawStore commit without holding the publication lock
+6. after RawStore reports successful commit:
+       mark CS terminal under the publication lock
+       advance P only through the contiguous terminal prefix
+7. if CS is ahead of P, wait on the publication condition
+8. return commit only after P >= CS
 ```
 
-If any operation before or during RawStore commit fails:
+A failed/aborted finalization marks its reserved sequence terminal without creating durable user
+versions, allowing publication to advance through the gap.
 
-```text
-RawStore undo/abort removes the stamped changes
-P is not advanced
-the reserved sequence may remain an unused gap
-```
-
-Commit sequence density is not a correctness requirement.
+The commit-return barrier is required. Once JDBC `commit()` returns, every subsequently opened
+snapshot must be able to observe that commit. A transaction may therefore finish its RawStore commit
+before an earlier sequence, but it cannot return to the caller until ordered publication catches up.
 
 ### Snapshot protocol
 
 ```text
-1. acquire commitPublicationLock
+1. acquire the publication lock
 2. capture S = P
-3. register the snapshot/horizon state
-4. release commitPublicationLock
+3. register the snapshot/horizon lease
+4. release the publication lock
 ```
 
-A snapshot cannot open between sequence reservation and commit publication.
-
-Therefore, every `CS <= S` belongs to a transaction whose RawStore commit completed before the
-snapshot captured S.
+`READ COMMITTED` may capture a new snapshot per statement. `REPEATABLE READ` retains its transaction
+snapshot according to the isolation contract.
 
 ## Visibility rule
 
-Ignoring the current transaction's own uncommitted writes, a committed version is visible to
-snapshot S when:
+Ignoring the current transaction's own uncommitted writes, a committed version is visible to snapshot
+S when:
 
 ```text
 beginSequence <= S
@@ -123,56 +109,64 @@ and
 (endSequence is absent or endSequence > S)
 ```
 
-The current transaction sees its own writes using its `MvccTransactionId` and statement/savepoint
-state, not by pretending those writes already have a committed sequence.
-
+The current transaction sees its own writes by transaction identity and statement/savepoint state.
 A transaction never sees another transaction's uncommitted versions.
 
 ## Proof of snapshot stability
 
-Assume snapshot S captures published high-water P while holding the commit-publication lock.
+Assume snapshot S captures P.
 
-For any transaction T not committed when S is captured:
+For any sequence greater than P, at least one sequence at or before it has not yet reached the
+contiguous terminal prefix. Therefore no later physical commit can advance P past that gap. A snapshot
+opened while A(10) is unfinished cannot capture 11 merely because B(11) physically committed first.
+When 10 later commits or aborts, publication may advance through 10 and already-terminal 11, but the
+older snapshot retains its previously captured S.
 
-1. T cannot have published its commit sequence, because publication happens only after RawStore
-   commit succeeds while the same lock is held.
-2. T cannot complete commit while S captures P, because T requires the same lock.
-3. When T later commits, it receives or publishes a sequence greater than the captured P.
-4. Therefore T's committed versions have `beginSequence > S` and remain invisible to S.
+Therefore an out-of-order physical commit cannot become visible retroactively to an existing
+snapshot.
 
-The invalid schedule where a later commit publishes sequence 10 below snapshot 11 is impossible.
+## Why disjoint writers may physically commit concurrently
 
-## Crash matrix
+The publication lock is not held across version stamping, index publication work, or RawStore commit.
+Independent writers may therefore perform the expensive physical finalization work concurrently.
+Only sequence allocation, terminal-set mutation, snapshot capture, and publication-frontier movement
+use the short database-scoped publication boundary.
 
-### Crash before RawStore commit record
+## Crash and recovery
 
-```text
-stamped page and metadata changes are uncommitted
-RawStore recovery undoes them
-persisted high-water does not advance
-```
+The durable recovery publication ceiling RC is intentionally different from the live in-memory P.
+During a running process, only the contiguous terminal frontier controls visibility.
 
-### Crash after RawStore commit record but before in-memory publication
-
-```text
-RawStore recovery retains stamped versions and committed high-water metadata
-on boot, P is reconstructed from RawStore-owned committed metadata
-```
-
-### Crash after publication
+### Crash before user RawStore commit
 
 ```text
-committed RawStore state and in-memory publication agree
-reopen reconstructs the same P
+CS may already belong to a durably reserved block
+RawStore recovery removes uncommitted stamped user changes
+RC remains advanced
+no durable version exists for the abandoned CS
 ```
 
-The persistent source of truth is RawStore-owned committed metadata. The in-memory high-water is a
-boot-scoped acceleration and coordination value.
+### Crash after user RawStore commit but before live publication
+
+```text
+RawStore recovery retains the committed stamped versions
+RC already covers CS
+on reopen, the runtime initializes P from the durable reserved ceiling
+```
+
+### Why recovery may publish reserved gaps
+
+After RawStore recovery, every durable stamped version belongs to a transaction whose RawStore commit
+survived. Unused reserved sequences and aborted transactions have no surviving version rows. It is
+therefore safe for the reopened runtime to initialize publication through RC: gaps contain nothing to
+expose.
+
+This avoids a second transaction-status or durability authority. RawStore remains the sole physical
+commit/recovery authority.
 
 ## Savepoints and statement rollback
 
-Physical version/index mutations occur during statement execution and are already within the user
-RawStore transaction.
+Physical version/index mutations remain inside the user RawStore transaction.
 
 ```text
 statement/savepoint rollback:
@@ -180,77 +174,55 @@ statement/savepoint rollback:
     MVCC transaction context trims semantic lists and command state
 ```
 
-No commit sequence is assigned during ordinary statement execution or savepoint rollback.
+Commit sequences are assigned only during transaction finalization.
 
 ## `commitNoSync`
 
-`commitNoSync` does not change logical visibility ordering.
-
-It follows the same commit-publication boundary and publishes only after RawStore reports successful
-commit. The requested synchronization/durability mode remains a RawStore concern.
+`commitNoSync` follows the same ordered visibility-publication rule. The requested synchronization
+mode remains a RawStore durability concern.
 
 ## Read-only and heap-only transactions
 
-A read-only transaction captures a snapshot when MVCC semantics require one.
-
-A heap-only transaction does not need an MVCC commit sequence unless it also writes a transactional
-derived-index journal whose ordering must share the database commit sequence. The exact policy is
-part of the transaction-lifecycle proof.
+Read-only transactions capture snapshots when MVCC semantics require one. Heap-only transactions do
+not need an MVCC commit sequence unless a future shared transactional structure explicitly requires
+the same ordering domain.
 
 ## XA boundary
 
-The local protocol cannot simply be applied to an XA prepared transaction:
+An XA prepared transaction cannot use the local protocol unchanged because prepare may be followed by
+an arbitrarily delayed commit and user pages cannot be restamped after prepare without a separate
+proof.
 
-```text
-prepare may be followed by an arbitrarily delayed commit
-holding commitPublicationLock across prepare is unacceptable
-mutating/stamping user pages after prepare may violate RawStore XA rules
-```
-
-Therefore:
-
-```text
-MVCC participation in XA remains unsupported and must fail before partial work
-```
-
-until a separate proof defines one of:
-
-```text
-active/prepared-set snapshots with durable status semantics
-or
-an XA-safe RawStore commit-order publication mechanism
-```
-
-No generic transaction participant API may claim XA support before that proof exists.
+Therefore MVCC participation in XA remains unsupported and must fail before partial work until an
+XA-safe publication proof exists.
 
 ## Required tests
 
 ```text
-A stalls during finalization; snapshot cannot pass publication boundary
-A aborts after reserving a sequence; snapshot high-water does not advance
-A commits; snapshots opened before and after retain stable results
-two concurrent committers publish in commit order
-commit failure rolls back stamped version and journal metadata
-crash before commit record
-crash after commit record before in-memory publication
-reopen reconstructs committed high-water
-commitNoSync preserves logical ordering
-savepoint rollback removes versions from finalization lists
-statement rollback cannot receive a commit sequence
+durable block reservation never reuses gaps after reboot
+crash before RawStore commit leaves no user row
+crash after RawStore commit before publication recovers the row
+out-of-order/disjoint writer completion does not create false conflicts
+commit return implies visibility to a new snapshot
+REPEATABLE READ snapshot remains stable across concurrent disjoint commits
+READ COMMITTED may observe later commits on a later statement
+aborted reserved sequences do not block publication
+multi-table and mixed heap/MVCC transactions retain one RawStore outcome
+savepoint and rollback semantics remain unchanged
+reopen reconstructs publication from the durable recovery ceiling
 XA MVCC work fails closed before mutation
 ```
 
-## Provisional implementation questions
+## Measured evidence
 
-This proof intentionally does not decide:
+The focused eight-client disjoint UPDATE x1 JFR checkpoint showed:
 
 ```text
-lock class and package
-exact high-water metadata container/record
-sequence allocation mechanism
-transaction callback interface
-whether non-MVCC derived-index-only transactions share this sequence
-how runtime diagnostics expose waiting/finalizing transactions
+serialized block-64 publication:        16,199 tx/s, 0 retries
+concurrent publication without return barrier:
+                                       22,661 tx/s, 42,328 false retries (rejected)
+ordered commit-return publication:     23,773 tx/s, 0 retries
 ```
 
-Those choices must preserve the mathematics above.
+The accepted ordered-return design is therefore both the correctness-preserving protocol and the
+measured performance direction for v1.

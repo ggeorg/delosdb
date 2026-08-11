@@ -35,7 +35,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 executeUpdate(connection, "insert into heap_t values (1, 'heap-one')");
                 executeUpdate(connection, "insert into mvcc_t values (1, 'mvcc-one')");
                 connection.commit();
-                assertCounters(connection, 2L, 65L, 1L);
+                assertCounters(connection, 2L, 65L, 64L);
                 connection.commit();
 
                 executeUpdate(connection, "insert into mvcc_t values (2, 'mvcc-rollback')");
@@ -45,7 +45,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 connection.rollback();
                 assertRows(connection, "select id, name from heap_t order by id", "1|heap-one");
                 assertRows(connection, "select id, name from mvcc_t order by id", "1|mvcc-one");
-                assertCounters(connection, 3L, 65L, 1L);
+                assertCounters(connection, 3L, 65L, 64L);
                 connection.commit();
 
                 executeUpdate(connection, "insert into heap_t values (3, 'heap-before-savepoint')");
@@ -67,7 +67,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                         "select id, name from mvcc_t order by id",
                         "1|mvcc-one",
                         "3|mvcc-before-savepoint");
-                assertCounters(connection, 4L, 65L, 2L);
+                assertCounters(connection, 4L, 65L, 64L);
                 connection.commit();
 
                 executeUpdate(connection, "delete from mvcc_t where id = 1");
@@ -75,12 +75,12 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 connection.commit();
                 assertRows(connection, "select id, name from heap_t order by id", "3|heap-before-savepoint");
                 assertRows(connection, "select id, name from mvcc_t order by id", "3|mvcc-before-savepoint");
-                assertCounters(connection, 5L, 65L, 3L);
+                assertCounters(connection, 5L, 65L, 64L);
                 connection.commit();
 
                 executeUpdate(connection, "insert into heap_t values (5, 'heap-only')");
                 connection.commit();
-                assertCounters(connection, 5L, 65L, 3L);
+                assertCounters(connection, 5L, 65L, 64L);
                 connection.commit();
             }
             shutdownDatabase(database);
@@ -94,7 +94,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 assertRows(reopened,
                         "select id, name from mvcc_t order by id",
                         "3|mvcc-before-savepoint");
-                assertCounters(reopened, 5L, 65L, 3L);
+                assertCounters(reopened, 5L, 65L, 64L);
                 reopened.commit();
             }
             shutdownDatabase(database);
@@ -132,7 +132,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
             connection.commit();
             assertRows(connection, "select id, name from memory_heap", "1|heap-new");
             assertRows(connection, "select id, name from memory_mvcc", "1|mvcc-new");
-            assertCounters(connection, 4L, 65L, 2L);
+            assertCounters(connection, 4L, 65L, 64L);
             connection.commit();
         }
         shutdownMemoryDatabase(database);
@@ -191,7 +191,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                             "select id, name from crash_mvcc order by id",
                             "1|mvcc-new",
                             "3|mvcc-insert");
-                    assertCounters(recovered, 3L, 129L, 65L);
+                    assertCounters(recovered, 3L, 129L, 128L);
                 } else {
                     assertRows(recovered,
                             "select id, name from crash_heap order by id",
@@ -201,7 +201,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                             "select id, name from crash_mvcc order by id",
                             "1|mvcc-old",
                             "2|mvcc-delete");
-                    assertCounters(recovered, 3L, 129L, 1L);
+                    assertCounters(recovered, 3L, 129L, 128L);
                 }
                 recovered.commit();
             }
@@ -222,7 +222,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
             Connection connection,
             long nextTransactionId,
             long durableNextCommitSequence,
-            long committedHighWater) throws Exception {
+            long recoveryPublicationCeiling) throws Exception {
         MvccRawStoreMetadataInspection.Counters counters =
                 MvccRawStoreMetadataInspection.counters(connection);
         assertEquals("next transaction ID", nextTransactionId, counters.nextTransactionId());
@@ -230,7 +230,8 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 "durable next commit sequence",
                 durableNextCommitSequence,
                 counters.nextCommitSequence());
-        assertEquals("committed high-water", committedHighWater, counters.committedHighWater());
+        assertEquals("recovery publication ceiling", recoveryPublicationCeiling,
+                counters.recoveryPublicationCeiling());
     }
 
     private static String javaExecutable() {

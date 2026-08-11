@@ -28,8 +28,6 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final String CONCURRENT_PUBLICATION_PROPERTY =
-            "delosdb.mvcc.rawStoreConcurrentCommitPublication";
 
     public void testRollbackAndRebootDoNotReuseDatabaseWideIdentities() throws Exception {
         String database = databaseName("mvcc-raw-store-database-identities");
@@ -50,7 +48,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_mvcc_t values (2, 'first-commit')");
                 connection.commit();
-                assertCounters(connection, 3L, 65L, 1L);
+                assertCounters(connection, 3L, 65L, 64L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_MVCC_T",
@@ -63,7 +61,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 reopened.setAutoCommit(false);
                 executeUpdate(reopened, "insert into identity_mvcc_t values (3, 'after-reboot')");
                 reopened.commit();
-                assertCounters(reopened, 4L, 129L, 65L);
+                assertCounters(reopened, 4L, 129L, 128L);
                 assertVersionIdentities(
                         reopened,
                         "IDENTITY_MVCC_T",
@@ -86,7 +84,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_table_a values 1");
                 connection.commit();
-                assertCounters(connection, 2L, 65L, 1L);
+                assertCounters(connection, 2L, 65L, 64L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_TABLE_A",
@@ -95,7 +93,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(connection, "insert into identity_table_b values 2");
                 connection.commit();
-                assertCounters(connection, 3L, 65L, 2L);
+                assertCounters(connection, 3L, 65L, 64L);
                 assertVersionIdentities(
                         connection,
                         "IDENTITY_TABLE_B",
@@ -143,13 +141,13 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection recovered = openDatabase(database, false)) {
                 recovered.setAutoCommit(false);
-                assertCounters(recovered, 2L, 65L, 0L);
+                assertCounters(recovered, 2L, 65L, 64L);
                 assertRows(recovered, "select id from identity_crash_t");
                 recovered.commit();
 
                 executeUpdate(recovered, "insert into identity_crash_t values (2, 'after-gap')");
                 recovered.commit();
-                assertCounters(recovered, 3L, 129L, 65L);
+                assertCounters(recovered, 3L, 129L, 128L);
                 assertVersionIdentities(
                         recovered,
                         "IDENTITY_CRASH_T",
@@ -163,9 +161,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
     public void testConcurrentPublicationRecoveryCeilingAndReboot() throws Exception {
         String database = databaseName("mvcc-raw-store-concurrent-publication-reboot");
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope concurrent = setSystemProperty(
-                     CONCURRENT_PUBLICATION_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
@@ -207,9 +203,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
     public void testConcurrentPublicationPreservesHeldSnapshotAcrossDisjointCommits()
             throws Exception {
         String database = databaseName("mvcc-raw-store-concurrent-publication-snapshot");
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope concurrent = setSystemProperty(
-                     CONCURRENT_PUBLICATION_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -268,7 +262,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
 
                 executeUpdate(firstConnection, "insert into identity_a values 1");
                 firstConnection.commit();
-                assertCounters(firstConnection, 2L, 65L, 1L);
+                assertCounters(firstConnection, 2L, 65L, 64L);
                 firstConnection.commit();
                 assertCounters(secondConnection, 1L, 1L, 0L);
                 secondConnection.commit();
@@ -285,7 +279,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 memoryConnection.rollback();
                 executeUpdate(memoryConnection, "insert into identity_memory values 2");
                 memoryConnection.commit();
-                assertCounters(memoryConnection, 3L, 65L, 1L);
+                assertCounters(memoryConnection, 3L, 65L, 64L);
                 assertVersionIdentities(
                         memoryConnection,
                         "IDENTITY_MEMORY",
@@ -304,9 +298,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope concurrent = setSystemProperty(
-                     CONCURRENT_PUBLICATION_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -319,7 +311,6 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         Process process = new ProcessBuilder(
                 javaExecutable(),
                 "-D" + ENABLED_PROPERTY + "=true",
-                "-D" + CONCURRENT_PUBLICATION_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -332,9 +323,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash boundary; output=" + output, expectedExit, process.exitValue());
 
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope concurrent = setSystemProperty(
-                     CONCURRENT_PUBLICATION_PROPERTY, "true")) {
+        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
             try (Connection recovered = openDatabase(database, false)) {
                 recovered.setAutoCommit(false);
                 assertCounters(recovered, 2L, 65L, 64L);
@@ -389,12 +378,13 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
             Connection connection,
             long nextTransactionId,
             long nextCommitSequence,
-            long committedHighWater) throws Exception {
+            long recoveryPublicationCeiling) throws Exception {
         MvccRawStoreMetadataInspection.Counters counters =
                 MvccRawStoreMetadataInspection.counters(connection);
         assertEquals("next transaction ID", nextTransactionId, counters.nextTransactionId());
         assertEquals("next commit sequence", nextCommitSequence, counters.nextCommitSequence());
-        assertEquals("committed high-water", committedHighWater, counters.committedHighWater());
+        assertEquals("recovery publication ceiling", recoveryPublicationCeiling,
+                counters.recoveryPublicationCeiling());
     }
 
     private static void assertVersionIdentities(

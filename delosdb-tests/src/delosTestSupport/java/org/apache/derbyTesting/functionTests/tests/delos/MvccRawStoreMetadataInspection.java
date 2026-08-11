@@ -45,7 +45,7 @@ final class MvccRawStoreMetadataInspection {
 
     private static final int NEXT_TRANSACTION_ID_FIELD = 3;
     private static final int NEXT_COMMIT_SEQUENCE_FIELD = 4;
-    private static final int COMMITTED_HIGH_WATER_FIELD = 5;
+    private static final int RECOVERY_PUBLICATION_CEILING_FIELD = 5;
 
     private static final int CONTROL_VERSION_CONTAINER_FIELD = 4;
     private static final int CONTROL_COLUMN_COUNT_FIELD = 5;
@@ -110,7 +110,7 @@ final class MvccRawStoreMetadataInspection {
             return new Counters(
                     longField(raw, page, Page.FIRST_SLOT_NUMBER, NEXT_TRANSACTION_ID_FIELD),
                     longField(raw, page, Page.FIRST_SLOT_NUMBER, NEXT_COMMIT_SEQUENCE_FIELD),
-                    longField(raw, page, Page.FIRST_SLOT_NUMBER, COMMITTED_HIGH_WATER_FIELD));
+                    longField(raw, page, Page.FIRST_SLOT_NUMBER, RECOVERY_PUBLICATION_CEILING_FIELD));
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -1009,7 +1009,7 @@ final class MvccRawStoreMetadataInspection {
                 false);
     }
 
-    record Counters(long nextTransactionId, long nextCommitSequence, long committedHighWater) {
+    record Counters(long nextTransactionId, long nextCommitSequence, long recoveryPublicationCeiling) {
     }
 
     record DirectoryIdentity(

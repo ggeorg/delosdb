@@ -872,7 +872,7 @@ tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
         def blockSize = providers.gradleProperty(
                 'delosdb.benchmark.mvccCommitPublicationJfr.commitSequenceBlockSize').getOrElse('64')
         def concurrentPublication = providers.gradleProperty(
-                'delosdb.benchmark.mvccCommitPublicationJfr.concurrentPublication').getOrElse('false')
+                'delosdb.benchmark.mvccCommitPublicationJfr.concurrentPublication').getOrElse('true')
         def publicationMode = concurrentPublication.toBoolean() ? 'concurrent' : 'serialized'
         def jfrFile = new File(
                 output,

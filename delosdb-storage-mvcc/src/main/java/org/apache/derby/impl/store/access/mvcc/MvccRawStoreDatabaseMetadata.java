@@ -42,7 +42,7 @@ final class MvccRawStoreDatabaseMetadata {
     static final int FORMAT_VERSION_FIELD = 2;
     static final int NEXT_TRANSACTION_ID_FIELD = 3;
     static final int NEXT_COMMIT_SEQUENCE_FIELD = 4;
-    static final int COMMITTED_HIGH_WATER_FIELD = 5;
+    static final int RECOVERY_PUBLICATION_CEILING_FIELD = 5;
     static final int FIELD_COUNT = 6;
 
     private static final int INSERT_FLAGS = Page.INSERT_UNDO_WITH_PURGE;
@@ -92,14 +92,14 @@ final class MvccRawStoreDatabaseMetadata {
                     key = new ContainerKey(SEGMENT_ID, parseContainerId(persisted));
                 }
 
-                long committedHighWater = validateAndReadHighWater(
+                long recoveryPublicationCeiling = validateAndReadRecoveryPublicationCeiling(
                         childManager.getRawStoreXact(),
                         key,
                         useReservedRecoveryCeiling);
                 child.commit();
                 committed = true;
                 containerKey = key;
-                return committedHighWater;
+                return recoveryPublicationCeiling;
             } catch (StandardException | RuntimeException | Error failure) {
                 abortChild(child, failure);
                 throw failure;
@@ -145,7 +145,7 @@ final class MvccRawStoreDatabaseMetadata {
             StoreDataValue current = MvccRawStoreFormat.longValue(parent, 0L);
             page.fetchFieldFromSlot(
                     Page.FIRST_SLOT_NUMBER,
-                    COMMITTED_HIGH_WATER_FIELD,
+                    RECOVERY_PUBLICATION_CEILING_FIELD,
                     current);
             long currentHighWater = StoreTypeUtil.getLong(current);
             if (commitSequence <= currentHighWater) {
@@ -155,7 +155,7 @@ final class MvccRawStoreDatabaseMetadata {
             }
             page.updateFieldAtSlot(
                     Page.FIRST_SLOT_NUMBER,
-                    COMMITTED_HIGH_WATER_FIELD,
+                    RECOVERY_PUBLICATION_CEILING_FIELD,
                     MvccRawStoreFormat.longValue(parent, commitSequence),
                     null);
         } finally {
@@ -214,12 +214,12 @@ final class MvccRawStoreDatabaseMetadata {
                     StoreDataValue highWater = MvccRawStoreFormat.longValue(nested, 0L);
                     page.fetchFieldFromSlot(
                             Page.FIRST_SLOT_NUMBER,
-                            COMMITTED_HIGH_WATER_FIELD,
+                            RECOVERY_PUBLICATION_CEILING_FIELD,
                             highWater);
                     if (ceiling > StoreTypeUtil.getLong(highWater)) {
                         page.updateFieldAtSlot(
                                 Page.FIRST_SLOT_NUMBER,
-                                COMMITTED_HIGH_WATER_FIELD,
+                                RECOVERY_PUBLICATION_CEILING_FIELD,
                                 MvccRawStoreFormat.longValue(nested, ceiling),
                                 null);
                     }
@@ -267,7 +267,7 @@ final class MvccRawStoreDatabaseMetadata {
             row[FORMAT_VERSION_FIELD] = MvccRawStoreFormat.intValue(transaction, FORMAT_VERSION);
             row[NEXT_TRANSACTION_ID_FIELD] = MvccRawStoreFormat.longValue(transaction, 1L);
             row[NEXT_COMMIT_SEQUENCE_FIELD] = MvccRawStoreFormat.longValue(transaction, 1L);
-            row[COMMITTED_HIGH_WATER_FIELD] = MvccRawStoreFormat.longValue(transaction, 0L);
+            row[RECOVERY_PUBLICATION_CEILING_FIELD] = MvccRawStoreFormat.longValue(transaction, 0L);
             page.insertAtSlot(
                     Page.FIRST_SLOT_NUMBER,
                     row,
@@ -283,7 +283,7 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    private static long validateAndReadHighWater(
+    private static long validateAndReadRecoveryPublicationCeiling(
             Transaction transaction,
             ContainerKey key,
             boolean useReservedRecoveryCeiling) throws StandardException {
@@ -301,7 +301,7 @@ final class MvccRawStoreDatabaseMetadata {
             StoreDataValue highWater = MvccRawStoreFormat.longValue(transaction, 0L);
             page.fetchFieldFromSlot(
                     Page.FIRST_SLOT_NUMBER,
-                    COMMITTED_HIGH_WATER_FIELD,
+                    RECOVERY_PUBLICATION_CEILING_FIELD,
                     highWater);
             long value = StoreTypeUtil.getLong(highWater);
             if (value < 0L) {

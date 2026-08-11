@@ -65,28 +65,32 @@ No RawStore `XactId` is persisted as the MVCC identity.
 
 ## Durable commit sequences
 
-Immediately before the inherited user RawStore commit, the transaction participant holds the existing
-commit-publication boundary and consumes one `MvccCommitSequence` from a durably reserved block. The
-runtime reserves 64 consecutive sequences at a time through the same nested-top RawStore mechanism,
-then performs normal logged updates inside each user transaction:
+Immediately before the inherited user RawStore commit, the transaction participant consumes one
+`MvccCommitSequence` from a durably reserved database-wide block. The runtime reserves 64 consecutive
+sequences at a time through a nested-top RawStore transaction. The reservation also advances the
+durable recovery publication ceiling to the end of that block.
+
+The expensive user finalization work is then concurrent:
 
 ```text
-stamp created version rows with the reserved sequence
-stage the database committed high-water to the same sequence
-return to RAMTransaction
-write the one inherited RawStore commit record
-publish the in-memory high-water
+stamp surviving version rows with the reserved sequence
+publish transaction-private ordered-index replacements
+stage allocator high-waters
+perform the one inherited user RawStore commit
+mark the sequence terminal
+advance the contiguous in-memory publication frontier
+return commit only after that frontier reaches this sequence
 ```
 
-Each block reservation is independently durable before any value from the block is returned. Unused
-values are allowed gaps and are never reused: after reboot the runtime reserves a fresh block starting
-at the durable next-unreserved sequence. A failed user commit may likewise leave a consumed sequence
-gap. The committed high-water is not advanced unless the user transaction's RawStore commit succeeds.
-After reboot, the runtime reconstructs the published high-water from the committed database metadata
-row.
+Unused values are safe gaps and are never reused. After reboot the runtime starts from the durable
+next-unreserved sequence. RawStore recovery removes uncommitted stamped changes, while successfully
+committed stamped versions survive. The durable recovery ceiling can therefore be used to reconstruct
+the initial publication frontier after reopen without introducing another transaction-status
+authority.
 
-The table-local allocator row remains format-compatible for the existing isolated table format, but
-its historical committed-high-water field is no longer an authority for visibility or publication.
+The metadata field historically called committed high-water now represents this recovery publication
+ceiling. Live snapshot visibility is controlled by the in-memory contiguous published frontier, not by
+the durable ceiling while the database is running.
 
 ## Crash boundaries
 
@@ -94,12 +98,12 @@ The executable proof distinguishes allocator durability from transaction outcome
 
 | Failure boundary | Durable counter state | Durable row state |
 | --- | --- | --- |
-| user rollback after transaction-ID reservation | transaction-ID gap retained | row absent |
-| halt after ID/sequence-block reservation and version stamping, before user RawStore commit | reserved block and transaction-ID gap retained; committed high-water unchanged | row absent |
-| halt after user RawStore commit, before in-memory publication | counters and committed high-water retained | row present |
+| user rollback before commit-sequence reservation | transaction-ID gap may remain; no sequence block required | row absent |
+| halt after sequence-block reservation and stamping, before user RawStore commit | next-unreserved sequence and recovery ceiling remain advanced | row absent after RawStore recovery |
+| halt after user RawStore commit, before live publication | reservation/ceiling retained | row present after RawStore recovery |
 
-This preserves one database transaction outcome while guaranteeing that durable MVCC identities are
-never reused.
+This preserves one RawStore transaction outcome while guaranteeing that durable MVCC identities are
+never reused and that live snapshots never pass an unfinished earlier commit sequence.
 
 ## Database and memory scope
 
