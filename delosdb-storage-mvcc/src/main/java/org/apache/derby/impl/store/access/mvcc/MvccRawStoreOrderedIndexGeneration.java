@@ -21,8 +21,6 @@ import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -365,6 +363,7 @@ final class MvccRawStoreOrderedIndexGeneration {
             return null;
         }
         long[] btrees = new long[table.columnCount()];
+        Object[] mapping = mappingTemplate(transaction);
         int found = 0;
         Page page = null;
         try {
@@ -378,17 +377,13 @@ final class MvccRawStoreOrderedIndexGeneration {
                     if (page.isDeletedAtSlot(slot)) {
                         continue;
                     }
-                    StoreDataValue kind = MvccRawStoreFormat.intValue(transaction, 0);
-                    page.fetchFieldFromSlot(
-                            slot,
-                            MvccRawStoreFormat.ORDERED_INDEX_DIRECTORY_KIND_FIELD,
-                            kind);
-                    if (StoreTypeUtil.getLong(kind)
+                    page.fetchFromSlot(null, slot, mapping, null, false);
+                    if (MvccRawStoreFormat.intAt(
+                                    mapping,
+                                    MvccRawStoreFormat.ORDERED_INDEX_DIRECTORY_KIND_FIELD)
                             != MvccRawStoreFormat.ORDERED_INDEX_BTREE_DESCRIPTOR_KIND) {
                         continue;
                     }
-                    Object[] mapping = mappingTemplate(transaction);
-                    page.fetchFromSlot(null, slot, mapping, null, false);
                     if (MvccRawStoreFormat.intAt(
                                     mapping,
                                     MvccRawStoreFormat.ORDERED_INDEX_DIRECTORY_FORMAT_VERSION)
