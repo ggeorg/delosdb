@@ -220,6 +220,7 @@ public final class MvccRawStoreDatabaseIdentityTest extends MvccSqlTestSupport {
             }
 
             try (Connection reader = openDatabase(database, false)) {
+                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
                 reader.setAutoCommit(false);
                 assertRows(reader,
                         "select id, quantity from concurrent_snapshot_t order by id",
