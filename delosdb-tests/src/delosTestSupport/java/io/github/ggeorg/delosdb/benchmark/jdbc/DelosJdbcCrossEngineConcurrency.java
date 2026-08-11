@@ -125,6 +125,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "rows", options.rows());
         addProperty(command, "clients", options.clients());
         addProperty(command, "widths", options.widths());
+        addProperty(command, "workloads", options.workloads());
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "payload", options.payload());
         addProperty(command, "fixtureBatch", options.fixtureBatch());
@@ -180,22 +181,24 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static String ensureImage(Options options, String image) throws Exception {
-        CommandResult inspect = runCommand(20,
-                List.of("docker", "image", "inspect", "--format", "{{.Id}} {{join .RepoDigests \",\"}}", image));
-        if (inspect.exitCode() != 0) {
+        CommandResult id = runCommand(20,
+                List.of("docker", "image", "inspect", "--format", "{{.Id}}", image));
+        if (id.exitCode() != 0) {
             CommandResult pull = runCommand(Math.max(120, options.containerStartupTimeoutSeconds()),
                     List.of("docker", "pull", image));
             if (pull.exitCode() != 0) {
                 throw new IllegalStateException("Could not pull benchmark image " + image + ":\n" + pull.output());
             }
-            inspect = runCommand(20,
-                    List.of("docker", "image", "inspect", "--format", "{{.Id}} {{join .RepoDigests \",\"}}", image));
+            id = runCommand(20,
+                    List.of("docker", "image", "inspect", "--format", "{{.Id}}", image));
         }
-        if (inspect.exitCode() != 0) {
-            throw new IllegalStateException("Could not inspect benchmark image " + image + ":\n"
-                    + inspect.output());
+        if (id.exitCode() != 0) {
+            throw new IllegalStateException("Could not inspect benchmark image " + image + ":\n" + id.output());
         }
-        return inspect.output().trim();
+        CommandResult digests = runCommand(20,
+                List.of("docker", "image", "inspect", "--format", "{{json .RepoDigests}}", image));
+        String digestEvidence = digests.exitCode() == 0 ? digests.output().trim() : "unavailable";
+        return "id=" + id.output().trim() + " repoDigests=" + digestEvidence;
     }
 
     private static ContainerServer startContainer(Options options, Target target, int run) throws Exception {
@@ -826,7 +829,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         List<Spec> specs = new ArrayList<>();
         for (int width : options.widthValues()) {
             for (int clients : options.clientValues()) {
-                for (Workload workload : Workload.values()) {
+                for (Workload workload : options.workloadValues()) {
                     specs.add(new Spec(workload, clients, width));
                 }
             }
@@ -891,7 +894,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void validateRows(Options options, List<Row> rows) {
         int expected = options.targetValues().size() * options.runs() * options.rowCounts().size()
-                * options.clientValues().size() * options.widthValues().size() * Workload.values().length;
+                * options.clientValues().size() * options.widthValues().size() * options.workloadValues().size();
         if (rows.size() != expected) {
             throw new IllegalStateException(
                     "Concurrency measurement count mismatch: expected=" + expected + ", actual=" + rows.size());
@@ -1033,7 +1036,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Clients: ").append(options.clients()).append('\n')
                 .append("Operations per transaction: ").append(options.widths()).append('\n')
                 .append("Transactions per client/interval: ").append(options.transactionsPerClient()).append('\n')
-                .append("Workloads: PRIMARY_KEY_READ, DISJOINT_INDEXED_UPDATE, CONTENDED_INDEXED_UPDATE\n")
+                .append("Workloads: ").append(options.workloadValues()).append('\n')
                 .append("Each client owns one JDBC connection and reused prepared statement.\n")
                 .append("Disjoint-update client rows are evenly spread across the fixture.\n")
                 .append("Timed interval: synchronized client execution through final commit.\n")
@@ -1484,6 +1487,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String rows,
             String clients,
             String widths,
+            String workloads,
             int transactionsPerClient,
             int payload,
             int fixtureBatch,
@@ -1523,6 +1527,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "rows", "10000"),
                     System.getProperty(PREFIX + "clients", "1,2,4,8"),
                     System.getProperty(PREFIX + "widths", "1,10"),
+                    System.getProperty(PREFIX + "workloads",
+                            "PRIMARY_KEY_READ,DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE"),
                     Integer.parseInt(System.getProperty(PREFIX + "transactionsPerClient", "50")),
                     Integer.parseInt(System.getProperty(PREFIX + "payload", "128")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
@@ -1551,12 +1557,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             parsePositive(rows, "rows", 100);
             parsePositive(clients, "clients", 1);
             parsePositive(widths, "widths", 1);
+            workloadValues();
             int maxClients = clientValues().stream().mapToInt(Integer::intValue).max().orElseThrow();
             int minRows = rowCounts().stream().mapToInt(Integer::intValue).min().orElseThrow();
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
-            if (!clientValues().contains(1)) {
+            if (target == null && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || payload < 16 || fixtureBatch < 1 || warmups < 0
@@ -1599,6 +1606,26 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         List<Integer> widthValues() {
             return integerList(widths);
+        }
+
+        List<Workload> workloadValues() {
+            List<Workload> values = new ArrayList<>();
+            for (String token : workloads.split(",")) {
+                Workload value;
+                try {
+                    value = Workload.valueOf(token.trim().toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException failure) {
+                    throw new IllegalArgumentException("Unknown concurrency workload: " + token, failure);
+                }
+                if (values.contains(value)) {
+                    throw new IllegalArgumentException("Duplicate concurrency workload: " + value);
+                }
+                values.add(value);
+            }
+            if (values.isEmpty()) {
+                throw new IllegalArgumentException("At least one concurrency workload is required");
+            }
+            return List.copyOf(values);
         }
 
         List<Target> targetValues() {

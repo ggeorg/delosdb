@@ -816,6 +816,9 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
                         'delosdb.benchmark.crossEngineConcurrency.clients').getOrElse('1,2,4,8'),
                 'delosdb.benchmark.crossEngineConcurrency.widths': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.widths').getOrElse('1,10'),
+                'delosdb.benchmark.crossEngineConcurrency.workloads': providers.gradleProperty(
+                        'delosdb.benchmark.crossEngineConcurrency.workloads').getOrElse(
+                        'PRIMARY_KEY_READ,DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient').getOrElse('50'),
                 'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
@@ -832,6 +835,69 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
                         'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds').getOrElse('120'),
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.childHeap').getOrElse('1g')
+        ])
+    }
+}
+
+
+tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
+    group = 'benchmark'
+    description = 'Profiles the 8-client disjoint Delos MVCC commit/publication path with JFR.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/mvcc-commit-publication-jfr')
+    outputs.dir(reportDir)
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'MVCC commit/publication JFR profiling requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def output = reportDir.get().asFile
+        project.delete(output)
+        output.mkdirs()
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-mvcc-commit-publication-jfr').get().asFile
+        project.delete(databaseRoot)
+        def jfrFile = new File(output, 'delos-mvcc-disjoint-8c-x1.jfr')
+        jvmArgs '-Xms1g', '-Xmx1g', '-XX:+AlwaysPreTouch',
+                "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile,dumponexit=true,maxsize=512m"
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2',
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': output.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'DISJOINT_INDEXED_UPDATE',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.mvccCommitPublicationJfr.transactionsPerClient').getOrElse('20000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
     }
 }
@@ -902,6 +968,9 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
                         'delosdb.benchmark.serverContainer.clients').getOrElse('1,2,4,8'),
                 'delosdb.benchmark.crossEngineConcurrency.widths': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.widths').getOrElse('1,10'),
+                'delosdb.benchmark.crossEngineConcurrency.workloads': providers.gradleProperty(
+                        'delosdb.benchmark.serverContainer.workloads').getOrElse(
+                        'PRIMARY_KEY_READ,DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.transactionsPerClient').getOrElse('50'),
                 'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
