@@ -133,9 +133,18 @@ latency ratios against Derby, H2, and SQLite, while `cross-engine-dispersion.csv
 IQR, MAD, min/max, sample count, and normalized robust spread for every engine/workload shape. Use the
 dispersion report before treating small ratio differences as meaningful.
 
-`runDelosJdbcCrossEngineConcurrencyComparison` uses the same five embedded targets. Its current implemented
-workloads remain `PRIMARY_KEY_READ`, `DISJOINT_INDEXED_UPDATE`, and `CONTENDED_INDEXED_UPDATE`; broader
-read/write mixes and contention shapes are roadmap work, not silently claimed as already implemented.
+`runDelosJdbcCrossEngineConcurrencyComparison` uses the same five embedded targets. Primary-key reads are
+split explicitly into `PRIMARY_KEY_READ_HOT`, `PRIMARY_KEY_READ_DISJOINT`, and
+`PRIMARY_KEY_READ_RANDOM`: the hot shape sends every client to id=1, the disjoint shape assigns one evenly
+spaced private id per client, and the random shape replays a deterministic precomputed key stream across
+the fixture. Key generation occurs outside the timed interval. The current write workloads remain
+`DISJOINT_INDEXED_UPDATE` and `CONTENDED_INDEXED_UPDATE`; broader read/write mixes are roadmap work, not
+silently claimed as already implemented.
+
+Concurrency results report both transactions/second and operations/second. The aggregate value
+`elapsedNanos / measuredTransactions` is reported as `inverseThroughputNanosPerTransaction`; it is the
+reciprocal of aggregate throughput and is not an observed client transaction latency. p50/p95/p99 remain
+reserved for later per-client latency sampling.
 `cross-engine-concurrency-capabilities.csv` records the execution model for every configured target/workload.
 SQLite BUSY/LOCKED retries are counted with retryable conflict retries, so its single-writer architecture
 remains visible in the result rather than being hidden by the harness.

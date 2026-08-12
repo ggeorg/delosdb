@@ -854,7 +854,8 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
                         'delosdb.benchmark.crossEngineConcurrency.widths').getOrElse('1,10'),
                 'delosdb.benchmark.crossEngineConcurrency.workloads': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.workloads').getOrElse(
-                        'PRIMARY_KEY_READ,DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM,' +
+                                'DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient').getOrElse('50'),
                 'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
@@ -885,7 +886,7 @@ def primaryKeyReadJfrProfiles = [
 
 tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
     group = 'benchmark'
-    description = 'Profiles Delos heap/MVCC, upstream Derby, and H2 on 8-client PRIMARY_KEY_READ x10.'
+    description = 'Profiles Delos heap/MVCC, upstream Derby, and H2 on 8-client hot-key PK reads x10.'
     dependsOn tasks.named('compileTestJava'), ':jars'
     outputs.upToDateWhen { false }
     def reportDir = rootProject.layout.buildDirectory.dir(
@@ -928,7 +929,7 @@ tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
                             "${System.getProperty('os.arch')}\n" +
                             "Processors: ${Runtime.getRuntime().availableProcessors()}\n" +
                             "target=${profile.target}\n" +
-                            "workload=PRIMARY_KEY_READ\n" +
+                            "workload=PRIMARY_KEY_READ_HOT\n" +
                             "clients=8\n" +
                             "operationsPerTransaction=10\n" +
                             "transactionsPerClient=${transactionsPerClient}\n" +
@@ -950,7 +951,7 @@ tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
                     'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
                     'delosdb.benchmark.crossEngineConcurrency.clients': '8',
                     'delosdb.benchmark.crossEngineConcurrency.widths': '10',
-                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
                     'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': transactionsPerClient,
                     'delosdb.benchmark.crossEngineConcurrency.payload': '128',
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
@@ -978,7 +979,7 @@ tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
                     'worker'
             ])
 
-            logger.lifecycle("Profiling ${profile.target} PRIMARY_KEY_READ x10 with JFR")
+            logger.lifecycle("Profiling ${profile.target} PRIMARY_KEY_READ_HOT x10 with JFR")
             def process = new ProcessBuilder(command.collect { it.toString() }).inheritIO().start()
             def exitCode = process.waitFor()
             if (exitCode != 0) {
@@ -988,9 +989,9 @@ tasks.register('runDelosJdbcPrimaryKeyReadJfr') {
         }
 
         new File(output, 'profile-matrix.txt').text =
-                'DelosDB embedded PRIMARY_KEY_READ JFR attribution matrix\n' +
+                'DelosDB embedded PRIMARY_KEY_READ_HOT JFR attribution matrix\n' +
                         'Targets: delos_heap, delos_mvcc, upstream_derby, h2\n' +
-                        'Shape: 8 clients, 10 PK reads/transaction, READ_COMMITTED\n' +
+                        'Shape: 8 clients, all reading id=1, 10 PK reads/transaction, READ_COMMITTED\n' +
                         'Recordings: one JFR per target using JDK profile settings\n' +
                         'Interpretation: attribute CPU/allocation/locking; do not compare JFR TPS as release TPS.\n'
     }
@@ -1140,7 +1141,8 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
                         'delosdb.benchmark.serverContainer.widths').getOrElse('1,10'),
                 'delosdb.benchmark.crossEngineConcurrency.workloads': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.workloads').getOrElse(
-                        'PRIMARY_KEY_READ,DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM,' +
+                                'DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE'),
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.transactionsPerClient').getOrElse('50'),
                 'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(

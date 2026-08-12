@@ -117,13 +117,16 @@ execution, MVCC scan/snapshot ownership, immutable runtime evidence, and text/JS
 Phase 10 closeout added no second plan, execution authority, optimizer behavior, storage behavior, or
 profiling path.
 
-Before Phase 11 starts, the accepted performance closeout finishes measurement-first MVCC indexed-read
-accounting, closes that investigation when no material semantically avoidable cost remains, studies the
-H2/Derby-family architectural gap separately, profiles concurrent INSERT from evidence rather than
-speculation, and records the final cross-engine checkpoint. The permanent embedded comparison authority is
-DelosDB heap, DelosDB MVCC, upstream Derby, H2, and SQLite through Xerial SQLite JDBC. SQLite is labelled
-`native SQLite through JDBC` and is not used as a JVM architectural-equivalence threshold. The extended
-client/server reference group is PostgreSQL, Firebird, and MariaDB.
+Before Phase 11 starts, the performance campaign must reach a state we are satisfied can ship. The
+measurement-first MVCC indexed-read accounting is complete and removed one proven duplicate hidden-B-tree
+fetch, but the five-engine matrix exposed a larger Derby-family question: the historical concurrent
+primary-key-read workload was a hot-key test because every client repeatedly read id=1. The immediate
+checkpoint therefore separates hot, disjoint, and deterministic-random primary-key reads across DelosDB
+heap, DelosDB MVCC, upstream Derby, H2, and SQLite before more profiling or storage changes. That evidence
+then drives H2/SQLite/Derby-architecture research, concurrent INSERT profiling, and the remaining full
+cross-engine benchmark plan. SQLite is labelled `native SQLite through JDBC` and is not used as a JVM
+architectural-equivalence threshold. The extended client/server reference group is PostgreSQL, Firebird,
+and MariaDB.
 
 Phase 11 remains planned after that performance closeout and owns remaining v1 product-completeness work:
 explicit heap/MVCC and embedded/DRDA parity, large-value and streaming lifecycle, bounded resources and
