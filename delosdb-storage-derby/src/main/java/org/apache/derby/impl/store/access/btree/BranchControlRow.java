@@ -241,7 +241,14 @@ public class BranchControlRow extends ControlRow
 
         try
         {
-            searchForEntry(sp);
+            long snapshotChildPageId = ContainerHandle.INVALID_PAGE_NUMBER;
+            if (this.page.getPageNumber() == BTree.ROOTPAGEID
+                    && !sp.searchForOptimizer) {
+                snapshotChildPageId = sp.btree.getConglomerate()
+                        .searchRootRoutingSnapshot(this, sp.btree, sp);
+            } else {
+                searchForEntry(sp);
+            }
 
             if (sp.searchForOptimizer)
             {
@@ -281,8 +288,9 @@ public class BranchControlRow extends ControlRow
                     (sp.current_fraction) * (((float) 1) / row_count);
             }
 
-            childpage =
-                this.getChildPageAtSlot(sp.btree, sp.resultSlot);
+            childpage = snapshotChildPageId == ContainerHandle.INVALID_PAGE_NUMBER
+                    ? this.getChildPageAtSlot(sp.btree, sp.resultSlot)
+                    : ControlRow.get(sp.btree, snapshotChildPageId);
 
             this.release();
 

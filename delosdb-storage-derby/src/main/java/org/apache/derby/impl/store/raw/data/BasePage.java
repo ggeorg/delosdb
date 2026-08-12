@@ -1736,6 +1736,43 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                 .toArray(String[]::new);
     }
 
+    /**
+     * Wait for the current page owner to release the exclusive latch.
+     * Caller holds this page's monitor.
+     */
+    private void waitForExclusiveOwnerRelease() {
+        long ownerWaitStarted = 0L;
+        PageLatchContention pageContention = null;
+        if (PAGE_LATCH_DIAGNOSTICS && owner != null) {
+            PAGE_LATCH_CONTENDED_REQUESTS.increment();
+            pageContention = PAGE_LATCH_CONTENTION_BY_PAGE.computeIfAbsent(
+                    identity, ignored -> new PageLatchContention());
+            pageContention.contendedRequests.increment();
+            ownerWaitStarted = System.nanoTime();
+        }
+
+        while (owner != null) {
+            if (PAGE_LATCH_DIAGNOSTICS) {
+                PAGE_LATCH_OWNER_WAIT_CALLS.increment();
+                if (pageContention != null) {
+                    pageContention.ownerWaitCalls.increment();
+                }
+            }
+            try {
+                // Expect notify from releaseExclusive().
+                wait();
+            } catch (InterruptedException ie) {
+                InterruptStatus.setInterrupted();
+            }
+        }
+
+        if (ownerWaitStarted != 0L) {
+            long ownerWaitNanos = System.nanoTime() - ownerWaitStarted;
+            PAGE_LATCH_OWNER_WAIT_NANOS.add(ownerWaitNanos);
+            pageContention.ownerWaitNanos.add(ownerWaitNanos);
+        }
+    }
+
 	/**
 		Get an exclusive latch on the page.
 		<BR>
@@ -1786,34 +1823,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                     SQLState.DATA_DOUBLE_LATCH_INTERNAL_ERROR, identity);
 			}
 
-            long ownerWaitStarted = 0L;
-            PageLatchContention pageContention = null;
-            if (PAGE_LATCH_DIAGNOSTICS && owner != null) {
-                PAGE_LATCH_CONTENDED_REQUESTS.increment();
-                pageContention = PAGE_LATCH_CONTENTION_BY_PAGE.computeIfAbsent(
-                        identity, ignored -> new PageLatchContention());
-                pageContention.contendedRequests.increment();
-                ownerWaitStarted = System.nanoTime();
-            }
-			while (owner != null) {
-                if (PAGE_LATCH_DIAGNOSTICS) {
-                    PAGE_LATCH_OWNER_WAIT_CALLS.increment();
-                    if (pageContention != null) {
-                        pageContention.ownerWaitCalls.increment();
-                    }
-                }
-				try {
-					// Expect notify from releaseExclusive().
-					wait();
-				} catch (InterruptedException ie) {
-                    InterruptStatus.setInterrupted();
-				}
-			}
-            if (ownerWaitStarted != 0L) {
-                long ownerWaitNanos = System.nanoTime() - ownerWaitStarted;
-                PAGE_LATCH_OWNER_WAIT_NANOS.add(ownerWaitNanos);
-                pageContention.ownerWaitNanos.add(ownerWaitNanos);
-            }
+            waitForExclusiveOwnerRelease();
 
 			preLatch(requester);
 

@@ -44,6 +44,7 @@ import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreTypeUtil;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 import org.apache.derby.impl.store.access.conglomerate.GenericConglomerate;
@@ -196,6 +197,100 @@ public abstract class BTree extends GenericConglomerate
      * isn't StringDataValue.COLLATION_TYPE_UCS_BASIC.
      */
     protected boolean hasCollatedTypes;
+
+    /**
+     * Immutable decoded routing state for the current root branch page.
+     *
+     * <p>The RawStore root page remains the authority. A search still latches
+     * the root and keeps the inherited root-to-child latch coupling. This
+     * snapshot only removes repeated record decoding and page-local binary
+     * search work from that exclusive root-latch critical section. The
+     * snapshot is rebuilt while the root is latched whenever RawStore's page
+     * version changes.</p>
+     */
+    private transient volatile RootRoutingSnapshot rootRoutingSnapshot;
+
+    final long searchRootRoutingSnapshot(
+            BranchControlRow root, OpenBTree openBtree, SearchParameters params)
+            throws StandardException {
+        long pageVersion = root.page.getPageVersion();
+        RootRoutingSnapshot snapshot = rootRoutingSnapshot;
+        if (snapshot == null || snapshot.pageVersion != pageVersion) {
+            snapshot = RootRoutingSnapshot.fromLatchedRoot(
+                    root, openBtree, pageVersion);
+            rootRoutingSnapshot = snapshot;
+        }
+        return snapshot.search(params, this);
+    }
+
+    private static final class RootRoutingSnapshot {
+        private final long pageVersion;
+        private final StoreDataValue[][] branchRows;
+        private final long[] childPageIds;
+
+        private RootRoutingSnapshot(
+                long pageVersion, StoreDataValue[][] branchRows, long[] childPageIds) {
+            this.pageVersion = pageVersion;
+            this.branchRows = branchRows;
+            this.childPageIds = childPageIds;
+        }
+
+        private static RootRoutingSnapshot fromLatchedRoot(
+                BranchControlRow root, OpenBTree openBtree, long pageVersion)
+                throws StandardException {
+            int slotCount = root.page.recordCount();
+            StoreDataValue[][] branchRows =
+                    new StoreDataValue[Math.max(0, slotCount - 1)][];
+            long[] childPageIds = new long[slotCount];
+            childPageIds[0] = root.getLeftChildPageno();
+
+            for (int slot = 1; slot < slotCount; slot++) {
+                StoreDataValue[] row = BranchRow.createEmptyTemplate(
+                        openBtree.getRawTran(), openBtree.getConglomerate()).getRow();
+                root.page.fetchFromSlot(null, slot, row, null, true);
+                branchRows[slot - 1] = row;
+                childPageIds[slot] = StoreTypeUtil.getLong(
+                        row[openBtree.getConglomerate().nKeyFields]);
+            }
+
+            return new RootRoutingSnapshot(pageVersion, branchRows, childPageIds);
+        }
+
+        private long search(SearchParameters params, BTree btree)
+                throws StandardException {
+            int leftSlot = 0;
+            int rightSlot = branchRows.length + 1;
+            int leftRange = 1;
+            int rightRange = branchRows.length;
+
+            while (leftSlot != rightSlot - 1) {
+                int midSlot = (leftRange + rightRange) / 2;
+                int comparison = ControlRow.compareIndexRowToKey(
+                        branchRows[midSlot - 1],
+                        params.searchKey,
+                        btree.nUniqueColumns,
+                        params.partial_key_match_op,
+                        btree.ascDescInfo);
+
+                if (comparison == 0) {
+                    params.resultSlot = midSlot;
+                    params.resultExact = true;
+                    return childPageIds[midSlot];
+                }
+                if (comparison > 0) {
+                    rightSlot = midSlot;
+                    rightRange = midSlot - 1;
+                } else {
+                    leftSlot = midSlot;
+                    leftRange = midSlot + 1;
+                }
+            }
+
+            params.resultSlot = leftSlot;
+            params.resultExact = false;
+            return childPageIds[leftSlot];
+        }
+    }
 
 
 	/*
