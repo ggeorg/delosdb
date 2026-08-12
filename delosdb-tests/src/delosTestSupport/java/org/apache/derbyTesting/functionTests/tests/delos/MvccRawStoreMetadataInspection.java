@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Properties;
 
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
@@ -35,6 +36,8 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
+import org.apache.derby.shared.common.i18n.MessageService;
+import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 
@@ -306,6 +309,76 @@ final class MvccRawStoreMetadataInspection {
             base.close();
         }
         return List.copyOf(result);
+    }
+
+    static OrderedIndexProbeStats orderedIndexProbeStats(
+            Connection connection,
+            String tableName,
+            int columnId,
+            int key) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = manager.getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+        OrderedIndexMapping mapping = orderedIndexMappings(raw, layout).stream()
+                .filter(candidate -> candidate.columnId() == columnId)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "No RawStore MVCC ordered-index mapping for " + tableName
+                                + " column " + columnId));
+        ConglomerateController base = manager.openConglomerate(
+                metadataContainerId,
+                false,
+                0,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_READ_UNCOMMITTED);
+        StoreDataValue[] bound = new StoreDataValue[] {new SQLInteger(key)};
+        ScanController scan = manager.openScan(
+                mapping.btreeConglomerate(),
+                false,
+                0,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_READ_UNCOMMITTED,
+                null,
+                bound,
+                ScanController.GE,
+                null,
+                bound,
+                ScanController.GT);
+        int nextCalls = 0;
+        int candidates = 0;
+        try {
+            StoreDataValue[] row = orderedIndexRowTemplate(
+                    raw, layout, columnId, base.newRowLocationTemplate());
+            while (true) {
+                nextCalls++;
+                if (!scan.next()) {
+                    break;
+                }
+                candidates++;
+                scan.fetch(row);
+            }
+            Properties properties = scan.getScanInfo().getAllScanInfo(null);
+            return new OrderedIndexProbeStats(
+                    metric(properties, SQLState.STORE_RTS_NUM_PAGES_VISITED),
+                    metric(properties, SQLState.STORE_RTS_NUM_ROWS_VISITED),
+                    metric(properties, SQLState.STORE_RTS_NUM_ROWS_QUALIFIED),
+                    metric(properties, SQLState.STORE_RTS_TREE_HEIGHT),
+                    nextCalls,
+                    candidates);
+        } finally {
+            scan.close();
+            base.close();
+        }
+    }
+
+    private static long metric(Properties properties, String sqlState) {
+        String key = MessageService.getTextMessage(sqlState);
+        String value = properties.getProperty(key);
+        if (value == null) {
+            throw new AssertionError("Missing scan metric " + key + ": " + properties);
+        }
+        return Long.parseLong(value);
     }
 
     static List<OrderedIndexIdentity> orderedIndexEntries(
@@ -1039,6 +1112,15 @@ final class MvccRawStoreMetadataInspection {
     }
 
     record RowLocationIdentity(boolean hasLocator, long pageId, int slotId) {
+    }
+
+    record OrderedIndexProbeStats(
+            long pagesVisited,
+            long rowsVisited,
+            long rowsQualified,
+            long treeHeight,
+            int nextCalls,
+            int candidates) {
     }
 
     record OrderedIndexIdentity(

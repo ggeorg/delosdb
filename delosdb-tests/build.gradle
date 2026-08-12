@@ -735,6 +735,21 @@ registerDelosFocusedTest(
 }
 
 registerDelosFocusedTest(
+        'runDelosPrimaryKeyReadPhysicalAccounting',
+        'Measures one successful heap/MVCC PRIMARY_KEY_READ as physical B-tree/directory/version work without production hot-loop instrumentation.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/PrimaryKeyReadPhysicalAccountingTest.class'],
+        [
+                'delosdb.benchmark.physicalReadAccounting.rows': providers.gradleProperty(
+                        'delosdb.benchmark.physicalReadAccounting.rows').getOrElse('10000'),
+                'delosdb.benchmark.physicalReadAccounting.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/physical-read-accounting').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
