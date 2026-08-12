@@ -75,7 +75,7 @@ report prose do not participate in pass/fail.
 
 ## Current phase
 
-The current implementation phase is **Phase 11 — Product Completeness**.
+The current implementation phase is **Pre-Phase 11 — Performance closeout**.
 
 Phase 10.1 is complete. The immutable schema-version-1 selected-plan model now exposes:
 
@@ -117,9 +117,17 @@ execution, MVCC scan/snapshot ownership, immutable runtime evidence, and text/JS
 Phase 10 closeout added no second plan, execution authority, optimizer behavior, storage behavior, or
 profiling path.
 
-Phase 11 now owns remaining v1 product-completeness work: explicit heap/MVCC and embedded/DRDA parity,
-large-value and streaming lifecycle, bounded resources and physical-space reuse, DRDA lifecycle, and
-corresponding executable documentation.
+Before Phase 11 starts, the accepted performance closeout finishes measurement-first MVCC indexed-read
+accounting, closes that investigation when no material semantically avoidable cost remains, studies the
+H2/Derby-family architectural gap separately, profiles concurrent INSERT from evidence rather than
+speculation, and records the final cross-engine checkpoint. The permanent embedded comparison authority is
+DelosDB heap, DelosDB MVCC, upstream Derby, H2, and SQLite through Xerial SQLite JDBC. SQLite is labelled
+`native SQLite through JDBC` and is not used as a JVM architectural-equivalence threshold. The extended
+client/server reference group is PostgreSQL, Firebird, and MariaDB.
+
+Phase 11 remains planned after that performance closeout and owns remaining v1 product-completeness work:
+explicit heap/MVCC and embedded/DRDA parity, large-value and streaming lifecycle, bounded resources and
+physical-space reuse, DRDA lifecycle, and corresponding executable documentation.
 
 Repository-integrity stages and Phase 10 are closed and should not be reopened as endless cleanup or
 diagnostic-expansion programs.

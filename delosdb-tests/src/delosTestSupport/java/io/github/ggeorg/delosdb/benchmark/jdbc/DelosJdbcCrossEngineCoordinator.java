@@ -76,6 +76,9 @@ public final class DelosJdbcCrossEngineCoordinator {
         command.add("-Xms" + options.childHeap());
         command.add("-Xmx" + options.childHeap());
         command.add("-XX:+AlwaysPreTouch");
+        if (target == Target.SQLITE) {
+            command.add("--enable-native-access=ALL-UNNAMED");
+        }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
         command.add("-D" + PREFIX + "target=" + target.id());
@@ -178,8 +181,9 @@ public final class DelosJdbcCrossEngineCoordinator {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medians(rows);
         StringBuilder out = new StringBuilder(
                 "rowCount,workload,outcome,operationsPerTransaction,delosHeapMedianNanos,"
-                        + "delosMvccMedianNanos,upstreamDerbyMedianNanos,h2MedianNanos,"
-                        + "delosHeapToDerby,delosMvccToDerby,delosHeapToH2,delosMvccToH2\n");
+                        + "delosMvccMedianNanos,upstreamDerbyMedianNanos,h2MedianNanos,nativeSqliteJdbcMedianNanos,"
+                        + "delosHeapToDerby,delosMvccToDerby,delosHeapToH2,delosMvccToH2,"
+                        + "delosHeapToNativeSqliteJdbc,delosMvccToNativeSqliteJdbc\n");
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             ShapeKey key = entry.getKey();
             EnumMap<Target, Double> values = entry.getValue();
@@ -187,6 +191,7 @@ public final class DelosJdbcCrossEngineCoordinator {
             double mvcc = require(values, Target.DELOS_MVCC, key);
             double derby = require(values, Target.UPSTREAM_DERBY, key);
             double h2 = require(values, Target.H2, key);
+            double sqlite = require(values, Target.SQLITE, key);
             out.append(key.rowCount()).append(',')
                     .append(key.workload()).append(',')
                     .append(key.outcome()).append(',')
@@ -195,10 +200,13 @@ public final class DelosJdbcCrossEngineCoordinator {
                     .append(format(mvcc)).append(',')
                     .append(format(derby)).append(',')
                     .append(format(h2)).append(',')
+                    .append(format(sqlite)).append(',')
                     .append(format(heap / derby)).append(',')
                     .append(format(mvcc / derby)).append(',')
                     .append(format(heap / h2)).append(',')
-                    .append(format(mvcc / h2)).append('\n');
+                    .append(format(mvcc / h2)).append(',')
+                    .append(format(heap / sqlite)).append(',')
+                    .append(format(mvcc / sqlite)).append('\n');
         }
         Files.writeString(
                 options.reportDirectory().resolve("cross-engine-ratios.csv"),
@@ -270,9 +278,13 @@ public final class DelosJdbcCrossEngineCoordinator {
                 .append("Transaction timing includes commit or rollback: true\n")
                 .append("Fixture setup and semantic restoration outside timing: true\n")
                 .append("H2 durability setting: WRITE_DELAY=0\n")
+                .append("SQLite configuration: persistent file, WAL, synchronous=FULL, busy_timeout=3000 ms, "
+                        + "JDBC isolation requested as READ_COMMITTED\n")
+                .append("SQLite implementation: native SQLite through Xerial JDBC (not JVM-architecture equivalent)\n")
                 .append("External dependencies: upstream Derby ")
                 .append(options.upstreamDerbyVersion()).append(", H2 ")
-                .append(options.h2Version()).append("\n\n")
+                .append(options.h2Version()).append(", Xerial SQLite JDBC ")
+                .append(options.sqliteVersion()).append("\n\n")
                 .append("Observed products\n-----------------\n");
         for (Target target : Target.values()) {
             Product product = products.get(target);
@@ -289,10 +301,12 @@ public final class DelosJdbcCrossEngineCoordinator {
             double mvcc = require(values, Target.DELOS_MVCC, key);
             double derby = require(values, Target.UPSTREAM_DERBY, key);
             double h2 = require(values, Target.H2, key);
+            double sqlite = require(values, Target.SQLITE, key);
             out.append(String.format(Locale.ROOT,
                     "rows=%-7d %-17s %-8s width=%-3d "
-                            + "heap=%10.3f mvcc=%10.3f derby=%10.3f h2=%10.3f "
-                            + "heap/derby=%7.3f mvcc/derby=%7.3f heap/h2=%7.3f mvcc/h2=%7.3f%n",
+                            + "heap=%10.3f mvcc=%10.3f derby=%10.3f h2=%10.3f sqlite=%10.3f "
+                            + "heap/derby=%7.3f mvcc/derby=%7.3f heap/h2=%7.3f mvcc/h2=%7.3f "
+                            + "heap/sqlite=%7.3f mvcc/sqlite=%7.3f%n",
                     key.rowCount(),
                     key.workload(),
                     key.outcome(),
@@ -301,10 +315,13 @@ public final class DelosJdbcCrossEngineCoordinator {
                     mvcc / 1_000.0,
                     derby / 1_000.0,
                     h2 / 1_000.0,
+                    sqlite / 1_000.0,
                     heap / derby,
                     mvcc / derby,
                     heap / h2,
-                    mvcc / h2));
+                    mvcc / h2,
+                    heap / sqlite,
+                    mvcc / sqlite));
         }
         Files.writeString(
                 options.reportDirectory().resolve("cross-engine-summary.txt"),
@@ -422,7 +439,8 @@ public final class DelosJdbcCrossEngineCoordinator {
         DELOS_HEAP("delos_heap"),
         DELOS_MVCC("delos_mvcc"),
         UPSTREAM_DERBY("upstream_derby"),
-        H2("h2");
+        H2("h2"),
+        SQLITE("sqlite");
 
         private final String id;
 
@@ -557,6 +575,7 @@ public final class DelosJdbcCrossEngineCoordinator {
             String delosClasspath,
             String upstreamDerbyClasspath,
             String h2Classpath,
+            String sqliteClasspath,
             Path databaseRoot,
             Path reportDirectory,
             String rows,
@@ -570,7 +589,8 @@ public final class DelosJdbcCrossEngineCoordinator {
             int runs,
             String childHeap,
             String upstreamDerbyVersion,
-            String h2Version) {
+            String h2Version,
+            String sqliteVersion) {
         static Options fromSystemProperties() {
             return new Options(
                     Path.of(required(PREFIX + "projectDirectory")),
@@ -579,6 +599,7 @@ public final class DelosJdbcCrossEngineCoordinator {
                     required(PREFIX + "delosClasspath"),
                     required(PREFIX + "upstreamDerbyClasspath"),
                     required(PREFIX + "h2Classpath"),
+                    required(PREFIX + "sqliteClasspath"),
                     Path.of(required(PREFIX + "databaseRoot")),
                     Path.of(required(PREFIX + "reportDirectory")),
                     System.getProperty(PREFIX + "rows", "1000"),
@@ -592,7 +613,8 @@ public final class DelosJdbcCrossEngineCoordinator {
                     Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
                     System.getProperty(PREFIX + "childHeap", "1g"),
                     required(PREFIX + "upstreamDerbyVersion"),
-                    required(PREFIX + "h2Version"));
+                    required(PREFIX + "h2Version"),
+                    required(PREFIX + "sqliteVersion"));
         }
 
         void validate() {
@@ -604,7 +626,7 @@ public final class DelosJdbcCrossEngineCoordinator {
                 throw new IllegalArgumentException("Java executable does not exist: " + javaExecutable);
             }
             if (benchmarkClasses.isBlank() || delosClasspath.isBlank()
-                    || upstreamDerbyClasspath.isBlank() || h2Classpath.isBlank()) {
+                    || upstreamDerbyClasspath.isBlank() || h2Classpath.isBlank() || sqliteClasspath.isBlank()) {
                 throw new IllegalArgumentException("All cross-engine classpaths are required");
             }
             parsePositive(rows, "rows", 100);
@@ -628,6 +650,7 @@ public final class DelosJdbcCrossEngineCoordinator {
                 case DELOS_HEAP, DELOS_MVCC -> delosClasspath;
                 case UPSTREAM_DERBY -> upstreamDerbyClasspath;
                 case H2 -> h2Classpath;
+                case SQLITE -> sqliteClasspath;
             };
         }
 

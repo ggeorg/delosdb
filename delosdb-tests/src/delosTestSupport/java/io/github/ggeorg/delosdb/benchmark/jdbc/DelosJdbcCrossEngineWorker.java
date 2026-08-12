@@ -302,7 +302,7 @@ public final class DelosJdbcCrossEngineWorker {
             ConnectionWork<T> work) throws Exception {
         deleteRecursively(database);
         Files.createDirectories(database.getParent());
-        if (target == Target.H2) {
+        if (target == Target.H2 || target == Target.SQLITE) {
             Files.createDirectories(database);
         }
 
@@ -311,6 +311,9 @@ public final class DelosJdbcCrossEngineWorker {
         Throwable failure = null;
         try {
             connection = DriverManager.getConnection(target.jdbcUrl(database));
+            if (target == Target.SQLITE) {
+                connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+            }
             result = work.execute(connection);
         } catch (Throwable operationFailure) {
             failure = operationFailure;
@@ -734,7 +737,8 @@ public final class DelosJdbcCrossEngineWorker {
         DELOS_HEAP("delos_heap", "", true),
         DELOS_MVCC("delos_mvcc", " using delos_mvcc", true),
         UPSTREAM_DERBY("upstream_derby", "", true),
-        H2("h2", "", false);
+        H2("h2", "", false),
+        SQLITE("sqlite", "", false);
 
         private final String id;
         private final String createTableSuffix;
@@ -763,6 +767,10 @@ public final class DelosJdbcCrossEngineWorker {
             if (this == H2) {
                 return "jdbc:h2:file:" + database.resolve("database").toAbsolutePath().normalize()
                         + ";WRITE_DELAY=0;DB_CLOSE_ON_EXIT=FALSE";
+            }
+            if (this == SQLITE) {
+                return "jdbc:sqlite:" + database.resolve("database.sqlite").toAbsolutePath().normalize()
+                        + "?journal_mode=WAL&synchronous=FULL&busy_timeout=3000";
             }
             return "jdbc:derby:" + path + ";create=true";
         }

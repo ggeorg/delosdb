@@ -160,6 +160,11 @@ def h2BenchmarkRuntime = configurations.create('h2BenchmarkRuntime') {
     canBeResolved = true
     transitive = true
 }
+def sqliteBenchmarkRuntime = configurations.create('sqliteBenchmarkRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
 def postgresqlBenchmarkRuntime = configurations.create('postgresqlBenchmarkRuntime') {
     canBeConsumed = false
     canBeResolved = true
@@ -174,6 +179,8 @@ def upstreamDerbyBenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.crossEngine.derbyVersion').getOrElse('10.17.1.0')
 def h2BenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.crossEngine.h2Version').getOrElse('2.4.240')
+def sqliteBenchmarkVersion = providers.gradleProperty(
+        'delosdb.benchmark.crossEngine.sqliteVersion').getOrElse('3.53.2.1')
 def postgresqlBenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.serverContainer.postgresqlDriverVersion').getOrElse('42.7.13')
 def mariadbBenchmarkVersion = providers.gradleProperty(
@@ -267,6 +274,7 @@ dependencies {
     add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derby:${upstreamDerbyBenchmarkVersion}")
     add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derbyshared:${upstreamDerbyBenchmarkVersion}")
     add('h2BenchmarkRuntime', "com.h2database:h2:${h2BenchmarkVersion}")
+    add('sqliteBenchmarkRuntime', "org.xerial:sqlite-jdbc:${sqliteBenchmarkVersion}")
     add('postgresqlBenchmarkRuntime', "org.postgresql:postgresql:${postgresqlBenchmarkVersion}")
     add('mariadbBenchmarkRuntime', "org.mariadb.jdbc:mariadb-java-client:${mariadbBenchmarkVersion}")
 
@@ -785,7 +793,7 @@ registerDelosFocusedTest(
 
 tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
     group = 'benchmark'
-    description = 'Compares DelosDB heap/MVCC with upstream Derby and H2 under concurrent JDBC clients.'
+    description = 'Compares DelosDB heap/MVCC with upstream Derby, H2, and native SQLite through JDBC under concurrent clients.'
     dependsOn tasks.named('compileTestJava'), ':jars'
 
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
@@ -816,6 +824,9 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
                         upstreamDerbyBenchmarkRuntime.asPath,
                 'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
                 'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
                         .dir('tmp/delos-jdbc-cross-engine-concurrency').get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
@@ -1140,7 +1151,7 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
 
 tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
     group = 'benchmark'
-    description = 'Compares DelosDB heap/MVCC with upstream Derby and H2 in isolated JDK 25 JVMs.'
+    description = 'Compares DelosDB heap/MVCC with upstream Derby, H2, and native SQLite through JDBC in isolated JDK 25 JVMs.'
     dependsOn tasks.named('compileTestJava'), ':jars'
 
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineCoordinator'
@@ -1178,6 +1189,7 @@ tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
                 'delosdb.benchmark.crossEngine.upstreamDerbyClasspath':
                         upstreamDerbyBenchmarkRuntime.asPath,
                 'delosdb.benchmark.crossEngine.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngine.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
                 'delosdb.benchmark.crossEngine.databaseRoot': rootProject.layout.buildDirectory
                         .dir('tmp/delos-jdbc-cross-engine').get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngine.reportDirectory': rootProject.layout.buildDirectory
@@ -1204,7 +1216,8 @@ tasks.register('runDelosJdbcCrossEngineComparison', JavaExec) {
                         'delosdb.benchmark.crossEngine.childHeap').getOrElse('1g'),
                 'delosdb.benchmark.crossEngine.upstreamDerbyVersion':
                         upstreamDerbyBenchmarkVersion,
-                'delosdb.benchmark.crossEngine.h2Version': h2BenchmarkVersion
+                'delosdb.benchmark.crossEngine.h2Version': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngine.sqliteVersion': sqliteBenchmarkVersion
         ])
     }
 }

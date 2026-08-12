@@ -42,8 +42,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,iterations,"
-                    + "measuredTransactions,measuredOperations,retryableRollbacks,elapsedNanos,transactionsPerSecond,"
-                    + "averageTransactionLatencyNanos,semanticFingerprint,run";
+                    + "measuredTransactions,measuredOperations,retryableConflictRetries,elapsedNanos,"
+                    + "transactionsPerSecond,averageTransactionLatencyNanos,semanticFingerprint,run";
 
     private DelosJdbcCrossEngineConcurrency() {
     }
@@ -103,6 +103,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         writeRatioCsv(options, rows);
         writeScalingCsv(options, rows);
         writeDispersionCsv(options, rows);
+        writeCapabilityCsv(options);
         writeSummary(options, rows);
         if (options.containerMode()) {
             writeContainerSemanticEvidence(options, rows);
@@ -116,6 +117,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         command.add("-Xms" + options.childHeap());
         command.add("-Xmx" + options.childHeap());
         command.add("-XX:+AlwaysPreTouch");
+        if (target == Target.SQLITE) {
+            command.add("--enable-native-access=ALL-UNNAMED");
+        }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
         addProperty(command, "target", target.id());
@@ -288,7 +292,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Connection connection = options.remoteUser().isBlank()
                 ? DriverManager.getConnection(url)
                 : DriverManager.getConnection(url, options.remoteUser(), options.remotePassword());
-        if (options.target().isContainer()) {
+        if (options.target().isContainer() || options.target() == Target.SQLITE) {
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
         }
         return connection;
@@ -438,7 +442,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (!options.target().isContainer()) {
             deleteRecursively(database);
             Files.createDirectories(database.getParent());
-            if (options.target() == Target.H2) {
+            if (options.target() == Target.H2 || options.target() == Target.SQLITE) {
                 Files.createDirectories(database);
             }
         }
@@ -540,7 +544,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Connection connection = connect(options, database);
                     connection.setAutoCommit(false);
                     int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
-                    clients.add(new Client(connection, table, spec, ids[targetIndex], baseline[targetIndex]));
+                    clients.add(new Client(
+                            connection, table, spec, ids[targetIndex], baseline[targetIndex], options.target()));
                 }
             } catch (SQLException failure) {
                 closeClients(failure);
@@ -667,16 +672,18 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final Workload workload;
         private final int id;
         private final int expectedReadQuantity;
+        private final Target target;
         private final PreparedStatement read;
         private final PreparedStatement update;
 
         private Client(
-                Connection connection, String table, Spec spec, int id, int expectedReadQuantity)
+                Connection connection, String table, Spec spec, int id, int expectedReadQuantity, Target target)
                 throws SQLException {
             this.connection = connection;
             this.workload = spec.workload();
             this.id = id;
             this.expectedReadQuantity = expectedReadQuantity;
+            this.target = target;
             PreparedStatement localRead = null;
             PreparedStatement localUpdate = null;
             try {
@@ -739,7 +746,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             failure.addSuppressed(rollbackFailure);
                             throw failure;
                         }
-                        if (!isRetryableRollback(failure) || ++attempts >= 1000) {
+                        if (!isRetryableConflict(target, failure) || ++attempts >= 1000) {
                             throw failure;
                         }
                         retryableRollbacks++;
@@ -944,8 +951,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         } else {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,delosMvccMedianTps,"
-                            + "upstreamDerbyMedianTps,h2MedianTps,delosHeapToDerby,delosMvccToDerby,"
-                            + "delosHeapToH2,delosMvccToH2\n");
+                            + "upstreamDerbyMedianTps,h2MedianTps,nativeSqliteJdbcMedianTps,"
+                            + "delosHeapToDerby,delosMvccToDerby,delosHeapToH2,delosMvccToH2,"
+                            + "delosHeapToNativeSqliteJdbc,delosMvccToNativeSqliteJdbc\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
                 ShapeKey key = entry.getKey();
                 EnumMap<Target, Double> values = entry.getValue();
@@ -953,11 +961,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                 double mvcc = require(values, Target.DELOS_MVCC, key);
                 double derby = require(values, Target.UPSTREAM_DERBY, key);
                 double h2 = require(values, Target.H2, key);
+                double sqlite = require(values, Target.SQLITE, key);
                 out.append(key.csv()).append(',')
                         .append(format(heap)).append(',').append(format(mvcc)).append(',')
                         .append(format(derby)).append(',').append(format(h2)).append(',')
+                        .append(format(sqlite)).append(',')
                         .append(format(heap / derby)).append(',').append(format(mvcc / derby)).append(',')
-                        .append(format(heap / h2)).append(',').append(format(mvcc / h2)).append('\n');
+                        .append(format(heap / h2)).append(',').append(format(mvcc / h2)).append(',')
+                        .append(format(heap / sqlite)).append(',').append(format(mvcc / sqlite)).append('\n');
             }
         }
         Files.writeString(options.reportDirectory().resolve("cross-engine-concurrency-ratios.csv"),
@@ -1025,12 +1036,38 @@ public final class DelosJdbcCrossEngineConcurrency {
                 out.toString(), StandardCharsets.UTF_8);
     }
 
+    private static void writeCapabilityCsv(Options options) throws IOException {
+        StringBuilder out = new StringBuilder("target,workload,supported,executionModel,notes\n");
+        for (Target target : options.targetValues()) {
+            for (Workload workload : options.workloadValues()) {
+                String executionModel;
+                String notes;
+                if (target == Target.SQLITE) {
+                    executionModel = "native SQLite through JDBC";
+                    notes = workload == Workload.PRIMARY_KEY_READ
+                            ? "WAL mode; native/JDBC boundary retained as part of product result"
+                            : "WAL mode; single-writer architecture; SQLITE_BUSY/SQLITE_LOCKED retries counted";
+                } else if (target.isContainer()) {
+                    executionModel = "client/server JDBC";
+                    notes = "TCP/process boundary retained as part of product result";
+                } else {
+                    executionModel = "embedded JVM";
+                    notes = "in-process JDBC engine";
+                }
+                out.append(target.id()).append(',').append(workload).append(",true,")
+                        .append(csvSafe(executionModel)).append(',').append(csvSafe(notes)).append('\n');
+            }
+        }
+        Files.writeString(options.reportDirectory().resolve("cross-engine-concurrency-capabilities.csv"),
+                out.toString(), StandardCharsets.UTF_8);
+    }
+
     private static void writeSummary(Options options, List<Row> rows) throws IOException {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         StringBuilder out = new StringBuilder();
         out.append(options.containerMode()
                         ? "DelosDB JDBC server-container concurrency comparison\n"
-                        : "DelosDB JDBC four-engine concurrency comparison\n")
+                        : "DelosDB JDBC five-engine embedded concurrency comparison\n")
                 .append("Targets: ").append(options.targets()).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Clients: ").append(options.clients()).append('\n')
@@ -1047,7 +1084,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Target and matrix order orthogonalized across four-run blocks: true\n")
                 .append("Warmups: ").append(options.warmups()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
-                .append("Runs: ").append(options.runs()).append("\n\n");
+                .append("Runs: ").append(options.runs()).append('\n')
+                .append("Capability matrix: cross-engine-concurrency-capabilities.csv\n")
+                .append(options.containerMode()
+                        ? ""
+                        : "SQLite: native SQLite through Xerial JDBC; product/workload reference only, "
+                                + "not a JVM architectural-equivalence threshold.\n")
+                .append(options.containerMode()
+                        ? ""
+                        : "SQLite mode: persistent file, WAL, synchronous=FULL, busy_timeout=3000 ms, "
+                                + "JDBC isolation requested as READ_COMMITTED; BUSY/LOCKED retries are "
+                                + "reported as retryable conflict retries.\n")
+                .append('\n');
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             ShapeKey key = entry.getKey();
             out.append(String.format(Locale.ROOT, "%7d %-25s clients=%-2d ops/tx=%-2d",
@@ -1164,7 +1212,13 @@ public final class DelosJdbcCrossEngineConcurrency {
         throw new IllegalStateException("Unexpected concurrency benchmark failure", failure);
     }
 
-    private static boolean isRetryableRollback(SQLException failure) {
+    private static boolean isRetryableConflict(Target target, SQLException failure) {
+        if (target == Target.SQLITE) {
+            int primaryResultCode = failure.getErrorCode() & 0xff;
+            if (primaryResultCode == 5 || primaryResultCode == 6) {
+                return true;
+            }
+        }
         String sqlState = failure.getSQLState();
         return sqlState != null && sqlState.startsWith("40");
     }
@@ -1222,6 +1276,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         DELOS_MVCC("delos_mvcc", " using delos_mvcc"),
         UPSTREAM_DERBY("upstream_derby", ""),
         H2("h2", ""),
+        SQLITE("sqlite", ""),
         DELOS_HEAP_DRDA("delos_heap_drda", ""),
         DELOS_MVCC_DRDA("delos_mvcc_drda", " using delos_mvcc"),
         POSTGRESQL("postgresql", ""),
@@ -1292,6 +1347,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (this == H2) {
                 return "jdbc:h2:file:" + database.resolve("database").toAbsolutePath().normalize()
                         + ";WRITE_DELAY=0;DB_CLOSE_ON_EXIT=FALSE";
+            }
+            if (this == SQLITE) {
+                return "jdbc:sqlite:" + database.resolve("database.sqlite").toAbsolutePath().normalize()
+                        + "?journal_mode=WAL&synchronous=FULL&busy_timeout=3000";
             }
             return "jdbc:derby:" + database.toAbsolutePath().normalize() + ";create=true";
         }
@@ -1468,6 +1527,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String delosClasspath,
             String upstreamDerbyClasspath,
             String h2Classpath,
+            String sqliteClasspath,
             String delosClientClasspath,
             String postgresqlClasspath,
             String mariadbClasspath,
@@ -1508,10 +1568,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "delosClasspath", "."),
                     System.getProperty(PREFIX + "upstreamDerbyClasspath", "."),
                     System.getProperty(PREFIX + "h2Classpath", "."),
+                    System.getProperty(PREFIX + "sqliteClasspath", "."),
                     System.getProperty(PREFIX + "delosClientClasspath", "."),
                     System.getProperty(PREFIX + "postgresqlClasspath", "."),
                     System.getProperty(PREFIX + "mariadbClasspath", "."),
-                    System.getProperty(PREFIX + "targets", "delos_heap,delos_mvcc,upstream_derby,h2"),
+                    System.getProperty(PREFIX + "targets", "delos_heap,delos_mvcc,upstream_derby,h2,sqlite"),
                     path(PREFIX + "delosRuntimeDirectory", "build/libs"),
                     System.getProperty(PREFIX + "delosServerImage", "eclipse-temurin:25.0.3_9-jre-noble"),
                     System.getProperty(PREFIX + "postgresqlImage", "postgres:18.4"),
@@ -1547,12 +1608,19 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Java executable does not exist: " + javaExecutable);
             }
             List<Target> configuredTargets = targetValues();
-            List<Target> embedded = List.of(Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2);
+            List<Target> embedded = List.of(
+                    Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2, Target.SQLITE);
             List<Target> container = List.of(
                     Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.POSTGRESQL, Target.MARIADB);
-            if (!configuredTargets.equals(embedded) && !configuredTargets.equals(container)) {
-                throw new IllegalArgumentException("targets must be exactly " + embedded + " or " + container
-                        + ": " + configuredTargets);
+            if (target == null
+                    && !configuredTargets.equals(embedded)
+                    && !configuredTargets.equals(container)) {
+                throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + " or "
+                        + container + ": " + configuredTargets);
+            }
+            if (target != null && !configuredTargets.contains(target)) {
+                throw new IllegalArgumentException(
+                        "worker target " + target.id() + " is not present in configured targets " + configuredTargets);
             }
             parsePositive(rows, "rows", 100);
             parsePositive(clients, "clients", 1);
@@ -1575,6 +1643,11 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");
+            }
+            if (!containerMode()
+                    && (delosClasspath.isBlank() || upstreamDerbyClasspath.isBlank()
+                    || h2Classpath.isBlank() || sqliteClasspath.isBlank())) {
+                throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
                 if (!Files.isDirectory(delosRuntimeDirectory)) {
@@ -1649,6 +1722,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 case DELOS_HEAP, DELOS_MVCC -> delosClasspath;
                 case UPSTREAM_DERBY -> upstreamDerbyClasspath;
                 case H2 -> h2Classpath;
+                case SQLITE -> sqliteClasspath;
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> delosClientClasspath;
                 case POSTGRESQL -> postgresqlClasspath;
                 case MARIADB -> mariadbClasspath;

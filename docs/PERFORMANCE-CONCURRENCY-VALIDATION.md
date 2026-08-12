@@ -117,12 +117,25 @@ archived-oracle tests. The accepted historical baseline remains immutable eviden
 ## Cross-engine JDBC comparison quality controls
 
 `./gradlew :delosdb-tests:runDelosJdbcCrossEngineComparison -Pdelosdb.sane=false` runs DelosDB heap,
-DelosDB MVCC, upstream Derby, and H2 in isolated child JVMs. Benchmark order follows a four-run
-orthogonal cycle across engine, row-count, and workload order (`NNN`, `NRR`, `RNR`, `RRN`), so every
-pair of order dimensions sees all four combinations once per cycle. The benchmark therefore requires
-a run count that is a multiple of four (default `4`). Semantic fingerprints must match across every engine and run before reports are accepted.
+DelosDB MVCC, upstream Derby, H2, and SQLite through Xerial SQLite JDBC in isolated child JVMs. Benchmark
+order retains the four-run orthogonal cycle across engine, row-count, and workload order (`NNN`, `NRR`,
+`RNR`, `RRN`), so every pair of order dimensions sees all four combinations once per cycle. The benchmark
+therefore requires a run count that is a multiple of four (default `4`). Semantic fingerprints must match
+across every engine and run before reports are accepted.
+
+SQLite uses a persistent file with WAL, `synchronous=FULL`, a 3000 ms busy timeout, and a JDBC
+`READ_COMMITTED` isolation request. It is reported as
+`native SQLite through JDBC`; DelosDB/SQLite ratios compare products under the same logical workload and
+are not JVM architectural-equivalence thresholds.
 
 The raw `cross-engine-results.csv` remains authoritative evidence. `cross-engine-ratios.csv` reports median
-latency ratios, while `cross-engine-dispersion.csv` reports median, quartiles, IQR, MAD, min/max, and
-normalized robust spread for every engine/workload shape. Use the dispersion report before treating small
-ratio differences as meaningful.
+latency ratios against Derby, H2, and SQLite, while `cross-engine-dispersion.csv` reports median, quartiles,
+IQR, MAD, min/max, sample count, and normalized robust spread for every engine/workload shape. Use the
+dispersion report before treating small ratio differences as meaningful.
+
+`runDelosJdbcCrossEngineConcurrencyComparison` uses the same five embedded targets. Its current implemented
+workloads remain `PRIMARY_KEY_READ`, `DISJOINT_INDEXED_UPDATE`, and `CONTENDED_INDEXED_UPDATE`; broader
+read/write mixes and contention shapes are roadmap work, not silently claimed as already implemented.
+`cross-engine-concurrency-capabilities.csv` records the execution model for every configured target/workload.
+SQLite BUSY/LOCKED retries are counted with retryable conflict retries, so its single-writer architecture
+remains visible in the result rather than being hidden by the harness.
