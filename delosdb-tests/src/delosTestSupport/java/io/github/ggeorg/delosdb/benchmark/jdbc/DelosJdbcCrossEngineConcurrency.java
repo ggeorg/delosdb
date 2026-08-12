@@ -462,12 +462,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             String product = csvSafe(metadata.getDatabaseProductName());
             String productVersion = csvSafe(metadata.getDatabaseProductVersion());
             String driverVersion = csvSafe(metadata.getDriverVersion());
-            DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(
-                    verifier, options.target().id(), options.target().createTableSuffix(),
-                    options.target().isContainer(), config);
-            scenario.prepare();
+            List<String> tables = prepareTables(verifier, options, spec, config);
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
-                    options, spec, database, verifier, scenario.tableName(), config.rowCount())) {
+                    options, spec, database, verifier, tables, config.rowCount())) {
                 Long expectedSemantic = null;
                 for (int warmup = 0; warmup < options.warmups(); warmup++) {
                     Interval interval = concurrentCase.runInterval();
@@ -521,6 +518,24 @@ public final class DelosJdbcCrossEngineConcurrency {
         return measurement;
     }
 
+    private static List<String> prepareTables(
+            Connection verifier, Options options, Spec spec, DelosBenchmarkConfig config) throws SQLException {
+        int tableCount = spec.workload().isConglomerateLocalityDiagnostic() ? spec.clients() : 1;
+        List<String> tables = new ArrayList<>(tableCount);
+        for (int index = 0; index < tableCount; index++) {
+            String targetId = options.target().id();
+            if (tableCount > 1) {
+                targetId += "_client_" + (index + 1);
+            }
+            DelosJdbcBenchmarkScenario scenario = new DelosJdbcBenchmarkScenario(
+                    verifier, targetId, options.target().createTableSuffix(),
+                    options.target().isContainer(), config);
+            scenario.prepare();
+            tables.add(scenario.tableName());
+        }
+        return List.copyOf(tables);
+    }
+
     private static final class ConcurrentCase implements AutoCloseable {
         private final Options options;
         private final Spec spec;
@@ -537,17 +552,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 Spec spec,
                 Path database,
                 Connection verifier,
-                String table,
+                List<String> tables,
                 int rowCount) throws SQLException {
             this.options = options;
             this.spec = spec;
             this.verifier = verifier;
-            this.table = table;
+            this.table = tables.get(0);
             this.transactionsPerClient = options.transactionsPerClient(spec);
             this.mutationIds = mutationIds(spec, rowCount);
             this.mutationBaseline = new int[mutationIds.length];
             for (int index = 0; index < mutationIds.length; index++) {
-                mutationBaseline[index] = quantity(verifier, table, mutationIds[index]);
+                mutationBaseline[index] = quantity(verifier, this.table, mutationIds[index]);
             }
             int[] fixtureQuantities = spec.workload().isPrimaryKeyRead() ? fixtureQuantities(rowCount) : null;
             verifier.rollback();
@@ -572,8 +587,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
                         updateId = mutationIds[targetIndex];
                     }
+                    String clientTable = spec.workload().usesPrivateTablePerClient()
+                            ? tables.get(client)
+                            : this.table;
                     clients.add(new Client(
-                            connection, table, spec, updateId, readIds, expectedReadQuantities, options.target()));
+                            connection, clientTable, spec, updateId, readIds, expectedReadQuantities,
+                            options.target()));
                 }
             } catch (SQLException failure) {
                 closeClients(failure);
@@ -885,7 +904,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         int[] ids = new int[operations];
         switch (spec.workload()) {
             case PRIMARY_KEY_READ_HOT -> Arrays.fill(ids, 1);
-            case PRIMARY_KEY_READ_DISJOINT, PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU -> {
+            case PRIMARY_KEY_READ_DISJOINT, PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU,
+                    SAME_TABLE_DISJOINT, PRIVATE_TABLE_DISJOINT -> {
                 int id = 1 + (int) (((long) client * rowCount) / spec.clients());
                 Arrays.fill(ids, id);
             }
@@ -1223,6 +1243,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Gate 1 PK reads are DISJOINT: each client repeatedly reads one evenly spaced private id.\n")
                 .append("PK_READ_10_RU changes only isolation from READ_COMMITTED to READ_UNCOMMITTED; "
                         + "its causal interpretation is Derby/Delos-specific.\n")
+                .append("Gate 2 locality workloads: SAME_TABLE_DISJOINT and PRIVATE_TABLE_DISJOINT, "
+                        + "both READ_COMMITTED with 100 PK reads per transaction.\n")
+                .append("Gate 2 prepares one full fixture table per client for BOTH shapes so database size, "
+                        + "fixture count, and cache population pressure are matched.\n")
+                .append("SAME_TABLE_DISJOINT routes every client to the first table; PRIVATE_TABLE_DISJOINT routes "
+                        + "each client to its own heap conglomerate, PK B-tree, root/internal pages, and data pages.\n")
                 .append("Disjoint-update client rows are evenly spread across the fixture.\n")
                 .append("Timed interval: synchronized client execution through final commit.\n")
                 .append("operationsPerSecond is measuredOperations / shared wall-clock interval.\n")
@@ -1425,6 +1451,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         PK_READ_10_RC(true, false, true, 10, Connection.TRANSACTION_READ_COMMITTED),
         PK_READ_100_RC(true, false, true, 100, Connection.TRANSACTION_READ_COMMITTED),
         PK_READ_10_RU(true, false, true, 10, Connection.TRANSACTION_READ_UNCOMMITTED),
+        SAME_TABLE_DISJOINT(true, false, true, 100, Connection.TRANSACTION_READ_COMMITTED),
+        PRIVATE_TABLE_DISJOINT(true, false, true, 100, Connection.TRANSACTION_READ_COMMITTED),
         PRIMARY_KEY_READ_HOT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         PRIMARY_KEY_READ_DISJOINT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         PRIMARY_KEY_READ_RANDOM(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
@@ -1456,6 +1484,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         boolean isValues() {
             return values;
+        }
+
+        boolean isConglomerateLocalityDiagnostic() {
+            return this == SAME_TABLE_DISJOINT || this == PRIVATE_TABLE_DISJOINT;
+        }
+
+        boolean usesPrivateTablePerClient() {
+            return this == PRIVATE_TABLE_DISJOINT;
         }
 
         boolean isReadOnly() {
