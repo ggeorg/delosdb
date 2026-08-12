@@ -352,11 +352,10 @@ final class MvccRawStoreMetadataInspection {
                     raw, layout, columnId, base.newRowLocationTemplate());
             while (true) {
                 nextCalls++;
-                if (!scan.next()) {
+                if (!scan.fetchNext(row)) {
                     break;
                 }
                 candidates++;
-                scan.fetch(row);
             }
             Properties properties = scan.getScanInfo().getAllScanInfo(null);
             return new OrderedIndexProbeStats(

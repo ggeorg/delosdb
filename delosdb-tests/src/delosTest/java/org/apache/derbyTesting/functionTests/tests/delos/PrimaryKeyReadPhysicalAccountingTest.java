@@ -130,9 +130,9 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 mvccBtree.rowsQualified(), "measured ScanInfo"));
         accounting.add(row("B-tree scan-next/fetch-next calls", heapBtreeRows + 1,
                 mvccBtree.nextCalls(),
-                "heap fetchNext returns row; MVCC loop calls next once per candidate plus terminal false"));
-        accounting.add(row("B-tree leaf record fetch operations", 1, 2,
-                "source-proven: TableScanResultSet.fetchNext vs MVCC scan.next() + scan.fetch(row)"));
+                "heap and MVCC fetchNext return each candidate plus one terminal false"));
+        accounting.add(row("B-tree leaf record fetch operations", 1, 1,
+                "source-proven: heap and MVCC both use ScanController.fetchNext(row)"));
         accounting.add(row("heap base-row page acquisitions", 1, 0,
                 "source-proven successful IndexRowToBaseRow fetch: one latchPage"));
         accounting.add(row("heap base-row record fetches", 1, 0,
@@ -157,8 +157,8 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "one successful primary-key result"));
         accounting.add(row("unique physical records represented", 2, 3,
                 "heap=index+base row; MVCC=index+directory+version"));
-        accounting.add(row("physical record fetch/decode operations", 2, 5,
-                "heap=index fetchNext+base fetch; MVCC=2 hidden-index leaf fetches+directory decode+2 version slot fetches"));
+        accounting.add(row("physical record fetch/decode operations", 2, 4,
+                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+2 version slot fetches"));
         accounting.add(row("storage container opens required by read path", 2, 3,
                 "source-proven: index+heap vs hidden index+directory+version"));
 

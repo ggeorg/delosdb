@@ -389,8 +389,7 @@ final class MvccRawStoreOrderedIndex {
                     transactionManager.getRawStoreXact(),
                     table,
                     predicate.columnId());
-            while (scan.next()) {
-                scan.fetch(row);
+            while (scan.fetchNext(row)) {
                 long rowId = StoreTypeUtil.getLong(row[ROW_ID_FIELD]);
                 long versionId = StoreTypeUtil.getLong(row[VERSION_ID_FIELD]);
                 MvccRowLocation rowLocation = MvccRowLocation.from(
