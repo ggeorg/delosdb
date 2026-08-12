@@ -42,6 +42,8 @@ import java.util.concurrent.TimeUnit;
 public final class DelosJdbcCrossEngineConcurrency {
     private static final String PREFIX = "delosdb.benchmark.crossEngineConcurrency.";
     private static final long SEED = 0x5DE10DBL;
+    private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
+            Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,iterations,"
@@ -135,6 +137,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "widths", options.widths());
         addProperty(command, "workloads", options.workloads());
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
+        addProperty(command, "fixedWorkloadOperationBudgetPerClient",
+                options.fixedWorkloadOperationBudgetPerClient());
         addProperty(command, "payload", options.payload());
         addProperty(command, "fixtureBatch", options.fixtureBatch());
         addProperty(command, "warmups", options.warmups());
@@ -480,15 +484,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                     measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
                             "measured iteration " + iteration);
                 }
+                int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
-                        Math.multiplyExact((long) spec.clients(), options.transactionsPerClient()),
+                        Math.multiplyExact((long) spec.clients(), transactionsPerClient),
                         options.iterations());
                 long measuredOperations = Math.multiplyExact(
                         measuredTransactions, spec.operationsPerTransaction());
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
-                        options.transactionsPerClient(), config.rowCount(), config.payloadSize(),
+                        transactionsPerClient, config.rowCount(), config.payloadSize(),
                         config.commitBatchSize(), options.warmups(), options.iterations(),
                         measuredTransactions, measuredOperations, retryableRollbacks, elapsed,
                         measuredTransactions * 1_000_000_000.0 / elapsed,
@@ -521,6 +526,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final Spec spec;
         private final Connection verifier;
         private final String table;
+        private final int transactionsPerClient;
         private final int[] mutationIds;
         private final int[] mutationBaseline;
         private final List<Client> clients;
@@ -537,30 +543,32 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.spec = spec;
             this.verifier = verifier;
             this.table = table;
+            this.transactionsPerClient = options.transactionsPerClient(spec);
             this.mutationIds = mutationIds(spec, rowCount);
             this.mutationBaseline = new int[mutationIds.length];
             for (int index = 0; index < mutationIds.length; index++) {
                 mutationBaseline[index] = quantity(verifier, table, mutationIds[index]);
             }
-            int[] fixtureQuantities = spec.workload().isRead() ? fixtureQuantities(rowCount) : null;
+            int[] fixtureQuantities = spec.workload().isPrimaryKeyRead() ? fixtureQuantities(rowCount) : null;
             verifier.rollback();
             this.clients = new ArrayList<>(spec.clients());
             try {
                 for (int client = 0; client < spec.clients(); client++) {
                     Connection connection = connect(options, database);
                     connection.setAutoCommit(false);
+                    connection.setTransactionIsolation(spec.workload().isolationLevel());
                     int updateId = 0;
                     int[] readIds = null;
                     int[] expectedReadQuantities = null;
-                    if (spec.workload().isRead()) {
+                    if (spec.workload().isPrimaryKeyRead()) {
                         int operations = Math.multiplyExact(
-                                options.transactionsPerClient(), spec.operationsPerTransaction());
+                                transactionsPerClient, spec.operationsPerTransaction());
                         readIds = readOperationIds(spec, rowCount, client, operations);
                         expectedReadQuantities = new int[readIds.length];
                         for (int operation = 0; operation < readIds.length; operation++) {
                             expectedReadQuantities[operation] = fixtureQuantities[readIds[operation]];
                         }
-                    } else {
+                    } else if (spec.workload().isUpdate()) {
                         int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
                         updateId = mutationIds[targetIndex];
                     }
@@ -584,7 +592,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     if (!start.await(options.caseTimeoutSeconds(), TimeUnit.SECONDS)) {
                         throw new IllegalStateException("concurrency start barrier timed out");
                     }
-                    return client.runTransactions(options.transactionsPerClient(), spec.operationsPerTransaction());
+                    return client.runTransactions(transactionsPerClient, spec.operationsPerTransaction());
                 }));
             }
             if (!ready.await(options.caseTimeoutSeconds(), TimeUnit.SECONDS)) {
@@ -616,11 +624,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         private long verifyAndRestore() throws SQLException {
             try {
                 long fingerprint = mix(spec.clients(), spec.operationsPerTransaction());
-                if (spec.workload().isRead()) {
+                if (spec.workload().isReadOnly()) {
                     verifier.rollback();
                     return fingerprint;
                 }
-                int increment = Math.multiplyExact(options.transactionsPerClient(), spec.operationsPerTransaction());
+                int increment = Math.multiplyExact(transactionsPerClient, spec.operationsPerTransaction());
                 for (int index = 0; index < mutationIds.length; index++) {
                     int expected = mutationBaseline[index];
                     if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
@@ -696,6 +704,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int[] expectedReadQuantities;
         private final Target target;
         private final PreparedStatement read;
+        private final PreparedStatement values;
         private final PreparedStatement update;
 
         private Client(
@@ -714,19 +723,24 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.expectedReadQuantities = expectedReadQuantities;
             this.target = target;
             PreparedStatement localRead = null;
+            PreparedStatement localValues = null;
             PreparedStatement localUpdate = null;
             try {
-                if (workload.isRead()) {
+                if (workload.isPrimaryKeyRead()) {
                     localRead = connection.prepareStatement(
                             "select quantity from " + table + " where id = ?");
-                } else {
+                } else if (workload.isValues()) {
+                    localValues = connection.prepareStatement("values 1");
+                } else if (workload.isUpdate()) {
                     localUpdate = connection.prepareStatement(
                             "update " + table + " set quantity = quantity + 1 where id = ?");
                 }
                 this.read = localRead;
+                this.values = localValues;
                 this.update = localUpdate;
             } catch (SQLException failure) {
                 closeStatement(localUpdate, failure);
+                closeStatement(localValues, failure);
                 closeStatement(localRead, failure);
                 throw failure;
             }
@@ -742,8 +756,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     try {
                         for (int operation = 0; operation < operationsPerTransaction; operation++) {
                             int operationIndex = transaction * operationsPerTransaction + operation;
-                            int id = workload.isRead() ? readIds[operationIndex] : updateId;
-                            if (workload.isRead()) {
+                            if (workload.isValues()) {
+                                try (ResultSet resultSet = values.executeQuery()) {
+                                    if (!resultSet.next() || resultSet.getInt(1) != 1 || resultSet.next()) {
+                                        throw new SQLException("VALUES benchmark returned unexpected result");
+                                    }
+                                }
+                                transactionFingerprint = mix(transactionFingerprint, 1);
+                            } else if (workload.isPrimaryKeyRead()) {
+                                int id = readIds[operationIndex];
                                 int expectedReadQuantity = expectedReadQuantities[operationIndex];
                                 read.setInt(1, id);
                                 try (ResultSet resultSet = read.executeQuery()) {
@@ -760,13 +781,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                                         throw new SQLException("Concurrent read returned duplicate id=" + id);
                                     }
                                 }
-                            } else {
-                                update.setInt(1, id);
+                                transactionFingerprint = mix(transactionFingerprint, id);
+                            } else if (workload.isUpdate()) {
+                                update.setInt(1, updateId);
                                 if (update.executeUpdate() != 1) {
-                                    throw new SQLException("Concurrent update did not affect one row: id=" + id);
+                                    throw new SQLException(
+                                            "Concurrent update did not affect one row: id=" + updateId);
                                 }
+                                transactionFingerprint = mix(transactionFingerprint, updateId);
                             }
-                            transactionFingerprint = mix(transactionFingerprint, id);
                         }
                         connection.commit();
                         fingerprint = mix(fingerprint, transactionFingerprint);
@@ -804,6 +827,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             } catch (SQLException closeFailure) {
                 failure = closeFailure;
+            }
+            try {
+                if (values != null) {
+                    values.close();
+                }
+            } catch (SQLException closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
             }
             try {
                 if (update != null) {
@@ -851,7 +885,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         int[] ids = new int[operations];
         switch (spec.workload()) {
             case PRIMARY_KEY_READ_HOT -> Arrays.fill(ids, 1);
-            case PRIMARY_KEY_READ_DISJOINT -> {
+            case PRIMARY_KEY_READ_DISJOINT, PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU -> {
                 int id = 1 + (int) (((long) client * rowCount) / spec.clients());
                 Arrays.fill(ids, id);
             }
@@ -896,10 +930,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static List<Spec> specsForRun(Options options) {
         List<Spec> specs = new ArrayList<>();
-        for (int width : options.widthValues()) {
-            for (int clients : options.clientValues()) {
-                for (Workload workload : options.workloadValues()) {
-                    specs.add(new Spec(workload, clients, width));
+        for (int clients : options.clientValues()) {
+            for (Workload workload : options.workloadValues()) {
+                if (workload.fixedOperationsPerTransaction() >= 0) {
+                    specs.add(new Spec(workload, clients, workload.fixedOperationsPerTransaction()));
+                } else {
+                    for (int width : options.widthValues()) {
+                        specs.add(new Spec(workload, clients, width));
+                    }
                 }
             }
         }
@@ -908,6 +946,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             Collections.reverse(specs);
         }
         return List.copyOf(specs);
+    }
+
+    private static int specsPerRun(Options options) {
+        int perClient = 0;
+        for (Workload workload : options.workloadValues()) {
+            perClient += workload.fixedOperationsPerTransaction() >= 0 ? 1 : options.widthValues().size();
+        }
+        return Math.multiplyExact(options.clientValues().size(), perClient);
     }
 
     private static List<Integer> ordered(List<Integer> values, int run) {
@@ -963,7 +1009,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void validateRows(Options options, List<Row> rows) {
         int expected = options.targetValues().size() * options.runs() * options.rowCounts().size()
-                * options.clientValues().size() * options.widthValues().size() * options.workloadValues().size();
+                * specsPerRun(options);
         if (rows.size() != expected) {
             throw new IllegalStateException(
                     "Concurrency measurement count mismatch: expected=" + expected + ", actual=" + rows.size());
@@ -1009,6 +1055,21 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append(format(postgres)).append(',').append(format(mariadb)).append(',')
                         .append(format(heap / postgres)).append(',').append(format(mvcc / postgres)).append(',')
                         .append(format(heap / mariadb)).append(',').append(format(mvcc / mariadb)).append('\n');
+            }
+        } else if (options.targetValues().equals(READ_DECOMPOSITION_TARGETS)) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,"
+                            + "upstreamDerbyMedianTps,h2MedianTps,delosHeapToDerby,delosHeapToH2\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP, key);
+                double derby = require(values, Target.UPSTREAM_DERBY, key);
+                double h2 = require(values, Target.H2, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(derby)).append(',')
+                        .append(format(h2)).append(',')
+                        .append(format(heap / derby)).append(',').append(format(heap / h2)).append('\n');
             }
         } else {
             out = new StringBuilder(
@@ -1118,7 +1179,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String notes;
                 if (target == Target.SQLITE) {
                     executionModel = "native SQLite through JDBC";
-                    notes = workload.isRead()
+                    notes = workload.isReadOnly()
                             ? "WAL mode; native/JDBC boundary retained as part of product result"
                             : "WAL mode; single-writer architecture; SQLITE_BUSY/SQLITE_LOCKED retries counted";
                 } else if (target.isContainer()) {
@@ -1141,18 +1202,27 @@ public final class DelosJdbcCrossEngineConcurrency {
         StringBuilder out = new StringBuilder();
         out.append(options.containerMode()
                         ? "DelosDB JDBC server-container concurrency comparison\n"
-                        : "DelosDB JDBC five-engine embedded concurrency comparison\n")
+                        : "DelosDB JDBC embedded concurrency comparison\n")
                 .append("Targets: ").append(options.targets()).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Clients: ").append(options.clients()).append('\n')
-                .append("Operations per transaction: ").append(options.widths()).append('\n')
-                .append("Transactions per client/interval: ").append(options.transactionsPerClient()).append('\n')
+                .append("Generic operations-per-transaction widths: ").append(options.widths()).append('\n')
+                .append("Fixed diagnostic workloads carry their operation count in the workload definition.\n")
+                .append("Default transactions per client/interval: ").append(options.transactionsPerClient())
+                .append('\n')
+                .append("Fixed-workload operation budget per client/interval: ")
+                .append(options.fixedWorkloadOperationBudgetPerClient()).append('\n')
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
-                .append("Each client owns one JDBC connection and reused prepared statement.\n")
+                .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n")
                 .append("PRIMARY_KEY_READ_HOT: every client repeatedly reads id=1.\n")
                 .append("PRIMARY_KEY_READ_DISJOINT: each client repeatedly reads one evenly spaced private id.\n")
                 .append("PRIMARY_KEY_READ_RANDOM: each client replays a deterministic precomputed key stream "
                         + "across the fixture; random generation is outside the timed interval.\n")
+                .append("Gate 1 decomposition workloads: EMPTY_TRANSACTION, VALUES_1, VALUES_10, "
+                        + "PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU.\n")
+                .append("Gate 1 PK reads are DISJOINT: each client repeatedly reads one evenly spaced private id.\n")
+                .append("PK_READ_10_RU changes only isolation from READ_COMMITTED to READ_UNCOMMITTED; "
+                        + "its causal interpretation is Derby/Delos-specific.\n")
                 .append("Disjoint-update client rows are evenly spread across the fixture.\n")
                 .append("Timed interval: synchronized client execution through final commit.\n")
                 .append("operationsPerSecond is measuredOperations / shared wall-clock interval.\n")
@@ -1167,15 +1237,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append('\n')
                 .append("Capability matrix: cross-engine-concurrency-capabilities.csv\n")
-                .append(options.containerMode()
-                        ? ""
-                        : "SQLite: native SQLite through Xerial JDBC; product/workload reference only, "
-                                + "not a JVM architectural-equivalence threshold.\n")
-                .append(options.containerMode()
-                        ? ""
-                        : "SQLite mode: persistent file, WAL, synchronous=FULL, busy_timeout=3000 ms, "
+                .append(options.targetValues().contains(Target.SQLITE)
+                        ? "SQLite: native SQLite through Xerial JDBC; product/workload reference only, "
+                                + "not a JVM architectural-equivalence threshold.\n"
+                        : "")
+                .append(options.targetValues().contains(Target.SQLITE)
+                        ? "SQLite mode: persistent file, WAL, synchronous=FULL, busy_timeout=3000 ms, "
                                 + "JDBC isolation requested as READ_COMMITTED; BUSY/LOCKED retries are "
-                                + "reported as retryable conflict retries.\n")
+                                + "reported as retryable conflict retries.\n"
+                        : "")
                 .append('\n');
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             ShapeKey key = entry.getKey();
@@ -1348,20 +1418,60 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private enum Workload {
-        PRIMARY_KEY_READ_HOT(true),
-        PRIMARY_KEY_READ_DISJOINT(true),
-        PRIMARY_KEY_READ_RANDOM(true),
-        DISJOINT_INDEXED_UPDATE(false),
-        CONTENDED_INDEXED_UPDATE(false);
+        EMPTY_TRANSACTION(false, false, true, 0, Connection.TRANSACTION_READ_COMMITTED),
+        VALUES_1(false, true, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        VALUES_10(false, true, true, 10, Connection.TRANSACTION_READ_COMMITTED),
+        PK_READ_1_RC(true, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        PK_READ_10_RC(true, false, true, 10, Connection.TRANSACTION_READ_COMMITTED),
+        PK_READ_100_RC(true, false, true, 100, Connection.TRANSACTION_READ_COMMITTED),
+        PK_READ_10_RU(true, false, true, 10, Connection.TRANSACTION_READ_UNCOMMITTED),
+        PRIMARY_KEY_READ_HOT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        PRIMARY_KEY_READ_DISJOINT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        PRIMARY_KEY_READ_RANDOM(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
+        CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
 
-        private final boolean read;
+        private final boolean primaryKeyRead;
+        private final boolean values;
+        private final boolean readOnly;
+        private final int fixedOperationsPerTransaction;
+        private final int isolationLevel;
 
-        Workload(boolean read) {
-            this.read = read;
+        Workload(
+                boolean primaryKeyRead,
+                boolean values,
+                boolean readOnly,
+                int fixedOperationsPerTransaction,
+                int isolationLevel) {
+            this.primaryKeyRead = primaryKeyRead;
+            this.values = values;
+            this.readOnly = readOnly;
+            this.fixedOperationsPerTransaction = fixedOperationsPerTransaction;
+            this.isolationLevel = isolationLevel;
         }
 
-        boolean isRead() {
-            return read;
+        boolean isPrimaryKeyRead() {
+            return primaryKeyRead;
+        }
+
+        boolean isValues() {
+            return values;
+        }
+
+        boolean isReadOnly() {
+            return readOnly;
+        }
+
+        boolean isUpdate() {
+            return !readOnly;
+        }
+
+        int fixedOperationsPerTransaction() {
+            return fixedOperationsPerTransaction;
+        }
+
+        int isolationLevel() {
+            return isolationLevel;
         }
     }
 
@@ -1646,6 +1756,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String widths,
             String workloads,
             int transactionsPerClient,
+            int fixedWorkloadOperationBudgetPerClient,
             int payload,
             int fixtureBatch,
             int warmups,
@@ -1689,6 +1800,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM,"
                                     + "DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE"),
                     Integer.parseInt(System.getProperty(PREFIX + "transactionsPerClient", "50")),
+                    Integer.parseInt(System.getProperty(PREFIX + "fixedWorkloadOperationBudgetPerClient", "0")),
                     Integer.parseInt(System.getProperty(PREFIX + "payload", "128")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "2")),
@@ -1712,9 +1824,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.POSTGRESQL, Target.MARIADB);
             if (target == null
                     && !configuredTargets.equals(embedded)
-                    && !configuredTargets.equals(container)) {
-                throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + " or "
-                        + container + ": " + configuredTargets);
+                    && !configuredTargets.equals(container)
+                    && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)) {
+                throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
+                        + container + ", or diagnostic " + READ_DECOMPOSITION_TARGETS + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
                 throw new IllegalArgumentException(
@@ -1732,7 +1845,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (target == null && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
-            if (transactionsPerClient < 1 || payload < 16 || fixtureBatch < 1 || warmups < 0
+            if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
+                    || payload < 16 || fixtureBatch < 1 || warmups < 0
                     || iterations < 1 || caseTimeoutSeconds < 1 || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }
@@ -1742,9 +1856,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");
             }
-            if (!containerMode()
-                    && (delosClasspath.isBlank() || upstreamDerbyClasspath.isBlank()
-                    || h2Classpath.isBlank() || sqliteClasspath.isBlank())) {
+            if (!containerMode() && (delosClasspath.isBlank() || upstreamDerbyClasspath.isBlank()
+                    || h2Classpath.isBlank()
+                    || (configuredTargets.contains(Target.SQLITE) && sqliteClasspath.isBlank()))) {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
@@ -1765,6 +1879,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException("remoteJdbcUrl is required for " + target.id());
                 }
             }
+        }
+
+        int transactionsPerClient(Spec spec) {
+            if (fixedWorkloadOperationBudgetPerClient == 0
+                    || spec.workload().fixedOperationsPerTransaction() < 0) {
+                return transactionsPerClient;
+            }
+            if (spec.operationsPerTransaction() == 0) {
+                return fixedWorkloadOperationBudgetPerClient;
+            }
+            return Math.max(1, fixedWorkloadOperationBudgetPerClient / spec.operationsPerTransaction());
         }
 
         List<Integer> rowCounts() {
