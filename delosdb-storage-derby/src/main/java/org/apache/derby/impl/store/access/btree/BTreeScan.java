@@ -356,18 +356,13 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         // have the lock it will be granted.
         while (true)
         {
-            // Find the starting page and row slot, must start at root and
-            // search either for leftmost leaf, or search for specific key.
-            ControlRow root = ControlRow.get(this, BTree.ROOTPAGEID); 
-
-            // include search of tree in page visited stats.
-            stat_numpages_visited += root.getLevel() + 1;
-
             boolean need_previous_lock = true;
 
             if (init_startKeyValue == null)
             {
-                // No start given, so position at 0 slot of leftmost leaf page
+                // Left-edge scans retain the inherited root-latched path.
+                ControlRow root = ControlRow.get(this, BTree.ROOTPAGEID);
+                stat_numpages_visited += root.getLevel() + 1;
                 pos.current_leaf = (LeafControlRow) root.searchLeft(this);
 
                 pos.current_slot = ControlRow.CR_SLOT;
@@ -389,7 +384,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                         SearchParameters.POSITION_RIGHT_OF_PARTIAL_KEY_MATCH),
                     init_template, this, false);
 
-                pos.current_leaf = (LeafControlRow) root.search(sp);
+                pos.current_leaf = searchFromRoot(sp, true);
 
                 pos.current_slot = sp.resultSlot;
                 exact     = sp.resultExact;
@@ -934,8 +929,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                     SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
                     init_template, this, false);
 
-        pos.current_leaf = (LeafControlRow)
-                    ControlRow.get(this, BTree.ROOTPAGEID).search(sp);
+        pos.current_leaf = searchFromRoot(sp, false);
 
         if (!sp.resultExact && !missing_row_for_key_ok)
         {
@@ -959,6 +953,26 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         pos.current_positionKey = null;
 
         return(true);
+    }
+
+    private LeafControlRow searchFromRoot(
+            SearchParameters sp, boolean countVisitedPages)
+            throws StandardException {
+        BTree conglomerate = getConglomerate();
+        int snapshotHeight = conglomerate.rootRoutingTreeHeight();
+        ControlRow result = conglomerate.searchFromRootRoutingSnapshot(this, sp);
+        if (result != null) {
+            if (countVisitedPages && snapshotHeight != 0) {
+                stat_numpages_visited += snapshotHeight;
+            }
+            return (LeafControlRow) result;
+        }
+
+        ControlRow root = ControlRow.get(this, BTree.ROOTPAGEID);
+        if (countVisitedPages) {
+            stat_numpages_visited += root.getLevel() + 1;
+        }
+        return (LeafControlRow) root.search(sp);
     }
 
     /*

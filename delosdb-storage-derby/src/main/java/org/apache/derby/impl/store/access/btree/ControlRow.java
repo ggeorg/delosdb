@@ -160,6 +160,13 @@ public abstract class ControlRow implements AuxObject, TypedFormat
     private BTree    btree = null;
 
     /**
+     * Live conglomerate whose immutable root-routing snapshot was derived
+     * from this root control row. Transient because RawStore page contents,
+     * not this observer reference, remain authoritative.
+     */
+    private transient BTree rootRoutingOwner;
+
+    /**
      * The page that this control row describes.
      **/
 	protected Page page;
@@ -1866,6 +1873,18 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	
 
 
+    final void observeRootRoutingSnapshot(BTree owner) {
+        rootRoutingOwner = owner;
+    }
+
+    @Override
+    public void pageAboutToChange() {
+        BTree owner = rootRoutingOwner;
+        if (owner != null) {
+            owner.invalidateRootRoutingSnapshot();
+        }
+    }
+
 	/*
 	** Methods of AuxObject
 	*/
@@ -1879,6 +1898,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	**/
  	public void auxObjectInvalidated()
 	{
+        pageAboutToChange();
+        rootRoutingOwner = null;
 		version = null;
 		leftSiblingPageNumber = null;
 		rightSiblingPageNumber = null;

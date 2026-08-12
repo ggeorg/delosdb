@@ -201,12 +201,13 @@ public abstract class BTree extends GenericConglomerate
     /**
      * Immutable decoded routing state for the current root branch page.
      *
-     * <p>The RawStore root page remains the authority. A search still latches
-     * the root and keeps the inherited root-to-child latch coupling. This
-     * snapshot only removes repeated record decoding and page-local binary
-     * search work from that exclusive root-latch critical section. The
-     * snapshot is rebuilt while the root is latched whenever RawStore's page
-     * version changes.</p>
+     * <p>The RawStore root page remains the authority. Keyed read scans may
+     * route through this immutable snapshot without latching the root, then
+     * validate that the same snapshot survived while they descend. RawStore
+     * invalidates the snapshot before any root-page mutation, so a concurrent
+     * structural change forces the reader back through the inherited latched
+     * root path. Snapshot construction and refresh still occur under the
+     * exclusive root latch.</p>
      */
     private transient volatile RootRoutingSnapshot rootRoutingSnapshot;
 
@@ -220,17 +221,54 @@ public abstract class BTree extends GenericConglomerate
                     root, openBtree, pageVersion);
             rootRoutingSnapshot = snapshot;
         }
+        root.observeRootRoutingSnapshot(this);
         return snapshot.search(params, this);
+    }
+
+    final ControlRow searchFromRootRoutingSnapshot(
+            OpenBTree openBtree, SearchParameters params)
+            throws StandardException {
+        RootRoutingSnapshot snapshot = rootRoutingSnapshot;
+        if (snapshot == null) {
+            return null;
+        }
+
+        ControlRow child = ControlRow.get(
+                openBtree, snapshot.search(params, this));
+        if (rootRoutingSnapshot != snapshot) {
+            child.release();
+            return null;
+        }
+
+        ControlRow result = child.search(params);
+        if (rootRoutingSnapshot == snapshot) {
+            return result;
+        }
+
+        result.release();
+        return null;
+    }
+
+    final int rootRoutingTreeHeight() {
+        RootRoutingSnapshot snapshot = rootRoutingSnapshot;
+        return snapshot == null ? 0 : snapshot.rootLevel + 1;
+    }
+
+    final void invalidateRootRoutingSnapshot() {
+        rootRoutingSnapshot = null;
     }
 
     private static final class RootRoutingSnapshot {
         private final long pageVersion;
+        private final int rootLevel;
         private final StoreDataValue[][] branchRows;
         private final long[] childPageIds;
 
         private RootRoutingSnapshot(
-                long pageVersion, StoreDataValue[][] branchRows, long[] childPageIds) {
+                long pageVersion, int rootLevel,
+                StoreDataValue[][] branchRows, long[] childPageIds) {
             this.pageVersion = pageVersion;
+            this.rootLevel = rootLevel;
             this.branchRows = branchRows;
             this.childPageIds = childPageIds;
         }
@@ -253,7 +291,8 @@ public abstract class BTree extends GenericConglomerate
                         row[openBtree.getConglomerate().nKeyFields]);
             }
 
-            return new RootRoutingSnapshot(pageVersion, branchRows, childPageIds);
+            return new RootRoutingSnapshot(
+                    pageVersion, root.getLevel(), branchRows, childPageIds);
         }
 
         private long search(SearchParameters params, BTree btree)

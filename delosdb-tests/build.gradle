@@ -73,6 +73,8 @@ def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
+def lockEntryDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
@@ -315,6 +317,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
@@ -340,6 +343,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(deadlockVictimLifecycleTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
+    }
+    from(lockEntryDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(mvccVisibilityTestSupportSource) {
@@ -1103,6 +1109,85 @@ tasks.register('runDelosJdbcPageLatchContentionProof', JavaExec) {
                         'delosdb.benchmark.pageLatchProof.caseTimeoutSeconds').getOrElse('180'),
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
                 'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true'
+        ])
+    }
+}
+
+// Gate 6C proof: after the root-page latch is removed, measure whether the
+// remaining SAME_TABLE cliff comes from the shared ConcurrentLockSet entry
+// used for compatible container-intent locking.
+tasks.register('runDelosJdbcLockEntryContentionProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Measures lock-table entry mutex contention for same-table versus private-table reads after Gate 6B.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/lock-entry-contention-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Lock-entry contention proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/lock-entry-contention-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-lock-entry-contention-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.diagnostic.lockEntry': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'SAME_TABLE_DISJOINT,PRIVATE_TABLE_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.lockEntryProof.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.payload').getOrElse('128'),
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.warmups').getOrElse('1'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.iterations').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.lockEntryProof.caseTimeoutSeconds').getOrElse('180'),
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.lockEntryDiagnostics': 'true'
         ])
     }
 }

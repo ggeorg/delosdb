@@ -35,6 +35,7 @@ import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.ConcurrentHashMap;
@@ -111,6 +112,24 @@ final class ConcurrentLockSet implements LockTable {
 	// The number of waiters for locks
 	private final AtomicInteger blockCount;
 
+    private static final boolean LOCK_ENTRY_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.lockEntry");
+    private static final LockEntryStats CONTAINER_KEY_ENTRY_STATS = new LockEntryStats();
+    private static final LockEntryStats RECORD_ID_ENTRY_STATS = new LockEntryStats();
+    private static final LockEntryStats OTHER_ENTRY_STATS = new LockEntryStats();
+
+    private static final class LockEntryStats {
+        private final LongAdder acquisitions = new LongAdder();
+        private final LongAdder contendedAcquisitions = new LongAdder();
+        private final LongAdder waitNanos = new LongAdder();
+
+        private void reset() {
+            acquisitions.reset();
+            contendedAcquisitions.reset();
+            waitNanos.reset();
+        }
+    }
+
 	/*
 	** Constructor
 	*/
@@ -125,6 +144,12 @@ final class ConcurrentLockSet implements LockTable {
      * Class representing an entry in the lock table.
      */
     private static final class Entry {
+        private final Lockable ref;
+
+        Entry(Lockable ref) {
+            this.ref = ref;
+        }
+
         /** The lock control. */
         Control control;
         /**
@@ -158,7 +183,18 @@ final class ConcurrentLockSet implements LockTable {
             if (SanityManager.DEBUG) {
                 SanityManager.ASSERT(!mutex.isHeldByCurrentThread());
             }
-            mutex.lock();
+            if (!LOCK_ENTRY_DIAGNOSTICS) {
+                mutex.lock();
+            } else {
+                LockEntryStats stats = lockEntryStats(ref);
+                stats.acquisitions.increment();
+                if (!mutex.tryLock()) {
+                    stats.contendedAcquisitions.increment();
+                    long start = System.nanoTime();
+                    mutex.lock();
+                    stats.waitNanos.add(System.nanoTime() - start);
+                }
+            }
             while (deadlockDetection != null) {
                 deadlockDetection.awaitUninterruptibly();
             }
@@ -237,7 +273,7 @@ final class ConcurrentLockSet implements LockTable {
                 // retrieved it. Try to reuse it later.
             } else {
                 // no entry found, create a new one
-                e = new Entry();
+                e = new Entry(ref);
                 e.lock();
             }
             // reinsert empty entry, or insert the new entry
@@ -283,6 +319,36 @@ final class ConcurrentLockSet implements LockTable {
                 entry.exitDeadlockDetection();
             }
         }
+    }
+
+    static void resetLockEntryDiagnosticsForTesting() {
+        CONTAINER_KEY_ENTRY_STATS.reset();
+        RECORD_ID_ENTRY_STATS.reset();
+        OTHER_ENTRY_STATS.reset();
+    }
+
+    static String[] snapshotLockEntryDiagnosticsForTesting() {
+        return new String[] {
+            diagnosticRow("ContainerKey", CONTAINER_KEY_ENTRY_STATS),
+            diagnosticRow("RecordId", RECORD_ID_ENTRY_STATS),
+            diagnosticRow("Other", OTHER_ENTRY_STATS)
+        };
+    }
+
+    private static LockEntryStats lockEntryStats(Lockable ref) {
+        String name = ref.getClass().getName();
+        if ("org.apache.derby.iapi.store.raw.ContainerKey".equals(name)) {
+            return CONTAINER_KEY_ENTRY_STATS;
+        }
+        if ("org.apache.derby.impl.store.raw.data.RecordId".equals(name)) {
+            return RECORD_ID_ENTRY_STATS;
+        }
+        return OTHER_ENTRY_STATS;
+    }
+
+    private static String diagnosticRow(String name, LockEntryStats stats) {
+        return name + "," + stats.acquisitions.sum() + ","
+                + stats.contendedAcquisitions.sum() + "," + stats.waitNanos.sum();
     }
 
 	/*

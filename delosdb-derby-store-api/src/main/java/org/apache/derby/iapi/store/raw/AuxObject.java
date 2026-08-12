@@ -39,4 +39,15 @@ public interface AuxObject
 		reference to this object. 
 	*/
 	public void auxObjectInvalidated();
+
+    /**
+     * Called while the page is latched immediately before its persistent
+     * contents are changed. Most auxiliary objects need no action.
+     *
+     * <p>This hook lets an auxiliary object invalidate immutable derived
+     * read state before a page mutation becomes visible, without changing
+     * the RawStore page-latch contract.</p>
+     */
+    default void pageAboutToChange() {
+    }
 }

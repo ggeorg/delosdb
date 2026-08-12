@@ -52,6 +52,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
+import org.apache.derby.iapi.store.raw.AuxObject;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
@@ -7058,6 +7059,11 @@ public class StoredPage extends CachedPage
                 initialRowCount = internalNonDeletedRecordCount();
             } else
                 initialRowCount = 0;
+        }
+
+        AuxObject auxObject = getAuxObject();
+        if (auxObject != null) {
+            auxObject.pageAboutToChange();
         }
 
         setDirty();

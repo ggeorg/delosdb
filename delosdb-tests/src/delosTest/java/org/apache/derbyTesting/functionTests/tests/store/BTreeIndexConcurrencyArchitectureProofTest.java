@@ -20,8 +20,12 @@
 package org.apache.derbyTesting.functionTests.tests.store;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import junit.framework.Test;
 
@@ -42,8 +46,8 @@ import org.apache.derbyTesting.junit.TestConfiguration;
  * must not remain searchable.</p>
  *
  * <p>This is a proof net for the PostgreSQL-class indexing pillar. It does not
- * make DelosDB MVCC and it does not refactor B-tree latch, split, or scan
- * traversal code.</p>
+ * make DelosDB MVCC; it pins down B-tree conflict, rollback, and concurrent
+ * routing behavior while inherited index internals are modernized.</p>
  */
 public class BTreeIndexConcurrencyArchitectureProofTest
         extends BaseJDBCTestCase {
@@ -168,6 +172,120 @@ public class BTreeIndexConcurrencyArchitectureProofTest
                         + "--derby-properties index=btree_index_concurrency_key_uq\n"
                         + "where key_value = 11"),
                 new String[][] { { "2", "11", "111" } });
+    }
+
+    /**
+     * A cached root-routing snapshot must never make an index lookup miss a
+     * key while concurrent inserts grow and split the same B-tree. The reader
+     * repeatedly uses the forced unique secondary index while the writer adds
+     * enough keys to mutate its routing structure.
+     */
+    public void testConcurrentRootRoutingSnapshotTracksIndexGrowth()
+            throws Exception {
+        populateCommittedRows(1, 2000);
+
+        JDBC.assertSingleValueResultSet(
+                createStatement().executeQuery(
+                        "select payload from btree_index_concurrency "
+                        + "--derby-properties index=btree_index_concurrency_key_uq\n"
+                        + "where key_value = 1000"),
+                "10000");
+
+        Connection reader = openDefaultConnection();
+        Connection writer = openDefaultConnection();
+        reader.setAutoCommit(true);
+        writer.setAutoCommit(false);
+
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        Thread readerThread = new Thread(
+                () -> runIndexedReader(reader, start, failure),
+                "btree-root-routing-reader");
+        Thread writerThread = new Thread(
+                () -> runIndexGrowthWriter(writer, start, failure),
+                "btree-root-routing-writer");
+
+        readerThread.start();
+        writerThread.start();
+        start.countDown();
+        readerThread.join();
+        writerThread.join();
+
+        reader.close();
+        rollbackAndClose(writer);
+        if (failure.get() != null) {
+            throw new AssertionError(
+                    "Concurrent root-routing snapshot failure", failure.get());
+        }
+
+        JDBC.assertSingleValueResultSet(
+                createStatement().executeQuery(
+                        "select payload from btree_index_concurrency "
+                        + "--derby-properties index=btree_index_concurrency_key_uq\n"
+                        + "where key_value = 5000"),
+                "50000");
+    }
+
+    private void populateCommittedRows(int first, int last) throws Exception {
+        try (PreparedStatement insert = prepareStatement(
+                "insert into btree_index_concurrency values (?, ?, ?)")) {
+            for (int key = first; key <= last; key++) {
+                insert.setInt(1, key);
+                insert.setInt(2, key);
+                insert.setInt(3, key * 10);
+                insert.addBatch();
+            }
+            insert.executeBatch();
+        }
+        commit();
+    }
+
+    private void runIndexedReader(
+            Connection connection, CountDownLatch start,
+            AtomicReference<Throwable> failure) {
+        try (PreparedStatement query = connection.prepareStatement(
+                "select payload from btree_index_concurrency "
+                + "--derby-properties index=btree_index_concurrency_key_uq\n"
+                + "where key_value = ?")) {
+            start.await();
+            for (int iteration = 0; iteration < 6000; iteration++) {
+                int key = 1 + (iteration % 2000);
+                query.setInt(1, key);
+                try (ResultSet rs = query.executeQuery()) {
+                    if (!rs.next() || rs.getInt(1) != key * 10 || rs.next()) {
+                        throw new AssertionError(
+                                "Incorrect indexed lookup for key " + key);
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            failure.compareAndSet(null, t);
+        }
+    }
+
+    private void runIndexGrowthWriter(
+            Connection connection, CountDownLatch start,
+            AtomicReference<Throwable> failure) {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into btree_index_concurrency values (?, ?, ?)")) {
+            start.await();
+            for (int key = 2001; key <= 5000; key++) {
+                insert.setInt(1, key);
+                insert.setInt(2, key);
+                insert.setInt(3, key * 10);
+                insert.executeUpdate();
+                if ((key % 50) == 0) {
+                    connection.commit();
+                }
+            }
+            connection.commit();
+        } catch (Throwable t) {
+            failure.compareAndSet(null, t);
+            try {
+                connection.rollback();
+            } catch (SQLException ignored) {
+            }
+        }
     }
 
     private void assertInsertConflicts(Statement statement, String sql)
