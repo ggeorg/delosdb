@@ -69,6 +69,8 @@ def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/dem
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+def pageLatchDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
@@ -311,6 +313,7 @@ sourceSets {
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
@@ -331,6 +334,9 @@ artifacts {
 // already depends on it.
 tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(pageLatchDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(deadlockVictimLifecycleTestSupportSource) {
@@ -1021,6 +1027,85 @@ tasks.register('runDelosJdbcConglomerateLocalityDiagnostic', JavaExec) {
 }
 
 
+
+
+// Gate 5 proof: measure exclusive RawStore page-latch contention directly in the
+// already-proven four-client SAME_TABLE versus PRIVATE_TABLE contrast.
+tasks.register('runDelosJdbcPageLatchContentionProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Measures RawStore page-latch wait counts/times for the four-client conglomerate-locality contrast.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/page-latch-contention-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Page-latch contention proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/page-latch-contention-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-page-latch-contention-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'SAME_TABLE_DISJOINT,PRIVATE_TABLE_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.pageLatchProof.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.payload').getOrElse('128'),
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.warmups').getOrElse('1'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.iterations').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.pageLatchProof.caseTimeoutSeconds').getOrElse('180'),
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true'
+        ])
+    }
+}
 
 def conglomerateLocalityJfrProfiles = [
         [target: 'delos_heap', workload: 'SAME_TABLE_DISJOINT', runtimeClasspath: rootProject.files(derbyRuntimeJars)],

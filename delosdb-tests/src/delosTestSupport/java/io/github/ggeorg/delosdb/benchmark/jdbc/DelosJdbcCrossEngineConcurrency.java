@@ -471,6 +471,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     expectedSemantic = sameSemantic(expectedSemantic, interval.semanticFingerprint(), spec,
                             "warmup " + warmup);
                 }
+                if (pageLatchDiagnosticsEnabled()) {
+                    resetPageLatchDiagnostics();
+                }
                 long elapsed = 0L;
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
@@ -481,12 +484,19 @@ public final class DelosJdbcCrossEngineConcurrency {
                     measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
                             "measured iteration " + iteration);
                 }
+                long[] pageLatchDiagnostics = pageLatchDiagnosticsEnabled()
+                        ? snapshotPageLatchDiagnostics()
+                        : null;
                 int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
                         options.iterations());
                 long measuredOperations = Math.multiplyExact(
                         measuredTransactions, spec.operationsPerTransaction());
+                if (pageLatchDiagnostics != null) {
+                    writePageLatchDiagnostics(
+                            options, spec, config, measuredOperations, pageLatchDiagnostics);
+                }
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
@@ -516,6 +526,57 @@ public final class DelosJdbcCrossEngineConcurrency {
             throwFailure(failure);
         }
         return measurement;
+    }
+
+    private static boolean pageLatchDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "pageLatchDiagnostics");
+    }
+
+    private static void resetPageLatchDiagnostics() throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.PageLatchDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static long[] snapshotPageLatchDiagnostics() throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.PageLatchDiagnosticTestSupport");
+        return (long[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writePageLatchDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            long[] values) throws IOException {
+        if (values.length != 8) {
+            throw new IllegalStateException(
+                    "Unexpected page-latch diagnostic width: " + values.length);
+        }
+        Path output = options.reportDirectory().resolve(
+                "page-latch-diagnostics-" + options.target().id() + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "latchRequests,contendedLatchRequests,ownerWaitCalls,ownerWaitNanos,"
+                + "cleanerWaitCalls,cleanerWaitNanos,noWaitRequests,noWaitFailures,"
+                + "contendedPercent,ownerWaitNanosPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        double contendedPercent = values[0] == 0L ? 0.0 : values[1] * 100.0 / values[0];
+        double waitNanosPerOperation = measuredOperations == 0L
+                ? 0.0
+                : (double) values[3] / measuredOperations;
+        String row = options.target().id() + ',' + spec.workload().name() + ','
+                + spec.clients() + ',' + spec.operationsPerTransaction() + ','
+                + config.rowCount() + ',' + measuredOperations + ','
+                + values[0] + ',' + values[1] + ',' + values[2] + ',' + values[3] + ','
+                + values[4] + ',' + values[5] + ',' + values[6] + ',' + values[7] + ','
+                + format(contendedPercent) + ',' + format(waitNanosPerOperation) + '\n';
+        Files.writeString(
+                output, row, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
     }
 
     private static List<String> prepareTables(

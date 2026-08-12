@@ -52,6 +52,7 @@ import org.apache.derby.iapi.util.InterruptStatus;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.ObjectInput;
+import java.util.concurrent.atomic.LongAdder;
 
 
 
@@ -78,6 +79,17 @@ import java.io.ObjectInput;
 
 abstract class BasePage implements Page, DerbyObserver, TypedFormat
 {
+
+    private static final boolean PAGE_LATCH_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.pageLatch");
+    private static final LongAdder PAGE_LATCH_REQUESTS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_CONTENDED_REQUESTS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_OWNER_WAIT_CALLS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_OWNER_WAIT_NANOS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_CLEANER_WAIT_CALLS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_CLEANER_WAIT_NANOS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_NO_WAIT_REQUESTS = new LongAdder();
+    private static final LongAdder PAGE_LATCH_NO_WAIT_FAILURES = new LongAdder();
 
 	/**
 		auxiliary object
@@ -1673,6 +1685,30 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		return identity;
 	}
 
+    static void resetPageLatchDiagnosticsForTesting() {
+        PAGE_LATCH_REQUESTS.reset();
+        PAGE_LATCH_CONTENDED_REQUESTS.reset();
+        PAGE_LATCH_OWNER_WAIT_CALLS.reset();
+        PAGE_LATCH_OWNER_WAIT_NANOS.reset();
+        PAGE_LATCH_CLEANER_WAIT_CALLS.reset();
+        PAGE_LATCH_CLEANER_WAIT_NANOS.reset();
+        PAGE_LATCH_NO_WAIT_REQUESTS.reset();
+        PAGE_LATCH_NO_WAIT_FAILURES.reset();
+    }
+
+    static long[] pageLatchDiagnosticsForTesting() {
+        return new long[] {
+                PAGE_LATCH_REQUESTS.sum(),
+                PAGE_LATCH_CONTENDED_REQUESTS.sum(),
+                PAGE_LATCH_OWNER_WAIT_CALLS.sum(),
+                PAGE_LATCH_OWNER_WAIT_NANOS.sum(),
+                PAGE_LATCH_CLEANER_WAIT_CALLS.sum(),
+                PAGE_LATCH_CLEANER_WAIT_NANOS.sum(),
+                PAGE_LATCH_NO_WAIT_REQUESTS.sum(),
+                PAGE_LATCH_NO_WAIT_FAILURES.sum()
+        };
+    }
+
 	/**
 		Get an exclusive latch on the page.
 		<BR>
@@ -1681,6 +1717,10 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 	*/
 	void setExclusive(BaseContainerHandle requester)
 		throws StandardException {
+
+        if (PAGE_LATCH_DIAGNOSTICS) {
+            PAGE_LATCH_REQUESTS.increment();
+        }
 
 		RawTransaction t = requester.getTransaction();
 
@@ -1719,7 +1759,15 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                     SQLState.DATA_DOUBLE_LATCH_INTERNAL_ERROR, identity);
 			}
 
+            long ownerWaitStarted = 0L;
+            if (PAGE_LATCH_DIAGNOSTICS && owner != null) {
+                PAGE_LATCH_CONTENDED_REQUESTS.increment();
+                ownerWaitStarted = System.nanoTime();
+            }
 			while (owner != null) {
+                if (PAGE_LATCH_DIAGNOSTICS) {
+                    PAGE_LATCH_OWNER_WAIT_CALLS.increment();
+                }
 				try {
 					// Expect notify from releaseExclusive().
 					wait();
@@ -1727,6 +1775,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                     InterruptStatus.setInterrupted();
 				}
 			}
+            if (ownerWaitStarted != 0L) {
+                PAGE_LATCH_OWNER_WAIT_NANOS.add(System.nanoTime() - ownerWaitStarted);
+            }
 
 			preLatch(requester);
 
@@ -1744,8 +1795,15 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
             // Previously we would wait in lockEvent, but that caused the code 
             // to block on I/O while holding the locking system monitor.
 
+            long cleanerWaitStarted = 0L;
+            if (PAGE_LATCH_DIAGNOSTICS && inClean) {
+                cleanerWaitStarted = System.nanoTime();
+            }
             while (inClean) 
             {
+                if (PAGE_LATCH_DIAGNOSTICS) {
+                    PAGE_LATCH_CLEANER_WAIT_CALLS.increment();
+                }
                 try 
                 {
                     // Expect notify from clean() routine.
@@ -1755,6 +1813,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                 {
                     InterruptStatus.setInterrupted();
                 }
+            }
+            if (cleanerWaitStarted != 0L) {
+                PAGE_LATCH_CLEANER_WAIT_NANOS.add(System.nanoTime() - cleanerWaitStarted);
             }
 
             // no clean taking place, so safe to move to full LATCHED state.
@@ -1769,6 +1830,10 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		MT - thread safe
 	*/
 	boolean setExclusiveNoWait(BaseContainerHandle requester) throws StandardException {
+
+        if (PAGE_LATCH_DIAGNOSTICS) {
+            PAGE_LATCH_NO_WAIT_REQUESTS.increment();
+        }
 
 		RawTransaction t = requester.getTransaction();
 
@@ -1789,6 +1854,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 			if (owner == null) {
 				preLatch(requester);
 			} else {
+                if (PAGE_LATCH_DIAGNOSTICS) {
+                    PAGE_LATCH_NO_WAIT_FAILURES.increment();
+                }
 				return false;
 			}
 
