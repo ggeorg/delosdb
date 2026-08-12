@@ -487,6 +487,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 long[] pageLatchDiagnostics = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchDiagnostics()
                         : null;
+                String[] pageLatchContentionByPage = pageLatchDiagnosticsEnabled()
+                        ? snapshotPageLatchContentionByPage()
+                        : null;
                 int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
@@ -496,6 +499,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (pageLatchDiagnostics != null) {
                     writePageLatchDiagnostics(
                             options, spec, config, measuredOperations, pageLatchDiagnostics);
+                    writePageLatchContentionByPage(
+                            options, spec, config, pageLatchContentionByPage);
                 }
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
@@ -544,6 +549,13 @@ public final class DelosJdbcCrossEngineConcurrency {
         return (long[]) support.getMethod("snapshot").invoke(null);
     }
 
+    private static String[] snapshotPageLatchContentionByPage()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.PageLatchDiagnosticTestSupport");
+        return (String[]) support.getMethod("contentionByPage").invoke(null);
+    }
+
     private static void writePageLatchDiagnostics(
             Options options,
             Spec spec,
@@ -575,6 +587,44 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + format(contendedPercent) + ',' + format(waitNanosPerOperation) + '\n';
         Files.writeString(
                 output, row, StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static void writePageLatchContentionByPage(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            String[] rows) throws IOException {
+        if (rows == null) {
+            return;
+        }
+        Path output = options.reportDirectory().resolve(
+                "page-latch-contention-by-page-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,pageKey,"
+                + "contendedLatchRequests,ownerWaitCalls,ownerWaitNanos\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String row : rows) {
+            String[] values = row.split("\t", -1);
+            if (values.length != 4) {
+                throw new IllegalStateException("Unexpected page-latch contention row: " + row);
+            }
+            out.append(options.target().id()).append(',')
+                    .append(spec.workload().name()).append(',')
+                    .append(spec.clients()).append(',')
+                    .append(spec.operationsPerTransaction()).append(',')
+                    .append(config.rowCount()).append(',')
+                    .append(csvSafe(values[0])).append(',')
+                    .append(values[1]).append(',')
+                    .append(values[2]).append(',')
+                    .append(values[3]).append('\n');
+        }
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
                 java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
     }

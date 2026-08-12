@@ -18,4 +18,8 @@ public final class PageLatchDiagnosticTestSupport {
     public static long[] snapshot() {
         return BasePage.pageLatchDiagnosticsForTesting();
     }
+
+    public static String[] contentionByPage() {
+        return BasePage.pageLatchContentionByPageForTesting();
+    }
 }

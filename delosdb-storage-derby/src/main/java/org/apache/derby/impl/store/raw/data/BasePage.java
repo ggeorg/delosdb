@@ -52,6 +52,9 @@ import org.apache.derby.iapi.util.InterruptStatus;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.ObjectInput;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
 
 
@@ -90,6 +93,14 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
     private static final LongAdder PAGE_LATCH_CLEANER_WAIT_NANOS = new LongAdder();
     private static final LongAdder PAGE_LATCH_NO_WAIT_REQUESTS = new LongAdder();
     private static final LongAdder PAGE_LATCH_NO_WAIT_FAILURES = new LongAdder();
+    private static final ConcurrentHashMap<PageKey, PageLatchContention> PAGE_LATCH_CONTENTION_BY_PAGE =
+            new ConcurrentHashMap<>();
+
+    private static final class PageLatchContention {
+        private final LongAdder contendedRequests = new LongAdder();
+        private final LongAdder ownerWaitCalls = new LongAdder();
+        private final LongAdder ownerWaitNanos = new LongAdder();
+    }
 
 	/**
 		auxiliary object
@@ -1694,6 +1705,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
         PAGE_LATCH_CLEANER_WAIT_NANOS.reset();
         PAGE_LATCH_NO_WAIT_REQUESTS.reset();
         PAGE_LATCH_NO_WAIT_FAILURES.reset();
+        PAGE_LATCH_CONTENTION_BY_PAGE.clear();
     }
 
     static long[] pageLatchDiagnosticsForTesting() {
@@ -1707,6 +1719,21 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                 PAGE_LATCH_NO_WAIT_REQUESTS.sum(),
                 PAGE_LATCH_NO_WAIT_FAILURES.sum()
         };
+    }
+
+    static String[] pageLatchContentionByPageForTesting() {
+        return PAGE_LATCH_CONTENTION_BY_PAGE.entrySet().stream()
+                .sorted(Comparator.comparingLong(
+                        (Map.Entry<PageKey, PageLatchContention> entry) ->
+                                entry.getValue().ownerWaitNanos.sum()).reversed())
+                .map(entry -> {
+                    PageLatchContention contention = entry.getValue();
+                    return entry.getKey() + "\t"
+                            + contention.contendedRequests.sum() + "\t"
+                            + contention.ownerWaitCalls.sum() + "\t"
+                            + contention.ownerWaitNanos.sum();
+                })
+                .toArray(String[]::new);
     }
 
 	/**
@@ -1760,13 +1787,20 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 			}
 
             long ownerWaitStarted = 0L;
+            PageLatchContention pageContention = null;
             if (PAGE_LATCH_DIAGNOSTICS && owner != null) {
                 PAGE_LATCH_CONTENDED_REQUESTS.increment();
+                pageContention = PAGE_LATCH_CONTENTION_BY_PAGE.computeIfAbsent(
+                        identity, ignored -> new PageLatchContention());
+                pageContention.contendedRequests.increment();
                 ownerWaitStarted = System.nanoTime();
             }
 			while (owner != null) {
                 if (PAGE_LATCH_DIAGNOSTICS) {
                     PAGE_LATCH_OWNER_WAIT_CALLS.increment();
+                    if (pageContention != null) {
+                        pageContention.ownerWaitCalls.increment();
+                    }
                 }
 				try {
 					// Expect notify from releaseExclusive().
@@ -1776,7 +1810,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 				}
 			}
             if (ownerWaitStarted != 0L) {
-                PAGE_LATCH_OWNER_WAIT_NANOS.add(System.nanoTime() - ownerWaitStarted);
+                long ownerWaitNanos = System.nanoTime() - ownerWaitStarted;
+                PAGE_LATCH_OWNER_WAIT_NANOS.add(ownerWaitNanos);
+                pageContention.ownerWaitNanos.add(ownerWaitNanos);
             }
 
 			preLatch(requester);
