@@ -219,17 +219,9 @@ final class MvccRawStoreOrderedIndexPredicate {
 
         boolean upperInclusive();
 
-        default boolean equality() {
-            return false;
-        }
     }
 
     private record EqualityPredicate(int columnId, StoreDataValue value) implements Predicate {
-        @Override
-        public boolean equality() {
-            return true;
-        }
-
         @Override
         public StoreDataValue lowerBound() {
             return value;

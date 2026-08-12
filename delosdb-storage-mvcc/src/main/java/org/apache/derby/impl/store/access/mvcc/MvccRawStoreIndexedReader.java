@@ -293,8 +293,8 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         return versionReader;
     }
 
-    MvccRawStoreIndexedReadMetrics.Snapshot metrics() {
-        return metrics.snapshot();
+    MvccRawStoreIndexedReadMetrics metrics() {
+        return metrics;
     }
 
     @Override

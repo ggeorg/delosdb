@@ -10,7 +10,6 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
@@ -354,12 +353,7 @@ final class MvccRawStoreOrderedIndex {
         int stopOperator = stopKey == null
                 ? ScanController.NA
                 : (predicate.upperInclusive() ? ScanController.GT : ScanController.GE);
-        boolean equality = predicate.equality();
-        List<Candidate> equalityCandidates = equality ? new ArrayList<>() : null;
-        LinkedHashMap<Long, Candidate> rangeCandidates =
-                equality ? null : new LinkedHashMap<>();
-        long previousRowId = 0L;
-        boolean havePreviousRowId = false;
+        LinkedHashMap<Long, Candidate> candidates = new LinkedHashMap<>();
         ScanController scan;
         if (compiledInfo == null) {
             scan = transactionManager.openScan(
@@ -398,6 +392,7 @@ final class MvccRawStoreOrderedIndex {
             while (scan.next()) {
                 scan.fetch(row);
                 long rowId = StoreTypeUtil.getLong(row[ROW_ID_FIELD]);
+                long versionId = StoreTypeUtil.getLong(row[VERSION_ID_FIELD]);
                 MvccRowLocation rowLocation = MvccRowLocation.from(
                         row[ROW_LOCATION_FIELD]);
                 if (rowLocation.rowId() != rowId) {
@@ -405,29 +400,19 @@ final class MvccRawStoreOrderedIndex {
                             "RawStore MVCC B-tree candidate row-location identity mismatch: row="
                                     + rowId + ", location=" + rowLocation);
                 }
-                if (equality && havePreviousRowId && rowId == previousRowId) {
-                    continue;
-                }
-                Candidate candidate = new Candidate(
-                        predicate.columnId(),
-                        StoreValueCopySupport.cloneValue(row[KEY_FIELD], true),
+                candidates.putIfAbsent(
                         rowId,
-                        StoreTypeUtil.getLong(row[VERSION_ID_FIELD]),
-                        rowLocation);
-                if (equality) {
-                    equalityCandidates.add(candidate);
-                    previousRowId = rowId;
-                    havePreviousRowId = true;
-                } else {
-                    rangeCandidates.putIfAbsent(rowId, candidate);
-                }
+                        new Candidate(
+                                predicate.columnId(),
+                                StoreValueCopySupport.cloneValue(row[KEY_FIELD], true),
+                                rowId,
+                                versionId,
+                                rowLocation));
             }
         } finally {
             scan.close();
         }
-        return equality
-                ? List.copyOf(equalityCandidates)
-                : List.copyOf(rangeCandidates.values());
+        return List.copyOf(candidates.values());
     }
 
 

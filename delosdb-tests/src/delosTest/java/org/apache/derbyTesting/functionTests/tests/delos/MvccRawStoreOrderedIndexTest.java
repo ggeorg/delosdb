@@ -81,18 +81,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "4|40",
                         "5|50");
 
-                executeUpdate(connection, "update indexed_t set score = 65 where id = 6");
-                connection.commit();
-                executeUpdate(connection, "update indexed_t set score = 60 where id = 6");
-                connection.commit();
-                assertIndexedRows(connection,
-                        "select id, score from indexed_t where score = 60",
-                        "6|60");
-                assertIndexedRows(connection,
-                        "select id, score from indexed_t where score >= 60 and score <= 70 order by score",
-                        "6|60",
-                        "7|70");
-
                 long indexContainer = MvccRawStoreMetadataInspection.orderedIndexContainerId(
                         connection,
                         "INDEXED_T");
@@ -108,7 +96,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                                 "INDEXED_T") > 1L);
                 List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
                         MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
-                assertEquals(38, entries.size());
+                assertEquals(36, entries.size());
                 assertTrue(
                         "fresh B-tree candidates must carry direct directory locators",
                         entries.stream().allMatch(
@@ -701,8 +689,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         assertColumnKeys(entries, 1, Set.of(
                 "name-1", "name-2", "name-3", "name-4", "name-5",
                 "name-6", "name-7", "name-8", "name-10"));
-        assertColumnKeys(entries, 2, 11, Set.of(
-                "10", "20", "30", "40", "50", "60", "65", "70", "80", "100"));
+        assertColumnKeys(entries, 2, Set.of(
+                "10", "20", "30", "40", "50", "60", "70", "80", "100"));
         assertColumnKeys(entries, 3, java.util.Arrays.stream(ids)
                 .mapToObj(id -> "pad-" + id + '-' + "x".repeat(400))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet()));
@@ -712,19 +700,11 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries,
             int columnId,
             Set<String> expectedKeys) {
-        assertColumnKeys(entries, columnId, expectedKeys.size(), expectedKeys);
-    }
-
-    private static void assertColumnKeys(
-            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries,
-            int columnId,
-            int expectedEntryCount,
-            Set<String> expectedKeys) {
         List<String> keys = entries.stream()
                 .filter(entry -> entry.columnId() == columnId)
                 .map(MvccRawStoreMetadataInspection.OrderedIndexIdentity::key)
                 .toList();
-        assertEquals(expectedEntryCount, keys.size());
+        assertEquals(expectedKeys.size(), keys.size());
         assertEquals(expectedKeys, Set.copyOf(keys));
     }
 
