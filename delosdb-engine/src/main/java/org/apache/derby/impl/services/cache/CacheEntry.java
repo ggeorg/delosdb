@@ -22,8 +22,11 @@
 package org.apache.derby.impl.services.cache;
 
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.derby.iapi.services.cache.Cacheable;
+import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
@@ -74,6 +77,25 @@ import org.apache.derby.shared.common.sanity.SanityManager;
  * other entry can be requested.
  */
 final class CacheEntry {
+    private static final boolean CACHE_ENTRY_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.cacheEntry");
+    private static final CacheEntryStats PAGE_CACHE_STATS = new CacheEntryStats();
+    private static final CacheEntryStats CONTAINER_CACHE_STATS = new CacheEntryStats();
+    private static final CacheEntryStats CONGLOMERATE_CACHE_STATS = new CacheEntryStats();
+    private static final CacheEntryStats OTHER_CACHE_STATS = new CacheEntryStats();
+
+    private static final class CacheEntryStats {
+        final LongAdder acquisitions = new LongAdder();
+        final LongAdder contended = new LongAdder();
+        final LongAdder waitNanos = new LongAdder();
+
+        void reset() {
+            acquisitions.reset();
+            contended.reset();
+            waitNanos.reset();
+        }
+    }
+
     /** Mutex which guards the internal state of the entry. */
     private final ReentrantLock mutex = new ReentrantLock();
 
@@ -114,7 +136,64 @@ final class CacheEntry {
         if (SanityManager.DEBUG) {
             SanityManager.ASSERT(!mutex.isHeldByCurrentThread());
         }
-        mutex.lock();
+        if (!CACHE_ENTRY_DIAGNOSTICS) {
+            mutex.lock();
+            return;
+        }
+
+        boolean contended = !mutex.tryLock();
+        long waitNanos = 0L;
+        if (contended) {
+            long start = System.nanoTime();
+            mutex.lock();
+            waitNanos = System.nanoTime() - start;
+        }
+        recordDiagnostic(contended, waitNanos);
+    }
+
+    static void resetCacheEntryDiagnosticsForTesting() {
+        PAGE_CACHE_STATS.reset();
+        CONTAINER_CACHE_STATS.reset();
+        CONGLOMERATE_CACHE_STATS.reset();
+        OTHER_CACHE_STATS.reset();
+    }
+
+    static String[] snapshotCacheEntryDiagnosticsForTesting() {
+        return new String[] {
+            diagnosticRow("PageCache", PAGE_CACHE_STATS),
+            diagnosticRow("ContainerCache", CONTAINER_CACHE_STATS),
+            diagnosticRow("ConglomerateDirectoryCache", CONGLOMERATE_CACHE_STATS),
+            diagnosticRow("Other", OTHER_CACHE_STATS)
+        };
+    }
+
+    private void recordDiagnostic(boolean contended, long waitNanos) {
+        CacheEntryStats stats = diagnosticStats();
+        stats.acquisitions.increment();
+        if (contended) {
+            stats.contended.increment();
+            stats.waitNanos.add(waitNanos);
+        }
+    }
+
+    private CacheEntryStats diagnosticStats() {
+        Cacheable item = cacheable;
+        Object identity = item == null ? null : item.getIdentity();
+        if (identity instanceof PageKey) {
+            return PAGE_CACHE_STATS;
+        }
+        if (identity instanceof ContainerKey) {
+            return CONTAINER_CACHE_STATS;
+        }
+        if (identity instanceof Long) {
+            return CONGLOMERATE_CACHE_STATS;
+        }
+        return OTHER_CACHE_STATS;
+    }
+
+    private static String diagnosticRow(String cacheName, CacheEntryStats stats) {
+        return cacheName + ',' + stats.acquisitions.sum() + ','
+                + stats.contended.sum() + ',' + stats.waitNanos.sum();
     }
 
     /**

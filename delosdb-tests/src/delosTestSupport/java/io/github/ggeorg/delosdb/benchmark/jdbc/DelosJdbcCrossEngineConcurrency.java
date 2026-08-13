@@ -477,6 +477,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockEntryDiagnosticsEnabled()) {
                     resetLockEntryDiagnostics();
                 }
+                if (cacheEntryDiagnosticsEnabled()) {
+                    resetCacheEntryDiagnostics();
+                }
                 long elapsed = 0L;
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
@@ -496,6 +499,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] lockEntryDiagnostics = lockEntryDiagnosticsEnabled()
                         ? snapshotLockEntryDiagnostics()
                         : null;
+                String[] cacheEntryDiagnostics = cacheEntryDiagnosticsEnabled()
+                        ? snapshotCacheEntryDiagnostics()
+                        : null;
                 int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
@@ -511,6 +517,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockEntryDiagnostics != null) {
                     writeLockEntryDiagnostics(
                             options, spec, config, measuredOperations, lockEntryDiagnostics);
+                }
+                if (cacheEntryDiagnostics != null) {
+                    writeCacheEntryDiagnostics(
+                            options, spec, config, measuredOperations, cacheEntryDiagnostics);
                 }
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
@@ -579,6 +589,68 @@ public final class DelosJdbcCrossEngineConcurrency {
             String[] fields = row.split(",", -1);
             if (fields.length != 4) {
                 throw new IllegalStateException("Unexpected lock-entry diagnostic row: " + row);
+            }
+            long acquisitions = Long.parseLong(fields[1]);
+            long contended = Long.parseLong(fields[2]);
+            long waitNanos = Long.parseLong(fields[3]);
+            double contendedPercent = acquisitions == 0L ? 0.0 : contended * 100.0 / acquisitions;
+            double waitNanosPerOperation = measuredOperations == 0L
+                    ? 0.0 : (double) waitNanos / measuredOperations;
+            out.append(options.target().id()).append(',')
+                    .append(spec.workload().name()).append(',')
+                    .append(spec.clients()).append(',')
+                    .append(spec.operationsPerTransaction()).append(',')
+                    .append(config.rowCount()).append(',')
+                    .append(measuredOperations).append(',')
+                    .append(fields[0]).append(',')
+                    .append(acquisitions).append(',')
+                    .append(contended).append(',')
+                    .append(waitNanos).append(',')
+                    .append(format(contendedPercent)).append(',')
+                    .append(format(waitNanosPerOperation)).append('\n');
+        }
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean cacheEntryDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "cacheEntryDiagnostics");
+    }
+
+    private static void resetCacheEntryDiagnostics() throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.services.cache.CacheEntryDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static String[] snapshotCacheEntryDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.services.cache.CacheEntryDiagnosticTestSupport");
+        return (String[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeCacheEntryDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            String[] rows) throws IOException {
+        Path output = options.reportDirectory().resolve(
+                "cache-entry-diagnostics-" + options.target().id() + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "cacheName,entryLockAcquisitions,contendedAcquisitions,entryMutexWaitNanos,"
+                + "contendedPercent,waitNanosPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String row : rows) {
+            String[] fields = row.split(",", -1);
+            if (fields.length != 4) {
+                throw new IllegalStateException("Unexpected cache-entry diagnostic row: " + row);
             }
             long acquisitions = Long.parseLong(fields[1]);
             long contended = Long.parseLong(fields[2]);
