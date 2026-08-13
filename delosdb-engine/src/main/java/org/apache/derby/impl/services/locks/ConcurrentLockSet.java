@@ -37,10 +37,10 @@ import org.apache.derby.shared.common.reference.Property;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -254,19 +254,23 @@ final class ConcurrentLockSet implements LockTable {
     /**
      * Concurrent control used only while a ContainerKey is held exclusively
      * with intent-shared (CIS) locks. CIS holders are mutually compatible, so
-     * acquisition and release can update per-compatibility-space counters
-     * under a shared gate instead of serializing on {@link Entry#mutex}.
+     * acquisition and release update per-compatibility-space counters without
+     * serializing on {@link Entry#mutex} or a shared reader gate.
      *
-     * <p>The first request for any other qualifier freezes this control under
-     * the gate's write lock and materializes all holders into the ordinary
-     * {@link LockControl}. From that point on, Derby's existing compatibility,
-     * waiter ordering, timeout and deadlock machinery is authoritative.</p>
+     * <p>The first request for any other qualifier clears {@link #fast}, waits
+     * only for already-entered fast operations to leave, then materializes all
+     * holders into the ordinary {@link LockControl}. From that point on,
+     * Derby's existing compatibility, waiter ordering, timeout and deadlock
+     * machinery is authoritative.</p>
      */
     private final class FastCisControl implements Control {
+        private static final int FAST_OPERATION_STRIPES = 16;
+
         private final Lockable ref;
         private final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
                 new ConcurrentHashMap<CompatibilitySpace, AtomicInteger>();
-        private final ReentrantReadWriteLock gate = new ReentrantReadWriteLock();
+        private final AtomicIntegerArray inFlight =
+                new AtomicIntegerArray(FAST_OPERATION_STRIPES);
         private volatile boolean fast = true;
 
         FastCisControl(Lockable ref) {
@@ -279,31 +283,30 @@ final class ConcurrentLockSet implements LockTable {
         }
 
         Lock tryAcquire(CompatibilitySpace space) {
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
+            int stripe = enterFast(space);
+            if (stripe < 0) {
+                return null;
+            }
             try {
-                if (!fast) {
-                    return null;
-                }
                 int count = holders.computeIfAbsent(
                         space, ignored -> new AtomicInteger()).incrementAndGet();
                 Lock lock = new Lock(space, ref, ContainerLock.CIS);
                 lock.count = count;
                 return lock;
             } finally {
-                read.unlock();
+                leaveFast(stripe);
             }
         }
 
         boolean tryRelease(Latch item, int unlockCount) {
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
+            CompatibilitySpace space = item.getCompatabilitySpace();
+            int stripe = enterFast(space);
+            if (stripe < 0) {
+                return false;
+            }
             try {
-                if (!fast) {
-                    return false;
-                }
                 int count = unlockCount == 0 ? item.getCount() : unlockCount;
-                AtomicInteger held = holders.get(item.getCompatabilitySpace());
+                AtomicInteger held = holders.get(space);
                 if (held == null) {
                     return false;
                 }
@@ -313,33 +316,55 @@ final class ConcurrentLockSet implements LockTable {
                             "negative fast CIS hold count: " + remaining);
                 }
                 if (remaining == 0) {
-                    holders.remove(item.getCompatabilitySpace(), held);
+                    holders.remove(space, held);
                 }
                 return true;
             } finally {
-                read.unlock();
+                leaveFast(stripe);
             }
         }
 
         LockControl freeze() {
-            java.util.concurrent.locks.Lock write = gate.writeLock();
-            write.lock();
-            try {
-                fast = false;
-                return materializeCisHolders(ref, holders);
-            } finally {
-                write.unlock();
+            fast = false;
+            awaitFastOperations();
+            return materializeCisHolders(ref, holders);
+        }
+
+        private int enterFast(CompatibilitySpace space) {
+            if (!fast) {
+                return -1;
+            }
+            int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
+            inFlight.incrementAndGet(stripe);
+            if (fast) {
+                return stripe;
+            }
+            inFlight.decrementAndGet(stripe);
+            return -1;
+        }
+
+        private void leaveFast(int stripe) {
+            inFlight.decrementAndGet(stripe);
+        }
+
+        private void awaitFastOperations() {
+            for (;;) {
+                boolean active = false;
+                for (int stripe = 0; stripe < FAST_OPERATION_STRIPES; stripe++) {
+                    if (inFlight.get(stripe) != 0) {
+                        active = true;
+                        break;
+                    }
+                }
+                if (!active) {
+                    return;
+                }
+                Thread.onSpinWait();
             }
         }
 
         private LockControl snapshot() {
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
-            try {
-                return materializeCisHolders(ref, holders);
-            } finally {
-                read.unlock();
-            }
+            return materializeCisHolders(ref, holders);
         }
 
         public Lockable getLockable() {
@@ -355,20 +380,14 @@ final class ConcurrentLockSet implements LockTable {
             if (qualifier != ContainerLock.CIS) {
                 return null;
             }
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
-            try {
-                AtomicInteger held = holders.get(compatibilitySpace);
-                int count = held == null ? 0 : held.get();
-                if (count == 0) {
-                    return null;
-                }
-                Lock lock = new Lock(compatibilitySpace, ref, qualifier);
-                lock.count = count;
-                return lock;
-            } finally {
-                read.unlock();
+            AtomicInteger held = holders.get(compatibilitySpace);
+            int count = held == null ? 0 : held.get();
+            if (count == 0) {
+                return null;
             }
+            Lock lock = new Lock(compatibilitySpace, ref, qualifier);
+            lock.count = count;
+            return lock;
         }
 
         public Control shallowClone() {
@@ -398,22 +417,16 @@ final class ConcurrentLockSet implements LockTable {
         }
 
         public java.util.List<Lock> getGranted() {
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
-            try {
-                java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
-                for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-                    int count = holder.getValue().get();
-                    if (count > 0) {
-                        Lock lock = new Lock(holder.getKey(), ref, ContainerLock.CIS);
-                        lock.count = count;
-                        grants.add(lock);
-                    }
+            java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
+            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                int count = holder.getValue().get();
+                if (count > 0) {
+                    Lock lock = new Lock(holder.getKey(), ref, ContainerLock.CIS);
+                    lock.count = count;
+                    grants.add(lock);
                 }
-                return grants.isEmpty() ? null : grants;
-            } finally {
-                read.unlock();
             }
+            return grants.isEmpty() ? null : grants;
         }
 
         public java.util.List<Lock> getWaiting() {
@@ -423,21 +436,15 @@ final class ConcurrentLockSet implements LockTable {
         public boolean isGrantable(boolean noWaitersBeforeMe,
                                    CompatibilitySpace compatibilitySpace,
                                    Object qualifier) {
-            java.util.concurrent.locks.Lock read = gate.readLock();
-            read.lock();
-            try {
-                for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-                    if (holder.getValue().get() == 0 || holder.getKey() == compatibilitySpace) {
-                        continue;
-                    }
-                    if (!ref.requestCompatible(qualifier, ContainerLock.CIS)) {
-                        return false;
-                    }
+            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                if (holder.getValue().get() == 0 || holder.getKey() == compatibilitySpace) {
+                    continue;
                 }
-                return true;
-            } finally {
-                read.unlock();
+                if (!ref.requestCompatible(qualifier, ContainerLock.CIS)) {
+                    return false;
+                }
             }
+            return true;
         }
     }
 
