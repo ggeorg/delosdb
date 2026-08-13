@@ -23,7 +23,8 @@ package org.apache.derby.impl.store.access.mvcc;
 /** Per-scan physical attribution for the RawStore MVCC ordered-index path. */
 final class MvccRawStoreIndexedReadMetrics {
     static final Snapshot EMPTY = new Snapshot(
-            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L,
+            0L, 0L, 0L);
 
     private long candidatesVisited;
     private long coveringCandidates;
@@ -36,6 +37,9 @@ final class MvccRawStoreIndexedReadMetrics {
     private long directoryHeadSummaryChecks;
     private long directoryHeadSummaryHits;
     private long directoryHeadSummaryFallbacks;
+    private long currentRowAnchorChecks;
+    private long currentRowAnchorHits;
+    private long currentRowAnchorFallbacks;
     private long versionPageAcquisitions;
     private long versionSlotFetches;
     private long visibilityChecks;
@@ -85,6 +89,18 @@ final class MvccRawStoreIndexedReadMetrics {
         directoryHeadSummaryFallbacks++;
     }
 
+    void currentRowAnchorChecked() {
+        currentRowAnchorChecks++;
+    }
+
+    void currentRowAnchorHit() {
+        currentRowAnchorHits++;
+    }
+
+    void currentRowAnchorFallback() {
+        currentRowAnchorFallbacks++;
+    }
+
     void versionPageAcquired() {
         versionPageAcquisitions++;
     }
@@ -118,6 +134,9 @@ final class MvccRawStoreIndexedReadMetrics {
                 directoryHeadSummaryChecks,
                 directoryHeadSummaryHits,
                 directoryHeadSummaryFallbacks,
+                currentRowAnchorChecks,
+                currentRowAnchorHits,
+                currentRowAnchorFallbacks,
                 versionPageAcquisitions,
                 versionSlotFetches,
                 visibilityChecks,
@@ -137,6 +156,9 @@ final class MvccRawStoreIndexedReadMetrics {
             long directoryHeadSummaryChecks,
             long directoryHeadSummaryHits,
             long directoryHeadSummaryFallbacks,
+            long currentRowAnchorChecks,
+            long currentRowAnchorHits,
+            long currentRowAnchorFallbacks,
             long versionPageAcquisitions,
             long versionSlotFetches,
             long visibilityChecks,

@@ -98,6 +98,9 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         long candidates = mvccMetric(mvccStatistics, "mvccOrderedCandidates");
         long directoryPages = mvccMetric(mvccStatistics, "mvccDirectoryPageAcquisitions");
         long directoryFallbacks = mvccMetric(mvccStatistics, "mvccDirectoryLogicalFallbacks");
+        long anchorChecks = mvccMetric(mvccStatistics, "mvccCurrentRowAnchorChecks");
+        long anchorHits = mvccMetric(mvccStatistics, "mvccCurrentRowAnchorHits");
+        long anchorFallbacks = mvccMetric(mvccStatistics, "mvccCurrentRowAnchorFallbacks");
         long versionPages = mvccMetric(mvccStatistics, "mvccVersionPageAcquisitions");
         long versionSlotFetches = mvccMetric(mvccStatistics, "mvccVersionSlotFetches");
         long visibilityChecks = mvccMetric(mvccStatistics, "mvccVisibilityChecks");
@@ -110,11 +113,13 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         assertEquals("one MVCC hidden B-tree candidate", 1, mvccBtree.candidates());
         assertEquals("one MVCC directory page acquisition", 1L, directoryPages);
         assertEquals("MVCC directory hint must avoid logical fallback", 0L, directoryFallbacks);
-        assertEquals("one MVCC version page acquisition", 1L, versionPages);
-        assertEquals("current version path performs identity + payload slot fetch", 2L,
-                versionSlotFetches);
+        assertEquals("one MVCC current-row anchor check", 1L, anchorChecks);
+        assertEquals("one MVCC current-row anchor hit", 1L, anchorHits);
+        assertEquals("current-row anchor must not fall back", 0L, anchorFallbacks);
+        assertEquals("current-row anchor avoids the version container", 0L, versionPages);
+        assertEquals("current-row anchor avoids version slot fetches", 0L, versionSlotFetches);
         assertEquals("one MVCC visibility check", 1L, visibilityChecks);
-        assertEquals("one current-head version-chain step", 1L, versionChainSteps);
+        assertEquals("current-row anchor avoids the version chain", 0L, versionChainSteps);
         assertEquals("MVCC version hint must avoid logical fallback", 0L, versionFallbacks);
 
         List<Row> accounting = new ArrayList<>();
@@ -143,6 +148,12 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "source-proven hinted directory lookup; no logical fallback"));
         accounting.add(row("MVCC directory logical fallbacks", 0, directoryFallbacks,
                 "measured mvccDirectoryLogicalFallbacks"));
+        accounting.add(row("MVCC current-row anchor checks", 0, anchorChecks,
+                "measured mvccCurrentRowAnchorChecks"));
+        accounting.add(row("MVCC current-row anchor hits", 0, anchorHits,
+                "measured mvccCurrentRowAnchorHits"));
+        accounting.add(row("MVCC current-row anchor fallbacks", 0, anchorFallbacks,
+                "measured mvccCurrentRowAnchorFallbacks"));
         accounting.add(row("MVCC version page acquisitions", 0, versionPages,
                 "measured mvccVersionPageAcquisitions"));
         accounting.add(row("MVCC version slot fetches", 0, versionSlotFetches,
@@ -155,12 +166,12 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "measured mvccVersionLogicalFallbacks"));
         accounting.add(row("logical candidates/result", 1, candidates,
                 "one successful primary-key result"));
-        accounting.add(row("unique physical records represented", 2, 3,
-                "heap=index+base row; MVCC=index+directory+version"));
-        accounting.add(row("physical record fetch/decode operations", 2, 4,
-                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+2 version slot fetches"));
-        accounting.add(row("storage container opens required by read path", 2, 3,
-                "source-proven: index+heap vs hidden index+directory+version"));
+        accounting.add(row("physical records touched by successful read", 2, 2,
+                "heap=index+base row; MVCC=index+current-row anchor"));
+        accounting.add(row("physical record fetch/decode operations", 2, 2,
+                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+current-row anchor fetch"));
+        accounting.add(row("storage container opens required by read path", 2, 2,
+                "source-proven: index+heap vs hidden index+current-row anchor"));
 
         writeReports(rows, key, accounting, heapStatistics, mvccStatistics, mvccBtree);
     }
