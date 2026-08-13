@@ -248,6 +248,35 @@ public final class SharedRawStoreIoDiagnosticsTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testFileDatabaseDiagnosticsOwnershipSurvivesImmediateRestart()
+            throws Exception {
+        String database = databaseName("shared-rawstore-io-restart");
+        try (SystemPropertyScope ignored =
+                     setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
+            try (Connection connection = openDatabase(database, true)) {
+                executeUpdate(connection,
+                        "create table restart_t (id int primary key, value int)");
+                executeUpdate(connection, "insert into restart_t values (1, 10)");
+            }
+            shutdownDatabase(database);
+
+            DelosRawStoreIoSnapshot stopped =
+                    DelosStorageDiagnosticsRegistry.heapDatabaseRawStoreIoSnapshot(
+                            databasePath(database));
+            assertFalse(stopped.runtimeActive());
+
+            try (Connection reopened = openDatabase(database, false)) {
+                assertRows(reopened, "select value from restart_t where id = 1", "10");
+                DelosRawStoreIoSnapshot active =
+                        DelosStorageDiagnosticsRegistry.heapDatabaseRawStoreIoSnapshot(
+                                databasePath(database));
+                assertTrue(active.runtimeActive());
+            } finally {
+                shutdownDatabase(database);
+            }
+        }
+    }
+
     public void testMemoryDatabaseUsesTheSameSnapshotShapeAndMetadataForcePath()
             throws Exception {
         String database = "shared-rawstore-io-memory-" + System.nanoTime();

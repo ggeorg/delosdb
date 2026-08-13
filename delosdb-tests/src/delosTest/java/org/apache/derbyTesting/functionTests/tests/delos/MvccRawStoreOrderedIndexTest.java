@@ -327,8 +327,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 writer.commit();
 
                 String historicalStatistics = assertNonCoveringIndexedRows(historical,
-                        "select category from covering_snapshot_t where category = 7",
-                        "7");
+                        "select id, category from covering_snapshot_t where category = 7",
+                        "1|7");
                 assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorChecks", 1L);
                 assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorHits", 0L);
                 assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
@@ -384,16 +384,16 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "select category from head_summary_t where category = 7",
                         "7");
                 String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
-                        "select category from head_summary_t where category = 9");
+                        "select id, category from head_summary_t where category = 9");
                 assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorChecks", 1L);
                 assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorHits", 0L);
                 assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 0L);
                 assertScanMetric(
                         otherTransactionStatistics, "mvccDirectoryHeadSummaryHits", 0L);
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 1L);
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
 
                 writer.rollback();
                 reader.commit();

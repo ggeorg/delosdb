@@ -317,8 +317,6 @@ public class BaseDataFileFactory
             }
         }
 
-        registerRawStoreIoMetrics();
-
         // you can't encrypt a database if the Lucene plugin is loaded
         if ( luceneLoaded() )
         {
@@ -352,6 +350,19 @@ public class BaseDataFileFactory
 
         if (!isReadOnly())		// read only db, not interested in filelock
             getJBMSLockOnDB(identifier, uf, dataDirectory);
+
+        try
+        {
+            // Publish diagnostics only after this RawStore owns the database.
+            // Shutdown withdraws the identity before releasing the same lock,
+            // so an immediate restart cannot observe two live owners.
+            registerRawStoreIoMetrics();
+        }
+        catch (StandardException se)
+        {
+            releaseJBMSLockOnDB();
+            throw se;
+        }
 
 
         //If the database is being restored/created from backup
@@ -578,10 +589,17 @@ public class BaseDataFileFactory
 		if (removeStubsOK && OK)	
 			removeStubs();
 
-		releaseJBMSLockOnDB();
-        
-        if ( writableStorageFactory != null ) { writableStorageFactory.shutdown(); }
-        shutdownRawStoreIoMetrics();
+        try
+        {
+            if ( writableStorageFactory != null ) { writableStorageFactory.shutdown(); }
+        }
+        finally
+        {
+            // Keep diagnostics ownership aligned with the physical database
+            // lock: withdraw the identity before another RawStore can boot.
+            shutdownRawStoreIoMetrics();
+            releaseJBMSLockOnDB();
+        }
 	} // end of stop
 
 	/*
