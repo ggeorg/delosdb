@@ -24,6 +24,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -71,7 +72,10 @@ public class BTreeIndexConcurrencyArchitectureProofTest
                         + "on btree_index_concurrency(key_value)");
             }
         };
-        return DatabasePropertyTestSetup.setLockTimeouts(test, 1, 2);
+        Properties lockTimeouts = new Properties();
+        lockTimeouts.setProperty("derby.locks.deadlockTimeout", "1");
+        lockTimeouts.setProperty("derby.locks.waitTimeout", "2");
+        return new DatabasePropertyTestSetup(test, lockTimeouts, false);
     }
 
     protected void setUp() throws Exception {
