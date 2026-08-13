@@ -287,6 +287,15 @@ final class ConcurrentCache implements CacheManager {
             return null;
         }
 
+        CacheEntry fastEntry = cache.get(key);
+        if (fastEntry != null) {
+            Cacheable fastItem = fastEntry.tryFastContainerKeep(key);
+            if (fastItem != null) {
+                countHit();
+                return fastItem;
+            }
+        }
+
         CacheEntry entry = getEntry(key);
 
         Cacheable item;
@@ -345,6 +354,12 @@ final class ConcurrentCache implements CacheManager {
             // No such object was found in the cache.
             countMiss();
             return null;
+        }
+
+        Cacheable fastItem = entry.tryFastContainerKeep(key);
+        if (fastItem != null) {
+            countHit();
+            return fastItem;
         }
 
         // Lock the entry, but wait until its identity has been set.
@@ -434,6 +449,10 @@ final class ConcurrentCache implements CacheManager {
         // not added to or removed from the cache before we have locked
         // it. Just call get() which is cheaper.
         CacheEntry entry = cache.get(item.getIdentity());
+        if (entry.tryFastContainerUnkeep(item)) {
+            return;
+        }
+
         entry.lock();
         try {
             if (SanityManager.DEBUG) {
@@ -465,14 +484,20 @@ final class ConcurrentCache implements CacheManager {
         CacheEntry entry = cache.get(key);
 
         entry.lock();
+        boolean removed = false;
         try {
             if (SanityManager.DEBUG) {
                 SanityManager.ASSERT(item == entry.getCacheable());
             }
+            entry.freezeFastContainerAccess();
             entry.unkeepForRemove();
             item.clean(true);
             removeEntry(key);
+            removed = true;
         } finally {
+            if (!removed) {
+                entry.unfreezeFastContainerAccess();
+            }
             entry.unlock();
         }
     }
@@ -600,17 +625,23 @@ final class ConcurrentCache implements CacheManager {
     public void ageOut() {
         for (CacheEntry entry : cache.values()) {
             entry.lock();
+            boolean remove = false;
             try {
-                // never remove kept entries
-                if (!entry.isKept()) {
+                // Freeze lock-free container pins before deciding that an
+                // unused entry can be removed.
+                if (entry.freezeFastContainerAccessIfUnkept()) {
                     Cacheable c = entry.getCacheable();
                     // If c is null, it's not in the cache and there's no need
                     // to remove it. If c is dirty, we can't remove it yet.
                     if (c != null && !c.isDirty()) {
                         removeEntry(c.getIdentity());
+                        remove = true;
                     }
                 }
             } finally {
+                if (!remove) {
+                    entry.unfreezeFastContainerAccess();
+                }
                 entry.unlock();
             }
         }
@@ -663,6 +694,7 @@ final class ConcurrentCache implements CacheManager {
         boolean allRemoved = true;
         for (CacheEntry entry : cache.values()) {
             entry.lock();
+            boolean remove = false;
             try {
                 Cacheable c = entry.getCacheable();
                 if (c == null) {
@@ -673,13 +705,17 @@ final class ConcurrentCache implements CacheManager {
                     // not a match, don't remove it
                     continue;
                 }
-                if (entry.isKept()) {
+                if (!entry.freezeFastContainerAccessIfUnkept()) {
                     // still in use, don't remove it
                     allRemoved = false;
                     continue;
                 }
                 removeEntry(c.getIdentity());
+                remove = true;
             } finally {
+                if (!remove) {
+                    entry.unfreezeFastContainerAccess();
+                }
                 entry.unlock();
             }
         }

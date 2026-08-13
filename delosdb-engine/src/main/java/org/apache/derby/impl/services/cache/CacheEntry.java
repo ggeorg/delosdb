@@ -21,8 +21,9 @@
 
 package org.apache.derby.impl.services.cache;
 
-import java.util.concurrent.locks.Condition;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.derby.iapi.services.cache.Cacheable;
 import org.apache.derby.iapi.store.raw.ContainerKey;
@@ -32,8 +33,9 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 /**
  * Class representing an entry in the cache. It is used by
  * <code>ConcurrentCache</code>. When a thread invokes any of the methods in
- * this class, except <code>lock()</code>, it must first have called
- * <code>lock()</code> to ensure exclusive access to the entry.
+ * this class, except <code>lock()</code> and the explicitly named stable
+ * container fast-pin methods, it must first have called <code>lock()</code> to
+ * ensure exclusive access to the entry.
  *
  * <p>
  *
@@ -103,17 +105,32 @@ final class CacheEntry {
      * The cached object. If it is null, it means that the entry is invalid
      * (either uninitialized or removed).
      */
-    private Cacheable cacheable;
+    private volatile Cacheable cacheable;
 
-    /** How many threads are currently keeping this entry. */
+    /** How many ordinary users are currently keeping this entry. */
     private int keepCount;
+
+    /**
+     * Additional keep references acquired through the stable ContainerKey
+     * fast path. Ordinary cache entries retain Derby's original int counter.
+     */
+    private final AtomicInteger fastContainerKeepCount = new AtomicInteger();
+
+    /**
+     * Stable ContainerKey entries may use the lock-free keep/release path.
+     * Lifecycle operations freeze that path before removing or reusing the
+     * cached object.
+     */
+    private volatile boolean fastContainerAccess;
+    private volatile boolean fastContainerFrozen;
+    private volatile boolean fastContainerAccessed;
 
     /**
      * Condition variable used to notify a thread that it is allowed to remove
      * the entry from the cache. If it is null, there is no thread waiting for
      * the entry to be unkept.
      */
-    private Condition forRemove;
+    private volatile Condition forRemove;
 
     /**
      * Condition variable used to notify a thread that the setting of this
@@ -197,6 +214,130 @@ final class CacheEntry {
     }
 
     /**
+     * Try to pin an initialized ContainerKey entry without taking the entry
+     * mutex. A concurrent lifecycle operation freezes this path before it can
+     * remove or reuse the cached object. The second state check closes the
+     * race between the initial fast-path check and the atomic pin.
+     */
+    Cacheable tryFastContainerKeep(Object key) {
+        if (!(key instanceof ContainerKey)
+                || !fastContainerAccess
+                || fastContainerFrozen) {
+            return null;
+        }
+
+        fastContainerKeepCount.incrementAndGet();
+        if (!fastContainerAccess || fastContainerFrozen) {
+            fastContainerUnkeepAfterFailedAcquire();
+            return null;
+        }
+
+        Cacheable item = cacheable;
+        if (item == null || !key.equals(item.getIdentity())) {
+            fastContainerUnkeepAfterFailedAcquire();
+            return null;
+        }
+
+        fastContainerAccessed = true;
+        return item;
+    }
+
+    /** Release a ContainerKey entry without taking the entry mutex. */
+    boolean tryFastContainerUnkeep(Cacheable item) {
+        Object identity = item.getIdentity();
+        if (!(identity instanceof ContainerKey) || cacheable != item) {
+            return false;
+        }
+
+        while (true) {
+            int fastKeeps = fastContainerKeepCount.get();
+            if (fastKeeps == 0) {
+                return false;
+            }
+            if (fastContainerKeepCount.compareAndSet(fastKeeps, fastKeeps - 1)) {
+                signalRemoveWaiterIfNeeded();
+                return true;
+            }
+        }
+    }
+
+    /** Freeze new lock-free container pins before lifecycle work. */
+    void freezeFastContainerAccess() {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(mutex.isHeldByCurrentThread());
+        }
+        fastContainerFrozen = true;
+    }
+
+    /**
+     * Freeze the fast path only if the entry is unused. A racing fast pin
+     * either becomes visible in keepCount or observes the freeze and backs
+     * out before it can use the cached object.
+     */
+    boolean freezeFastContainerAccessIfUnkept() {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(mutex.isHeldByCurrentThread());
+        }
+        if (!fastContainerAccess) {
+            return keepCount == 0;
+        }
+
+        fastContainerFrozen = true;
+        if (keepCount == 0 && fastContainerKeepCount.get() == 0) {
+            return true;
+        }
+
+        fastContainerFrozen = false;
+        return false;
+    }
+
+    /** Re-open the fast path after a lifecycle probe decides not to remove. */
+    void unfreezeFastContainerAccess() {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(mutex.isHeldByCurrentThread());
+        }
+        fastContainerFrozen = false;
+    }
+
+    /**
+     * Consume the concurrent replacement-policy access bit while the entry is
+     * frozen. This preserves recently-used semantics without serializing fast
+     * container hits on the replacement callback.
+     */
+    boolean consumeFastContainerAccessed() {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(mutex.isHeldByCurrentThread());
+        }
+        boolean accessed = fastContainerAccessed;
+        fastContainerAccessed = false;
+        return accessed;
+    }
+
+    private void fastContainerUnkeepAfterFailedAcquire() {
+        int remaining = fastContainerKeepCount.decrementAndGet();
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(remaining >= 0, "negative fast container keep count");
+        }
+        signalRemoveWaiterIfNeeded();
+    }
+
+    private void signalRemoveWaiterIfNeeded() {
+        if (forRemove == null) {
+            return;
+        }
+
+        mutex.lock();
+        try {
+            if (forRemove != null
+                    && keepCount + fastContainerKeepCount.get() <= 1) {
+                forRemove.signal();
+            }
+        } finally {
+            mutex.unlock();
+        }
+    }
+
+    /**
      * Block until this entry's cacheable has been initialized (that is, until
      * {@code settingIdentityComplete()} has been called on this object). If
      * the cacheable has been initialized before this method is called, it will
@@ -261,7 +402,8 @@ final class CacheEntry {
             SanityManager.ASSERT(isKept());
         }
         keepCount--;
-        if (forRemove != null && keepCount == 1) {
+        if (forRemove != null
+                && keepCount + fastContainerKeepCount.get() == 1) {
             // This entry is only kept by the thread waiting in
             // unkeepForRemove(). Signal that the entry can be removed.
             forRemove.signal();
@@ -274,11 +416,13 @@ final class CacheEntry {
      * @return <code>true</code> if the object is kept
      */
     boolean isKept() {
+        int fastKeeps = fastContainerKeepCount.get();
         if (SanityManager.DEBUG) {
             SanityManager.ASSERT(mutex.isHeldByCurrentThread());
             SanityManager.ASSERT(keepCount >= 0);
+            SanityManager.ASSERT(fastKeeps >= 0);
         }
-        return keepCount > 0;
+        return keepCount + fastKeeps > 0;
     }
 
     /**
@@ -295,14 +439,18 @@ final class CacheEntry {
             SanityManager.ASSERT(isKept());
             SanityManager.ASSERT(forRemove == null);
         }
-        if (keepCount > 1) {
+        if (keepCount + fastContainerKeepCount.get() > 1) {
             forRemove = mutex.newCondition();
-            while (keepCount > 1) {
+            while (keepCount + fastContainerKeepCount.get() > 1) {
                 forRemove.awaitUninterruptibly();
             }
             forRemove = null;
         }
-        keepCount--;
+        if (fastContainerKeepCount.get() > 0) {
+            fastContainerKeepCount.decrementAndGet();
+        } else {
+            keepCount--;
+        }
     }
 
     /**
@@ -316,6 +464,12 @@ final class CacheEntry {
             SanityManager.ASSERT(mutex.isHeldByCurrentThread());
         }
         cacheable = c;
+        fastContainerAccess = c != null
+                && settingIdentity == null
+                && c.getIdentity() instanceof ContainerKey;
+        if (!fastContainerAccess) {
+            fastContainerAccessed = false;
+        }
     }
 
     /**
@@ -370,6 +524,9 @@ final class CacheEntry {
             // removal. Now we need to mark it as free.
             callback.free();
         }
+        fastContainerAccess = false;
+        fastContainerFrozen = true;
+        fastContainerAccessed = false;
         cacheable = null;
     }
 }

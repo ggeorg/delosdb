@@ -464,6 +464,7 @@ final class ClockPolicy implements ReplacementPolicy {
                     // we'd like to be as responsive as possible, move on to
                     // the next entry instead of waiting for the clean
                     // operation to finish.
+                    e.unfreezeFastContainerAccess();
                     continue;
                 }
 
@@ -473,6 +474,7 @@ final class ClockPolicy implements ReplacementPolicy {
                 // we have cleaned it, but don't mark it as accessed (recently
                 // used).
                 e.keep(false);
+                e.unfreezeFastContainerAccess();
                 dirty = c;
 
             } finally {
@@ -521,8 +523,10 @@ final class ClockPolicy implements ReplacementPolicy {
             return false;
         }
 
-        if (e.isKept()) {
-            // The entry is in use and cannot be evicted.
+        if (!e.freezeFastContainerAccessIfUnkept()) {
+            // The entry is in use and cannot be evicted. The freeze handoff
+            // also prevents a stable container fast pin from racing the
+            // eviction decision.
             return false;
         }
 
@@ -535,11 +539,14 @@ final class ClockPolicy implements ReplacementPolicy {
             SanityManager.ASSERT(!h.isEvicted(), "Holder is evicted");
         }
 
-        if (h.recentlyUsed) {
+        boolean recentlyUsed = h.recentlyUsed;
+        boolean fastAccessed = e.consumeFastContainerAccessed();
+        if (recentlyUsed || fastAccessed) {
             // The object has been used recently, so it cannot be evicted.
             if (clearRecentlyUsedFlag) {
                 h.recentlyUsed = false;
             }
+            e.unfreezeFastContainerAccess();
             return false;
         }
 
@@ -655,6 +662,7 @@ final class ClockPolicy implements ReplacementPolicy {
                 final Cacheable c = e.getCacheable();
                 if (c.isDirty()) {
                     // Don't evict dirty entries.
+                    e.unfreezeFastContainerAccess();
                     continue;
                 }
 

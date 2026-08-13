@@ -77,6 +77,8 @@ def lockEntryDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java')
 def cacheEntryDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java')
+def containerCacheFastPinTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java')
 def containerIntentSharedFastPathTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
@@ -241,6 +243,8 @@ def delosInternalTestSupportExports = [
         '--add-exports',
         'org.apache.derby.engine/org.apache.derby.impl.services.locks=org.apache.derby.tests',
         '--add-exports',
+        'org.apache.derby.engine/org.apache.derby.impl.services.cache=org.apache.derby.tests',
+        '--add-exports',
         'org.apache.derby.engine/org.apache.derby.impl.services.storetypes=org.apache.derby.tests',
         '--add-exports',
         'org.apache.derby.engine/org.apache.derby.impl.store.access.mvcc=org.apache.derby.tests'
@@ -323,6 +327,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
@@ -355,6 +360,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(cacheEntryDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/services/cache'
+    }
+    from(containerCacheFastPinTestSupportSource) {
         into 'org/apache/derby/impl/services/cache'
     }
     from(containerIntentSharedFastPathTestSupportSource) {
