@@ -139,8 +139,7 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.RecordHint newHeadHint,
             long creatorTransactionId,
             long beginSequence,
-            int flags,
-            org.apache.derby.iapi.store.types.StoreDataValue[] values) throws StandardException {
+            int flags) throws StandardException {
         if (updateByHint(
                 transaction,
                 table,
@@ -151,8 +150,7 @@ final class MvccRawStoreRowDirectory {
                 newHeadHint,
                 creatorTransactionId,
                 beginSequence,
-                flags,
-                values)) {
+                flags)) {
             return;
         }
         ContainerHandle container = transaction.openContainer(
@@ -178,16 +176,14 @@ final class MvccRawStoreRowDirectory {
                     validateExpectedHead(rowId, expectedHead, directory.head());
                     page.updateAtSlot(
                             slot,
-                            MvccRawStoreCurrentRowAnchor.row(
+                            MvccRawStoreTable.directoryRow(
                                     transaction,
-                                    table,
                                     rowId,
                                     newHeadVersionId,
                                     newHeadHint,
                                     creatorTransactionId,
                                     beginSequence,
-                                    flags,
-                                    values),
+                                    flags),
                             null);
                     return;
                 }
@@ -446,8 +442,7 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.RecordHint newHeadHint,
             long creatorTransactionId,
             long beginSequence,
-            int flags,
-            org.apache.derby.iapi.store.types.StoreDataValue[] values) throws StandardException {
+            int flags) throws StandardException {
         if (directoryLocation == null || !directoryLocation.hasLocatorHint()) {
             return false;
         }
@@ -476,16 +471,14 @@ final class MvccRawStoreRowDirectory {
             validateExpectedHead(rowId, expectedHead, directory.head());
             page.updateAtSlot(
                     slot,
-                    MvccRawStoreCurrentRowAnchor.row(
+                    MvccRawStoreTable.directoryRow(
                             transaction,
-                            table,
                             rowId,
                             newHeadVersionId,
                             newHeadHint,
                             creatorTransactionId,
                             beginSequence,
-                            flags,
-                            values),
+                            flags),
                     null);
             return true;
         } finally {
@@ -505,7 +498,7 @@ final class MvccRawStoreRowDirectory {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         return fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                || fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
     }
 
     private static void validateExpectedHead(

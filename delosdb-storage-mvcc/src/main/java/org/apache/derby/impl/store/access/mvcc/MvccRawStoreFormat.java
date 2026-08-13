@@ -85,11 +85,6 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
-    static final int DIRECTORY_CURRENT_PAYLOAD_START = DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
-
-    static int directoryCurrentRowFieldCount(int columnCount) {
-        return DIRECTORY_CURRENT_PAYLOAD_START + columnCount;
-    }
 
     static final int VERSION_KIND_FIELD = 0;
     static final int VERSION_FORMAT_VERSION = 1;

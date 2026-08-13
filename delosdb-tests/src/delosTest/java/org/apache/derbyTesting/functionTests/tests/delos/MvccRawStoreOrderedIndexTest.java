@@ -261,26 +261,18 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
             assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
             assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
-            String anchoredStatistics = assertNonCoveringIndexedRows(connection,
+            assertNonCoveringIndexedRows(connection,
                     "select id, category from covering_t where category = 7 order by id",
                     "1|7",
                     "2|7");
-            assertScanMetric(anchoredStatistics, "mvccCurrentRowAnchorChecks", 2L);
-            assertScanMetric(anchoredStatistics, "mvccCurrentRowAnchorHits", 2L);
-            assertScanMetric(anchoredStatistics, "mvccCurrentRowAnchorFallbacks", 0L);
-            assertScanMetric(anchoredStatistics, "mvccVersionPageAcquisitions", 0L);
 
             executeUpdate(connection,
                     "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
             connection.commit();
-            String unchangedKeyAnchorStatistics = assertNonCoveringIndexedRows(connection,
-                    "select category, payload from covering_t where category = 7 order by id",
-                    "7|" + "x".repeat(500),
-                    "7|" + "z".repeat(500));
-            assertScanMetric(unchangedKeyAnchorStatistics, "mvccCurrentRowAnchorChecks", 2L);
-            assertScanMetric(unchangedKeyAnchorStatistics, "mvccCurrentRowAnchorHits", 2L);
-            assertScanMetric(unchangedKeyAnchorStatistics, "mvccCurrentRowAnchorFallbacks", 0L);
-            assertScanMetric(unchangedKeyAnchorStatistics, "mvccVersionPageAcquisitions", 0L);
+            assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7",
+                    "7",
+                    "7");
 
             executeUpdate(connection,
                     "update covering_t set category = 9 where id = 2");
@@ -326,12 +318,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "update covering_snapshot_t set category = 9 where id = 1");
                 writer.commit();
 
-                String historicalStatistics = assertNonCoveringIndexedRows(historical,
-                        "select id, category from covering_snapshot_t where category = 7",
-                        "1|7");
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorHits", 0L);
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
+                assertNonCoveringIndexedRows(historical,
+                        "select category from covering_snapshot_t where category = 7",
+                        "7");
                 historical.commit();
                 assertCoveringIndexedRows(historical,
                         "select category from covering_snapshot_t where category = 9",
@@ -384,16 +373,13 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "select category from head_summary_t where category = 7",
                         "7");
                 String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
-                        "select id, category from head_summary_t where category = 9");
-                assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorHits", 0L);
-                assertScanMetric(otherTransactionStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
+                        "select category from head_summary_t where category = 9");
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 0L);
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
                 assertScanMetric(
                         otherTransactionStatistics, "mvccDirectoryHeadSummaryHits", 0L);
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 1L);
 
                 writer.rollback();
                 reader.commit();

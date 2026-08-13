@@ -433,8 +433,7 @@ final class MvccRawStoreScanController implements ScanManager {
                         table,
                         snapshotSequence,
                         versionProjection,
-                        context,
-                        !forUpdate)) {
+                        context)) {
                     boolean coveringEligible = !candidateRows.isEmpty()
                             && coveringEligible(candidateRows.get(0).columnId());
                     for (MvccRawStoreIndexedReader.Result result : reader.read(

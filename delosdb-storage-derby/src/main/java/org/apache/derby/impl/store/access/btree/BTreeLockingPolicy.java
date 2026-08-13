@@ -154,18 +154,6 @@ public interface BTreeLockingPolicy
     boolean                 forUpdate)
 		throws StandardException;
 
-    /**
-     * Lock an already-materialized base RowLocation from an immutable leaf
-     * snapshot. Implementations return false when their isolation protocol
-     * requires the physical leaf latch/positioning path.
-     */
-    default boolean lockScanRowFromSnapshot(
-            StoreRowLocation rowLocation,
-            boolean forUpdate,
-            int lockOperation) throws StandardException {
-        return false;
-    }
-
 
     /**************************************************************************
      * Abstract Protected lockNonScan*() locking methods of BTree:

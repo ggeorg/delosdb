@@ -26,12 +26,10 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException; 
 
 import org.apache.derby.iapi.store.access.ConglomerateController;
-import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
-import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
 import org.apache.derby.impl.store.access.btree.BTreeRowPosition;
@@ -72,22 +70,11 @@ class B2IRowLocking2 extends B2IRowLockingRR implements BTreeLockingPolicy
 
 
     /**
-     * Lock the base row referenced by an immutable leaf snapshot.
-     */
-    @Override
-    public boolean lockScanRowFromSnapshot(
-            StoreRowLocation rowLocation, boolean forUpdate, int lockOperation)
-            throws StandardException
-    {
-        if (forUpdate) {
-            return false;
-        }
-        base_cc.lockRow(
-                rowLocation, lockOperation, true,
-                TransactionManager.LOCK_COMMIT_DURATION);
-        return true;
-    }
-
+     * Release read lock on a row.
+     *
+     * @param forUpdate         Is the scan for update or for read only.
+     *
+     **/
     public void unlockScanRecordAfterRead(
     BTreeRowPosition        pos,
     boolean                 forUpdate)

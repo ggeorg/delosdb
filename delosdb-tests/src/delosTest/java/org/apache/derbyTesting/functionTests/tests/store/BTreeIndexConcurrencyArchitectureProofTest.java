@@ -24,7 +24,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -72,10 +71,7 @@ public class BTreeIndexConcurrencyArchitectureProofTest
                         + "on btree_index_concurrency(key_value)");
             }
         };
-        Properties lockTimeouts = new Properties();
-        lockTimeouts.setProperty("derby.locks.deadlockTimeout", "1");
-        lockTimeouts.setProperty("derby.locks.waitTimeout", "2");
-        return new DatabasePropertyTestSetup(test, lockTimeouts, false);
+        return DatabasePropertyTestSetup.setLockTimeouts(test, 1, 2);
     }
 
     protected void setUp() throws Exception {
@@ -179,54 +175,6 @@ public class BTreeIndexConcurrencyArchitectureProofTest
     }
 
     /**
-     * A leaf point-read snapshot must not retain a stale RowLocation while a
-     * writer repeatedly replaces the row behind one committed unique key. The
-     * writer deletes and reinserts the key atomically; every reader result must
-     * therefore contain exactly one committed generation with a matching
-     * payload. This specifically exercises snapshot invalidation and the
-     * post-lock revalidation used by the latch-free exact-key path.
-     */
-    public void testConcurrentLeafSnapshotTracksRowLocationReplacement()
-            throws Exception {
-        populateCommittedRows(1, 2000);
-        Statement setup = createStatement();
-
-        JDBC.assertFullResultSet(
-                setup.executeQuery(
-                        "select id, payload from btree_index_concurrency "
-                        + "--derby-properties index=btree_index_concurrency_key_uq\n"
-                        + "where key_value = 37"),
-                new String[][] { { "37", "370" } });
-
-        Connection reader = openDefaultConnection();
-        Connection writer = openDefaultConnection();
-        reader.setAutoCommit(true);
-        writer.setAutoCommit(false);
-
-        CountDownLatch start = new CountDownLatch(1);
-        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
-        Thread readerThread = new Thread(
-                () -> runReplacingKeyReader(reader, start, failure),
-                "btree-leaf-snapshot-reader");
-        Thread writerThread = new Thread(
-                () -> runReplacingKeyWriter(writer, start, failure),
-                "btree-leaf-snapshot-writer");
-
-        readerThread.start();
-        writerThread.start();
-        start.countDown();
-        readerThread.join();
-        writerThread.join();
-
-        reader.close();
-        rollbackAndClose(writer);
-        if (failure.get() != null) {
-            throw new AssertionError(
-                    "Concurrent leaf snapshot failure", failure.get());
-        }
-    }
-
-    /**
      * A cached root-routing snapshot must never make an index lookup miss a
      * key while concurrent inserts grow and split the same B-tree. The reader
      * repeatedly uses the forced unique secondary index while the writer adds
@@ -312,62 +260,6 @@ public class BTreeIndexConcurrencyArchitectureProofTest
             }
         } catch (Throwable t) {
             failure.compareAndSet(null, t);
-        }
-    }
-
-    private void runReplacingKeyReader(
-            Connection connection, CountDownLatch start,
-            AtomicReference<Throwable> failure) {
-        try (PreparedStatement query = connection.prepareStatement(
-                "select id, payload from btree_index_concurrency "
-                + "--derby-properties index=btree_index_concurrency_key_uq\n"
-                + "where key_value = 37")) {
-            start.await();
-            for (int iteration = 0; iteration < 2000; iteration++) {
-                try (ResultSet rs = query.executeQuery()) {
-                    if (!rs.next()) {
-                        throw new AssertionError(
-                                "Missing committed unique-key generation");
-                    }
-                    int id = rs.getInt(1);
-                    int payload = rs.getInt(2);
-                    if (payload != id * 10 || rs.next()) {
-                        throw new AssertionError(
-                                "Stale or duplicate unique-key generation: id="
-                                + id + ", payload=" + payload);
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            failure.compareAndSet(null, t);
-        }
-    }
-
-    private void runReplacingKeyWriter(
-            Connection connection, CountDownLatch start,
-            AtomicReference<Throwable> failure) {
-        try (PreparedStatement delete = connection.prepareStatement(
-                     "delete from btree_index_concurrency where key_value = 37");
-             PreparedStatement insert = connection.prepareStatement(
-                     "insert into btree_index_concurrency values (?, 37, ?)")) {
-            start.await();
-            for (int iteration = 1; iteration <= 300; iteration++) {
-                if (delete.executeUpdate() != 1) {
-                    throw new AssertionError(
-                            "Expected exactly one unique-key row to replace");
-                }
-                int id = 100000 + iteration;
-                insert.setInt(1, id);
-                insert.setInt(2, id * 10);
-                insert.executeUpdate();
-                connection.commit();
-            }
-        } catch (Throwable t) {
-            failure.compareAndSet(null, t);
-            try {
-                connection.rollback();
-            } catch (SQLException ignored) {
-            }
         }
     }
 
