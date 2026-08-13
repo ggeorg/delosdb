@@ -114,6 +114,13 @@ final class ConcurrentLockSet implements LockTable {
 
     private static final boolean LOCK_ENTRY_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.lockEntry");
+    private static final boolean HOT_STATE_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.hotState");
+    private static final LongAdder FAST_CIS_ACQUIRE_ATTEMPTS = new LongAdder();
+    private static final LongAdder FAST_CIS_RELEASE_ATTEMPTS = new LongAdder();
+    private static final LongAdder FAST_CIS_HOLDER_CREATES = new LongAdder();
+    private static final LongAdder FAST_CIS_HOLDER_REMOVES = new LongAdder();
+    private static final LongAdder FAST_CIS_STRIPE_OVERLAP = new LongAdder();
     private static final LockEntryStats CONTAINER_KEY_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats RECORD_ID_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats OTHER_ENTRY_STATS = new LockEntryStats();
@@ -283,13 +290,20 @@ final class ConcurrentLockSet implements LockTable {
         }
 
         Lock tryAcquire(CompatibilitySpace space) {
+            if (HOT_STATE_DIAGNOSTICS) {
+                FAST_CIS_ACQUIRE_ATTEMPTS.increment();
+            }
             int stripe = enterFast(space);
             if (stripe < 0) {
                 return null;
             }
             try {
-                int count = holders.computeIfAbsent(
-                        space, ignored -> new AtomicInteger()).incrementAndGet();
+                int count = holders.computeIfAbsent(space, ignored -> {
+                    if (HOT_STATE_DIAGNOSTICS) {
+                        FAST_CIS_HOLDER_CREATES.increment();
+                    }
+                    return new AtomicInteger();
+                }).incrementAndGet();
                 Lock lock = new Lock(space, ref, ContainerLock.CIS);
                 lock.count = count;
                 return lock;
@@ -299,6 +313,9 @@ final class ConcurrentLockSet implements LockTable {
         }
 
         boolean tryRelease(Latch item, int unlockCount) {
+            if (HOT_STATE_DIAGNOSTICS) {
+                FAST_CIS_RELEASE_ATTEMPTS.increment();
+            }
             CompatibilitySpace space = item.getCompatabilitySpace();
             int stripe = enterFast(space);
             if (stripe < 0) {
@@ -315,8 +332,9 @@ final class ConcurrentLockSet implements LockTable {
                     SanityManager.ASSERT(remaining >= 0,
                             "negative fast CIS hold count: " + remaining);
                 }
-                if (remaining == 0) {
-                    holders.remove(space, held);
+                if (remaining == 0 && holders.remove(space, held)
+                        && HOT_STATE_DIAGNOSTICS) {
+                    FAST_CIS_HOLDER_REMOVES.increment();
                 }
                 return true;
             } finally {
@@ -335,7 +353,10 @@ final class ConcurrentLockSet implements LockTable {
                 return -1;
             }
             int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
-            inFlight.incrementAndGet(stripe);
+            int active = inFlight.incrementAndGet(stripe);
+            if (HOT_STATE_DIAGNOSTICS && active > 1) {
+                FAST_CIS_STRIPE_OVERLAP.increment();
+            }
             if (fast) {
                 return stripe;
             }
@@ -585,6 +606,28 @@ final class ConcurrentLockSet implements LockTable {
             diagnosticRow("RecordId", RECORD_ID_ENTRY_STATS),
             diagnosticRow("Other", OTHER_ENTRY_STATS)
         };
+    }
+
+    static void resetHotStateDiagnosticsForTesting() {
+        FAST_CIS_ACQUIRE_ATTEMPTS.reset();
+        FAST_CIS_RELEASE_ATTEMPTS.reset();
+        FAST_CIS_HOLDER_CREATES.reset();
+        FAST_CIS_HOLDER_REMOVES.reset();
+        FAST_CIS_STRIPE_OVERLAP.reset();
+    }
+
+    static String[] snapshotHotStateDiagnosticsForTesting() {
+        return new String[] {
+            hotStateRow("fastCisAcquireAttempts", FAST_CIS_ACQUIRE_ATTEMPTS),
+            hotStateRow("fastCisReleaseAttempts", FAST_CIS_RELEASE_ATTEMPTS),
+            hotStateRow("fastCisHolderCreates", FAST_CIS_HOLDER_CREATES),
+            hotStateRow("fastCisHolderRemoves", FAST_CIS_HOLDER_REMOVES),
+            hotStateRow("fastCisStripeOverlap", FAST_CIS_STRIPE_OVERLAP)
+        };
+    }
+
+    private static String hotStateRow(String metric, LongAdder value) {
+        return "FastCisControl," + metric + "," + value.sum();
     }
 
     private static LockEntryStats lockEntryStats(Lockable ref) {

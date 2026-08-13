@@ -480,6 +480,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (cacheEntryDiagnosticsEnabled()) {
                     resetCacheEntryDiagnostics();
                 }
+                if (hotStateDiagnosticsEnabled()) {
+                    resetHotStateDiagnostics();
+                }
                 long elapsed = 0L;
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
@@ -502,6 +505,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] cacheEntryDiagnostics = cacheEntryDiagnosticsEnabled()
                         ? snapshotCacheEntryDiagnostics()
                         : null;
+                String[] hotStateDiagnostics = hotStateDiagnosticsEnabled()
+                        ? snapshotHotStateDiagnostics()
+                        : null;
                 int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
@@ -521,6 +527,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (cacheEntryDiagnostics != null) {
                     writeCacheEntryDiagnostics(
                             options, spec, config, measuredOperations, cacheEntryDiagnostics);
+                }
+                if (hotStateDiagnostics != null) {
+                    writeHotStateDiagnostics(
+                            options, spec, config, measuredOperations, hotStateDiagnostics);
                 }
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
@@ -670,6 +680,71 @@ public final class DelosJdbcCrossEngineConcurrency {
                     .append(waitNanos).append(',')
                     .append(format(contendedPercent)).append(',')
                     .append(format(waitNanosPerOperation)).append('\n');
+        }
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean hotStateDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "hotStateDiagnostics");
+    }
+
+    private static void resetHotStateDiagnostics() throws ReflectiveOperationException {
+        Class<?> cacheSupport = Class.forName(
+                "org.apache.derby.impl.services.cache.CacheEntryDiagnosticTestSupport");
+        cacheSupport.getMethod("resetHotState").invoke(null);
+        Class<?> lockSupport = Class.forName(
+                "org.apache.derby.impl.services.locks.LockEntryDiagnosticTestSupport");
+        lockSupport.getMethod("resetHotState").invoke(null);
+    }
+
+    private static String[] snapshotHotStateDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> cacheSupport = Class.forName(
+                "org.apache.derby.impl.services.cache.CacheEntryDiagnosticTestSupport");
+        String[] cacheRows = (String[]) cacheSupport.getMethod("snapshotHotState").invoke(null);
+        Class<?> lockSupport = Class.forName(
+                "org.apache.derby.impl.services.locks.LockEntryDiagnosticTestSupport");
+        String[] lockRows = (String[]) lockSupport.getMethod("snapshotHotState").invoke(null);
+        String[] rows = Arrays.copyOf(cacheRows, cacheRows.length + lockRows.length);
+        System.arraycopy(lockRows, 0, rows, cacheRows.length, lockRows.length);
+        return rows;
+    }
+
+    private static void writeHotStateDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            String[] rows) throws IOException {
+        Path output = options.reportDirectory().resolve(
+                "hot-state-diagnostics-" + options.target().id() + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "component,metric,value,valuePerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String row : rows) {
+            String[] fields = row.split(",", -1);
+            if (fields.length != 3) {
+                throw new IllegalStateException("Unexpected hot-state diagnostic row: " + row);
+            }
+            long value = Long.parseLong(fields[2]);
+            double valuePerOperation = measuredOperations == 0L
+                    ? 0.0 : (double) value / measuredOperations;
+            out.append(options.target().id()).append(',')
+                    .append(spec.workload().name()).append(',')
+                    .append(spec.clients()).append(',')
+                    .append(spec.operationsPerTransaction()).append(',')
+                    .append(config.rowCount()).append(',')
+                    .append(measuredOperations).append(',')
+                    .append(fields[0]).append(',')
+                    .append(fields[1]).append(',')
+                    .append(value).append(',')
+                    .append(format(valuePerOperation)).append('\n');
         }
         Files.writeString(
                 output, out.toString(), StandardCharsets.UTF_8,

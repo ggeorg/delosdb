@@ -81,6 +81,15 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 final class CacheEntry {
     private static final boolean CACHE_ENTRY_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.cacheEntry");
+    private static final boolean HOT_STATE_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.hotState");
+    private static final LongAdder FAST_KEEP_ATTEMPTS = new LongAdder();
+    private static final LongAdder FAST_KEEP_SUCCESSES = new LongAdder();
+    private static final LongAdder FAST_KEEP_OVERLAP = new LongAdder();
+    private static final LongAdder FAST_KEEP_IDENTITY_MISMATCHES = new LongAdder();
+    private static final LongAdder FAST_UNKEEP_ATTEMPTS = new LongAdder();
+    private static final LongAdder FAST_UNKEEP_SUCCESSES = new LongAdder();
+    private static final LongAdder FAST_UNKEEP_CAS_FAILURES = new LongAdder();
     private static final CacheEntryStats PAGE_CACHE_STATS = new CacheEntryStats();
     private static final CacheEntryStats CONTAINER_CACHE_STATS = new CacheEntryStats();
     private static final CacheEntryStats CONGLOMERATE_CACHE_STATS = new CacheEntryStats();
@@ -220,13 +229,20 @@ final class CacheEntry {
      * race between the initial fast-path check and the atomic pin.
      */
     Cacheable tryFastContainerKeep(Object key) {
-        if (!(key instanceof ContainerKey)
-                || !fastContainerAccess
-                || fastContainerFrozen) {
+        if (!(key instanceof ContainerKey)) {
+            return null;
+        }
+        if (HOT_STATE_DIAGNOSTICS) {
+            FAST_KEEP_ATTEMPTS.increment();
+        }
+        if (!fastContainerAccess || fastContainerFrozen) {
             return null;
         }
 
-        fastContainerKeepCount.incrementAndGet();
+        int fastKeeps = fastContainerKeepCount.incrementAndGet();
+        if (HOT_STATE_DIAGNOSTICS && fastKeeps > 1) {
+            FAST_KEEP_OVERLAP.increment();
+        }
         if (!fastContainerAccess || fastContainerFrozen) {
             fastContainerUnkeepAfterFailedAcquire();
             return null;
@@ -234,18 +250,30 @@ final class CacheEntry {
 
         Cacheable item = cacheable;
         if (item == null || !key.equals(item.getIdentity())) {
+            if (HOT_STATE_DIAGNOSTICS) {
+                FAST_KEEP_IDENTITY_MISMATCHES.increment();
+            }
             fastContainerUnkeepAfterFailedAcquire();
             return null;
         }
 
         fastContainerAccessed = true;
+        if (HOT_STATE_DIAGNOSTICS) {
+            FAST_KEEP_SUCCESSES.increment();
+        }
         return item;
     }
 
     /** Release a ContainerKey entry without taking the entry mutex. */
     boolean tryFastContainerUnkeep(Cacheable item) {
         Object identity = item.getIdentity();
-        if (!(identity instanceof ContainerKey) || cacheable != item) {
+        if (!(identity instanceof ContainerKey)) {
+            return false;
+        }
+        if (HOT_STATE_DIAGNOSTICS) {
+            FAST_UNKEEP_ATTEMPTS.increment();
+        }
+        if (cacheable != item) {
             return false;
         }
 
@@ -255,10 +283,42 @@ final class CacheEntry {
                 return false;
             }
             if (fastContainerKeepCount.compareAndSet(fastKeeps, fastKeeps - 1)) {
+                if (HOT_STATE_DIAGNOSTICS) {
+                    FAST_UNKEEP_SUCCESSES.increment();
+                }
                 signalRemoveWaiterIfNeeded();
                 return true;
             }
+            if (HOT_STATE_DIAGNOSTICS) {
+                FAST_UNKEEP_CAS_FAILURES.increment();
+            }
         }
+    }
+
+    static void resetHotStateDiagnosticsForTesting() {
+        FAST_KEEP_ATTEMPTS.reset();
+        FAST_KEEP_SUCCESSES.reset();
+        FAST_KEEP_OVERLAP.reset();
+        FAST_KEEP_IDENTITY_MISMATCHES.reset();
+        FAST_UNKEEP_ATTEMPTS.reset();
+        FAST_UNKEEP_SUCCESSES.reset();
+        FAST_UNKEEP_CAS_FAILURES.reset();
+    }
+
+    static String[] snapshotHotStateDiagnosticsForTesting() {
+        return new String[] {
+            hotStateRow("fastKeepAttempts", FAST_KEEP_ATTEMPTS),
+            hotStateRow("fastKeepSuccesses", FAST_KEEP_SUCCESSES),
+            hotStateRow("fastKeepOverlap", FAST_KEEP_OVERLAP),
+            hotStateRow("fastKeepIdentityMismatches", FAST_KEEP_IDENTITY_MISMATCHES),
+            hotStateRow("fastUnkeepAttempts", FAST_UNKEEP_ATTEMPTS),
+            hotStateRow("fastUnkeepSuccesses", FAST_UNKEEP_SUCCESSES),
+            hotStateRow("fastUnkeepCasFailures", FAST_UNKEEP_CAS_FAILURES)
+        };
+    }
+
+    private static String hotStateRow(String metric, LongAdder value) {
+        return "ContainerCacheFastPin," + metric + "," + value.sum();
     }
 
     /** Freeze new lock-free container pins before lifecycle work. */

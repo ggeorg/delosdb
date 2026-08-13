@@ -17,4 +17,12 @@ public final class LockEntryDiagnosticTestSupport {
     public static String[] snapshot() {
         return ConcurrentLockSet.snapshotLockEntryDiagnosticsForTesting();
     }
+
+    public static void resetHotState() {
+        ConcurrentLockSet.resetHotStateDiagnosticsForTesting();
+    }
+
+    public static String[] snapshotHotState() {
+        return ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting();
+    }
 }

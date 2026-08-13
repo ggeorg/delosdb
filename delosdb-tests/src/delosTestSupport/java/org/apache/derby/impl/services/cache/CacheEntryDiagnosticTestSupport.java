@@ -17,4 +17,12 @@ public final class CacheEntryDiagnosticTestSupport {
     public static String[] snapshot() {
         return CacheEntry.snapshotCacheEntryDiagnosticsForTesting();
     }
+
+    public static void resetHotState() {
+        CacheEntry.resetHotStateDiagnosticsForTesting();
+    }
+
+    public static String[] snapshotHotState() {
+        return CacheEntry.snapshotHotStateDiagnosticsForTesting();
+    }
 }
