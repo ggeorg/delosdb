@@ -56,6 +56,7 @@ import java.io.ObjectOutput;
 import java.io.ObjectInput;
 
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
 
@@ -211,6 +212,13 @@ public abstract class BTree extends GenericConglomerate
      */
     private transient volatile RootRoutingSnapshot rootRoutingSnapshot;
 
+    /**
+     * Immutable decoded rows for stable leaf pages used by exact-key reads.
+     * RawStore pages remain authoritative: a page mutation invalidates its
+     * snapshot through the page auxiliary-object hook before any bytes change.
+     */
+    private transient volatile ConcurrentHashMap<Long, LeafReadSnapshot> leafReadSnapshots;
+
     final long searchRootRoutingSnapshot(
             BranchControlRow root, OpenBTree openBtree, SearchParameters params)
             throws StandardException {
@@ -256,6 +264,74 @@ public abstract class BTree extends GenericConglomerate
 
     final void invalidateRootRoutingSnapshot() {
         rootRoutingSnapshot = null;
+    }
+
+    final void observeLeafReadSnapshot(LeafControlRow leaf, OpenBTree openBtree)
+            throws StandardException {
+        long pageNumber = leaf.page.getPageNumber();
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots();
+        LeafReadSnapshot current = snapshots.get(pageNumber);
+        long pageVersion = leaf.page.getPageVersion();
+        if (current == null || current.pageVersion != pageVersion) {
+            current = LeafReadSnapshot.fromLatchedLeaf(
+                    leaf, openBtree, pageVersion);
+            snapshots.put(pageNumber, current);
+        }
+        leaf.observeLeafReadSnapshot(this);
+    }
+
+    final LeafReadSnapshotHit searchLeafReadSnapshot(StoreDataValue[] searchKey)
+            throws StandardException {
+        RootRoutingSnapshot root = rootRoutingSnapshot;
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
+        if (root == null || root.rootLevel != 1 || snapshots == null) {
+            return null;
+        }
+
+        long leafPageNumber = root.route(
+                searchKey, SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH, this);
+        if (rootRoutingSnapshot != root) {
+            return null;
+        }
+        LeafReadSnapshot leaf = snapshots.get(leafPageNumber);
+        if (leaf == null) {
+            return null;
+        }
+        StoreDataValue[] row = leaf.searchExact(searchKey, this);
+        if (row == null || rootRoutingSnapshot != root
+                || snapshots.get(leafPageNumber) != leaf) {
+            return null;
+        }
+        return new LeafReadSnapshotHit(root, leafPageNumber, leaf, row);
+    }
+
+    final boolean leafReadSnapshotStillCurrent(LeafReadSnapshotHit hit) {
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
+        return hit != null
+                && rootRoutingSnapshot == hit.rootToken
+                && snapshots != null
+                && snapshots.get(hit.pageNumber) == hit.leaf;
+    }
+
+    final void invalidateLeafReadSnapshot(long pageNumber) {
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
+        if (snapshots != null) {
+            snapshots.remove(pageNumber);
+        }
+    }
+
+    private ConcurrentHashMap<Long, LeafReadSnapshot> leafReadSnapshots() {
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
+        if (snapshots == null) {
+            synchronized (this) {
+                snapshots = leafReadSnapshots;
+                if (snapshots == null) {
+                    snapshots = new ConcurrentHashMap<Long, LeafReadSnapshot>();
+                    leafReadSnapshots = snapshots;
+                }
+            }
+        }
+        return snapshots;
     }
 
     private static final class RootRoutingSnapshot {
@@ -327,6 +403,34 @@ public abstract class BTree extends GenericConglomerate
 
             params.resultSlot = leftSlot;
             params.resultExact = false;
+            return childPageIds[leftSlot];
+        }
+
+        private long route(
+                StoreDataValue[] searchKey, int partialKeyMatchOp, BTree btree)
+                throws StandardException {
+            int leftSlot = 0;
+            int rightSlot = branchRows.length + 1;
+            int leftRange = 1;
+            int rightRange = branchRows.length;
+
+            while (leftSlot != rightSlot - 1) {
+                int midSlot = (leftRange + rightRange) / 2;
+                int comparison = ControlRow.compareIndexRowToKey(
+                        branchRows[midSlot - 1], searchKey,
+                        btree.nUniqueColumns, partialKeyMatchOp,
+                        btree.ascDescInfo);
+                if (comparison == 0) {
+                    return childPageIds[midSlot];
+                }
+                if (comparison > 0) {
+                    rightSlot = midSlot;
+                    rightRange = midSlot - 1;
+                } else {
+                    leftSlot = midSlot;
+                    leftRange = midSlot + 1;
+                }
+            }
             return childPageIds[leftSlot];
         }
     }

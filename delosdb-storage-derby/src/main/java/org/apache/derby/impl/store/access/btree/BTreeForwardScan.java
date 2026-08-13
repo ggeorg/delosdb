@@ -102,6 +102,20 @@ public class BTreeForwardScan extends BTreeScan
         if (max_rowcnt == -1)
             max_rowcnt = Long.MAX_VALUE;
 
+        if (hasSnapshotPointPosition()) {
+            finishSnapshotPointPosition();
+            return 0;
+        }
+        if (this.scan_state == SCAN_INIT && max_rowcnt == 1
+                && row_array != null && row_array[0] != null
+                && rowloc_array == null && hash_table == null
+                && key_column_numbers == null) {
+            int snapshotRows = trySnapshotPointRead(row_array[0]);
+            if (snapshotRows >= 0) {
+                return snapshotRows;
+            }
+        }
+
 
         if (this.scan_state == BTreeScan.SCAN_INPROGRESS)
         {
@@ -128,6 +142,7 @@ public class BTreeForwardScan extends BTreeScan
         {
             // 1st positioning of scan (delayed from openScan).
             positionAtStartPosition(pos);
+            observeSnapshotPointLeaf();
         }
         else if (this.scan_state == SCAN_HOLD_INPROGRESS)
         {

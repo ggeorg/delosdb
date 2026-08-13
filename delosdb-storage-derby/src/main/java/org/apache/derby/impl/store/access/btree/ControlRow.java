@@ -166,6 +166,9 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      */
     private transient BTree rootRoutingOwner;
 
+    /** B-tree owning an immutable snapshot derived from this leaf page. */
+    private transient BTree leafReadSnapshotOwner;
+
     /**
      * The page that this control row describes.
      **/
@@ -1877,11 +1880,19 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         rootRoutingOwner = owner;
     }
 
+    final void observeLeafReadSnapshot(BTree owner) {
+        leafReadSnapshotOwner = owner;
+    }
+
     @Override
     public void pageAboutToChange() {
         BTree owner = rootRoutingOwner;
         if (owner != null) {
             owner.invalidateRootRoutingSnapshot();
+        }
+        BTree leafOwner = leafReadSnapshotOwner;
+        if (leafOwner != null && page != null) {
+            leafOwner.invalidateLeafReadSnapshot(page.getPageNumber());
         }
     }
 
@@ -1900,6 +1911,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
         pageAboutToChange();
         rootRoutingOwner = null;
+        leafReadSnapshotOwner = null;
 		version = null;
 		leftSiblingPageNumber = null;
 		rightSiblingPageNumber = null;
