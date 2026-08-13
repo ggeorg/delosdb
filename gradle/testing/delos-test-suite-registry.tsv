@@ -2,6 +2,7 @@
 # class_name	source_path	suite	execution_tier	reason
 # Every entry is active authority; Stage 7 closed with no transitional sources.
 # Removed Stage 7 assertions are recorded in gradle/testing/delos-stage7-test-consolidation.tsv.
+org.apache.derbyTesting.functionTests.tests.delos.ContainerIntentSharedFastPathTest	org/apache/derbyTesting/functionTests/tests/delos/ContainerIntentSharedFastPathTest.java	concurrency	full	Gate 6D concurrent compatible container-intent shared lock proof
 org.apache.derbyTesting.functionTests.tests.delos.CrossEngineConsistencyFrameworkTest	org/apache/derbyTesting/functionTests/tests/delos/CrossEngineConsistencyFrameworkTest.java	functional	quick	Stage 7 enduring mixed-provider consistency report and failure-isolation authority
 org.apache.derbyTesting.functionTests.tests.delos.DelosDdlCrashAtomicityTest	org/apache/derbyTesting/functionTests/tests/delos/DelosDdlCrashAtomicityTest.java	recovery	full	Stage 6 MariaDB-derived supported-DDL crash atomicity proof
 org.apache.derbyTesting.functionTests.tests.delos.DelosDeadlockVictimLifecycleTest	org/apache/derbyTesting/functionTests/tests/delos/DelosDeadlockVictimLifecycleTest.java	concurrency	full	Stage 6 MariaDB-derived deadlock-victim wake-up lifecycle proof

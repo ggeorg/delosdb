@@ -25,6 +25,8 @@ import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.iapi.services.locks.Latch;
 import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.iapi.services.locks.C_LockFactory;
+import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.ContainerLock;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -38,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,15 +64,12 @@ import java.util.Map;
 	<BR>
 	The class creates ActiveLock and LockControl objects.
 	
-	LockControl objects are never passed out of this class, All the methods of 
-    LockControl are called while holding a ReentrantLock associated with the
-    Lockable controlled by the LockControl, thus providing the
-    single threading that LockControl required.
-
-	Methods of Lockables are only called by this class or LockControl, and 
-    always while holding the corresponding ReentrantLock, thus providing the
-    single threading that Lockable requires.
-	
+	Ordinary LockControl objects are never passed out of this class and are
+	accessed while holding the per-Lockable ReentrantLock. A ContainerKey that
+	is held only with intent-shared (CIS) locks may instead use a concurrent
+	CIS-only control. The first request for any other container lock mode freezes
+	that control and materializes all holders into an ordinary LockControl before
+	compatibility, waiter ordering, timeout, or deadlock logic runs.
 	@see LockControl
 */
 
@@ -150,8 +150,8 @@ final class ConcurrentLockSet implements LockTable {
             this.ref = ref;
         }
 
-        /** The lock control. */
-        Control control;
+        /** The lock control. Volatile for the CIS-only read fast path. */
+        volatile Control control;
         /**
          * Mutex used to ensure single-threaded access to the LockControls. To
          * avoid Java deadlocks, no thread should ever hold the mutex of more
@@ -249,6 +249,251 @@ final class ConcurrentLockSet implements LockTable {
             deadlockDetection.signalAll();
             deadlockDetection = null;
         }
+    }
+
+    /**
+     * Concurrent control used only while a ContainerKey is held exclusively
+     * with intent-shared (CIS) locks. CIS holders are mutually compatible, so
+     * acquisition and release can update per-compatibility-space counters
+     * under a shared gate instead of serializing on {@link Entry#mutex}.
+     *
+     * <p>The first request for any other qualifier freezes this control under
+     * the gate's write lock and materializes all holders into the ordinary
+     * {@link LockControl}. From that point on, Derby's existing compatibility,
+     * waiter ordering, timeout and deadlock machinery is authoritative.</p>
+     */
+    private final class FastCisControl implements Control {
+        private final Lockable ref;
+        private final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
+                new ConcurrentHashMap<CompatibilitySpace, AtomicInteger>();
+        private final ReentrantReadWriteLock gate = new ReentrantReadWriteLock();
+        private volatile boolean fast = true;
+
+        FastCisControl(Lockable ref) {
+            this.ref = ref;
+        }
+
+        private FastCisControl(Lockable ref, boolean fast) {
+            this.ref = ref;
+            this.fast = fast;
+        }
+
+        Lock tryAcquire(CompatibilitySpace space) {
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                if (!fast) {
+                    return null;
+                }
+                int count = holders.computeIfAbsent(
+                        space, ignored -> new AtomicInteger()).incrementAndGet();
+                Lock lock = new Lock(space, ref, ContainerLock.CIS);
+                lock.count = count;
+                return lock;
+            } finally {
+                read.unlock();
+            }
+        }
+
+        boolean tryRelease(Latch item, int unlockCount) {
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                if (!fast) {
+                    return false;
+                }
+                int count = unlockCount == 0 ? item.getCount() : unlockCount;
+                AtomicInteger held = holders.get(item.getCompatabilitySpace());
+                if (held == null) {
+                    return false;
+                }
+                int remaining = held.addAndGet(-count);
+                if (SanityManager.DEBUG) {
+                    SanityManager.ASSERT(remaining >= 0,
+                            "negative fast CIS hold count: " + remaining);
+                }
+                if (remaining == 0) {
+                    holders.remove(item.getCompatabilitySpace(), held);
+                }
+                return true;
+            } finally {
+                read.unlock();
+            }
+        }
+
+        LockControl freeze() {
+            java.util.concurrent.locks.Lock write = gate.writeLock();
+            write.lock();
+            try {
+                fast = false;
+                return materializeCisHolders(ref, holders);
+            } finally {
+                write.unlock();
+            }
+        }
+
+        private LockControl snapshot() {
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                return materializeCisHolders(ref, holders);
+            } finally {
+                read.unlock();
+            }
+        }
+
+        public Lockable getLockable() {
+            return ref;
+        }
+
+        public LockControl getLockControl() {
+            return snapshot();
+        }
+
+        public Lock getLock(CompatibilitySpace compatibilitySpace,
+                            Object qualifier) {
+            if (qualifier != ContainerLock.CIS) {
+                return null;
+            }
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                AtomicInteger held = holders.get(compatibilitySpace);
+                int count = held == null ? 0 : held.get();
+                if (count == 0) {
+                    return null;
+                }
+                Lock lock = new Lock(compatibilitySpace, ref, qualifier);
+                lock.count = count;
+                return lock;
+            } finally {
+                read.unlock();
+            }
+        }
+
+        public Control shallowClone() {
+            LockControl snapshot = snapshot();
+            return snapshot == null ? new FastCisControl(ref, false) : snapshot;
+        }
+
+        public ActiveLock firstWaiter() {
+            return null;
+        }
+
+        public boolean isEmpty() {
+            return holders.isEmpty();
+        }
+
+        public boolean unlock(Latch lockInGroup, int unlockCount) {
+            tryRelease(lockInGroup, unlockCount);
+            return false;
+        }
+
+        public void addWaiters(Map<Object,Object> waiters) {
+        }
+
+        public Lock getFirstGrant() {
+            java.util.List<Lock> grants = getGranted();
+            return grants == null || grants.isEmpty() ? null : grants.get(0);
+        }
+
+        public java.util.List<Lock> getGranted() {
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
+                for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                    int count = holder.getValue().get();
+                    if (count > 0) {
+                        Lock lock = new Lock(holder.getKey(), ref, ContainerLock.CIS);
+                        lock.count = count;
+                        grants.add(lock);
+                    }
+                }
+                return grants.isEmpty() ? null : grants;
+            } finally {
+                read.unlock();
+            }
+        }
+
+        public java.util.List<Lock> getWaiting() {
+            return null;
+        }
+
+        public boolean isGrantable(boolean noWaitersBeforeMe,
+                                   CompatibilitySpace compatibilitySpace,
+                                   Object qualifier) {
+            java.util.concurrent.locks.Lock read = gate.readLock();
+            read.lock();
+            try {
+                for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                    if (holder.getValue().get() == 0 || holder.getKey() == compatibilitySpace) {
+                        continue;
+                    }
+                    if (!ref.requestCompatible(qualifier, ContainerLock.CIS)) {
+                        return false;
+                    }
+                }
+                return true;
+            } finally {
+                read.unlock();
+            }
+        }
+    }
+
+    private LockControl materializeCisHolders(
+            Lockable ref,
+            ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders) {
+        LockControl control = null;
+        for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+            int count = holder.getValue().get();
+            if (count <= 0) {
+                continue;
+            }
+            if (control == null) {
+                Lock first = new Lock(holder.getKey(), ref, ContainerLock.CIS);
+                first.count = count;
+                control = new LockControl(first, ref);
+                continue;
+            }
+            for (int i = 0; i < count; i++) {
+                Lock granted = control.addLock(this, holder.getKey(), ContainerLock.CIS);
+                if (SanityManager.DEBUG) {
+                    SanityManager.ASSERT(granted.getCount() != 0,
+                            "materialized CIS lock was not granted");
+                }
+            }
+        }
+        return control;
+    }
+
+    private static boolean isFastCisRequest(Lockable ref, Object qualifier) {
+        return ref instanceof ContainerKey && qualifier == ContainerLock.CIS;
+    }
+
+    private Lock tryFastCisLock(CompatibilitySpace compatibilitySpace,
+                                Lockable ref,
+                                Object qualifier) {
+        if (!isFastCisRequest(ref, qualifier)) {
+            return null;
+        }
+        Entry entry = locks.get(ref);
+        if (entry == null) {
+            return null;
+        }
+        Control control = entry.control;
+        return control instanceof FastCisControl
+                ? ((FastCisControl) control).tryAcquire(compatibilitySpace)
+                : null;
+    }
+
+    private boolean tryFastCisUnlock(Entry entry, Latch item, int unlockCount) {
+        if (entry == null || !isFastCisRequest(item.getLockable(), item.getQualifier())) {
+            return false;
+        }
+        Control control = entry.control;
+        return control instanceof FastCisControl
+                && ((FastCisControl) control).tryRelease(item, unlockCount);
     }
 
     /**
@@ -387,12 +632,34 @@ final class ConcurrentLockSet implements LockTable {
         String  lockDebug = null;
         boolean blockedByParent = false;
 
+        Lock fastCis = tryFastCisLock(compatibilitySpace, ref, qualifier);
+        if (fastCis != null) {
+            return fastCis;
+        }
+
         Entry entry = getEntry(ref);
         try {
 
             Control gc = entry.control;
+            if (gc instanceof FastCisControl) {
+                FastCisControl fastControl = (FastCisControl) gc;
+                if (isFastCisRequest(ref, qualifier)) {
+                    fastCis = fastControl.tryAcquire(compatibilitySpace);
+                    if (fastCis != null) {
+                        return fastCis;
+                    }
+                }
+                gc = fastControl.freeze();
+                entry.control = gc;
+            }
 
 			if (gc == null) {
+                if (isFastCisRequest(ref, qualifier)) {
+                    FastCisControl fastControl = new FastCisControl(ref);
+                    Lock granted = fastControl.tryAcquire(compatibilitySpace);
+                    entry.control = fastControl;
+                    return granted;
+                }
 
 				// object is not locked, can be granted
 				Lock gl = new Lock(compatibilitySpace, ref, qualifier);
@@ -756,6 +1023,9 @@ forever:	for (;;) {
 	public void unlock(Latch item, int unlockCount) {
         // assume LockEntry is there
         Entry entry = locks.get(item.getLockable());
+        if (tryFastCisUnlock(entry, item, unlockCount)) {
+            return;
+        }
         entry.lock();
         try {
             unlock(entry, item, unlockCount);
@@ -865,6 +1135,19 @@ forever:	for (;;) {
         Entry entry = locks.get(ref);
         if (entry == null) {
             return null;
+        }
+
+        if (isFastCisRequest(ref, qualifier)) {
+            Control fast = entry.control;
+            if (fast instanceof FastCisControl) {
+                Lock key = new Lock(space, ref, qualifier);
+                Lock lockInGroup = (Lock) group.get(key);
+                if (lockInGroup != null
+                        && ((FastCisControl) fast).tryRelease(lockInGroup, 1)) {
+                    group.remove(key);
+                    return lockInGroup;
+                }
+            }
         }
 
         entry.lock();

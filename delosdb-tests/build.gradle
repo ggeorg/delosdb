@@ -75,6 +75,8 @@ def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def lockEntryDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java')
+def containerIntentSharedFastPathTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
@@ -318,6 +320,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
@@ -346,6 +349,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(lockEntryDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
+    }
+    from(containerIntentSharedFastPathTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(mvccVisibilityTestSupportSource) {
