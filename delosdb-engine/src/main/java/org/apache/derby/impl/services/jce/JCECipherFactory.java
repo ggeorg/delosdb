@@ -1056,5 +1056,4 @@ final class JCECipherFactory implements CipherFactory
             this.paddedInputKey = paddedInputKey;
         }
     }
-    
 }
