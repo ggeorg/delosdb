@@ -1322,6 +1322,220 @@ tasks.register('runDelosJdbcConglomerateLocalityJfr') {
     }
 }
 
+
+// Gate 6F residual locality diagnosis: after root-page serialization and the
+// shared ContainerKey Entry mutex are removed, isolate the remaining 8-client
+// SAME_TABLE loss before any further production lock/storage change.
+tasks.register('runDelosJdbcPostCisPageLatchProof8c', JavaExec) {
+    group = 'benchmark'
+    description = 'Checks whether any RawStore page latch becomes the residual eight-client same-table bottleneck after Gate 6E.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/post-cis-page-latch-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Post-CIS page-latch proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/post-cis-page-latch-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-post-cis-page-latch-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'SAME_TABLE_DISJOINT,PRIVATE_TABLE_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.postCisResidual.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.payload').getOrElse('128'),
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.warmups').getOrElse('1'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.iterations').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.postCisResidual.caseTimeoutSeconds').getOrElse('300'),
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true'
+        ])
+    }
+}
+
+def postCisLocalityJfrProfiles = [
+        [workload: 'SAME_TABLE_DISJOINT', clients: '4'],
+        [workload: 'SAME_TABLE_DISJOINT', clients: '8'],
+        [workload: 'PRIVATE_TABLE_DISJOINT', clients: '4'],
+        [workload: 'PRIVATE_TABLE_DISJOINT', clients: '8']
+]
+
+tasks.register('runDelosJdbcPostCisLocalityJfr') {
+    group = 'benchmark'
+    description = 'Profiles the post-Gate-6E Delos heap same/private locality contrast at four and eight clients.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/post-cis-locality-jfr')
+    outputs.dir(reportDir)
+
+    doLast {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Post-CIS locality JFR profiling requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def output = reportDir.get().asFile
+        project.delete(output)
+        output.mkdirs()
+        def operationBudgetPerClient = providers.gradleProperty(
+                'delosdb.benchmark.postCisResidual.jfrOperationBudgetPerClient').getOrElse('1000000')
+        def iterations = providers.gradleProperty(
+                'delosdb.benchmark.postCisResidual.jfrIterations').getOrElse('2')
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+
+        postCisLocalityJfrProfiles.each { profile ->
+            def targetOutput = new File(output,
+                    "${profile.workload.toLowerCase(java.util.Locale.ROOT)}/${profile.clients}c")
+            targetOutput.mkdirs()
+            def databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-post-cis-locality-jfr/${profile.workload}/${profile.clients}c")
+                    .get().asFile
+            project.delete(databaseRoot)
+            def jfrFile = new File(targetOutput,
+                    "delos_heap-${profile.workload.toLowerCase(java.util.Locale.ROOT)}-${profile.clients}c-x100.jfr")
+            new File(targetOutput, 'profile-manifest.txt').text =
+                    "DelosDB Gate 6F post-CIS residual locality profile\n" +
+                            "Question: what shared authority remains after root-read serialization and ContainerKey Entry-mutex serialization are removed?\n" +
+                            "Gate 6E clean evidence: SAME_TABLE is ~59.6% of PRIVATE_TABLE at 4 clients and ~24.7% at 8 clients.\n" +
+                            "Project version: ${rootProject.version}\n" +
+                            "JDK: ${System.getProperty('java.runtime.version')}\n" +
+                            "OS: ${System.getProperty('os.name')} ${System.getProperty('os.version')} ${System.getProperty('os.arch')}\n" +
+                            "Processors: ${Runtime.getRuntime().availableProcessors()}\n" +
+                            "target=delos_heap\n" +
+                            "workload=${profile.workload}\n" +
+                            "clients=${profile.clients}\n" +
+                            "operationsPerTransaction=100\n" +
+                            "operationBudgetPerClientPerInterval=${operationBudgetPerClient}\n" +
+                            "rowsPerFixtureTable=10000\n" +
+                            "payloadBytes=128\n" +
+                            "warmups=1\n" +
+                            "iterations=${iterations}\n" +
+                            "isolation=TRANSACTION_READ_COMMITTED\n" +
+                            "jfrSettings=profile\n" +
+                            "Interpretation: compare SAME vs PRIVATE at the same client count, then compare 4c vs 8c within each shape.\n" +
+                            "Look for differential CPU, allocation, parking, monitor, atomic/CHM, page/cache and lock-manager stacks; do not infer causality from an absolute hot frame.\n"
+
+            def systemProperties = [
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                    'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': targetOutput.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': profile.clients,
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': profile.workload,
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': operationBudgetPerClient,
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': iterations,
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ]
+            def command = [
+                    javaExecutable,
+                    '-Xms1g',
+                    '-Xmx1g',
+                    '-XX:+AlwaysPreTouch',
+                    '-XX:FlightRecorderOptions=stackdepth=256',
+                    "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile," +
+                            'dumponexit=true,maxsize=512m'
+            ]
+            systemProperties.each { key, value ->
+                command.add("-D${key}=${value}")
+            }
+            command.addAll([
+                    '-cp',
+                    rootProject.files(derbyTestsClassDir, derbyRuntimeJars).asPath,
+                    'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency',
+                    'worker'
+            ])
+
+            logger.lifecycle(
+                    "Profiling post-CIS delos_heap ${profile.workload} ${profile.clients}c x100 with JFR")
+            def process = new ProcessBuilder(command.collect { it.toString() }).inheritIO().start()
+            def exitCode = process.waitFor()
+            if (exitCode != 0) {
+                throw new GradleException(
+                        "Post-CIS locality JFR worker ${profile.workload}/${profile.clients}c failed with exit code ${exitCode}")
+            }
+        }
+
+        new File(output, 'profile-matrix.txt').text =
+                'DelosDB Gate 6F post-CIS residual locality profile\n' +
+                        'Target: delos_heap\n' +
+                        'Shapes: SAME_TABLE_DISJOINT and PRIVATE_TABLE_DISJOINT\n' +
+                        'Clients: 4 and 8\n' +
+                        'All cells: 100 PK reads/transaction, READ_COMMITTED, matched fixture-table count\n' +
+                        'Interpretation: explain the residual 4c/8c SAME_TABLE loss after Gate 6B root bypass and Gate 6D/6E CIS fast path.\n'
+    }
+}
+
+tasks.register('runDelosJdbcPostCisResidualLocalityDiagnosis') {
+    group = 'benchmark'
+    description = 'Runs the Gate 6F eight-client page-latch proof and four-cell JFR residual-locality profile.'
+    dependsOn tasks.named('runDelosJdbcPostCisPageLatchProof8c'),
+            tasks.named('runDelosJdbcPostCisLocalityJfr')
+}
+
 def primaryKeyReadJfrProfiles = [
         [target: 'delos_heap', runtimeClasspath: rootProject.files(derbyRuntimeJars)],
         [target: 'delos_mvcc', runtimeClasspath: rootProject.files(derbyRuntimeJars)],
