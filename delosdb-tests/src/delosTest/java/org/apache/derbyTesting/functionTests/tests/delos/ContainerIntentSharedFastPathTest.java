@@ -21,12 +21,4 @@ public final class ContainerIntentSharedFastPathTest extends TestCase {
     public void testConcurrentCompatibleReaders() throws Exception {
         ContainerIntentSharedFastPathTestSupport.verifyConcurrentReaders();
     }
-
-    public void testStableHolderReuseAvoidsPerTransactionMapChurn() throws Exception {
-        ContainerIntentSharedFastPathTestSupport.verifyStableHolderReuse();
-    }
-
-    public void testIdleRetainedHoldersAreReclaimed() throws Exception {
-        ContainerIntentSharedFastPathTestSupport.verifyIdleHolderReclamation();
-    }
 }

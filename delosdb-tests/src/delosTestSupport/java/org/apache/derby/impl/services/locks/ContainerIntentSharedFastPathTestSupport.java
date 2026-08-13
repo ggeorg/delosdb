@@ -131,58 +131,6 @@ public final class ContainerIntentSharedFastPathTestSupport {
         table.unlock(exclusive, 1);
     }
 
-
-    public static void verifyStableHolderReuse() throws Exception {
-        final int readers = 8;
-        final int iterations = 1_000;
-        ConcurrentLockSet table = new ConcurrentLockSet(null);
-        ContainerKey key = new ContainerKey(0, 168);
-        CompatibilitySpace[] spaces = new CompatibilitySpace[readers];
-        for (int i = 0; i < readers; i++) {
-            spaces[i] = new LockSpace(new TestLockOwner());
-            Lock warm = requireLock(table.lockObject(
-                    spaces[i], key, ContainerLock.CIS, C_LockFactory.NO_WAIT),
-                    "warm-up CIS reader was not granted");
-            table.unlock(warm, 1);
-        }
-
-        for (int iteration = 0; iteration < iterations; iteration++) {
-            for (CompatibilitySpace space : spaces) {
-                Lock lock = requireLock(table.lockObject(
-                        space, key, ContainerLock.CIS, C_LockFactory.NO_WAIT),
-                        "retained CIS holder was not reused");
-                table.unlock(lock, 1);
-            }
-        }
-
-        if (table.fastCisRetainedHolderCountForTesting(key) != readers) {
-            throw new AssertionError("stable CIS holders were not retained for reuse");
-        }
-    }
-
-    public static void verifyIdleHolderReclamation() throws Exception {
-        ConcurrentLockSet table = new ConcurrentLockSet(null);
-        ContainerKey key = new ContainerKey(0, 210);
-
-        for (int i = 0; i < 48; i++) {
-            CompatibilitySpace space = new LockSpace(new TestLockOwner());
-            Lock lock = requireLock(table.lockObject(
-                    space, key, ContainerLock.CIS, C_LockFactory.NO_WAIT),
-                    "CIS reader was not granted during holder reclamation proof");
-            table.unlock(lock, 1);
-        }
-        int retained = table.fastCisRetainedHolderCountForTesting(key);
-        if (retained > 32) {
-            throw new AssertionError("retained CIS holder bound exceeded: " + retained);
-        }
-
-        Lock exclusive = requireLock(table.lockObject(
-                new LockSpace(new TestLockOwner()), key,
-                ContainerLock.CX, C_LockFactory.NO_WAIT),
-                "retained zero-count CIS holders blocked CX materialization");
-        table.unlock(exclusive, 1);
-    }
-
     private static Lock requireLock(Lock lock, String message) {
         if (lock == null) {
             throw new AssertionError(message);
