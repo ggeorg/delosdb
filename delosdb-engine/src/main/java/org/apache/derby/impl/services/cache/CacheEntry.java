@@ -21,7 +21,7 @@
 
 package org.apache.derby.impl.services.cache;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -86,6 +86,7 @@ final class CacheEntry {
     private static final LongAdder FAST_KEEP_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_KEEP_SUCCESSES = new LongAdder();
     private static final LongAdder FAST_KEEP_OVERLAP = new LongAdder();
+    private static final LongAdder FAST_KEEP_STRIPE_OVERLAP = new LongAdder();
     private static final LongAdder FAST_KEEP_IDENTITY_MISMATCHES = new LongAdder();
     private static final LongAdder FAST_UNKEEP_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_UNKEEP_SUCCESSES = new LongAdder();
@@ -119,11 +120,19 @@ final class CacheEntry {
     /** How many ordinary users are currently keeping this entry. */
     private int keepCount;
 
+    private static final int FAST_CONTAINER_PIN_STRIPES = 16;
+    private static final int FAST_CONTAINER_PIN_STRIDE = 16;
+    private static final int FAST_CONTAINER_PIN_ARRAY_LENGTH =
+            FAST_CONTAINER_PIN_STRIPES * FAST_CONTAINER_PIN_STRIDE;
+
     /**
      * Additional keep references acquired through the stable ContainerKey
-     * fast path. Ordinary cache entries retain Derby's original int counter.
+     * fast path. This array is allocated only for ContainerKey entries. The
+     * sparse indexes keep independent reader stripes on separate cache lines,
+     * avoiding one globally contended atomic keep counter. Ordinary cache
+     * entries retain Derby's original int counter and allocate no stripes.
      */
-    private final AtomicInteger fastContainerKeepCount = new AtomicInteger();
+    private volatile AtomicIntegerArray fastContainerKeepStripes;
 
     /**
      * Stable ContainerKey entries may use the lock-free keep/release path.
@@ -235,16 +244,23 @@ final class CacheEntry {
         if (HOT_STATE_DIAGNOSTICS) {
             FAST_KEEP_ATTEMPTS.increment();
         }
-        if (!fastContainerAccess || fastContainerFrozen) {
+        AtomicIntegerArray stripes = fastContainerKeepStripes;
+        if (!fastContainerAccess || fastContainerFrozen || stripes == null) {
             return null;
         }
 
-        int fastKeeps = fastContainerKeepCount.incrementAndGet();
-        if (HOT_STATE_DIAGNOSTICS && fastKeeps > 1) {
-            FAST_KEEP_OVERLAP.increment();
+        int stripeIndex = fastContainerStripeIndex();
+        int stripeKeeps = stripes.incrementAndGet(stripeIndex);
+        if (HOT_STATE_DIAGNOSTICS) {
+            if (stripeKeeps > 1) {
+                FAST_KEEP_STRIPE_OVERLAP.increment();
+            }
+            if (totalFastContainerKeeps(stripes) > 1) {
+                FAST_KEEP_OVERLAP.increment();
+            }
         }
         if (!fastContainerAccess || fastContainerFrozen) {
-            fastContainerUnkeepAfterFailedAcquire();
+            fastContainerUnkeepAfterFailedAcquire(stripes, stripeIndex);
             return null;
         }
 
@@ -253,7 +269,7 @@ final class CacheEntry {
             if (HOT_STATE_DIAGNOSTICS) {
                 FAST_KEEP_IDENTITY_MISMATCHES.increment();
             }
-            fastContainerUnkeepAfterFailedAcquire();
+            fastContainerUnkeepAfterFailedAcquire(stripes, stripeIndex);
             return null;
         }
 
@@ -277,16 +293,56 @@ final class CacheEntry {
             return false;
         }
 
+        AtomicIntegerArray stripes = fastContainerKeepStripes;
+        if (stripes == null || !decrementFastContainerKeep(stripes)) {
+            return false;
+        }
+        if (HOT_STATE_DIAGNOSTICS) {
+            FAST_UNKEEP_SUCCESSES.increment();
+        }
+        signalRemoveWaiterIfNeeded();
+        return true;
+    }
+
+    private static int fastContainerStripeIndex() {
+        return ((int) Thread.currentThread().threadId()
+                        & (FAST_CONTAINER_PIN_STRIPES - 1))
+                * FAST_CONTAINER_PIN_STRIDE;
+    }
+
+    private static int totalFastContainerKeeps(AtomicIntegerArray stripes) {
+        if (stripes == null) {
+            return 0;
+        }
+        int total = 0;
+        for (int stripe = 0; stripe < FAST_CONTAINER_PIN_STRIPES; stripe++) {
+            total += stripes.get(stripe * FAST_CONTAINER_PIN_STRIDE);
+        }
+        return total;
+    }
+
+    private static boolean decrementFastContainerKeep(AtomicIntegerArray stripes) {
+        int preferred = fastContainerStripeIndex();
+        if (decrementFastContainerStripe(stripes, preferred)) {
+            return true;
+        }
+        for (int stripe = 0; stripe < FAST_CONTAINER_PIN_STRIPES; stripe++) {
+            int index = stripe * FAST_CONTAINER_PIN_STRIDE;
+            if (index != preferred && decrementFastContainerStripe(stripes, index)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean decrementFastContainerStripe(
+            AtomicIntegerArray stripes, int index) {
         while (true) {
-            int fastKeeps = fastContainerKeepCount.get();
-            if (fastKeeps == 0) {
+            int value = stripes.get(index);
+            if (value == 0) {
                 return false;
             }
-            if (fastContainerKeepCount.compareAndSet(fastKeeps, fastKeeps - 1)) {
-                if (HOT_STATE_DIAGNOSTICS) {
-                    FAST_UNKEEP_SUCCESSES.increment();
-                }
-                signalRemoveWaiterIfNeeded();
+            if (stripes.compareAndSet(index, value, value - 1)) {
                 return true;
             }
             if (HOT_STATE_DIAGNOSTICS) {
@@ -299,6 +355,7 @@ final class CacheEntry {
         FAST_KEEP_ATTEMPTS.reset();
         FAST_KEEP_SUCCESSES.reset();
         FAST_KEEP_OVERLAP.reset();
+        FAST_KEEP_STRIPE_OVERLAP.reset();
         FAST_KEEP_IDENTITY_MISMATCHES.reset();
         FAST_UNKEEP_ATTEMPTS.reset();
         FAST_UNKEEP_SUCCESSES.reset();
@@ -310,6 +367,7 @@ final class CacheEntry {
             hotStateRow("fastKeepAttempts", FAST_KEEP_ATTEMPTS),
             hotStateRow("fastKeepSuccesses", FAST_KEEP_SUCCESSES),
             hotStateRow("fastKeepOverlap", FAST_KEEP_OVERLAP),
+            hotStateRow("fastKeepStripeOverlap", FAST_KEEP_STRIPE_OVERLAP),
             hotStateRow("fastKeepIdentityMismatches", FAST_KEEP_IDENTITY_MISMATCHES),
             hotStateRow("fastUnkeepAttempts", FAST_UNKEEP_ATTEMPTS),
             hotStateRow("fastUnkeepSuccesses", FAST_UNKEEP_SUCCESSES),
@@ -343,7 +401,7 @@ final class CacheEntry {
         }
 
         fastContainerFrozen = true;
-        if (keepCount == 0 && fastContainerKeepCount.get() == 0) {
+        if (keepCount == 0 && totalFastContainerKeeps(fastContainerKeepStripes) == 0) {
             return true;
         }
 
@@ -373,8 +431,9 @@ final class CacheEntry {
         return accessed;
     }
 
-    private void fastContainerUnkeepAfterFailedAcquire() {
-        int remaining = fastContainerKeepCount.decrementAndGet();
+    private void fastContainerUnkeepAfterFailedAcquire(
+            AtomicIntegerArray stripes, int stripeIndex) {
+        int remaining = stripes.decrementAndGet(stripeIndex);
         if (SanityManager.DEBUG) {
             SanityManager.ASSERT(remaining >= 0, "negative fast container keep count");
         }
@@ -389,7 +448,7 @@ final class CacheEntry {
         mutex.lock();
         try {
             if (forRemove != null
-                    && keepCount + fastContainerKeepCount.get() <= 1) {
+                    && keepCount + totalFastContainerKeeps(fastContainerKeepStripes) <= 1) {
                 forRemove.signal();
             }
         } finally {
@@ -463,7 +522,7 @@ final class CacheEntry {
         }
         keepCount--;
         if (forRemove != null
-                && keepCount + fastContainerKeepCount.get() == 1) {
+                && keepCount + totalFastContainerKeeps(fastContainerKeepStripes) == 1) {
             // This entry is only kept by the thread waiting in
             // unkeepForRemove(). Signal that the entry can be removed.
             forRemove.signal();
@@ -476,7 +535,7 @@ final class CacheEntry {
      * @return <code>true</code> if the object is kept
      */
     boolean isKept() {
-        int fastKeeps = fastContainerKeepCount.get();
+        int fastKeeps = totalFastContainerKeeps(fastContainerKeepStripes);
         if (SanityManager.DEBUG) {
             SanityManager.ASSERT(mutex.isHeldByCurrentThread());
             SanityManager.ASSERT(keepCount >= 0);
@@ -499,15 +558,20 @@ final class CacheEntry {
             SanityManager.ASSERT(isKept());
             SanityManager.ASSERT(forRemove == null);
         }
-        if (keepCount + fastContainerKeepCount.get() > 1) {
+        if (keepCount + totalFastContainerKeeps(fastContainerKeepStripes) > 1) {
             forRemove = mutex.newCondition();
-            while (keepCount + fastContainerKeepCount.get() > 1) {
+            while (keepCount + totalFastContainerKeeps(fastContainerKeepStripes) > 1) {
                 forRemove.awaitUninterruptibly();
             }
             forRemove = null;
         }
-        if (fastContainerKeepCount.get() > 0) {
-            fastContainerKeepCount.decrementAndGet();
+        AtomicIntegerArray stripes = fastContainerKeepStripes;
+        if (totalFastContainerKeeps(stripes) > 0) {
+            if (SanityManager.DEBUG) {
+                SanityManager.ASSERT(decrementFastContainerKeep(stripes));
+            } else {
+                decrementFastContainerKeep(stripes);
+            }
         } else {
             keepCount--;
         }
@@ -527,7 +591,16 @@ final class CacheEntry {
         fastContainerAccess = c != null
                 && settingIdentity == null
                 && c.getIdentity() instanceof ContainerKey;
-        if (!fastContainerAccess) {
+        if (fastContainerAccess) {
+            AtomicIntegerArray stripes = fastContainerKeepStripes;
+            if (stripes == null) {
+                fastContainerKeepStripes =
+                        new AtomicIntegerArray(FAST_CONTAINER_PIN_ARRAY_LENGTH);
+            } else if (SanityManager.DEBUG) {
+                SanityManager.ASSERT(totalFastContainerKeeps(stripes) == 0);
+            }
+        } else {
+            fastContainerKeepStripes = null;
             fastContainerAccessed = false;
         }
     }
@@ -587,6 +660,7 @@ final class CacheEntry {
         fastContainerAccess = false;
         fastContainerFrozen = true;
         fastContainerAccessed = false;
+        fastContainerKeepStripes = null;
         cacheable = null;
     }
 }

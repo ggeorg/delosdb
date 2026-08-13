@@ -22,6 +22,10 @@ public final class ContainerCacheFastPinTest extends TestCase {
         ContainerCacheFastPinTestSupport.verifyConcurrentFastPins();
     }
 
+    public void testFastPinCanBeReleasedByAnotherThread() throws Exception {
+        ContainerCacheFastPinTestSupport.verifyCrossThreadFastRelease();
+    }
+
     public void testConcurrentCacheLifecycle() throws Exception {
         ContainerCacheFastPinTestSupport.verifyConcurrentCacheLifecycle();
     }

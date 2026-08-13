@@ -152,6 +152,45 @@ public final class ContainerCacheFastPinTestSupport {
         }
     }
 
+    public static void verifyCrossThreadFastRelease() throws Exception {
+        ContainerKey key = new ContainerKey(0, 147);
+        TestCacheable item = new TestCacheable(key);
+        CacheEntry entry = stableEntry(item);
+
+        if (entry.tryFastContainerKeep(key) != item) {
+            throw new AssertionError("failed to establish fast pin for cross-thread release");
+        }
+
+        AtomicReference<Throwable> failure = new AtomicReference<Throwable>();
+        Thread releaser = new Thread(() -> {
+            try {
+                if (!entry.tryFastContainerUnkeep(item)) {
+                    throw new AssertionError("cross-thread fast release failed");
+                }
+            } catch (Throwable t) {
+                failure.compareAndSet(null, t);
+            }
+        }, "container-cache-cross-thread-release");
+        releaser.start();
+        releaser.join(5_000L);
+        if (releaser.isAlive()) {
+            throw new AssertionError("cross-thread fast release did not finish");
+        }
+        if (failure.get() != null) {
+            throw new AssertionError("cross-thread fast release failed", failure.get());
+        }
+
+        entry.lock();
+        try {
+            if (!entry.freezeFastContainerAccessIfUnkept()) {
+                throw new AssertionError("cross-thread release leaked a striped pin");
+            }
+            entry.unfreezeFastContainerAccess();
+        } finally {
+            entry.unlock();
+        }
+    }
+
     public static void verifyConcurrentCacheLifecycle() throws Exception {
         ConcurrentCache cache = new ConcurrentCache(
                 new TestCacheableFactory(), "ContainerCache", 16, 64);
