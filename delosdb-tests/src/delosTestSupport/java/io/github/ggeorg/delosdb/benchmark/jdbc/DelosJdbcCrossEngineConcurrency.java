@@ -786,7 +786,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             DelosBenchmarkConfig config,
             long measuredOperations,
             long[] values) throws IOException {
-        if (values.length != 23) {
+        if (values.length != 31) {
             throw new IllegalStateException(
                     "Unexpected B-tree point-read diagnostic width: " + values.length);
         }
@@ -800,9 +800,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "eligibleExactPointShapes,rootSnapshotAttempts,rootSnapshotHits,rootSnapshotFallbacks,"
                 + "rootSnapshotHeightTwoHits,rootSnapshotOtherHeightHits,exactStartMatches,"
                 + "previousKeyLockSkipped,previousKeyLockRequested,indexLeafRowFetches,"
+                + "snapshotPointAttempts,snapshotPointHits,snapshotPointSnapshotMisses,"
+                + "snapshotPointLockFallbacks,snapshotPointRevalidationFallbacks,"
+                + "snapshotPointHeldExhaustions,leafSnapshotObservations,leafSnapshotInvalidations,"
                 + "scanInitSingleRowCallsPerOperation,rejectHeldPerScanInit,"
                 + "eligibleExactPointShapesPerScanInit,rootSnapshotHitsPerOperation,"
-                + "indexLeafRowFetchesPerOperation\n";
+                + "indexLeafRowFetchesPerOperation,snapshotPointAttemptsPerOperation,"
+                + "snapshotPointHitsPerOperation,snapshotPointHitRatio\n";
         if (!Files.exists(output)) {
             Files.writeString(output, header, StandardCharsets.UTF_8);
         }
@@ -814,6 +818,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 ? 0.0 : (double) values[15] / measuredOperations;
         double leafFetchesPerOperation = measuredOperations == 0L
                 ? 0.0 : (double) values[22] / measuredOperations;
+        double snapshotAttemptsPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[23] / measuredOperations;
+        double snapshotHitsPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[24] / measuredOperations;
+        double snapshotHitRatio = values[23] == 0L
+                ? 0.0 : (double) values[24] / values[23];
         StringBuilder row = new StringBuilder();
         row.append(options.target().id()).append(',')
                 .append(spec.workload().name()).append(',')
@@ -829,6 +839,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(',').append(format(eligiblePerScanInit))
                 .append(',').append(format(rootHitsPerOperation))
                 .append(',').append(format(leafFetchesPerOperation))
+                .append(',').append(format(snapshotAttemptsPerOperation))
+                .append(',').append(format(snapshotHitsPerOperation))
+                .append(',').append(format(snapshotHitRatio))
                 .append('\n');
         Files.writeString(
                 output, row.toString(), StandardCharsets.UTF_8,
@@ -986,6 +999,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Connection connection = connect(options, database);
                     connection.setAutoCommit(false);
                     connection.setTransactionIsolation(spec.workload().isolationLevel());
+                    if (Boolean.getBoolean(PREFIX + "closeCursorsAtCommit")) {
+                        connection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
+                    }
                     int updateId = 0;
                     int[] readIds = null;
                     int[] expectedReadQuantities = null;

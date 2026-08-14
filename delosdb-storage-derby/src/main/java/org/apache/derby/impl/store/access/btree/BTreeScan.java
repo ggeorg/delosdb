@@ -48,6 +48,7 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
+import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 
 
 import org.apache.derby.impl.store.access.conglomerate.TemplateRow;
@@ -182,6 +183,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
      **/
     protected int lock_operation;
 
+    /** Current row supplied from an immutable exact-key leaf snapshot. */
+    private LeafReadSnapshotHit snapshotPointHit;
+    private boolean snapshotPointLockHeld;
+    private boolean snapshotPointHeldExhausted;
+
 
     /**
      * A 1 element array to turn fetchNext and fetch calls into 
@@ -259,6 +265,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         scan_position = new BTreeRowPosition(this);
 
         scan_position.init();
+        snapshotPointHit = null;
+        snapshotPointLockHeld = false;
+        snapshotPointHeldExhausted = false;
 
         scan_position.current_lock_template = 
             new StoreDataValue[this.init_template.length];
@@ -1044,6 +1053,127 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         return (LeafControlRow) root.search(sp);
     }
 
+    final boolean hasSnapshotPointPosition() {
+        return snapshotPointHit != null;
+    }
+
+    final void copySnapshotPointRow(StoreDataValue[] row)
+            throws StandardException {
+        StoreValueCopySupport.copyRow(
+                snapshotPointHit.row, row, init_scanColumnList);
+    }
+
+    final int trySnapshotPointRead(StoreDataValue[] row)
+            throws StandardException {
+        if (!isSnapshotPointReadCandidate()) {
+            return -1;
+        }
+        BTreePointReadDiagnostics.increment(
+                BTreePointReadDiagnostics.SNAPSHOT_POINT_ATTEMPTS);
+
+        BTree conglomerate = getConglomerate();
+        LeafReadSnapshotHit hit =
+                conglomerate.searchLeafReadSnapshot(init_startKeyValue);
+        if (hit == null) {
+            BTreePointReadDiagnostics.increment(
+                    BTreePointReadDiagnostics.SNAPSHOT_POINT_SNAPSHOT_MISSES);
+            return -1;
+        }
+
+        StoreDataValue rowLocationValue = hit.row[hit.row.length - 1];
+        if (!(rowLocationValue instanceof StoreRowLocation)
+                || !StoreValueCopySupport.copyValue(
+                        scan_position.current_lock_row_loc, rowLocationValue)
+                || !getLockingPolicy().lockScanRowFromSnapshot(
+                        scan_position.current_lock_row_loc, false, lock_operation)) {
+            BTreePointReadDiagnostics.increment(
+                    BTreePointReadDiagnostics.SNAPSHOT_POINT_LOCK_FALLBACKS);
+            return -1;
+        }
+        snapshotPointLockHeld = true;
+
+        if (!conglomerate.leafReadSnapshotStillCurrent(hit)) {
+            BTreePointReadDiagnostics.increment(
+                    BTreePointReadDiagnostics.SNAPSHOT_POINT_REVALIDATION_FALLBACKS);
+            releaseSnapshotPointLock();
+            return -1;
+        }
+
+        snapshotPointHit = hit;
+        StoreValueCopySupport.copyRow(hit.row, row, init_scanColumnList);
+        scan_position.current_rh_qualified = true;
+        stat_numrows_visited++;
+        stat_numrows_qualified++;
+        stat_numpages_visited += 2;
+        scan_state = SCAN_INPROGRESS;
+        BTreePointReadDiagnostics.increment(
+                BTreePointReadDiagnostics.SNAPSHOT_POINT_HITS);
+        return 1;
+    }
+
+    final boolean finishHeldSnapshotPointRead() throws StandardException {
+        if (!snapshotPointHeldExhausted || scan_state != SCAN_HOLD_INPROGRESS) {
+            return false;
+        }
+        snapshotPointHeldExhausted = false;
+        scan_position.current_rh_qualified = false;
+        scan_state = SCAN_DONE;
+        BTreePointReadDiagnostics.increment(
+                BTreePointReadDiagnostics.SNAPSHOT_POINT_HELD_EXHAUSTIONS);
+        return true;
+    }
+
+    final void finishSnapshotPointPosition() throws StandardException {
+        if (snapshotPointHit == null) {
+            return;
+        }
+        releaseSnapshotPointLock();
+        snapshotPointHit = null;
+        scan_position.current_rh_qualified = false;
+        positionAtDoneScan(scan_position);
+    }
+
+    final void observeSnapshotPointLeaf() throws StandardException {
+        if (isSnapshotPointReadShape() && scan_position.current_leaf != null) {
+            getConglomerate().observeLeafReadSnapshot(
+                    scan_position.current_leaf, this);
+        }
+    }
+
+    private boolean isSnapshotPointReadCandidate() throws StandardException {
+        return scan_state == SCAN_INIT && isSnapshotPointReadShape();
+    }
+
+    private boolean isSnapshotPointReadShape() throws StandardException {
+        if (init_forUpdate || init_qualifier != null
+                || init_startKeyValue == null || init_stopKeyValue == null
+                || init_startSearchOperator != ScanController.GE
+                || init_stopSearchOperator != ScanController.GT) {
+            return false;
+        }
+
+        BTree conglomerate = getConglomerate();
+        if (!conglomerate.isUnique()
+                || init_startKeyValue.length != conglomerate.nUniqueColumns
+                || init_stopKeyValue.length != init_startKeyValue.length) {
+            return false;
+        }
+        for (int i = 0; i < init_startKeyValue.length; i++) {
+            if (StoreTypeUtil.compare(
+                    init_startKeyValue[i], init_stopKeyValue[i]) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void releaseSnapshotPointLock() throws StandardException {
+        if (snapshotPointLockHeld) {
+            getLockingPolicy().unlockScanRecordAfterRead(scan_position, false);
+            snapshotPointLockHeld = false;
+        }
+    }
+
     /*
     ** Public Methods of BTreeScan
     */
@@ -1162,6 +1292,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         throws StandardException
     {
         // Scan is closed, make sure no access to any state variables
+        if (snapshotPointHit != null) {
+            releaseSnapshotPointLock();
+            snapshotPointHit = null;
+        }
+        snapshotPointHeldExhausted = false;
         positionAtDoneScanFromClose(scan_position);
 
         super.close();
@@ -1367,6 +1502,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             "BTreeScan.doesCurrentPositionQualify() called on a closed scan.");
         }
 
+        if (hasSnapshotPointPosition()) {
+            return true;
+        }
+
         try
         {
             // Get current page of scan, with latch
@@ -1428,6 +1567,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         {
             SanityManager.ASSERT(this.container != null,
                 "BTreeScan.fetch() called on a closed scan.");
+        }
+
+        if (hasSnapshotPointPosition()) {
+            copySnapshotPointRow(row);
+            return;
         }
 
         try
@@ -1565,6 +1709,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         {
             SanityManager.ASSERT(this.container != null,
                 "BTreeScan.isCurrentPositionDeleted() called on closed scan.");
+        }
+        if (hasSnapshotPointPosition()) {
+            return false;
         }
         try
         {
@@ -2100,7 +2247,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     {
         if (!init_hold || closeHeldScan)
         {
-            // Scan is closed, make sure no access to any state variables
+            // Scan is closed, make sure no access to any state variables.
+            // Transaction-end cleanup releases any remaining row locks.
+            snapshotPointHit = null;
+            snapshotPointLockHeld = false;
+            snapshotPointHeldExhausted = false;
             positionAtDoneScan(scan_position);
 
             super.close();
@@ -2118,8 +2269,21 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         }
         else
         {
-
-            if (this.scan_state == SCAN_INPROGRESS)
+            if (snapshotPointHit != null && this.scan_state == SCAN_INPROGRESS)
+            {
+                // An exact unique singleton has already returned its only row.
+                // Preserve JDBC holdability without manufacturing a physical
+                // B-tree cursor position: after commit, the only legal next()
+                // result is EOF. Release the RC row lock while the controller
+                // is still open, then remember only that terminal state.
+                releaseSnapshotPointLock();
+                snapshotPointHit = null;
+                scan_position.current_rh = null;
+                scan_position.current_rh_qualified = false;
+                snapshotPointHeldExhausted = true;
+                this.scan_state = SCAN_HOLD_INPROGRESS;
+            }
+            else if (this.scan_state == SCAN_INPROGRESS)
             {
                 if (SanityManager.DEBUG)
                 {

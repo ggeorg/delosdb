@@ -42,7 +42,15 @@ final class BTreePointReadDiagnostics {
     static final int PREVIOUS_KEY_LOCK_SKIPPED = 20;
     static final int PREVIOUS_KEY_LOCK_REQUESTED = 21;
     static final int INDEX_LEAF_ROW_FETCHES = 22;
-    static final int WIDTH = 23;
+    static final int SNAPSHOT_POINT_ATTEMPTS = 23;
+    static final int SNAPSHOT_POINT_HITS = 24;
+    static final int SNAPSHOT_POINT_SNAPSHOT_MISSES = 25;
+    static final int SNAPSHOT_POINT_LOCK_FALLBACKS = 26;
+    static final int SNAPSHOT_POINT_REVALIDATION_FALLBACKS = 27;
+    static final int SNAPSHOT_POINT_HELD_EXHAUSTIONS = 28;
+    static final int LEAF_SNAPSHOT_OBSERVATIONS = 29;
+    static final int LEAF_SNAPSHOT_INVALIDATIONS = 30;
+    static final int WIDTH = 31;
 
     private static final boolean ENABLED =
             Boolean.getBoolean("delosdb.diagnostic.btreePointReadPath");

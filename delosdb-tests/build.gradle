@@ -1214,6 +1214,389 @@ tasks.register('runDelosJdbcHotPointReadPathProof', JavaExec) {
     }
 }
 
+// Gate 10F removability proof: the rejected Gate 10C fast path excluded held
+// scans. Run the exact HOT singleton read with JDBC's default holdability and
+// with CLOSE_CURSORS_AT_COMMIT, then fail unless the path counters prove that
+// holdability is the dominant shape blocker. This gate does not change B-tree
+// behavior; physical leaf-latch accounting should remain unchanged.
+def configureHotHoldabilityProof = { JavaExec task, String reportName, boolean closeCursors ->
+    task.group = 'benchmark'
+    task.description = closeCursors
+            ? 'Runs 4c/8c HOT point-read diagnostics with CLOSE_CURSORS_AT_COMMIT.'
+            : 'Runs 4c/8c HOT point-read diagnostics with default JDBC holdability.'
+    task.dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "reports/delosdb/benchmarks/hot-holdability-removability-proof/${reportName}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'HOT holdability removability proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("reports/delosdb/benchmarks/hot-holdability-removability-proof/${reportName}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-hot-holdability-removability-proof/${reportName}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        task.systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.btreePointReadPath': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.hotHoldabilityProof.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.hotHoldabilityProof.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.btreePointReadPathDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.closeCursorsAtCommit':
+                        Boolean.toString(closeCursors)
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcHotHoldabilityDefaultProof', JavaExec) { task ->
+    configureHotHoldabilityProof(task, 'default-holdability', false)
+}
+
+tasks.register('runDelosJdbcHotCloseCursorsProof', JavaExec) { task ->
+    configureHotHoldabilityProof(task, 'close-cursors-at-commit', true)
+    task.mustRunAfter tasks.named('runDelosJdbcHotHoldabilityDefaultProof')
+}
+
+tasks.register('runDelosJdbcHotHoldabilityRemovabilityProof') {
+    group = 'benchmark'
+    description = 'Proves whether JDBC holdability is the Gate 10C HOT singleton-path blocker.'
+    dependsOn tasks.named('runDelosJdbcHotHoldabilityDefaultProof')
+    dependsOn tasks.named('runDelosJdbcHotCloseCursorsProof')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def reportRoot = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/hot-holdability-removability-proof')
+                .get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10F report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10F report has no measurements: ${file}")
+            }
+            def header = lines[0].split(',', -1) as List
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index] }
+                row
+            }
+        }
+        def diagnosticFile = { String variant ->
+            new File(reportRoot,
+                    "${variant}/btree-point-read-path-diagnostics-delos_heap-run-1.csv")
+        }
+        def latchFile = { String variant ->
+            new File(reportRoot,
+                    "${variant}/page-latch-diagnostics-delos_heap-run-1.csv")
+        }
+        def defaults = loadCsv(diagnosticFile('default-holdability'))
+        def closes = loadCsv(diagnosticFile('close-cursors-at-commit'))
+        def defaultLatches = loadCsv(latchFile('default-holdability'))
+        def closeLatches = loadCsv(latchFile('close-cursors-at-commit'))
+        if (defaults.size() != 2 || closes.size() != 2 ||
+                defaultLatches.size() != 2 || closeLatches.size() != 2) {
+            throw new GradleException('Gate 10F expected exactly 4c and 8c measurements per variant.')
+        }
+
+        def byClients = { rows -> rows.collectEntries { [(it.clients): it] } }
+        def defaultByClients = byClients(defaults)
+        def closeByClients = byClients(closes)
+        def defaultLatchByClients = byClients(defaultLatches)
+        def closeLatchByClients = byClients(closeLatches)
+        def decisionLines = ['Gate 10F HOT holdability removability proof']
+        ['4', '8'].each { clients ->
+            def d = defaultByClients[clients]
+            def c = closeByClients[clients]
+            def dl = defaultLatchByClients[clients]
+            def cl = closeLatchByClients[clients]
+            if (d == null || c == null || dl == null || cl == null) {
+                throw new GradleException("Gate 10F missing ${clients}c measurement.")
+            }
+            long dScans = Long.parseLong(d.scanInitSingleRowCalls)
+            long cScans = Long.parseLong(c.scanInitSingleRowCalls)
+            long dHeld = Long.parseLong(d.rejectHeld)
+            long cHeld = Long.parseLong(c.rejectHeld)
+            long dEligible = Long.parseLong(d.eligibleExactPointShapes)
+            long cEligible = Long.parseLong(c.eligibleExactPointShapes)
+            if (dScans == 0L || cScans == 0L) {
+                throw new GradleException("Gate 10F ${clients}c did not observe singleton B-tree scans.")
+            }
+            double defaultHeldRatio = dHeld / (double) dScans
+            double closeHeldRatio = cHeld / (double) cScans
+            double closeEligibleRatio = cEligible / (double) cScans
+            if (defaultHeldRatio < 0.95d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10F %sc default holdability did not prove held-scan rejection: %.3f',
+                        clients, defaultHeldRatio))
+            }
+            if (closeHeldRatio > 0.01d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10F %sc CLOSE_CURSORS still rejected held scans: %.3f',
+                        clients, closeHeldRatio))
+            }
+            if (closeEligibleRatio < 0.95d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10F %sc CLOSE_CURSORS did not expose exact-point eligibility: %.3f',
+                        clients, closeEligibleRatio))
+            }
+
+            long dOps = Long.parseLong(dl.measuredOperations)
+            long cOps = Long.parseLong(cl.measuredOperations)
+            double dLatchesPerOperation = dOps == 0L
+                    ? 0d : Long.parseLong(dl.latchRequests) / (double) dOps
+            double cLatchesPerOperation = cOps == 0L
+                    ? 0d : Long.parseLong(cl.latchRequests) / (double) cOps
+            if (dLatchesPerOperation < 1.8d || cLatchesPerOperation < 1.8d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10F %sc unexpectedly changed the physical leaf-latch path: default=%.3f close=%.3f',
+                        clients, dLatchesPerOperation, cLatchesPerOperation))
+            }
+            def decisionLine = String.format(java.util.Locale.ROOT,
+                    '%sc: default rejectHeld=%.6f, CLOSE eligible=%.6f, latches/op default=%.6f close=%.6f',
+                    clients, defaultHeldRatio, closeEligibleRatio,
+                    dLatchesPerOperation, cLatchesPerOperation)
+            decisionLines.add(decisionLine)
+            logger.lifecycle('Gate 10F ' + decisionLine)
+        }
+        def passLine = 'PASS: JDBC holdability is proven removable from exact HOT point-read eligibility; B-tree leaf latching remains physically unchanged.'
+        decisionLines.add(passLine)
+        new File(reportRoot, 'gate10f-decision.txt').setText(
+                decisionLines.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10F ' + passLine)
+    }
+}
+
+// Gate 10G production proof: default JDBC holdability is preserved while an
+// exact read-only unique singleton uses the immutable leaf snapshot. Fail the
+// task unless the real HOT workload enters the fast path and physically drops
+// the inherited B-tree leaf latch before any five-engine throughput checkpoint.
+tasks.register('runDelosJdbcHotHeldSingletonFastPathProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Proves held exact HOT singleton reads enter the leaf snapshot fast path and remove the page-2 latch.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/hot-held-singleton-fast-path-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'HOT held-singleton fast-path proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/hot-held-singleton-fast-path-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-hot-held-singleton-fast-path-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.btreePointReadPath': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.hotHeldSingletonFastPathProof.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.hotHeldSingletonFastPathProof.transactionsPerClient')
+                        .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.btreePointReadPathDiagnostics': 'true'
+        ])
+    }
+
+    doLast {
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/hot-held-singleton-fast-path-proof').get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10G report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10G report has no measurements: ${file}")
+            }
+            def header = lines[0].split(',', -1) as List
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index] }
+                row
+            }
+        }
+        def diagnostics = loadCsv(new File(
+                reportDir, 'btree-point-read-path-diagnostics-delos_heap-run-1.csv'))
+        def latches = loadCsv(new File(
+                reportDir, 'page-latch-diagnostics-delos_heap-run-1.csv'))
+        def pages = loadCsv(new File(
+                reportDir, 'page-latch-contention-by-page-delos_heap-run-1.csv'))
+        if (diagnostics.size() != 2 || latches.size() != 2) {
+            throw new GradleException('Gate 10G expected exactly 4c and 8c measurements.')
+        }
+
+        def diagByClients = diagnostics.collectEntries { [(it.clients): it] }
+        def latchByClients = latches.collectEntries { [(it.clients): it] }
+        def decision = ['Gate 10G HOT held-singleton fast-path proof']
+        ['4', '8'].each { clients ->
+            def d = diagByClients[clients]
+            def l = latchByClients[clients]
+            if (d == null || l == null) {
+                throw new GradleException("Gate 10G missing ${clients}c measurement.")
+            }
+            long operations = Long.parseLong(d.measuredOperations)
+            long attempts = Long.parseLong(d.snapshotPointAttempts)
+            long hits = Long.parseLong(d.snapshotPointHits)
+            long snapshotMisses = Long.parseLong(d.snapshotPointSnapshotMisses)
+            long lockFallbacks = Long.parseLong(d.snapshotPointLockFallbacks)
+            long revalidationFallbacks = Long.parseLong(d.snapshotPointRevalidationFallbacks)
+            long leafFetches = Long.parseLong(d.indexLeafRowFetches)
+            long latchRequests = Long.parseLong(l.latchRequests)
+            if (operations == 0L || attempts == 0L) {
+                throw new GradleException("Gate 10G ${clients}c observed no HOT fast-path work.")
+            }
+
+            double attemptsPerOperation = attempts / (double) operations
+            double hitRatio = hits / (double) attempts
+            double leafFetchesPerOperation = leafFetches / (double) operations
+            double latchesPerOperation = latchRequests / (double) operations
+            double fallbackRatio = (snapshotMisses + lockFallbacks + revalidationFallbacks) /
+                    (double) attempts
+
+            if (attemptsPerOperation < 0.98d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc fast path was not attempted for the real HOT workload: %.6f/op',
+                        clients, attemptsPerOperation))
+            }
+            if (hitRatio < 0.99d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc fast-path hit ratio too low: %.6f', clients, hitRatio))
+            }
+            if (fallbackRatio > 0.01d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc fallback ratio too high: %.6f', clients, fallbackRatio))
+            }
+            if (leafFetchesPerOperation > 0.02d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc still fetches the physical B-tree leaf: %.6f/op',
+                        clients, leafFetchesPerOperation))
+            }
+            if (latchesPerOperation < 0.80d || latchesPerOperation > 1.20d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc did not reduce physical page latches to ~1/read: %.6f',
+                        clients, latchesPerOperation))
+            }
+
+            long hotLeafContended = pages.findAll {
+                it.clients == clients && it.pageKey.startsWith('Page(2;Container(')
+            }.sum { Long.parseLong(it.contendedLatchRequests) } ?: 0L
+            double hotLeafContentionPerOperation = hotLeafContended / (double) operations
+            if (hotLeafContentionPerOperation > 0.01d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10G %sc page-2 contention remains material: %.6f/op',
+                        clients, hotLeafContentionPerOperation))
+            }
+
+            def line = String.format(java.util.Locale.ROOT,
+                    '%sc: attempts/op=%.6f hitRatio=%.6f leafFetches/op=%.6f latches/op=%.6f page2Contention/op=%.6f',
+                    clients, attemptsPerOperation, hitRatio,
+                    leafFetchesPerOperation, latchesPerOperation,
+                    hotLeafContentionPerOperation)
+            decision.add(line)
+            logger.lifecycle('Gate 10G ' + line)
+        }
+        def passLine = 'PASS: default held HOT singleton reads use the immutable leaf fast path; physical B-tree leaf latching is removed.'
+        decision.add(passLine)
+        new File(reportDir, 'gate10g-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10G ' + passLine)
+    }
+}
+
 // Gate 6C proof: after the root-page latch is removed, measure whether the
 // remaining SAME_TABLE cliff comes from the shared ConcurrentLockSet entry
 // used for compatible container-intent locking.
