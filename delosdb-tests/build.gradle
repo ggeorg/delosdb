@@ -4024,3 +4024,259 @@ tasks.register('runDelosJdbcPostGate6hResidualDiagnosis') {
     dependsOn tasks.named('runDelosJdbcPostGate6hHotPageLatchProof8c'),
             tasks.named('runDelosJdbcPostGate6hResidualLocalityJfr')
 }
+
+
+// Gate 10I-A paired acceptance proof. Compare the exact current Delos heap with
+// the immutable heap-page image disabled versus enabled using a balanced
+// OFF -> ON -> ON -> OFF phase order. Each observation is a direct single-
+// target worker run because the shared coordinator intentionally accepts only
+// canonical multi-engine target sets. This preserves that coordinator contract
+// while still producing six OFF and six ON Delos-heap observations per cell.
+def configureGate10iPairedImageWorker = {
+        JavaExec task, String phaseName, boolean imageEnabled, int run ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10I-A paired acceptance phase ${phaseName}, run ${run}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "reports/delosdb/benchmarks/gate10i-paired-image-acceptance/${phaseName}/run-${run}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10I-A paired image acceptance proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("reports/delosdb/benchmarks/gate10i-paired-image-acceptance/${phaseName}/run-${run}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10i-paired-image-acceptance-${phaseName}-run-${run}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': imageEnabled.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': run.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '3',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+def registerGate10iPairedPhaseWorkers = { String taskSuffix, String phaseName, boolean imageEnabled ->
+    (1..3).collect { run ->
+        tasks.register("runDelosJdbcGate10iPairedImage${taskSuffix}Run${run}", JavaExec) { task ->
+            configureGate10iPairedImageWorker(task, phaseName, imageEnabled, run)
+        }
+    }
+}
+
+def gate10iPairedOffAWorkers = registerGate10iPairedPhaseWorkers('OffA', 'off-a', false)
+def gate10iPairedOnAWorkers = registerGate10iPairedPhaseWorkers('OnA', 'on-a', true)
+def gate10iPairedOnBWorkers = registerGate10iPairedPhaseWorkers('OnB', 'on-b', true)
+def gate10iPairedOffBWorkers = registerGate10iPairedPhaseWorkers('OffB', 'off-b', false)
+
+def gate10iPairedExecutionOrder = []
+gate10iPairedExecutionOrder.addAll(gate10iPairedOffAWorkers)
+gate10iPairedExecutionOrder.addAll(gate10iPairedOnAWorkers)
+gate10iPairedExecutionOrder.addAll(gate10iPairedOnBWorkers)
+gate10iPairedExecutionOrder.addAll(gate10iPairedOffBWorkers)
+(1..<gate10iPairedExecutionOrder.size()).each { index ->
+    gate10iPairedExecutionOrder[index].configure {
+        mustRunAfter gate10iPairedExecutionOrder[index - 1]
+    }
+}
+
+def gate10iPairedOffA = tasks.register('runDelosJdbcGate10iPairedImageOffA') {
+    group = 'benchmark'
+    description = 'Runs the three Gate 10I-A paired image OFF-A worker observations.'
+    dependsOn gate10iPairedOffAWorkers
+}
+def gate10iPairedOnA = tasks.register('runDelosJdbcGate10iPairedImageOnA') {
+    group = 'benchmark'
+    description = 'Runs the three Gate 10I-A paired image ON-A worker observations.'
+    dependsOn gate10iPairedOnAWorkers
+}
+def gate10iPairedOnB = tasks.register('runDelosJdbcGate10iPairedImageOnB') {
+    group = 'benchmark'
+    description = 'Runs the three Gate 10I-A paired image ON-B worker observations.'
+    dependsOn gate10iPairedOnBWorkers
+}
+def gate10iPairedOffB = tasks.register('runDelosJdbcGate10iPairedImageOffB') {
+    group = 'benchmark'
+    description = 'Runs the three Gate 10I-A paired image OFF-B worker observations.'
+    dependsOn gate10iPairedOffBWorkers
+}
+
+tasks.register('runDelosJdbcGate10iPairedImageAcceptanceProof') {
+    group = 'benchmark'
+    description = 'Runs balanced image OFF/ON acceptance proof for HOT, DISJOINT and RANDOM exact PK reads.'
+    dependsOn gate10iPairedExecutionOrder
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/gate10i-paired-image-acceptance')
+                .get().asFile
+
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10I-A paired report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10I-A paired report has no rows: ${file}")
+            }
+            def header = lines[0].split(',', -1) as List
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index] }
+                row
+            }
+        }
+
+        def loadPhase = { String phase ->
+            def rows = []
+            (1..3).each { run ->
+                rows.addAll(loadCsv(new File(
+                        root, "${phase}/run-${run}/delos_heap-run-${run}.csv")))
+            }
+            rows
+        }
+
+        def offRows = []
+        def onRows = []
+        ['off-a', 'off-b'].each { phase -> offRows.addAll(loadPhase(phase)) }
+        ['on-a', 'on-b'].each { phase -> onRows.addAll(loadPhase(phase)) }
+
+        if (offRows.size() != 90 || onRows.size() != 90) {
+            throw new GradleException(
+                    "Gate 10I-A paired proof expected 90 rows/mode, observed off=${offRows.size()} on=${onRows.size()}.")
+        }
+
+        def validateSemantics = { String mode, rows ->
+            def groups = rows.groupBy { it.workload + ':' + it.clients }
+            groups.each { key, values ->
+                def fingerprints = values.collect { it.semanticFingerprint }.toSet()
+                long retries = values.sum { Long.parseLong(it.retryableConflictRetries) } as long
+                if (fingerprints.size() != 1) {
+                    throw new GradleException(
+                            "Gate 10I-A paired ${mode} semantic mismatch for ${key}: ${fingerprints}")
+                }
+                if (retries != 0L) {
+                    throw new GradleException(
+                            "Gate 10I-A paired ${mode} observed retryable conflicts for ${key}: ${retries}")
+                }
+            }
+        }
+        validateSemantics('OFF', offRows)
+        validateSemantics('ON', onRows)
+
+        def median = { List<Double> values ->
+            def sorted = values.sort()
+            int n = sorted.size()
+            n == 0 ? Double.NaN :
+                    (n % 2 == 1 ? sorted[n.intdiv(2)] :
+                            (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d)
+        }
+
+        def modeMedian = { rows, String workload, String clients ->
+            def values = rows.findAll {
+                it.workload == workload && it.clients == clients
+            }.collect { Double.parseDouble(it.operationsPerSecond) }
+            if (values.size() != 6) {
+                throw new GradleException(
+                        "Gate 10I-A paired expected six observations for ${workload}:${clients}, observed ${values.size()}.")
+            }
+            median(values)
+        }
+
+        def decision = [
+                'Gate 10I-A paired immutable heap-page image acceptance proof',
+                'Balanced execution order: OFF-A -> ON-A -> ON-B -> OFF-B; three direct Delos-heap worker runs per phase; six observations per mode/cell.',
+                'Acceptance: HOT 4c/8c/16c must improve >=10%; no workload/client >=2c may regress >10%; 1c guard is -15% because the established harness has high 1c JVM variance.'
+        ]
+
+        def failures = []
+        ['PRIMARY_KEY_READ_HOT',
+         'PRIMARY_KEY_READ_DISJOINT',
+         'PRIMARY_KEY_READ_RANDOM'].each { workload ->
+            ['1', '2', '4', '8', '16'].each { clients ->
+                double off = modeMedian(offRows, workload, clients)
+                double on = modeMedian(onRows, workload, clients)
+                double ratio = on / off
+                double delta = (ratio - 1.0d) * 100.0d
+                def line = String.format(java.util.Locale.ROOT,
+                        '%s %sc: OFF=%.2f ON=%.2f ratio=%.4f delta=%+.2f%%',
+                        workload, clients, off, on, ratio, delta)
+                decision.add(line)
+                logger.lifecycle('Gate 10I-A paired ' + line)
+
+                double regressionFloor = clients == '1' ? 0.85d : 0.90d
+                if (ratio < regressionFloor) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%s %sc regressed %.2f%%',
+                            workload, clients, (1.0d - ratio) * 100.0d))
+                }
+                if (workload == 'PRIMARY_KEY_READ_HOT'
+                        && ['4', '8', '16'].contains(clients)
+                        && ratio < 1.10d) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            'HOT %sc improved only %.2f%%',
+                            clients, delta))
+                }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            decision.add('FAIL: ' + failures.join('; '))
+            new File(root, 'gate10i-paired-decision.txt').setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10I-A paired acceptance failed: ' + failures.join('; '))
+        }
+
+        def passLine = 'PASS: the shared immutable heap-page image reproduces the HOT gain on the same current tree without a material broad-read regression. Gate 10I-A may be accepted; only then profile the remaining post-latch HOT authority.'
+        decision.add(passLine)
+        new File(root, 'gate10i-paired-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10I-A paired ' + passLine)
+    }
+}
