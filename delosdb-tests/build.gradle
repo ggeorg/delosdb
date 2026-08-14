@@ -4280,3 +4280,224 @@ tasks.register('runDelosJdbcGate10iPairedImageAcceptanceProof') {
         logger.lifecycle('Gate 10I-A paired ' + passLine)
     }
 }
+
+
+// Gate 10I-A focused HOT 8c confirmation. The broad paired proof cleared the
+// original RANDOM/DISJOINT concern but its pooled HOT 8c median landed at
+// +7.72% with material phase dispersion. Confirm that single frozen acceptance
+// cell using longer observations and repeated balanced OFF -> ON -> ON -> OFF
+// quartets. Acceptance remains the original >=10% HOT 8c improvement.
+def gate10iHot8cConfirmationRoot = 'reports/delosdb/benchmarks/gate10i-hot8c-confirmation'
+
+def configureGate10iHot8cConfirmationWorker = {
+        JavaExec task, int cycle, String slot, boolean imageEnabled, int sequence ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10I-A focused HOT 8c confirmation cycle ${cycle} ${slot}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10iHot8cConfirmationRoot}/cycle-${cycle}/${slot}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10I-A HOT 8c confirmation requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10iHot8cConfirmationRoot}/cycle-${cycle}/${slot}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10i-hot8c-confirmation-cycle-${cycle}-${slot}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': imageEnabled.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': sequence.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+def gate10iHot8cConfirmationWorkers = []
+int gate10iHot8cSequence = 0
+(1..4).each { cycle ->
+    [['off-a', false], ['on-a', true], ['on-b', true], ['off-b', false]].each { slot ->
+        gate10iHot8cSequence++
+        String slotName = slot[0] as String
+        boolean enabled = slot[1] as boolean
+        int sequence = gate10iHot8cSequence
+        def worker = tasks.register(
+                "runDelosJdbcGate10iHot8cConfirmationCycle${cycle}${slotName.split('-').collect { it.capitalize() }.join()}",
+                JavaExec) { task ->
+            configureGate10iHot8cConfirmationWorker(task, cycle, slotName, enabled, sequence)
+        }
+        gate10iHot8cConfirmationWorkers.add(worker)
+    }
+}
+(1..<gate10iHot8cConfirmationWorkers.size()).each { index ->
+    gate10iHot8cConfirmationWorkers[index].configure {
+        mustRunAfter gate10iHot8cConfirmationWorkers[index - 1]
+    }
+}
+
+tasks.register('runDelosJdbcGate10iHot8cConfirmation') {
+    group = 'benchmark'
+    description = 'Confirms the frozen Gate 10I-A HOT 8c >=10% acceptance criterion with longer balanced observations.'
+    dependsOn gate10iHot8cConfirmationWorkers
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(gate10iHot8cConfirmationRoot)
+                .get().asFile
+
+        def loadSingleRow = { File directory, int sequence ->
+            def file = new File(directory, "delos_heap-run-${sequence}.csv")
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10I-A HOT 8c confirmation report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() != 2) {
+                throw new GradleException(
+                        "Gate 10I-A HOT 8c confirmation expected one row in ${file}, observed ${lines.size() - 1}")
+            }
+            def header = lines[0].split(',', -1) as List
+            def fields = lines[1].split(',', -1)
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index] }
+            row
+        }
+
+        def offRows = []
+        def onRows = []
+        def cycleRows = [:].withDefault { [off: [], on: []] }
+        int sequence = 0
+        (1..4).each { cycle ->
+            [['off-a', false], ['on-a', true], ['on-b', true], ['off-b', false]].each { slot ->
+                sequence++
+                String slotName = slot[0] as String
+                boolean enabled = slot[1] as boolean
+                def row = loadSingleRow(new File(root, "cycle-${cycle}/${slotName}"), sequence)
+                if (row.workload != 'PRIMARY_KEY_READ_HOT' || row.clients != '8') {
+                    throw new GradleException(
+                            "Gate 10I-A HOT 8c confirmation unexpected row shape: ${row.workload}:${row.clients}")
+                }
+                if (enabled) {
+                    onRows.add(row)
+                    cycleRows[cycle].on.add(row)
+                } else {
+                    offRows.add(row)
+                    cycleRows[cycle].off.add(row)
+                }
+            }
+        }
+
+        if (offRows.size() != 8 || onRows.size() != 8) {
+            throw new GradleException(
+                    "Gate 10I-A HOT 8c confirmation expected 8 rows/mode, observed off=${offRows.size()} on=${onRows.size()}")
+        }
+
+        def allRows = offRows + onRows
+        def fingerprints = allRows.collect { it.semanticFingerprint }.toSet()
+        long retries = allRows.sum { Long.parseLong(it.retryableConflictRetries) } as long
+        if (fingerprints.size() != 1) {
+            throw new GradleException(
+                    "Gate 10I-A HOT 8c confirmation semantic mismatch: ${fingerprints}")
+        }
+        if (retries != 0L) {
+            throw new GradleException(
+                    "Gate 10I-A HOT 8c confirmation observed retryable conflicts: ${retries}")
+        }
+
+        def median = { List<Double> values ->
+            def sorted = values.sort()
+            int n = sorted.size()
+            n % 2 == 1 ? sorted[n.intdiv(2)] :
+                    (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d
+        }
+        def throughputMedian = { rows ->
+            median(rows.collect { Double.parseDouble(it.operationsPerSecond) })
+        }
+
+        double off = throughputMedian(offRows)
+        double on = throughputMedian(onRows)
+        double ratio = on / off
+        double delta = (ratio - 1.0d) * 100.0d
+        def decision = [
+                'Gate 10I-A focused HOT 8c confirmation',
+                'Four repeated balanced OFF -> ON -> ON -> OFF quartets; eight OFF and eight ON observations.',
+                'Each observation: HOT 8c only, 10,000 transactions/client, one warmup, three measured iterations.',
+                'Frozen acceptance criterion: pooled ON median must improve >=10% over pooled OFF median.'
+        ]
+
+        (1..4).each { cycle ->
+            double cycleOff = throughputMedian(cycleRows[cycle].off)
+            double cycleOn = throughputMedian(cycleRows[cycle].on)
+            double cycleDelta = (cycleOn / cycleOff - 1.0d) * 100.0d
+            def cycleLine = String.format(java.util.Locale.ROOT,
+                    'cycle %d: OFF=%.2f ON=%.2f delta=%+.2f%%',
+                    cycle, cycleOff, cycleOn, cycleDelta)
+            decision.add(cycleLine)
+            logger.lifecycle('Gate 10I-A HOT 8c ' + cycleLine)
+        }
+
+        def pooledLine = String.format(java.util.Locale.ROOT,
+                'pooled: OFF=%.2f ON=%.2f ratio=%.4f delta=%+.2f%%',
+                off, on, ratio, delta)
+        decision.add(pooledLine)
+        logger.lifecycle('Gate 10I-A HOT 8c ' + pooledLine)
+
+        def decisionFile = new File(root, 'gate10i-hot8c-confirmation-decision.txt')
+        if (ratio < 1.10d) {
+            def failLine = String.format(java.util.Locale.ROOT,
+                    'FAIL: HOT 8c improved only %.2f%%; Gate 10I-A remains acceptance-pending.', delta)
+            decision.add(failLine)
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(failLine)
+        }
+
+        def passLine = 'PASS: HOT 8c reproduces the frozen >=10% gain. Combined with the clean broad paired safety matrix, Gate 10I-A may proceed to repository integrity and formal acceptance.'
+        decision.add(passLine)
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10I-A HOT 8c ' + passLine)
+    }
+}
