@@ -77,6 +77,8 @@ def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def lockEntryDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java')
+def lockWaitDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/LockWaitDiagnosticTestSupport.java')
 def cacheEntryDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java')
 def containerCacheFastPinTestSupportSource = file(
@@ -329,6 +331,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/LockWaitDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java'
@@ -363,6 +366,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(lockEntryDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
+    }
+    from(lockWaitDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(cacheEntryDiagnosticTestSupportSource) {
@@ -1655,8 +1661,7 @@ def configureGate10hHotWorker = { JavaExec task, String reportName, String targe
                 'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
-                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
-                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient':
                         providers.gradleProperty('delosdb.benchmark.gate10h.operationBudgetPerClient')
                                 .getOrElse('500000'),
                 'delosdb.benchmark.crossEngineConcurrency.payload': '128',
@@ -1791,7 +1796,7 @@ tasks.register('runDelosJdbcGate10hResidualHotAuthorityProof') {
                         clients, contendedPercent, pageWaitPerOperation, maxPageWaitNanos))
             }
 
-            def matcher = (dominant.pageKey =~ /Container\(0;(\d+)\)/)
+            def matcher = (dominant.pageKey =~ /Container\(0;\s*(\d+)\)/)
             if (!matcher.find()) {
                 throw new GradleException("Gate 10H cannot parse dominant page key: ${dominant.pageKey}")
             }
