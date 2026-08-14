@@ -223,6 +223,12 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         throws StandardException;
 
 
+    private void resetSnapshotPointState() {
+        snapshotPointHit = null;
+        snapshotPointLockHeld = false;
+        snapshotPointHeldExhausted = false;
+    }
+
     /**
      * Shared initialization code between init() and reopenScan().
      * <p>
@@ -265,9 +271,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         scan_position = new BTreeRowPosition(this);
 
         scan_position.init();
-        snapshotPointHit = null;
-        snapshotPointLockHeld = false;
-        snapshotPointHeldExhausted = false;
+        resetSnapshotPointState();
 
         scan_position.current_lock_template = 
             new StoreDataValue[this.init_template.length];
@@ -2249,9 +2253,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         {
             // Scan is closed, make sure no access to any state variables.
             // Transaction-end cleanup releases any remaining row locks.
-            snapshotPointHit = null;
-            snapshotPointLockHeld = false;
-            snapshotPointHeldExhausted = false;
+            resetSnapshotPointState();
             positionAtDoneScan(scan_position);
 
             super.close();
