@@ -62,6 +62,7 @@ public final class HeapPageReadImageArchitectureProofTest extends MvccSqlTestSup
             long[] diagnostics = snapshotDiagnostics();
             assertTrue("expected page-image invalidation after writes", diagnostics[8] > 0L);
             assertTrue("expected fallback/republication after writes", diagnostics[6] > 0L);
+            connection.commit();
         }
 
         shutdownDatabase(DATABASE);
@@ -75,6 +76,7 @@ public final class HeapPageReadImageArchitectureProofTest extends MvccSqlTestSup
             assertQuantity(reopened, 40);
             assertTrue("second reopened read should hit a newly published image",
                     snapshotDiagnostics()[1] > 0L);
+            reopened.commit();
         } finally {
             shutdownDatabase(DATABASE);
         }

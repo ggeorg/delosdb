@@ -77,10 +77,16 @@ public abstract class GenericConglomerateController
         }
         ContainerHandle container = open_conglom.getContainer();
         LockingPolicy locking = container.getLockingPolicy();
+        boolean secondaryLocked =
+                (open_conglom.getOpenMode() & ContainerHandle.MODE_SECONDARY_LOCKED) != 0;
         RecordHandle record = pos.current_rh;
-        if (!locking.supportsImmutablePageRead()
+        if ((!secondaryLocked
+                && (locking == null || !locking.supportsImmutablePageRead()))
                 || !HeapPageReadImageAccess.hasImage(container, record)) {
             return false;
+        }
+        if (secondaryLocked) {
+            return HeapPageReadImageAccess.fetch(container, record, row, fetchDesc);
         }
         boolean locked = locking.lockRecordForRead(
                 open_conglom.getRawTran(), container, record, true, false);
@@ -93,6 +99,15 @@ public abstract class GenericConglomerateController
             locking.unlockRecordAfterRead(
                     open_conglom.getRawTran(), container, record, false, true);
         }
+    }
+
+    private boolean supportsImmutablePageRead()
+    {
+        if ((open_conglom.getOpenMode() & ContainerHandle.MODE_SECONDARY_LOCKED) != 0) {
+            return true;
+        }
+        LockingPolicy locking = open_conglom.getContainer().getLockingPolicy();
+        return locking != null && locking.supportsImmutablePageRead();
     }
 
     /**************************************************************************
@@ -340,9 +355,7 @@ public abstract class GenericConglomerateController
                 fetchDesc, 
                 false) != null);
 
-        if (ret_val
-                && !open_conglom.isForUpdate()
-                && open_conglom.getContainer().getLockingPolicy().supportsImmutablePageRead()) {
+        if (ret_val && !open_conglom.isForUpdate() && supportsImmutablePageRead()) {
             HeapPageReadImageAccess.publish(
                     open_conglom.getContainer(), pos.current_page);
         }
