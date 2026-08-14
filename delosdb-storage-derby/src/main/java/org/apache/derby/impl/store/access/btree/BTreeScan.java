@@ -388,6 +388,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
                 pos.current_slot = sp.resultSlot;
                 exact     = sp.resultExact;
+                if (exact) {
+                    BTreePointReadDiagnostics.increment(
+                            BTreePointReadDiagnostics.EXACT_START_MATCHES);
+                }
 
                 // The way that scans are used, the caller calls next()
                 // to position on the first row.  If the result of the
@@ -421,6 +425,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                     }
                 }
             }
+
+            BTreePointReadDiagnostics.increment(need_previous_lock
+                    ? BTreePointReadDiagnostics.PREVIOUS_KEY_LOCK_REQUESTED
+                    : BTreePointReadDiagnostics.PREVIOUS_KEY_LOCK_SKIPPED);
 
             boolean latch_released = false;
             if (need_previous_lock)
@@ -955,19 +963,80 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         return(true);
     }
 
+    final void diagnoseExactPointReadShape() throws StandardException {
+        if (!BTreePointReadDiagnostics.enabled()) {
+            return;
+        }
+        if (init_forUpdate) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_FOR_UPDATE);
+            return;
+        }
+        if (init_hold) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_HELD);
+            return;
+        }
+        if (init_qualifier != null) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_QUALIFIER);
+            return;
+        }
+        if (init_startKeyValue == null) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_MISSING_START);
+            return;
+        }
+        if (init_stopKeyValue == null) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_MISSING_STOP);
+            return;
+        }
+        if (init_startSearchOperator != ScanController.GE) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_START_OPERATOR);
+            return;
+        }
+        if (init_stopSearchOperator != ScanController.GT) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_STOP_OPERATOR);
+            return;
+        }
+
+        BTree conglomerate = getConglomerate();
+        if (!conglomerate.isUnique()) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_NON_UNIQUE);
+            return;
+        }
+        if (init_startKeyValue.length != conglomerate.nUniqueColumns) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_START_KEY_LENGTH);
+            return;
+        }
+        if (init_stopKeyValue.length != init_startKeyValue.length) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_STOP_KEY_LENGTH);
+            return;
+        }
+        for (int i = 0; i < init_startKeyValue.length; i++) {
+            if (StoreTypeUtil.compare(init_startKeyValue[i], init_stopKeyValue[i]) != 0) {
+                BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.REJECT_UNEQUAL_BOUNDS);
+                return;
+            }
+        }
+        BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ELIGIBLE_EXACT_POINT_SHAPES);
+    }
+
     private LeafControlRow searchFromRoot(
             SearchParameters sp, boolean countVisitedPages)
             throws StandardException {
         BTree conglomerate = getConglomerate();
         int snapshotHeight = conglomerate.rootRoutingTreeHeight();
+        BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ROOT_SNAPSHOT_ATTEMPTS);
         ControlRow result = conglomerate.searchFromRootRoutingSnapshot(this, sp);
         if (result != null) {
+            BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ROOT_SNAPSHOT_HITS);
+            BTreePointReadDiagnostics.increment(snapshotHeight == 2
+                    ? BTreePointReadDiagnostics.ROOT_SNAPSHOT_HEIGHT_TWO_HITS
+                    : BTreePointReadDiagnostics.ROOT_SNAPSHOT_OTHER_HEIGHT_HITS);
             if (countVisitedPages && snapshotHeight != 0) {
                 stat_numpages_visited += snapshotHeight;
             }
             return (LeafControlRow) result;
         }
 
+        BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ROOT_SNAPSHOT_FALLBACKS);
         ControlRow root = ControlRow.get(this, BTree.ROOTPAGEID);
         if (countVisitedPages) {
             stat_numpages_visited += root.getLevel() + 1;

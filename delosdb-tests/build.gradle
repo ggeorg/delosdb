@@ -71,6 +71,8 @@ def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
+def btreePointReadDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def lockEntryDiagnosticTestSupportSource = file(
@@ -324,6 +326,7 @@ sourceSets {
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java'
@@ -352,6 +355,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     }
     from(pageLatchDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(btreePointReadDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/btree'
     }
     from(deadlockVictimLifecycleTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
@@ -1129,6 +1135,81 @@ tasks.register('runDelosJdbcPageLatchContentionProof', JavaExec) {
                         'delosdb.benchmark.pageLatchProof.caseTimeoutSeconds').getOrElse('180'),
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
                 'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true'
+        ])
+    }
+}
+
+
+// HOT exact-path proof: explain why the real JDBC singleton PK read still
+// acquires the lower B-tree page after lock-free root routing.
+tasks.register('runDelosJdbcHotPointReadPathProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Counts exact singleton B-tree scan shape/rejection reasons and page latches for 4c/8c HOT reads.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/hot-point-read-path-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'HOT point-read path proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/hot-point-read-path-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-hot-point-read-path-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.btreePointReadPath': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.hotPointReadPathProof.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.hotPointReadPathProof.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.btreePointReadPathDiagnostics': 'true'
         ])
     }
 }

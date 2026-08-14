@@ -474,6 +474,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (pageLatchDiagnosticsEnabled()) {
                     resetPageLatchDiagnostics();
                 }
+                if (btreePointReadPathDiagnosticsEnabled()) {
+                    resetBTreePointReadPathDiagnostics();
+                }
                 if (lockEntryDiagnosticsEnabled()) {
                     resetLockEntryDiagnostics();
                 }
@@ -499,6 +502,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] pageLatchContentionByPage = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchContentionByPage()
                         : null;
+                long[] btreePointReadPathDiagnostics = btreePointReadPathDiagnosticsEnabled()
+                        ? snapshotBTreePointReadPathDiagnostics()
+                        : null;
                 String[] lockEntryDiagnostics = lockEntryDiagnosticsEnabled()
                         ? snapshotLockEntryDiagnostics()
                         : null;
@@ -519,6 +525,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                             options, spec, config, measuredOperations, pageLatchDiagnostics);
                     writePageLatchContentionByPage(
                             options, spec, config, pageLatchContentionByPage);
+                }
+                if (btreePointReadPathDiagnostics != null) {
+                    writeBTreePointReadPathDiagnostics(
+                            options, spec, config, measuredOperations, btreePointReadPathDiagnostics);
                 }
                 if (lockEntryDiagnostics != null) {
                     writeLockEntryDiagnostics(
@@ -748,6 +758,80 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         Files.writeString(
                 output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean btreePointReadPathDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "btreePointReadPathDiagnostics");
+    }
+
+    private static void resetBTreePointReadPathDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.btree.BTreePointReadDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static long[] snapshotBTreePointReadPathDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.btree.BTreePointReadDiagnosticTestSupport");
+        return (long[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeBTreePointReadPathDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            long[] values) throws IOException {
+        if (values.length != 23) {
+            throw new IllegalStateException(
+                    "Unexpected B-tree point-read diagnostic width: " + values.length);
+        }
+        Path output = options.reportDirectory().resolve(
+                "btree-point-read-path-diagnostics-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "fetchRowsCalls,scanInitSingleRowCalls,rejectForUpdate,rejectHeld,rejectQualifier,"
+                + "rejectMissingStart,rejectMissingStop,rejectStartOperator,rejectStopOperator,"
+                + "rejectNonUnique,rejectStartKeyLength,rejectStopKeyLength,rejectUnequalBounds,"
+                + "eligibleExactPointShapes,rootSnapshotAttempts,rootSnapshotHits,rootSnapshotFallbacks,"
+                + "rootSnapshotHeightTwoHits,rootSnapshotOtherHeightHits,exactStartMatches,"
+                + "previousKeyLockSkipped,previousKeyLockRequested,indexLeafRowFetches,"
+                + "scanInitSingleRowCallsPerOperation,rejectHeldPerScanInit,"
+                + "eligibleExactPointShapesPerScanInit,rootSnapshotHitsPerOperation,"
+                + "indexLeafRowFetchesPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        double scanInitPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[1] / measuredOperations;
+        double heldPerScanInit = values[1] == 0L ? 0.0 : (double) values[3] / values[1];
+        double eligiblePerScanInit = values[1] == 0L ? 0.0 : (double) values[13] / values[1];
+        double rootHitsPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[15] / measuredOperations;
+        double leafFetchesPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[22] / measuredOperations;
+        StringBuilder row = new StringBuilder();
+        row.append(options.target().id()).append(',')
+                .append(spec.workload().name()).append(',')
+                .append(spec.clients()).append(',')
+                .append(spec.operationsPerTransaction()).append(',')
+                .append(config.rowCount()).append(',')
+                .append(measuredOperations);
+        for (long value : values) {
+            row.append(',').append(value);
+        }
+        row.append(',').append(format(scanInitPerOperation))
+                .append(',').append(format(heldPerScanInit))
+                .append(',').append(format(eligiblePerScanInit))
+                .append(',').append(format(rootHitsPerOperation))
+                .append(',').append(format(leafFetchesPerOperation))
+                .append('\n');
+        Files.writeString(
+                output, row.toString(), StandardCharsets.UTF_8,
                 java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
     }
