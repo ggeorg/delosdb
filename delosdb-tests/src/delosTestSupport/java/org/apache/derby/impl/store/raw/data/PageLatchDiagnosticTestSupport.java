@@ -22,4 +22,8 @@ public final class PageLatchDiagnosticTestSupport {
     public static String[] contentionByPage() {
         return BasePage.pageLatchContentionByPageForTesting();
     }
+
+    public static String[] detailedContentionByPage() {
+        return BasePage.pageLatchContentionByPageDetailedForTesting();
+    }
 }

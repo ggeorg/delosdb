@@ -38,6 +38,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.LongAccumulator;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -114,6 +115,8 @@ final class ConcurrentLockSet implements LockTable {
 
     private static final boolean LOCK_ENTRY_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.lockEntry");
+    private static final boolean LOCK_WAIT_DIAGNOSTICS =
+            Boolean.getBoolean("delosdb.diagnostic.lockWait");
     private static final boolean HOT_STATE_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.hotState");
     private static final LongAdder FAST_CIS_ACQUIRE_ATTEMPTS = new LongAdder();
@@ -124,6 +127,9 @@ final class ConcurrentLockSet implements LockTable {
     private static final LockEntryStats CONTAINER_KEY_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats RECORD_ID_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats OTHER_ENTRY_STATS = new LockEntryStats();
+    private static final LogicalWaitStats CONTAINER_KEY_WAIT_STATS = new LogicalWaitStats();
+    private static final LogicalWaitStats RECORD_ID_WAIT_STATS = new LogicalWaitStats();
+    private static final LogicalWaitStats OTHER_WAIT_STATS = new LogicalWaitStats();
 
     private static final class LockEntryStats {
         private final LongAdder acquisitions = new LongAdder();
@@ -134,6 +140,18 @@ final class ConcurrentLockSet implements LockTable {
             acquisitions.reset();
             contendedAcquisitions.reset();
             waitNanos.reset();
+        }
+    }
+
+    private static final class LogicalWaitStats {
+        private final LongAdder waits = new LongAdder();
+        private final LongAdder waitNanos = new LongAdder();
+        private final LongAccumulator maxWaitNanos = new LongAccumulator(Long::max, 0L);
+
+        private void reset() {
+            waits.reset();
+            waitNanos.reset();
+            maxWaitNanos.reset();
         }
     }
 
@@ -646,6 +664,46 @@ final class ConcurrentLockSet implements LockTable {
                 + stats.contendedAcquisitions.sum() + "," + stats.waitNanos.sum();
     }
 
+    static void resetLogicalWaitDiagnosticsForTesting() {
+        CONTAINER_KEY_WAIT_STATS.reset();
+        RECORD_ID_WAIT_STATS.reset();
+        OTHER_WAIT_STATS.reset();
+    }
+
+    static String[] snapshotLogicalWaitDiagnosticsForTesting() {
+        return new String[] {
+            logicalWaitRow("ContainerKey", CONTAINER_KEY_WAIT_STATS),
+            logicalWaitRow("RecordId", RECORD_ID_WAIT_STATS),
+            logicalWaitRow("Other", OTHER_WAIT_STATS)
+        };
+    }
+
+    private static void recordLogicalWait(Lockable ref, long waitNanos) {
+        if (!LOCK_WAIT_DIAGNOSTICS) {
+            return;
+        }
+        LogicalWaitStats stats = logicalWaitStats(ref);
+        stats.waits.increment();
+        stats.waitNanos.add(waitNanos);
+        stats.maxWaitNanos.accumulate(waitNanos);
+    }
+
+    private static LogicalWaitStats logicalWaitStats(Lockable ref) {
+        String name = ref.getClass().getName();
+        if ("org.apache.derby.iapi.store.raw.ContainerKey".equals(name)) {
+            return CONTAINER_KEY_WAIT_STATS;
+        }
+        if ("org.apache.derby.impl.store.raw.data.RecordId".equals(name)) {
+            return RECORD_ID_WAIT_STATS;
+        }
+        return OTHER_WAIT_STATS;
+    }
+
+    private static String logicalWaitRow(String name, LogicalWaitStats stats) {
+        return name + "," + stats.waits.sum() + "," + stats.waitNanos.sum()
+                + "," + stats.maxWaitNanos.get();
+    }
+
 	/*
 	** Public Methods
 	*/
@@ -855,10 +913,12 @@ final class ConcurrentLockSet implements LockTable {
 
         ActiveLock waitingLock = (ActiveLock) lockItem;
         lockItem = null;
+        long logicalWaitStarted = LOCK_WAIT_DIAGNOSTICS ? System.nanoTime() : 0L;
 
         int earlyWakeupCount = 0;
         long startWaitTime = 0;
 
+        try {
 forever:	for (;;) {
 
                 byte wakeupReason = 0;
@@ -1060,6 +1120,11 @@ forever:	for (;;) {
 
 
             } // for(;;)
+        } finally {
+            if (logicalWaitStarted != 0L) {
+                recordLogicalWait(ref, System.nanoTime() - logicalWaitStarted);
+            }
+        }
 	}
 
 	/**

@@ -133,6 +133,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "databaseRoot", options.databaseRoot());
         addProperty(command, "reportDirectory", options.reportDirectory().resolve("workers"));
         addProperty(command, "rows", options.rows());
+        addProperty(command, "sqliteSharedCache", options.sqliteSharedCache());
         addProperty(command, "clients", options.clients());
         addProperty(command, "widths", options.widths());
         addProperty(command, "workloads", options.workloads());
@@ -463,6 +464,12 @@ public final class DelosJdbcCrossEngineConcurrency {
             String productVersion = csvSafe(metadata.getDatabaseProductVersion());
             String driverVersion = csvSafe(metadata.getDriverVersion());
             List<String> tables = prepareTables(verifier, options, spec, config);
+            if (options.target() == Target.SQLITE) {
+                writeSqliteRuntimeMetadata(verifier, options, spec, config, tables);
+            }
+            if (heapAuthorityDiagnosticsEnabled() && options.target() == Target.DELOS_HEAP) {
+                writeDerbyConglomerateMap(verifier, options, spec, config, tables);
+            }
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
                     options, spec, database, verifier, tables, config.rowCount())) {
                 Long expectedSemantic = null;
@@ -479,6 +486,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if (lockEntryDiagnosticsEnabled()) {
                     resetLockEntryDiagnostics();
+                }
+                if (lockWaitDiagnosticsEnabled()) {
+                    resetLockWaitDiagnostics();
                 }
                 if (cacheEntryDiagnosticsEnabled()) {
                     resetCacheEntryDiagnostics();
@@ -502,11 +512,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] pageLatchContentionByPage = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchContentionByPage()
                         : null;
+                String[] detailedPageLatchContentionByPage = heapAuthorityDiagnosticsEnabled()
+                        ? snapshotDetailedPageLatchContentionByPage()
+                        : null;
                 long[] btreePointReadPathDiagnostics = btreePointReadPathDiagnosticsEnabled()
                         ? snapshotBTreePointReadPathDiagnostics()
                         : null;
                 String[] lockEntryDiagnostics = lockEntryDiagnosticsEnabled()
                         ? snapshotLockEntryDiagnostics()
+                        : null;
+                String[] lockWaitDiagnostics = lockWaitDiagnosticsEnabled()
+                        ? snapshotLockWaitDiagnostics()
                         : null;
                 String[] cacheEntryDiagnostics = cacheEntryDiagnosticsEnabled()
                         ? snapshotCacheEntryDiagnostics()
@@ -525,6 +541,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                             options, spec, config, measuredOperations, pageLatchDiagnostics);
                     writePageLatchContentionByPage(
                             options, spec, config, pageLatchContentionByPage);
+                    if (detailedPageLatchContentionByPage != null) {
+                        writeDetailedPageLatchContentionByPage(
+                                options, spec, config, measuredOperations,
+                                detailedPageLatchContentionByPage);
+                    }
                 }
                 if (btreePointReadPathDiagnostics != null) {
                     writeBTreePointReadPathDiagnostics(
@@ -533,6 +554,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockEntryDiagnostics != null) {
                     writeLockEntryDiagnostics(
                             options, spec, config, measuredOperations, lockEntryDiagnostics);
+                }
+                if (lockWaitDiagnostics != null) {
+                    writeLockWaitDiagnostics(
+                            options, spec, config, measuredOperations, lockWaitDiagnostics);
                 }
                 if (cacheEntryDiagnostics != null) {
                     writeCacheEntryDiagnostics(
@@ -627,6 +652,69 @@ public final class DelosJdbcCrossEngineConcurrency {
                     .append(contended).append(',')
                     .append(waitNanos).append(',')
                     .append(format(contendedPercent)).append(',')
+                    .append(format(waitNanosPerOperation)).append('\n');
+        }
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean lockWaitDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "lockWaitDiagnostics");
+    }
+
+    private static void resetLockWaitDiagnostics() throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.services.locks.LockWaitDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static String[] snapshotLockWaitDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.services.locks.LockWaitDiagnosticTestSupport");
+        return (String[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeLockWaitDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            String[] rows) throws IOException {
+        Path output = options.reportDirectory().resolve(
+                "logical-lock-wait-diagnostics-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "lockableClass,logicalWaits,totalWaitNanos,maxWaitNanos,"
+                + "waitsPerOperation,waitNanosPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String row : rows) {
+            String[] fields = row.split(",", -1);
+            if (fields.length != 4) {
+                throw new IllegalStateException("Unexpected logical lock-wait diagnostic row: " + row);
+            }
+            long waits = Long.parseLong(fields[1]);
+            long waitNanos = Long.parseLong(fields[2]);
+            double waitsPerOperation = measuredOperations == 0L
+                    ? 0.0 : waits / (double) measuredOperations;
+            double waitNanosPerOperation = measuredOperations == 0L
+                    ? 0.0 : waitNanos / (double) measuredOperations;
+            out.append(options.target().id()).append(',')
+                    .append(spec.workload().name()).append(',')
+                    .append(spec.clients()).append(',')
+                    .append(spec.operationsPerTransaction()).append(',')
+                    .append(config.rowCount()).append(',')
+                    .append(measuredOperations).append(',')
+                    .append(fields[0]).append(',')
+                    .append(waits).append(',')
+                    .append(waitNanos).append(',')
+                    .append(fields[3]).append(',')
+                    .append(format(waitsPerOperation)).append(',')
                     .append(format(waitNanosPerOperation)).append('\n');
         }
         Files.writeString(
@@ -762,6 +850,57 @@ public final class DelosJdbcCrossEngineConcurrency {
                 java.nio.file.StandardOpenOption.APPEND);
     }
 
+    private static void writeDetailedPageLatchContentionByPage(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            String[] rows) throws IOException {
+        Path output = options.reportDirectory().resolve(
+                "page-latch-authority-by-page-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,pageKey,"
+                + "latchRequests,contendedLatchRequests,ownerWaitCalls,ownerWaitNanos,maxOwnerWaitNanos,"
+                + "latchesPerOperation,contendedPercent,waitNanosPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String row : rows) {
+            String[] values = row.split("\t", -1);
+            if (values.length != 6) {
+                throw new IllegalStateException("Unexpected detailed page-latch row: " + row);
+            }
+            long requests = Long.parseLong(values[1]);
+            long contended = Long.parseLong(values[2]);
+            long waitNanos = Long.parseLong(values[4]);
+            double latchesPerOperation = measuredOperations == 0L
+                    ? 0.0 : requests / (double) measuredOperations;
+            double contendedPercent = requests == 0L ? 0.0 : contended * 100.0 / requests;
+            double waitNanosPerOperation = measuredOperations == 0L
+                    ? 0.0 : waitNanos / (double) measuredOperations;
+            out.append(options.target().id()).append(',')
+                    .append(spec.workload().name()).append(',')
+                    .append(spec.clients()).append(',')
+                    .append(spec.operationsPerTransaction()).append(',')
+                    .append(config.rowCount()).append(',')
+                    .append(measuredOperations).append(',')
+                    .append(csvSafe(values[0])).append(',')
+                    .append(requests).append(',')
+                    .append(contended).append(',')
+                    .append(values[3]).append(',')
+                    .append(waitNanos).append(',')
+                    .append(values[5]).append(',')
+                    .append(format(latchesPerOperation)).append(',')
+                    .append(format(contendedPercent)).append(',')
+                    .append(format(waitNanosPerOperation)).append('\n');
+        }
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
     private static boolean btreePointReadPathDiagnosticsEnabled() {
         return Boolean.getBoolean(PREFIX + "btreePointReadPathDiagnostics");
     }
@@ -872,6 +1011,17 @@ public final class DelosJdbcCrossEngineConcurrency {
         return (String[]) support.getMethod("contentionByPage").invoke(null);
     }
 
+    private static String[] snapshotDetailedPageLatchContentionByPage()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.PageLatchDiagnosticTestSupport");
+        return (String[]) support.getMethod("detailedContentionByPage").invoke(null);
+    }
+
+    private static boolean heapAuthorityDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "heapAuthorityDiagnostics");
+    }
+
     private static void writePageLatchDiagnostics(
             Options options,
             Spec spec,
@@ -961,6 +1111,127 @@ public final class DelosJdbcCrossEngineConcurrency {
             tables.add(scenario.tableName());
         }
         return List.copyOf(tables);
+    }
+
+    private static void writeDerbyConglomerateMap(
+            Connection connection,
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            List<String> tables) throws SQLException, IOException {
+        Path output = options.reportDirectory().resolve(
+                "derby-conglomerate-map-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,tableName,"
+                + "conglomerateNumber,rawContainerKey,conglomerateName,isIndex\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        String sql = "select c.conglomeratenumber, c.conglomeratename, c.isindex "
+                + "from sys.sysconglomerates c join sys.systables t on c.tableid = t.tableid "
+                + "where t.tablename = ? order by c.conglomeratenumber";
+        StringBuilder rows = new StringBuilder();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (String table : tables) {
+                statement.setString(1, table.toUpperCase(Locale.ROOT));
+                try (ResultSet rs = statement.executeQuery()) {
+                    while (rs.next()) {
+                        long conglomerateNumber = rs.getLong(1);
+                        rows.append(options.target().id()).append(',')
+                                .append(spec.workload().name()).append(',')
+                                .append(spec.clients()).append(',')
+                                .append(spec.operationsPerTransaction()).append(',')
+                                .append(config.rowCount()).append(',')
+                                .append(csvSafe(table)).append(',')
+                                .append(conglomerateNumber).append(',')
+                                .append(csvSafe("Container(0;" + conglomerateNumber + ")")).append(',')
+                                .append(csvSafe(rs.getString(2))).append(',')
+                                .append(rs.getBoolean(3)).append('\n');
+                    }
+                }
+            }
+        }
+        Files.writeString(
+                output, rows.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static void writeSqliteRuntimeMetadata(
+            Connection connection,
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            List<String> tables) throws SQLException, IOException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        StringBuilder out = new StringBuilder();
+        out.append("workload=").append(spec.workload().name()).append('\n')
+                .append("clients=").append(spec.clients()).append('\n')
+                .append("operationsPerTransaction=").append(spec.operationsPerTransaction()).append('\n')
+                .append("rowCount=").append(config.rowCount()).append('\n')
+                .append("sqliteVersion=").append(singleValue(connection, "select sqlite_version()"))
+                .append('\n')
+                .append("driverVersion=").append(metadata.getDriverVersion()).append('\n')
+                .append("sharedCacheRequested=").append(options.sqliteSharedCache()).append('\n')
+                .append("omitSharedCacheCompileOption=")
+                .append(singleValue(connection,
+                        "select sqlite_compileoption_used('OMIT_SHARED_CACHE')"))
+                .append('\n')
+                .append("journalMode=").append(pragmaValue(connection, "journal_mode")).append('\n')
+                .append("lockingMode=").append(pragmaValue(connection, "locking_mode")).append('\n')
+                .append("synchronous=").append(pragmaValue(connection, "synchronous")).append('\n')
+                .append("pageSize=").append(pragmaValue(connection, "page_size")).append('\n')
+                .append("cacheSize=").append(pragmaValue(connection, "cache_size")).append('\n')
+                .append("mmapSize=").append(pragmaValue(connection, "mmap_size")).append('\n')
+                .append("benchmarkDdl=").append(sqliteBenchmarkDdl(tables)).append('\n')
+                .append("compileOptions=").append(sqliteCompileOptions(connection)).append('\n')
+                .append('\n');
+        Path output = options.reportDirectory().resolve(
+                "sqlite-runtime-metadata-run-" + options.run() + ".txt");
+        Files.writeString(
+                output, out.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static String sqliteBenchmarkDdl(List<String> tables) {
+        StringBuilder ddl = new StringBuilder();
+        for (String table : tables) {
+            if (ddl.length() != 0) {
+                ddl.append(" | ");
+            }
+            ddl.append("create table ").append(table)
+                    .append(" (id int not null primary key, category int not null, bucket int not null, ")
+                    .append("quantity int not null, payload varchar(4096) not null); ")
+                    .append("create index ").append(table).append("_CATEGORY_IDX on ")
+                    .append(table).append(" (category); ")
+                    .append("create index ").append(table).append("_RANGE_IDX on ")
+                    .append(table).append(" (bucket, quantity)");
+        }
+        return ddl.toString();
+    }
+
+    private static String pragmaValue(Connection connection, String pragma) throws SQLException {
+        return singleValue(connection, "pragma " + pragma);
+    }
+
+    private static String singleValue(Connection connection, String sql) throws SQLException {
+        try (java.sql.Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery(sql)) {
+            return rs.next() ? Objects.toString(rs.getObject(1), "") : "";
+        }
+    }
+
+    private static String sqliteCompileOptions(Connection connection) throws SQLException {
+        List<String> options = new ArrayList<>();
+        try (java.sql.Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery("pragma compile_options")) {
+            while (rs.next()) {
+                options.add(rs.getString(1));
+            }
+        }
+        Collections.sort(options);
+        return String.join("|", options);
     }
 
     private static final class ConcurrentCase implements AutoCloseable {
@@ -2019,8 +2290,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ";WRITE_DELAY=0;DB_CLOSE_ON_EXIT=FALSE";
             }
             if (this == SQLITE) {
-                return "jdbc:sqlite:" + database.resolve("database.sqlite").toAbsolutePath().normalize()
+                String url = "jdbc:sqlite:" + database.resolve("database.sqlite").toAbsolutePath().normalize()
                         + "?journal_mode=WAL&synchronous=FULL&busy_timeout=3000";
+                return options.sqliteSharedCache() ? url + "&shared_cache=true" : url;
             }
             return "jdbc:derby:" + database.toAbsolutePath().normalize() + ";create=true";
         }
@@ -2221,6 +2493,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String clients,
             String widths,
             String workloads,
+            boolean sqliteSharedCache,
             int transactionsPerClient,
             int fixedWorkloadOperationBudgetPerClient,
             int payload,
@@ -2265,6 +2538,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "workloads",
                             "PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM,"
                                     + "DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE"),
+                    Boolean.parseBoolean(System.getProperty(PREFIX + "sqliteSharedCache", "false")),
                     Integer.parseInt(System.getProperty(PREFIX + "transactionsPerClient", "50")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixedWorkloadOperationBudgetPerClient", "0")),
                     Integer.parseInt(System.getProperty(PREFIX + "payload", "128")),

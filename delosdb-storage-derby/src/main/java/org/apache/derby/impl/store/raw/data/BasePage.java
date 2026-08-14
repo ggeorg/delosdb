@@ -55,6 +55,7 @@ import java.io.ObjectInput;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 
@@ -97,9 +98,11 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
             new ConcurrentHashMap<>();
 
     private static final class PageLatchContention {
+        private final LongAdder requests = new LongAdder();
         private final LongAdder contendedRequests = new LongAdder();
         private final LongAdder ownerWaitCalls = new LongAdder();
         private final LongAdder ownerWaitNanos = new LongAdder();
+        private final AtomicLong maxOwnerWaitNanos = new AtomicLong();
     }
 
 	/**
@@ -1736,6 +1739,23 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                 .toArray(String[]::new);
     }
 
+    static String[] pageLatchContentionByPageDetailedForTesting() {
+        return PAGE_LATCH_CONTENTION_BY_PAGE.entrySet().stream()
+                .sorted(Comparator.comparingLong(
+                        (Map.Entry<PageKey, PageLatchContention> entry) ->
+                                entry.getValue().ownerWaitNanos.sum()).reversed())
+                .map(entry -> {
+                    PageLatchContention contention = entry.getValue();
+                    return entry.getKey() + "\t"
+                            + contention.requests.sum() + "\t"
+                            + contention.contendedRequests.sum() + "\t"
+                            + contention.ownerWaitCalls.sum() + "\t"
+                            + contention.ownerWaitNanos.sum() + "\t"
+                            + contention.maxOwnerWaitNanos.get();
+                })
+                .toArray(String[]::new);
+    }
+
     /**
      * Wait for the current page owner to release the exclusive latch.
      * Caller holds this page's monitor.
@@ -1770,6 +1790,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
             long ownerWaitNanos = System.nanoTime() - ownerWaitStarted;
             PAGE_LATCH_OWNER_WAIT_NANOS.add(ownerWaitNanos);
             pageContention.ownerWaitNanos.add(ownerWaitNanos);
+            pageContention.maxOwnerWaitNanos.accumulateAndGet(ownerWaitNanos, Math::max);
         }
     }
 
@@ -1784,6 +1805,8 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 
         if (PAGE_LATCH_DIAGNOSTICS) {
             PAGE_LATCH_REQUESTS.increment();
+            PAGE_LATCH_CONTENTION_BY_PAGE.computeIfAbsent(
+                    identity, ignored -> new PageLatchContention()).requests.increment();
         }
 
 		RawTransaction t = requester.getTransaction();

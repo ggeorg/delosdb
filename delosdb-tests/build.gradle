@@ -1597,6 +1597,293 @@ tasks.register('runDelosJdbcHotHeldSingletonFastPathProof', JavaExec) {
     }
 }
 
+// Gate 10H proof-only tranche. Gate 10G removed the B-tree leaf latch; this
+// gate proves whether the remaining HOT serializer is the base heap page,
+// separates physical page blocking from logical lock waits, and records the
+// actual SQLite/Xerial runtime plus a default-private vs shared-cache control.
+def configureGate10hHotWorker = { JavaExec task, String reportName, String target, boolean sharedCache ->
+    task.group = 'benchmark'
+    task.dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars,
+            sqliteBenchmarkRuntime)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "reports/delosdb/benchmarks/gate10h-residual-hot-authority/${reportName}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10H residual HOT authority proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("reports/delosdb/benchmarks/gate10h-residual-hot-authority/${reportName}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10h-${reportName}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def properties = [
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': target,
+                'delosdb.benchmark.crossEngineConcurrency.targets': target,
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.gate10h.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        providers.gradleProperty('delosdb.benchmark.gate10h.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.sqliteSharedCache': Boolean.toString(sharedCache)
+        ]
+        if (target == 'delos_heap') {
+            properties.putAll([
+                    'delosdb.diagnostic.pageLatch': 'true',
+                    'delosdb.diagnostic.lockWait': 'true',
+                    'delosdb.diagnostic.btreePointReadPath': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.lockWaitDiagnostics': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.btreePointReadPathDiagnostics': 'true'
+            ])
+        }
+        task.systemProperties(properties)
+    }
+}
+
+tasks.register('runDelosJdbcGate10hDelosResidualAuthorityProof', JavaExec) { task ->
+    task.description = 'Maps the post-Gate-10G HOT latch to the Derby heap and measures page-vs-logical-lock blocking.'
+    configureGate10hHotWorker(task, 'delos-residual-authority', 'delos_heap', false)
+}
+
+tasks.register('runDelosJdbcGate10hSqlitePrivateCacheProof', JavaExec) { task ->
+    task.description = 'Records SQLite/Xerial runtime metadata and HOT throughput with the normal private-cache configuration.'
+    configureGate10hHotWorker(task, 'sqlite-private-cache', 'sqlite', false)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10hDelosResidualAuthorityProof')
+}
+
+tasks.register('runDelosJdbcGate10hSqliteSharedCacheProof', JavaExec) { task ->
+    task.description = 'Runs the same SQLite HOT workload with Xerial shared_cache enabled as an architecture control.'
+    configureGate10hHotWorker(task, 'sqlite-shared-cache', 'sqlite', true)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10hSqlitePrivateCacheProof')
+}
+
+tasks.register('runDelosJdbcGate10hResidualHotAuthorityProof') {
+    group = 'benchmark'
+    description = 'Proves the residual Delos HOT authority and compares SQLite private vs shared cache without changing production behavior.'
+    dependsOn tasks.named('runDelosJdbcGate10hDelosResidualAuthorityProof')
+    dependsOn tasks.named('runDelosJdbcGate10hSqlitePrivateCacheProof')
+    dependsOn tasks.named('runDelosJdbcGate10hSqliteSharedCacheProof')
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/gate10h-residual-hot-authority').get().asFile
+        def delosDir = new File(root, 'delos-residual-authority')
+        def sqlitePrivateDir = new File(root, 'sqlite-private-cache')
+        def sqliteSharedDir = new File(root, 'sqlite-shared-cache')
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10H report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10H report has no measurements: ${file}")
+            }
+            def header = lines[0].split(',', -1) as List
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index] }
+                row
+            }
+        }
+
+        def latchTotals = loadCsv(new File(
+                delosDir, 'page-latch-diagnostics-delos_heap-run-1.csv'))
+        def pageAuthority = loadCsv(new File(
+                delosDir, 'page-latch-authority-by-page-delos_heap-run-1.csv'))
+        def congloms = loadCsv(new File(
+                delosDir, 'derby-conglomerate-map-delos_heap-run-1.csv'))
+        def lockWaits = loadCsv(new File(
+                delosDir, 'logical-lock-wait-diagnostics-delos_heap-run-1.csv'))
+        def btree = loadCsv(new File(
+                delosDir, 'btree-point-read-path-diagnostics-delos_heap-run-1.csv'))
+        def latchByClients = latchTotals.collectEntries { [(it.clients): it] }
+        def btreeByClients = btree.collectEntries { [(it.clients): it] }
+        def decision = ['Gate 10H residual HOT authority proof']
+
+        ['4', '8'].each { clients ->
+            def total = latchByClients[clients]
+            def b = btreeByClients[clients]
+            if (total == null || b == null) {
+                throw new GradleException("Gate 10H missing Delos ${clients}c measurement.")
+            }
+            long operations = Long.parseLong(total.measuredOperations)
+            long totalLatches = Long.parseLong(total.latchRequests)
+            double latchesPerOperation = totalLatches / (double) operations
+            if (latchesPerOperation < 0.80d || latchesPerOperation > 1.20d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10H %sc expected the post-10G ~1-latch/read state, observed %.6f',
+                        clients, latchesPerOperation))
+            }
+            long leafFetches = Long.parseLong(b.indexLeafRowFetches)
+            if (leafFetches / (double) operations > 0.02d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10H %sc regressed into physical B-tree leaf fetches: %.6f/op',
+                        clients, leafFetches / (double) operations))
+            }
+
+            def pages = pageAuthority.findAll { it.clients == clients }
+            if (pages.isEmpty()) {
+                throw new GradleException("Gate 10H ${clients}c has no page-authority rows.")
+            }
+            def dominant = pages.max { Long.parseLong(it.ownerWaitNanos) }
+            long pageRequests = Long.parseLong(dominant.latchRequests)
+            long contended = Long.parseLong(dominant.contendedLatchRequests)
+            long pageWaitNanos = Long.parseLong(dominant.ownerWaitNanos)
+            long maxPageWaitNanos = Long.parseLong(dominant.maxOwnerWaitNanos)
+            double requestsPerOperation = pageRequests / (double) operations
+            double contendedPercent = pageRequests == 0L ? 0.0d : contended * 100.0d / pageRequests
+            double pageWaitPerOperation = pageWaitNanos / (double) operations
+            if (requestsPerOperation < 0.90d) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10H %sc has no single residual page authority: dominant requests/op=%.6f',
+                        clients, requestsPerOperation))
+            }
+            double minContention = clients == '8' ? 10.0d : 5.0d
+            double minWaitPerOperation = clients == '8' ? 1000.0d : 250.0d
+            if (contendedPercent < minContention || pageWaitPerOperation < minWaitPerOperation
+                    || maxPageWaitNanos <= 0L) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10H %sc residual page does not materially block readers: contended=%.3f%% wait/op=%.1f ns maxWait=%d ns',
+                        clients, contendedPercent, pageWaitPerOperation, maxPageWaitNanos))
+            }
+
+            def matcher = (dominant.pageKey =~ /Container\(0;(\d+)\)/)
+            if (!matcher.find()) {
+                throw new GradleException("Gate 10H cannot parse dominant page key: ${dominant.pageKey}")
+            }
+            def rawContainer = "Container(0;${matcher.group(1)})"
+            def mapping = congloms.find {
+                it.clients == clients && it.rawContainerKey == rawContainer && it.isIndex == 'false'
+            }
+            if (mapping == null) {
+                throw new GradleException(
+                        "Gate 10H dominant page ${dominant.pageKey} is not mapped to the benchmark base heap.")
+            }
+
+            def relevantLockWaits = lockWaits.findAll {
+                it.clients == clients && (it.lockableClass == 'RecordId' || it.lockableClass == 'ContainerKey')
+            }
+            long logicalWaitNanos = relevantLockWaits.inject(0L) { totalWait, row ->
+                totalWait + Long.parseLong(row.totalWaitNanos)
+            }
+            long logicalWaits = relevantLockWaits.inject(0L) { totalWaits, row ->
+                totalWaits + Long.parseLong(row.logicalWaits)
+            }
+            if (pageWaitNanos > 0L && logicalWaitNanos > pageWaitNanos / 10L) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10H %sc logical row/container lock waits are material relative to page blocking: logical=%d ns page=%d ns',
+                        clients, logicalWaitNanos, pageWaitNanos))
+            }
+
+            def line = String.format(java.util.Locale.ROOT,
+                    '%sc: heapPage=%s requests/op=%.6f contended=%.3f%% wait/op=%.1f ns maxWait=%d ns logicalWaits=%d logicalWaitNanos=%d',
+                    clients, dominant.pageKey, requestsPerOperation, contendedPercent,
+                    pageWaitPerOperation, maxPageWaitNanos, logicalWaits, logicalWaitNanos)
+            decision.add(line)
+            logger.lifecycle('Gate 10H ' + line)
+        }
+
+        def privateRows = loadCsv(new File(sqlitePrivateDir, 'sqlite-run-1.csv'))
+        def sharedRows = loadCsv(new File(sqliteSharedDir, 'sqlite-run-1.csv'))
+        def privateByClients = privateRows.collectEntries { [(it.clients): it] }
+        def sharedByClients = sharedRows.collectEntries { [(it.clients): it] }
+        def privateMetadata = new File(sqlitePrivateDir, 'sqlite-runtime-metadata-run-1.txt')
+        def sharedMetadata = new File(sqliteSharedDir, 'sqlite-runtime-metadata-run-1.txt')
+        if (!privateMetadata.isFile() || !sharedMetadata.isFile()) {
+            throw new GradleException('Gate 10H SQLite runtime metadata is missing.')
+        }
+        def privateText = privateMetadata.getText('UTF-8')
+        def sharedText = sharedMetadata.getText('UTF-8')
+        ['sqliteVersion=', 'driverVersion=', 'journalMode=', 'lockingMode=', 'synchronous=',
+         'pageSize=', 'cacheSize=', 'mmapSize=', 'compileOptions=', 'benchmarkDdl='].each { token ->
+            if (!privateText.contains(token) || !sharedText.contains(token)) {
+                throw new GradleException("Gate 10H SQLite metadata missing ${token}")
+            }
+        }
+        if (!privateText.contains('sharedCacheRequested=false')) {
+            throw new GradleException('Gate 10H SQLite private control did not record sharedCacheRequested=false.')
+        }
+        if (!sharedText.contains('sharedCacheRequested=true')) {
+            throw new GradleException('Gate 10H SQLite shared control did not record sharedCacheRequested=true.')
+        }
+        if (sharedText.contains('omitSharedCacheCompileOption=1')) {
+            throw new GradleException('Gate 10H SQLite runtime was compiled with OMIT_SHARED_CACHE; shared-cache control is invalid.')
+        }
+        if (!privateText.toLowerCase(java.util.Locale.ROOT).contains('id int not null primary key')) {
+            throw new GradleException('Gate 10H SQLite metadata did not preserve the benchmark INT PRIMARY KEY DDL.')
+        }
+
+        ['4', '8'].each { clients ->
+            def normal = privateByClients[clients]
+            def shared = sharedByClients[clients]
+            if (normal == null || shared == null) {
+                throw new GradleException("Gate 10H missing SQLite ${clients}c private/shared measurement.")
+            }
+            if (normal.semanticFingerprint != shared.semanticFingerprint) {
+                throw new GradleException("Gate 10H SQLite ${clients}c semantic fingerprint differs between cache modes.")
+            }
+            double privateOps = Double.parseDouble(normal.operationsPerSecond)
+            double sharedOps = Double.parseDouble(shared.operationsPerSecond)
+            def line = String.format(java.util.Locale.ROOT,
+                    'SQLite %sc: private=%.2f op/s shared=%.2f op/s shared/private=%.4f',
+                    clients, privateOps, sharedOps, sharedOps / privateOps)
+            decision.add(line)
+            logger.lifecycle('Gate 10H ' + line)
+        }
+
+        decision.add('Source path: GenericConglomerateController.fetch -> OpenConglomerate.latchPage -> BaseContainerHandle.getPage -> BaseContainer.latchPage -> BasePage.setExclusive -> StoredPage.fetchFromSlot/restoreRecordFromSlot.')
+        def passLine = 'PASS: the post-Gate-10G HOT serializer is the base heap page, with material physical latch blocking and no comparable logical row/container lock wait. SQLite private-vs-shared cache evidence is recorded without attributing the effect to one internal mutex. Gate 10I-A should prototype a shared immutable heap-page read image first.'
+        decision.add(passLine)
+        new File(root, 'gate10h-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10H ' + passLine)
+    }
+}
+
 // Gate 6C proof: after the root-page latch is removed, measure whether the
 // remaining SAME_TABLE cliff comes from the shared ConcurrentLockSet entry
 // used for compatible container-intent locking.
