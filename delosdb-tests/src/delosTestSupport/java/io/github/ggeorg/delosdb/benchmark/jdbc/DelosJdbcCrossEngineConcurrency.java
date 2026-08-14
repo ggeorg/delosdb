@@ -123,6 +123,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         command.add("-Xms" + options.childHeap());
         command.add("-Xmx" + options.childHeap());
         command.add("-XX:+AlwaysPreTouch");
+        if (target == Target.DELOS_HEAP
+                && Boolean.getBoolean("delosdb.experimental.heapPageReadImage")) {
+            command.add("-Ddelosdb.experimental.heapPageReadImage=true");
+        }
         if (target == Target.SQLITE) {
             command.add("--enable-native-access=ALL-UNNAMED");
         }
