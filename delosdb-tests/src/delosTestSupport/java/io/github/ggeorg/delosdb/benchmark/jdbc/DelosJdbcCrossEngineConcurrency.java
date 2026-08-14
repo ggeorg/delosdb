@@ -481,6 +481,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (pageLatchDiagnosticsEnabled()) {
                     resetPageLatchDiagnostics();
                 }
+                if (heapPageReadImageDiagnosticsEnabled()) {
+                    resetHeapPageReadImageDiagnostics();
+                }
                 if (btreePointReadPathDiagnosticsEnabled()) {
                     resetBTreePointReadPathDiagnostics();
                 }
@@ -508,6 +511,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 long[] pageLatchDiagnostics = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchDiagnostics()
+                        : null;
+                long[] heapPageReadImageDiagnostics = heapPageReadImageDiagnosticsEnabled()
+                        ? snapshotHeapPageReadImageDiagnostics()
                         : null;
                 String[] pageLatchContentionByPage = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchContentionByPage()
@@ -546,6 +552,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 options, spec, config, measuredOperations,
                                 detailedPageLatchContentionByPage);
                     }
+                }
+                if (heapPageReadImageDiagnostics != null) {
+                    writeHeapPageReadImageDiagnostics(
+                            options, spec, config, measuredOperations,
+                            heapPageReadImageDiagnostics);
                 }
                 if (btreePointReadPathDiagnostics != null) {
                     writeBTreePointReadPathDiagnostics(
@@ -981,6 +992,74 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(',').append(format(snapshotAttemptsPerOperation))
                 .append(',').append(format(snapshotHitsPerOperation))
                 .append(',').append(format(snapshotHitRatio))
+                .append('\n');
+        Files.writeString(
+                output, row.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean heapPageReadImageDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "heapPageReadImageDiagnostics");
+    }
+
+    private static void resetHeapPageReadImageDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.HeapPageReadImageDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static long[] snapshotHeapPageReadImageDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.raw.data.HeapPageReadImageDiagnosticTestSupport");
+        return (long[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeHeapPageReadImageDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            long[] values) throws IOException {
+        if (values.length != 12) {
+            throw new IllegalStateException(
+                    "Unexpected heap-page read-image diagnostic width: " + values.length);
+        }
+        Path output = options.reportDirectory().resolve(
+                "heap-page-read-image-diagnostics-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "attempts,hits,misses,generationFailures,recordFailures,unsupported,fallbacks,"
+                + "imagesPublished,imagesInvalidated,bytesCopied,currentImageBytes,peakImageBytes,"
+                + "attemptsPerOperation,hitsPerOperation,hitRatio,fallbackRatio,bytesCopiedPerOperation\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        double attemptsPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[0] / measuredOperations;
+        double hitsPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[1] / measuredOperations;
+        double hitRatio = values[0] == 0L ? 0.0 : (double) values[1] / values[0];
+        double fallbackRatio = values[0] == 0L ? 0.0 : (double) values[6] / values[0];
+        double bytesPerOperation = measuredOperations == 0L
+                ? 0.0 : (double) values[9] / measuredOperations;
+        StringBuilder row = new StringBuilder();
+        row.append(options.target().id()).append(',')
+                .append(spec.workload().name()).append(',')
+                .append(spec.clients()).append(',')
+                .append(spec.operationsPerTransaction()).append(',')
+                .append(config.rowCount()).append(',')
+                .append(measuredOperations);
+        for (long value : values) {
+            row.append(',').append(value);
+        }
+        row.append(',').append(format(attemptsPerOperation))
+                .append(',').append(format(hitsPerOperation))
+                .append(',').append(format(hitRatio))
+                .append(',').append(format(fallbackRatio))
+                .append(',').append(format(bytesPerOperation))
                 .append('\n');
         Files.writeString(
                 output, row.toString(), StandardCharsets.UTF_8,

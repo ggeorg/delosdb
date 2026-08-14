@@ -217,4 +217,11 @@ public class RowLocking2 extends RowLockingRR
         lf.unlockGroup(
             t.getCompatibilitySpace(), container_handle.getUniqueId());
 	}
+    @Override
+    public boolean supportsImmutablePageRead()
+    {
+        return true;
+    }
+
+
 }

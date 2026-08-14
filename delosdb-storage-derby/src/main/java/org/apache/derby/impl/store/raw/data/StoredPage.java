@@ -7035,6 +7035,30 @@ public class StoredPage extends CachedPage
         }
     }
 
+    HeapPageReadImage captureHeapPageReadImage()
+    {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(isLatched());
+        }
+        if (isOverflowPage() || pageData == null) {
+            return null;
+        }
+        int count = recordCount();
+        int[] offsets = new int[count];
+        StoredRecordHeader[] headerCopies = new StoredRecordHeader[count];
+        for (int slot = 0; slot < count; slot++) {
+            offsets[slot] = getRecordOffset(slot);
+            headerCopies[slot] = new StoredRecordHeader(getHeaderAtSlot(slot));
+        }
+        return new HeapPageReadImage(
+                getPageId(),
+                getPageVersion(),
+                pageData.clone(),
+                slotFieldSize,
+                offsets,
+                headerCopies);
+    }
+
     /*
      * methods that is called underneath a page action
      */

@@ -103,4 +103,11 @@ public class RowLocking2nohold extends RowLocking2
 	{
         return;
 	}
+    @Override
+    public boolean supportsImmutablePageRead()
+    {
+        return false;
+    }
+
+
 }

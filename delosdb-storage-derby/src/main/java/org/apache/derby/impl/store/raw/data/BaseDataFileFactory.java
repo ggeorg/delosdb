@@ -87,6 +87,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 
 import java.io.File;
 import java.io.IOException;
@@ -128,6 +129,8 @@ public class BaseDataFileFactory
             new DelosRawStoreIoMetrics();
     private final DelosRawStoreIoFaultInjector rawStoreIoFaultInjector =
             new DelosRawStoreIoFaultInjector();
+    private final ConcurrentHashMap<PageKey, HeapPageReadImage> heapPageReadImages =
+            new ConcurrentHashMap<>();
     private String rawStoreIoIdentity;
 
     /* writableStorageFactory == (WritableStorageFactory) storageFactory if 
@@ -517,8 +520,42 @@ public class BaseDataFileFactory
         fileHandler = new RFResource( this);
     } // end of boot
 
+    HeapPageReadImage heapPageReadImage(PageKey key) {
+        return heapPageReadImages.get(key);
+    }
+
+    void publishHeapPageReadImage(HeapPageReadImage image) {
+        heapPageReadImages.compute(image.pageKey(), (key, current) -> {
+            if (current != null && current.pageVersion() == image.pageVersion()) {
+                return current;
+            }
+            int previousBytes = current == null ? 0 : current.bytes();
+            HeapPageReadImageAccess.imagePublished(
+                    image.bytes(), image.bytes() - previousBytes);
+            return image;
+        });
+    }
+
+    void invalidateHeapPageReadImage(PageKey key) {
+        if (key == null) {
+            return;
+        }
+        HeapPageReadImage removed = heapPageReadImages.remove(key);
+        if (removed != null) {
+            HeapPageReadImageAccess.imageInvalidated(removed.bytes());
+        }
+    }
+
+    private void clearHeapPageReadImages() {
+        for (HeapPageReadImage image : heapPageReadImages.values()) {
+            HeapPageReadImageAccess.imageInvalidated(image.bytes());
+        }
+        heapPageReadImages.clear();
+    }
+
 	public void	stop() 
     {
+        clearHeapPageReadImages();
 		boolean OK = false;
 
 		if (rawStoreFactory != null)

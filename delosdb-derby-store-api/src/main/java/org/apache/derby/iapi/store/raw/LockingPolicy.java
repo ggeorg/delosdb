@@ -203,4 +203,14 @@ public interface LockingPolicy {
 		Get the mode of this policy
 	*/
 	public int getMode();
+
+    /**
+     * Whether read-only heap fetches may take a row read lock before
+     * consulting an immutable page image. The default is conservative;
+     * cursor-stability row locking opts in explicitly.
+     */
+    default boolean supportsImmutablePageRead() {
+        return false;
+    }
 }
+

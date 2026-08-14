@@ -33,7 +33,12 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowUtil;
 
+import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
+import org.apache.derby.iapi.store.raw.LockingPolicy;
+import org.apache.derby.iapi.store.raw.RecordHandle;
+
+import org.apache.derby.impl.store.raw.data.HeapPageReadImageAccess;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -62,6 +67,33 @@ public abstract class GenericConglomerateController
      * Private/Protected methods of This class:
      **************************************************************************
      */
+
+    private boolean tryFetchFromImmutablePage(
+            RowPosition pos, Object[] row, FetchDescriptor fetchDesc)
+            throws StandardException
+    {
+        if (open_conglom.isForUpdate()) {
+            return false;
+        }
+        ContainerHandle container = open_conglom.getContainer();
+        LockingPolicy locking = container.getLockingPolicy();
+        RecordHandle record = pos.current_rh;
+        if (!locking.supportsImmutablePageRead()
+                || !HeapPageReadImageAccess.hasImage(container, record)) {
+            return false;
+        }
+        boolean locked = locking.lockRecordForRead(
+                open_conglom.getRawTran(), container, record, true, false);
+        if (!locked) {
+            return false;
+        }
+        try {
+            return HeapPageReadImageAccess.fetch(container, record, row, fetchDesc);
+        } finally {
+            locking.unlockRecordAfterRead(
+                    open_conglom.getRawTran(), container, record, false, true);
+        }
+    }
 
     /**************************************************************************
      * Public Methods of This class:
@@ -260,6 +292,12 @@ public abstract class GenericConglomerateController
 
         getRowPositionFromRowLocation(loc, pos);
 
+        FetchDescriptor fetchDesc = new FetchDescriptor(
+                row.length, validColumns, (Qualifier[][]) null);
+        if (tryFetchFromImmutablePage(pos, row, fetchDesc)) {
+            return true;
+        }
+
         if (!open_conglom.latchPage(pos))
         {
             return(false);
@@ -299,9 +337,15 @@ public abstract class GenericConglomerateController
             (pos.current_page.fetchFromSlot(
                 pos.current_rh, pos.current_slot, 
                 row, 
-                new FetchDescriptor(
-                    row.length, validColumns, (Qualifier[][]) null), 
+                fetchDesc, 
                 false) != null);
+
+        if (ret_val
+                && !open_conglom.isForUpdate()
+                && open_conglom.getContainer().getLockingPolicy().supportsImmutablePageRead()) {
+            HeapPageReadImageAccess.publish(
+                    open_conglom.getContainer(), pos.current_page);
+        }
 
         // RESOLVE (mikem) - should be some way to hide this in the unlock call,
         // and just always make the unlock call.

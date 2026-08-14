@@ -443,6 +443,9 @@ public abstract class CachedPage extends BasePage implements Cacheable
      **/
 	public void preDirty()
 	{
+        if (dataFactory != null && identity != null) {
+            dataFactory.invalidateHeapPageReadImage(identity);
+        }
 		synchronized (this) 
         {
 			if (!isDirty)
@@ -639,6 +642,9 @@ public abstract class CachedPage extends BasePage implements Cacheable
 
 	public void clearIdentity() 
     {
+        if (dataFactory != null && identity != null) {
+            dataFactory.invalidateHeapPageReadImage(identity);
+        }
 		alreadyReadPage = false;
 		super.clearIdentity();
 	}
