@@ -6146,3 +6146,465 @@ tasks.register('runDelosJdbcGate10kfBoundedRecordReadRetentionProof') {
         logger.lifecycle('Gate 10K-F ' + pass)
     }
 }
+
+// Gate 10K-G: balanced performance acceptance for bounded dormant RecordId
+// fast-control retention. Both modes keep the accepted heap-page image and
+// compatible RecordId RS2 fast path enabled. Only retainedSlots changes:
+// 0 preserves the unbounded Gate 10K-B lifecycle; 4096 enables Gate 10K-F.
+def gate10kgBoundedRetentionPairedRoot =
+        'reports/delosdb/benchmarks/gate10kg-bounded-retention-paired-acceptance'
+def gate10kgBoundedRetentionSlots = 4096
+
+def configureGate10kgBoundedRetentionPairedWorker = {
+        JavaExec task, String phaseName, int retainedSlots, int run ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10K-G bounded retention ${phaseName}, run ${run}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10kgBoundedRetentionPairedRoot}/${phaseName}/run-${run}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10K-G bounded-retention paired acceptance requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10kgBoundedRetentionPairedRoot}/${phaseName}/run-${run}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10kg-bounded-retention-${phaseName}-run-${run}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.experimental.fastRecordReadLock.retainedSlots':
+                        Integer.toString(retainedSlots),
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': run.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '3',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+def registerGate10kgBoundedRetentionPairedWorkers = {
+        String taskSuffix, String phaseName, int retainedSlots ->
+    (1..3).collect { run ->
+        tasks.register("runDelosJdbcGate10kgBoundedRetention${taskSuffix}Run${run}", JavaExec) { task ->
+            configureGate10kgBoundedRetentionPairedWorker(
+                    task, phaseName, retainedSlots, run)
+        }
+    }
+}
+
+def gate10kgUnboundedAWorkers =
+        registerGate10kgBoundedRetentionPairedWorkers('UnboundedA', 'unbounded-a', 0)
+def gate10kgBoundedAWorkers =
+        registerGate10kgBoundedRetentionPairedWorkers('BoundedA', 'bounded-a', gate10kgBoundedRetentionSlots)
+def gate10kgBoundedBWorkers =
+        registerGate10kgBoundedRetentionPairedWorkers('BoundedB', 'bounded-b', gate10kgBoundedRetentionSlots)
+def gate10kgUnboundedBWorkers =
+        registerGate10kgBoundedRetentionPairedWorkers('UnboundedB', 'unbounded-b', 0)
+
+// High-churn acceptance control: Gate 10K-F showed that 100k-row RANDOM at
+// 16 clients actively exercises bounded reclamation. Keep this paired case in
+// the performance gate so the eviction cost is measured where it matters.
+def configureGate10kgHighChurnWorker = {
+        JavaExec task, String phaseName, int retainedSlots, int run ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10K-G 100k RANDOM high-churn ${phaseName}, run ${run}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10kgBoundedRetentionPairedRoot}/high-churn/${phaseName}/run-${run}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10K-G high-churn acceptance requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10kgBoundedRetentionPairedRoot}/high-churn/${phaseName}/run-${run}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10kg-high-churn-${phaseName}-run-${run}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.experimental.fastRecordReadLock.retainedSlots':
+                        Integer.toString(retainedSlots),
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': run.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+def registerGate10kgHighChurnWorkers = {
+        String taskSuffix, String phaseName, int retainedSlots ->
+    (1..3).collect { run ->
+        tasks.register("runDelosJdbcGate10kgHighChurn${taskSuffix}Run${run}", JavaExec) { task ->
+            configureGate10kgHighChurnWorker(task, phaseName, retainedSlots, run)
+        }
+    }
+}
+
+def gate10kgHighChurnUnboundedAWorkers =
+        registerGate10kgHighChurnWorkers('UnboundedA', 'unbounded-a', 0)
+def gate10kgHighChurnBoundedAWorkers =
+        registerGate10kgHighChurnWorkers(
+                'BoundedA', 'bounded-a', gate10kgBoundedRetentionSlots)
+def gate10kgHighChurnBoundedBWorkers =
+        registerGate10kgHighChurnWorkers(
+                'BoundedB', 'bounded-b', gate10kgBoundedRetentionSlots)
+def gate10kgHighChurnUnboundedBWorkers =
+        registerGate10kgHighChurnWorkers('UnboundedB', 'unbounded-b', 0)
+
+def gate10kgBoundedRetentionExecutionOrder = []
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgUnboundedAWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgBoundedAWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgBoundedBWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgUnboundedBWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgHighChurnUnboundedAWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgHighChurnBoundedAWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgHighChurnBoundedBWorkers)
+gate10kgBoundedRetentionExecutionOrder.addAll(gate10kgHighChurnUnboundedBWorkers)
+(1..<gate10kgBoundedRetentionExecutionOrder.size()).each { index ->
+    gate10kgBoundedRetentionExecutionOrder[index].configure {
+        mustRunAfter gate10kgBoundedRetentionExecutionOrder[index - 1]
+    }
+}
+
+tasks.register('runDelosJdbcGate10kgBoundedRetentionPairedAcceptanceProof') {
+    group = 'benchmark'
+    description = 'Runs balanced Gate 10K-G bounded-vs-unbounded RecordId retention performance acceptance across HOT, DISJOINT and RANDOM.'
+    dependsOn gate10kgBoundedRetentionExecutionOrder
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(gate10kgBoundedRetentionPairedRoot).get().asFile
+
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10K-G paired report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10K-G paired report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException(
+                            "Gate 10K-G malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index ->
+                    row[name] = fields[index].toString().trim()
+                }
+                row
+            }
+        }
+
+        def loadPhase = { String phase ->
+            def rows = []
+            (1..3).each { run ->
+                rows.addAll(loadCsv(new File(
+                        root, "${phase}/run-${run}/delos_heap-run-${run}.csv")))
+            }
+            if (rows.size() != 45) {
+                throw new GradleException(
+                        "Gate 10K-G paired phase ${phase} expected 45 rows, observed ${rows.size()}.")
+            }
+            rows
+        }
+
+        def phaseRows = [:]
+        phaseRows['unbounded-a'] = loadPhase('unbounded-a')
+        phaseRows['bounded-a'] = loadPhase('bounded-a')
+        phaseRows['bounded-b'] = loadPhase('bounded-b')
+        phaseRows['unbounded-b'] = loadPhase('unbounded-b')
+        def unboundedRows = phaseRows['unbounded-a'] + phaseRows['unbounded-b']
+        def boundedRows = phaseRows['bounded-a'] + phaseRows['bounded-b']
+        def allRows = unboundedRows + boundedRows
+        if (unboundedRows.size() != 90 || boundedRows.size() != 90 || allRows.size() != 180) {
+            throw new GradleException(
+                    "Gate 10K-G paired proof expected 90 rows/mode and 180 total, observed unbounded=${unboundedRows.size()} bounded=${boundedRows.size()} total=${allRows.size()}.")
+        }
+
+        def grouped = allRows.groupBy { row ->
+            "${row.workload}:${Integer.parseInt(row.clients)}".toString()
+        }
+        if (grouped.size() != 15) {
+            throw new GradleException(
+                    "Gate 10K-G paired proof expected 15 workload/client cells, observed ${grouped.keySet()}.")
+        }
+        grouped.each { cell, values ->
+            if (values.size() != 12) {
+                throw new GradleException(
+                        "Gate 10K-G paired ${cell} expected 12 observations, observed ${values.size()}.")
+            }
+            def fingerprints = values.collect { it.semanticFingerprint }.toSet()
+            if (fingerprints.size() != 1) {
+                throw new GradleException(
+                        "Gate 10K-G paired semantic mismatch for ${cell}: ${fingerprints}")
+            }
+            def operationCounts = values.collect { it.measuredOperations }.toSet()
+            if (operationCounts.size() != 1) {
+                throw new GradleException(
+                        "Gate 10K-G paired measured-operation mismatch for ${cell}: ${operationCounts}")
+            }
+            long retries = values.sum { Long.parseLong(it.retryableConflictRetries) } as long
+            if (retries != 0L) {
+                throw new GradleException(
+                        "Gate 10K-G paired observed retryable conflicts for ${cell}: ${retries}")
+            }
+        }
+
+        def loadHighChurnPhase = { String phase ->
+            def rows = []
+            (1..3).each { run ->
+                def phaseRowsHigh = loadCsv(new File(
+                        root, "high-churn/${phase}/run-${run}/delos_heap-run-${run}.csv"))
+                if (phaseRowsHigh.size() != 1) {
+                    throw new GradleException(
+                            "Gate 10K-G high-churn phase ${phase} run ${run} expected 1 row, observed ${phaseRowsHigh.size()}.")
+                }
+                rows.addAll(phaseRowsHigh)
+            }
+            rows
+        }
+        def highPhaseRows = [:]
+        highPhaseRows['unbounded-a'] = loadHighChurnPhase('unbounded-a')
+        highPhaseRows['bounded-a'] = loadHighChurnPhase('bounded-a')
+        highPhaseRows['bounded-b'] = loadHighChurnPhase('bounded-b')
+        highPhaseRows['unbounded-b'] = loadHighChurnPhase('unbounded-b')
+        def highUnboundedRows = highPhaseRows['unbounded-a'] + highPhaseRows['unbounded-b']
+        def highBoundedRows = highPhaseRows['bounded-a'] + highPhaseRows['bounded-b']
+        def highAllRows = highUnboundedRows + highBoundedRows
+        if (highUnboundedRows.size() != 6 || highBoundedRows.size() != 6
+                || highAllRows.size() != 12) {
+            throw new GradleException(
+                    "Gate 10K-G high-churn expected 6 rows/mode and 12 total, observed unbounded=${highUnboundedRows.size()} bounded=${highBoundedRows.size()} total=${highAllRows.size()}.")
+        }
+        def highFingerprints = highAllRows.collect { it.semanticFingerprint }.toSet()
+        if (highFingerprints.size() != 1) {
+            throw new GradleException(
+                    "Gate 10K-G high-churn semantic mismatch: ${highFingerprints}")
+        }
+        def highOperationCounts = highAllRows.collect { it.measuredOperations }.toSet()
+        if (highOperationCounts.size() != 1) {
+            throw new GradleException(
+                    "Gate 10K-G high-churn measured-operation mismatch: ${highOperationCounts}")
+        }
+        long highRetries = highAllRows.sum {
+            Long.parseLong(it.retryableConflictRetries)
+        } as long
+        if (highRetries != 0L) {
+            throw new GradleException(
+                    "Gate 10K-G high-churn observed retryable conflicts: ${highRetries}")
+        }
+
+        def median = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            int n = sorted.size()
+            if (n == 0) {
+                return Double.NaN
+            }
+            n % 2 == 1 ? sorted[n.intdiv(2)] :
+                    (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d
+        }
+        def valuesFor = { rows, String workload, String clients, int expected ->
+            def values = rows.findAll {
+                it.workload == workload && it.clients == clients
+            }.collect { Double.parseDouble(it.operationsPerSecond) }
+            if (values.size() != expected) {
+                throw new GradleException(
+                        "Gate 10K-G paired expected ${expected} observations for ${workload}:${clients}, observed ${values.size()}.")
+            }
+            values
+        }
+        def dispersion = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            double med = median(sorted)
+            int n = sorted.size()
+            def lower = sorted.subList(0, n.intdiv(2))
+            def upper = sorted.subList((n + 1).intdiv(2), n)
+            double q1 = median(lower)
+            double q3 = median(upper)
+            double iqr = q3 - q1
+            def deviations = sorted.collect { Math.abs(it - med) }
+            double mad = median(deviations)
+            [median: med, q1: q1, q3: q3, iqr: iqr, mad: mad]
+        }
+        def phaseMedian = { String phase, String workload, String clients ->
+            median(valuesFor(phaseRows[phase], workload, clients, 3))
+        }
+
+        def decision = [
+                'Gate 10K-G balanced bounded dormant RecordId retention performance acceptance',
+                'Exact current tree in both modes; heap-page read image and compatible RecordId RS2 fast path enabled throughout.',
+                "Only delosdb.experimental.fastRecordReadLock.retainedSlots changes: UNBOUNDED=0 versus BOUNDED=${gate10kgBoundedRetentionSlots}.",
+                'Balanced execution: UNBOUNDED-A -> BOUNDED-A -> BOUNDED-B -> UNBOUNDED-B; three runs per phase; six observations/mode/cell.',
+                'Acceptance authority: pooled six-vs-six median. No workload/client >=2c may regress >10%; 1c guard is -15%.',
+                'Balanced-half deltas and IQR/MAD are reported for diagnosis only and never replace the pooled acceptance rule.',
+                'Additional acceptance control: 100k-row RANDOM 16c, width=1, 4M reads/observation, no warmup; bounded mode must remain within -10% of unbounded.'
+        ]
+        def failures = []
+        ['PRIMARY_KEY_READ_HOT',
+         'PRIMARY_KEY_READ_DISJOINT',
+         'PRIMARY_KEY_READ_RANDOM'].each { workload ->
+            ['1', '2', '4', '8', '16'].each { clients ->
+                def unboundedStats = dispersion(valuesFor(unboundedRows, workload, clients, 6))
+                def boundedStats = dispersion(valuesFor(boundedRows, workload, clients, 6))
+                double ratio = boundedStats.median / unboundedStats.median
+                double delta = (ratio - 1.0d) * 100.0d
+                double halfARatio = phaseMedian('bounded-a', workload, clients) /
+                        phaseMedian('unbounded-a', workload, clients)
+                double halfBRatio = phaseMedian('bounded-b', workload, clients) /
+                        phaseMedian('unbounded-b', workload, clients)
+                double unboundedIqrPct = unboundedStats.median == 0.0d ? Double.NaN :
+                        unboundedStats.iqr / unboundedStats.median * 100.0d
+                double boundedIqrPct = boundedStats.median == 0.0d ? Double.NaN :
+                        boundedStats.iqr / boundedStats.median * 100.0d
+                double unboundedMadPct = unboundedStats.median == 0.0d ? Double.NaN :
+                        unboundedStats.mad / unboundedStats.median * 100.0d
+                double boundedMadPct = boundedStats.median == 0.0d ? Double.NaN :
+                        boundedStats.mad / boundedStats.median * 100.0d
+
+                def line = String.format(java.util.Locale.ROOT,
+                        '%s %sc: UNBOUNDED=%.2f BOUNDED=%.2f ratio=%.4f delta=%+.2f%% halfA=%+.2f%% halfB=%+.2f%% UNBOUNDED-IQR=%.2f%% BOUNDED-IQR=%.2f%% UNBOUNDED-MAD=%.2f%% BOUNDED-MAD=%.2f%%',
+                        workload, clients, unboundedStats.median, boundedStats.median, ratio, delta,
+                        (halfARatio - 1.0d) * 100.0d, (halfBRatio - 1.0d) * 100.0d,
+                        unboundedIqrPct, boundedIqrPct, unboundedMadPct, boundedMadPct)
+                decision.add(line)
+                logger.lifecycle('Gate 10K-G paired ' + line)
+
+                double regressionFloor = clients == '1' ? 0.85d : 0.90d
+                if (ratio < regressionFloor) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%s %sc regressed %.2f%%',
+                            workload, clients, (1.0d - ratio) * 100.0d))
+                }
+            }
+        }
+
+        def highValues = { rows ->
+            rows.collect { Double.parseDouble(it.operationsPerSecond) }
+        }
+        def highUnboundedStats = dispersion(highValues(highUnboundedRows))
+        def highBoundedStats = dispersion(highValues(highBoundedRows))
+        double highRatio = highBoundedStats.median / highUnboundedStats.median
+        double highDelta = (highRatio - 1.0d) * 100.0d
+        double highHalfARatio = median(highValues(highPhaseRows['bounded-a'])) /
+                median(highValues(highPhaseRows['unbounded-a']))
+        double highHalfBRatio = median(highValues(highPhaseRows['bounded-b'])) /
+                median(highValues(highPhaseRows['unbounded-b']))
+        def highLine = String.format(java.util.Locale.ROOT,
+                'HIGH_CHURN_RANDOM_100K_16C: UNBOUNDED=%.2f BOUNDED=%.2f ratio=%.4f delta=%+.2f%% halfA=%+.2f%% halfB=%+.2f%%',
+                highUnboundedStats.median, highBoundedStats.median, highRatio,
+                highDelta, (highHalfARatio - 1.0d) * 100.0d,
+                (highHalfBRatio - 1.0d) * 100.0d)
+        decision.add(highLine)
+        logger.lifecycle('Gate 10K-G paired ' + highLine)
+        if (highRatio < 0.90d) {
+            failures.add(String.format(java.util.Locale.ROOT,
+                    'HIGH_CHURN_RANDOM_100K_16C regressed %.2f%%',
+                    (1.0d - highRatio) * 100.0d))
+        }
+
+        if (!failures.isEmpty()) {
+            decision.add('FAIL: ' + failures.join('; '))
+            new File(root, 'gate10kg-paired-decision.txt').setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10K-G bounded-retention performance acceptance failed: ' +
+                            failures.join('; '))
+        }
+
+        def passLine = "PASS: bounded ${gate10kgBoundedRetentionSlots}-slot dormant RecordId retention preserves accepted HOT/DISJOINT/RANDOM performance within the frozen paired guards. Gate 10K-F bounded lifecycle is performance-accepted."
+        decision.add(passLine)
+        new File(root, 'gate10kg-paired-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10K-G paired ' + passLine)
+    }
+}
