@@ -95,12 +95,15 @@ final class LeafReadSnapshot {
         if (searchKey == null || searchKey.length == 0 || rows.length == 0) {
             return null;
         }
+        // Prefix equality must compare only the supplied prefix columns.
+        // Using the B-tree's full unique width intentionally produces the
+        // partial-key ordering sentinel after the prefix and can never equal 0.
         int low = 0;
         int high = rows.length;
         while (low < high) {
             int mid = (low + high) >>> 1;
             int comparison = ControlRow.compareIndexRowToKey(
-                    rows[mid], searchKey, btree.nUniqueColumns,
+                    rows[mid], searchKey, searchKey.length,
                     SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
                     btree.ascDescInfo);
             if (comparison < 0) {
@@ -111,14 +114,14 @@ final class LeafReadSnapshot {
         }
         int first = low;
         if (first >= rows.length || ControlRow.compareIndexRowToKey(
-                rows[first], searchKey, btree.nUniqueColumns,
+                rows[first], searchKey, searchKey.length,
                 SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
                 btree.ascDescInfo) != 0) {
             return null;
         }
         int last = first;
         while (last + 1 < rows.length && ControlRow.compareIndexRowToKey(
-                rows[last + 1], searchKey, btree.nUniqueColumns,
+                rows[last + 1], searchKey, searchKey.length,
                 SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
                 btree.ascDescInfo) == 0) {
             last++;
