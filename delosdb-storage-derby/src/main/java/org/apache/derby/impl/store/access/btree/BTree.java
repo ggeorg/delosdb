@@ -219,14 +219,8 @@ public abstract class BTree extends GenericConglomerate
      */
     private transient volatile ConcurrentHashMap<Long, LeafReadSnapshot> leafReadSnapshots;
 
-    /**
-     * Immutable decoded routing state for stable level-1 branch pages used by
-     * exact-prefix reads. RawStore branch pages remain authoritative and
-     * invalidate their snapshot before mutation through the page auxiliary
-     * object hook.
-     */
-    private transient volatile ConcurrentHashMap<Long, BranchRoutingSnapshot>
-            branchRoutingSnapshots;
+    /** Immutable routing snapshots for stable level-1 branch pages. */
+    private transient volatile BTreeBranchRoutingSnapshots branchRoutingSnapshots;
 
     final long searchRootRoutingSnapshot(
             BranchControlRow root, OpenBTree openBtree, SearchParameters params)
@@ -293,15 +287,8 @@ public abstract class BTree extends GenericConglomerate
 
     private static final String PREFIX_LEAF_SNAPSHOT_PROPERTY =
             "delosdb.experimental.btreePrefixLeafSnapshot";
-    private static final String PREFIX_BRANCH_SNAPSHOT_PROPERTY =
-            "delosdb.experimental.btreePrefixBranchSnapshot";
-
     static boolean prefixLeafSnapshotEnabled() {
         return Boolean.getBoolean(PREFIX_LEAF_SNAPSHOT_PROPERTY);
-    }
-
-    static boolean prefixBranchSnapshotEnabled() {
-        return Boolean.getBoolean(PREFIX_BRANCH_SNAPSHOT_PROPERTY);
     }
 
     final LeafReadSnapshotHit searchLeafReadSnapshot(StoreDataValue[] searchKey)
@@ -347,12 +334,11 @@ public abstract class BTree extends GenericConglomerate
             return null;
         }
 
-        BranchRoutingSnapshot branchSnapshot = null;
-        ConcurrentHashMap<Long, BranchRoutingSnapshot> branchSnapshots =
-                branchRoutingSnapshots;
+        BTreeBranchRoutingSnapshots.Snapshot branchSnapshot = null;
+        BTreeBranchRoutingSnapshots branchSnapshots = branchRoutingSnapshots;
         long leafPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
 
-        if (prefixBranchSnapshotEnabled() && branchSnapshots != null) {
+        if (BTreeBranchRoutingSnapshots.enabled() && branchSnapshots != null) {
             branchSnapshot = branchSnapshots.get(branchPageNumber);
             if (branchSnapshot != null) {
                 leafPageNumber = branchSnapshot.route(
@@ -361,7 +347,7 @@ public abstract class BTree extends GenericConglomerate
                         this);
                 if (rootRoutingSnapshot != root
                         || branchRoutingSnapshots != branchSnapshots
-                        || branchSnapshots.get(branchPageNumber) != branchSnapshot) {
+                        || !branchSnapshots.isCurrent(branchPageNumber, branchSnapshot)) {
                     return null;
                 }
             }
@@ -374,7 +360,7 @@ public abstract class BTree extends GenericConglomerate
                         || branch.getLevel() != 1) {
                     return null;
                 }
-                if (prefixBranchSnapshotEnabled()) {
+                if (BTreeBranchRoutingSnapshots.enabled()) {
                     branchSnapshot = observeBranchRoutingSnapshot(branch, openBtree);
                     branchSnapshots = branchRoutingSnapshots;
                     leafPageNumber = branchSnapshot.route(
@@ -399,7 +385,7 @@ public abstract class BTree extends GenericConglomerate
                 || (branchSnapshot != null
                 && (branchSnapshots == null
                 || branchRoutingSnapshots != branchSnapshots
-                || branchSnapshots.get(branchPageNumber) != branchSnapshot))) {
+                || !branchSnapshots.isCurrent(branchPageNumber, branchSnapshot)))) {
             return null;
         }
         LeafReadSnapshot leaf = snapshots.get(leafPageNumber);
@@ -430,41 +416,26 @@ public abstract class BTree extends GenericConglomerate
         }
     }
 
-    private BranchRoutingSnapshot observeBranchRoutingSnapshot(
+    private BTreeBranchRoutingSnapshots.Snapshot observeBranchRoutingSnapshot(
             BranchControlRow branch, OpenBTree openBtree)
             throws StandardException {
-        long pageNumber = branch.page.getPageNumber();
-        ConcurrentHashMap<Long, BranchRoutingSnapshot> snapshots =
-                branchRoutingSnapshots();
-        BranchRoutingSnapshot current = snapshots.get(pageNumber);
-        long pageVersion = branch.page.getPageVersion();
-        if (current == null || current.pageVersion != pageVersion) {
-            current = BranchRoutingSnapshot.fromLatchedBranch(
-                    branch, openBtree, pageVersion);
-            snapshots.put(pageNumber, current);
-        }
-        branch.observeBranchRoutingSnapshot(this);
-        return current;
+        return branchRoutingSnapshots().observe(branch, openBtree, this);
     }
 
     final void invalidateBranchRoutingSnapshot(long pageNumber) {
-        ConcurrentHashMap<Long, BranchRoutingSnapshot> snapshots =
-                branchRoutingSnapshots;
+        BTreeBranchRoutingSnapshots snapshots = branchRoutingSnapshots;
         if (snapshots != null) {
-            snapshots.remove(pageNumber);
+            snapshots.invalidate(pageNumber);
         }
     }
 
-    private ConcurrentHashMap<Long, BranchRoutingSnapshot>
-            branchRoutingSnapshots() {
-        ConcurrentHashMap<Long, BranchRoutingSnapshot> snapshots =
-                branchRoutingSnapshots;
+    private BTreeBranchRoutingSnapshots branchRoutingSnapshots() {
+        BTreeBranchRoutingSnapshots snapshots = branchRoutingSnapshots;
         if (snapshots == null) {
             synchronized (this) {
                 snapshots = branchRoutingSnapshots;
                 if (snapshots == null) {
-                    snapshots =
-                            new ConcurrentHashMap<Long, BranchRoutingSnapshot>();
+                    snapshots = new BTreeBranchRoutingSnapshots();
                     branchRoutingSnapshots = snapshots;
                 }
             }
@@ -484,72 +455,6 @@ public abstract class BTree extends GenericConglomerate
             }
         }
         return snapshots;
-    }
-
-    private static final class BranchRoutingSnapshot {
-        private final long pageVersion;
-        private final StoreDataValue[][] branchRows;
-        private final long[] childPageIds;
-
-        private BranchRoutingSnapshot(
-                long pageVersion,
-                StoreDataValue[][] branchRows,
-                long[] childPageIds) {
-            this.pageVersion = pageVersion;
-            this.branchRows = branchRows;
-            this.childPageIds = childPageIds;
-        }
-
-        private static BranchRoutingSnapshot fromLatchedBranch(
-                BranchControlRow branch, OpenBTree openBtree, long pageVersion)
-                throws StandardException {
-            int slotCount = branch.page.recordCount();
-            StoreDataValue[][] branchRows =
-                    new StoreDataValue[Math.max(0, slotCount - 1)][];
-            long[] childPageIds = new long[slotCount];
-            childPageIds[0] = branch.getLeftChildPageno();
-
-            for (int slot = 1; slot < slotCount; slot++) {
-                StoreDataValue[] row = BranchRow.createEmptyTemplate(
-                        openBtree.getRawTran(),
-                        openBtree.getConglomerate()).getRow();
-                branch.page.fetchFromSlot(null, slot, row, null, true);
-                branchRows[slot - 1] = row;
-                childPageIds[slot] = StoreTypeUtil.getLong(
-                        row[openBtree.getConglomerate().nKeyFields]);
-            }
-
-            return new BranchRoutingSnapshot(
-                    pageVersion, branchRows, childPageIds);
-        }
-
-        private long route(
-                StoreDataValue[] searchKey, int partialKeyMatchOp, BTree btree)
-                throws StandardException {
-            int leftSlot = 0;
-            int rightSlot = branchRows.length + 1;
-            int leftRange = 1;
-            int rightRange = branchRows.length;
-
-            while (leftSlot != rightSlot - 1) {
-                int midSlot = (leftRange + rightRange) / 2;
-                int comparison = ControlRow.compareIndexRowToKey(
-                        branchRows[midSlot - 1], searchKey,
-                        btree.nUniqueColumns, partialKeyMatchOp,
-                        btree.ascDescInfo);
-                if (comparison == 0) {
-                    return childPageIds[midSlot];
-                }
-                if (comparison > 0) {
-                    rightSlot = midSlot;
-                    rightRange = midSlot - 1;
-                } else {
-                    leftSlot = midSlot;
-                    leftRange = midSlot + 1;
-                }
-            }
-            return childPageIds[leftSlot];
-        }
     }
 
     private static final class RootRoutingSnapshot {
@@ -627,29 +532,8 @@ public abstract class BTree extends GenericConglomerate
         private long route(
                 StoreDataValue[] searchKey, int partialKeyMatchOp, BTree btree)
                 throws StandardException {
-            int leftSlot = 0;
-            int rightSlot = branchRows.length + 1;
-            int leftRange = 1;
-            int rightRange = branchRows.length;
-
-            while (leftSlot != rightSlot - 1) {
-                int midSlot = (leftRange + rightRange) / 2;
-                int comparison = ControlRow.compareIndexRowToKey(
-                        branchRows[midSlot - 1], searchKey,
-                        btree.nUniqueColumns, partialKeyMatchOp,
-                        btree.ascDescInfo);
-                if (comparison == 0) {
-                    return childPageIds[midSlot];
-                }
-                if (comparison > 0) {
-                    rightSlot = midSlot;
-                    rightRange = midSlot - 1;
-                } else {
-                    leftSlot = midSlot;
-                    leftRange = midSlot + 1;
-                }
-            }
-            return childPageIds[leftSlot];
+            return BTreeBranchRoutingSnapshots.routeBranchRows(
+                    branchRows, childPageIds, searchKey, partialKeyMatchOp, btree);
         }
     }
 
