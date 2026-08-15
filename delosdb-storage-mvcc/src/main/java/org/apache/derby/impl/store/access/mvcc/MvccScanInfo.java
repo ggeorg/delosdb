@@ -54,6 +54,9 @@ final class MvccScanInfo implements ScanInfo {
     private static final String VISIBILITY_CHECKS = "mvccVisibilityChecks";
     private static final String VERSION_CHAIN_STEPS = "mvccVersionChainSteps";
     private static final String VERSION_LOGICAL_FALLBACKS = "mvccVersionLogicalFallbacks";
+    private static final String CURRENT_ROW_ANCHOR_CHECKS = "mvccCurrentRowAnchorChecks";
+    private static final String CURRENT_ROW_ANCHOR_HITS = "mvccCurrentRowAnchorHits";
+    private static final String CURRENT_ROW_ANCHOR_FALLBACKS = "mvccCurrentRowAnchorFallbacks";
     private static final String SNAPSHOT_SEQUENCE = "mvccSnapshotSequence";
 
     private final String scanType;
@@ -142,6 +145,15 @@ final class MvccScanInfo implements ScanInfo {
         result.setProperty(
                 VERSION_LOGICAL_FALLBACKS,
                 Long.toString(indexedReadMetrics.versionLogicalFallbacks()));
+        result.setProperty(
+                CURRENT_ROW_ANCHOR_CHECKS,
+                Long.toString(indexedReadMetrics.currentRowAnchorChecks()));
+        result.setProperty(
+                CURRENT_ROW_ANCHOR_HITS,
+                Long.toString(indexedReadMetrics.currentRowAnchorHits()));
+        result.setProperty(
+                CURRENT_ROW_ANCHOR_FALLBACKS,
+                Long.toString(indexedReadMetrics.currentRowAnchorFallbacks()));
         result.setProperty(SNAPSHOT_SEQUENCE, Long.toString(snapshotSequence));
         return result;
     }

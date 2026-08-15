@@ -76,6 +76,39 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return transactionManager;
     }
 
+    boolean currentRowAnchorEnabled() {
+        return runtime.currentRowAnchorEnabled();
+    }
+
+    MvccRawStoreRuntime.CurrentRowAnchor currentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            long rowId) {
+        return runtime.currentRowAnchor(table, rowId);
+    }
+
+    void observeCurrentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTable.DirectoryRecord directory) {
+        runtime.observeCurrentRowAnchor(table, directory);
+    }
+
+    void invalidateCurrentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            long rowId,
+            MvccRawStoreRuntime.CurrentRowAnchor expected) {
+        runtime.invalidateCurrentRowAnchor(table, rowId, expected);
+    }
+
+    boolean hasPendingVersion(MvccRawStoreTable.Descriptor table, long rowId) {
+        for (MvccRawStoreTable.PendingVersion version : pending) {
+            if (version.rowId() == rowId
+                    && version.table().metadataContainer().equals(table.metadataContainer())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void beforeWrite() throws StandardException {
         ensureWriteSupported();
         ensureTransactionId();
@@ -449,6 +482,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
+            // The RawStore commit is durable at this point, but the commit
+            // sequence is not yet visible to new snapshots. Publish the
+            // transient current-row anchor first so a snapshot which observes
+            // the new sequence can never see an older cached current head.
+            runtime.publishCommittedAnchors(committedVersions, reservedCommitSequence);
         }
         for (OrderedIndexReplacement replacement : committableOrderedIndexReplacements()) {
             replacement.table().observeOrderedIndexContainer(replacement.privateContainer());

@@ -6886,3 +6886,31 @@ tasks.register('runDelosJdbcGate10laMvccCurrentRowTopologyProof') {
         logger.lifecycle('Gate 10L-A ' + passLine)
     }
 }
+
+// Gate 10L-B: experimental bounded transient MVCC current-row anchor prototype.
+// The authoritative RawStore directory/version chain remains the fallback for
+// cache misses, old snapshots, own uncommitted writes, stale hints, and reopen.
+registerDelosFocusedTest(
+        'runDelosMvccCurrentRowAnchorTest',
+        'Runs focused correctness and physical-shape proofs for the experimental bounded MVCC current-row anchor.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowAnchorTest.class'],
+        [
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096'
+        ])
+
+tasks.named('runDelosMvccCurrentRowAnchorTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('runDelosJdbcGate10lbMvccCurrentRowAnchorPrototypeProof') {
+    group = 'benchmark'
+    description = 'Runs Gate 10L-B focused current-row anchor correctness and one-slot physical-path proof.'
+    dependsOn tasks.named('runDelosMvccCurrentRowAnchorTest')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        logger.lifecycle('Gate 10L-B PASS: the experimental bounded transient current-row anchor preserves current-read, own-write, rollback, old-snapshot, and reopen semantics; anchor hits skip the directory page and decode the current version in one slot fetch. RawStore directory/version history remains authoritative fallback.')
+    }
+}

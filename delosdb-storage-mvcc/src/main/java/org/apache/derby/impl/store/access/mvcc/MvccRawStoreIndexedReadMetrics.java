@@ -23,7 +23,7 @@ package org.apache.derby.impl.store.access.mvcc;
 /** Per-scan physical attribution for the RawStore MVCC ordered-index path. */
 final class MvccRawStoreIndexedReadMetrics {
     static final Snapshot EMPTY = new Snapshot(
-            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+            0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
 
     private long candidatesVisited;
     private long coveringCandidates;
@@ -41,6 +41,9 @@ final class MvccRawStoreIndexedReadMetrics {
     private long visibilityChecks;
     private long versionChainSteps;
     private long versionLogicalFallbacks;
+    private long currentRowAnchorChecks;
+    private long currentRowAnchorHits;
+    private long currentRowAnchorFallbacks;
 
     void candidateVisited(boolean coveringEligible) {
         candidatesVisited++;
@@ -105,6 +108,18 @@ final class MvccRawStoreIndexedReadMetrics {
         versionLogicalFallbacks++;
     }
 
+    void currentRowAnchorChecked() {
+        currentRowAnchorChecks++;
+    }
+
+    void currentRowAnchorHit() {
+        currentRowAnchorHits++;
+    }
+
+    void currentRowAnchorFallback() {
+        currentRowAnchorFallbacks++;
+    }
+
     Snapshot snapshot() {
         return new Snapshot(
                 candidatesVisited,
@@ -122,7 +137,10 @@ final class MvccRawStoreIndexedReadMetrics {
                 versionSlotFetches,
                 visibilityChecks,
                 versionChainSteps,
-                versionLogicalFallbacks);
+                versionLogicalFallbacks,
+                currentRowAnchorChecks,
+                currentRowAnchorHits,
+                currentRowAnchorFallbacks);
     }
 
     record Snapshot(
@@ -141,6 +159,9 @@ final class MvccRawStoreIndexedReadMetrics {
             long versionSlotFetches,
             long visibilityChecks,
             long versionChainSteps,
-            long versionLogicalFallbacks) {
+            long versionLogicalFallbacks,
+            long currentRowAnchorChecks,
+            long currentRowAnchorHits,
+            long currentRowAnchorFallbacks) {
     }
 }

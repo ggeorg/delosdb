@@ -20,6 +20,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -49,6 +50,10 @@ final class MvccRawStoreRuntime {
             "delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize";
     static final String CONCURRENT_COMMIT_PUBLICATION_PROPERTY =
             "delosdb.mvcc.rawStoreConcurrentCommitPublication";
+    static final String CURRENT_ROW_ANCHOR_PROPERTY =
+            "delosdb.experimental.mvccCurrentRowAnchor";
+    static final String CURRENT_ROW_ANCHOR_SLOTS_PROPERTY =
+            "delosdb.experimental.mvccCurrentRowAnchor.slots";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -76,6 +81,7 @@ final class MvccRawStoreRuntime {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final int commitSequenceReservationBlockSize;
     private final boolean concurrentCommitPublication;
+    private final AtomicReferenceArray<CurrentRowAnchor> currentRowAnchors;
     private final TreeSet<Long> terminalCommitSequences = new TreeSet<>();
     private long nextCommitSequence;
     private long commitSequenceReservationLimit;
@@ -113,6 +119,26 @@ final class MvccRawStoreRuntime {
         }
         concurrentCommitPublication = Boolean.parseBoolean(System.getProperty(
                 CONCURRENT_COMMIT_PUBLICATION_PROPERTY, "true"));
+        if (Boolean.parseBoolean(System.getProperty(CURRENT_ROW_ANCHOR_PROPERTY, "false"))) {
+            String slotText = System.getProperty(CURRENT_ROW_ANCHOR_SLOTS_PROPERTY, "4096");
+            int slots;
+            try {
+                slots = Integer.parseInt(slotText);
+            } catch (NumberFormatException failure) {
+                throw new IllegalArgumentException(
+                        CURRENT_ROW_ANCHOR_SLOTS_PROPERTY
+                                + " must be a positive integer: " + slotText,
+                        failure);
+            }
+            if (slots <= 0) {
+                throw new IllegalArgumentException(
+                        CURRENT_ROW_ANCHOR_SLOTS_PROPERTY
+                                + " must be positive: " + slotText);
+            }
+            currentRowAnchors = new AtomicReferenceArray<>(slots);
+        } else {
+            currentRowAnchors = null;
+        }
     }
 
     Object databaseIdentity() {
@@ -140,6 +166,7 @@ final class MvccRawStoreRuntime {
     }
 
     void unregisterTable(MvccRawStoreTable.Descriptor table) {
+        clearCurrentRowAnchors(table);
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
             maintenance.unregister(table);
@@ -150,6 +177,115 @@ final class MvccRawStoreRuntime {
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
             maintenance.afterCommit(committed);
+        }
+    }
+
+
+
+    boolean currentRowAnchorEnabled() {
+        return currentRowAnchors != null;
+    }
+
+    CurrentRowAnchor currentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            long rowId) {
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (anchors == null) {
+            return null;
+        }
+        int slot = currentRowAnchorSlot(table.metadataContainer(), rowId, anchors.length());
+        CurrentRowAnchor anchor = anchors.get(slot);
+        return anchor != null
+                && anchor.rowId() == rowId
+                && anchor.tableKey().equals(table.metadataContainer())
+                ? anchor
+                : null;
+    }
+
+    void observeCurrentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTable.DirectoryRecord directory) {
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (anchors == null || directory == null) {
+            return;
+        }
+        MvccRawStoreTable.DirectoryHead head = directory.head();
+        MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
+        if (!summary.available()
+                || summary.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                || !head.hint().valid()) {
+            return;
+        }
+        putCurrentRowAnchor(new CurrentRowAnchor(
+                table.metadataContainer(),
+                directory.rowId(),
+                head.versionId(),
+                summary.beginSequence(),
+                summary.flags(),
+                head.hint(),
+                MvccRawStoreRowDirectory.location(directory.rowId(), directory.handle())));
+    }
+
+    void publishCommittedAnchors(
+            List<MvccRawStoreTable.PendingVersion> committed,
+            long commitSequence) {
+        if (currentRowAnchors == null || commitSequence <= 0L) {
+            return;
+        }
+        for (MvccRawStoreTable.PendingVersion pending : committed) {
+            putCurrentRowAnchor(new CurrentRowAnchor(
+                    pending.table().metadataContainer(),
+                    pending.rowId(),
+                    pending.versionId(),
+                    commitSequence,
+                    pending.flags(),
+                    MvccRawStoreTable.RecordHint.of(pending.handle()),
+                    pending.directoryLocation()));
+        }
+    }
+
+    void invalidateCurrentRowAnchor(
+            MvccRawStoreTable.Descriptor table,
+            long rowId,
+            CurrentRowAnchor expected) {
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (anchors == null || expected == null) {
+            return;
+        }
+        int slot = currentRowAnchorSlot(table.metadataContainer(), rowId, anchors.length());
+        anchors.compareAndSet(slot, expected, null);
+    }
+
+    private void putCurrentRowAnchor(CurrentRowAnchor anchor) {
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (anchors == null) {
+            return;
+        }
+        int slot = currentRowAnchorSlot(anchor.tableKey(), anchor.rowId(), anchors.length());
+        anchors.set(slot, anchor);
+    }
+
+    private static int currentRowAnchorSlot(
+            ContainerKey tableKey,
+            long rowId,
+            int length) {
+        long mixed = rowId ^ (rowId >>> 33) ^ tableKey.hashCode();
+        mixed *= 0xff51afd7ed558ccdL;
+        mixed ^= mixed >>> 33;
+        return Math.floorMod((int) mixed, length);
+    }
+
+    private void clearCurrentRowAnchors(MvccRawStoreTable.Descriptor table) {
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (anchors == null) {
+            return;
+        }
+        ContainerKey tableKey = table.metadataContainer();
+        for (int index = 0; index < anchors.length(); index++) {
+            CurrentRowAnchor anchor = anchors.get(index);
+            if (anchor != null && anchor.tableKey().equals(tableKey)) {
+                anchors.compareAndSet(index, anchor, null);
+            }
         }
     }
 
@@ -566,6 +702,11 @@ final class MvccRawStoreRuntime {
             maintenance.close();
         }
         tableIdentityAllocators.clear();
+        if (currentRowAnchors != null) {
+            for (int index = 0; index < currentRowAnchors.length(); index++) {
+                currentRowAnchors.set(index, null);
+            }
+        }
         tableMaintenanceBoundaries.clear();
         activeTransactionIds.clear();
         commitPublicationLock.lock();
@@ -573,6 +714,30 @@ final class MvccRawStoreRuntime {
             retainedSnapshotSequences.clear();
         } finally {
             commitPublicationLock.unlock();
+        }
+    }
+
+    record CurrentRowAnchor(
+            ContainerKey tableKey,
+            long rowId,
+            long versionId,
+            long beginSequence,
+            int flags,
+            MvccRawStoreTable.RecordHint hint,
+            MvccRowLocation directoryLocation) {
+        CurrentRowAnchor {
+            Objects.requireNonNull(tableKey, "tableKey");
+            Objects.requireNonNull(hint, "hint");
+            Objects.requireNonNull(directoryLocation, "directoryLocation");
+            directoryLocation = (MvccRowLocation) directoryLocation.cloneValue(false);
+        }
+
+        boolean tombstone() {
+            return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
+        }
+
+        boolean visibleTo(long snapshotSequence) {
+            return beginSequence <= snapshotSequence;
         }
     }
 

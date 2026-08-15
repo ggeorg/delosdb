@@ -127,6 +127,54 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         }
     }
 
+    MvccRawStoreTable.VersionRecord findAnchoredCurrent(
+            MvccRawStoreRuntime.CurrentRowAnchor anchor,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        if (container == null || anchor == null || !anchor.hint().valid()) {
+            return null;
+        }
+        Page page = null;
+        try {
+            page = container.getPage(anchor.hint().pageNumber());
+            if (page != null && metrics != null) {
+                metrics.versionPageAcquired();
+            }
+            if (page == null) {
+                return null;
+            }
+            RecordHandle handle = page.getRecordHandle(anchor.hint().recordId());
+            if (handle == null) {
+                return null;
+            }
+            int slot = page.getSlotNumber(handle);
+            if (page.isDeletedAtSlot(slot)) {
+                return null;
+            }
+            int fieldCount = page.fetchNumFieldsAtSlot(slot);
+            int baseFieldCount = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
+            int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
+            if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
+                return null;
+            }
+            MvccRawStoreTable.VersionRecord decoded = decoder(projection).decodeAtSlot(page, slot);
+            if (metrics != null) {
+                metrics.versionSlotFetched();
+            }
+            if (decoded == null
+                    || decoded.rowId() != anchor.rowId()
+                    || decoded.versionId() != anchor.versionId()
+                    || decoded.beginSequence() != anchor.beginSequence()
+                    || decoded.flags() != anchor.flags()) {
+                return null;
+            }
+            return decoded;
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+    }
+
     MvccRawStoreTable.VersionRecord findVisibleHead(
             long rowId,
             MvccRawStoreTable.DirectoryHead head,

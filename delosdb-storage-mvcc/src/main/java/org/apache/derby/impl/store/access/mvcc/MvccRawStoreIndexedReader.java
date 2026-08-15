@@ -42,7 +42,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     private final MvccRawStoreVersionRows.FetchProjection projection;
     private MvccRawStoreVersionRows.FetchProjection metadataProjection;
     private final MvccRawStoreTransactionContext context;
-    private final ContainerHandle directoryContainer;
+    private ContainerHandle directoryContainer;
     private final MvccRawStoreIndexedReadMetrics metrics;
     private MvccRawStoreVersionReader versionReader;
 
@@ -58,10 +58,6 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         this.projection = projection;
         this.context = context;
         this.metrics = new MvccRawStoreIndexedReadMetrics();
-        directoryContainer = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
     }
 
     List<Result> read(
@@ -91,6 +87,13 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         int index = start;
         while (index < end) {
             MvccRawStoreOrderedIndex.Candidate first = candidates.get(index);
+            Result anchored = readAnchoredCurrent(first);
+            if (anchored != null) {
+                metrics.candidateVisited(coveringEligible);
+                results[index] = anchored;
+                index++;
+                continue;
+            }
             MvccRowLocation firstLocation = first.rowLocation();
             if (!firstLocation.hasLocatorHint()) {
                 metrics.candidateVisited(coveringEligible);
@@ -128,7 +131,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 new MvccRawStoreTable.DirectoryRecord[end - start];
         Page page = null;
         try {
-            page = directoryContainer.getPage(pageNumber);
+            page = directoryContainer().getPage(pageNumber);
             if (page != null) {
                 metrics.directoryPageAcquired();
             }
@@ -167,7 +170,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction,
                 candidate.rowLocation(),
-                directoryContainer,
+                directoryContainer(),
                 metrics);
         return readResolved(candidate, coveringEligible, directory);
     }
@@ -188,7 +191,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         MvccRawStoreRowDirectory.find(
                                 transaction,
                                 candidate.rowLocation(),
-                                directoryContainer,
+                                directoryContainer(),
                                 metrics);
                 if (refreshed.head().versionId() == current.head().versionId()) {
                     throw missing;
@@ -202,6 +205,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible,
             MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
+        context.observeCurrentRowAnchor(table, directory);
         if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
             MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
             if (summary.available()) {
@@ -277,6 +281,55 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         MvccRawStoreRowDirectory.location(
                                 candidate.rowId(), directory.handle())),
                 false);
+    }
+
+    private Result readAnchoredCurrent(
+            MvccRawStoreOrderedIndex.Candidate candidate) throws StandardException {
+        if (!context.currentRowAnchorEnabled()
+                || context.hasPendingVersion(table, candidate.rowId())) {
+            return null;
+        }
+        MvccRawStoreRuntime.CurrentRowAnchor anchor =
+                context.currentRowAnchor(table, candidate.rowId());
+        if (anchor == null) {
+            return null;
+        }
+        metrics.currentRowAnchorChecked();
+        if (!anchor.visibleTo(snapshotSequence)) {
+            metrics.currentRowAnchorFallback();
+            return null;
+        }
+        metrics.visibilityChecked();
+        if (anchor.tombstone()) {
+            metrics.currentRowAnchorHit();
+            return new Result(null, false);
+        }
+        MvccRawStoreTable.VersionRecord current =
+                versionReader().findAnchoredCurrent(anchor, projection);
+        if (current == null) {
+            context.invalidateCurrentRowAnchor(table, candidate.rowId(), anchor);
+            metrics.currentRowAnchorFallback();
+            return null;
+        }
+        metrics.currentRowAnchorHit();
+        return new Result(
+                new MvccRawStoreTable.VisibleRow(
+                        candidate.rowId(),
+                        current.versionId(),
+                        current.values(),
+                        current.handle(),
+                        anchor.directoryLocation()),
+                false);
+    }
+
+    private ContainerHandle directoryContainer() throws StandardException {
+        if (directoryContainer == null) {
+            directoryContainer = transaction.openContainer(
+                    table.metadataContainer(),
+                    MvccRawStorePhysicalLocking.rowLevel(transaction),
+                    ContainerHandle.MODE_READONLY);
+        }
+        return directoryContainer;
     }
 
     private MvccRawStoreVersionRows.FetchProjection metadataProjection() {
