@@ -5366,3 +5366,277 @@ tasks.register('runDelosJdbcGate10kcFastRecordReadPairedAcceptanceProof') {
         logger.lifecycle('Gate 10K-C paired ' + passLine)
     }
 }
+
+// Gate 10K-C focused guard confirmation. The broad paired acceptance run
+// decisively proved the intended HOT 8c/16c benefit, but two non-authority
+// guard cells narrowly failed in a high-dispersion run: HOT 1c (-15.39%,
+// guard -15%) and DISJOINT 16c (-10.36%, guard -10%). Neither cell is expected
+// to use the fast RecordId state in steady state. Re-measure only those two
+// cells with longer observations in four balanced OFF -> ON -> ON -> OFF
+// cycles. The original regression guards remain unchanged.
+def gate10kcGuardConfirmationRoot =
+        'reports/delosdb/benchmarks/gate10kc-focused-guard-confirmation'
+
+def configureGate10kcGuardWorker = {
+        JavaExec task,
+        String phaseName,
+        boolean fastRecordReadEnabled,
+        int cycle,
+        String workload,
+        int clients,
+        String cellName ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10K-C focused guard ${phaseName} cycle ${cycle} ${cellName}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10kcGuardConfirmationRoot}/${phaseName}/cycle-${cycle}/${cellName}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10K-C focused guard confirmation requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10kcGuardConfirmationRoot}/${phaseName}/cycle-${cycle}/${cellName}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10kc-guard-${phaseName}-cycle-${cycle}-${cellName}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': fastRecordReadEnabled.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': cycle.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': clients.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': workload,
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+def gate10kcGuardWorkers = []
+(1..4).each { cycle ->
+    [
+            [suffix: 'OffA', phase: 'off-a', enabled: false],
+            [suffix: 'OnA', phase: 'on-a', enabled: true],
+            [suffix: 'OnB', phase: 'on-b', enabled: true],
+            [suffix: 'OffB', phase: 'off-b', enabled: false]
+    ].each { phase ->
+        def hotTask = tasks.register(
+                "runDelosJdbcGate10kcGuard${phase.suffix}Cycle${cycle}Hot1", JavaExec) { task ->
+            configureGate10kcGuardWorker(
+                    task, phase.phase, phase.enabled, cycle,
+                    'PRIMARY_KEY_READ_HOT', 1, 'hot-1c')
+        }
+        def disjointTask = tasks.register(
+                "runDelosJdbcGate10kcGuard${phase.suffix}Cycle${cycle}Disjoint16", JavaExec) { task ->
+            configureGate10kcGuardWorker(
+                    task, phase.phase, phase.enabled, cycle,
+                    'PRIMARY_KEY_READ_DISJOINT', 16, 'disjoint-16c')
+        }
+        disjointTask.configure { mustRunAfter hotTask }
+        gate10kcGuardWorkers.add(hotTask)
+        gate10kcGuardWorkers.add(disjointTask)
+    }
+}
+(1..<gate10kcGuardWorkers.size()).each { index ->
+    gate10kcGuardWorkers[index].configure {
+        mustRunAfter gate10kcGuardWorkers[index - 1]
+    }
+}
+
+tasks.register('runDelosJdbcGate10kcFocusedGuardConfirmation') {
+    group = 'benchmark'
+    description = 'Confirms the two marginal Gate 10K-C regression guards with longer balanced HOT 1c and DISJOINT 16c measurements.'
+    dependsOn gate10kcGuardWorkers
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(gate10kcGuardConfirmationRoot).get().asFile
+
+        def loadOne = { String phase, int cycle, String cellName ->
+            File file = new File(root,
+                    "${phase}/cycle-${cycle}/${cellName}/delos_heap-run-${cycle}.csv")
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10K-C focused guard report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() != 2) {
+                throw new GradleException(
+                        "Gate 10K-C focused guard expected exactly one row in ${file}, observed ${lines.size() - 1}.")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            def fields = lines[1].split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Malformed Gate 10K-C focused guard row in ${file}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row.phase = phase
+            row.cycle = cycle.toString()
+            row.cellName = cellName
+            row
+        }
+
+        def rows = []
+        (1..4).each { cycle ->
+            ['off-a', 'on-a', 'on-b', 'off-b'].each { phase ->
+                rows.add(loadOne(phase, cycle, 'hot-1c'))
+                rows.add(loadOne(phase, cycle, 'disjoint-16c'))
+            }
+        }
+        if (rows.size() != 32) {
+            throw new GradleException(
+                    "Gate 10K-C focused guard expected 32 rows, observed ${rows.size()}.")
+        }
+
+        def cells = rows.groupBy { it.cellName }
+        if (cells.keySet() != ['hot-1c', 'disjoint-16c'] as Set) {
+            throw new GradleException(
+                    "Gate 10K-C focused guard unexpected cells: ${cells.keySet()}")
+        }
+        cells.each { cellName, values ->
+            if (values.size() != 16) {
+                throw new GradleException(
+                        "Gate 10K-C focused guard ${cellName} expected 16 observations, observed ${values.size()}.")
+            }
+            def fingerprints = values.collect { it.semanticFingerprint }.toSet()
+            if (fingerprints.size() != 1) {
+                throw new GradleException(
+                        "Gate 10K-C focused guard semantic mismatch for ${cellName}: ${fingerprints}")
+            }
+            def operationCounts = values.collect { it.measuredOperations }.toSet()
+            if (operationCounts.size() != 1) {
+                throw new GradleException(
+                        "Gate 10K-C focused guard measured-operation mismatch for ${cellName}: ${operationCounts}")
+            }
+            long retries = values.sum { Long.parseLong(it.retryableConflictRetries) } as long
+            if (retries != 0L) {
+                throw new GradleException(
+                        "Gate 10K-C focused guard observed retryable conflicts for ${cellName}: ${retries}")
+            }
+        }
+
+        def median = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            int n = sorted.size()
+            n % 2 == 1 ? sorted[n.intdiv(2)] :
+                    (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d
+        }
+        def dispersion = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            double med = median(sorted)
+            int n = sorted.size()
+            def lower = sorted.subList(0, n.intdiv(2))
+            def upper = sorted.subList((n + 1).intdiv(2), n)
+            double q1 = median(lower)
+            double q3 = median(upper)
+            double mad = median(sorted.collect { Math.abs(it - med) })
+            [median: med, iqr: q3 - q1, mad: mad]
+        }
+        def values = { cellRows, List<String> phases ->
+            cellRows.findAll { phases.contains(it.phase) }
+                    .collect { Double.parseDouble(it.operationsPerSecond) }
+        }
+
+        def decision = [
+                'Gate 10K-C focused confirmation of the two marginal broad-paired regression guards',
+                'Four balanced OFF -> ON -> ON -> OFF cycles; 8 OFF and 8 ON observations per cell.',
+                'Longer observations: 10000 transactions/client, 1 warmup, 3 measured iterations.',
+                'Frozen guards are unchanged: HOT 1c ON/OFF >=0.85; DISJOINT 16c ON/OFF >=0.90.'
+        ]
+        def failures = []
+        [
+                [name: 'hot-1c', label: 'PRIMARY_KEY_READ_HOT 1c', floor: 0.85d],
+                [name: 'disjoint-16c', label: 'PRIMARY_KEY_READ_DISJOINT 16c', floor: 0.90d]
+        ].each { spec ->
+            def cellRows = cells[spec.name]
+            def offStats = dispersion(values(cellRows, ['off-a', 'off-b']))
+            def onStats = dispersion(values(cellRows, ['on-a', 'on-b']))
+            double ratio = onStats.median / offStats.median
+            double delta = (ratio - 1.0d) * 100.0d
+            double offIqrPct = offStats.iqr / offStats.median * 100.0d
+            double onIqrPct = onStats.iqr / onStats.median * 100.0d
+            double offMadPct = offStats.mad / offStats.median * 100.0d
+            double onMadPct = onStats.mad / onStats.median * 100.0d
+
+            def line = String.format(java.util.Locale.ROOT,
+                    '%s: OFF=%.2f ON=%.2f ratio=%.4f delta=%+.2f%% OFF-IQR=%.2f%% ON-IQR=%.2f%% OFF-MAD=%.2f%% ON-MAD=%.2f%%',
+                    spec.label, offStats.median, onStats.median, ratio, delta,
+                    offIqrPct, onIqrPct, offMadPct, onMadPct)
+            decision.add(line)
+            logger.lifecycle('Gate 10K-C focused ' + line)
+
+            (1..4).each { cycle ->
+                def cycleRows = cellRows.findAll { Integer.parseInt(it.cycle) == cycle }
+                double cycleOff = median(values(cycleRows, ['off-a', 'off-b']))
+                double cycleOn = median(values(cycleRows, ['on-a', 'on-b']))
+                double cycleDelta = (cycleOn / cycleOff - 1.0d) * 100.0d
+                def cycleLine = String.format(java.util.Locale.ROOT,
+                        '  cycle %d OFF=%.2f ON=%.2f delta=%+.2f%%',
+                        cycle, cycleOff, cycleOn, cycleDelta)
+                decision.add(cycleLine)
+                logger.lifecycle('Gate 10K-C focused ' + spec.label + cycleLine.trim())
+            }
+
+            if (ratio < spec.floor) {
+                failures.add(String.format(java.util.Locale.ROOT,
+                        '%s regressed %.2f%%', spec.label, (1.0d - ratio) * 100.0d))
+            }
+        }
+
+        File decisionFile = new File(root, 'gate10kc-focused-guard-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10K-C focused guard confirmation failed: ' + failures.join('; '))
+        }
+
+        def passLine = 'PASS: both marginal broad-run regression guards clear under longer balanced confirmation. Combined with the existing broad Gate 10K-C HOT 8c/16c gains and clean RANDOM controls, proceed to the fresh five-engine read checkpoint.'
+        decision.add(passLine)
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10K-C focused ' + passLine)
+    }
+}
