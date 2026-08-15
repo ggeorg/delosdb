@@ -6769,7 +6769,9 @@ tasks.register('runDelosJdbcGate10laMvccCurrentRowTopologyProof') {
             ]
         }
 
-        def requirePhysical = { String operation, long heap, long mvcc ->
+        def requirePhysical = { String operation, expectedHeap, expectedMvcc ->
+            long heap = ((Number) expectedHeap).longValue()
+            long mvcc = ((Number) expectedMvcc).longValue()
             def row = physical[operation]
             if (row == null) {
                 throw new GradleException("Gate 10L-A missing physical operation: ${operation}")
