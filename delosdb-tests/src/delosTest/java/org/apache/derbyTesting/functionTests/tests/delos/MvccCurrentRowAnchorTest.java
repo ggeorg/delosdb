@@ -106,16 +106,10 @@ public final class MvccCurrentRowAnchorTest extends MvccSqlTestSupport {
             String second = measuredRead(reopened, 1);
             assertEquals(10, quantity(reopened, 1));
             assertEquals(1L, metric(second, "mvccCurrentRowAnchorHits"));
+            assertEquals(1L, metric(second, "mvccCurrentVersionReadImageHits"));
+            assertEquals(0L, metric(second, "mvccCurrentVersionReadImageFallbacks"));
             assertEquals(0L, metric(second, "mvccDirectoryPageAcquisitions"));
-            assertEquals(1L, metric(second, "mvccCurrentVersionReadImageFallbacks"));
-            assertEquals(1L, metric(second, "mvccVersionSlotFetches"));
-
-            String third = measuredRead(reopened, 1);
-            assertEquals(10, quantity(reopened, 1));
-            assertEquals(1L, metric(third, "mvccCurrentRowAnchorHits"));
-            assertEquals(1L, metric(third, "mvccCurrentVersionReadImageHits"));
-            assertEquals(0L, metric(third, "mvccDirectoryPageAcquisitions"));
-            assertEquals(0L, metric(third, "mvccVersionSlotFetches"));
+            assertEquals(0L, metric(second, "mvccVersionSlotFetches"));
             reopened.commit();
         }
         shutdownDatabase(database);
