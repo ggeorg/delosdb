@@ -146,6 +146,12 @@ class B2IRowLocking1 extends B2IRowLocking2 implements BTreeLockingPolicy
      * @param forUpdate         Is the scan for update or for read only.
      *
      **/
+
+    @Override
+    public boolean supportsUnlatchedPrefixSnapshotRead() {
+        return true;
+    }
+
     public void unlockScanRecordAfterRead(
     BTreeRowPosition        pos,
     boolean                 forUpdate)

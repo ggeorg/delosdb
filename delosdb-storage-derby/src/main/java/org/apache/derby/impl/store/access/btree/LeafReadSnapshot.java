@@ -37,12 +37,17 @@ final class LeafReadSnapshot {
     final long pageVersion;
     private final StoreDataValue[][] rows;
     private final boolean[] deleted;
+    private final boolean leftmost;
+    private final boolean rightmost;
 
     private LeafReadSnapshot(
-            long pageVersion, StoreDataValue[][] rows, boolean[] deleted) {
+            long pageVersion, StoreDataValue[][] rows, boolean[] deleted,
+            boolean leftmost, boolean rightmost) {
         this.pageVersion = pageVersion;
         this.rows = rows;
         this.deleted = deleted;
+        this.leftmost = leftmost;
+        this.rightmost = rightmost;
     }
 
     static LeafReadSnapshot fromLatchedLeaf(
@@ -57,7 +62,10 @@ final class LeafReadSnapshot {
             rows[slot - 1] = StoreValueCopySupport.cloneRow(row, true);
             deleted[slot - 1] = leaf.page.isDeletedAtSlot(slot);
         }
-        return new LeafReadSnapshot(pageVersion, rows, deleted);
+        return new LeafReadSnapshot(
+                pageVersion, rows, deleted,
+                leaf.getleftSiblingPageNumber() == org.apache.derby.iapi.store.raw.ContainerHandle.INVALID_PAGE_NUMBER,
+                leaf.getrightSiblingPageNumber() == org.apache.derby.iapi.store.raw.ContainerHandle.INVALID_PAGE_NUMBER);
     }
 
     StoreDataValue[] searchExact(StoreDataValue[] searchKey, BTree btree)
@@ -81,6 +89,66 @@ final class LeafReadSnapshot {
         }
         return null;
     }
+
+    StoreDataValue[][] searchExactPrefix(StoreDataValue[] searchKey, BTree btree)
+            throws StandardException {
+        if (searchKey == null || searchKey.length == 0 || rows.length == 0) {
+            return null;
+        }
+        int low = 0;
+        int high = rows.length;
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            int comparison = ControlRow.compareIndexRowToKey(
+                    rows[mid], searchKey, btree.nUniqueColumns,
+                    SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                    btree.ascDescInfo);
+            if (comparison < 0) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        int first = low;
+        if (first >= rows.length || ControlRow.compareIndexRowToKey(
+                rows[first], searchKey, btree.nUniqueColumns,
+                SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                btree.ascDescInfo) != 0) {
+            return null;
+        }
+        int last = first;
+        while (last + 1 < rows.length && ControlRow.compareIndexRowToKey(
+                rows[last + 1], searchKey, btree.nUniqueColumns,
+                SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                btree.ascDescInfo) == 0) {
+            last++;
+        }
+
+        // A matching prefix at either physical edge may continue on the
+        // adjacent leaf. Fall back rather than return a truncated candidate
+        // set. This deliberately sacrifices some hits for correctness.
+        if ((first == 0 && !leftmost) || (last == rows.length - 1 && !rightmost)) {
+            return null;
+        }
+
+        int live = 0;
+        for (int index = first; index <= last; index++) {
+            if (!deleted[index]) {
+                live++;
+            }
+        }
+        if (live == 0) {
+            return null;
+        }
+        StoreDataValue[][] matches = new StoreDataValue[live][];
+        int output = 0;
+        for (int index = first; index <= last; index++) {
+            if (!deleted[index]) {
+                matches[output++] = rows[index];
+            }
+        }
+        return matches;
+    }
 }
 
 /** Identity tokens needed to validate one optimistic leaf read. */
@@ -97,5 +165,23 @@ final class LeafReadSnapshotHit {
         this.pageNumber = pageNumber;
         this.leaf = leaf;
         this.row = row;
+    }
+}
+
+
+/** Identity tokens needed to validate one optimistic exact-prefix leaf read. */
+final class LeafReadSnapshotPrefixHit {
+    final Object rootToken;
+    final long pageNumber;
+    final LeafReadSnapshot leaf;
+    final StoreDataValue[][] rows;
+
+    LeafReadSnapshotPrefixHit(
+            Object rootToken, long pageNumber, LeafReadSnapshot leaf,
+            StoreDataValue[][] rows) {
+        this.rootToken = rootToken;
+        this.pageNumber = pageNumber;
+        this.leaf = leaf;
+        this.rows = rows;
     }
 }

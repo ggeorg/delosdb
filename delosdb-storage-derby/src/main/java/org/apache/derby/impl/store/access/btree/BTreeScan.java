@@ -187,6 +187,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     private LeafReadSnapshotHit snapshotPointHit;
     private boolean snapshotPointLockHeld;
     private boolean snapshotPointHeldExhausted;
+    private LeafReadSnapshotPrefixHit snapshotPrefixHit;
+    private int snapshotPrefixIndex;
 
 
     /**
@@ -227,6 +229,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         snapshotPointHit = null;
         snapshotPointLockHeld = false;
         snapshotPointHeldExhausted = false;
+        snapshotPrefixHit = null;
+        snapshotPrefixIndex = 0;
     }
 
     /**
@@ -1138,7 +1142,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     }
 
     final void observeSnapshotPointLeaf() throws StandardException {
-        if (isSnapshotPointReadShape() && scan_position.current_leaf != null) {
+        if ((isSnapshotPointReadShape() || isSnapshotPrefixReadShape())
+                && scan_position.current_leaf != null) {
             getConglomerate().observeLeafReadSnapshot(
                     scan_position.current_leaf, this);
         }
@@ -1159,6 +1164,76 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         BTree conglomerate = getConglomerate();
         if (!conglomerate.isUnique()
                 || init_startKeyValue.length != conglomerate.nUniqueColumns
+                || init_stopKeyValue.length != init_startKeyValue.length) {
+            return false;
+        }
+        for (int i = 0; i < init_startKeyValue.length; i++) {
+            if (StoreTypeUtil.compare(
+                    init_startKeyValue[i], init_stopKeyValue[i]) != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    final int trySnapshotPrefixRead(StoreDataValue[] row)
+            throws StandardException {
+        if (scan_state != SCAN_INIT || !isSnapshotPrefixReadShape()) {
+            return -1;
+        }
+        LeafReadSnapshotPrefixHit hit = getConglomerate()
+                .searchPrefixLeafReadSnapshot(this, init_startKeyValue, init_template);
+        if (hit == null) {
+            return -1;
+        }
+        snapshotPrefixHit = hit;
+        snapshotPrefixIndex = 0;
+        return copyNextSnapshotPrefixRow(row);
+    }
+
+    final int continueSnapshotPrefixRead(StoreDataValue[] row)
+            throws StandardException {
+        if (snapshotPrefixHit == null) {
+            return -1;
+        }
+        return copyNextSnapshotPrefixRow(row);
+    }
+
+    private int copyNextSnapshotPrefixRow(StoreDataValue[] row)
+            throws StandardException {
+        LeafReadSnapshotPrefixHit hit = snapshotPrefixHit;
+        if (hit == null) {
+            return -1;
+        }
+        if (snapshotPrefixIndex >= hit.rows.length) {
+            snapshotPrefixHit = null;
+            snapshotPrefixIndex = 0;
+            scan_position.current_rh_qualified = false;
+            scan_state = SCAN_DONE;
+            return 0;
+        }
+        StoreValueCopySupport.copyRow(
+                hit.rows[snapshotPrefixIndex++], row, init_scanColumnList);
+        scan_position.current_rh_qualified = true;
+        stat_numrows_visited++;
+        stat_numrows_qualified++;
+        stat_numpages_visited += 3;
+        scan_state = SCAN_INPROGRESS;
+        return 1;
+    }
+
+    private boolean isSnapshotPrefixReadShape() throws StandardException {
+        if (!BTree.prefixLeafSnapshotEnabled()
+                || init_forUpdate || getHold() || init_qualifier != null
+                || init_startKeyValue == null || init_stopKeyValue == null
+                || init_startSearchOperator != ScanController.GE
+                || init_stopSearchOperator != ScanController.GT
+                || !getLockingPolicy().supportsUnlatchedPrefixSnapshotRead()) {
+            return false;
+        }
+        BTree conglomerate = getConglomerate();
+        if (init_startKeyValue.length <= 0
+                || init_startKeyValue.length >= conglomerate.nUniqueColumns
                 || init_stopKeyValue.length != init_startKeyValue.length) {
             return false;
         }
@@ -1301,6 +1376,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             snapshotPointHit = null;
         }
         snapshotPointHeldExhausted = false;
+        snapshotPrefixHit = null;
+        snapshotPrefixIndex = 0;
         positionAtDoneScanFromClose(scan_position);
 
         super.close();

@@ -166,6 +166,15 @@ public interface BTreeLockingPolicy
         return false;
     }
 
+    /**
+     * Whether this scan policy may consume immutable prefix-candidate rows
+     * without taking a logical row lock. Read-uncommitted scans qualify;
+     * stronger isolation levels retain the ordinary latched path.
+     */
+    default boolean supportsUnlatchedPrefixSnapshotRead() {
+        return false;
+    }
+
 
     /**************************************************************************
      * Abstract Protected lockNonScan*() locking methods of BTree:

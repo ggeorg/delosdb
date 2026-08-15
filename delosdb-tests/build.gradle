@@ -7522,3 +7522,217 @@ tasks.register('runDelosJdbcGate10ldMvccResidualHotAuthorityProof') {
         logger.lifecycle('Gate 10L-D ' + passLine)
     }
 }
+
+// Gate 10L-E: experimental immutable exact-prefix leaf snapshot for the
+// read-uncommitted MVCC hidden ordered-index probe. Gate 10L-D proved that
+// the height-3 ordered-index leaf page, not the version page or lock manager,
+// dominates HOT wait/read. Keep the accepted 10L-B current-row anchor enabled
+// in both modes so the only variable here is the B-tree prefix leaf snapshot.
+registerDelosFocusedTest(
+        'runDelosMvccCurrentRowAnchorPrefixLeafSnapshotTest',
+        'Runs the Gate 10L-B semantic proof with the experimental read-uncommitted B-tree exact-prefix leaf snapshot enabled.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowAnchorTest.class'],
+        [
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096',
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'true'
+        ])
+
+tasks.named('runDelosMvccCurrentRowAnchorPrefixLeafSnapshotTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+def gate10leMvccPrefixLeafRoot =
+        'reports/delosdb/benchmarks/gate10le-mvcc-prefix-leaf-snapshot'
+def gate10leMvccAnchorSlots = 4096
+
+def configureGate10leMvccPrefixLeafWorker = {
+        JavaExec task, String mode, boolean prefixSnapshotEnabled ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-E MVCC HOT diagnostics with prefix leaf snapshot ${mode}."
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10leMvccPrefixLeafRoot}/${mode}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-E MVCC prefix-leaf proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10leMvccPrefixLeafRoot}/${mode}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10le-mvcc-${mode}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots':
+                        gate10leMvccAnchorSlots.toString(),
+                'delosdb.experimental.btreePrefixLeafSnapshot':
+                        prefixSnapshotEnabled.toString(),
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalLayoutDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10leMvccPrefixLeafOff', JavaExec) { task ->
+    configureGate10leMvccPrefixLeafWorker(task, 'off', false)
+    task.dependsOn tasks.named('runDelosMvccCurrentRowAnchorPrefixLeafSnapshotTest')
+}
+
+tasks.register('runDelosJdbcGate10leMvccPrefixLeafOn', JavaExec) { task ->
+    configureGate10leMvccPrefixLeafWorker(task, 'on', true)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10leMvccPrefixLeafOff')
+}
+
+tasks.register('runDelosJdbcGate10leMvccPrefixLeafSnapshotProof') {
+    group = 'benchmark'
+    description = 'Proves Gate 10L-E removes the measured MVCC hidden ordered-index leaf latch before performance acceptance.'
+    dependsOn tasks.named('runDelosJdbcGate10leMvccPrefixLeafOff')
+    dependsOn tasks.named('runDelosJdbcGate10leMvccPrefixLeafOn')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10leMvccPrefixLeafRoot).get().asFile
+        def parseCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-E report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-E report has no rows: ${file}")
+            }
+            def headers = lines[0].split(',', -1).toList()
+            lines.drop(1).collect { line ->
+                def values = line.split(',', -1).toList()
+                if (values.size() != headers.size()) {
+                    throw new GradleException("Gate 10L-E malformed CSV row in ${file}: ${line}")
+                }
+                [headers, values].transpose().collectEntries { pair -> [(pair[0]): pair[1]] }
+            }
+        }
+
+        def byMode = [:]
+        ['off', 'on'].each { mode ->
+            File measurementFile = new File(root, "${mode}/delos_mvcc-run-1.csv")
+            File latchFile = new File(root, "${mode}/page-latch-diagnostics-delos_mvcc-run-1.csv")
+            def measurements = parseCsv(measurementFile)
+            def latches = parseCsv(latchFile)
+            if (measurements.size() != 4 || latches.size() != 4) {
+                throw new GradleException(
+                        "Gate 10L-E ${mode} expected four HOT cells; measurements=${measurements.size()} latches=${latches.size()}")
+            }
+            def cells = [:]
+            measurements.each { row ->
+                int clients = Integer.parseInt(row.clients)
+                def latch = latches.find { Integer.parseInt(it.clients) == clients }
+                if (latch == null) {
+                    throw new GradleException("Gate 10L-E ${mode} missing ${clients}c latch row")
+                }
+                long measured = Long.parseLong(row.measuredOperations)
+                long requests = Long.parseLong(latch.latchRequests)
+                cells[clients] = [
+                        throughput: Double.parseDouble(row.operationsPerSecond),
+                        fingerprint: row.semanticFingerprint,
+                        retries: Long.parseLong(row.retryableConflictRetries),
+                        latchesPerRead: requests / (double) measured,
+                        waitPerRead: Double.parseDouble(latch.ownerWaitNanosPerOperation)
+                ]
+            }
+            byMode[mode] = cells
+        }
+
+        [1, 4, 8, 16].each { clients ->
+            def off = byMode.off[clients]
+            def on = byMode.on[clients]
+            if (off == null || on == null) {
+                throw new GradleException("Gate 10L-E missing ${clients}c OFF/ON cell")
+            }
+            if (off.retries != 0L || on.retries != 0L) {
+                throw new GradleException(
+                        "Gate 10L-E ${clients}c observed retries OFF=${off.retries} ON=${on.retries}")
+            }
+            if (off.fingerprint != on.fingerprint) {
+                throw new GradleException(
+                        "Gate 10L-E ${clients}c semantic fingerprint mismatch OFF=${off.fingerprint} ON=${on.fingerprint}")
+            }
+            double waitRatio = off.waitPerRead <= 0.0 ? 0.0 : on.waitPerRead / off.waitPerRead
+            double throughputDelta = (on.throughput / off.throughput - 1.0) * 100.0
+            logger.lifecycle(String.format(java.util.Locale.ROOT,
+                    'Gate 10L-E HOT %dc: OFF=%.2f ON=%.2f delta=%+.2f%% latches/read OFF=%.6f ON=%.6f wait/read OFF=%.1f ns ON=%.1f ns waitRatio=%.4f',
+                    clients, off.throughput, on.throughput, throughputDelta,
+                    off.latchesPerRead, on.latchesPerRead,
+                    off.waitPerRead, on.waitPerRead, waitRatio))
+        }
+
+        [8, 16].each { clients ->
+            def off = byMode.off[clients]
+            def on = byMode.on[clients]
+            if (off.latchesPerRead < 3.50) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10L-E %dc OFF baseline no longer exposes the expected MVCC B-tree leaf authority: latches/read=%.6f',
+                        clients, off.latchesPerRead))
+            }
+            if (on.latchesPerRead > 2.25) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10L-E %dc prefix snapshot did not remove the leaf latch strongly enough: latches/read=%.6f required <=2.25',
+                        clients, on.latchesPerRead))
+            }
+            if (off.waitPerRead > 0.0 && on.waitPerRead / off.waitPerRead > 0.35) {
+                throw new GradleException(String.format(java.util.Locale.ROOT,
+                        'Gate 10L-E %dc prefix snapshot left too much physical wait: OFF=%.1f ns/read ON=%.1f ns/read ratio=%.4f required <=0.35',
+                        clients, off.waitPerRead, on.waitPerRead,
+                        on.waitPerRead / off.waitPerRead))
+            }
+        }
+
+        def passLine = 'PASS: Gate 10L-E experimental read-uncommitted exact-prefix leaf snapshot removes the measured MVCC hidden ordered-index leaf-latch authority at HOT 8c/16c while preserving semantic fingerprints and zero-retry reads. Performance acceptance remains a separate gate.'
+        new File(root, 'gate10le-mvcc-prefix-leaf-snapshot-decision.txt').setText(
+                passLine + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-E ' + passLine)
+    }
+}

@@ -110,6 +110,14 @@ public class BTreeForwardScan extends BTreeScan
             finishSnapshotPointPosition();
             return 0;
         }
+        if (max_rowcnt == 1 && row_array != null && row_array[0] != null
+                && rowloc_array == null && hash_table == null
+                && key_column_numbers == null) {
+            int continuedPrefixRows = continueSnapshotPrefixRead(row_array[0]);
+            if (continuedPrefixRows >= 0) {
+                return continuedPrefixRows;
+            }
+        }
         if (this.scan_state == SCAN_INIT && max_rowcnt == 1
                 && row_array != null && row_array[0] != null
                 && rowloc_array == null && hash_table == null
@@ -120,6 +128,10 @@ public class BTreeForwardScan extends BTreeScan
             int snapshotRows = trySnapshotPointRead(row_array[0]);
             if (snapshotRows >= 0) {
                 return snapshotRows;
+            }
+            int prefixSnapshotRows = trySnapshotPrefixRead(row_array[0]);
+            if (prefixSnapshotRows >= 0) {
+                return prefixSnapshotRows;
             }
         }
 

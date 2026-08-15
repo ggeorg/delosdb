@@ -1389,7 +1389,7 @@ public class BranchControlRow extends ControlRow
         }
 	}
 
-    private long getChildPageIdAtSlot(
+    long getChildPageIdAtSlot(
     OpenBTree       btree,
     int             slot)
         throws StandardException

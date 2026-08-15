@@ -282,6 +282,13 @@ public abstract class BTree extends GenericConglomerate
         leaf.observeLeafReadSnapshot(this);
     }
 
+    private static final String PREFIX_LEAF_SNAPSHOT_PROPERTY =
+            "delosdb.experimental.btreePrefixLeafSnapshot";
+
+    static boolean prefixLeafSnapshotEnabled() {
+        return Boolean.getBoolean(PREFIX_LEAF_SNAPSHOT_PROPERTY);
+    }
+
     final LeafReadSnapshotHit searchLeafReadSnapshot(StoreDataValue[] searchKey)
             throws StandardException {
         RootRoutingSnapshot root = rootRoutingSnapshot;
@@ -305,6 +312,54 @@ public abstract class BTree extends GenericConglomerate
             return null;
         }
         return new LeafReadSnapshotHit(root, leafPageNumber, leaf, row);
+    }
+
+    final LeafReadSnapshotPrefixHit searchPrefixLeafReadSnapshot(
+            OpenBTree openBtree, StoreDataValue[] searchKey,
+            StoreDataValue[] template) throws StandardException {
+        if (!prefixLeafSnapshotEnabled()) {
+            return null;
+        }
+        RootRoutingSnapshot root = rootRoutingSnapshot;
+        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
+        if (root == null || root.rootLevel != 2 || snapshots == null) {
+            return null;
+        }
+
+        long branchPageNumber = root.route(
+                searchKey, SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH, this);
+        if (rootRoutingSnapshot != root) {
+            return null;
+        }
+
+        ControlRow control = ControlRow.get(openBtree, branchPageNumber);
+        long leafPageNumber;
+        try {
+            if (!(control instanceof BranchControlRow branch) || branch.getLevel() != 1) {
+                return null;
+            }
+            SearchParameters params = new SearchParameters(
+                    searchKey, SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                    template, openBtree, false);
+            branch.searchForEntry(params);
+            leafPageNumber = branch.getChildPageIdAtSlot(openBtree, params.resultSlot);
+        } finally {
+            control.release();
+        }
+
+        if (rootRoutingSnapshot != root) {
+            return null;
+        }
+        LeafReadSnapshot leaf = snapshots.get(leafPageNumber);
+        if (leaf == null) {
+            return null;
+        }
+        StoreDataValue[][] rows = leaf.searchExactPrefix(searchKey, this);
+        if (rows == null || rootRoutingSnapshot != root
+                || snapshots.get(leafPageNumber) != leaf) {
+            return null;
+        }
+        return new LeafReadSnapshotPrefixHit(root, leafPageNumber, leaf, rows);
     }
 
     final boolean leafReadSnapshotStillCurrent(LeafReadSnapshotHit hit) {
