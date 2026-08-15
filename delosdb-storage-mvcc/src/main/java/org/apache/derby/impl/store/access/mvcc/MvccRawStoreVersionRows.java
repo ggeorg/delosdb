@@ -161,6 +161,34 @@ final class MvccRawStoreVersionRows {
         return new FetchProjection(table, new FormatableBitSet(table.columnCount()));
     }
 
+    static MvccRawStoreTable.VersionRecord project(
+            MvccRawStoreTable.VersionRecord source,
+            FetchProjection projection) throws StandardException {
+        StoreDataValue[] sourceValues = source.values();
+        StoreDataValue[] values = projection != null && !projection.includesPayload()
+                ? null
+                : new StoreDataValue[sourceValues == null ? 0 : sourceValues.length];
+        if (values != null) {
+            for (int index = 0; index < values.length; index++) {
+                if ((projection == null || projection.includes(index))
+                        && sourceValues[index] != null) {
+                    values[index] = StoreValueCopySupport.cloneValue(sourceValues[index], true);
+                }
+            }
+        }
+        return new MvccRawStoreTable.VersionRecord(
+                source.rowId(),
+                source.versionId(),
+                source.creatorTransactionId(),
+                source.beginSequence(),
+                source.endSequence(),
+                source.previousVersionId(),
+                source.previousHint(),
+                source.flags(),
+                values,
+                source.handle());
+    }
+
     static MvccRawStoreTable.VersionRecord decodeAtSlot(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,

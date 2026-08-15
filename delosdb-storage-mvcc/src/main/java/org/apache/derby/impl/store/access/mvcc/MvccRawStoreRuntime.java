@@ -54,6 +54,8 @@ final class MvccRawStoreRuntime {
             "delosdb.experimental.mvccCurrentRowAnchor";
     static final String CURRENT_ROW_ANCHOR_SLOTS_PROPERTY =
             "delosdb.experimental.mvccCurrentRowAnchor.slots";
+    static final String CURRENT_VERSION_READ_IMAGE_PROPERTY =
+            "delosdb.experimental.mvccCurrentVersionReadImage";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -82,6 +84,7 @@ final class MvccRawStoreRuntime {
     private final int commitSequenceReservationBlockSize;
     private final boolean concurrentCommitPublication;
     private final AtomicReferenceArray<CurrentRowAnchor> currentRowAnchors;
+    private final AtomicReferenceArray<CurrentVersionReadImage> currentVersionReadImages;
     private final TreeSet<Long> terminalCommitSequences = new TreeSet<>();
     private long nextCommitSequence;
     private long commitSequenceReservationLimit;
@@ -136,8 +139,13 @@ final class MvccRawStoreRuntime {
                                 + " must be positive: " + slotText);
             }
             currentRowAnchors = new AtomicReferenceArray<>(slots);
+            currentVersionReadImages = Boolean.parseBoolean(System.getProperty(
+                    CURRENT_VERSION_READ_IMAGE_PROPERTY, "false"))
+                    ? new AtomicReferenceArray<>(slots)
+                    : null;
         } else {
             currentRowAnchors = null;
+            currentVersionReadImages = null;
         }
     }
 
@@ -184,6 +192,46 @@ final class MvccRawStoreRuntime {
 
     boolean currentRowAnchorEnabled() {
         return currentRowAnchors != null;
+    }
+
+    boolean currentVersionReadImageEnabled() {
+        return currentVersionReadImages != null;
+    }
+
+    MvccRawStoreTable.VersionRecord currentVersionReadImage(
+            MvccRawStoreTable.Descriptor table,
+            CurrentRowAnchor anchor) {
+        AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
+        if (images == null || anchor == null) {
+            return null;
+        }
+        int slot = currentRowAnchorSlot(table.metadataContainer(), anchor.rowId(), images.length());
+        CurrentVersionReadImage image = images.get(slot);
+        return image != null && image.anchor() == anchor ? image.version() : null;
+    }
+
+    void publishCurrentVersionReadImage(
+            MvccRawStoreTable.Descriptor table,
+            CurrentRowAnchor anchor,
+            MvccRawStoreTable.VersionRecord version) {
+        AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
+        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
+        if (images == null || anchors == null || anchor == null || version == null
+                || version.rowId() != anchor.rowId()
+                || version.versionId() != anchor.versionId()
+                || version.beginSequence() != anchor.beginSequence()
+                || version.flags() != anchor.flags()) {
+            return;
+        }
+        int slot = currentRowAnchorSlot(table.metadataContainer(), anchor.rowId(), images.length());
+        if (anchors.get(slot) != anchor) {
+            return;
+        }
+        CurrentVersionReadImage image = new CurrentVersionReadImage(anchor, version);
+        images.set(slot, image);
+        if (anchors.get(slot) != anchor) {
+            images.compareAndSet(slot, image, null);
+        }
     }
 
     CurrentRowAnchor currentRowAnchor(
@@ -253,7 +301,9 @@ final class MvccRawStoreRuntime {
             return;
         }
         int slot = currentRowAnchorSlot(table.metadataContainer(), rowId, anchors.length());
-        anchors.compareAndSet(slot, expected, null);
+        if (anchors.compareAndSet(slot, expected, null)) {
+            clearCurrentVersionReadImage(slot, expected);
+        }
     }
 
     private void putCurrentRowAnchor(CurrentRowAnchor anchor) {
@@ -262,7 +312,22 @@ final class MvccRawStoreRuntime {
             return;
         }
         int slot = currentRowAnchorSlot(anchor.tableKey(), anchor.rowId(), anchors.length());
+        AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
+        if (images != null) {
+            images.set(slot, null);
+        }
         anchors.set(slot, anchor);
+    }
+
+    private void clearCurrentVersionReadImage(int slot, CurrentRowAnchor expectedAnchor) {
+        AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
+        if (images == null) {
+            return;
+        }
+        CurrentVersionReadImage image = images.get(slot);
+        if (image != null && image.anchor() == expectedAnchor) {
+            images.compareAndSet(slot, image, null);
+        }
     }
 
     private static int currentRowAnchorSlot(
@@ -283,8 +348,9 @@ final class MvccRawStoreRuntime {
         ContainerKey tableKey = table.metadataContainer();
         for (int index = 0; index < anchors.length(); index++) {
             CurrentRowAnchor anchor = anchors.get(index);
-            if (anchor != null && anchor.tableKey().equals(tableKey)) {
-                anchors.compareAndSet(index, anchor, null);
+            if (anchor != null && anchor.tableKey().equals(tableKey)
+                    && anchors.compareAndSet(index, anchor, null)) {
+                clearCurrentVersionReadImage(index, anchor);
             }
         }
     }
@@ -715,6 +781,11 @@ final class MvccRawStoreRuntime {
         } finally {
             commitPublicationLock.unlock();
         }
+    }
+
+    private record CurrentVersionReadImage(
+            CurrentRowAnchor anchor,
+            MvccRawStoreTable.VersionRecord version) {
     }
 
     record CurrentRowAnchor(

@@ -7962,3 +7962,249 @@ tasks.register('runDelosJdbcGate10lfMvccPostLeafResidualAuthorityProof') {
         logger.lifecycle('Gate 10L-F ' + passLine)
     }
 }
+
+// Gate 10L-G: transient immutable full current-version read image.
+// The Current-Row Anchor and exact-prefix leaf snapshot are enabled in both
+// modes. The only mechanism variable is mvccCurrentVersionReadImage.
+registerDelosFocusedTest(
+        'runDelosMvccCurrentVersionReadImageTest',
+        'Runs focused current-version read-image correctness, invalidation, old-snapshot, and reopen proofs.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentVersionReadImageTest.class'],
+        [
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096',
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
+                'delosdb.experimental.mvccCurrentVersionReadImage': 'true'
+        ])
+
+tasks.named('runDelosMvccCurrentVersionReadImageTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+def gate10lgMvccVersionImageRoot =
+        'reports/delosdb/benchmarks/gate10lg-mvcc-current-version-read-image'
+def gate10lgMvccAnchorSlots = 4096
+
+def configureGate10lgMvccVersionImageWorker = {
+        JavaExec task, String mode, boolean versionImageEnabled ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-G MVCC HOT diagnostics with current-version read image ${mode}."
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10lgMvccVersionImageRoot}/${mode}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-G MVCC current-version read-image proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10lgMvccVersionImageRoot}/${mode}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10lg-mvcc-${mode}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots':
+                        gate10lgMvccAnchorSlots.toString(),
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
+                'delosdb.experimental.mvccCurrentVersionReadImage':
+                        versionImageEnabled.toString(),
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalLayoutDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10lgMvccVersionImageOff', JavaExec) { task ->
+    configureGate10lgMvccVersionImageWorker(task, 'off', false)
+    task.dependsOn tasks.named('runDelosMvccCurrentVersionReadImageTest')
+}
+
+tasks.register('runDelosJdbcGate10lgMvccVersionImageOn', JavaExec) { task ->
+    configureGate10lgMvccVersionImageWorker(task, 'on', true)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10lgMvccVersionImageOff')
+}
+
+tasks.register('runDelosJdbcGate10lgMvccCurrentVersionReadImageProof') {
+    group = 'benchmark'
+    description = 'Proves Gate 10L-G removes the residual MVCC current-version page latch without changing semantics.'
+    dependsOn tasks.named('runDelosJdbcGate10lgMvccVersionImageOff')
+    dependsOn tasks.named('runDelosJdbcGate10lgMvccVersionImageOn')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lgMvccVersionImageRoot).get().asFile
+
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-G report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-G report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Gate 10L-G malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+        def parseContainerId = { String pageKey ->
+            def matcher = (pageKey =~ /Container\(0;\s*(\d+)\)/)
+            matcher.find() ? Long.parseLong(matcher.group(1)) : -1L
+        }
+        def clientsList = ['1', '4', '8', '16']
+        def modes = ['off', 'on']
+        def measurements = [:]
+        def latches = [:]
+        def pages = [:]
+        def layouts = [:]
+        modes.each { mode ->
+            File dir = new File(root, mode)
+            measurements[mode] = loadCsv(new File(dir, 'delos_mvcc-run-1.csv'))
+            latches[mode] = loadCsv(new File(dir, 'page-latch-diagnostics-delos_mvcc-run-1.csv'))
+            pages[mode] = loadCsv(new File(dir, 'page-latch-authority-by-page-delos_mvcc-run-1.csv'))
+            layouts[mode] = loadCsv(new File(dir, 'mvcc-physical-layout-delos_mvcc-run-1.csv'))
+            if (measurements[mode].size() != 4 || latches[mode].size() != 4) {
+                throw new GradleException(
+                        "Gate 10L-G ${mode} expected four HOT rows; measurements=${measurements[mode].size()} latches=${latches[mode].size()}")
+            }
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-G MVCC immutable current-version read-image proof',
+                'Current-Row Anchor and exact-prefix B-tree leaf snapshot are enabled in both modes.',
+                'Only delosdb.experimental.mvccCurrentVersionReadImage changes: OFF=false versus ON=true.',
+                'Frozen high-concurrency mechanism guards: OFF >=1.75 latches/read; ON <=1.25; ON version-page requests/read <=0.05; ON/OFF total physical wait <=0.25 at 8c and 16c.'
+        ]
+
+        clientsList.each { clients ->
+            def offMeasurement = measurements.off.find { it.clients == clients }
+            def onMeasurement = measurements.on.find { it.clients == clients }
+            def offLatch = latches.off.find { it.clients == clients }
+            def onLatch = latches.on.find { it.clients == clients }
+            if ([offMeasurement, onMeasurement, offLatch, onLatch].any { it == null }) {
+                throw new GradleException("Gate 10L-G missing ${clients}c row")
+            }
+            if (offMeasurement.semanticFingerprint != onMeasurement.semanticFingerprint) {
+                failures.add("${clients}c semantic fingerprint changed OFF=${offMeasurement.semanticFingerprint} ON=${onMeasurement.semanticFingerprint}")
+            }
+            if (Long.parseLong(offMeasurement.retryableConflictRetries) != 0L
+                    || Long.parseLong(onMeasurement.retryableConflictRetries) != 0L) {
+                failures.add("${clients}c observed retryable conflicts OFF=${offMeasurement.retryableConflictRetries} ON=${onMeasurement.retryableConflictRetries}")
+            }
+
+            long offOps = Long.parseLong(offMeasurement.measuredOperations)
+            long onOps = Long.parseLong(onMeasurement.measuredOperations)
+            if (offOps != onOps) {
+                failures.add("${clients}c measured-operation mismatch OFF=${offOps} ON=${onOps}")
+            }
+            double offLatchesPerRead = Long.parseLong(offLatch.latchRequests) / (double) offOps
+            double onLatchesPerRead = Long.parseLong(onLatch.latchRequests) / (double) onOps
+            double offWaitPerRead = Long.parseLong(offLatch.ownerWaitNanos) / (double) offOps
+            double onWaitPerRead = Long.parseLong(onLatch.ownerWaitNanos) / (double) onOps
+            double waitRatio = offWaitPerRead == 0.0d ? 0.0d : onWaitPerRead / offWaitPerRead
+
+            def onRoles = layouts.on.findAll { it.clients == clients }
+                    .groupBy { Long.parseLong(it.containerId) }
+                    .collectEntries { containerId, values ->
+                        [(containerId): values.collect { it.role }.unique().sort().join('+')]
+                    }
+            long onVersionLatchRequests = pages.on.findAll { page ->
+                page.clients == clients
+                        && onRoles.get(parseContainerId(page.pageKey), '').contains('version')
+            }.inject(0L) { total, page -> total + Long.parseLong(page.latchRequests) }
+            double onVersionLatchesPerRead = onVersionLatchRequests / (double) onOps
+
+            double offThroughput = Double.parseDouble(offMeasurement.operationsPerSecond)
+            double onThroughput = Double.parseDouble(onMeasurement.operationsPerSecond)
+            double delta = ((onThroughput / offThroughput) - 1.0d) * 100.0d
+            def line = String.format(java.util.Locale.ROOT,
+                    '%sc: OFF=%.2f ON=%.2f delta=%+.2f%% latches/read OFF=%.6f ON=%.6f versionLatches/read ON=%.6f wait/read OFF=%.1f ns ON=%.1f ns waitRatio=%.4f',
+                    clients, offThroughput, onThroughput, delta,
+                    offLatchesPerRead, onLatchesPerRead, onVersionLatchesPerRead,
+                    offWaitPerRead, onWaitPerRead, waitRatio)
+            decision.add(line)
+            logger.lifecycle('Gate 10L-G ' + line)
+
+            if (clients in ['8', '16']) {
+                if (offLatchesPerRead < 1.75d) {
+                    failures.add("${clients}c OFF baseline unexpectedly low: latches/read=${String.format(java.util.Locale.ROOT, '%.6f', offLatchesPerRead)} required >=1.75")
+                }
+                if (onLatchesPerRead > 1.25d) {
+                    failures.add("${clients}c image did not remove the version latch: latches/read=${String.format(java.util.Locale.ROOT, '%.6f', onLatchesPerRead)} required <=1.25")
+                }
+                if (onVersionLatchesPerRead > 0.05d) {
+                    failures.add("${clients}c version page remained physical authority: versionLatches/read=${String.format(java.util.Locale.ROOT, '%.6f', onVersionLatchesPerRead)} required <=0.05")
+                }
+                if (waitRatio > 0.25d) {
+                    failures.add("${clients}c current-version image left too much physical wait: ratio=${String.format(java.util.Locale.ROOT, '%.4f', waitRatio)} required <=0.25")
+                }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            decision.add('FAIL: ' + failures.join('; '))
+            new File(root, 'gate10lg-mvcc-current-version-read-image-decision.txt').setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-G mechanism proof failed: ' + failures.join('; '))
+        }
+        def passLine = 'PASS: the bounded transient immutable current-version image removes the residual MVCC version-page latch on HOT current-row reads while preserving semantic fingerprints and zero-retry behavior. Proceed to repository integrity and a separate balanced performance acceptance gate.'
+        decision.add(passLine)
+        new File(root, 'gate10lg-mvcc-current-version-read-image-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-G ' + passLine)
+    }
+}

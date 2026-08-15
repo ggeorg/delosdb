@@ -80,6 +80,23 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return runtime.currentRowAnchorEnabled();
     }
 
+    boolean currentVersionReadImageEnabled() {
+        return runtime.currentVersionReadImageEnabled();
+    }
+
+    MvccRawStoreTable.VersionRecord currentVersionReadImage(
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreRuntime.CurrentRowAnchor anchor) {
+        return runtime.currentVersionReadImage(table, anchor);
+    }
+
+    void publishCurrentVersionReadImage(
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreRuntime.CurrentRowAnchor anchor,
+            MvccRawStoreTable.VersionRecord version) {
+        runtime.publishCurrentVersionReadImage(table, anchor, version);
+    }
+
     MvccRawStoreRuntime.CurrentRowAnchor currentRowAnchor(
             MvccRawStoreTable.Descriptor table,
             long rowId) {

@@ -304,8 +304,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             metrics.currentRowAnchorHit();
             return new Result(null, false);
         }
-        MvccRawStoreTable.VersionRecord current =
-                versionReader().findAnchoredCurrent(anchor, projection);
+        MvccRawStoreTable.VersionRecord current = readAnchoredVersion(anchor);
         if (current == null) {
             context.invalidateCurrentRowAnchor(table, candidate.rowId(), anchor);
             metrics.currentRowAnchorFallback();
@@ -320,6 +319,28 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         current.handle(),
                         anchor.directoryLocation()),
                 false);
+    }
+
+    private MvccRawStoreTable.VersionRecord readAnchoredVersion(
+            MvccRawStoreRuntime.CurrentRowAnchor anchor) throws StandardException {
+        if (!context.currentVersionReadImageEnabled()) {
+            return versionReader().findAnchoredCurrent(anchor, projection);
+        }
+        metrics.currentVersionReadImageChecked();
+        MvccRawStoreTable.VersionRecord image = context.currentVersionReadImage(table, anchor);
+        if (image != null) {
+            metrics.currentVersionReadImageHit();
+            return MvccRawStoreVersionRows.project(image, projection);
+        }
+        metrics.currentVersionReadImageFallback();
+        MvccRawStoreTable.VersionRecord decoded = versionReader().findAnchoredCurrent(anchor, null);
+        if (decoded == null) {
+            return null;
+        }
+        MvccRawStoreTable.VersionRecord projected =
+                MvccRawStoreVersionRows.project(decoded, projection);
+        context.publishCurrentVersionReadImage(table, anchor, decoded);
+        return projected;
     }
 
     private ContainerHandle directoryContainer() throws StandardException {

@@ -57,6 +57,12 @@ final class MvccScanInfo implements ScanInfo {
     private static final String CURRENT_ROW_ANCHOR_CHECKS = "mvccCurrentRowAnchorChecks";
     private static final String CURRENT_ROW_ANCHOR_HITS = "mvccCurrentRowAnchorHits";
     private static final String CURRENT_ROW_ANCHOR_FALLBACKS = "mvccCurrentRowAnchorFallbacks";
+    private static final String CURRENT_VERSION_READ_IMAGE_CHECKS =
+            "mvccCurrentVersionReadImageChecks";
+    private static final String CURRENT_VERSION_READ_IMAGE_HITS =
+            "mvccCurrentVersionReadImageHits";
+    private static final String CURRENT_VERSION_READ_IMAGE_FALLBACKS =
+            "mvccCurrentVersionReadImageFallbacks";
     private static final String SNAPSHOT_SEQUENCE = "mvccSnapshotSequence";
 
     private final String scanType;
@@ -154,6 +160,15 @@ final class MvccScanInfo implements ScanInfo {
         result.setProperty(
                 CURRENT_ROW_ANCHOR_FALLBACKS,
                 Long.toString(indexedReadMetrics.currentRowAnchorFallbacks()));
+        result.setProperty(
+                CURRENT_VERSION_READ_IMAGE_CHECKS,
+                Long.toString(indexedReadMetrics.currentVersionReadImageChecks()));
+        result.setProperty(
+                CURRENT_VERSION_READ_IMAGE_HITS,
+                Long.toString(indexedReadMetrics.currentVersionReadImageHits()));
+        result.setProperty(
+                CURRENT_VERSION_READ_IMAGE_FALLBACKS,
+                Long.toString(indexedReadMetrics.currentVersionReadImageFallbacks()));
         result.setProperty(SNAPSHOT_SEQUENCE, Long.toString(snapshotSequence));
         return result;
     }
