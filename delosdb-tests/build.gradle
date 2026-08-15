@@ -7223,3 +7223,298 @@ tasks.register('runDelosJdbcGate10lcMvccCurrentRowAnchorPairedAcceptanceProof') 
         logger.lifecycle('Gate 10L-C paired ' + passLine)
     }
 }
+
+// Gate 10L-D: diagnostic-only residual authority proof after Gate 10L-C showed
+// that the transient current-row anchor improves single-client reads but does
+// not improve HOT 8c/16c. Measure the exact shared authority with the anchor
+// OFF versus ON before changing MVCC production architecture again.
+def gate10ldMvccResidualAuthorityRoot =
+        'reports/delosdb/benchmarks/gate10ld-mvcc-residual-hot-authority'
+def gate10ldMvccAnchorSlots = 4096
+
+def configureGate10ldMvccResidualAuthorityWorker = {
+        JavaExec task, String mode, boolean anchorEnabled ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-D MVCC residual HOT authority diagnostics with anchor ${mode}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10ldMvccResidualAuthorityRoot}/${mode}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-D MVCC residual-authority proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10ldMvccResidualAuthorityRoot}/${mode}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10ld-mvcc-${mode}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.mvccCurrentRowAnchor': anchorEnabled.toString(),
+                'delosdb.experimental.mvccCurrentRowAnchor.slots':
+                        gate10ldMvccAnchorSlots.toString(),
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.lockEntry': 'true',
+                'delosdb.diagnostic.lockWait': 'true',
+                'delosdb.diagnostic.cacheEntry': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                // Reuse the existing detailed page-latch reporting switch. It is
+                // target-neutral despite its historical heap-specific name.
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalLayoutDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockEntryDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockWaitDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.cacheEntryDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10ldMvccResidualAuthorityOff', JavaExec) { task ->
+    configureGate10ldMvccResidualAuthorityWorker(task, 'off', false)
+}
+
+tasks.register('runDelosJdbcGate10ldMvccResidualAuthorityOn', JavaExec) { task ->
+    configureGate10ldMvccResidualAuthorityWorker(task, 'on', true)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10ldMvccResidualAuthorityOff')
+}
+
+tasks.register('runDelosJdbcGate10ldMvccResidualHotAuthorityProof') {
+    group = 'benchmark'
+    description = 'Diagnoses the residual MVCC HOT authority after the transient Current-Row Anchor failed high-concurrency acceptance.'
+    dependsOn tasks.named('runDelosJdbcGate10ldMvccResidualAuthorityOff')
+    dependsOn tasks.named('runDelosJdbcGate10ldMvccResidualAuthorityOn')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(gate10ldMvccResidualAuthorityRoot).get().asFile
+
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-D report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-D report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException(
+                            "Gate 10L-D malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+
+        def parseContainerId = { String pageKey ->
+            def matcher = (pageKey =~ /Container\(0;\s*(\d+)\)/)
+            matcher.find() ? Long.parseLong(matcher.group(1)) : -1L
+        }
+        def simpleName = { String name ->
+            name.contains('.') ? name.substring(name.lastIndexOf('.') + 1) : name
+        }
+        def clientsList = ['1', '4', '8', '16']
+        def modes = ['off', 'on']
+        def decision = [
+                'Gate 10L-D MVCC residual HOT authority proof',
+                'Diagnostic only: no production optimization is accepted by this task.',
+                'Gate 10L-C rejected the bounded transient Current-Row Anchor: 1c improved materially but HOT 8c/16c did not.',
+                'Source path on an anchor hit still executes versionContainer.getPage(anchor.hint.pageNumber) -> version-slot decode -> page.unlatch.',
+                'Measure page-latch, lock-entry, logical-lock-wait and cache-entry authorities with anchor OFF versus ON at HOT 1c/4c/8c/16c.'
+        ]
+
+        def modeData = [:]
+        modes.each { mode ->
+            File dir = new File(root, mode)
+            def measurements = loadCsv(new File(dir, 'delos_mvcc-run-1.csv'))
+            def latches = loadCsv(new File(dir, 'page-latch-diagnostics-delos_mvcc-run-1.csv'))
+            def pages = loadCsv(new File(dir, 'page-latch-authority-by-page-delos_mvcc-run-1.csv'))
+            def layouts = loadCsv(new File(dir, 'mvcc-physical-layout-delos_mvcc-run-1.csv'))
+            def entries = loadCsv(new File(dir, 'lock-entry-diagnostics-delos_mvcc-run-1.csv'))
+            def waits = loadCsv(new File(dir, 'logical-lock-wait-diagnostics-delos_mvcc-run-1.csv'))
+            def caches = loadCsv(new File(dir, 'cache-entry-diagnostics-delos_mvcc-run-1.csv'))
+            if (measurements.size() != 4 || latches.size() != 4) {
+                throw new GradleException(
+                        "Gate 10L-D ${mode} expected four HOT measurements/latch rows, observed measurements=${measurements.size()} latches=${latches.size()}.")
+            }
+            modeData[mode] = [
+                    measurements: measurements,
+                    latches: latches,
+                    pages: pages,
+                    layouts: layouts,
+                    entries: entries,
+                    waits: waits,
+                    caches: caches
+            ]
+        }
+
+        clientsList.each { clients ->
+            def fingerprints = modes.collect { mode ->
+                def row = modeData[mode].measurements.find { it.clients == clients }
+                if (row == null) {
+                    throw new GradleException("Gate 10L-D missing ${mode} ${clients}c measurement.")
+                }
+                if (Long.parseLong(row.retryableConflictRetries) != 0L) {
+                    throw new GradleException(
+                            "Gate 10L-D ${mode} ${clients}c observed retryable conflicts: ${row.retryableConflictRetries}")
+                }
+                row.semanticFingerprint
+            }.toSet()
+            if (fingerprints.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-D ${clients}c semantic fingerprint differs OFF/ON: ${fingerprints}")
+            }
+        }
+
+        modes.each { mode ->
+            clientsList.each { clients ->
+                def data = modeData[mode]
+                def measurement = data.measurements.find { it.clients == clients }
+                def latch = data.latches.find { it.clients == clients }
+                long operations = Long.parseLong(measurement.measuredOperations)
+                double throughput = Double.parseDouble(measurement.operationsPerSecond)
+                long latchRequests = Long.parseLong(latch.latchRequests)
+                long latchWaitNanos = Long.parseLong(latch.ownerWaitNanos)
+                double latchesPerRead = latchRequests / (double) operations
+                double latchWaitPerRead = latchWaitNanos / (double) operations
+
+                def rolesByContainer = data.layouts.findAll { it.clients == clients }
+                        .groupBy { Long.parseLong(it.containerId) }
+                        .collectEntries { containerId, values ->
+                            [(containerId): values.collect { it.role }.unique().sort().join('+')]
+                        }
+                def pageRows = data.pages.findAll { it.clients == clients }
+                def dominantPage = pageRows.isEmpty() ? null :
+                        pageRows.max { Long.parseLong(it.ownerWaitNanos) }
+                String dominantRole = 'none'
+                String dominantPageKey = 'none'
+                double dominantRequestsPerRead = 0.0d
+                double dominantContendedPercent = 0.0d
+                double dominantWaitPerRead = 0.0d
+                if (dominantPage != null) {
+                    dominantPageKey = dominantPage.pageKey
+                    long containerId = parseContainerId(dominantPage.pageKey)
+                    dominantRole = rolesByContainer.get(containerId, 'unknown')
+                    dominantRequestsPerRead = Long.parseLong(dominantPage.latchRequests) /
+                            (double) operations
+                    dominantContendedPercent = Double.parseDouble(dominantPage.contendedPercent)
+                    dominantWaitPerRead = Long.parseLong(dominantPage.ownerWaitNanos) /
+                            (double) operations
+                }
+
+                def entryRows = data.entries.findAll { it.clients == clients }
+                def dominantEntry = entryRows.isEmpty() ? null :
+                        entryRows.max { Long.parseLong(it.entryMutexWaitNanos) }
+                String entryClass = dominantEntry == null ? 'none' :
+                        simpleName(dominantEntry.lockableClass)
+                double entryAcquisitionsPerRead = dominantEntry == null ? 0.0d :
+                        Long.parseLong(dominantEntry.entryAcquisitions) / (double) operations
+                double entryContendedPercent = dominantEntry == null ? 0.0d :
+                        Double.parseDouble(dominantEntry.contendedPercent)
+                double entryWaitPerRead = dominantEntry == null ? 0.0d :
+                        Long.parseLong(dominantEntry.entryMutexWaitNanos) / (double) operations
+
+                def waitRows = data.waits.findAll { it.clients == clients }
+                long logicalWaitCount = waitRows.inject(0L) { total, row ->
+                    total + Long.parseLong(row.logicalWaits)
+                }
+                long logicalWaitNanos = waitRows.inject(0L) { total, row ->
+                    total + Long.parseLong(row.totalWaitNanos)
+                }
+                double logicalWaitsPerRead = logicalWaitCount / (double) operations
+                double logicalWaitPerRead = logicalWaitNanos / (double) operations
+
+                def cacheRows = data.caches.findAll { it.clients == clients }
+                def dominantCache = cacheRows.isEmpty() ? null :
+                        cacheRows.max { Long.parseLong(it.entryMutexWaitNanos) }
+                String cacheName = dominantCache == null ? 'none' : dominantCache.cacheName
+                double cacheWaitPerRead = dominantCache == null ? 0.0d :
+                        Long.parseLong(dominantCache.entryMutexWaitNanos) / (double) operations
+
+                def line = String.format(java.util.Locale.ROOT,
+                        '%s %sc: throughput=%.2f op/s latches/read=%.6f latchWait/read=%.1f ns dominantPage=%s role=%s requests/read=%.6f pageContended=%.3f%% pageWait/read=%.1f ns dominantEntry=%s acquisitions/read=%.6f entryContended=%.3f%% entryWait/read=%.1f ns logicalWaits/read=%.9f logicalWait/read=%.1f ns dominantCache=%s cacheWait/read=%.1f ns',
+                        mode.toUpperCase(java.util.Locale.ROOT), clients, throughput,
+                        latchesPerRead, latchWaitPerRead, dominantPageKey, dominantRole,
+                        dominantRequestsPerRead, dominantContendedPercent, dominantWaitPerRead,
+                        entryClass, entryAcquisitionsPerRead, entryContendedPercent,
+                        entryWaitPerRead, logicalWaitsPerRead, logicalWaitPerRead,
+                        cacheName, cacheWaitPerRead)
+                decision.add(line)
+                logger.lifecycle('Gate 10L-D ' + line)
+
+                def topPages = pageRows.sort { a, b ->
+                    Long.parseLong(b.ownerWaitNanos) <=> Long.parseLong(a.ownerWaitNanos)
+                }.take(5)
+                topPages.eachWithIndex { page, rank ->
+                    long containerId = parseContainerId(page.pageKey)
+                    def role = rolesByContainer.get(containerId, 'unknown')
+                    def detail = String.format(java.util.Locale.ROOT,
+                            '  page#%d %s role=%s requests/read=%.6f contended=%s%% wait/read=%.1f ns maxWait=%s ns',
+                            rank + 1, page.pageKey, role,
+                            Long.parseLong(page.latchRequests) / (double) operations,
+                            page.contendedPercent,
+                            Long.parseLong(page.ownerWaitNanos) / (double) operations,
+                            page.maxOwnerWaitNanos)
+                    decision.add(detail)
+                    logger.lifecycle('Gate 10L-D ' + detail)
+                }
+            }
+        }
+
+        decision.add('Interpretation rule: prefer the authority with the largest measured wait/read that also scales materially from 4c to 8c/16c. Do not optimize a zero-wait compatible lock or a low-share page merely because it appears in the path.')
+        def passLine = 'PASS: Gate 10L-D captured the residual MVCC HOT page/lock/cache authorities with the transient anchor OFF and ON. Use the measured dominant authority to choose the next experiment; do not revive or finalize the transient anchor based on Gate 10L-C.'
+        decision.add(passLine)
+        new File(root, 'gate10ld-mvcc-residual-hot-authority-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-D ' + passLine)
+    }
+}

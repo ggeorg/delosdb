@@ -478,6 +478,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (heapAuthorityDiagnosticsEnabled() && options.target() == Target.DELOS_HEAP) {
                 writeDerbyConglomerateMap(verifier, options, spec, config, tables);
             }
+            if (mvccPhysicalLayoutDiagnosticsEnabled() && options.target() == Target.DELOS_MVCC) {
+                writeMvccPhysicalLayout(verifier, options, spec, config, tables);
+            }
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
                     options, spec, database, verifier, tables, config.rowCount())) {
                 Long expectedSemantic = null;
@@ -1109,6 +1112,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "heapAuthorityDiagnostics");
     }
 
+    private static boolean mvccPhysicalLayoutDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccPhysicalLayoutDiagnostics");
+    }
+
     private static void writePageLatchDiagnostics(
             Options options,
             Spec spec,
@@ -1198,6 +1205,52 @@ public final class DelosJdbcCrossEngineConcurrency {
             tables.add(scenario.tableName());
         }
         return List.copyOf(tables);
+    }
+
+    private static void writeMvccPhysicalLayout(
+            Connection connection,
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            List<String> tables) throws Exception {
+        Path output = options.reportDirectory().resolve(
+                "mvcc-physical-layout-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,tableName,"
+                + "role,containerId,rawContainerKey\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        Class<?> support = Class.forName(
+                "org.apache.derbyTesting.functionTests.tests.delos.MvccPhysicalLayoutDiagnosticTestSupport");
+        java.lang.reflect.Method describe = support.getMethod(
+                "describe", Connection.class, String.class);
+        StringBuilder rows = new StringBuilder();
+        for (String table : tables) {
+            String[] layoutRows = (String[]) describe.invoke(null, connection, table);
+            for (String layoutRow : layoutRows) {
+                String[] values = layoutRow.split("\t", -1);
+                if (values.length != 2) {
+                    throw new IllegalStateException(
+                            "Unexpected MVCC physical-layout row: " + layoutRow);
+                }
+                long containerId = Long.parseLong(values[1]);
+                rows.append(options.target().id()).append(',')
+                        .append(spec.workload().name()).append(',')
+                        .append(spec.clients()).append(',')
+                        .append(spec.operationsPerTransaction()).append(',')
+                        .append(config.rowCount()).append(',')
+                        .append(table).append(',')
+                        .append(values[0]).append(',')
+                        .append(containerId).append(',')
+                        .append("Container(0;").append(containerId).append(")")
+                        .append('\n');
+            }
+        }
+        Files.writeString(
+                output, rows.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
     }
 
     private static void writeDerbyConglomerateMap(
