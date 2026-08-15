@@ -127,6 +127,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 && Boolean.getBoolean("delosdb.experimental.heapPageReadImage")) {
             command.add("-Ddelosdb.experimental.heapPageReadImage=true");
         }
+        if (target == Target.DELOS_HEAP
+                && Boolean.getBoolean("delosdb.experimental.fastRecordReadLock")) {
+            command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
+        }
         if (target == Target.SQLITE) {
             command.add("--enable-native-access=ALL-UNNAMED");
         }

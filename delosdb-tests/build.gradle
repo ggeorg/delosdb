@@ -5640,3 +5640,77 @@ tasks.register('runDelosJdbcGate10kcFocusedGuardConfirmation') {
         logger.lifecycle('Gate 10K-C focused ' + passLine)
     }
 }
+
+
+// Gate 10K-D: fresh five-engine read checkpoint after accepting the reusable
+// compatible RecordId RS2 fast path. Both accepted Delos heap read fast paths
+// are enabled only in the Delos heap child JVM. Delos MVCC and all control
+// engines remain on their normal production paths.
+tasks.register('runDelosJdbcGate10kdFiveEngineReadCheckpoint', JavaExec) {
+    group = 'benchmark'
+    description = 'Benchmarks the accepted Gate 10I-A + 10K-B Delos heap read path against Delos MVCC, Derby, H2, and SQLite.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/gate10kd-five-engine-read-checkpoint'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10K-D five-engine checkpoint requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/gate10kd-five-engine-read-checkpoint')
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10kd-five-engine-read-checkpoint')
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
