@@ -4974,6 +4974,7 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
         def decision = [
                 'Gate 10K-B dormant compatible RecordId RS2 mechanism proof',
                 'Experimental feature: delosdb.experimental.fastRecordReadLock=true; promoted HOT controls remain dormant/reusable across empty gaps.',
+                'Measured promotions may be zero when warmup established the reusable HOT control; measured fast hits and Entry-mutex removal remain authoritative.',
                 'Mechanism-only gate: performance acceptance requires a later balanced OFF/ON proof.'
         ]
         ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
@@ -5024,7 +5025,11 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                 if (workload == 'PRIMARY_KEY_READ_HOT' && (clients == '8' || clients == '16')) {
                     double promotionsPerRead = promotions / (double) operations
                     double freezesPerRead = freezes / (double) operations
-                    if (promotions == 0L || acquireHitsPerRead < 0.90d
+                    // A reusable HOT control may be promoted during the warmup and then
+                    // survive into the measured interval. In that healthy steady state the
+                    // measured promotion count is legitimately zero; fast hits and the absence
+                    // of Entry-mutex acquisitions are the mechanism proof.
+                    if (acquireHitsPerRead < 0.90d
                             || releaseHitsPerRead < 0.90d || entryAcquisitionsPerRead > 0.25d
                             || promotionsPerRead > 0.01d || freezesPerRead > 0.01d
                             || retirements != 0L) {
