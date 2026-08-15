@@ -9116,3 +9116,73 @@ tasks.register('runDelosJdbcGate10ljMvccCurrentRowArchitecturePairedAcceptancePr
         logger.lifecycle('Gate 10L-J ' + passLine)
     }
 }
+
+// Gate 10L-K: lifecycle safety proof for the complete MVCC current-row
+// architecture accepted by Gate 10L-J. No production mechanism changes here:
+// keep every component switchable while proving mutation/history/recovery and
+// bounded-cache safety before any feature flag is retired or defaulted on.
+def gate10lkMvccCurrentRowArchitectureProperties = [
+        'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+        'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096',
+        'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
+        'delosdb.experimental.btreePrefixBranchSnapshot': 'true',
+        'delosdb.experimental.mvccCurrentVersionReadImage': 'true'
+]
+
+registerDelosFocusedTest(
+        'runDelosMvccCurrentRowArchitectureLifecycleSafetyTest',
+        'Runs Gate 10L-K mutation/history/vacuum/reopen/recovery/isolation safety with the complete current-row architecture enabled.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitectureLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowAnchorTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentVersionReadImageTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'
+        ],
+        gate10lkMvccCurrentRowArchitectureProperties)
+
+tasks.named('runDelosMvccCurrentRowArchitectureLifecycleSafetyTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+registerDelosFocusedTest(
+        'runDelosMvccCurrentRowArchitectureBoundedCacheTest',
+        'Runs Gate 10L-K with only four Current-Row Anchor/version-image slots to force collision and replacement safety.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitectureBoundedCacheTest.class'],
+        gate10lkMvccCurrentRowArchitectureProperties + [
+                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4'
+        ])
+
+tasks.named('runDelosMvccCurrentRowArchitectureBoundedCacheTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    mustRunAfter tasks.named('runDelosMvccCurrentRowArchitectureLifecycleSafetyTest')
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('runDelosJdbcGate10lkMvccCurrentRowArchitectureLifecycleProof') {
+    group = 'verification'
+    description = 'Runs Gate 10L-K complete current-row architecture lifecycle and bounded-cache safety proof.'
+    dependsOn tasks.named('runDelosMvccCurrentRowArchitectureLifecycleSafetyTest'),
+            tasks.named('runDelosMvccCurrentRowArchitectureBoundedCacheTest')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/gate10lk-mvcc-current-row-architecture-lifecycle')
+                .get().asFile
+        project.delete(root)
+        root.mkdirs()
+        def decision = [
+                'Gate 10L-K MVCC current-row architecture lifecycle safety proof',
+                'PASS: all focused lifecycle and bounded-cache tests completed.',
+                'Fast path: Current-Row Anchor=true (4096 slots), prefix leaf snapshot=true, prefix branch snapshot=true, current-version image=true.',
+                'Bounded collision proof: same architecture with Current-Row Anchor/version-image slots=4.',
+                'Covered boundaries: committed update, delete/reinsert, savepoint rollback, full rollback, retained old snapshot, vacuum, reopen, drop/recreate, crash before RawStore commit, crash after RawStore commit before publication, existing MVCC vacuum suite, and heap/MVCC isolation differential suite.',
+                'This gate does not retire experimental flags and does not make the architecture default. Permanent transition follows only after this proof and repository integrity are green.'
+        ]
+        new File(root, 'gate10lk-mvcc-current-row-architecture-lifecycle-decision.txt')
+                .setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-K PASS: complete current-row architecture lifecycle and bounded-cache safety proof is green.')
+    }
+}

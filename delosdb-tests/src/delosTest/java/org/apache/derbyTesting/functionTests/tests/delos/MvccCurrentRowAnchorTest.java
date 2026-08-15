@@ -107,7 +107,12 @@ public final class MvccCurrentRowAnchorTest extends MvccSqlTestSupport {
             assertEquals(10, quantity(reopened, 1));
             assertEquals(1L, metric(second, "mvccCurrentRowAnchorHits"));
             assertEquals(0L, metric(second, "mvccDirectoryPageAcquisitions"));
-            assertEquals(1L, metric(second, "mvccVersionSlotFetches"));
+            if (Boolean.getBoolean("delosdb.experimental.mvccCurrentVersionReadImage")) {
+                assertEquals(1L, metric(second, "mvccCurrentVersionReadImageHits"));
+                assertEquals(0L, metric(second, "mvccVersionSlotFetches"));
+            } else {
+                assertEquals(1L, metric(second, "mvccVersionSlotFetches"));
+            }
             reopened.commit();
         }
         shutdownDatabase(database);
