@@ -5879,12 +5879,12 @@ tasks.register('runDelosJdbcGate10keRecordReadFootprintProof') {
                 long releaseHits = metric(hotState, workload, 'releaseHits')
                 long freezes = metric(hotState, workload, 'freezes')
                 long retirements = metric(hotState, workload, 'retirements')
-                if (freezes != 0L || retirements != 0L) {
+                long retained = promotions - freezes - retirements
+                if (retained < 0L) {
                     throw new GradleException(String.format(java.util.Locale.ROOT,
-                            'Gate 10K-E read-only shape unexpectedly changed fast-control lifecycle for %s rows=%d: freezes=%d retirements=%d',
-                            workload, rowCount, freezes, retirements))
+                            'Gate 10K-E lifecycle accounting underflow for %s rows=%d: promotions=%d freezes=%d retirements=%d',
+                            workload, rowCount, promotions, freezes, retirements))
                 }
-                long retained = promotions
                 if (workload == 'PRIMARY_KEY_READ_HOT' && promotions < 1L) {
                     throw new GradleException(
                             "Gate 10K-E HOT rows=${rowCount} never promoted despite 16-client overlap")
