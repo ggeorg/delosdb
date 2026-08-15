@@ -7236,9 +7236,13 @@ def configureGate10ldMvccResidualAuthorityWorker = {
         JavaExec task, String mode, boolean anchorEnabled ->
     task.group = 'benchmark'
     task.description = "Runs Gate 10L-D MVCC residual HOT authority diagnostics with anchor ${mode}."
-    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
     task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
-    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
     task.args 'worker'
     task.outputs.upToDateWhen { false }
     task.outputs.dir(rootProject.layout.buildDirectory.dir(
