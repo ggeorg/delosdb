@@ -143,7 +143,7 @@ public final class RecordReadFastPathTestSupport {
         table.unlock(reader, 1);
     }
 
-    public static void verifyConcurrentReadersRetireCleanly() throws Exception {
+    public static void verifyConcurrentReadersRemainReusable() throws Exception {
         enableDiagnostics();
         ConcurrentLockSet.resetHotStateDiagnosticsForTesting();
         final int threads = 8;
@@ -188,26 +188,50 @@ public final class RecordReadFastPathTestSupport {
             throw new AssertionError("concurrent RS2 proof failed", failure.get());
         }
 
-        Map<?, ?> remaining = table.shallowClone();
-        if (!remaining.isEmpty()) {
-            throw new AssertionError("empty adaptive RecordId control was retained: " + remaining);
-        }
-        long promotions = hotStateMetric(
+        long promotionsBeforeReuse = hotStateMetric(
                 ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting(),
                 "FastRecordReadControl", "promotions");
-        long hits = hotStateMetric(
+        long hitsBeforeReuse = hotStateMetric(
                 ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting(),
                 "FastRecordReadControl", "acquireHits");
-        if (promotions == 0L || hits == 0L) {
+        if (promotionsBeforeReuse == 0L || hitsBeforeReuse == 0L) {
             throw new AssertionError(
                     "adaptive RecordId fast path did not enter: promotions="
-                            + promotions + " acquireHits=" + hits);
+                            + promotionsBeforeReuse + " acquireHits=" + hitsBeforeReuse);
+        }
+
+        for (int i = 0; i < 10_000; i++) {
+            CompatibilitySpace reader = spaces[i & (threads - 1)];
+            Lock lock = requireLock(table.lockObject(
+                    reader, row, RowLock.RS2, C_LockFactory.NO_WAIT),
+                    "dormant RS2 fast control was not reusable");
+            table.unlock(lock, 1);
+        }
+        String[] afterReuse = ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting();
+        long promotionsAfterReuse = hotStateMetric(
+                afterReuse, "FastRecordReadControl", "promotions");
+        long hitsAfterReuse = hotStateMetric(
+                afterReuse, "FastRecordReadControl", "acquireHits");
+        if (promotionsAfterReuse != promotionsBeforeReuse) {
+            throw new AssertionError(
+                    "dormant RecordId fast control re-promoted: before="
+                            + promotionsBeforeReuse + " after=" + promotionsAfterReuse);
+        }
+        if (hitsAfterReuse - hitsBeforeReuse != 10_000L) {
+            throw new AssertionError(
+                    "dormant RecordId fast control did not serve all reuses: hits before="
+                            + hitsBeforeReuse + " after=" + hitsAfterReuse);
         }
 
         Lock exclusive = requireLock(table.lockObject(
                 space(), row, RowLock.RX2, C_LockFactory.NO_WAIT),
-                "RX2 was not granted after concurrent readers retired");
+                "RX2 was not granted after dormant fast control materialized");
         table.unlock(exclusive, 1);
+        Map<?, ?> remaining = table.shallowClone();
+        if (!remaining.isEmpty()) {
+            throw new AssertionError(
+                    "writer materialization left lock-table state: " + remaining);
+        }
     }
 
     private static void enableDiagnostics() {

@@ -22,7 +22,7 @@ public final class RecordReadFastPathTest extends TestCase {
         RecordReadFastPathTestSupport.verifyWriterWaiterOrdering();
     }
 
-    public void testConcurrentReadersRetireCleanly() throws Exception {
-        RecordReadFastPathTestSupport.verifyConcurrentReadersRetireCleanly();
+    public void testConcurrentReadersRemainReusable() throws Exception {
+        RecordReadFastPathTestSupport.verifyConcurrentReadersRemainReusable();
     }
 }

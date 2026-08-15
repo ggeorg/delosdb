@@ -484,9 +484,9 @@ final class ConcurrentLockSet implements LockTable {
     /**
      * Concurrent control for a RecordId held only with compatible RS2 locks.
      * It is installed adaptively only when a second compatibility space
-     * overlaps the first reader. Ordinary single-reader rows therefore retain
-     * Derby's existing lock-table lifecycle and do not leave cached controls
-     * behind.
+     * overlaps the first reader. Once promoted, the empty control remains
+     * dormant and reusable across short idle gaps so a genuinely hot record
+     * does not repeatedly fall back through Entry.mutex promotion.
      *
      * <p>The first request for any other qualifier freezes this control, waits
      * for already-entered fast operations to leave, and materializes all RS2
@@ -522,13 +522,28 @@ final class ConcurrentLockSet implements LockTable {
                 return null;
             }
             try {
-                AtomicInteger held = holders.get(space);
-                if (held == null) {
-                    AtomicInteger candidate = new AtomicInteger();
-                    AtomicInteger existing = holders.putIfAbsent(space, candidate);
-                    held = existing == null ? candidate : existing;
-                }
-                if (!held.compareAndSet(0, 1)) {
+                AtomicInteger held;
+                for (;;) {
+                    held = holders.get(space);
+                    if (held == null) {
+                        AtomicInteger candidate = new AtomicInteger(1);
+                        AtomicInteger existing = holders.putIfAbsent(space, candidate);
+                        if (existing == null) {
+                            break;
+                        }
+                        held = existing;
+                    }
+                    int state = held.get();
+                    if (state == 0) {
+                        if (held.compareAndSet(0, 1)) {
+                            break;
+                        }
+                        continue;
+                    }
+                    if (state < 0) {
+                        holders.remove(space, held);
+                        continue;
+                    }
                     return null;
                 }
                 totalHolds.incrementAndGet();
@@ -560,6 +575,9 @@ final class ConcurrentLockSet implements LockTable {
                     SanityManager.ASSERT(remainingTotal >= 0,
                             "negative fast RecordId RS2 total: " + remainingTotal);
                 }
+                if (held.compareAndSet(0, -1)) {
+                    holders.remove(space, held);
+                }
                 if (HOT_STATE_DIAGNOSTICS) {
                     FAST_RECORD_READ_RELEASE_HITS.increment();
                 }
@@ -576,31 +594,6 @@ final class ConcurrentLockSet implements LockTable {
                 FAST_RECORD_READ_FREEZES.increment();
             }
             return materializeRecordReadHolders(ref, holders);
-        }
-
-        void retireIfEmpty(Entry entry) {
-            if (!fast || totalHolds.get() != 0) {
-                return;
-            }
-            fast = false;
-            awaitFastOperations(inFlight);
-            entry.lock();
-            try {
-                if (entry.control != this) {
-                    return;
-                }
-                if (totalHolds.get() == 0) {
-                    locks.remove(ref, entry);
-                    entry.control = null;
-                    if (HOT_STATE_DIAGNOSTICS) {
-                        FAST_RECORD_READ_RETIREMENTS.increment();
-                    }
-                } else {
-                    entry.control = materializeRecordReadHolders(ref, holders);
-                }
-            } finally {
-                entry.unlock();
-            }
         }
 
         private int enterFast(CompatibilitySpace space) {
@@ -832,9 +825,6 @@ final class ConcurrentLockSet implements LockTable {
         int remaining = fastControl.tryRelease(item, unlockCount);
         if (remaining < 0) {
             return false;
-        }
-        if (remaining == 0) {
-            fastControl.retireIfEmpty(entry);
         }
         return true;
     }

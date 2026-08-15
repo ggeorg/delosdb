@@ -4811,7 +4811,7 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
     }
 }
 
-// Gate 10K-A: experimentally remove compatible HOT RecordId RS2 reader
+// Gate 10K-B: retain promoted compatible HOT RecordId RS2 reader
 // bookkeeping from the per-Lockable Entry mutex. The fast control is adaptive:
 // it is installed only after a second overlapping RS2 compatibility space and
 // materializes back into Derby's ordinary LockControl before any other mode.
@@ -4839,7 +4839,7 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                 .toLowerCase(java.util.Locale.ROOT)
         if (saneValue != 'false') {
             throw new GradleException(
-                    'Gate 10K-A fast RecordId read proof requires a release build; ' +
+                    'Gate 10K-B dormant RecordId read proof requires a release build; ' +
                             'rerun with -Pdelosdb.sane=false')
         }
         def reportDir = rootProject.layout.buildDirectory
@@ -4902,11 +4902,11 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
         def root = rootProject.layout.buildDirectory.dir(gate10kFastRecordReadRoot).get().asFile
         def loadCsv = { File file ->
             if (!file.isFile()) {
-                throw new GradleException("Missing Gate 10K-A report: ${file}")
+                throw new GradleException("Missing Gate 10K-B report: ${file}")
             }
             def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
             if (lines.size() < 2) {
-                throw new GradleException("Gate 10K-A report has no measurements: ${file}")
+                throw new GradleException("Gate 10K-B report has no measurements: ${file}")
             }
             def header = (lines[0].split(',', -1) as List).collect {
                 it.toString().trim().replace('\uFEFF', '')
@@ -4914,7 +4914,7 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
             lines.drop(1).collect { line ->
                 def fields = line.split(',', -1)
                 if (fields.length != header.size()) {
-                    throw new GradleException("Gate 10K-A malformed CSV row in ${file}: ${line}")
+                    throw new GradleException("Gate 10K-B malformed CSV row in ${file}: ${line}")
                 }
                 def row = [:]
                 header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
@@ -4929,7 +4929,7 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
             rows.each { row ->
                 String rowKey = key(row)
                 if (indexed.put(rowKey, row) != null) {
-                    throw new GradleException("Gate 10K-A duplicate ${label} row for ${rowKey}")
+                    throw new GradleException("Gate 10K-B duplicate ${label} row for ${rowKey}")
                 }
             }
             indexed
@@ -4946,7 +4946,7 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
         if (measurements.size() != 6 || images.size() != 6 || latches.size() != 6
                 || btree.size() != 6 || entries.size() != 18 || logicalWaits.size() != 18) {
             throw new GradleException(String.format(java.util.Locale.ROOT,
-                    'Gate 10K-A report cardinality mismatch: measurements=%d images=%d latches=%d btree=%d entries=%d logicalWaits=%d',
+                    'Gate 10K-B report cardinality mismatch: measurements=%d images=%d latches=%d btree=%d entries=%d logicalWaits=%d',
                     measurements.size(), images.size(), latches.size(), btree.size(),
                     entries.size(), logicalWaits.size()))
         }
@@ -4966,14 +4966,14 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
             }
             if (row == null) {
                 throw new GradleException(
-                        "Gate 10K-A missing FastRecordReadControl metric ${metric} for ${workload}:${clients}")
+                        "Gate 10K-B missing FastRecordReadControl metric ${metric} for ${workload}:${clients}")
             }
             Long.parseLong(row.value)
         }
 
         def decision = [
-                'Gate 10K-A adaptive compatible RecordId RS2 mechanism proof',
-                'Experimental feature: delosdb.experimental.fastRecordReadLock=true.',
+                'Gate 10K-B dormant compatible RecordId RS2 mechanism proof',
+                'Experimental feature: delosdb.experimental.fastRecordReadLock=true; promoted HOT controls remain dormant/reusable across empty gaps.',
                 'Mechanism-only gate: performance acceptance requires a later balanced OFF/ON proof.'
         ]
         ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
@@ -4986,11 +4986,11 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                 def entry = recordEntryByKey[k]
                 def logical = recordWaitByKey[k]
                 if ([measurement, image, latch, tree, entry, logical].any { it == null }) {
-                    throw new GradleException("Gate 10K-A missing evidence for ${k}")
+                    throw new GradleException("Gate 10K-B missing evidence for ${k}")
                 }
                 long operations = Long.parseLong(measurement.measuredOperations)
                 if (Long.parseLong(measurement.retryableConflictRetries) != 0L) {
-                    throw new GradleException("Gate 10K-A ${k} observed retryable conflicts")
+                    throw new GradleException("Gate 10K-B ${k} observed retryable conflicts")
                 }
                 double imageHits = Long.parseLong(image.hits) / (double) operations
                 double fallbacks = Long.parseLong(image.attempts) == 0L ? 1.0d
@@ -5000,12 +5000,12 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                 if (imageHits < 0.98d || fallbacks > 0.02d
                         || latchesPerRead > 0.02d || leafFetchesPerRead > 0.02d) {
                     throw new GradleException(String.format(java.util.Locale.ROOT,
-                            'Gate 10K-A %s lost accepted physical path: imageHits/read=%.6f fallback=%.6f latches/read=%.6f leafFetches/read=%.6f',
+                            'Gate 10K-B %s lost accepted physical path: imageHits/read=%.6f fallback=%.6f latches/read=%.6f leafFetches/read=%.6f',
                             k, imageHits, fallbacks, latchesPerRead, leafFetchesPerRead))
                 }
                 if (Long.parseLong(logical.logicalWaits) != 0L) {
                     throw new GradleException(
-                            "Gate 10K-A ${k} observed logical RecordId waiting: ${logical.logicalWaits}")
+                            "Gate 10K-B ${k} observed logical RecordId waiting: ${logical.logicalWaits}")
                 }
 
                 double entryAcquisitionsPerRead =
@@ -5022,18 +5022,23 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                 double throughput = Double.parseDouble(measurement.operationsPerSecond)
 
                 if (workload == 'PRIMARY_KEY_READ_HOT' && (clients == '8' || clients == '16')) {
+                    double promotionsPerRead = promotions / (double) operations
+                    double freezesPerRead = freezes / (double) operations
                     if (promotions == 0L || acquireHitsPerRead < 0.90d
-                            || releaseHitsPerRead < 0.90d || entryAcquisitionsPerRead > 0.25d) {
+                            || releaseHitsPerRead < 0.90d || entryAcquisitionsPerRead > 0.25d
+                            || promotionsPerRead > 0.01d || freezesPerRead > 0.01d
+                            || retirements != 0L) {
                         throw new GradleException(String.format(java.util.Locale.ROOT,
-                                'Gate 10K-A %s mechanism did not remove RecordId Entry authority: promotions=%d acquireHits/read=%.6f releaseHits/read=%.6f entryAcquisitions/read=%.6f',
-                                k, promotions, acquireHitsPerRead, releaseHitsPerRead,
-                                entryAcquisitionsPerRead))
+                                'Gate 10K-B %s mechanism did not establish reusable HOT state: promotions=%d promotions/read=%.6f acquireHits/read=%.6f releaseHits/read=%.6f entryAcquisitions/read=%.6f freezes/read=%.6f retirements=%d',
+                                k, promotions, promotionsPerRead, acquireHitsPerRead,
+                                releaseHitsPerRead, entryAcquisitionsPerRead, freezesPerRead,
+                                retirements))
                     }
                 }
                 if (workload == 'PRIMARY_KEY_READ_DISJOINT'
                         && (promotions != 0L || acquireHits != 0L || releaseHits != 0L)) {
                     throw new GradleException(String.format(java.util.Locale.ROOT,
-                            'Gate 10K-A %s incorrectly entered adaptive HOT-row state: promotions=%d acquireHits=%d releaseHits=%d',
+                            'Gate 10K-B %s incorrectly entered adaptive HOT-row state: promotions=%d acquireHits=%d releaseHits=%d',
                             k, promotions, acquireHits, releaseHits))
                 }
 
@@ -5043,14 +5048,14 @@ tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { Ja
                         entryAcquisitionsPerRead, entryWaitPerRead, promotions,
                         acquireHitsPerRead, releaseHitsPerRead, freezes, retirements)
                 decision.add(line)
-                logger.lifecycle('Gate 10K-A ' + line)
+                logger.lifecycle('Gate 10K-B ' + line)
             }
         }
 
-        def pass = 'PASS: adaptive RecordId RS2 fast path entered on HOT, stayed out of DISJOINT, removed the HOT Entry-mutex authority at 8c/16c, and preserved Gate 10I-A physical invariants. Performance acceptance is still pending.'
+        def pass = 'PASS: dormant/reusable RecordId RS2 fast state entered only after HOT overlap, stayed out of DISJOINT, eliminated promotion/retirement churn, removed the HOT Entry-mutex authority at 8c/16c, and preserved Gate 10I-A physical invariants. Performance acceptance is still pending.'
         decision.add(pass)
         new File(root, 'gate10k-decision.txt').setText(
                 decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
-        logger.lifecycle('Gate 10K-A ' + pass)
+        logger.lifecycle('Gate 10K-B ' + pass)
     }
 }
