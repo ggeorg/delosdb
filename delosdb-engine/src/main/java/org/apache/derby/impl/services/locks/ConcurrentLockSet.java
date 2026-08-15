@@ -27,6 +27,7 @@ import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.iapi.services.locks.C_LockFactory;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.ContainerLock;
+import org.apache.derby.iapi.store.raw.RowLock;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -119,11 +120,18 @@ final class ConcurrentLockSet implements LockTable {
             Boolean.getBoolean("delosdb.diagnostic.lockWait");
     private static final boolean HOT_STATE_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.hotState");
+    private static final boolean FAST_RECORD_READ_ENABLED =
+            Boolean.getBoolean("delosdb.experimental.fastRecordReadLock");
     private static final LongAdder FAST_CIS_ACQUIRE_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_CIS_RELEASE_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_CIS_HOLDER_CREATES = new LongAdder();
     private static final LongAdder FAST_CIS_HOLDER_REMOVES = new LongAdder();
     private static final LongAdder FAST_CIS_STRIPE_OVERLAP = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_PROMOTIONS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_ACQUIRE_HITS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RELEASE_HITS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_FREEZES = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RETIREMENTS = new LongAdder();
     private static final LockEntryStats CONTAINER_KEY_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats RECORD_ID_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats OTHER_ENTRY_STATS = new LockEntryStats();
@@ -175,7 +183,7 @@ final class ConcurrentLockSet implements LockTable {
             this.ref = ref;
         }
 
-        /** The lock control. Volatile for the CIS-only read fast path. */
+        /** The lock control. Volatile for lock-free compatible-reader fast paths. */
         volatile Control control;
         /**
          * Mutex used to ensure single-threaded access to the LockControls. To
@@ -362,7 +370,7 @@ final class ConcurrentLockSet implements LockTable {
 
         LockControl freeze() {
             fast = false;
-            awaitFastOperations();
+            awaitFastOperations(inFlight);
             return materializeCisHolders(ref, holders);
         }
 
@@ -386,21 +394,6 @@ final class ConcurrentLockSet implements LockTable {
             inFlight.decrementAndGet(stripe);
         }
 
-        private void awaitFastOperations() {
-            for (;;) {
-                boolean active = false;
-                for (int stripe = 0; stripe < FAST_OPERATION_STRIPES; stripe++) {
-                    if (inFlight.get(stripe) != 0) {
-                        active = true;
-                        break;
-                    }
-                }
-                if (!active) {
-                    return;
-                }
-                Thread.onSpinWait();
-            }
-        }
 
         private LockControl snapshot() {
             return materializeCisHolders(ref, holders);
@@ -487,6 +480,244 @@ final class ConcurrentLockSet implements LockTable {
         }
     }
 
+
+    /**
+     * Concurrent control for a RecordId held only with compatible RS2 locks.
+     * It is installed adaptively only when a second compatibility space
+     * overlaps the first reader. Ordinary single-reader rows therefore retain
+     * Derby's existing lock-table lifecycle and do not leave cached controls
+     * behind.
+     *
+     * <p>The first request for any other qualifier freezes this control, waits
+     * for already-entered fast operations to leave, and materializes all RS2
+     * holders into the ordinary LockControl. From that point onward Derby's
+     * waiter ordering, timeout, conversion, and deadlock machinery is
+     * authoritative.</p>
+     */
+    private final class FastRecordReadControl implements Control {
+        private static final int FAST_OPERATION_STRIPES = 16;
+
+        private final Lockable ref;
+        private final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
+                new ConcurrentHashMap<CompatibilitySpace, AtomicInteger>();
+        private final AtomicIntegerArray inFlight =
+                new AtomicIntegerArray(FAST_OPERATION_STRIPES);
+        private final AtomicInteger totalHolds = new AtomicInteger();
+        private volatile boolean fast = true;
+
+        FastRecordReadControl(Lock firstGrant) {
+            ref = firstGrant.getLockable();
+            holders.put(firstGrant.getCompatabilitySpace(), new AtomicInteger(1));
+            totalHolds.set(1);
+        }
+
+        private FastRecordReadControl(Lockable ref, boolean fast) {
+            this.ref = ref;
+            this.fast = fast;
+        }
+
+        Lock tryAcquire(CompatibilitySpace space) {
+            int stripe = enterFast(space);
+            if (stripe < 0) {
+                return null;
+            }
+            try {
+                AtomicInteger held = holders.get(space);
+                if (held == null) {
+                    AtomicInteger candidate = new AtomicInteger();
+                    AtomicInteger existing = holders.putIfAbsent(space, candidate);
+                    held = existing == null ? candidate : existing;
+                }
+                if (!held.compareAndSet(0, 1)) {
+                    return null;
+                }
+                totalHolds.incrementAndGet();
+                if (HOT_STATE_DIAGNOSTICS) {
+                    FAST_RECORD_READ_ACQUIRE_HITS.increment();
+                }
+                Lock lock = new Lock(space, ref, RowLock.RS2);
+                lock.count = 1;
+                return lock;
+            } finally {
+                leaveFast(stripe);
+            }
+        }
+
+        int tryRelease(Latch item, int unlockCount) {
+            CompatibilitySpace space = item.getCompatabilitySpace();
+            int stripe = enterFast(space);
+            if (stripe < 0) {
+                return -1;
+            }
+            try {
+                int count = unlockCount == 0 ? item.getCount() : unlockCount;
+                AtomicInteger held = holders.get(space);
+                if (count != 1 || held == null || !held.compareAndSet(1, 0)) {
+                    return -1;
+                }
+                int remainingTotal = totalHolds.decrementAndGet();
+                if (SanityManager.DEBUG) {
+                    SanityManager.ASSERT(remainingTotal >= 0,
+                            "negative fast RecordId RS2 total: " + remainingTotal);
+                }
+                if (HOT_STATE_DIAGNOSTICS) {
+                    FAST_RECORD_READ_RELEASE_HITS.increment();
+                }
+                return remainingTotal;
+            } finally {
+                leaveFast(stripe);
+            }
+        }
+
+        LockControl freeze() {
+            fast = false;
+            awaitFastOperations(inFlight);
+            if (HOT_STATE_DIAGNOSTICS) {
+                FAST_RECORD_READ_FREEZES.increment();
+            }
+            return materializeRecordReadHolders(ref, holders);
+        }
+
+        void retireIfEmpty(Entry entry) {
+            if (!fast || totalHolds.get() != 0) {
+                return;
+            }
+            fast = false;
+            awaitFastOperations(inFlight);
+            entry.lock();
+            try {
+                if (entry.control != this) {
+                    return;
+                }
+                if (totalHolds.get() == 0) {
+                    locks.remove(ref, entry);
+                    entry.control = null;
+                    if (HOT_STATE_DIAGNOSTICS) {
+                        FAST_RECORD_READ_RETIREMENTS.increment();
+                    }
+                } else {
+                    entry.control = materializeRecordReadHolders(ref, holders);
+                }
+            } finally {
+                entry.unlock();
+            }
+        }
+
+        private int enterFast(CompatibilitySpace space) {
+            if (!fast) {
+                return -1;
+            }
+            int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
+            inFlight.incrementAndGet(stripe);
+            if (fast) {
+                return stripe;
+            }
+            inFlight.decrementAndGet(stripe);
+            return -1;
+        }
+
+        private void leaveFast(int stripe) {
+            inFlight.decrementAndGet(stripe);
+        }
+
+
+        private LockControl snapshot() {
+            return materializeRecordReadHolders(ref, holders);
+        }
+
+        public Lockable getLockable() {
+            return ref;
+        }
+
+        public LockControl getLockControl() {
+            return snapshot();
+        }
+
+        public Lock getLock(CompatibilitySpace compatibilitySpace,
+                            Object qualifier) {
+            if (qualifier != RowLock.RS2) {
+                return null;
+            }
+            AtomicInteger held = holders.get(compatibilitySpace);
+            int count = held == null ? 0 : held.get();
+            if (count == 0) {
+                return null;
+            }
+            Lock lock = new Lock(compatibilitySpace, ref, qualifier);
+            lock.count = count;
+            return lock;
+        }
+
+        public Control shallowClone() {
+            LockControl snapshot = snapshot();
+            return snapshot == null ? new FastRecordReadControl(ref, false) : snapshot;
+        }
+
+        public ActiveLock firstWaiter() {
+            return null;
+        }
+
+        public boolean isEmpty() {
+            return totalHolds.get() == 0;
+        }
+
+        public boolean unlock(Latch lockInGroup, int unlockCount) {
+            return false;
+        }
+
+        public void addWaiters(Map<Object,Object> waiters) {
+        }
+
+        public Lock getFirstGrant() {
+            java.util.List<Lock> grants = getGranted();
+            return grants == null || grants.isEmpty() ? null : grants.get(0);
+        }
+
+        public java.util.List<Lock> getGranted() {
+            java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
+            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                int count = holder.getValue().get();
+                if (count > 0) {
+                    Lock lock = new Lock(holder.getKey(), ref, RowLock.RS2);
+                    lock.count = count;
+                    grants.add(lock);
+                }
+            }
+            return grants.isEmpty() ? null : grants;
+        }
+
+        public java.util.List<Lock> getWaiting() {
+            return null;
+        }
+
+        public boolean isGrantable(boolean noWaitersBeforeMe,
+                                   CompatibilitySpace compatibilitySpace,
+                                   Object qualifier) {
+            AtomicInteger own = holders.get(compatibilitySpace);
+            int ownCount = own == null ? 0 : own.get();
+            if (totalHolds.get() <= ownCount) {
+                return true;
+            }
+            return ref.requestCompatible(qualifier, RowLock.RS2);
+        }
+    }
+
+    private static void awaitFastOperations(AtomicIntegerArray inFlight) {
+        for (;;) {
+            boolean active = false;
+            for (int stripe = 0; stripe < inFlight.length(); stripe++) {
+                if (inFlight.get(stripe) != 0) {
+                    active = true;
+                    break;
+                }
+            }
+            if (!active) {
+                return;
+            }
+            Thread.onSpinWait();
+        }
+    }
+
     private LockControl materializeCisHolders(
             Lockable ref,
             ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders) {
@@ -511,6 +742,101 @@ final class ConcurrentLockSet implements LockTable {
             }
         }
         return control;
+    }
+
+
+    private LockControl materializeRecordReadHolders(
+            Lockable ref,
+            ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders) {
+        LockControl control = null;
+        for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+            int count = holder.getValue().get();
+            if (count <= 0) {
+                continue;
+            }
+            if (control == null) {
+                Lock first = new Lock(holder.getKey(), ref, RowLock.RS2);
+                first.count = count;
+                control = new LockControl(first, ref);
+                continue;
+            }
+            for (int i = 0; i < count; i++) {
+                Lock granted = control.addLock(this, holder.getKey(), RowLock.RS2);
+                if (SanityManager.DEBUG) {
+                    SanityManager.ASSERT(granted.getCount() != 0,
+                            "materialized RecordId RS2 lock was not granted");
+                }
+            }
+        }
+        return control;
+    }
+
+    private static boolean isFastRecordReadRequest(Lockable ref, Object qualifier) {
+        return FAST_RECORD_READ_ENABLED
+                && qualifier == RowLock.RS2
+                && "org.apache.derby.impl.store.raw.data.RecordId".equals(
+                        ref.getClass().getName());
+    }
+
+    private Lock tryFastRecordReadLock(CompatibilitySpace compatibilitySpace,
+                                       Lockable ref,
+                                       Object qualifier) {
+        if (!isFastRecordReadRequest(ref, qualifier)) {
+            return null;
+        }
+        Entry entry = locks.get(ref);
+        if (entry == null) {
+            return null;
+        }
+        Control control = entry.control;
+        return control instanceof FastRecordReadControl
+                ? ((FastRecordReadControl) control).tryAcquire(compatibilitySpace)
+                : null;
+    }
+
+    private Lock promoteFastRecordRead(Entry entry,
+                                       Control control,
+                                       CompatibilitySpace compatibilitySpace,
+                                       Lockable ref,
+                                       Object qualifier) {
+        if (!isFastRecordReadRequest(ref, qualifier) || !(control instanceof Lock)) {
+            return null;
+        }
+        Lock first = (Lock) control;
+        if (first.getQualifier() != RowLock.RS2 || first.getCount() != 1
+                || first.getCompatabilitySpace() == compatibilitySpace) {
+            return null;
+        }
+        FastRecordReadControl fastControl = new FastRecordReadControl(first);
+        Lock granted = fastControl.tryAcquire(compatibilitySpace);
+        if (granted == null) {
+            return null;
+        }
+        entry.control = fastControl;
+        if (HOT_STATE_DIAGNOSTICS) {
+            FAST_RECORD_READ_PROMOTIONS.increment();
+        }
+        return granted;
+    }
+
+    private boolean tryFastRecordReadUnlock(Entry entry, Latch item, int unlockCount) {
+        if (entry == null
+                || !isFastRecordReadRequest(item.getLockable(), item.getQualifier())) {
+            return false;
+        }
+        Control control = entry.control;
+        if (!(control instanceof FastRecordReadControl)) {
+            return false;
+        }
+        FastRecordReadControl fastControl = (FastRecordReadControl) control;
+        int remaining = fastControl.tryRelease(item, unlockCount);
+        if (remaining < 0) {
+            return false;
+        }
+        if (remaining == 0) {
+            fastControl.retireIfEmpty(entry);
+        }
+        return true;
     }
 
     private static boolean isFastCisRequest(Lockable ref, Object qualifier) {
@@ -632,20 +958,30 @@ final class ConcurrentLockSet implements LockTable {
         FAST_CIS_HOLDER_CREATES.reset();
         FAST_CIS_HOLDER_REMOVES.reset();
         FAST_CIS_STRIPE_OVERLAP.reset();
+        FAST_RECORD_READ_PROMOTIONS.reset();
+        FAST_RECORD_READ_ACQUIRE_HITS.reset();
+        FAST_RECORD_READ_RELEASE_HITS.reset();
+        FAST_RECORD_READ_FREEZES.reset();
+        FAST_RECORD_READ_RETIREMENTS.reset();
     }
 
     static String[] snapshotHotStateDiagnosticsForTesting() {
         return new String[] {
-            hotStateRow("fastCisAcquireAttempts", FAST_CIS_ACQUIRE_ATTEMPTS),
-            hotStateRow("fastCisReleaseAttempts", FAST_CIS_RELEASE_ATTEMPTS),
-            hotStateRow("fastCisHolderCreates", FAST_CIS_HOLDER_CREATES),
-            hotStateRow("fastCisHolderRemoves", FAST_CIS_HOLDER_REMOVES),
-            hotStateRow("fastCisStripeOverlap", FAST_CIS_STRIPE_OVERLAP)
+            hotStateRow("FastCisControl", "fastCisAcquireAttempts", FAST_CIS_ACQUIRE_ATTEMPTS),
+            hotStateRow("FastCisControl", "fastCisReleaseAttempts", FAST_CIS_RELEASE_ATTEMPTS),
+            hotStateRow("FastCisControl", "fastCisHolderCreates", FAST_CIS_HOLDER_CREATES),
+            hotStateRow("FastCisControl", "fastCisHolderRemoves", FAST_CIS_HOLDER_REMOVES),
+            hotStateRow("FastCisControl", "fastCisStripeOverlap", FAST_CIS_STRIPE_OVERLAP),
+            hotStateRow("FastRecordReadControl", "promotions", FAST_RECORD_READ_PROMOTIONS),
+            hotStateRow("FastRecordReadControl", "acquireHits", FAST_RECORD_READ_ACQUIRE_HITS),
+            hotStateRow("FastRecordReadControl", "releaseHits", FAST_RECORD_READ_RELEASE_HITS),
+            hotStateRow("FastRecordReadControl", "freezes", FAST_RECORD_READ_FREEZES),
+            hotStateRow("FastRecordReadControl", "retirements", FAST_RECORD_READ_RETIREMENTS)
         };
     }
 
-    private static String hotStateRow(String metric, LongAdder value) {
-        return "FastCisControl," + metric + "," + value.sum();
+    private static String hotStateRow(String component, String metric, LongAdder value) {
+        return component + "," + metric + "," + value.sum();
     }
 
     private static LockEntryStats lockEntryStats(Lockable ref) {
@@ -744,6 +1080,11 @@ final class ConcurrentLockSet implements LockTable {
         if (fastCis != null) {
             return fastCis;
         }
+        Lock fastRecordRead = tryFastRecordReadLock(
+                compatibilitySpace, ref, qualifier);
+        if (fastRecordRead != null) {
+            return fastRecordRead;
+        }
 
         Entry entry = getEntry(ref);
         try {
@@ -755,6 +1096,17 @@ final class ConcurrentLockSet implements LockTable {
                     fastCis = fastControl.tryAcquire(compatibilitySpace);
                     if (fastCis != null) {
                         return fastCis;
+                    }
+                }
+                gc = fastControl.freeze();
+                entry.control = gc;
+            }
+            if (gc instanceof FastRecordReadControl) {
+                FastRecordReadControl fastControl = (FastRecordReadControl) gc;
+                if (isFastRecordReadRequest(ref, qualifier)) {
+                    fastRecordRead = fastControl.tryAcquire(compatibilitySpace);
+                    if (fastRecordRead != null) {
+                        return fastRecordRead;
                     }
                 }
                 gc = fastControl.freeze();
@@ -778,6 +1130,12 @@ final class ConcurrentLockSet implements LockTable {
 
 				return gl;
 			}
+
+            fastRecordRead = promoteFastRecordRead(
+                    entry, gc, compatibilitySpace, ref, qualifier);
+            if (fastRecordRead != null) {
+                return fastRecordRead;
+            }
 
 			control = gc.getLockControl();
 			if (control != gc) {
@@ -1138,11 +1496,15 @@ forever:	for (;;) {
 	public void unlock(Latch item, int unlockCount) {
         // assume LockEntry is there
         Entry entry = locks.get(item.getLockable());
-        if (tryFastCisUnlock(entry, item, unlockCount)) {
+        if (tryFastCisUnlock(entry, item, unlockCount)
+                || tryFastRecordReadUnlock(entry, item, unlockCount)) {
             return;
         }
         entry.lock();
         try {
+            if (entry.control instanceof FastRecordReadControl) {
+                entry.control = ((FastRecordReadControl) entry.control).freeze();
+            }
             unlock(entry, item, unlockCount);
         } finally {
             entry.unlock();
@@ -1264,10 +1626,22 @@ forever:	for (;;) {
                 }
             }
         }
+        if (isFastRecordReadRequest(ref, qualifier)) {
+            Lock key = new Lock(space, ref, qualifier);
+            Lock lockInGroup = (Lock) group.get(key);
+            if (lockInGroup != null && tryFastRecordReadUnlock(entry, lockInGroup, 1)) {
+                group.remove(key);
+                return lockInGroup;
+            }
+        }
 
         entry.lock();
         try {
             Control control = entry.control;
+            if (control instanceof FastRecordReadControl) {
+                control = ((FastRecordReadControl) control).freeze();
+                entry.control = control;
+            }
             if (control == null) {
                 return null;
             }
@@ -1332,6 +1706,14 @@ forever:	for (;;) {
             Control control = entry.control;
             if (control == null) {
                 return true;
+            }
+            if (control instanceof FastRecordReadControl
+                    && !isFastRecordReadRequest(ref, qualifier)) {
+                control = ((FastRecordReadControl) control).freeze();
+                entry.control = control;
+                if (control == null) {
+                    return true;
+                }
             }
 
             // If we are grantable, ignoring waiting locks then

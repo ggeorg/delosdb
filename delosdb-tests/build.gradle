@@ -87,6 +87,8 @@ def containerCacheFastPinTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java')
 def containerIntentSharedFastPathTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java')
+def recordReadFastPathTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
@@ -338,6 +340,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/services/cache/CacheEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
@@ -384,6 +387,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/services/cache'
     }
     from(containerIntentSharedFastPathTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
+    }
+    from(recordReadFastPathTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(mvccVisibilityTestSupportSource) {
@@ -4802,5 +4808,249 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
         new File(root, 'gate10j-decision.txt').setText(
                 decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
         logger.lifecycle('Gate 10J ' + passLine)
+    }
+}
+
+// Gate 10K-A: experimentally remove compatible HOT RecordId RS2 reader
+// bookkeeping from the per-Lockable Entry mutex. The fast control is adaptive:
+// it is installed only after a second overlapping RS2 compatibility space and
+// materializes back into Derby's ordinary LockControl before any other mode.
+def gate10kFastRecordReadRoot =
+        'reports/delosdb/benchmarks/gate10k-fast-record-read-mechanism'
+
+tasks.register('runDelosJdbcGate10kFastRecordReadMechanismProof', JavaExec) { JavaExec task ->
+    group = 'benchmark'
+    description = 'Proves the adaptive compatible RecordId RS2 fast path removes HOT Entry-mutex bookkeeping without changing DISJOINT or physical read authority.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(gate10kFastRecordReadRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10K-A fast RecordId read proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir(gate10kFastRecordReadRoot).get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10k-fast-record-read').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.diagnostic.heapPageReadImage': 'true',
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.btreePointReadPath': 'true',
+                'delosdb.diagnostic.lockEntry': 'true',
+                'delosdb.diagnostic.lockWait': 'true',
+                'delosdb.diagnostic.hotState': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient':
+                        providers.gradleProperty('delosdb.benchmark.gate10k.operationBudgetPerClient')
+                                .getOrElse('500000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.btreePointReadPathDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapPageReadImageDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockEntryDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockWaitDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.hotStateDiagnostics': 'true'
+        ])
+    }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(gate10kFastRecordReadRoot).get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10K-A report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10K-A report has no measurements: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Gate 10K-A malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+        def key = { row ->
+            "${row.workload.toUpperCase(java.util.Locale.ROOT)}:${Integer.parseInt(row.clients)}".toString()
+        }
+        def indexUnique = { List rows, String label ->
+            def indexed = [:]
+            rows.each { row ->
+                String rowKey = key(row)
+                if (indexed.put(rowKey, row) != null) {
+                    throw new GradleException("Gate 10K-A duplicate ${label} row for ${rowKey}")
+                }
+            }
+            indexed
+        }
+
+        def measurements = loadCsv(new File(root, 'delos_heap-run-1.csv'))
+        def images = loadCsv(new File(root, 'heap-page-read-image-diagnostics-delos_heap-run-1.csv'))
+        def latches = loadCsv(new File(root, 'page-latch-diagnostics-delos_heap-run-1.csv'))
+        def btree = loadCsv(new File(root, 'btree-point-read-path-diagnostics-delos_heap-run-1.csv'))
+        def entries = loadCsv(new File(root, 'lock-entry-diagnostics-delos_heap-run-1.csv'))
+        def logicalWaits = loadCsv(new File(root, 'logical-lock-wait-diagnostics-delos_heap-run-1.csv'))
+        def hotState = loadCsv(new File(root, 'hot-state-diagnostics-delos_heap-run-1.csv'))
+
+        if (measurements.size() != 6 || images.size() != 6 || latches.size() != 6
+                || btree.size() != 6 || entries.size() != 18 || logicalWaits.size() != 18) {
+            throw new GradleException(String.format(java.util.Locale.ROOT,
+                    'Gate 10K-A report cardinality mismatch: measurements=%d images=%d latches=%d btree=%d entries=%d logicalWaits=%d',
+                    measurements.size(), images.size(), latches.size(), btree.size(),
+                    entries.size(), logicalWaits.size()))
+        }
+
+        def measurementByKey = indexUnique(measurements, 'measurement')
+        def imageByKey = indexUnique(images, 'image')
+        def latchByKey = indexUnique(latches, 'latch')
+        def btreeByKey = indexUnique(btree, 'btree')
+        def recordEntryByKey = indexUnique(
+                entries.findAll { it.lockableClass.endsWith('RecordId') }, 'RecordId entry')
+        def recordWaitByKey = indexUnique(
+                logicalWaits.findAll { it.lockableClass.endsWith('RecordId') }, 'RecordId wait')
+        def fastMetric = { String workload, String clients, String metric ->
+            def row = hotState.find {
+                it.workload == workload && it.clients == clients
+                        && it.component == 'FastRecordReadControl' && it.metric == metric
+            }
+            if (row == null) {
+                throw new GradleException(
+                        "Gate 10K-A missing FastRecordReadControl metric ${metric} for ${workload}:${clients}")
+            }
+            Long.parseLong(row.value)
+        }
+
+        def decision = [
+                'Gate 10K-A adaptive compatible RecordId RS2 mechanism proof',
+                'Experimental feature: delosdb.experimental.fastRecordReadLock=true.',
+                'Mechanism-only gate: performance acceptance requires a later balanced OFF/ON proof.'
+        ]
+        ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
+            ['4', '8', '16'].each { clients ->
+                String k = "${workload}:${clients}".toString()
+                def measurement = measurementByKey[k]
+                def image = imageByKey[k]
+                def latch = latchByKey[k]
+                def tree = btreeByKey[k]
+                def entry = recordEntryByKey[k]
+                def logical = recordWaitByKey[k]
+                if ([measurement, image, latch, tree, entry, logical].any { it == null }) {
+                    throw new GradleException("Gate 10K-A missing evidence for ${k}")
+                }
+                long operations = Long.parseLong(measurement.measuredOperations)
+                if (Long.parseLong(measurement.retryableConflictRetries) != 0L) {
+                    throw new GradleException("Gate 10K-A ${k} observed retryable conflicts")
+                }
+                double imageHits = Long.parseLong(image.hits) / (double) operations
+                double fallbacks = Long.parseLong(image.attempts) == 0L ? 1.0d
+                        : Long.parseLong(image.fallbacks) / (double) Long.parseLong(image.attempts)
+                double latchesPerRead = Long.parseLong(latch.latchRequests) / (double) operations
+                double leafFetchesPerRead = Long.parseLong(tree.indexLeafRowFetches) / (double) operations
+                if (imageHits < 0.98d || fallbacks > 0.02d
+                        || latchesPerRead > 0.02d || leafFetchesPerRead > 0.02d) {
+                    throw new GradleException(String.format(java.util.Locale.ROOT,
+                            'Gate 10K-A %s lost accepted physical path: imageHits/read=%.6f fallback=%.6f latches/read=%.6f leafFetches/read=%.6f',
+                            k, imageHits, fallbacks, latchesPerRead, leafFetchesPerRead))
+                }
+                if (Long.parseLong(logical.logicalWaits) != 0L) {
+                    throw new GradleException(
+                            "Gate 10K-A ${k} observed logical RecordId waiting: ${logical.logicalWaits}")
+                }
+
+                double entryAcquisitionsPerRead =
+                        Long.parseLong(entry.entryAcquisitions) / (double) operations
+                double entryWaitPerRead =
+                        Long.parseLong(entry.entryMutexWaitNanos) / (double) operations
+                long promotions = fastMetric(workload, clients, 'promotions')
+                long acquireHits = fastMetric(workload, clients, 'acquireHits')
+                long releaseHits = fastMetric(workload, clients, 'releaseHits')
+                long freezes = fastMetric(workload, clients, 'freezes')
+                long retirements = fastMetric(workload, clients, 'retirements')
+                double acquireHitsPerRead = acquireHits / (double) operations
+                double releaseHitsPerRead = releaseHits / (double) operations
+                double throughput = Double.parseDouble(measurement.operationsPerSecond)
+
+                if (workload == 'PRIMARY_KEY_READ_HOT' && (clients == '8' || clients == '16')) {
+                    if (promotions == 0L || acquireHitsPerRead < 0.90d
+                            || releaseHitsPerRead < 0.90d || entryAcquisitionsPerRead > 0.25d) {
+                        throw new GradleException(String.format(java.util.Locale.ROOT,
+                                'Gate 10K-A %s mechanism did not remove RecordId Entry authority: promotions=%d acquireHits/read=%.6f releaseHits/read=%.6f entryAcquisitions/read=%.6f',
+                                k, promotions, acquireHitsPerRead, releaseHitsPerRead,
+                                entryAcquisitionsPerRead))
+                    }
+                }
+                if (workload == 'PRIMARY_KEY_READ_DISJOINT'
+                        && (promotions != 0L || acquireHits != 0L || releaseHits != 0L)) {
+                    throw new GradleException(String.format(java.util.Locale.ROOT,
+                            'Gate 10K-A %s incorrectly entered adaptive HOT-row state: promotions=%d acquireHits=%d releaseHits=%d',
+                            k, promotions, acquireHits, releaseHits))
+                }
+
+                def line = String.format(java.util.Locale.ROOT,
+                        '%s: throughput=%.2f op/s imageHits/read=%.6f latches/read=%.6f leafFetches/read=%.6f RecordIdEntry acquisitions/read=%.6f mutexWait/read=%.1f ns promotions=%d acquireHits/read=%.6f releaseHits/read=%.6f freezes=%d retirements=%d',
+                        k, throughput, imageHits, latchesPerRead, leafFetchesPerRead,
+                        entryAcquisitionsPerRead, entryWaitPerRead, promotions,
+                        acquireHitsPerRead, releaseHitsPerRead, freezes, retirements)
+                decision.add(line)
+                logger.lifecycle('Gate 10K-A ' + line)
+            }
+        }
+
+        def pass = 'PASS: adaptive RecordId RS2 fast path entered on HOT, stayed out of DISJOINT, removed the HOT Entry-mutex authority at 8c/16c, and preserved Gate 10I-A physical invariants. Performance acceptance is still pending.'
+        decision.add(pass)
+        new File(root, 'gate10k-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10K-A ' + pass)
     }
 }
