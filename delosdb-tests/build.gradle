@@ -6608,3 +6608,279 @@ tasks.register('runDelosJdbcGate10kgBoundedRetentionPairedAcceptanceProof') {
         logger.lifecycle('Gate 10K-G paired ' + passLine)
     }
 }
+
+// Gate 10L-A: diagnostic-only MVCC current-row topology authority proof.
+// Heap HOT shared-authority work is closed at Gate 10K-G. Before changing the
+// MVCC row/version format, re-prove the exact current non-covering PK-read
+// topology on the current tree and pair it with same-run heap/MVCC throughput.
+// No production feature flag or MVCC format change is introduced here.
+def gate10laRoot = 'reports/delosdb/benchmarks/gate10la-mvcc-current-row-topology'
+
+def configureGate10laWorker = {
+        JavaExec task,
+        String target,
+        int run ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-A ${target} HOT baseline run ${run}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10laRoot}/workers/${target}/run-${run}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-A MVCC topology proof requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10laRoot}/workers/${target}/run-${run}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10la-${target}-run-${run}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def properties = [
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': target,
+                'delosdb.benchmark.crossEngineConcurrency.targets': target,
+                'delosdb.benchmark.crossEngineConcurrency.run': run.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ]
+        if (target == 'delos_heap') {
+            properties['delosdb.experimental.heapPageReadImage'] = 'true'
+            properties['delosdb.experimental.fastRecordReadLock'] = 'true'
+            properties['delosdb.experimental.fastRecordReadLock.retainedSlots'] = '4096'
+        }
+        task.systemProperties(properties)
+    }
+}
+
+def gate10laWorkers = []
+(1..4).each { run ->
+    def order = (run % 2 == 1)
+            ? ['delos_heap', 'delos_mvcc']
+            : ['delos_mvcc', 'delos_heap']
+    order.each { target ->
+        def suffix = target == 'delos_heap' ? 'Heap' : 'Mvcc'
+        gate10laWorkers.add(tasks.register(
+                "runDelosJdbcGate10la${suffix}Run${run}", JavaExec) { task ->
+            configureGate10laWorker(task, target, run)
+        })
+    }
+}
+(1..<gate10laWorkers.size()).each { index ->
+    gate10laWorkers[index].configure {
+        mustRunAfter gate10laWorkers[index - 1]
+    }
+}
+gate10laWorkers.each { worker ->
+    worker.configure {
+        mustRunAfter tasks.named('runDelosPrimaryKeyReadPhysicalAccounting')
+    }
+}
+
+tasks.register('runDelosJdbcGate10laMvccCurrentRowTopologyProof') {
+    group = 'benchmark'
+    description = 'Proves the current MVCC PK-read directory/version topology and records same-run heap/MVCC HOT cost before Current-Row Anchor work.'
+    dependsOn tasks.named('runDelosPrimaryKeyReadPhysicalAccounting')
+    dependsOn gate10laWorkers
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(gate10laRoot).get().asFile
+        root.mkdirs()
+
+        File physicalFile = rootProject.layout.buildDirectory.file(
+                'reports/delosdb/benchmarks/physical-read-accounting/primary-key-read-physical-accounting.csv')
+                .get().asFile
+        if (!physicalFile.isFile()) {
+            throw new GradleException("Missing Gate 10L-A physical accounting report: ${physicalFile}")
+        }
+
+        def parseCsv = { File file ->
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-A report has no data rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                // Gate 10L-A worker CSVs contain no quoted commas. The physical
+                // accounting operation and numeric columns are the first four
+                // fields, so they are parsed separately below.
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Malformed Gate 10L-A CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+
+        // The physical-accounting CSV quotes operation/authority text. These
+        // operation names contain no commas, so a narrow matcher is clearer and
+        // avoids adding a second CSV library solely for a diagnostic collector.
+        def physical = [:]
+        physicalFile.readLines('UTF-8').drop(1).findAll { !it.trim().isEmpty() }.each { line ->
+            def matcher = (line =~ /^\"([^\"]+)\",(\d+),(\d+),([+-]?\d+),/)
+            if (!matcher.find()) {
+                throw new GradleException("Malformed Gate 10L-A physical row: ${line}")
+            }
+            physical[matcher.group(1)] = [
+                    heap: Long.parseLong(matcher.group(2)),
+                    mvcc: Long.parseLong(matcher.group(3)),
+                    excess: Long.parseLong(matcher.group(4))
+            ]
+        }
+
+        def requirePhysical = { String operation, long heap, long mvcc ->
+            def row = physical[operation]
+            if (row == null) {
+                throw new GradleException("Gate 10L-A missing physical operation: ${operation}")
+            }
+            if (row.heap != heap || row.mvcc != mvcc) {
+                throw new GradleException(
+                        "Gate 10L-A physical topology changed for ${operation}: " +
+                                "heap=${row.heap} mvcc=${row.mvcc}, expected heap=${heap} mvcc=${mvcc}")
+            }
+        }
+        requirePhysical('MVCC directory page acquisitions', 0L, 1L)
+        requirePhysical('MVCC directory record decodes', 0L, 1L)
+        requirePhysical('MVCC directory logical fallbacks', 0L, 0L)
+        requirePhysical('MVCC version page acquisitions', 0L, 1L)
+        requirePhysical('MVCC version slot fetches', 0L, 2L)
+        requirePhysical('MVCC visibility checks', 0L, 1L)
+        requirePhysical('MVCC version-chain steps', 0L, 1L)
+        requirePhysical('MVCC version logical fallbacks', 0L, 0L)
+        requirePhysical('unique physical records represented', 2L, 3L)
+        requirePhysical('physical record fetch/decode operations', 2L, 4L)
+        requirePhysical('storage container opens required by read path', 2L, 3L)
+
+        def rows = []
+        ['delos_heap', 'delos_mvcc'].each { target ->
+            (1..4).each { run ->
+                File file = new File(root,
+                        "workers/${target}/run-${run}/${target}-run-${run}.csv")
+                if (!file.isFile()) {
+                    throw new GradleException("Missing Gate 10L-A worker report: ${file}")
+                }
+                def values = parseCsv(file)
+                if (values.size() != 3) {
+                    throw new GradleException(
+                            "Gate 10L-A expected 3 client cells in ${file}, observed ${values.size()}.")
+                }
+                rows.addAll(values)
+            }
+        }
+        if (rows.size() != 24) {
+            throw new GradleException(
+                    "Gate 10L-A expected 24 performance rows, observed ${rows.size()}.")
+        }
+
+        def grouped = rows.groupBy { "${it.workload}:${it.clients}" }
+        if (grouped.keySet() != [
+                'PRIMARY_KEY_READ_HOT:1',
+                'PRIMARY_KEY_READ_HOT:8',
+                'PRIMARY_KEY_READ_HOT:16'] as Set) {
+            throw new GradleException("Gate 10L-A unexpected performance cells: ${grouped.keySet()}")
+        }
+        grouped.each { cell, values ->
+            if (values.size() != 8) {
+                throw new GradleException(
+                        "Gate 10L-A ${cell} expected 8 observations, observed ${values.size()}.")
+            }
+            def fingerprints = values.collect { it.semanticFingerprint }.toSet()
+            if (fingerprints.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-A semantic mismatch for ${cell}: ${fingerprints}")
+            }
+            long retries = values.sum { Long.parseLong(it.retryableConflictRetries) } as long
+            if (retries != 0L) {
+                throw new GradleException(
+                        "Gate 10L-A observed retryable conflicts for ${cell}: ${retries}")
+            }
+        }
+
+        def median = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            int n = sorted.size()
+            n % 2 == 1 ? sorted[n.intdiv(2)] :
+                    (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d
+        }
+        def throughput = { String target, String clients ->
+            def values = rows.findAll {
+                it.target == target && it.clients == clients
+            }.collect { Double.parseDouble(it.operationsPerSecond) }
+            if (values.size() != 4) {
+                throw new GradleException(
+                        "Gate 10L-A expected four ${target} ${clients}c observations, observed ${values.size()}.")
+            }
+            median(values)
+        }
+
+        def decision = [
+                'Gate 10L-A diagnostic-only MVCC Current-Row Anchor topology authority proof',
+                'Current production tree; no MVCC format or read-path optimization enabled.',
+                'Physical authority: existing one-read accounting test on a non-covering primary-key lookup.',
+                'Performance authority: four same-tree observations each for accepted Delos heap and current Delos MVCC at HOT 1c/8c/16c.'
+        ]
+        ['1', '8', '16'].each { clients ->
+            double heap = throughput('delos_heap', clients)
+            double mvcc = throughput('delos_mvcc', clients)
+            double ratio = mvcc / heap
+            def line = String.format(java.util.Locale.ROOT,
+                    'PRIMARY_KEY_READ_HOT %sc: heap=%.2f mvcc=%.2f mvcc/heap=%.4f gap=%.2fx',
+                    clients, heap, mvcc, ratio, heap / mvcc)
+            decision.add(line)
+            logger.lifecycle('Gate 10L-A ' + line)
+        }
+        decision.add('PHYSICAL: heap=index+base row; MVCC=index+directory+version; MVCC current-head non-covering read acquires one directory page and one version page and performs two version-slot fetches.')
+        def passLine = 'PASS: the current MVCC non-covering PK-read topology and same-run heap/MVCC cost are re-established on the post-10K tree. Current-Row Anchor prototyping may begin behind an experimental gate; history/old-snapshot fallback must remain authoritative.'
+        decision.add(passLine)
+        new File(root, 'gate10la-mvcc-current-row-topology-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        project.copy {
+            from physicalFile.parentFile
+            include 'primary-key-read-physical-accounting.csv'
+            include 'primary-key-read-physical-accounting.txt'
+            into new File(root, 'physical-accounting')
+        }
+        logger.lifecycle('Gate 10L-A ' + passLine)
+    }
+}
