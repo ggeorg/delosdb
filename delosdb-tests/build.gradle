@@ -4596,6 +4596,12 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
         def root = rootProject.layout.buildDirectory
                 .dir(gate10jResidualHotLockAuthorityRoot)
                 .get().asFile
+        def canonicalCsvValue = { value ->
+            value == null ? '' : value.toString().trim()
+        }
+        def canonicalHeader = { value ->
+            canonicalCsvValue(value).replace('\uFEFF', '')
+        }
         def loadCsv = { File file ->
             if (!file.isFile()) {
                 throw new GradleException("Missing Gate 10J report: ${file}")
@@ -4604,7 +4610,7 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
             if (lines.size() < 2) {
                 throw new GradleException("Gate 10J report has no measurements: ${file}")
             }
-            def header = lines[0].split(',', -1) as List
+            def header = (lines[0].split(',', -1) as List).collect { canonicalHeader(it) }
             lines.drop(1).collect { line ->
                 def fields = line.split(',', -1)
                 if (fields.length != header.size()) {
@@ -4612,7 +4618,9 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
                             "Gate 10J malformed CSV row in ${file}: ${line}")
                 }
                 def row = [:]
-                header.eachWithIndex { name, index -> row[name] = fields[index] }
+                header.eachWithIndex { name, index ->
+                    row[name] = canonicalCsvValue(fields[index])
+                }
                 row
             }
         }
@@ -4637,15 +4645,46 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
                     entries.size(), logicalWaits.size()))
         }
 
-        def key = { row -> "${row.workload}:${row.clients}" }
-        def measurementByKey = measurements.collectEntries { [(key(it)): it] }
-        def imageByKey = images.collectEntries { [(key(it)): it] }
-        def latchByKey = latches.collectEntries { [(key(it)): it] }
-        def btreeByKey = btree.collectEntries { [(key(it)): it] }
-        def recordEntryByKey = entries.findAll { it.lockableClass == 'RecordId' }
-                .collectEntries { [(key(it)): it] }
-        def recordWaitByKey = logicalWaits.findAll { it.lockableClass == 'RecordId' }
-                .collectEntries { [(key(it)): it] }
+        def key = { row ->
+            def workload = canonicalCsvValue(row['workload']).toUpperCase(java.util.Locale.ROOT)
+            def clients = Integer.toString(Integer.parseInt(canonicalCsvValue(row['clients'])))
+            "${workload}:${clients}".toString()
+        }
+        def canonicalLockableClass = { row ->
+            def name = canonicalCsvValue(row['lockableClass'])
+            def simpleName = name.contains('.') ? name.substring(name.lastIndexOf('.') + 1) : name
+            if (simpleName.equalsIgnoreCase('RecordId')) {
+                return 'RecordId'
+            }
+            if (simpleName.equalsIgnoreCase('ContainerKey')) {
+                return 'ContainerKey'
+            }
+            if (simpleName.equalsIgnoreCase('Other')) {
+                return 'Other'
+            }
+            name
+        }
+        def indexUnique = { List rows, String label ->
+            def indexed = [:]
+            rows.each { row ->
+                def rowKey = key(row)
+                if (indexed.put(rowKey, row) != null) {
+                    throw new GradleException(
+                            "Gate 10J duplicate ${label} row for ${rowKey}")
+                }
+            }
+            indexed
+        }
+        def measurementByKey = indexUnique(measurements, 'measurement')
+        def imageByKey = indexUnique(images, 'heap-page-read-image diagnostic')
+        def latchByKey = indexUnique(latches, 'page-latch diagnostic')
+        def btreeByKey = indexUnique(btree, 'B-tree point-read diagnostic')
+        def recordEntryByKey = indexUnique(
+                entries.findAll { canonicalLockableClass(it) == 'RecordId' },
+                'RecordId lock-entry diagnostic')
+        def recordWaitByKey = indexUnique(
+                logicalWaits.findAll { canonicalLockableClass(it) == 'RecordId' },
+                'RecordId logical-lock-wait diagnostic')
 
         def workloads = ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT']
         def clientsList = ['4', '8', '16']
@@ -4658,15 +4697,37 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
 
         workloads.each { workload ->
             clientsList.each { clients ->
-                def k = "${workload}:${clients}"
+                String k = "${workload}:${clients}".toString()
                 def measurement = measurementByKey[k]
                 def image = imageByKey[k]
                 def latch = latchByKey[k]
                 def tree = btreeByKey[k]
                 def entry = recordEntryByKey[k]
                 def logical = recordWaitByKey[k]
-                if ([measurement, image, latch, tree, entry, logical].any { it == null }) {
-                    throw new GradleException("Gate 10J missing diagnostic row for ${k}")
+                def missing = []
+                if (measurement == null) {
+                    missing.add("measurement available=${measurementByKey.keySet().sort()}")
+                }
+                if (image == null) {
+                    missing.add("image available=${imageByKey.keySet().sort()}")
+                }
+                if (latch == null) {
+                    missing.add("latch available=${latchByKey.keySet().sort()}")
+                }
+                if (tree == null) {
+                    missing.add("btree available=${btreeByKey.keySet().sort()}")
+                }
+                if (entry == null) {
+                    def classes = entries.collect { canonicalLockableClass(it) }.unique().sort()
+                    missing.add("RecordId-entry available=${recordEntryByKey.keySet().sort()} classes=${classes}")
+                }
+                if (logical == null) {
+                    def classes = logicalWaits.collect { canonicalLockableClass(it) }.unique().sort()
+                    missing.add("RecordId-logical-wait available=${recordWaitByKey.keySet().sort()} classes=${classes}")
+                }
+                if (!missing.isEmpty()) {
+                    throw new GradleException(
+                            "Gate 10J missing evidence for ${k}: ${missing.join('; ')}")
                 }
                 if (Long.parseLong(measurement.retryableConflictRetries) != 0L) {
                     throw new GradleException(
@@ -4719,8 +4780,8 @@ tasks.register('runDelosJdbcGate10jResidualHotLockAuthorityProof', JavaExec) { t
         }
 
         clientsList.each { clients ->
-            def hot = recordEntryByKey["PRIMARY_KEY_READ_HOT:${clients}"]
-            def disjoint = recordEntryByKey["PRIMARY_KEY_READ_DISJOINT:${clients}"]
+            def hot = recordEntryByKey["PRIMARY_KEY_READ_HOT:${clients}".toString()]
+            def disjoint = recordEntryByKey["PRIMARY_KEY_READ_DISJOINT:${clients}".toString()]
             double hotWait = Double.parseDouble(hot.waitNanosPerOperation)
             double disjointWait = Double.parseDouble(disjoint.waitNanosPerOperation)
             double hotContended = Double.parseDouble(hot.contendedPercent)
