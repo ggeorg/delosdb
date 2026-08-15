@@ -166,6 +166,13 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      */
     private transient BTree rootRoutingOwner;
 
+    /** B-tree owning an immutable routing snapshot derived from this branch page. */
+    private transient BTree branchRoutingSnapshotOwner;
+
+    /** Physical branch identity captured while the page is latched. */
+    private transient long branchRoutingSnapshotPageNumber =
+            ContainerHandle.INVALID_PAGE_NUMBER;
+
     /** B-tree owning an immutable snapshot derived from this leaf page. */
     private transient BTree leafReadSnapshotOwner;
 
@@ -1884,6 +1891,11 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         rootRoutingOwner = owner;
     }
 
+    final void observeBranchRoutingSnapshot(BTree owner) {
+        branchRoutingSnapshotPageNumber = page.getPageNumber();
+        branchRoutingSnapshotOwner = owner;
+    }
+
     final void observeLeafReadSnapshot(BTree owner) {
         leafReadSnapshotPageNumber = page.getPageNumber();
         leafReadSnapshotOwner = owner;
@@ -1894,6 +1906,12 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         BTree owner = rootRoutingOwner;
         if (owner != null) {
             owner.invalidateRootRoutingSnapshot();
+        }
+        BTree branchOwner = branchRoutingSnapshotOwner;
+        long branchPageNumber = branchRoutingSnapshotPageNumber;
+        if (branchOwner != null
+                && branchPageNumber != ContainerHandle.INVALID_PAGE_NUMBER) {
+            branchOwner.invalidateBranchRoutingSnapshot(branchPageNumber);
         }
         BTree leafOwner = leafReadSnapshotOwner;
         long leafPageNumber = leafReadSnapshotPageNumber;
@@ -1918,6 +1936,8 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	{
         pageAboutToChange();
         rootRoutingOwner = null;
+        branchRoutingSnapshotOwner = null;
+        branchRoutingSnapshotPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
         leafReadSnapshotOwner = null;
         leafReadSnapshotPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
 		version = null;

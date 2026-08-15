@@ -8432,3 +8432,236 @@ tasks.register('runDelosJdbcGate10lhMvccPostVersionImageResidualAuthorityProof')
         logger.lifecycle('Gate 10L-H ' + passLine)
     }
 }
+
+// Gate 10L-I: immutable level-1 branch-routing snapshot for the exact-prefix
+// MVCC hidden-index read path. Gate 10L-H proved that after the leaf snapshot
+// and current-version image remove their physical page latches, the remaining
+// 1.0 latch/read is the level-1 ordered-index routing page. Keep all accepted
+// mechanisms enabled in both modes and vary only the branch snapshot.
+registerDelosFocusedTest(
+        'runDelosMvccCurrentVersionReadImageBranchSnapshotTest',
+        'Runs the current-version image semantic proof with immutable prefix branch routing enabled.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentVersionReadImageTest.class'],
+        [
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096',
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
+                'delosdb.experimental.btreePrefixBranchSnapshot': 'true',
+                'delosdb.experimental.mvccCurrentVersionReadImage': 'true'
+        ])
+
+tasks.named('runDelosMvccCurrentVersionReadImageBranchSnapshotTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+def gate10liMvccBranchSnapshotRoot =
+        'reports/delosdb/benchmarks/gate10li-mvcc-prefix-branch-snapshot'
+def gate10liMvccAnchorSlots = 4096
+
+def configureGate10liMvccBranchSnapshotWorker = {
+        JavaExec task, String mode, boolean branchSnapshotEnabled ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-I MVCC HOT diagnostics with prefix branch snapshot ${mode}."
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10liMvccBranchSnapshotRoot}/${mode}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-I MVCC prefix branch-snapshot proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10liMvccBranchSnapshotRoot}/${mode}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10li-mvcc-${mode}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.experimental.mvccCurrentRowAnchor': 'true',
+                'delosdb.experimental.mvccCurrentRowAnchor.slots':
+                        gate10liMvccAnchorSlots.toString(),
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
+                'delosdb.experimental.btreePrefixBranchSnapshot':
+                        branchSnapshotEnabled.toString(),
+                'delosdb.experimental.mvccCurrentVersionReadImage': 'true',
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalLayoutDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10liMvccBranchSnapshotOff', JavaExec) { task ->
+    configureGate10liMvccBranchSnapshotWorker(task, 'off', false)
+    task.dependsOn tasks.named('runDelosMvccCurrentVersionReadImageBranchSnapshotTest')
+}
+
+tasks.register('runDelosJdbcGate10liMvccBranchSnapshotOn', JavaExec) { task ->
+    configureGate10liMvccBranchSnapshotWorker(task, 'on', true)
+    task.mustRunAfter tasks.named('runDelosJdbcGate10liMvccBranchSnapshotOff')
+}
+
+tasks.register('runDelosJdbcGate10liMvccPrefixBranchSnapshotProof') {
+    group = 'benchmark'
+    description = 'Proves Gate 10L-I removes the final MVCC level-1 ordered-index routing-page latch.'
+    dependsOn tasks.named('runDelosJdbcGate10liMvccBranchSnapshotOff')
+    dependsOn tasks.named('runDelosJdbcGate10liMvccBranchSnapshotOn')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10liMvccBranchSnapshotRoot).get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-I report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-I report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Gate 10L-I malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+
+        def measurements = [:]
+        def latches = [:]
+        ['off', 'on'].each { mode ->
+            File dir = new File(root, mode)
+            measurements[mode] = loadCsv(new File(dir, 'delos_mvcc-run-1.csv'))
+            latches[mode] = loadCsv(new File(dir, 'page-latch-diagnostics-delos_mvcc-run-1.csv'))
+            if (measurements[mode].size() != 4 || latches[mode].size() != 4) {
+                throw new GradleException(
+                        "Gate 10L-I ${mode} expected four HOT rows; measurements=${measurements[mode].size()} latches=${latches[mode].size()}")
+            }
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-I MVCC immutable prefix branch-routing snapshot proof',
+                'Current-Row Anchor, exact-prefix leaf snapshot, and immutable current-version read image are enabled in both modes.',
+                'The only variable is delosdb.experimental.btreePrefixBranchSnapshot.',
+                'Gate 10L-H measured the remaining 1.0 latch/read as the level-1 ordered-index routing page.'
+        ]
+
+        ['1', '4', '8', '16'].each { clients ->
+            def offMeasurement = measurements.off.find { it.clients == clients }
+            def onMeasurement = measurements.on.find { it.clients == clients }
+            def offLatch = latches.off.find { it.clients == clients }
+            def onLatch = latches.on.find { it.clients == clients }
+            if (offMeasurement == null || onMeasurement == null
+                    || offLatch == null || onLatch == null) {
+                throw new GradleException("Gate 10L-I missing ${clients}c OFF/ON cell")
+            }
+
+            if (Long.parseLong(offMeasurement.retryableConflictRetries) != 0L
+                    || Long.parseLong(onMeasurement.retryableConflictRetries) != 0L) {
+                failures.add("${clients}c observed retryable conflicts")
+            }
+            if (offMeasurement.semanticFingerprint != onMeasurement.semanticFingerprint) {
+                failures.add("${clients}c semantic fingerprint mismatch")
+            }
+            if (offMeasurement.measuredOperations != onMeasurement.measuredOperations) {
+                failures.add("${clients}c measured-operation count mismatch")
+            }
+
+            double operations = Double.parseDouble(offMeasurement.measuredOperations)
+            double offThroughput = Double.parseDouble(offMeasurement.operationsPerSecond)
+            double onThroughput = Double.parseDouble(onMeasurement.operationsPerSecond)
+            double offLatches = Long.parseLong(offLatch.latchRequests) / operations
+            double onLatches = Long.parseLong(onLatch.latchRequests) / operations
+            double offWait = Long.parseLong(offLatch.ownerWaitNanos) / operations
+            double onWait = Long.parseLong(onLatch.ownerWaitNanos) / operations
+            double waitRatio = offWait == 0.0d ? 0.0d : onWait / offWait
+            double delta = ((onThroughput / offThroughput) - 1.0d) * 100.0d
+
+            def line = String.format(java.util.Locale.ROOT,
+                    '%sc: OFF=%.2f ON=%.2f delta=%+.2f%% latches/read OFF=%.6f ON=%.6f wait/read OFF=%.1f ns ON=%.1f ns waitRatio=%.4f',
+                    clients, offThroughput, onThroughput, delta,
+                    offLatches, onLatches, offWait, onWait, waitRatio)
+            decision.add(line)
+            logger.lifecycle('Gate 10L-I ' + line)
+
+            if (clients in ['8', '16']) {
+                if (offLatches < 0.75d) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%sc OFF baseline no longer exposes the expected final routing latch: %.6f/read',
+                            clients, offLatches))
+                }
+                if (onLatches > 0.10d) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%sc branch snapshot left too many physical latches: %.6f/read required <=0.10',
+                            clients, onLatches))
+                }
+                if (offWait > 0.0d && waitRatio > 0.10d) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%sc branch snapshot left too much physical wait: ratio=%.4f required <=0.10',
+                            clients, waitRatio))
+                }
+            }
+        }
+
+        if (!failures.isEmpty()) {
+            decision.add('FAIL: ' + failures.join('; '))
+            new File(root, 'gate10li-mvcc-prefix-branch-snapshot-decision.txt').setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-I mechanism proof failed: ' + failures.join('; '))
+        }
+
+        def passLine = 'PASS: Gate 10L-I immutable level-1 branch routing removes the final measured MVCC HOT physical page-latch authority while preserving semantic fingerprints and zero-retry reads. Broad performance acceptance remains separate.'
+        decision.add(passLine)
+        new File(root, 'gate10li-mvcc-prefix-branch-snapshot-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-I ' + passLine)
+    }
+}
