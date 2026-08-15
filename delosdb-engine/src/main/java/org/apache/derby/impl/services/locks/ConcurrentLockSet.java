@@ -636,6 +636,13 @@ final class ConcurrentLockSet implements LockTable {
                         if (HOT_STATE_DIAGNOSTICS) {
                             FAST_RECORD_READ_RETENTION_CLAIMS.increment();
                         }
+                        // A concurrent incompatible request can freeze this
+                        // control after the dormant pre-check but before the
+                        // slot claim. Do not leave a stale frozen control in
+                        // the bounded retention table.
+                        if (!fast || entry.control != this) {
+                            releaseRetentionSlot();
+                        }
                         return;
                     }
                     continue;
