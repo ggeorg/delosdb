@@ -39,6 +39,7 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.atomic.LongAccumulator;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
@@ -113,6 +114,7 @@ final class ConcurrentLockSet implements LockTable {
 
 	// The number of waiters for locks
 	private final AtomicInteger blockCount;
+    private final AtomicReferenceArray<FastRecordReadControl> fastRecordReadRetained;
 
     private static final boolean LOCK_ENTRY_DIAGNOSTICS =
             Boolean.getBoolean("delosdb.diagnostic.lockEntry");
@@ -122,6 +124,9 @@ final class ConcurrentLockSet implements LockTable {
             Boolean.getBoolean("delosdb.diagnostic.hotState");
     private static final boolean FAST_RECORD_READ_ENABLED =
             Boolean.getBoolean("delosdb.experimental.fastRecordReadLock");
+    private static final int FAST_RECORD_READ_RETAINED_SLOTS =
+            Math.max(0, Integer.getInteger(
+                    "delosdb.experimental.fastRecordReadLock.retainedSlots", 4096));
     private static final LongAdder FAST_CIS_ACQUIRE_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_CIS_RELEASE_ATTEMPTS = new LongAdder();
     private static final LongAdder FAST_CIS_HOLDER_CREATES = new LongAdder();
@@ -132,6 +137,10 @@ final class ConcurrentLockSet implements LockTable {
     private static final LongAdder FAST_RECORD_READ_RELEASE_HITS = new LongAdder();
     private static final LongAdder FAST_RECORD_READ_FREEZES = new LongAdder();
     private static final LongAdder FAST_RECORD_READ_RETIREMENTS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RETENTION_CLAIMS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RETENTION_RELEASES = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RETENTION_EVICTIONS = new LongAdder();
+    private static final LongAdder FAST_RECORD_READ_RETENTION_REJECTIONS = new LongAdder();
     private static final LockEntryStats CONTAINER_KEY_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats RECORD_ID_ENTRY_STATS = new LockEntryStats();
     private static final LockEntryStats OTHER_ENTRY_STATS = new LockEntryStats();
@@ -171,6 +180,11 @@ final class ConcurrentLockSet implements LockTable {
 		this.factory = factory;
         blockCount = new AtomicInteger();
 		locks = new ConcurrentHashMap<Lockable, Entry>();
+        fastRecordReadRetained =
+                FAST_RECORD_READ_ENABLED && FAST_RECORD_READ_RETAINED_SLOTS > 0
+                        ? new AtomicReferenceArray<FastRecordReadControl>(
+                                FAST_RECORD_READ_RETAINED_SLOTS)
+                        : null;
 	}
 
     /**
@@ -503,17 +517,23 @@ final class ConcurrentLockSet implements LockTable {
         private final AtomicIntegerArray inFlight =
                 new AtomicIntegerArray(FAST_OPERATION_STRIPES);
         private final AtomicInteger totalHolds = new AtomicInteger();
+        private final Entry entry;
+        private final int retentionSlot;
         private volatile boolean fast = true;
 
-        FastRecordReadControl(Lock firstGrant) {
+        FastRecordReadControl(Entry entry, Lock firstGrant) {
+            this.entry = entry;
             ref = firstGrant.getLockable();
+            retentionSlot = fastRecordReadRetentionSlot(ref);
             holders.put(firstGrant.getCompatabilitySpace(), new AtomicInteger(1));
             totalHolds.set(1);
         }
 
         private FastRecordReadControl(Lockable ref, boolean fast) {
+            this.entry = null;
             this.ref = ref;
             this.fast = fast;
+            retentionSlot = -1;
         }
 
         Lock tryAcquire(CompatibilitySpace space) {
@@ -589,11 +609,91 @@ final class ConcurrentLockSet implements LockTable {
 
         LockControl freeze() {
             fast = false;
+            releaseRetentionSlot();
             awaitFastOperations(inFlight);
             if (HOT_STATE_DIAGNOSTICS) {
                 FAST_RECORD_READ_FREEZES.increment();
             }
             return materializeRecordReadHolders(ref, holders);
+        }
+
+        void retainOrRetireIfDormant() {
+            if (!fast || entry == null || totalHolds.get() != 0) {
+                return;
+            }
+            if (fastRecordReadRetained == null) {
+                return;
+            }
+            for (int attempt = 0; attempt < 2; attempt++) {
+                FastRecordReadControl incumbent =
+                        fastRecordReadRetained.get(retentionSlot);
+                if (incumbent == this) {
+                    return;
+                }
+                if (incumbent == null) {
+                    if (fastRecordReadRetained.compareAndSet(
+                            retentionSlot, null, this)) {
+                        if (HOT_STATE_DIAGNOSTICS) {
+                            FAST_RECORD_READ_RETENTION_CLAIMS.increment();
+                        }
+                        return;
+                    }
+                    continue;
+                }
+                if (incumbent.retireIfDormant(true)) {
+                    continue;
+                }
+                if (HOT_STATE_DIAGNOSTICS) {
+                    FAST_RECORD_READ_RETENTION_REJECTIONS.increment();
+                }
+                retireIfDormant(false);
+                return;
+            }
+            retireIfDormant(false);
+        }
+
+        private boolean retireIfDormant(boolean eviction) {
+            if (!fast || entry == null || totalHolds.get() != 0) {
+                return false;
+            }
+            fast = false;
+            awaitFastOperations(inFlight);
+            entry.lock();
+            try {
+                if (entry.control != this) {
+                    releaseRetentionSlot();
+                    return true;
+                }
+                if (totalHolds.get() != 0) {
+                    fast = true;
+                    return false;
+                }
+                if (!locks.remove(ref, entry)) {
+                    fast = true;
+                    return false;
+                }
+                entry.control = null;
+                releaseRetentionSlot();
+                if (HOT_STATE_DIAGNOSTICS) {
+                    FAST_RECORD_READ_RETIREMENTS.increment();
+                    if (eviction) {
+                        FAST_RECORD_READ_RETENTION_EVICTIONS.increment();
+                    }
+                }
+                return true;
+            } finally {
+                entry.unlock();
+            }
+        }
+
+        private void releaseRetentionSlot() {
+            if (fastRecordReadRetained != null
+                    && retentionSlot >= 0
+                    && fastRecordReadRetained.compareAndSet(
+                            retentionSlot, this, null)
+                    && HOT_STATE_DIAGNOSTICS) {
+                FAST_RECORD_READ_RETENTION_RELEASES.increment();
+            }
         }
 
         private int enterFast(CompatibilitySpace space) {
@@ -764,6 +864,15 @@ final class ConcurrentLockSet implements LockTable {
         return control;
     }
 
+    private int fastRecordReadRetentionSlot(Lockable ref) {
+        if (fastRecordReadRetained == null) {
+            return -1;
+        }
+        int hash = ref.hashCode();
+        hash ^= hash >>> 16;
+        return Math.floorMod(hash, FAST_RECORD_READ_RETAINED_SLOTS);
+    }
+
     private static boolean isFastRecordReadRequest(Lockable ref, Object qualifier) {
         return FAST_RECORD_READ_ENABLED
                 && qualifier == RowLock.RS2
@@ -800,7 +909,7 @@ final class ConcurrentLockSet implements LockTable {
                 || first.getCompatabilitySpace() == compatibilitySpace) {
             return null;
         }
-        FastRecordReadControl fastControl = new FastRecordReadControl(first);
+        FastRecordReadControl fastControl = new FastRecordReadControl(entry, first);
         Lock granted = fastControl.tryAcquire(compatibilitySpace);
         if (granted == null) {
             return null;
@@ -825,6 +934,9 @@ final class ConcurrentLockSet implements LockTable {
         int remaining = fastControl.tryRelease(item, unlockCount);
         if (remaining < 0) {
             return false;
+        }
+        if (remaining == 0) {
+            fastControl.retainOrRetireIfDormant();
         }
         return true;
     }
@@ -953,6 +1065,10 @@ final class ConcurrentLockSet implements LockTable {
         FAST_RECORD_READ_RELEASE_HITS.reset();
         FAST_RECORD_READ_FREEZES.reset();
         FAST_RECORD_READ_RETIREMENTS.reset();
+        FAST_RECORD_READ_RETENTION_CLAIMS.reset();
+        FAST_RECORD_READ_RETENTION_RELEASES.reset();
+        FAST_RECORD_READ_RETENTION_EVICTIONS.reset();
+        FAST_RECORD_READ_RETENTION_REJECTIONS.reset();
     }
 
     static String[] snapshotHotStateDiagnosticsForTesting() {
@@ -966,7 +1082,15 @@ final class ConcurrentLockSet implements LockTable {
             hotStateRow("FastRecordReadControl", "acquireHits", FAST_RECORD_READ_ACQUIRE_HITS),
             hotStateRow("FastRecordReadControl", "releaseHits", FAST_RECORD_READ_RELEASE_HITS),
             hotStateRow("FastRecordReadControl", "freezes", FAST_RECORD_READ_FREEZES),
-            hotStateRow("FastRecordReadControl", "retirements", FAST_RECORD_READ_RETIREMENTS)
+            hotStateRow("FastRecordReadControl", "retirements", FAST_RECORD_READ_RETIREMENTS),
+            hotStateRow("FastRecordReadControl", "retentionClaims",
+                    FAST_RECORD_READ_RETENTION_CLAIMS),
+            hotStateRow("FastRecordReadControl", "retentionReleases",
+                    FAST_RECORD_READ_RETENTION_RELEASES),
+            hotStateRow("FastRecordReadControl", "retentionEvictions",
+                    FAST_RECORD_READ_RETENTION_EVICTIONS),
+            hotStateRow("FastRecordReadControl", "retentionRejections",
+                    FAST_RECORD_READ_RETENTION_REJECTIONS)
         };
     }
 

@@ -234,6 +234,81 @@ public final class RecordReadFastPathTestSupport {
         }
     }
 
+
+    public static void verifyBoundedDormantRetention() throws Exception {
+        enableDiagnostics();
+        ConcurrentLockSet.resetHotStateDiagnosticsForTesting();
+        ConcurrentLockSet table = new ConcurrentLockSet(null);
+        CompatibilitySpace readerA = space();
+        CompatibilitySpace readerB = space();
+        final int rows = 5000;
+
+        RecordId last = null;
+        for (int recordId = 1000; recordId < 1000 + rows; recordId++) {
+            RecordId row = row(recordId);
+            last = row;
+            Lock first = requireLock(table.lockObject(
+                    readerA, row, RowLock.RS2, C_LockFactory.NO_WAIT),
+                    "first bounded-retention RS2 reader was not granted");
+            Lock second = requireLock(table.lockObject(
+                    readerB, row, RowLock.RS2, C_LockFactory.NO_WAIT),
+                    "second bounded-retention RS2 reader was not granted");
+            table.unlock(first, 1);
+            table.unlock(second, 1);
+        }
+
+        String[] bounded = ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting();
+        long promotions = hotStateMetric(
+                bounded, "FastRecordReadControl", "promotions");
+        long retirements = hotStateMetric(
+                bounded, "FastRecordReadControl", "retirements");
+        long claims = hotStateMetric(
+                bounded, "FastRecordReadControl", "retentionClaims");
+        long releases = hotStateMetric(
+                bounded, "FastRecordReadControl", "retentionReleases");
+        long evictions = hotStateMetric(
+                bounded, "FastRecordReadControl", "retentionEvictions");
+        long retained = claims - releases;
+
+        if (promotions != rows) {
+            throw new AssertionError(
+                    "bounded retention promotion count mismatch: " + promotions);
+        }
+        if (retained < 1L || retained > 4096L) {
+            throw new AssertionError(
+                    "bounded retention exceeded configured slot limit: " + retained);
+        }
+        if (retirements == 0L || evictions == 0L) {
+            throw new AssertionError(
+                    "bounded retention did not reclaim colliding dormant controls: retirements="
+                            + retirements + " evictions=" + evictions);
+        }
+
+        long promotionsBeforeReuse = promotions;
+        long hitsBeforeReuse = hotStateMetric(
+                bounded, "FastRecordReadControl", "acquireHits");
+        for (int i = 0; i < 1000; i++) {
+            Lock lock = requireLock(table.lockObject(
+                    readerA, last, RowLock.RS2, C_LockFactory.NO_WAIT),
+                    "retained bounded fast control was not reusable");
+            table.unlock(lock, 1);
+        }
+        String[] reused = ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting();
+        if (hotStateMetric(reused, "FastRecordReadControl", "promotions")
+                != promotionsBeforeReuse) {
+            throw new AssertionError("retained bounded fast control re-promoted");
+        }
+        if (hotStateMetric(reused, "FastRecordReadControl", "acquireHits")
+                - hitsBeforeReuse != 1000L) {
+            throw new AssertionError("retained bounded fast control missed reuse hits");
+        }
+
+        Lock writer = requireLock(table.lockObject(
+                space(), last, RowLock.RX2, C_LockFactory.NO_WAIT),
+                "writer was not granted after bounded dormant control materialized");
+        table.unlock(writer, 1);
+    }
+
     private static void enableDiagnostics() {
         System.setProperty(ENABLE_PROPERTY, "true");
         System.setProperty("delosdb.diagnostic.hotState", "true");

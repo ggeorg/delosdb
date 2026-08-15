@@ -25,4 +25,8 @@ public final class RecordReadFastPathTest extends TestCase {
     public void testConcurrentReadersRemainReusable() throws Exception {
         RecordReadFastPathTestSupport.verifyConcurrentReadersRemainReusable();
     }
+
+    public void testDormantRetentionIsBounded() throws Exception {
+        RecordReadFastPathTestSupport.verifyBoundedDormantRetention();
+    }
 }

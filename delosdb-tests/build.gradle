@@ -5915,3 +5915,234 @@ tasks.register('runDelosJdbcGate10keRecordReadFootprintProof') {
         logger.lifecycle('Gate 10K-E ' + pass)
     }
 }
+
+
+// Gate 10K-F: bounded retained RecordId fast-control mechanism proof.
+// Gate 10K-E showed that unbounded dormant controls grow materially with
+// RANDOM key-space exposure. This gate enables the fixed retained-slot table
+// and proves the hard footprint bound without inventing an eviction timer or
+// putting new shared synchronization on steady-state HOT reads.
+def gate10kfRetentionRoot =
+        'reports/delosdb/benchmarks/gate10kf-bounded-record-read-retention'
+def gate10kfRetainedSlots = 4096
+
+def registerGate10kfRetentionWorker = { String taskName, int rowCount ->
+    tasks.register(taskName, JavaExec) { JavaExec task ->
+        group = 'benchmark'
+        description = "Proves Gate 10K-F bounded RecordId retention with ${rowCount} rows."
+        dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(
+                derbyTestsClassDir,
+                rawStoreInternalTestSupportClassDir,
+                derbyRuntimeJars)
+        args 'worker'
+        outputs.upToDateWhen { false }
+        outputs.dir(rootProject.layout.buildDirectory.dir(
+                "${gate10kfRetentionRoot}/rows-${rowCount}"))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true')
+                    .trim()
+                    .toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gate 10K-F bounded RecordId retention proof requires a release build; ' +
+                                'rerun with -Pdelosdb.sane=false')
+            }
+            def reportDir = rootProject.layout.buildDirectory
+                    .dir("${gate10kfRetentionRoot}/rows-${rowCount}").get().asFile
+            def databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-gate10kf-bounded-record-read-retention-${rowCount}")
+                    .get().asFile
+            project.delete(reportDir)
+            project.delete(databaseRoot)
+            reportDir.mkdirs()
+            databaseRoot.mkdirs()
+
+            task.systemProperties([
+                    'delosdb.experimental.heapPageReadImage': 'true',
+                    'delosdb.experimental.fastRecordReadLock': 'true',
+                    'delosdb.experimental.fastRecordReadLock.retainedSlots':
+                            Integer.toString(gate10kfRetainedSlots),
+                    'delosdb.diagnostic.hotState': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                    'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                    'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                            new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': Integer.toString(rowCount),
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '16',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads':
+                            'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient':
+                            providers.gradleProperty('delosdb.benchmark.gate10kf.transactionsPerClient')
+                                    .getOrElse('250000'),
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                    'delosdb.benchmark.crossEngineConcurrency.hotStateDiagnostics': 'true'
+            ])
+        }
+    }
+}
+
+def gate10kfRows10k = registerGate10kfRetentionWorker(
+        'runDelosJdbcGate10kfBoundedRecordReadRetention10k', 10000)
+def gate10kfRows100k = registerGate10kfRetentionWorker(
+        'runDelosJdbcGate10kfBoundedRecordReadRetention100k', 100000)
+
+tasks.register('runDelosJdbcGate10kfBoundedRecordReadRetentionProof') {
+    group = 'benchmark'
+    description = 'Proves the hard Gate 10K-F dormant RecordId retention bound under HOT, DISJOINT and RANDOM reads.'
+    dependsOn gate10kfRows10k, gate10kfRows100k
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(gate10kfRetentionRoot).get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10K-F report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10K-F report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Gate 10K-F malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+        def metric = { List rows, String workload, String metricName ->
+            def row = rows.find {
+                it.workload == workload
+                        && it.component == 'FastRecordReadControl'
+                        && it.metric == metricName
+            }
+            if (row == null) {
+                throw new GradleException(
+                        "Gate 10K-F missing ${metricName} for ${workload}")
+            }
+            Long.parseLong(row.value)
+        }
+
+        def decision = [
+                'Gate 10K-F bounded dormant RecordId fast-control mechanism proof',
+                "retainedSlots=${gate10kfRetainedSlots}; no warmup; read-only width=1; 16 clients.",
+                'retentionClaims-retentionReleases is the exact retained-slot count for each fresh diagnostic case.'
+        ]
+
+        [10000, 100000].each { rowCount ->
+            def dir = new File(root, "rows-${rowCount}")
+            def measurements = loadCsv(new File(dir, 'delos_heap-run-1.csv'))
+            def hotState = loadCsv(new File(
+                    dir, 'hot-state-diagnostics-delos_heap-run-1.csv'))
+            if (measurements.size() != 3) {
+                throw new GradleException(
+                        "Gate 10K-F expected 3 measurements for rows=${rowCount}, found ${measurements.size()}")
+            }
+
+            ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT',
+             'PRIMARY_KEY_READ_RANDOM'].each { workload ->
+                def measurement = measurements.find { it.workload == workload }
+                if (measurement == null) {
+                    throw new GradleException(
+                            "Gate 10K-F missing measurement for ${workload} rows=${rowCount}")
+                }
+                if (Long.parseLong(measurement.retryableConflictRetries) != 0L) {
+                    throw new GradleException(
+                            "Gate 10K-F ${workload} rows=${rowCount} observed retryable conflicts")
+                }
+
+                long operations = Long.parseLong(measurement.measuredOperations)
+                long promotions = metric(hotState, workload, 'promotions')
+                long acquireHits = metric(hotState, workload, 'acquireHits')
+                long releaseHits = metric(hotState, workload, 'releaseHits')
+                long freezes = metric(hotState, workload, 'freezes')
+                long retirements = metric(hotState, workload, 'retirements')
+                long claims = metric(hotState, workload, 'retentionClaims')
+                long releases = metric(hotState, workload, 'retentionReleases')
+                long evictions = metric(hotState, workload, 'retentionEvictions')
+                long rejections = metric(hotState, workload, 'retentionRejections')
+                long retained = claims - releases
+                long lifecycleRetained = promotions - freezes - retirements
+
+                if (retained < 0L || retained > gate10kfRetainedSlots) {
+                    throw new GradleException(String.format(java.util.Locale.ROOT,
+                            'Gate 10K-F retained-slot bound failed for %s rows=%d: claims=%d releases=%d retained=%d limit=%d',
+                            workload, rowCount, claims, releases, retained,
+                            gate10kfRetainedSlots))
+                }
+                if (retained != lifecycleRetained) {
+                    throw new GradleException(String.format(java.util.Locale.ROOT,
+                            'Gate 10K-F lifecycle/slot accounting mismatch for %s rows=%d: slotRetained=%d lifecycleRetained=%d promotions=%d freezes=%d retirements=%d',
+                            workload, rowCount, retained, lifecycleRetained,
+                            promotions, freezes, retirements))
+                }
+                if (workload == 'PRIMARY_KEY_READ_HOT') {
+                    if (retained != 1L
+                            || acquireHits / (double) operations < 0.98d
+                            || releaseHits / (double) operations < 0.98d) {
+                        throw new GradleException(String.format(java.util.Locale.ROOT,
+                                'Gate 10K-F HOT rows=%d did not retain/reuse exactly one control: retained=%d acquireHits/read=%.6f releaseHits/read=%.6f',
+                                rowCount, retained, acquireHits / (double) operations,
+                                releaseHits / (double) operations))
+                    }
+                }
+                if (workload == 'PRIMARY_KEY_READ_DISJOINT'
+                        && (promotions != 0L || acquireHits != 0L
+                        || releaseHits != 0L || retained != 0L)) {
+                    throw new GradleException(String.format(java.util.Locale.ROOT,
+                            'Gate 10K-F DISJOINT rows=%d unexpectedly entered retained fast state: promotions=%d acquireHits=%d releaseHits=%d retained=%d',
+                            rowCount, promotions, acquireHits, releaseHits, retained))
+                }
+                if (workload == 'PRIMARY_KEY_READ_RANDOM'
+                        && rowCount == 100000 && evictions == 0L) {
+                    throw new GradleException(
+                            'Gate 10K-F RANDOM 100k did not exercise bounded reclamation')
+                }
+
+                double throughput = Double.parseDouble(measurement.operationsPerSecond)
+                def line = String.format(java.util.Locale.ROOT,
+                        'rows=%d %s: reads=%d throughput=%.2f op/s promotions=%d freezes=%d retirements=%d claims=%d releases=%d retained=%d retainedRows=%.3f%% evictions=%d rejections=%d acquireHits/read=%.6f releaseHits/read=%.6f',
+                        rowCount, workload, operations, throughput, promotions,
+                        freezes, retirements, claims, releases, retained,
+                        retained * 100.0d / rowCount, evictions, rejections,
+                        acquireHits / (double) operations,
+                        releaseHits / (double) operations)
+                decision.add(line)
+                logger.lifecycle('Gate 10K-F ' + line)
+            }
+        }
+
+        def pass = "PASS: retained RecordId fast controls are hard-bounded to ${gate10kfRetainedSlots} slots while HOT reuse and DISJOINT isolation remain intact. Inspect RANDOM reclamation and throughput before performance acceptance."
+        decision.add(pass)
+        new File(root, 'gate10kf-decision.txt').setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10K-F ' + pass)
+    }
+}
