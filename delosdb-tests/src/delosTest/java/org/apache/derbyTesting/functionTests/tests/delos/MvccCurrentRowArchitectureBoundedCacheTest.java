@@ -17,17 +17,13 @@ import java.sql.Statement;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Collision/identity proof for the bounded Current-Row Anchor and version-image arrays. */
+/** Collision/identity proof for the permanent bounded current-row read cache. */
 public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTestSupport {
     private static final String DATABASE = "mvcc-current-row-architecture-bounded-cache";
     private static final String TABLE = "BOUNDED_CURRENT_ROW_T";
 
     public void testTinyFourSlotCacheNeverCrossesRowOrVersionIdentity() throws Exception {
-        assertEquals("true", System.getProperty("delosdb.experimental.mvccCurrentRowAnchor"));
-        assertEquals("4", System.getProperty("delosdb.experimental.mvccCurrentRowAnchor.slots"));
-        assertEquals("true", System.getProperty("delosdb.experimental.btreePrefixLeafSnapshot"));
-        assertEquals("true", System.getProperty("delosdb.experimental.btreePrefixBranchSnapshot"));
-        assertEquals("true", System.getProperty("delosdb.experimental.mvccCurrentVersionReadImage"));
+        assertEquals("4", System.getProperty("delosdb.mvcc.currentRowReadCache.slots"));
         String database = databaseName(DATABASE);
         try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);

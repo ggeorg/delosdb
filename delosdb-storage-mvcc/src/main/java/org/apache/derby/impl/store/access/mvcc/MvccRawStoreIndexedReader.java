@@ -285,8 +285,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
 
     private Result readAnchoredCurrent(
             MvccRawStoreOrderedIndex.Candidate candidate) throws StandardException {
-        if (!context.currentRowAnchorEnabled()
-                || context.hasPendingVersion(table, candidate.rowId())) {
+        if (context.hasPendingVersion(table, candidate.rowId())) {
             return null;
         }
         MvccRawStoreRuntime.CurrentRowAnchor anchor =
@@ -323,9 +322,6 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
 
     private MvccRawStoreTable.VersionRecord readAnchoredVersion(
             MvccRawStoreRuntime.CurrentRowAnchor anchor) throws StandardException {
-        if (!context.currentVersionReadImageEnabled()) {
-            return versionReader().findAnchoredCurrent(anchor, projection);
-        }
         metrics.currentVersionReadImageChecked();
         MvccRawStoreTable.VersionRecord image = context.currentVersionReadImage(table, anchor);
         if (image != null) {

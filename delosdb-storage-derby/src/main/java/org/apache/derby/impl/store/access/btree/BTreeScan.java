@@ -1182,7 +1182,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             return -1;
         }
         LeafReadSnapshotPrefixHit hit = getConglomerate()
-                .searchPrefixLeafReadSnapshot(this, init_startKeyValue, init_template);
+                .searchPrefixLeafReadSnapshot(this, init_startKeyValue);
         if (hit == null) {
             return -1;
         }
@@ -1223,8 +1223,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     }
 
     private boolean isSnapshotPrefixReadShape() throws StandardException {
-        if (!BTree.prefixLeafSnapshotEnabled()
-                || init_forUpdate || getHold() || init_qualifier != null
+        if (init_forUpdate || getHold() || init_qualifier != null
                 || init_startKeyValue == null || init_stopKeyValue == null
                 || init_startSearchOperator != ScanController.GE
                 || init_stopSearchOperator != ScanController.GT

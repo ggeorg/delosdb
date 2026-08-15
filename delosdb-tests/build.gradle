@@ -9117,21 +9117,16 @@ tasks.register('runDelosJdbcGate10ljMvccCurrentRowArchitecturePairedAcceptancePr
     }
 }
 
-// Gate 10L-K: lifecycle safety proof for the complete MVCC current-row
-// architecture accepted by Gate 10L-J. No production mechanism changes here:
-// keep every component switchable while proving mutation/history/recovery and
-// bounded-cache safety before any feature flag is retired or defaulted on.
+// Gate 10L-K lifecycle regression remains part of the permanent architecture
+// proof. The MVCC current-row read cache is now normal v1 behavior; only its
+// bounded slot count is configurable.
 def gate10lkMvccCurrentRowArchitectureProperties = [
-        'delosdb.experimental.mvccCurrentRowAnchor': 'true',
-        'delosdb.experimental.mvccCurrentRowAnchor.slots': '4096',
-        'delosdb.experimental.btreePrefixLeafSnapshot': 'true',
-        'delosdb.experimental.btreePrefixBranchSnapshot': 'true',
-        'delosdb.experimental.mvccCurrentVersionReadImage': 'true'
+        'delosdb.mvcc.currentRowReadCache.slots': '4096'
 ]
 
 registerDelosFocusedTest(
         'runDelosMvccCurrentRowArchitectureLifecycleSafetyTest',
-        'Runs Gate 10L-K mutation/history/vacuum/reopen/recovery/isolation safety with the complete current-row architecture enabled.',
+        'Runs Gate 10L-K mutation/history/vacuum/reopen/recovery/isolation safety against the permanent current-row architecture.',
         [
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitectureLifecycleTest.class',
                 'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowAnchorTest.class',
@@ -9148,10 +9143,10 @@ tasks.named('runDelosMvccCurrentRowArchitectureLifecycleSafetyTest') {
 
 registerDelosFocusedTest(
         'runDelosMvccCurrentRowArchitectureBoundedCacheTest',
-        'Runs Gate 10L-K with only four Current-Row Anchor/version-image slots to force collision and replacement safety.',
+        'Runs Gate 10L-K with only four permanent current-row read-cache slots to force collision and replacement safety.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitectureBoundedCacheTest.class'],
         gate10lkMvccCurrentRowArchitectureProperties + [
-                'delosdb.experimental.mvccCurrentRowAnchor.slots': '4'
+                'delosdb.mvcc.currentRowReadCache.slots': '4'
         ])
 
 tasks.named('runDelosMvccCurrentRowArchitectureBoundedCacheTest') {
@@ -9176,13 +9171,199 @@ tasks.register('runDelosJdbcGate10lkMvccCurrentRowArchitectureLifecycleProof') {
         def decision = [
                 'Gate 10L-K MVCC current-row architecture lifecycle safety proof',
                 'PASS: all focused lifecycle and bounded-cache tests completed.',
-                'Fast path: Current-Row Anchor=true (4096 slots), prefix leaf snapshot=true, prefix branch snapshot=true, current-version image=true.',
-                'Bounded collision proof: same architecture with Current-Row Anchor/version-image slots=4.',
+                'Permanent path: bounded Current-Row Anchor/current-version image cache=4096 slots; exact-prefix leaf and level-1 branch snapshots are normal shape-gated B-tree behavior.',
+                'Bounded collision proof: same permanent architecture with current-row read-cache slots=4.',
                 'Covered boundaries: committed update, delete/reinsert, savepoint rollback, full rollback, retained old snapshot, vacuum, reopen, drop/recreate, crash before RawStore commit, crash after RawStore commit before publication, existing MVCC vacuum suite, and heap/MVCC isolation differential suite.',
-                'This gate does not retire experimental flags and does not make the architecture default. Permanent transition follows only after this proof and repository integrity are green.'
+                'This regression gate remains lifecycle authority for the permanent architecture.'
         ]
         new File(root, 'gate10lk-mvcc-current-row-architecture-lifecycle-decision.txt')
                 .setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
         logger.lifecycle('Gate 10L-K PASS: complete current-row architecture lifecycle and bounded-cache safety proof is green.')
+    }
+}
+
+
+// Gate 10L-L: permanent-v1 transition for the current-row read architecture.
+// The four experimental enable switches are retired. Exact-prefix leaf and
+// level-1 branch snapshots are normal conservative B-tree facilities, while
+// MVCC always owns a bounded Current-Row Anchor/current-version image cache.
+// The only permanent tuning surface is the positive cache slot count.
+registerDelosFocusedTest(
+        'runDelosMvccCurrentRowArchitecturePermanentDefaultTest',
+        'Proves retired experimental false flags cannot disable the permanent MVCC current-row architecture.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitecturePermanentTest.class'],
+        [
+                'delosdb.experimental.mvccCurrentRowAnchor': 'false',
+                'delosdb.experimental.btreePrefixLeafSnapshot': 'false',
+                'delosdb.experimental.btreePrefixBranchSnapshot': 'false',
+                'delosdb.experimental.mvccCurrentVersionReadImage': 'false'
+        ])
+
+tasks.named('runDelosMvccCurrentRowArchitecturePermanentDefaultTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+def gate10llMvccPermanentRoot =
+        'reports/delosdb/benchmarks/gate10ll-mvcc-permanent-current-row-architecture'
+
+tasks.register('runDelosJdbcGate10llMvccPermanentDefaultMechanism', JavaExec) { task ->
+    task.group = 'benchmark'
+    task.description = 'Proves the permanent default MVCC current-row path retains the accepted zero-latch HOT mechanism without experimental feature flags.'
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(gate10llMvccPermanentRoot))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-L permanent mechanism proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir(gate10llMvccPermanentRoot).get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10ll-mvcc-permanent').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalLayoutDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10llMvccPermanentArchitectureProof') {
+    group = 'verification'
+    description = 'Runs Gate 10L-L permanent-default semantic, lifecycle, boundedness, and zero-latch mechanism proof.'
+    dependsOn tasks.named('runDelosMvccCurrentRowArchitecturePermanentDefaultTest')
+    dependsOn tasks.named('runDelosMvccCurrentRowArchitectureLifecycleSafetyTest')
+    dependsOn tasks.named('runDelosMvccCurrentRowArchitectureBoundedCacheTest')
+    dependsOn tasks.named('runDelosJdbcGate10llMvccPermanentDefaultMechanism')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10llMvccPermanentRoot).get().asFile
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-L report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-L report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException("Gate 10L-L malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row
+            }
+        }
+
+        def measurements = loadCsv(new File(root, 'delos_mvcc-run-1.csv'))
+        def latches = loadCsv(new File(root, 'page-latch-diagnostics-delos_mvcc-run-1.csv'))
+        if (measurements.size() != 4 || latches.size() != 4) {
+            throw new GradleException(
+                    "Gate 10L-L expected four HOT rows; measurements=${measurements.size()} latches=${latches.size()}")
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-L permanent-v1 MVCC current-row architecture proof',
+                'Experimental enable switches are retired from production authority.',
+                'Permanent MVCC cache: Current-Row Anchor + current-version image, 4096 slots by default.',
+                'Permanent B-tree facilities: exact-prefix leaf snapshot + level-1 branch-routing snapshot, restricted by the existing read-shape and locking-policy eligibility checks.',
+                'Frozen mechanism guard: steady HOT physical page latches/read <= 0.10 at 1c/4c/8c/16c; retryable conflicts must remain zero.'
+        ]
+
+        ['1', '4', '8', '16'].each { clients ->
+            def measurement = measurements.find { it.clients == clients }
+            def latch = latches.find { it.clients == clients }
+            if (measurement == null || latch == null) {
+                throw new GradleException("Gate 10L-L missing ${clients}c HOT cell")
+            }
+            long operations = Long.parseLong(measurement.measuredOperations)
+            long latchRequests = Long.parseLong(latch.latchRequests)
+            double latchesPerRead = latchRequests / (double) operations
+            if (Long.parseLong(measurement.retryableConflictRetries) != 0L) {
+                failures.add("${clients}c observed retryable conflicts")
+            }
+            if (latchesPerRead > 0.10d) {
+                failures.add(String.format(java.util.Locale.ROOT,
+                        '%sc latches/read %.6f exceeds 0.10', clients, latchesPerRead))
+            }
+            def line = String.format(java.util.Locale.ROOT,
+                    '%sc: throughput=%.2f op/s latches/read=%.6f retries=%s fingerprint=%s operations=%s',
+                    clients,
+                    Double.parseDouble(measurement.operationsPerSecond),
+                    latchesPerRead,
+                    measurement.retryableConflictRetries,
+                    measurement.semanticFingerprint,
+                    measurement.measuredOperations)
+            decision.add(line)
+            logger.lifecycle('Gate 10L-L ' + line)
+        }
+
+        File decisionFile = new File(root,
+                'gate10ll-mvcc-permanent-current-row-architecture-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10L-L permanent architecture proof failed: ' + failures.join('; '))
+        }
+        def passLine = 'PASS: the permanent default current-row architecture preserves lifecycle/boundedness semantics and the accepted zero-latch HOT mechanism with no experimental enable switches. Proceed to repository integrity, then the fresh five-engine checkpoint.'
+        decision.add('')
+        decision.add(passLine)
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-L ' + passLine)
     }
 }

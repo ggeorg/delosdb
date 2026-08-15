@@ -29,18 +29,12 @@ import org.apache.derby.shared.common.error.StandardException;
 /**
  * Transient immutable routing snapshots for stable level-1 B-tree branches.
  * RawStore branch pages remain authoritative and invalidate entries before
- * mutation through the existing control-row auxiliary-object lifecycle.
+ * mutation or cache eviction through the existing control-row auxiliary-object
+ * lifecycle, so retained snapshots track authoritative page-cache residency.
  */
 final class BTreeBranchRoutingSnapshots {
-    private static final String PROPERTY =
-            "delosdb.experimental.btreePrefixBranchSnapshot";
-
     private final ConcurrentHashMap<Long, Snapshot> snapshots =
             new ConcurrentHashMap<>();
-
-    static boolean enabled() {
-        return Boolean.getBoolean(PROPERTY);
-    }
 
     Snapshot get(long pageNumber) {
         return snapshots.get(pageNumber);

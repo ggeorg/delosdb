@@ -50,12 +50,9 @@ final class MvccRawStoreRuntime {
             "delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize";
     static final String CONCURRENT_COMMIT_PUBLICATION_PROPERTY =
             "delosdb.mvcc.rawStoreConcurrentCommitPublication";
-    static final String CURRENT_ROW_ANCHOR_PROPERTY =
-            "delosdb.experimental.mvccCurrentRowAnchor";
-    static final String CURRENT_ROW_ANCHOR_SLOTS_PROPERTY =
-            "delosdb.experimental.mvccCurrentRowAnchor.slots";
-    static final String CURRENT_VERSION_READ_IMAGE_PROPERTY =
-            "delosdb.experimental.mvccCurrentVersionReadImage";
+    /** Fixed slot count shared by the permanent current-row anchor/image cache. */
+    static final String CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY =
+            "delosdb.mvcc.currentRowReadCache.slots";
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -122,31 +119,23 @@ final class MvccRawStoreRuntime {
         }
         concurrentCommitPublication = Boolean.parseBoolean(System.getProperty(
                 CONCURRENT_COMMIT_PUBLICATION_PROPERTY, "true"));
-        if (Boolean.parseBoolean(System.getProperty(CURRENT_ROW_ANCHOR_PROPERTY, "false"))) {
-            String slotText = System.getProperty(CURRENT_ROW_ANCHOR_SLOTS_PROPERTY, "4096");
-            int slots;
-            try {
-                slots = Integer.parseInt(slotText);
-            } catch (NumberFormatException failure) {
-                throw new IllegalArgumentException(
-                        CURRENT_ROW_ANCHOR_SLOTS_PROPERTY
-                                + " must be a positive integer: " + slotText,
-                        failure);
-            }
-            if (slots <= 0) {
-                throw new IllegalArgumentException(
-                        CURRENT_ROW_ANCHOR_SLOTS_PROPERTY
-                                + " must be positive: " + slotText);
-            }
-            currentRowAnchors = new AtomicReferenceArray<>(slots);
-            currentVersionReadImages = Boolean.parseBoolean(System.getProperty(
-                    CURRENT_VERSION_READ_IMAGE_PROPERTY, "false"))
-                    ? new AtomicReferenceArray<>(slots)
-                    : null;
-        } else {
-            currentRowAnchors = null;
-            currentVersionReadImages = null;
+        String slotText = System.getProperty(CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY, "4096");
+        int slots;
+        try {
+            slots = Integer.parseInt(slotText);
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException(
+                    CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY
+                            + " must be a positive integer: " + slotText,
+                    failure);
         }
+        if (slots <= 0) {
+            throw new IllegalArgumentException(
+                    CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY
+                            + " must be positive: " + slotText);
+        }
+        currentRowAnchors = new AtomicReferenceArray<>(slots);
+        currentVersionReadImages = new AtomicReferenceArray<>(slots);
     }
 
     Object databaseIdentity() {
@@ -189,20 +178,11 @@ final class MvccRawStoreRuntime {
     }
 
 
-
-    boolean currentRowAnchorEnabled() {
-        return currentRowAnchors != null;
-    }
-
-    boolean currentVersionReadImageEnabled() {
-        return currentVersionReadImages != null;
-    }
-
     MvccRawStoreTable.VersionRecord currentVersionReadImage(
             MvccRawStoreTable.Descriptor table,
             CurrentRowAnchor anchor) {
         AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
-        if (images == null || anchor == null) {
+        if (anchor == null) {
             return null;
         }
         int slot = currentRowAnchorSlot(table.metadataContainer(), anchor.rowId(), images.length());
@@ -216,7 +196,7 @@ final class MvccRawStoreRuntime {
             MvccRawStoreTable.VersionRecord version) {
         AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
         AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (images == null || anchors == null || anchor == null || version == null
+        if (anchor == null || version == null
                 || version.rowId() != anchor.rowId()
                 || version.versionId() != anchor.versionId()
                 || version.beginSequence() != anchor.beginSequence()
@@ -238,9 +218,6 @@ final class MvccRawStoreRuntime {
             MvccRawStoreTable.Descriptor table,
             long rowId) {
         AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (anchors == null) {
-            return null;
-        }
         int slot = currentRowAnchorSlot(table.metadataContainer(), rowId, anchors.length());
         CurrentRowAnchor anchor = anchors.get(slot);
         return anchor != null
@@ -253,8 +230,7 @@ final class MvccRawStoreRuntime {
     void observeCurrentRowAnchor(
             MvccRawStoreTable.Descriptor table,
             MvccRawStoreTable.DirectoryRecord directory) {
-        AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (anchors == null || directory == null) {
+        if (directory == null) {
             return;
         }
         MvccRawStoreTable.DirectoryHead head = directory.head();
@@ -277,7 +253,7 @@ final class MvccRawStoreRuntime {
     void publishCommittedAnchors(
             List<MvccRawStoreTable.PendingVersion> committed,
             long commitSequence) {
-        if (currentRowAnchors == null || commitSequence <= 0L) {
+        if (commitSequence <= 0L) {
             return;
         }
         for (MvccRawStoreTable.PendingVersion pending : committed) {
@@ -297,7 +273,7 @@ final class MvccRawStoreRuntime {
             long rowId,
             CurrentRowAnchor expected) {
         AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (anchors == null || expected == null) {
+        if (expected == null) {
             return;
         }
         int slot = currentRowAnchorSlot(table.metadataContainer(), rowId, anchors.length());
@@ -308,22 +284,13 @@ final class MvccRawStoreRuntime {
 
     private void putCurrentRowAnchor(CurrentRowAnchor anchor) {
         AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (anchors == null) {
-            return;
-        }
         int slot = currentRowAnchorSlot(anchor.tableKey(), anchor.rowId(), anchors.length());
-        AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
-        if (images != null) {
-            images.set(slot, null);
-        }
+        currentVersionReadImages.set(slot, null);
         anchors.set(slot, anchor);
     }
 
     private void clearCurrentVersionReadImage(int slot, CurrentRowAnchor expectedAnchor) {
         AtomicReferenceArray<CurrentVersionReadImage> images = currentVersionReadImages;
-        if (images == null) {
-            return;
-        }
         CurrentVersionReadImage image = images.get(slot);
         if (image != null && image.anchor() == expectedAnchor) {
             images.compareAndSet(slot, image, null);
@@ -342,9 +309,6 @@ final class MvccRawStoreRuntime {
 
     private void clearCurrentRowAnchors(MvccRawStoreTable.Descriptor table) {
         AtomicReferenceArray<CurrentRowAnchor> anchors = currentRowAnchors;
-        if (anchors == null) {
-            return;
-        }
         ContainerKey tableKey = table.metadataContainer();
         for (int index = 0; index < anchors.length(); index++) {
             CurrentRowAnchor anchor = anchors.get(index);

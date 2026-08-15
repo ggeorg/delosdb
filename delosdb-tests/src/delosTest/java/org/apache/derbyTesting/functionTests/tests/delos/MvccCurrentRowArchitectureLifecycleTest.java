@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 /**
  * Lifecycle safety proof for the complete transient MVCC current-row read path.
  * The test deliberately crosses mutation, rollback, history, vacuum, reopen,
- * recreation and crash-recovery boundaries while every fast-path component is enabled.
+ * recreation and crash-recovery boundaries with the permanent current-row read path active.
  */
 public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSupport {
     private static final String DATABASE = "mvcc-current-row-architecture-lifecycle";
@@ -34,16 +34,8 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final String VERTICAL_SLICE_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
-    private static final String ANCHOR_PROPERTY =
-            "delosdb.experimental.mvccCurrentRowAnchor";
-    private static final String ANCHOR_SLOTS_PROPERTY =
-            "delosdb.experimental.mvccCurrentRowAnchor.slots";
-    private static final String LEAF_SNAPSHOT_PROPERTY =
-            "delosdb.experimental.btreePrefixLeafSnapshot";
-    private static final String BRANCH_SNAPSHOT_PROPERTY =
-            "delosdb.experimental.btreePrefixBranchSnapshot";
-    private static final String VERSION_IMAGE_PROPERTY =
-            "delosdb.experimental.mvccCurrentVersionReadImage";
+    private static final String CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY =
+            "delosdb.mvcc.currentRowReadCache.slots";
 
     public void testCommittedUpdateDeleteReinsertAndVacuumNeverServeStaleState()
             throws Exception {
@@ -213,11 +205,7 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
                 javaExecutable(),
                 "-D" + VERTICAL_SLICE_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + "=" + failurePoint,
-                "-D" + ANCHOR_PROPERTY + "=true",
-                "-D" + ANCHOR_SLOTS_PROPERTY + "=4096",
-                "-D" + LEAF_SNAPSHOT_PROPERTY + "=true",
-                "-D" + BRANCH_SNAPSHOT_PROPERTY + "=true",
-                "-D" + VERSION_IMAGE_PROPERTY + "=true",
+                "-D" + CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY + "=4096",
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
@@ -245,7 +233,6 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
 
     private static void createFixture(
             Connection connection, String table, int rows) throws Exception {
-        assertFastPathEnabled();
         connection.setAutoCommit(false);
         executeUpdate(connection,
                 "create table " + table
@@ -262,13 +249,6 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
             statement.executeBatch();
         }
         connection.commit();
-    }
-
-    private static void assertFastPathEnabled() {
-        assertEquals("true", System.getProperty(ANCHOR_PROPERTY));
-        assertEquals("true", System.getProperty(LEAF_SNAPSHOT_PROPERTY));
-        assertEquals("true", System.getProperty(BRANCH_SNAPSHOT_PROPERTY));
-        assertEquals("true", System.getProperty(VERSION_IMAGE_PROPERTY));
     }
 
     private static void updateRow(

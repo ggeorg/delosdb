@@ -17,7 +17,7 @@ import java.sql.Statement;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Focused correctness and physical-shape proof for the experimental MVCC current-row anchor. */
+/** Focused correctness and physical-shape proof for the permanent MVCC current-row anchor. */
 public final class MvccCurrentRowAnchorTest extends MvccSqlTestSupport {
     private static final String DATABASE = "mvcc-current-row-anchor-db";
 
@@ -107,12 +107,15 @@ public final class MvccCurrentRowAnchorTest extends MvccSqlTestSupport {
             assertEquals(10, quantity(reopened, 1));
             assertEquals(1L, metric(second, "mvccCurrentRowAnchorHits"));
             assertEquals(0L, metric(second, "mvccDirectoryPageAcquisitions"));
-            if (Boolean.getBoolean("delosdb.experimental.mvccCurrentVersionReadImage")) {
-                assertEquals(1L, metric(second, "mvccCurrentVersionReadImageHits"));
-                assertEquals(0L, metric(second, "mvccVersionSlotFetches"));
-            } else {
-                assertEquals(1L, metric(second, "mvccVersionSlotFetches"));
-            }
+            assertEquals(1L, metric(second, "mvccCurrentVersionReadImageFallbacks"));
+            assertEquals(1L, metric(second, "mvccVersionSlotFetches"));
+
+            String third = measuredRead(reopened, 1);
+            assertEquals(10, quantity(reopened, 1));
+            assertEquals(1L, metric(third, "mvccCurrentRowAnchorHits"));
+            assertEquals(1L, metric(third, "mvccCurrentVersionReadImageHits"));
+            assertEquals(0L, metric(third, "mvccDirectoryPageAcquisitions"));
+            assertEquals(0L, metric(third, "mvccVersionSlotFetches"));
             reopened.commit();
         }
         shutdownDatabase(database);
