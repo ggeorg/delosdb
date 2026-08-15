@@ -49,12 +49,61 @@ public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTes
 
             Measurement first = measuredRead(connection, 97);
             Measurement second = measuredRead(connection, 97);
+            Measurement third = measuredRead(connection, 97);
             assertEquals(expectedQuantity(5, 97), first.quantity());
             assertEquals(expectedQuantity(5, 97), second.quantity());
-            assertEquals(1L, metric(second.statistics(), "mvccCurrentRowAnchorHits"));
-            assertEquals(1L, metric(second.statistics(), "mvccCurrentVersionReadImageHits"));
+            assertEquals(expectedQuantity(5, 97), third.quantity());
+
+            assertEquals(0L, metric(first.statistics(), "mvccCurrentRowAnchorChecks"));
+            assertEquals(0L, metric(first.statistics(), "mvccCurrentRowAnchorHits"));
+            assertEquals(0L, metric(first.statistics(), "mvccCurrentRowAnchorFallbacks"));
+            assertTrue("collision sweep must evict the target anchor; statistics="
+                            + first.statistics(),
+                    metric(first.statistics(), "mvccDirectoryPageAcquisitions") >= 1L);
+            assertEquals(0L, metric(first.statistics(), "mvccCurrentVersionReadImageChecks"));
+
+            long secondAnchorChecks =
+                    metric(second.statistics(), "mvccCurrentRowAnchorChecks");
+            long secondAnchorHits =
+                    metric(second.statistics(), "mvccCurrentRowAnchorHits");
+            assertTrue("second read must hit the rebuilt target anchor; statistics="
+                            + second.statistics(),
+                    secondAnchorHits >= 1L);
+            assertEquals(secondAnchorChecks, secondAnchorHits);
+            assertEquals(0L, metric(second.statistics(), "mvccCurrentRowAnchorFallbacks"));
             assertEquals(0L, metric(second.statistics(), "mvccDirectoryPageAcquisitions"));
-            assertEquals(0L, metric(second.statistics(), "mvccVersionPageAcquisitions"));
+            long secondImageChecks =
+                    metric(second.statistics(), "mvccCurrentVersionReadImageChecks");
+            assertTrue("second read must check the empty target version image; statistics="
+                            + second.statistics(),
+                    secondImageChecks >= 1L);
+            assertEquals(0L, metric(second.statistics(), "mvccCurrentVersionReadImageHits"));
+            assertEquals(secondImageChecks,
+                    metric(second.statistics(), "mvccCurrentVersionReadImageFallbacks"));
+            assertTrue("second read must rebuild the image from authoritative version storage; "
+                            + "statistics=" + second.statistics(),
+                    metric(second.statistics(), "mvccVersionPageAcquisitions") >= 1L);
+
+            long thirdAnchorChecks =
+                    metric(third.statistics(), "mvccCurrentRowAnchorChecks");
+            long thirdAnchorHits =
+                    metric(third.statistics(), "mvccCurrentRowAnchorHits");
+            assertTrue("third read must hit the rebuilt target anchor; statistics="
+                            + third.statistics(),
+                    thirdAnchorHits >= 1L);
+            assertEquals(thirdAnchorChecks, thirdAnchorHits);
+            assertEquals(0L, metric(third.statistics(), "mvccCurrentRowAnchorFallbacks"));
+            assertEquals(0L, metric(third.statistics(), "mvccDirectoryPageAcquisitions"));
+            long thirdImageChecks =
+                    metric(third.statistics(), "mvccCurrentVersionReadImageChecks");
+            long thirdImageHits =
+                    metric(third.statistics(), "mvccCurrentVersionReadImageHits");
+            assertTrue("third read must hit the rebuilt target version image; statistics="
+                            + third.statistics(),
+                    thirdImageHits >= 1L);
+            assertEquals(thirdImageChecks, thirdImageHits);
+            assertEquals(0L, metric(third.statistics(), "mvccCurrentVersionReadImageFallbacks"));
+            assertEquals(0L, metric(third.statistics(), "mvccVersionPageAcquisitions"));
             connection.commit();
         }
         shutdownDatabase(database);
