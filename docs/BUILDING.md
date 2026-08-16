@@ -44,7 +44,7 @@ disposable database under `build/readable-engine-demo` on each run. See
 
 ## Focused iteration
 
-Run the affected module and the smallest directly relevant proof. Examples:
+Run the affected module and the smallest directly relevant verification. Examples:
 
 ```bash
 ./gradlew :delosdb-storage-mvcc:check --console=plain
@@ -94,7 +94,7 @@ The focused acceptance does not run the full Derby language suite.
 
 ## Test inventory, provenance, authorship and stable suites
 
-The accepted test-organization structure freezes the inherited Derby baseline, separates
+The test-organization structure freezes the inherited Derby baseline, separates
 DelosDB-authored tests physically, and provides stable purpose-oriented execution tasks. Verify
 provenance and stable-suite coverage with:
 
@@ -169,8 +169,8 @@ Its 25 JSON specifications live under `src/delosTest/resources` and are inventor
 PostgreSQL-methodology provenance under `gradle/testing/`. They cover snapshot stability, savepoints,
 deadlocks, update/delete traversal, foreign-key concurrency, DDL conflicts, and concurrent `MERGE`
 across applicable heap/MVCC and file/memory configurations. The runner verifies actual Derby
-heavyweight lock waits through `SYSCS_DIAG.LOCK_TABLE`; incomplete async steps alone are not accepted
-as proof of blocking. The complete catalogue is also part of `delosConcurrencyTests` and root `check`.
+heavyweight lock waits through `SYSCS_DIAG.LOCK_TABLE`; incomplete async steps alone are not treated
+as evidence of blocking. The complete catalogue is also part of `delosConcurrencyTests` and root `check`.
 See [ISOLATION-SPECIFICATIONS.md](ISOLATION-SPECIFICATIONS.md) for the format and authoring rules.
 
 Verification levels:
@@ -243,8 +243,8 @@ lock; it is not a source or gate failure. Inspect the owner process and stop sta
 ./gradlew --stop
 ```
 
-## Gate policy
+## Verification policy
 
-Static gates must use executable or structural evidence. They must not depend on comments, Markdown,
-roadmap wording, exact report prose, or a task finding its own name in a Gradle script. See
+Static verification must use executable or structural evidence. It must not depend on comments, Markdown,
+planning wording, exact report prose, or a task finding its own name in a Gradle script. See
 [`STATIC-GATE-POLICY.md`](STATIC-GATE-POLICY.md).

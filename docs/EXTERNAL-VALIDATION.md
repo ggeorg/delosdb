@@ -92,7 +92,7 @@ caller-owned CI commands:
   -Pdelosdb.jmh.command="<approved external JMH command>"
 ```
 
-The built-in baseline is the current page-I/O representation decision proof, not a
+The built-in baseline is the current page-I/O representation decision verification, not a
 wall-clock substitute for JMH. The standalone JMH lane uses public JDBC, checks
 semantic fingerprints during measurement, writes JSON and human reports, and
 records SHA-256 fingerprints of all runtime jars and benchmark inputs.
@@ -100,7 +100,7 @@ records SHA-256 fingerprints of all runtime jars and benchmark inputs.
 ## Jcstress concurrency adapter
 
 The stable `delosJcstressConcurrencyValidation` adapter first runs the live RawStore-backed MVCC
-network-concurrency proof:
+network-concurrency verification:
 
 ```bash
 ./gradlew :delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
@@ -140,11 +140,11 @@ Run a CI-provided SQLancer command explicitly:
 The skeleton is external validation only. It is not wired into permanent verification, does not add
 SQLancer as a normal dependency, and does not change storage, optimizer, DRDA,
 heap, or MVCC behavior. Generated failures must be minimized and promoted into a
-normal deterministic DelosDB regression before they become release gates.
+normal deterministic DelosDB regression before they become release verification.
 
 ## Deterministic heap/MVCC differential follow-up
 
-Randomized SQLancer findings are not promoted directly into release gates. A
+Randomized SQLancer findings are not promoted directly into release verification. A
 minimized case should first be added to the deterministic heap/MVCC differential
 SQL harness:
 

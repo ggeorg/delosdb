@@ -44,7 +44,7 @@ Permanent gates must not fail because of:
 Markdown or documentation wording
 comments or Javadocs
 TODO/FIXME text
-roadmap status
+planning status
 commit messages
 archive or overlay names
 exact report sentences

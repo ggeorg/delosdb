@@ -2,7 +2,7 @@
 
 ## Current state
 
-The following repository programs are complete and accepted:
+DelosDB currently includes these established foundations:
 
 ```text
 RawStore convergence
@@ -69,32 +69,28 @@ Run them through:
 ./gradlew s0CloseoutVerification --console=plain
 ```
 
-Permanent verification is based on executable or structural evidence. Comments, Markdown, roadmap
+Permanent verification is based on executable or structural evidence. Comments, Markdown, planning
 wording, and report prose do not participate in pass/fail.
 
-## Current development focus
-
-DelosDB's current public state is described by product capability rather than internal development stages.
-The repository is undergoing documentation cleanup and consolidation so that public architecture, status,
-and reference material agree with the implemented system.
+## Pre-1.0 product focus
 
 The readable-engine foundation is implemented: one stable selected-plan model, deterministic `EXPLAIN`,
 bounded query-only `EXPLAIN ANALYZE`, operator timing and cardinality evidence, estimate comparison, MVCC
 read-path and snapshot diagnostics, and one executable end-to-end trace.
 
-### Accepted performance evidence
+### Performance evidence
 
 Current performance evidence comes from two distinct benchmark environments that must not be merged into
 one general performance claim.
 
 **Embedded/JDBC:** Delos Heap, Delos MVCC, Apache Derby, H2, and native SQLite through Xerial JDBC were
 compared on focused read workloads. Resident HOT and DISJOINT point reads showed Delos MVCC and Delos Heap
-in the same performance class after snapshot-registry work. RANDOM remains sensitive to current-row cache
+in the same performance class with the current snapshot-registry implementation. RANDOM remains sensitive to current-row cache
 capacity/associativity. H2/SQLite retain an advantage on simple embedded indexed reads, so indexed execution
 cost remains an area for further evidence-driven optimization.
 
 **Server/container:** Delos Heap and Delos MVCC over DRDA were compared with PostgreSQL and MariaDB for
-prepared disjoint primary-key reads at READ COMMITTED. The accepted matrix used 10,000 rows, 1/2/4/8/16
+prepared disjoint primary-key reads at READ COMMITTED. The measured matrix used 10,000 rows, 1/2/4/8/16
 clients, transaction widths 1 and 10, four balanced runs, and no retryable conflicts. At 16 clients the four
 engines converged within only a few percent in the measured cases. This is a narrow simple indexed point-SELECT
 result; it does not establish general performance for joins, aggregates, sorting, writes, mixed OLTP,

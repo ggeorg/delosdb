@@ -16,17 +16,17 @@ harden large-stream behavior
 preserve protocol compatibility
 ```
 
-## Current green server improvements
+## Implemented server behavior
 
 ```text
 unused Lucene/json_simple compile-path noise removed from delosdb-server
-server static gates added
+server static checks protect dependency and ownership boundaries
 resource-only DRDA localization package made module-visible
 runtimeinfo no longer forces JVM GC
 DRDA session scheduler isolated in DrdaSessionScheduler
-scheduler behavior gate added
+scheduler behavior is covered by deterministic verification
 optional virtual-thread DRDA worker mode added
-virtual-thread fairness audit added for queued-session dispatch
+queued-session fairness is verified for virtual-thread dispatch
 large EXTDTA values spool to temp storage above threshold
 DelosDB-owned DRDA configuration centralized in DrdaServerConfiguration
 ```
@@ -47,7 +47,7 @@ Optional virtual-thread worker mode:
 
 The listener/accept behavior and DRDA protocol semantics are not replaced by this option. The option only centralizes DRDA connection-worker thread creation behind the DelosDB threading seam.
 
-The fairness audit is intentionally white-box and protocol-neutral: it enqueues a bounded set of synthetic DRDA sessions, dispatches one worker per session through the selected threading mode, and verifies that every queued session is selected exactly once with no duplicates, no missing sessions, and no leftover waiting sessions. The virtual mode proof additionally verifies that all workers used by the audit are virtual threads.
+The scheduler verification is intentionally white-box and protocol-neutral: it enqueues a bounded set of synthetic DRDA sessions, dispatches one worker per session through the selected threading mode, and verifies that every queued session is selected exactly once with no duplicates, no missing sessions, and no leftover waiting sessions. The virtual-thread check additionally verifies that all workers used by the verification are virtual threads.
 
 ## EXTDTA spooling
 
@@ -67,9 +67,9 @@ Override:
 
 Small values keep the in-memory fast path. Large values use temp storage and cleanup-on-close/EOF behavior.
 
-## Server static gates
+## Server static verification
 
-The server static-analysis gate rejects:
+The server static analysis rejects:
 
 ```text
 Lucene/json_simple imports in delosdb-server
@@ -93,7 +93,7 @@ Focused server verification:
 ./gradlew :delosdb-tests:delosSystemTests :delosdb-server:compileJava delosServerStaticAnalysis
 ```
 
-## Not currently planned
+## Out of scope
 
 ```text
 Netty rewrite
@@ -107,15 +107,15 @@ A future Jakarta servlet adapter, if needed, should be separate from the legacy 
 
 ## Concurrent client stress
 
-The mixed heap/MVCC DRDA concurrent-client stress proof runs through the Derby
+The mixed heap/MVCC DRDA concurrent-client stress test runs through the Derby
 network client with DelosDB virtual DRDA worker mode enabled. It creates one
 heap table and one `using delos_mvcc` table, then runs concurrent clients that
 perform committed heap updates, committed MVCC updates/inserts, rollback-only
 work, read-only probes, and MVCC compress/vacuum.
 
-The proof is intentionally protocol-preserving: it does not alter DRDA message
-syntax, JDBC wire semantics, the accept loop, or transaction semantics. It only
-locks the current runtime behavior under a heavier concurrent client shape.
+The stress test is intentionally protocol-preserving: it does not alter DRDA message
+syntax, JDBC wire semantics, the accept loop, or transaction semantics. It validates
+the current runtime behavior under a heavier concurrent client shape.
 
 Focused verification:
 

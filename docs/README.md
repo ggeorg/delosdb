@@ -1,6 +1,6 @@
 # DelosDB public documentation
 
-This directory contains the public product, architecture, compatibility, operations, and accepted
+This directory contains the public product, architecture, compatibility, operations, and
 design documentation for DelosDB.
 
 Documentation describes the implementation. The build does not parse Markdown or comments to decide
@@ -70,15 +70,15 @@ repeated in the higher-level architecture documents:
 | [`design/V1-RAWSTORE-MVCC-UPDATE-DELETE.md`](design/V1-RAWSTORE-MVCC-UPDATE-DELETE.md) | replacement-version and tombstone mutation model |
 
 Completed experiments, detailed acceptance matrices, test seams, and superseded implementation slices
-belong in private engineering history. Current product behavior remains owned by the current documents
-above together with source code, tests, and permanent structural manifests.
+are omitted from the public product-documentation set. Current product behavior is described by the
+documents above together with source code, tests, and permanent structural manifests.
 
 ## Documentation ownership rules
 
 - One current document owns each public topic.
 - Current documents use present-tense product language.
 - Superseded engineering plans and implementation diaries are not public product documentation.
-- Design records explain durable decisions without requiring knowledge of internal development sequencing.
+- Design records explain durable decisions without requiring project chronology.
 - Public behavior, durable formats, module ownership, and supported limitations must match code and tests.
 - Documentation wording, headings, line counts, and exact phrases are never build authority.
 

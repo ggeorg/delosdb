@@ -18,7 +18,7 @@ MvccConglomerateFactory
         -> database-scoped diagnostics
 ```
 
-There is no `DelosStorageStore`, external MVCC page volume, external WAL, or
+There is no external MVCC provider store, external MVCC page volume, external WAL, or
 runtime backend selector in the current path.
 
 ## Lifecycle
@@ -60,7 +60,7 @@ maintenance and diagnostics are database-scoped
 shutdown of database A cannot close database B
 ```
 
-## Focused proofs
+## Focused verification
 
 ```text
 :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests

@@ -6,8 +6,8 @@ modernizing selected internals through explicit, tested boundaries.
 
 DelosDB is pre-1.0. The current repository includes RawStore-converged MVCC, JDK 25 generated-class
 modernization, repository-integrity consolidation, stable selected-plan modeling, deterministic `EXPLAIN`,
-storage-aware `EXPLAIN ANALYZE`, and an executable end-to-end query trace. Documentation is currently
-being consolidated so that public architecture, status, and reference material reflect the implementation consistently.
+storage-aware `EXPLAIN ANALYZE`, and an executable end-to-end query trace. Public documentation is
+organized around the implemented product architecture, supported behavior, and current limitations.
 
 ## Architecture
 
@@ -95,8 +95,8 @@ Completed foundations include:
 The readable-engine foundation is implemented: DelosDB has one stable selected-plan model, deterministic
 `EXPLAIN`, bounded query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison,
 MVCC read-path diagnostics and exact scan snapshot identity, plus one executable end-to-end trace shared
-by public documentation and teaching material. Remaining pre-1.0 work is tracked as product capabilities
-and limitations rather than internal development stages.
+by public documentation and teaching material. Remaining pre-1.0 work is described as product capabilities,
+limitations, and validation work.
 
 See [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -168,8 +168,8 @@ A complete public documentation index is available at [`docs/README.md`](docs/RE
 ## Documentation authority
 
 Documentation explains the implementation; it does not determine whether the build passes.
-Permanent gates use Java structure, module/dependency metadata, runtime providers, bytecode, tests,
-and checked structural manifests. Comments, Markdown wording, roadmap status, and exact report prose
+Permanent verification uses Java structure, module/dependency metadata, runtime providers, bytecode, tests,
+and checked structural manifests. Comments, Markdown wording, planning status, and exact report prose
 are not executable authority.
 
 ## Relationship to Apache Derby

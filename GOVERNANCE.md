@@ -5,8 +5,8 @@ DelosDB is currently a maintainer-led fork.
 ## Decision principles
 
 1. Derby-compatible behavior before novelty.
-2. Working proofs before new architecture.
-3. One behavior boundary per milestone.
+2. Executable evidence before architectural change.
+3. Keep behavior changes narrowly scoped and independently verifiable.
 4. Compatibility boundaries are explicit: heap format, SQL/JDBC behavior, and DRDA wire compatibility.
 5. Benchmarks before performance claims.
 6. Clear attribution to Apache Derby.
@@ -15,7 +15,7 @@ DelosDB is currently a maintainer-led fork.
 
 DelosDB modernizes selected internals while keeping inherited Derby compatibility boring.
 
-Closed or currently green areas include:
+Established product and contributor boundaries include:
 
 ```text
 Gradle-only developer workflow
@@ -23,7 +23,7 @@ JDK 25 Class-File API generated-bytecode backend behind JavaFactory
 RawStore-backed delos_mvcc SQL integration
 one Derby RawStore persistence/recovery authority
 MVCC transaction snapshots, visibility, indexes, maintenance, and vacuum
-repository-integrity and permanent verification gates
+repository-integrity and permanent verification
 DRDA server dependency hygiene and lifecycle hardening
 optional DRDA virtual-thread worker mode
 large DRDA EXTDTA temp spooling
@@ -34,7 +34,7 @@ Default behavior remains Derby-compatible heap storage. `delos_mvcc` remains exp
 
 ## Compatibility rule
 
-Do not change these boundaries without an explicit milestone and compatibility decision:
+Do not change these boundaries without an explicit compatibility decision:
 
 ```text
 Derby heap/raw-store disk compatibility
@@ -67,7 +67,7 @@ Do not replace DRDA with Netty, gRPC, JSON, protobuf, or another protocol inside
 
 ## Release rule
 
-No release should be cut unless these gates are green:
+No release should be cut unless the required verification passes:
 
 ```sh
 ./gradlew clean releaseVerification :delosdb-storage-mvcc:check
