@@ -9595,3 +9595,200 @@ tasks.register('runDelosJdbcGate10lmFiveEngineReadCheckpoint', JavaExec) {
         logger.lifecycle('Gate 10L-M ' + passLine)
     }
 }
+
+// Gate 10L-N: diagnose the residual permanent-MVCC read gap exposed by the
+// five-engine 10L-M checkpoint. This gate does not change production code.
+// Part A tests whether the 4096-slot bounded current-row cache is a material
+// contributor to RANDOM by sweeping only the slot count. Part B captures a
+// JFR profile for fully resident 16-client HOT/DISJOINT reads so residual CPU,
+// allocation, and monitor/park authorities can be identified without adding
+// timers to the read loop.
+def gate10lnRoot = 'reports/delosdb/benchmarks/gate10ln-mvcc-residual-read-gap'
+
+def configureGate10lnCoordinator = { JavaExec task, String suffix, int slots,
+                                     String workloads, String clients,
+                                     int transactionsPerClient, int runs,
+                                     boolean profile ->
+    task.group = 'benchmark'
+    task.description = "Gate 10L-N MVCC residual read-gap diagnostic ${suffix}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException('Gate 10L-N requires -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10lnRoot}/${suffix}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10ln-${suffix}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses': derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath': rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath': upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': clients,
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': workloads,
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': Integer.toString(transactionsPerClient),
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': profile ? '3' : '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': Integer.toString(runs),
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': profile ? '240' : '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.mvccCurrentRowReadCacheSlots': Integer.toString(slots),
+                'delosdb.benchmark.crossEngineConcurrency.profileDelosMvccWorkers': Boolean.toString(profile)
+        ])
+    }
+}
+
+[4096, 16384, 65536].each { slots ->
+    tasks.register("runDelosJdbcGate10lnRandomSlots${slots}", JavaExec) { task ->
+        configureGate10lnCoordinator(
+                task, "random-slots-${slots}", slots,
+                'PRIMARY_KEY_READ_RANDOM', '1,8,16', 5000, 6, false)
+    }
+}
+
+tasks.register('runDelosJdbcGate10lnResidentProfile', JavaExec) { task ->
+    configureGate10lnCoordinator(
+            task, 'resident-profile', 65536,
+            'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT', '16', 20000, 1, true)
+}
+
+tasks.register('runDelosJdbcGate10lnMvccResidualReadGapDiagnosis') {
+    group = 'benchmark'
+    description = 'Diagnoses remaining permanent-MVCC RANDOM cache-capacity and resident HOT/DISJOINT CPU authorities.'
+    dependsOn 'runDelosJdbcGate10lnRandomSlots4096',
+            'runDelosJdbcGate10lnRandomSlots16384',
+            'runDelosJdbcGate10lnRandomSlots65536',
+            'runDelosJdbcGate10lnResidentProfile'
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lnRoot).get().asFile
+        def median = { List<Double> values ->
+            def sorted = values.sort(false)
+            int n = sorted.size()
+            return (n & 1) == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0d
+        }
+        def failures = []
+        def cacheRows = []
+        [4096, 16384, 65536].each { slots ->
+            File results = new File(root, "random-slots-${slots}/cross-engine-concurrency-results.csv")
+            if (!results.isFile()) {
+                failures.add("missing RANDOM slot-sweep results for ${slots}")
+                return
+            }
+            def lines = results.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def header = lines[0].split(',', -1) as List
+            def rows = lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name.trim()] = fields[index].trim() }
+                row
+            }
+            ['1', '8', '16'].each { clients ->
+                def cell = rows.findAll { it.target == 'delos_mvcc' && it.clients == clients }
+                if (cell.size() != 6) {
+                    failures.add("RANDOM slots=${slots} ${clients}c expected 6 runs, found ${cell.size()}")
+                    return
+                }
+                long retries = cell.sum { Long.parseLong(it.retryableConflictRetries) } as long
+                if (retries != 0L) failures.add("RANDOM slots=${slots} ${clients}c retries=${retries}")
+                if (cell.collect { it.semanticFingerprint }.unique().size() != 1) {
+                    failures.add("RANDOM slots=${slots} ${clients}c semantic fingerprints differ")
+                }
+                cacheRows.add([slots: slots, clients: clients,
+                        median: median(cell.collect { Double.parseDouble(it.operationsPerSecond) })])
+            }
+        }
+
+        def by = { int slots, String clients ->
+            cacheRows.find { it.slots == slots && it.clients == clients }?.median as Double
+        }
+        def decision = [
+                'Gate 10L-N permanent-MVCC residual read-gap diagnosis',
+                'Part A: RANDOM cache-slot sensitivity at 4096 / 16384 / 65536 slots.',
+                'Part B: JFR profile for fully resident 16c HOT/DISJOINT at 65536 slots.',
+                'This is a diagnosis gate: production architecture is not changed and no throughput acceptance threshold is introduced.',
+                'Correctness guards frozen before measurement: six RANDOM observations per slot/client cell, identical semantics within each cell, zero retries, and a readable JFR recording.'
+        ]
+        ['1', '8', '16'].each { clients ->
+            double base = by(4096, clients)
+            double s16 = by(16384, clients)
+            double s64 = by(65536, clients)
+            double d16 = (s16 / base - 1.0d) * 100.0d
+            double d64 = (s64 / base - 1.0d) * 100.0d
+            decision.add(String.format(java.util.Locale.ROOT,
+                    'RANDOM %sc: 4096=%.0f 16384=%.0f (%+.2f%%) 65536=%.0f (%+.2f%%)',
+                    clients, base, s16, d16, s64, d64))
+        }
+        boolean capacityMaterial = ['8', '16'].any { clients ->
+            double base = by(4096, clients)
+            Math.max(by(16384, clients), by(65536, clients)) / base >= 1.20d
+        }
+        decision.add('RANDOM capacity hypothesis: ' +
+                (capacityMaterial ? 'MATERIAL-CONTRIBUTOR (>=20% gain at 8c or 16c)' :
+                        'NOT-MATERIAL by the predeclared >=20% diagnostic criterion'))
+
+        File profileDir = new File(root, 'resident-profile/profiles')
+        def recordings = profileDir.isDirectory()
+                ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }
+                : []
+        if (recordings.size() != 1) {
+            failures.add("expected exactly one resident-profile JFR recording, found ${recordings.size()}")
+        } else {
+            File jfr = recordings[0]
+            File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+            ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+                def output = new ByteArrayOutputStream()
+                def error = new ByteArrayOutputStream()
+                def result = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '220',
+                            '--cell-height', '30', view, jfr.absolutePath
+                    standardOutput = output
+                    errorOutput = error
+                    ignoreExitValue = true
+                }.result.get()
+                if (result.exitValue != 0) {
+                    failures.add("jfr view ${view} failed: ${error.toString('UTF-8').trim()}")
+                } else {
+                    new File(root, "resident-profile/${view}.txt")
+                            .setText(output.toString('UTF-8'), 'UTF-8')
+                }
+            }
+            decision.add("Resident JFR recording: ${jfr.name} (${jfr.length()} bytes)")
+        }
+
+        File decisionFile = new File(root, 'gate10ln-mvcc-residual-read-gap-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-N diagnostic evidence incomplete: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: diagnostic evidence complete. Use the slot sensitivity plus JFR hot/allocation/contention views to choose the next focused optimization gate; do not change production defaults from this diagnosis alone.')
+        decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-N diagnostic evidence complete: ' + decisionFile)
+    }
+}

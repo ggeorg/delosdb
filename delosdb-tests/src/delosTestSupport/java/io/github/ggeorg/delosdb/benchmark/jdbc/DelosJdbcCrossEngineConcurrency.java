@@ -44,6 +44,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
+    private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,iterations,"
@@ -130,6 +131,21 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (target == Target.DELOS_HEAP
                 && Boolean.getBoolean("delosdb.experimental.fastRecordReadLock")) {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
+        }
+        if (target == Target.DELOS_MVCC) {
+            String slots = System.getProperty(
+                    PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
+            if (!slots.isEmpty()) {
+                command.add("-Ddelosdb.mvcc.currentRowReadCache.slots=" + slots);
+            }
+            if (Boolean.getBoolean(PREFIX + "profileDelosMvccWorkers")) {
+                Path profileDirectory = options.reportDirectory().resolve("profiles");
+                Files.createDirectories(profileDirectory);
+                Path recording = profileDirectory.resolve(String.format(
+                        Locale.ROOT, "%02d-%s.jfr", run, target.id()));
+                command.add("-XX:StartFlightRecording=filename=" + recording
+                        + ",settings=profile,dumponexit=true");
+            }
         }
         if (target == Target.SQLITE) {
             command.add("--enable-native-access=ALL-UNNAMED");
@@ -1917,6 +1933,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append(format(heap / postgres)).append(',').append(format(mvcc / postgres)).append(',')
                         .append(format(heap / mariadb)).append(',').append(format(mvcc / mariadb)).append('\n');
             }
+        } else if (options.targetValues().equals(MVCC_ONLY_DIAGNOSTIC_TARGETS)) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosMvccMedianTps\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                double mvcc = require(entry.getValue(), Target.DELOS_MVCC, key);
+                out.append(key.csv()).append(',').append(format(mvcc)).append('\n');
+            }
         } else if (options.targetValues().equals(READ_DECOMPOSITION_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,"
@@ -1961,6 +1985,13 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void writeScalingCsv(Options options, List<Row> rows) throws IOException {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
+        if (!options.clientValues().contains(1)) {
+            Files.writeString(options.reportDirectory().resolve("cross-engine-concurrency-scaling.csv"),
+                    "rowCount,workload,clients,operationsPerTransaction,target,medianTransactionsPerSecond,"
+                            + "medianOperationsPerSecond,speedupFromOneClient,parallelEfficiency\n",
+                    StandardCharsets.UTF_8);
+            return;
+        }
         Map<BaselineKey, EnumMap<Target, Double>> baselines = new HashMap<>();
         for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
             if (entry.getKey().clients() == 1) {
@@ -2702,12 +2733,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2, Target.SQLITE);
             List<Target> container = List.of(
                     Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.POSTGRESQL, Target.MARIADB);
+            boolean mvccOnlyDiagnostic = configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS);
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
-                    && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)) {
+                    && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)
+                    && !mvccOnlyDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
-                        + container + ", or diagnostic " + READ_DECOMPOSITION_TARGETS + ": " + configuredTargets);
+                        + container + ", diagnostic " + READ_DECOMPOSITION_TARGETS
+                        + ", or MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
                 throw new IllegalArgumentException(
@@ -2722,7 +2756,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
-            if (target == null && !clientValues().contains(1)) {
+            if (target == null && !mvccOnlyDiagnostic && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
@@ -2730,7 +2764,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || iterations < 1 || caseTimeoutSeconds < 1 || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }
-            if (target == null && (runs < 4 || (runs & 3) != 0)) {
+            if (target == null && !mvccOnlyDiagnostic && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");
             }
             if (childHeap.isBlank()) {
