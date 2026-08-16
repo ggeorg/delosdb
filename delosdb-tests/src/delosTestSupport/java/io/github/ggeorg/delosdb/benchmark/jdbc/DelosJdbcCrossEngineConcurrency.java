@@ -138,6 +138,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (!slots.isEmpty()) {
                 command.add("-Ddelosdb.mvcc.currentRowReadCache.slots=" + slots);
             }
+            if (Boolean.getBoolean(PREFIX + "mvccSnapshotLeaseRegistry")) {
+                command.add("-Ddelosdb.experimental.mvccSnapshotLeaseRegistry=true");
+                String leaseSlots = System.getProperty(
+                        PREFIX + "mvccSnapshotLeaseRegistrySlots", "").trim();
+                if (!leaseSlots.isEmpty()) {
+                    command.add("-Ddelosdb.experimental.mvccSnapshotLeaseRegistry.slots="
+                            + leaseSlots);
+                }
+            }
             if (Boolean.getBoolean(PREFIX + "profileDelosMvccWorkers")) {
                 Path profileDirectory = options.reportDirectory().resolve("profiles");
                 Files.createDirectories(profileDirectory);

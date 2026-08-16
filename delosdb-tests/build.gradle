@@ -9791,3 +9791,245 @@ tasks.register('runDelosJdbcGate10lnMvccResidualReadGapDiagnosis') {
         logger.lifecycle('Gate 10L-N diagnostic evidence complete: ' + decisionFile)
     }
 }
+
+// Gate 10L-O: remove the residual global READ COMMITTED snapshot-lease
+// publication lock from the read path. Gate 10L-N JFR proved that
+// openSnapshotLease()/closeSnapshotLease() park reader threads on the same
+// database-scoped commitPublicationLock even after the physical page-latch
+// path is zero. The experimental registry uses bounded atomic lease slots;
+// vacuum still falls back to the locked legacy map if all slots are occupied.
+def gate10loSnapshotLeaseProperties = [
+        'delosdb.experimental.mvccSnapshotLeaseRegistry': 'true',
+        'delosdb.experimental.mvccSnapshotLeaseRegistry.slots': '64',
+        'delosdb.mvcc.currentRowReadCache.slots': '65536'
+]
+
+registerDelosFocusedTest(
+        'runDelosMvccSnapshotLeaseRegistrySafetyTest',
+        'Runs Gate 10L-O snapshot-lease registry history/vacuum/lifecycle/isolation safety.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMaintenanceDiagnosticsTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccCurrentRowArchitectureLifecycleTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/HeapMvccIsolationDifferentialTest.class'
+        ],
+        gate10loSnapshotLeaseProperties)
+
+tasks.named('runDelosMvccSnapshotLeaseRegistrySafetyTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+registerDelosFocusedTest(
+        'runDelosMvccSnapshotLeaseRegistryFallbackTest',
+        'Runs Gate 10L-O with one atomic snapshot-lease slot so concurrent/held readers exercise the locked overflow fallback while preserving vacuum safety.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class'],
+        gate10loSnapshotLeaseProperties + [
+                'delosdb.experimental.mvccSnapshotLeaseRegistry.slots': '1'
+        ])
+
+tasks.named('runDelosMvccSnapshotLeaseRegistryFallbackTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    mustRunAfter tasks.named('runDelosMvccSnapshotLeaseRegistrySafetyTest')
+    outputs.upToDateWhen { false }
+}
+
+def gate10loRoot = 'reports/delosdb/benchmarks/gate10lo-mvcc-snapshot-lease-registry'
+
+def registerGate10loResidentProfile = { String taskName, String suffix, boolean registry ->
+    tasks.register(taskName, JavaExec) { task ->
+        task.group = 'benchmark'
+        task.description = "Runs Gate 10L-O 16c resident HOT/DISJOINT JFR profile (${suffix})."
+        task.dependsOn tasks.named('compileTestJava'),
+                tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+        task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        task.classpath = rootProject.files(
+                derbyTestsClassDir,
+                rawStoreInternalTestSupportClassDir,
+                derbyRuntimeJars)
+        task.args 'coordinator'
+        task.outputs.upToDateWhen { false }
+        task.outputs.dir(rootProject.layout.buildDirectory.dir("${gate10loRoot}/${suffix}"))
+
+        task.doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gate 10L-O resident profile requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${gate10loRoot}/${suffix}").get().asFile
+            File databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-gate10lo-${suffix}").get().asFile
+            project.delete(reportDir)
+            project.delete(databaseRoot)
+            reportDir.mkdirs()
+            databaseRoot.mkdirs()
+
+            def properties = [
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                            new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '16',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads':
+                            'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '20000',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccCurrentRowReadCacheSlots': '65536',
+                    'delosdb.benchmark.crossEngineConcurrency.profileDelosMvccWorkers': 'true'
+            ]
+            if (registry) {
+                properties['delosdb.benchmark.crossEngineConcurrency.mvccSnapshotLeaseRegistry'] = 'true'
+                properties['delosdb.benchmark.crossEngineConcurrency.mvccSnapshotLeaseRegistrySlots'] = '256'
+            }
+            task.systemProperties(properties)
+        }
+    }
+}
+
+registerGate10loResidentProfile(
+        'runDelosJdbcGate10loSnapshotLeaseRegistryOffProfile', 'off', false)
+registerGate10loResidentProfile(
+        'runDelosJdbcGate10loSnapshotLeaseRegistryOnProfile', 'on', true)
+
+tasks.named('runDelosJdbcGate10loSnapshotLeaseRegistryOnProfile') {
+    mustRunAfter tasks.named('runDelosJdbcGate10loSnapshotLeaseRegistryOffProfile')
+}
+
+tasks.register('runDelosJdbcGate10loMvccSnapshotLeaseRegistryProof') {
+    group = 'verification'
+    description = 'Runs Gate 10L-O source/runtime/removability proof for the residual MVCC snapshot-lease publication-lock authority.'
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistrySafetyTest')
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistryFallbackTest')
+    dependsOn tasks.named('runDelosJdbcGate10loSnapshotLeaseRegistryOffProfile')
+    dependsOn tasks.named('runDelosJdbcGate10loSnapshotLeaseRegistryOnProfile')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10loRoot).get().asFile
+        def loadRows = { String suffix ->
+            File csv = new File(root, "${suffix}/cross-engine-concurrency-results.csv")
+            if (!csv.isFile()) {
+                throw new GradleException("Missing Gate 10L-O result: ${csv}")
+            }
+            def lines = csv.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def header = (lines[0].split(',', -1) as List).collect { it.trim() }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].trim() }
+                row
+            }
+        }
+        def rowsOff = loadRows('off')
+        def rowsOn = loadRows('on')
+        def byWorkload = { rows, workload ->
+            def matches = rows.findAll { it.workload == workload && it.clients == '16' }
+            if (matches.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-O expected exactly one ${workload} 16c row, found ${matches.size()}")
+            }
+            matches[0]
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-O residual MVCC snapshot-lease authority proof',
+                'Source authority from Gate 10L-N JFR: READ COMMITTED scan open/close parks on MvccRawStoreRuntime.commitPublicationLock.',
+                'Experimental ON path: bounded atomic snapshot-lease slots; slot exhaustion conservatively falls back to the locked legacy lease map.',
+                'Frozen mechanism criteria: OFF open/close lease parks >=100; ON open/close lease parks =0; identical fingerprints/operation counts; zero retries; focused history/vacuum/lifecycle/isolation suites green.',
+                'Throughput is diagnostic in 10L-O; balanced performance acceptance remains separate.'
+        ]
+
+        ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
+            def off = byWorkload(rowsOff, workload)
+            def on = byWorkload(rowsOn, workload)
+            if (off.semanticFingerprint != on.semanticFingerprint) {
+                failures.add("${workload} semantic fingerprint changed")
+            }
+            if (off.measuredOperations != on.measuredOperations) {
+                failures.add("${workload} measured operation count changed")
+            }
+            if (off.retryableConflictRetries != '0' || on.retryableConflictRetries != '0') {
+                failures.add("${workload} retryable conflicts were non-zero")
+            }
+            double offOps = off.operationsPerSecond as double
+            double onOps = on.operationsPerSecond as double
+            decision.add(String.format(java.util.Locale.ROOT,
+                    '%s 16c: OFF=%.0f ON=%.0f delta=%+.2f%%',
+                    workload, offOps, onOps, (onOps / offOps - 1.0d) * 100.0d))
+        }
+
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        def parkCount = { String suffix ->
+            File profileDir = new File(root, "${suffix}/profiles")
+            def recordings = profileDir.isDirectory()
+                    ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }
+                    : []
+            if (recordings.size() != 1) {
+                failures.add("${suffix}: expected exactly one JFR recording, found ${recordings.size()}")
+                return [open: -1, close: -1, total: -1]
+            }
+            def execOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'print', '--events', 'jdk.ThreadPark',
+                        '--stack-depth', '32', recordings[0].absolutePath
+                ignoreExitValue = true
+            }
+            def result = execOutput.result.get()
+            String output = execOutput.standardOutput.asText.get()
+            String error = execOutput.standardError.asText.get()
+            if (result.exitValue != 0) {
+                failures.add("${suffix}: jfr ThreadPark print failed: ${error.trim()}")
+                return [open: -1, close: -1, total: -1]
+            }
+            int open = output.count('MvccRawStoreRuntime.openSnapshotLease()')
+            int close = output.count('MvccRawStoreRuntime.closeSnapshotLease(')
+            int total = output.count('jdk.ThreadPark {')
+            new File(root, "${suffix}/thread-parks.txt").setText(output, 'UTF-8')
+            return [open: open, close: close, total: total]
+        }
+
+        def offParks = parkCount('off')
+        def onParks = parkCount('on')
+        int offLeaseParks = offParks.open + offParks.close
+        int onLeaseParks = onParks.open + onParks.close
+        decision.add("OFF lease parks: open=${offParks.open} close=${offParks.close} total=${offLeaseParks}")
+        decision.add("ON lease parks: open=${onParks.open} close=${onParks.close} total=${onLeaseParks}")
+        if (offLeaseParks < 100) {
+            failures.add("OFF snapshot-lease parks ${offLeaseParks} < frozen authority floor 100")
+        }
+        if (onLeaseParks != 0) {
+            failures.add("ON snapshot-lease parks ${onLeaseParks} != 0")
+        }
+
+        File decisionFile = new File(root, 'gate10lo-mvcc-snapshot-lease-registry-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-O failed: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: the bounded atomic lease registry removes the measured READ COMMITTED open/close snapshot-lease park authority while preserving snapshot/vacuum semantics. Proceed to balanced performance acceptance before making it permanent.')
+        decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-O PASS: residual snapshot-lease publication-lock authority removed in the experimental path.')
+    }
+}

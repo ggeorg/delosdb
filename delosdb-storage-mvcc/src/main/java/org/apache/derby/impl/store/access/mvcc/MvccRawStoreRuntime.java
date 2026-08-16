@@ -20,6 +20,7 @@ import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -53,6 +54,12 @@ final class MvccRawStoreRuntime {
     /** Fixed slot count shared by the permanent current-row anchor/image cache. */
     static final String CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY =
             "delosdb.mvcc.currentRowReadCache.slots";
+    static final String EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_PROPERTY =
+            "delosdb.experimental.mvccSnapshotLeaseRegistry";
+    static final String EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY =
+            "delosdb.experimental.mvccSnapshotLeaseRegistry.slots";
+    private static final long FREE_SNAPSHOT_LEASE_SLOT = -1L;
+    private static final long CLAIMING_SNAPSHOT_LEASE_SLOT = -2L;
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
             "after-stamp-before-raw-commit";
     static final String AFTER_RAW_COMMIT_BEFORE_PUBLICATION =
@@ -73,6 +80,9 @@ final class MvccRawStoreRuntime {
     private final AtomicLong diagnosticCaptureSequence = new AtomicLong();
     private final AtomicLong nextSnapshotLeaseId = new AtomicLong(1L);
     private final Map<Long, Long> retainedSnapshotSequences = new HashMap<>();
+    private final boolean experimentalSnapshotLeaseRegistry;
+    private final AtomicLongArray snapshotLeaseSlots;
+    private final AtomicLong snapshotLeaseClaimCursor = new AtomicLong();
     private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
             new ConcurrentHashMap<>();
@@ -136,6 +146,33 @@ final class MvccRawStoreRuntime {
         }
         currentRowAnchors = new AtomicReferenceArray<>(slots);
         currentVersionReadImages = new AtomicReferenceArray<>(slots);
+
+        experimentalSnapshotLeaseRegistry = Boolean.parseBoolean(System.getProperty(
+                EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_PROPERTY, "false"));
+        if (experimentalSnapshotLeaseRegistry) {
+            String leaseSlotText = System.getProperty(
+                    EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY, "256");
+            int leaseSlots;
+            try {
+                leaseSlots = Integer.parseInt(leaseSlotText);
+            } catch (NumberFormatException failure) {
+                throw new IllegalArgumentException(
+                        EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
+                                + " must be a positive integer: " + leaseSlotText,
+                        failure);
+            }
+            if (leaseSlots <= 0) {
+                throw new IllegalArgumentException(
+                        EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
+                                + " must be positive: " + leaseSlotText);
+            }
+            snapshotLeaseSlots = new AtomicLongArray(leaseSlots);
+            for (int index = 0; index < leaseSlots; index++) {
+                snapshotLeaseSlots.set(index, FREE_SNAPSHOT_LEASE_SLOT);
+            }
+        } else {
+            snapshotLeaseSlots = null;
+        }
     }
 
     Object databaseIdentity() {
@@ -435,10 +472,20 @@ final class MvccRawStoreRuntime {
     }
 
     SnapshotLease openSnapshotLease() {
+        if (experimentalSnapshotLeaseRegistry) {
+            SnapshotLease lease = tryClaimCurrentSnapshotLeaseSlot();
+            if (lease != null) {
+                return lease;
+            }
+        }
+        return openLockedSnapshotLease();
+    }
+
+    private SnapshotLease openLockedSnapshotLease() {
         commitPublicationLock.lock();
         try {
             long sequence = publishedHighWater.get();
-            return registerSnapshotLease(sequence);
+            return registerLockedSnapshotLease(sequence);
         } finally {
             commitPublicationLock.unlock();
         }
@@ -449,6 +496,16 @@ final class MvccRawStoreRuntime {
             throw new IllegalArgumentException(
                     "RawStore MVCC retained snapshot must be committed: " + sequence);
         }
+        if (experimentalSnapshotLeaseRegistry) {
+            SnapshotLease lease = tryClaimRetainedSnapshotLeaseSlot(sequence);
+            if (lease != null) {
+                return lease;
+            }
+        }
+        return retainLockedSnapshot(sequence);
+    }
+
+    private SnapshotLease retainLockedSnapshot(long sequence) {
         commitPublicationLock.lock();
         try {
             long published = publishedHighWater.get();
@@ -457,16 +514,18 @@ final class MvccRawStoreRuntime {
                         "RawStore MVCC retained snapshot is ahead of publication: "
                                 + sequence + " > " + published);
             }
-            return registerSnapshotLease(sequence);
+            return registerLockedSnapshotLease(sequence);
         } finally {
             commitPublicationLock.unlock();
         }
     }
 
     long vacuumHorizon() {
+        long published = publishedHighWater.get();
+        SnapshotLeaseSlotSummary slotSummary = snapshotLeaseSlotSummary(published);
         commitPublicationLock.lock();
         try {
-            long horizon = publishedHighWater.get();
+            long horizon = slotSummary.horizon();
             for (long retained : retainedSnapshotSequences.values()) {
                 horizon = Math.min(horizon, retained);
             }
@@ -488,13 +547,94 @@ final class MvccRawStoreRuntime {
         return new TableMaintenanceBoundary(writeLock);
     }
 
-    private SnapshotLease registerSnapshotLease(long sequence) {
+    private SnapshotLease registerLockedSnapshotLease(long sequence) {
         long leaseId = nextSnapshotLeaseId.getAndIncrement();
         retainedSnapshotSequences.put(leaseId, sequence);
-        return new SnapshotLease(this, leaseId, sequence);
+        return SnapshotLease.locked(this, leaseId, sequence);
     }
 
-    private void closeSnapshotLease(long leaseId) {
+    private SnapshotLease tryClaimCurrentSnapshotLeaseSlot() {
+        AtomicLongArray slots = snapshotLeaseSlots;
+        int slot = claimSnapshotLeaseSlot(slots);
+        if (slot < 0) {
+            return null;
+        }
+        try {
+            long sequence = publishedHighWater.get();
+            slots.set(slot, sequence);
+            return SnapshotLease.slotted(this, slot, sequence);
+        } catch (RuntimeException | Error failure) {
+            slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
+            throw failure;
+        }
+    }
+
+    private SnapshotLease tryClaimRetainedSnapshotLeaseSlot(long sequence) {
+        AtomicLongArray slots = snapshotLeaseSlots;
+        int slot = claimSnapshotLeaseSlot(slots);
+        if (slot < 0) {
+            return null;
+        }
+        try {
+            long published = publishedHighWater.get();
+            if (sequence > published) {
+                throw new IllegalArgumentException(
+                        "RawStore MVCC retained snapshot is ahead of publication: "
+                                + sequence + " > " + published);
+            }
+            slots.set(slot, sequence);
+            return SnapshotLease.slotted(this, slot, sequence);
+        } catch (RuntimeException | Error failure) {
+            slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
+            throw failure;
+        }
+    }
+
+    private int claimSnapshotLeaseSlot(AtomicLongArray slots) {
+        int length = slots.length();
+        int start = Math.floorMod((int) snapshotLeaseClaimCursor.getAndIncrement(), length);
+        for (int offset = 0; offset < length; offset++) {
+            int slot = (start + offset) % length;
+            if (slots.compareAndSet(
+                    slot, FREE_SNAPSHOT_LEASE_SLOT, CLAIMING_SNAPSHOT_LEASE_SLOT)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private SnapshotLeaseSlotSummary snapshotLeaseSlotSummary(long published) {
+        AtomicLongArray slots = snapshotLeaseSlots;
+        if (slots == null) {
+            return new SnapshotLeaseSlotSummary(published, 0);
+        }
+        scan:
+        while (true) {
+            long horizon = published;
+            int count = 0;
+            for (int index = 0; index < slots.length(); index++) {
+                long sequence = slots.get(index);
+                if (sequence == CLAIMING_SNAPSHOT_LEASE_SLOT) {
+                    Thread.onSpinWait();
+                    continue scan;
+                }
+                if (sequence >= 0L) {
+                    count++;
+                    horizon = Math.min(horizon, sequence);
+                }
+            }
+            return new SnapshotLeaseSlotSummary(horizon, count);
+        }
+    }
+
+    private void closeSnapshotLease(long leaseId, int slot, long sequence) {
+        if (slot >= 0) {
+            if (!snapshotLeaseSlots.compareAndSet(slot, sequence, FREE_SNAPSHOT_LEASE_SLOT)) {
+                throw new IllegalStateException(
+                        "RawStore MVCC snapshot lease slot changed before close: " + slot);
+            }
+            return;
+        }
         commitPublicationLock.lock();
         try {
             retainedSnapshotSequences.remove(leaseId);
@@ -629,14 +769,14 @@ final class MvccRawStoreRuntime {
     }
 
     DelosStorageMaintenanceSnapshot maintenanceSnapshot() {
-        long published;
+        long published = publishedHighWater.get();
+        SnapshotLeaseSlotSummary slotSummary = snapshotLeaseSlotSummary(published);
         long horizon;
         int retainedCount;
         commitPublicationLock.lock();
         try {
-            published = publishedHighWater.get();
-            horizon = published;
-            retainedCount = retainedSnapshotSequences.size();
+            horizon = slotSummary.horizon();
+            retainedCount = slotSummary.count() + retainedSnapshotSequences.size();
             for (long retained : retainedSnapshotSequences.values()) {
                 horizon = Math.min(horizon, retained);
             }
@@ -745,6 +885,15 @@ final class MvccRawStoreRuntime {
         } finally {
             commitPublicationLock.unlock();
         }
+        AtomicLongArray slots = snapshotLeaseSlots;
+        if (slots != null) {
+            for (int index = 0; index < slots.length(); index++) {
+                slots.set(index, FREE_SNAPSHOT_LEASE_SLOT);
+            }
+        }
+    }
+
+    private record SnapshotLeaseSlotSummary(long horizon, int count) {
     }
 
     private record CurrentVersionReadImage(
@@ -779,13 +928,33 @@ final class MvccRawStoreRuntime {
     static final class SnapshotLease implements AutoCloseable {
         private final MvccRawStoreRuntime runtime;
         private final long leaseId;
+        private final int slot;
         private final long sequence;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private SnapshotLease(MvccRawStoreRuntime runtime, long leaseId, long sequence) {
+        private SnapshotLease(
+                MvccRawStoreRuntime runtime,
+                long leaseId,
+                int slot,
+                long sequence) {
             this.runtime = runtime;
             this.leaseId = leaseId;
+            this.slot = slot;
             this.sequence = sequence;
+        }
+
+        private static SnapshotLease locked(
+                MvccRawStoreRuntime runtime,
+                long leaseId,
+                long sequence) {
+            return new SnapshotLease(runtime, leaseId, -1, sequence);
+        }
+
+        private static SnapshotLease slotted(
+                MvccRawStoreRuntime runtime,
+                int slot,
+                long sequence) {
+            return new SnapshotLease(runtime, 0L, slot, sequence);
         }
 
         long sequence() {
@@ -795,7 +964,7 @@ final class MvccRawStoreRuntime {
         @Override
         public void close() {
             if (closed.compareAndSet(false, true)) {
-                runtime.closeSnapshotLease(leaseId);
+                runtime.closeSnapshotLease(leaseId, slot, sequence);
             }
         }
     }
