@@ -10384,3 +10384,329 @@ tasks.register('runDelosJdbcGate10lo2aMvccSnapshotLeaseStatementCountProof') {
         logger.lifecycle('Gate 10L-O2A PASS: exact READ COMMITTED statement-snapshot lease-path removability proved.')
     }
 }
+
+// Gate 10L-P: balanced performance acceptance for the experimental bounded
+// atomic READ COMMITTED snapshot-lease registry. Gates 10L-O/O2/O2A established
+// lifecycle safety and exact statement-level removability of the legacy global
+// commitPublicationLock lease path. This gate introduces no new mechanism.
+//
+// Frozen before measurement:
+//   * pooled six-vs-six medians are authoritative;
+//   * HOT and DISJOINT 8c/16c must improve by >=20%;
+//   * no >=2c HOT/DISJOINT/RANDOM cell may regress by >10%;
+//   * 1c regression guard is 15%;
+//   * fingerprints and measured-operation counts must match; retries must be 0.
+// Balanced halves and IQR/MAD are diagnostic only.
+def gate10lpRoot =
+        'reports/delosdb/benchmarks/gate10lp-mvcc-snapshot-lease-registry-acceptance'
+def gate10lpRegistrySlots = 256
+
+def configureGate10lpWorker = {
+        JavaExec task,
+        String phase,
+        boolean registryEnabled,
+        int run ->
+    task.group = 'benchmark'
+    task.description = "Runs Gate 10L-P ${phase}, run ${run}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'worker'
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${gate10lpRoot}/${phase}/run-${run}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-P balanced snapshot-lease acceptance requires a release build; ' +
+                            'rerun with -Pdelosdb.sane=false')
+        }
+
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10lpRoot}/${phase}/run-${run}").get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-gate10lp-${phase}-run-${run}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def properties = [
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.run': run.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8,16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT,PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '3',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ]
+        if (registryEnabled) {
+            properties['delosdb.experimental.mvccSnapshotLeaseRegistry'] = 'true'
+            properties['delosdb.experimental.mvccSnapshotLeaseRegistry.slots'] =
+                    gate10lpRegistrySlots.toString()
+        }
+        task.systemProperties(properties)
+    }
+}
+
+def registerGate10lpWorkers = { String taskSuffix, String phase, boolean registryEnabled ->
+    (1..3).collect { run ->
+        tasks.register("runDelosJdbcGate10lp${taskSuffix}Run${run}", JavaExec) { task ->
+            configureGate10lpWorker(task, phase, registryEnabled, run)
+        }
+    }
+}
+
+def gate10lpOffA = registerGate10lpWorkers('OffA', 'off-a', false)
+def gate10lpOnA = registerGate10lpWorkers('OnA', 'on-a', true)
+def gate10lpOnB = registerGate10lpWorkers('OnB', 'on-b', true)
+def gate10lpOffB = registerGate10lpWorkers('OffB', 'off-b', false)
+
+def gate10lpExecutionOrder = []
+gate10lpExecutionOrder.addAll(gate10lpOffA)
+gate10lpExecutionOrder.addAll(gate10lpOnA)
+gate10lpExecutionOrder.addAll(gate10lpOnB)
+gate10lpExecutionOrder.addAll(gate10lpOffB)
+(1..<gate10lpExecutionOrder.size()).each { index ->
+    gate10lpExecutionOrder[index].configure {
+        mustRunAfter gate10lpExecutionOrder[index - 1]
+    }
+}
+
+tasks.register('runDelosJdbcGate10lpMvccSnapshotLeaseRegistryBalancedAcceptance') {
+    group = 'benchmark'
+    description = 'Runs Gate 10L-P balanced OFF/ON MVCC snapshot-lease registry performance acceptance.'
+    dependsOn gate10lpExecutionOrder
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lpRoot).get().asFile
+
+        def loadCsv = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-P report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                throw new GradleException("Gate 10L-P report has no rows: ${file}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect {
+                it.toString().trim().replace('\uFEFF', '')
+            }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != header.size()) {
+                    throw new GradleException(
+                            "Gate 10L-P malformed CSV row in ${file}: ${line}")
+                }
+                def row = [:]
+                header.eachWithIndex { name, fieldIndex ->
+                    row[name] = fields[fieldIndex].toString().trim()
+                }
+                row
+            }
+        }
+
+        def loadPhase = { String phase ->
+            def rows = []
+            (1..3).each { run ->
+                File file = new File(root, "${phase}/run-${run}/delos_mvcc-run-${run}.csv")
+                def phaseRows = loadCsv(file)
+                if (phaseRows.size() != 15) {
+                    throw new GradleException(
+                            "Gate 10L-P ${phase} run ${run} expected 15 rows, observed ${phaseRows.size()}.")
+                }
+                rows.addAll(phaseRows)
+            }
+            if (rows.size() != 45) {
+                throw new GradleException(
+                        "Gate 10L-P ${phase} expected 45 rows, observed ${rows.size()}.")
+            }
+            rows
+        }
+
+        def median = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            int n = sorted.size()
+            if (n == 0) {
+                return Double.NaN
+            }
+            n % 2 == 1 ? sorted[n.intdiv(2)] :
+                    (sorted[n.intdiv(2) - 1] + sorted[n.intdiv(2)]) / 2.0d
+        }
+        def valuesFor = { rows, String workload, String clients, int expected ->
+            def values = rows.findAll {
+                it.workload == workload && it.clients == clients
+            }.collect { Double.parseDouble(it.operationsPerSecond) }
+            if (values.size() != expected) {
+                throw new GradleException(
+                        "Gate 10L-P expected ${expected} observations for ${workload}:${clients}, observed ${values.size()}.")
+            }
+            values
+        }
+        def dispersion = { List<Double> input ->
+            def sorted = input.collect { it as double }.sort()
+            double med = median(sorted)
+            int n = sorted.size()
+            def lower = sorted.subList(0, n.intdiv(2))
+            def upper = sorted.subList((n + 1).intdiv(2), n)
+            double q1 = median(lower)
+            double q3 = median(upper)
+            double mad = median(sorted.collect { Math.abs(it - med) })
+            [median: med, iqr: q3 - q1, mad: mad]
+        }
+
+        def phaseRows = [
+                'off-a': loadPhase('off-a'),
+                'on-a': loadPhase('on-a'),
+                'on-b': loadPhase('on-b'),
+                'off-b': loadPhase('off-b')
+        ]
+        def offRows = phaseRows['off-a'] + phaseRows['off-b']
+        def onRows = phaseRows['on-a'] + phaseRows['on-b']
+        def allRows = offRows + onRows
+
+        if (offRows.size() != 90 || onRows.size() != 90 || allRows.size() != 180) {
+            throw new GradleException(
+                    "Gate 10L-P expected 90 OFF, 90 ON and 180 total rows; observed OFF=${offRows.size()} ON=${onRows.size()} total=${allRows.size()}.")
+        }
+
+        def grouped = allRows.groupBy { row ->
+            "${row.workload}:${Integer.parseInt(row.clients)}".toString()
+        }
+        if (grouped.size() != 15) {
+            throw new GradleException(
+                    "Gate 10L-P expected 15 workload/client cells, observed ${grouped.keySet()}.")
+        }
+        grouped.each { cell, values ->
+            if (values.size() != 12) {
+                throw new GradleException(
+                        "Gate 10L-P ${cell} expected 12 observations, observed ${values.size()}.")
+            }
+            def fingerprints = values.collect { it.semanticFingerprint }.toSet()
+            if (fingerprints.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-P semantic mismatch for ${cell}: ${fingerprints}")
+            }
+            def operationCounts = values.collect { it.measuredOperations }.toSet()
+            if (operationCounts.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-P measured-operation mismatch for ${cell}: ${operationCounts}")
+            }
+            long retries = values.sum {
+                Long.parseLong(it.retryableConflictRetries)
+            } as long
+            if (retries != 0L) {
+                throw new GradleException(
+                        "Gate 10L-P observed retryable conflicts for ${cell}: ${retries}")
+            }
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-P balanced MVCC snapshot-lease registry performance acceptance',
+                'Gate 10L-O2A proved exact READ COMMITTED statement-level removability: OFF takes the legacy locked lease path once per measured SQL scan; ON takes the bounded slotted path once per scan with zero fallback.',
+                'This gate contains no diagnostic lease counters and no JFR profiling; pooled six-vs-six medians are the acceptance authority.',
+                'Balanced order: OFF-A -> ON-A -> ON-B -> OFF-B; three runs per phase; HOT/DISJOINT/RANDOM x 1/2/4/8/16 clients.',
+                'Frozen guards: HOT and DISJOINT 8c/16c >= +20%; every >=2c cell >= -10%; every 1c cell >= -15%; identical semantics/operations; zero retries.',
+                'RANDOM has no positive-gain threshold because Gate 10L-N independently proved the current 4096-slot current-row cache is a material RANDOM capacity/collision confound.'
+        ]
+
+        def phaseMedian = { String phase, String workload, String clients ->
+            median(valuesFor(phaseRows[phase], workload, clients, 3))
+        }
+
+        ['PRIMARY_KEY_READ_HOT',
+         'PRIMARY_KEY_READ_DISJOINT',
+         'PRIMARY_KEY_READ_RANDOM'].each { workload ->
+            ['1', '2', '4', '8', '16'].each { clients ->
+                def offStats = dispersion(valuesFor(offRows, workload, clients, 6))
+                def onStats = dispersion(valuesFor(onRows, workload, clients, 6))
+                double ratio = onStats.median / offStats.median
+                double delta = (ratio - 1.0d) * 100.0d
+                double halfARatio = phaseMedian('on-a', workload, clients) /
+                        phaseMedian('off-a', workload, clients)
+                double halfBRatio = phaseMedian('on-b', workload, clients) /
+                        phaseMedian('off-b', workload, clients)
+                double offIqrPct = offStats.median == 0.0d ? Double.NaN :
+                        offStats.iqr / offStats.median * 100.0d
+                double onIqrPct = onStats.median == 0.0d ? Double.NaN :
+                        onStats.iqr / onStats.median * 100.0d
+                double offMadPct = offStats.median == 0.0d ? Double.NaN :
+                        offStats.mad / offStats.median * 100.0d
+                double onMadPct = onStats.median == 0.0d ? Double.NaN :
+                        onStats.mad / onStats.median * 100.0d
+
+                def line = String.format(java.util.Locale.ROOT,
+                        '%s %sc: OFF=%.2f ON=%.2f ratio=%.4f delta=%+.2f%% halfA=%+.2f%% halfB=%+.2f%% OFF-IQR=%.2f%% ON-IQR=%.2f%% OFF-MAD=%.2f%% ON-MAD=%.2f%%',
+                        workload, clients,
+                        offStats.median, onStats.median, ratio, delta,
+                        (halfARatio - 1.0d) * 100.0d,
+                        (halfBRatio - 1.0d) * 100.0d,
+                        offIqrPct, onIqrPct, offMadPct, onMadPct)
+                decision.add(line)
+                logger.lifecycle('Gate 10L-P ' + line)
+
+                double regressionFloor = clients == '1' ? 0.85d : 0.90d
+                if (ratio < regressionFloor) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%s %sc regressed %.2f%%; frozen floor is %.2f%%',
+                            workload, clients,
+                            (1.0d - ratio) * 100.0d,
+                            (1.0d - regressionFloor) * 100.0d))
+                }
+
+                boolean highConcurrency = clients == '8' || clients == '16'
+                boolean requiredWorkload = workload == 'PRIMARY_KEY_READ_HOT' ||
+                        workload == 'PRIMARY_KEY_READ_DISJOINT'
+                if (requiredWorkload && highConcurrency && ratio < 1.20d) {
+                    failures.add(String.format(java.util.Locale.ROOT,
+                            '%s %sc improved only %.2f%%; frozen requirement is >=20.00%%',
+                            workload, clients, delta))
+                }
+            }
+        }
+
+        File decisionFile = new File(root,
+                'gate10lp-mvcc-snapshot-lease-registry-balanced-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10L-P balanced snapshot-lease acceptance failed: ' +
+                            failures.join('; '))
+        }
+
+        def passLine = 'PASS: the bounded atomic READ COMMITTED snapshot-lease registry has material balanced high-concurrency value on resident HOT/DISJOINT reads while preserving the full HOT/DISJOINT/RANDOM matrix within the frozen regression guards, with identical semantics, operation counts, and zero retries. Proceed to permanent-transition/lifecycle cleanup for this mechanism, then a fresh resident profile before choosing any further current-row optimization.'
+        decision.add('')
+        decision.add(passLine)
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-P ' + passLine)
+    }
+}
