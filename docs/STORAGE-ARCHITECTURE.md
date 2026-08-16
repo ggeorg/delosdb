@@ -88,6 +88,17 @@ file and named-memory database storage
 The detailed transaction-decision and failure contract is described in
 [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md).
 
+### Physical page-I/O contract
+
+RawStore keeps one authoritative `byte[]` page image for cache, codec, and physical I/O. Directory
+storage performs explicit positional `FileChannel` reads and writes through the inherited random-access
+contract; DelosDB does not maintain a second native or mapped page image. Shared I/O diagnostics observe
+that same path, and deterministic fault injection is restricted to verification code rather than exposed
+as an application storage mode.
+
+Named `memory:` databases use the same RawStore ownership and access-method semantics through Derby's
+virtual storage factory. They do not create a separate MVCC memory engine.
+
 ### Commit and transaction outcome
 
 Supported heap-only, MVCC-only, and accepted mixed heap/MVCC transaction shapes participate in the

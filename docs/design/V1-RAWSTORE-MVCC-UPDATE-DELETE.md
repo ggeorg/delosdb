@@ -140,13 +140,13 @@ only the RawStore-backed MVCC path.
 Focused runtime task:
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreUpdateDeleteTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreUpdateDeleteTest'
 ```
 
 Permanent architecture gate:
 
 ```text
-delosMvccRawStoreUpdateDeleteStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 The proof covers committed and rolled-back replacement versions, committed and rolled-back

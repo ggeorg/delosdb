@@ -1,4 +1,4 @@
-# Design proof 1: MVCC commit ordering and snapshot mathematics
+# MVCC commit ordering and snapshot mathematics
 
 ## Status
 
@@ -8,7 +8,7 @@ commitNoSync:        same logical publication rule; durability mode remains RawS
 XA prepare/commit:   unresolved; MVCC participation remains fail-closed
 ```
 
-This proof defines correctness semantics. It does not freeze the Java callback API.
+This design defines correctness semantics. It does not freeze the Java callback API.
 
 ## Problem
 
@@ -191,10 +191,10 @@ the same ordering domain.
 
 An XA prepared transaction cannot use the local protocol unchanged because prepare may be followed by
 an arbitrarily delayed commit and user pages cannot be restamped after prepare without a separate
-proof.
+XA-safe publication design.
 
 Therefore MVCC participation in XA remains unsupported and must fail before partial work until an
-XA-safe publication proof exists.
+XA-safe publication protocol exists.
 
 ## Required tests
 

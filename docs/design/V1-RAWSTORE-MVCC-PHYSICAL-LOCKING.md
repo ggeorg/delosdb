@@ -116,13 +116,13 @@ replacement, and recovery remain complete and transactional.
 Focused runtime gate:
 
 ```text
-:delosdb-tests:runDelosMvccRawStorePhysicalLockingTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStorePhysicalLockingTest'
 ```
 
 Permanent architecture gate:
 
 ```text
-delosMvccRawStorePhysicalLockingStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 The proof covers different-row writer concurrency, nonblocking snapshot reads, transaction-local

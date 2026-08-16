@@ -161,8 +161,7 @@ See [`docs/BUILDING.md`](docs/BUILDING.md) and
 | `delosdb-tools` | command-line and administrative tools |
 | `delosdb-tests` | inherited compatibility and DelosDB integration tests |
 | `benchmarks` | opt-in reproducible benchmark and validation evidence |
-| `docs` | public product, architecture, operations, and historical records |
-| `.delosdb-v1` | local/private planning, workflow, and manuscript workspace |
+| `docs` | public product, architecture, operations, and contributor documentation |
 
 A complete public documentation index is available at [`docs/README.md`](docs/README.md).
 

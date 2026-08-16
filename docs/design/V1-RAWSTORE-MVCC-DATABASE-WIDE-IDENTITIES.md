@@ -126,7 +126,7 @@ transactions remain fail-closed boundaries.
 Focused runtime task:
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreDatabaseIdentityTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreDatabaseIdentityTest'
 ```
 
 It proves:
@@ -144,7 +144,7 @@ jdbc:derby:memory: uses the same RawStore metadata path
 Permanent architecture task:
 
 ```text
-delosMvccRawStoreDatabaseIdentityStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 The gate rejects runtime-only transaction-ID allocation, table-local publication authority,

@@ -124,13 +124,13 @@ recovery.
 Focused runtime gate:
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreUniqueConstraintTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreUniqueConstraintTest'
 ```
 
 Permanent architecture gate:
 
 ```text
-delosMvccRawStoreUniqueConstraintStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 The proof covers:
@@ -150,6 +150,22 @@ halt after RawStore commit before publication
 jdbc:derby:memory:
 ```
 
+## DDL lifecycle
+
+The same persisted uniqueness metadata is maintained transactionally for `ALTER TABLE ... ADD/DROP
+CONSTRAINT` and `CREATE/DROP UNIQUE INDEX`. The optional `AccessMethodUniqueConstraintLifecycle` seam
+validates existing rows before publication and updates native metadata in the same RawStore transaction
+as Derby catalog and backing-index changes. Multiple logical constraints may share one physical backing
+index, so metadata retains logical reference counts rather than collapsing equivalent definitions.
+
+Schema-changing uniqueness operations take the exclusive table-schema lock while ordinary DML takes the
+shared table-schema lock. Rollback, savepoint rollback, crash recovery, and `memory:` databases therefore
+use the same RawStore outcome as the rest of the DDL/DML operation. Deferrable or initially deferred
+uniqueness remains fail-closed with SQLState `0A000`.
+
+Verification includes `MvccRawStoreUniqueConstraintTest` and `MvccRawStoreUniqueLifecycleTest` through
+the standard `delosFunctionalTests` task.
+
 ## Current boundaries
 
 The current uniqueness model still fails closed for deferrable or initially deferred uniqueness and
@@ -158,6 +174,6 @@ Constraint-name persistence in the RawStore control row and foreign-key semantic
 concerns.
 
 DDL lifecycle changes use `AccessMethodUniqueConstraintLifecycle` and are described in
-`V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md`. Transaction-duration typed key locking is described in
+the DDL lifecycle above. Transaction-duration typed key locking is described in
 `V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`. Ordered-index page management and vacuum use the current
 RawStore/B-tree authorities rather than a second uniqueness store.

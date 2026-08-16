@@ -53,11 +53,25 @@ manifests.
 
 ## Design records
 
-Files under [`design/`](design/) record durable implementation decisions that still help contributors
-understand current code. Temporary audits, completed experiments, and superseded implementation slices
-belong in private engineering history rather than the public design directory. Current product behavior
-is owned by the current documents above together with source code, tests, and permanent structural
-manifests.
+The public design directory is intentionally small. These records add implementation detail that is not
+repeated in the higher-level architecture documents:
+
+| Document | Durable decision |
+|---|---|
+| [`design/V1-GENERATED-CLASS-ARCHITECTURE.md`](design/V1-GENERATED-CLASS-ARCHITECTURE.md) | JDK 25 generated activation classes and compiler/backend ownership |
+| [`design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md`](design/V1-JDK25-RAWSTORE-PAGE-IO-REPRESENTATION-DECISION.md) | authoritative RawStore page representation |
+| [`design/V1-MVCC-COMMIT-ORDERING-AND-SNAPSHOT-MATHEMATICS.md`](design/V1-MVCC-COMMIT-ORDERING-AND-SNAPSHOT-MATHEMATICS.md) | commit publication ordering and snapshot mathematics |
+| [`design/V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md`](design/V1-MVCC-STABLE-ROW-AND-VERSION-IDENTITY.md) | durable logical row/version identity |
+| [`design/V1-RAWSTORE-MVCC-DATABASE-WIDE-IDENTITIES.md`](design/V1-RAWSTORE-MVCC-DATABASE-WIDE-IDENTITIES.md) | database-wide transaction and commit-sequence allocation |
+| [`design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md`](design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md) | semantic row/schema/unique-key conflict locking |
+| [`design/V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md`](design/V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md) | RawStore physical lock granularity |
+| [`design/V1-RAWSTORE-MVCC-ORDERED-INDEXES.md`](design/V1-RAWSTORE-MVCC-ORDERED-INDEXES.md) | version-aware ordered-index candidates |
+| [`design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md`](design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md) | native uniqueness enforcement and DDL lifecycle |
+| [`design/V1-RAWSTORE-MVCC-UPDATE-DELETE.md`](design/V1-RAWSTORE-MVCC-UPDATE-DELETE.md) | replacement-version and tombstone mutation model |
+
+Completed experiments, detailed acceptance matrices, test seams, and superseded implementation slices
+belong in private engineering history. Current product behavior remains owned by the current documents
+above together with source code, tests, and permanent structural manifests.
 
 ## Documentation ownership rules
 

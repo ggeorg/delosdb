@@ -166,13 +166,13 @@ file and jdbc:derby:memory: databases
 Focused runtime gate:
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreOrderedIndexTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreOrderedIndexTest'
 ```
 
 Permanent architecture gate:
 
 ```text
-delosMvccRawStoreOrderedIndexStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 ## Current boundaries
@@ -198,7 +198,7 @@ Derby's inherited B-tree locking supplies physical access coordination only.
 
 ```text
 docs/design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md
-docs/design/V1-RAWSTORE-MVCC-UNIQUE-LIFECYCLE.md
+docs/design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md
 docs/design/V1-RAWSTORE-MVCC-LOGICAL-LOCKING.md
 docs/design/V1-RAWSTORE-MVCC-PHYSICAL-LOCKING.md
 ```

@@ -23,11 +23,11 @@ runtime backend selector in the current path.
 
 ## Lifecycle
 
-The access-method factory creates the runtime from the booted database context.
-Every MVCC conglomerate opened by that factory resolves its descriptor and
-transaction state through the same runtime. Shutdown closes the database-owned
-maintenance service, clears registered descriptors and diagnostics, and then
-releases the runtime.
+`RAMAccessManager` creates an `AccessMethodBootContext` from the booted RawStore/database service and
+passes it through `ExternalAccessMethodProvider` to `MvccConglomerateFactory`. The factory creates the
+one `MvccRawStoreRuntime` for that database. Every MVCC conglomerate opened by the factory resolves its
+descriptor and transaction state through that runtime. Shutdown closes the database-owned maintenance
+service, clears registered descriptors and diagnostics, and then releases the runtime.
 
 Persistent conglomerate metadata contains only durable descriptor fields.
 `MvccRawStoreRuntime` references are transient and are rebound by the owning

@@ -129,13 +129,13 @@ mutation.
 Focused runtime gate:
 
 ```text
-:delosdb-tests:runDelosMvccRawStoreLogicalLockingTest
+:delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreLogicalLockingTest'
 ```
 
 Permanent architecture gate:
 
 ```text
-delosMvccRawStoreLogicalLockingStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```
 
 The proof covers:
@@ -161,4 +161,4 @@ writer. The vacuum then takes the table-scoped physical maintenance boundary bef
 RawStore records. Snapshot readers remain semantically protected by retained-snapshot leases; they hold
 the physical read side only while materializing records.
 
-See `V1-RAWSTORE-MVCC-VACUUM.md`.
+See [`../MVCC-MAINTENANCE.md`](../MVCC-MAINTENANCE.md).

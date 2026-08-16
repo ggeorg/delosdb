@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-ACCEPTED DESIGN PROOF
+IMPLEMENTED DESIGN
 ```
 
-This proof freezes the logical identity and version-link rules for the first RawStore-backed MVCC
+This design records the logical identity and version-link rules for the first RawStore-backed MVCC
 format. It does not freeze Java class names, the final encoded column layout, or the final optimized
 row/version directory implementation.
 
@@ -319,7 +319,7 @@ storage lifecycle.
 Process exit discards the memory database, but it does not change the semantics of an identity while
 the database incarnation exists.
 
-## Required proof tests
+## Verification requirements
 
 Permanent tests cover:
 

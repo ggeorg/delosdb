@@ -142,7 +142,5 @@ begin Lucene work
 
 ```text
 :delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest
-delosSharedRawStoreHeapMemorySegmentPageBufferStaticAnalysis
-delosSharedRawStoreNativeMemoryPageBufferStaticAnalysis
-delosSharedRawStoreProductionCloseoutStaticAnalysis
+delosRepositoryIntegrityStaticAnalysis
 ```

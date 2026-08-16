@@ -54,6 +54,11 @@ before mutation. Maintenance remains subordinate to:
 The scheduler cannot decide visibility, bypass transaction logging, or mutate a
 closed table.
 
+Vacuum keeps every version that may still be required by an active or retained snapshot, preserves the
+necessary visible predecessor at the oldest retained horizon, and removes obsolete history only inside
+a logged RawStore transaction. Tombstone reclamation and derived-index rebuild follow the same horizon
+and transaction authority.
+
 ## Shutdown and diagnostics
 
 Shutdown stops periodic scans, rejects new work, interrupts and joins the worker,
@@ -61,7 +66,7 @@ and waits for the scanner to terminate. Immutable diagnostics report scheduling,
 completion, skip, failure, mutation, and removed-version counters together with
 registered-table and active-worker state.
 
-## Focused proofs
+## Verification
 
 ```text
 :delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreMaintenanceDiagnosticsTest'

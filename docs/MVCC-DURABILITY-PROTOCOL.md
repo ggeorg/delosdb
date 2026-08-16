@@ -22,6 +22,12 @@ SQL statement
 Heap and MVCC changes made in one JDBC transaction share that same RawStore
 transaction and therefore one commit or rollback outcome.
 
+Transaction-local MVCC semantic state is attached to the inherited access transaction through the
+neutral access-method lifecycle seam. Commit, rollback, savepoint, nested-transaction, held-cursor, and
+shutdown callbacks therefore remain ordered by Derby's existing transaction lifecycle instead of a
+second participant protocol. Multiple MVCC tables in one transaction share one MVCC transaction identity
+and commit sequence; accepted mixed heap/MVCC writes still have one RawStore outcome.
+
 ## DML
 
 A RawStore-backed MVCC write:
@@ -80,7 +86,7 @@ Two-byte format slots 480 through 483 belonged to the retired external commit
 and lifecycle operations. They remain reserved and unregistered and must never
 be reassigned.
 
-## Executable proof
+## Verification
 
 The focused authority lanes are:
 
