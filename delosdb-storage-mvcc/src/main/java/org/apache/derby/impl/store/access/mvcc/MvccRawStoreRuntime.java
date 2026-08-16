@@ -54,10 +54,9 @@ final class MvccRawStoreRuntime {
     /** Fixed slot count shared by the permanent current-row anchor/image cache. */
     static final String CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY =
             "delosdb.mvcc.currentRowReadCache.slots";
-    static final String EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_PROPERTY =
-            "delosdb.experimental.mvccSnapshotLeaseRegistry";
-    static final String EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY =
-            "delosdb.experimental.mvccSnapshotLeaseRegistry.slots";
+    /** Fixed slot count for the permanent bounded snapshot-lease registry. */
+    static final String SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY =
+            "delosdb.mvcc.snapshotLeaseRegistry.slots";
     private static final long FREE_SNAPSHOT_LEASE_SLOT = -1L;
     private static final long CLAIMING_SNAPSHOT_LEASE_SLOT = -2L;
     static final String AFTER_STAMP_BEFORE_RAW_COMMIT =
@@ -80,7 +79,6 @@ final class MvccRawStoreRuntime {
     private final AtomicLong diagnosticCaptureSequence = new AtomicLong();
     private final AtomicLong nextSnapshotLeaseId = new AtomicLong(1L);
     private final Map<Long, Long> retainedSnapshotSequences = new HashMap<>();
-    private final boolean experimentalSnapshotLeaseRegistry;
     private final AtomicLongArray snapshotLeaseSlots;
     private final AtomicLong snapshotLeaseClaimCursor = new AtomicLong();
     private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
@@ -147,31 +145,25 @@ final class MvccRawStoreRuntime {
         currentRowAnchors = new AtomicReferenceArray<>(slots);
         currentVersionReadImages = new AtomicReferenceArray<>(slots);
 
-        experimentalSnapshotLeaseRegistry = Boolean.parseBoolean(System.getProperty(
-                EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_PROPERTY, "false"));
-        if (experimentalSnapshotLeaseRegistry) {
-            String leaseSlotText = System.getProperty(
-                    EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY, "256");
-            int leaseSlots;
-            try {
-                leaseSlots = Integer.parseInt(leaseSlotText);
-            } catch (NumberFormatException failure) {
-                throw new IllegalArgumentException(
-                        EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
-                                + " must be a positive integer: " + leaseSlotText,
-                        failure);
-            }
-            if (leaseSlots <= 0) {
-                throw new IllegalArgumentException(
-                        EXPERIMENTAL_SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
-                                + " must be positive: " + leaseSlotText);
-            }
-            snapshotLeaseSlots = new AtomicLongArray(leaseSlots);
-            for (int index = 0; index < leaseSlots; index++) {
-                snapshotLeaseSlots.set(index, FREE_SNAPSHOT_LEASE_SLOT);
-            }
-        } else {
-            snapshotLeaseSlots = null;
+        String leaseSlotText = System.getProperty(
+                SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY, "256");
+        int leaseSlots;
+        try {
+            leaseSlots = Integer.parseInt(leaseSlotText);
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException(
+                    SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
+                            + " must be a positive integer: " + leaseSlotText,
+                    failure);
+        }
+        if (leaseSlots <= 0) {
+            throw new IllegalArgumentException(
+                    SNAPSHOT_LEASE_REGISTRY_SLOTS_PROPERTY
+                            + " must be positive: " + leaseSlotText);
+        }
+        snapshotLeaseSlots = new AtomicLongArray(leaseSlots);
+        for (int index = 0; index < leaseSlots; index++) {
+            snapshotLeaseSlots.set(index, FREE_SNAPSHOT_LEASE_SLOT);
         }
     }
 
@@ -472,13 +464,8 @@ final class MvccRawStoreRuntime {
     }
 
     SnapshotLease openSnapshotLease() {
-        if (experimentalSnapshotLeaseRegistry) {
-            SnapshotLease lease = tryClaimCurrentSnapshotLeaseSlot();
-            if (lease != null) {
-                return lease;
-            }
-        }
-        return openLockedSnapshotLease();
+        SnapshotLease lease = tryClaimCurrentSnapshotLeaseSlot();
+        return lease != null ? lease : openLockedSnapshotLease();
     }
 
     private SnapshotLease openLockedSnapshotLease() {
@@ -497,13 +484,8 @@ final class MvccRawStoreRuntime {
             throw new IllegalArgumentException(
                     "RawStore MVCC retained snapshot must be committed: " + sequence);
         }
-        if (experimentalSnapshotLeaseRegistry) {
-            SnapshotLease lease = tryClaimRetainedSnapshotLeaseSlot(sequence);
-            if (lease != null) {
-                return lease;
-            }
-        }
-        return retainLockedSnapshot(sequence);
+        SnapshotLease lease = tryClaimRetainedSnapshotLeaseSlot(sequence);
+        return lease != null ? lease : retainLockedSnapshot(sequence);
     }
 
     private SnapshotLease retainLockedSnapshot(long sequence) {
@@ -619,9 +601,6 @@ final class MvccRawStoreRuntime {
 
     private SnapshotLeaseSlotSummary snapshotLeaseSlotSummary(long published) {
         AtomicLongArray slots = snapshotLeaseSlots;
-        if (slots == null) {
-            return new SnapshotLeaseSlotSummary(published, 0);
-        }
         scan:
         while (true) {
             long horizon = published;

@@ -9805,8 +9805,7 @@ tasks.register('runDelosJdbcGate10lnMvccResidualReadGapDiagnosis') {
 // path is zero. The experimental registry uses bounded atomic lease slots;
 // vacuum still falls back to the locked legacy map if all slots are occupied.
 def gate10loSnapshotLeaseProperties = [
-        'delosdb.experimental.mvccSnapshotLeaseRegistry': 'true',
-        'delosdb.experimental.mvccSnapshotLeaseRegistry.slots': '64',
+        'delosdb.mvcc.snapshotLeaseRegistry.slots': '64',
         'delosdb.mvcc.currentRowReadCache.slots': '65536'
 ]
 
@@ -9831,7 +9830,7 @@ registerDelosFocusedTest(
         'Runs Gate 10L-O with one atomic snapshot-lease slot so concurrent/held readers exercise the locked overflow fallback while preserving vacuum safety.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreVacuumTest.class'],
         gate10loSnapshotLeaseProperties + [
-                'delosdb.experimental.mvccSnapshotLeaseRegistry.slots': '1'
+                'delosdb.mvcc.snapshotLeaseRegistry.slots': '1'
         ])
 
 tasks.named('runDelosMvccSnapshotLeaseRegistryFallbackTest') {
@@ -10708,5 +10707,150 @@ tasks.register('runDelosJdbcGate10lpMvccSnapshotLeaseRegistryBalancedAcceptance'
         decisionFile.setText(
                 decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
         logger.lifecycle('Gate 10L-P ' + passLine)
+    }
+}
+
+
+// Gate 10L-Q: permanent-v1 transition for the bounded snapshot-lease registry.
+// The experimental enable switch is retired in production. READ COMMITTED still
+// captures a fresh statement snapshot per scan; only lease bookkeeping changes:
+// bounded atomic slots are the permanent first path and the existing locked map
+// remains the conservative overflow path. Temporary exact counters are retained
+// for this transition proof only and are removed before the fresh resident profile.
+def gate10lqRoot = 'reports/delosdb/benchmarks/gate10lq-mvcc-permanent-snapshot-lease-registry'
+
+tasks.register('runDelosJdbcGate10lqMvccPermanentSnapshotLeaseMechanism', JavaExec) { task ->
+    task.group = 'verification'
+    task.description = 'Proves the permanent default MVCC statement-snapshot lease path uses bounded slots with zero locked fallback.'
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir("${gate10lqRoot}/mechanism"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-Q permanent snapshot-lease proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${gate10lqRoot}/mechanism").get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10lq-permanent-snapshot-lease').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.rows': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '4',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_HOT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.mvccCurrentRowReadCacheSlots': '4096',
+                'delosdb.benchmark.crossEngineConcurrency.mvccSnapshotLeaseDiagnostics': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10lqMvccPermanentSnapshotLeaseRegistryProof') {
+    group = 'verification'
+    description = 'Runs Gate 10L-Q permanent snapshot-lease registry transition/lifecycle proof.'
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistrySafetyTest')
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistryFallbackTest')
+    dependsOn tasks.named('runDelosJdbcGate10lqMvccPermanentSnapshotLeaseMechanism')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lqRoot).get().asFile
+        File resultCsv = new File(root, 'mechanism/cross-engine-concurrency-results.csv')
+        File counterCsv = new File(root,
+                'mechanism/workers/mvcc-snapshot-lease-diagnostics-delos_mvcc-run-1.csv')
+        def loadOne = { File file ->
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gate 10L-Q evidence: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() != 2) {
+                throw new GradleException(
+                        "Gate 10L-Q expected exactly one evidence row in ${file}, observed ${lines.size() - 1}")
+            }
+            def header = (lines[0].split(',', -1) as List).collect { it.trim() }
+            def fields = lines[1].split(',', -1)
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].trim() }
+            row
+        }
+        def result = loadOne(resultCsv)
+        def counters = loadOne(counterCsv)
+        long expected = result.measuredOperations as long
+        def failures = []
+        if (result.retryableConflictRetries != '0') {
+            failures.add("retryable conflicts ${result.retryableConflictRetries} != 0")
+        }
+        if ((counters.slottedCurrentOpens as long) != expected
+                || (counters.slottedCloses as long) != expected) {
+            failures.add("slotted opens/closes expected ${expected}/${expected} but were ${counters.slottedCurrentOpens}/${counters.slottedCloses}")
+        }
+        if ((counters.lockedCurrentOpens as long) != 0L
+                || (counters.lockedCloses as long) != 0L) {
+            failures.add("permanent default used locked fallback ${counters.lockedCurrentOpens}/${counters.lockedCloses}")
+        }
+        if ((counters.currentSlotClaimFailures as long) != 0L) {
+            failures.add("current slot-claim failures ${counters.currentSlotClaimFailures} != 0")
+        }
+        long retained = (counters.lockedRetainedOpens as long)
+                + (counters.slottedRetainedOpens as long)
+                + (counters.retainedSlotClaimFailures as long)
+        if (retained != 0L) {
+            failures.add("unexpected retained-snapshot activity ${retained}")
+        }
+
+        def decision = [
+                'Gate 10L-Q permanent-v1 MVCC snapshot-lease registry transition',
+                'Gate 10L-P balanced acceptance passed before this transition.',
+                'Production no longer reads the experimental snapshot-lease enable switch. The bounded slotted registry is the permanent first path; the locked map remains only as conservative overflow fallback.',
+                'READ COMMITTED statement-snapshot semantics are unchanged: every scan still captures/releases its own statement snapshot.',
+                "Permanent-default mechanism: operations=${expected} slotted=${counters.slottedCurrentOpens}/${counters.slottedCloses} locked=${counters.lockedCurrentOpens}/${counters.lockedCloses} claimFailures=${counters.currentSlotClaimFailures} retries=${result.retryableConflictRetries}."
+        ]
+        File decisionFile = new File(root, 'gate10lq-mvcc-permanent-snapshot-lease-registry-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.parentFile.mkdirs()
+            decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-Q failed: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: permanent default snapshot-lease registry is active with zero locked fallback in the focused statement-snapshot mechanism proof. Proceed to integrity and then a fresh resident profile with temporary lease counters removed.')
+        decisionFile.parentFile.mkdirs()
+        decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-Q PASS: permanent MVCC snapshot-lease registry transition proved.')
     }
 }
