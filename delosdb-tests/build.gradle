@@ -3043,6 +3043,8 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
                         'delosdb.benchmark.serverContainer.runs').getOrElse('4'),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.caseTimeoutSeconds').getOrElse('120'),
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.serverContainer.workerTimeoutSeconds').getOrElse('1800'),
                 'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.startupTimeoutSeconds').getOrElse('90'),
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': providers.gradleProperty(

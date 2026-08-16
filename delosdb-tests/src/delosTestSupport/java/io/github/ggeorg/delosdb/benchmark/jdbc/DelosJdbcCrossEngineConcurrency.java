@@ -8,7 +8,6 @@ package io.github.ggeorg.delosdb.benchmark.jdbc;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,6 +36,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** JDBC concurrency comparison with deterministic semantic verification. */
 public final class DelosJdbcCrossEngineConcurrency {
@@ -198,7 +198,20 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile())
                 .start();
-        int status = process.waitFor();
+        boolean completed = options.workerTimeoutSeconds() == 0
+                ? waitForUnbounded(process)
+                : process.waitFor(options.workerTimeoutSeconds(), TimeUnit.SECONDS);
+        if (!completed) {
+            process.destroy();
+            if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                process.waitFor(10, TimeUnit.SECONDS);
+            }
+            throw new IllegalStateException("Concurrency worker timed out: target=" + target.id()
+                    + ", run=" + run + ", workerTimeoutSeconds=" + options.workerTimeoutSeconds()
+                    + ", log=" + log);
+        }
+        int status = process.exitValue();
         if (status != 0) {
             List<String> lines = Files.exists(log) ? Files.readAllLines(log) : List.of();
             int from = Math.max(0, lines.size() - 40);
@@ -206,6 +219,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + ", run=" + run + ", exit=" + status + ", log=" + log
                     + (lines.isEmpty() ? "" : "\n" + String.join("\n", lines.subList(from, lines.size()))));
         }
+    }
+
+    private static boolean waitForUnbounded(Process process) throws InterruptedException {
+        process.waitFor();
+        return true;
     }
 
     private static void addProperty(List<String> command, String name, Object value) {
@@ -253,13 +271,12 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static ContainerServer startContainer(Options options, Target target, int run) throws Exception {
-        int port = freePort();
         String name = "delos-bench-" + target.id().replace('_', '-') + '-'
                 + ProcessHandle.current().pid() + '-' + run;
         runCommand(20, List.of("docker", "rm", "-f", name));
         List<String> command = new ArrayList<>(List.of(
                 "docker", "run", "-d", "--rm", "--name", name,
-                "-p", "127.0.0.1:" + port + ':' + target.containerPort()));
+                "-p", "127.0.0.1::" + target.containerPort()));
         switch (target) {
             case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> {
                 command.add("--mount");
@@ -296,6 +313,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (started.exitCode() != 0) {
             throw new IllegalStateException("Could not start " + target.id() + " container:\n" + started.output());
         }
+        int port = publishedPort(name, target.containerPort());
         ServerEndpoint endpoint = target.endpoint(port);
         ContainerServer server = new ContainerServer(name, endpoint);
         try {
@@ -345,11 +363,19 @@ public final class DelosJdbcCrossEngineConcurrency {
         return connection;
     }
 
-    private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            socket.setReuseAddress(true);
-            return socket.getLocalPort();
+    private static int publishedPort(String name, int containerPort) throws Exception {
+        CommandResult mapping = runCommand(20,
+                List.of("docker", "port", name, containerPort + "/tcp"));
+        if (mapping.exitCode() != 0) {
+            throw new IllegalStateException("Could not resolve published port for " + name + ":\n"
+                    + mapping.output());
         }
+        String output = mapping.output().trim();
+        int separator = output.lastIndexOf(':');
+        if (separator < 0 || separator == output.length() - 1) {
+            throw new IllegalStateException("Unexpected docker port mapping for " + name + ": " + output);
+        }
+        return Integer.parseInt(output.substring(separator + 1).trim());
     }
 
     private static CommandResult runCommand(int timeoutSeconds, List<String> command) throws Exception {
@@ -408,6 +434,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Warmups: ").append(options.warmups()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append('\n')
+                .append("Case timeout seconds: ").append(options.caseTimeoutSeconds()).append('\n')
+                .append("Worker timeout seconds: ").append(options.workerTimeoutSeconds()).append('\n')
                 .append("PostgreSQL JDBC: ").append(options.postgresqlDriverVersion()).append('\n')
                 .append("MariaDB Connector/J: ").append(options.mariadbDriverVersion()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
@@ -473,7 +501,29 @@ public final class DelosJdbcCrossEngineConcurrency {
             DelosBenchmarkConfig config = new DelosBenchmarkConfig(
                     rows, options.payload(), SEED, Math.min(options.fixtureBatch(), rows));
             for (Spec spec : specs) {
-                measurements.add(measureSpec(options, config, spec));
+                long started = System.nanoTime();
+                System.out.printf(Locale.ROOT,
+                        "START run=%d target=%s rows=%d workload=%s clients=%d width=%d%n",
+                        options.run(), options.target().id(), config.rowCount(), spec.workload().name(),
+                        spec.clients(), spec.operationsPerTransaction());
+                System.out.flush();
+                try {
+                    measurements.add(measureSpec(options, config, spec));
+                    System.out.printf(Locale.ROOT,
+                            "DONE run=%d target=%s rows=%d workload=%s clients=%d width=%d elapsedSeconds=%.3f%n",
+                            options.run(), options.target().id(), config.rowCount(), spec.workload().name(),
+                            spec.clients(), spec.operationsPerTransaction(),
+                            (System.nanoTime() - started) / 1_000_000_000.0);
+                    System.out.flush();
+                } catch (Throwable failure) {
+                    System.out.printf(Locale.ROOT,
+                            "FAIL run=%d target=%s rows=%d workload=%s clients=%d width=%d elapsedSeconds=%.3f error=%s%n",
+                            options.run(), options.target().id(), config.rowCount(), spec.workload().name(),
+                            spec.clients(), spec.operationsPerTransaction(),
+                            (System.nanoTime() - started) / 1_000_000_000.0, failure);
+                    System.out.flush();
+                    throwFailure(failure);
+                }
             }
         }
         writeWorkerCsv(options, measurements);
@@ -1535,7 +1585,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 closeClients(failure);
                 throw failure;
             }
-            this.executor = Executors.newFixedThreadPool(spec.clients());
+            this.executor = Executors.newFixedThreadPool(
+                    spec.clients(), Thread.ofPlatform().daemon().name("delos-bench-client-", 0).factory());
         }
 
         private Interval runInterval() throws Exception {
@@ -1553,28 +1604,45 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (!ready.await(options.caseTimeoutSeconds(), TimeUnit.SECONDS)) {
                 start.countDown();
+                cancelFutures(futures);
                 throw new IllegalStateException("concurrency readiness barrier timed out");
             }
             long started = System.nanoTime();
+            long deadline = started + TimeUnit.SECONDS.toNanos(options.caseTimeoutSeconds());
             start.countDown();
             long executionFingerprint = 1L;
             long retryableRollbacks = 0L;
             Throwable failure = null;
             for (Future<ClientRun> future : futures) {
                 try {
-                    ClientRun clientRun = future.get(options.caseTimeoutSeconds(), TimeUnit.SECONDS);
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0L) {
+                        throw new TimeoutException("concurrency interval deadline exceeded");
+                    }
+                    ClientRun clientRun = future.get(remaining, TimeUnit.NANOSECONDS);
                     executionFingerprint = mix(executionFingerprint, clientRun.fingerprint());
                     retryableRollbacks = Math.addExact(retryableRollbacks, clientRun.retryableRollbacks());
+                } catch (TimeoutException timeout) {
+                    cancelFutures(futures);
+                    throw new IllegalStateException("concurrency interval exceeded "
+                            + options.caseTimeoutSeconds() + " seconds: " + spec, timeout);
                 } catch (Throwable clientFailure) {
                     failure = preserve(failure, clientFailure);
                 }
             }
             long elapsed = System.nanoTime() - started;
             if (failure != null) {
+                cancelFutures(futures);
                 throwFailure(failure);
             }
             long stateFingerprint = verifyAndRestore();
             return new Interval(elapsed, mix(executionFingerprint, stateFingerprint), retryableRollbacks);
+        }
+
+        private static void cancelFutures(List<? extends Future<?>> futures) {
+            for (Future<?> future : futures) {
+                future.cancel(true);
+            }
         }
 
         private long verifyAndRestore() throws SQLException {
@@ -1625,8 +1693,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         @Override
         public void close() throws Exception {
             executor.shutdownNow();
-            executor.awaitTermination(10, TimeUnit.SECONDS);
-            closeClients(null);
+            if (executor.awaitTermination(10, TimeUnit.SECONDS)) {
+                closeClients(null);
+            } else {
+                System.err.println("Benchmark client tasks did not terminate after cancellation; "
+                        + "leaving JDBC connections to isolated worker-process teardown");
+            }
         }
 
         private void closeClients(Throwable primary) throws SQLException {
@@ -2753,6 +2825,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int iterations,
             int runs,
             int caseTimeoutSeconds,
+            int workerTimeoutSeconds,
             int containerStartupTimeoutSeconds,
             String childHeap,
             Target target,
@@ -2798,6 +2871,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.parseInt(System.getProperty(PREFIX + "iterations", "3")),
                     Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
                     Integer.parseInt(System.getProperty(PREFIX + "caseTimeoutSeconds", "120")),
+                    Integer.parseInt(System.getProperty(PREFIX + "workerTimeoutSeconds", "0")),
                     Integer.parseInt(System.getProperty(PREFIX + "containerStartupTimeoutSeconds", "90")),
                     System.getProperty(PREFIX + "childHeap", "1g"),
                     targetValue == null ? null : Target.parse(targetValue),
@@ -2841,7 +2915,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
                     || payload < 16 || fixtureBatch < 1 || warmups < 0
-                    || iterations < 1 || caseTimeoutSeconds < 1 || containerStartupTimeoutSeconds < 1) {
+                    || iterations < 1 || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
+                    || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }
             if (target == null && !mvccOnlyDiagnostic && (runs < 4 || (runs & 3) != 0)) {
