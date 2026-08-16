@@ -11270,3 +11270,212 @@ tasks.register('runDelosJdbcGate10lsFiveEngineReadCheckpoint', JavaExec) {
     }
 }
 
+
+// Gate 10L-T: post-registry five-engine read-stack decomposition.
+// Gate 10L-S showed resident Delos MVCC at approximate heap parity on HOT/DISJOINT,
+// while both Delos access methods remain materially behind H2/SQLite. Decompose the
+// common JDBC/SQL/read stack before selecting another production optimization.
+def gate10ltReadStackRoot =
+        'reports/delosdb/benchmarks/gate10lt-five-engine-read-stack-decomposition'
+
+tasks.register('runDelosJdbcGate10ltFiveEngineReadStackDecomposition', JavaExec) { task ->
+    group = 'benchmark'
+    description = 'Decomposes post-registry read cost across transaction, VALUES, PK-read multiplicity, and RC/RU using all five embedded engines.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(gate10ltReadStackRoot))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-T requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory.dir(gate10ltReadStackRoot).get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10lt-five-engine-read-stack').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath':
+                        sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8,16',
+                // Fixed-operation decomposition workloads ignore the generic width.
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'EMPTY_TRANSACTION,VALUES_1,VALUES_10,PK_READ_1_RC,PK_READ_10_RC,' +
+                                'PK_READ_100_RC,PK_READ_10_RU',
+                // Fixed-operation workloads derive transaction count from this budget.
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
+                        '20000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                // One complete forward/reverse target-order balance block.
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    task.doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10ltReadStackRoot).get().asFile
+        File resultsFile = new File(root, 'cross-engine-concurrency-results.csv')
+        File dispersionFile = new File(root, 'cross-engine-concurrency-dispersion.csv')
+        if (!resultsFile.isFile() || !dispersionFile.isFile()) {
+            throw new GradleException('Gate 10L-T missing results or dispersion report')
+        }
+
+        def lines = resultsFile.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+        if (lines.size() < 2) {
+            throw new GradleException('Gate 10L-T merged results contain no measurements')
+        }
+        def header = (lines[0].split(',', -1) as List).collect {
+            it.toString().trim().replace('\uFEFF', '')
+        }
+        def rows = lines.drop(1).collect { line ->
+            def fields = line.split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Gate 10L-T malformed CSV row: ${line}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row
+        }
+
+        final def targets = ['delos_heap', 'delos_mvcc', 'upstream_derby', 'h2', 'sqlite']
+        final def workloads = [
+                'EMPTY_TRANSACTION',
+                'VALUES_1',
+                'VALUES_10',
+                'PK_READ_1_RC',
+                'PK_READ_10_RC',
+                'PK_READ_100_RC',
+                'PK_READ_10_RU'
+        ]
+        final def clients = ['1', '2', '4', '8', '16']
+        final int observationsPerCell = 4
+        final int expectedRows = targets.size() * workloads.size() * clients.size() * observationsPerCell
+        if (rows.size() != expectedRows) {
+            throw new GradleException(
+                    "Gate 10L-T expected ${expectedRows} measurements but found ${rows.size()}")
+        }
+
+        def median = { List<Double> values ->
+            def sorted = values.sort(false)
+            int size = sorted.size()
+            return (size & 1) == 1
+                    ? sorted[size / 2]
+                    : (sorted[size / 2 - 1] + sorted[size / 2]) / 2.0d
+        }
+
+        def failures = []
+        def ratioCsv = new StringBuilder(
+                'workload,clients,delosHeapMedianOpsPerSecond,delosMvccMedianOpsPerSecond,' +
+                        'upstreamDerbyMedianOpsPerSecond,h2MedianOpsPerSecond,sqliteMedianOpsPerSecond,' +
+                        'mvccToHeap,heapToH2,mvccToH2,derbyToH2,heapToSqlite,mvccToSqlite\n')
+        def decision = [
+                'Gate 10L-T post-registry five-engine read-stack decomposition',
+                'Purpose: localize the remaining shared Delos read gap after Gate 10L-S established resident MVCC/heap parity.',
+                'Layers: EMPTY_TRANSACTION -> VALUES_1/10 -> PK_READ_1/10/100_RC -> PK_READ_10_RU.',
+                'Matrix: seven decomposition workloads x 1/2/4/8/16 clients x five engines x four balanced runs.',
+                'Measurement authority: pooled median throughput plus the coordinator IQR/MAD dispersion report.',
+                'Correctness guards: complete matrix, cross-engine semantic fingerprint validation, identical operation counts within each cell, and zero retryable conflicts.',
+                'Performance is diagnostic only. Use the first layer where Delos diverges materially from H2/SQLite to select a focused source/profile gate; do not optimize a downstream layer first.'
+        ]
+
+        workloads.each { workload ->
+            clients.each { clientCount ->
+                def cell = rows.findAll { it.workload == workload && it.clients == clientCount }
+                if (cell.size() != targets.size() * observationsPerCell) {
+                    failures.add("${workload} ${clientCount}c expected ${targets.size() * observationsPerCell} rows, found ${cell.size()}")
+                    return
+                }
+                def operationCounts = cell.collect { Long.parseLong(it.measuredOperations) }.unique()
+                if (operationCounts.size() != 1) {
+                    failures.add("${workload} ${clientCount}c measured operation counts differ: ${operationCounts}")
+                }
+                long retries = cell.sum { Long.parseLong(it.retryableConflictRetries) } as long
+                if (retries != 0L) {
+                    failures.add("${workload} ${clientCount}c observed ${retries} retryable conflicts")
+                }
+
+                def medians = [:]
+                targets.each { target ->
+                    def targetRows = cell.findAll { it.target == target }
+                    if (targetRows.size() != observationsPerCell) {
+                        failures.add("${workload} ${clientCount}c ${target} expected ${observationsPerCell} runs, found ${targetRows.size()}")
+                    } else {
+                        medians[target] = median(targetRows.collect {
+                            Double.parseDouble(it.operationsPerSecond)
+                        })
+                    }
+                }
+                if (medians.size() == targets.size()) {
+                    double heap = medians.delos_heap as double
+                    double mvcc = medians.delos_mvcc as double
+                    double derby = medians.upstream_derby as double
+                    double h2 = medians.h2 as double
+                    double sqlite = medians.sqlite as double
+                    ratioCsv.append(workload).append(',').append(clientCount).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', heap)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', mvcc)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', derby)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', h2)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', sqlite)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', mvcc / heap)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', heap / h2)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', mvcc / h2)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', derby / h2)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', heap / sqlite)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', mvcc / sqlite)).append('\n')
+                    decision.add(String.format(java.util.Locale.ROOT,
+                            '%s %sc: heap=%.0f mvcc=%.0f derby=%.0f h2=%.0f sqlite=%.0f ' +
+                                    'mvcc/heap=%.3f heap/h2=%.3f mvcc/h2=%.3f derby/h2=%.3f',
+                            workload, clientCount, heap, mvcc, derby, h2, sqlite,
+                            mvcc / heap, heap / h2, mvcc / h2, derby / h2))
+                }
+            }
+        }
+
+        new File(root, 'gate10lt-five-engine-read-stack-ratios.csv').setText(
+                ratioCsv.toString(), 'UTF-8')
+        File decisionFile = new File(root, 'gate10lt-five-engine-read-stack-decomposition-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-T failed: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: the five-engine read-stack decomposition matrix is complete and semantically stable with zero retryable conflicts. Inspect the first divergent layer and its IQR/MAD before selecting the next focused profile or production experiment.')
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-T PASS: five-engine read-stack decomposition captured.')
+    }
+}
