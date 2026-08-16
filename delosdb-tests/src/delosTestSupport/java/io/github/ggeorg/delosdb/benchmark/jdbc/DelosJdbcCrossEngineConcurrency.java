@@ -138,6 +138,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (!slots.isEmpty()) {
                 command.add("-Ddelosdb.mvcc.currentRowReadCache.slots=" + slots);
             }
+            if (Boolean.getBoolean(PREFIX + "mvccSnapshotLeaseDiagnostics")) {
+                command.add("-Ddelosdb.diagnostic.mvccSnapshotLease=true");
+                addProperty(command, "mvccSnapshotLeaseDiagnostics", true);
+            }
             if (Boolean.getBoolean(PREFIX + "mvccSnapshotLeaseRegistry")) {
                 command.add("-Ddelosdb.experimental.mvccSnapshotLeaseRegistry=true");
                 String leaseSlots = System.getProperty(
@@ -535,6 +539,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (hotStateDiagnosticsEnabled()) {
                     resetHotStateDiagnostics();
                 }
+                if (mvccSnapshotLeaseDiagnosticsEnabled()) {
+                    resetMvccSnapshotLeaseDiagnostics();
+                }
                 long elapsed = 0L;
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
@@ -571,6 +578,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         : null;
                 String[] hotStateDiagnostics = hotStateDiagnosticsEnabled()
                         ? snapshotHotStateDiagnostics()
+                        : null;
+                long[] mvccSnapshotLeaseDiagnostics = mvccSnapshotLeaseDiagnosticsEnabled()
+                        ? snapshotMvccSnapshotLeaseDiagnostics()
                         : null;
                 int transactionsPerClient = options.transactionsPerClient(spec);
                 long measuredTransactions = Math.multiplyExact(
@@ -614,6 +624,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     writeHotStateDiagnostics(
                             options, spec, config, measuredOperations, hotStateDiagnostics);
                 }
+                if (mvccSnapshotLeaseDiagnostics != null) {
+                    writeMvccSnapshotLeaseDiagnostics(
+                            options, spec, config, measuredTransactions,
+                            mvccSnapshotLeaseDiagnostics);
+                }
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
@@ -643,6 +658,61 @@ public final class DelosJdbcCrossEngineConcurrency {
             throwFailure(failure);
         }
         return measurement;
+    }
+
+    private static boolean mvccSnapshotLeaseDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccSnapshotLeaseDiagnostics");
+    }
+
+    private static void resetMvccSnapshotLeaseDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.mvcc.MvccSnapshotLeaseDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static long[] snapshotMvccSnapshotLeaseDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.mvcc.MvccSnapshotLeaseDiagnosticTestSupport");
+        return (long[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeMvccSnapshotLeaseDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredTransactions,
+            long[] values) throws IOException {
+        if (values.length != 8) {
+            throw new IllegalStateException(
+                    "Unexpected MVCC snapshot-lease diagnostic width: " + values.length);
+        }
+        Path output = options.reportDirectory().resolve(
+                "mvcc-snapshot-lease-diagnostics-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredTransactions,"
+                + "lockedCurrentOpens,lockedRetainedOpens,lockedCloses,"
+                + "slottedCurrentOpens,slottedRetainedOpens,slottedCloses,"
+                + "currentSlotClaimFailures,retainedSlotClaimFailures\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        StringBuilder row = new StringBuilder();
+        row.append(options.target().id()).append(',')
+                .append(spec.workload().name()).append(',')
+                .append(spec.clients()).append(',')
+                .append(spec.operationsPerTransaction()).append(',')
+                .append(config.rowCount()).append(',')
+                .append(measuredTransactions);
+        for (long value : values) {
+            row.append(',').append(value);
+        }
+        row.append('\n');
+        Files.writeString(
+                output, row.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
     }
 
     private static boolean lockEntryDiagnosticsEnabled() {
