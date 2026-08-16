@@ -9760,20 +9760,19 @@ tasks.register('runDelosJdbcGate10lnMvccResidualReadGapDiagnosis') {
             File jfr = recordings[0]
             File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
             ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
-                def output = new ByteArrayOutputStream()
-                def error = new ByteArrayOutputStream()
-                def result = providers.exec {
+                def execOutput = providers.exec {
                     commandLine jfrTool.absolutePath, 'view', '--width', '220',
                             '--cell-height', '30', view, jfr.absolutePath
-                    standardOutput = output
-                    errorOutput = error
                     ignoreExitValue = true
-                }.result.get()
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
                 if (result.exitValue != 0) {
-                    failures.add("jfr view ${view} failed: ${error.toString('UTF-8').trim()}")
+                    failures.add("jfr view ${view} failed: ${error.trim()}")
                 } else {
                     new File(root, "resident-profile/${view}.txt")
-                            .setText(output.toString('UTF-8'), 'UTF-8')
+                            .setText(output, 'UTF-8')
                 }
             }
             decision.add("Resident JFR recording: ${jfr.name} (${jfr.length()} bytes)")
