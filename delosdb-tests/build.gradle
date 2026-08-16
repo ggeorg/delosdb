@@ -10261,3 +10261,126 @@ tasks.register('runDelosJdbcGate10lo2MvccSnapshotLeaseRegistryCounterProof') {
     }
 }
 
+
+tasks.register('runDelosJdbcGate10lo2aMvccSnapshotLeaseStatementCountProof') {
+    group = 'verification'
+    description = 'Runs Gate 10L-O2A source-corrected statement-snapshot count proof using existing O2 OFF/ON evidence.'
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistrySafetyTest')
+    dependsOn tasks.named('runDelosMvccSnapshotLeaseRegistryFallbackTest')
+    dependsOn tasks.named('runDelosJdbcGate10lo2SnapshotLeaseRegistryOffCounterProfile')
+    dependsOn tasks.named('runDelosJdbcGate10lo2SnapshotLeaseRegistryOnCounterProfile')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lo2Root).get().asFile
+        def loadCsv = { String suffix, String name ->
+            File csv = new File(root, "${suffix}/${name}")
+            if (!csv.isFile()) {
+                throw new GradleException("Missing Gate 10L-O2A evidence: ${csv}")
+            }
+            def lines = csv.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def header = (lines[0].split(',', -1) as List).collect { it.trim() }
+            lines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { field, index -> row[field] = fields[index].trim() }
+                row
+            }
+        }
+        def resultsOff = loadCsv('off', 'cross-engine-concurrency-results.csv')
+        def resultsOn = loadCsv('on', 'cross-engine-concurrency-results.csv')
+        def countersOff = loadCsv('off', 'workers/mvcc-snapshot-lease-diagnostics-delos_mvcc-run-1.csv')
+        def countersOn = loadCsv('on', 'workers/mvcc-snapshot-lease-diagnostics-delos_mvcc-run-1.csv')
+        def one = { rows, workload ->
+            def matches = rows.findAll { it.workload == workload && it.clients == '16' }
+            if (matches.size() != 1) {
+                throw new GradleException(
+                        "Gate 10L-O2A expected one ${workload} 16c row, found ${matches.size()}")
+            }
+            matches[0]
+        }
+
+        def failures = []
+        def decision = [
+                'Gate 10L-O2A source-corrected MVCC snapshot-lease statement-count proof',
+                'Gate 10L-O original frozen JFR criterion remains a formal FAIL.',
+                'Gate 10L-O2 original transaction-scoped exact-count contract remains a formal FAIL: source inspection proves READ COMMITTED uses one snapshot lease per SQL scan/statement, not one lease per JDBC transaction.',
+                'Frozen O2A contract per workload: OFF lockedCurrentOpens == lockedCloses == measuredOperations and slotted opens/closes == 0; ON slottedCurrentOpens == slottedCloses == measuredOperations, locked opens/closes == 0, current slot-claim failures == 0; fingerprints/operations identical; retries == 0; retained lease activity == 0.'
+        ]
+
+        ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
+            def offResult = one(resultsOff, workload)
+            def onResult = one(resultsOn, workload)
+            def off = one(countersOff, workload)
+            def on = one(countersOn, workload)
+            long expectedOperations = offResult.measuredOperations as long
+            if ((onResult.measuredOperations as long) != expectedOperations) {
+                failures.add("${workload} OFF/ON measured operation count changed")
+            }
+            if (offResult.semanticFingerprint != onResult.semanticFingerprint) {
+                failures.add("${workload} semantic fingerprint changed")
+            }
+            if (offResult.retryableConflictRetries != '0' || onResult.retryableConflictRetries != '0') {
+                failures.add("${workload} retryable conflicts were non-zero")
+            }
+
+            long offLockedOpen = off.lockedCurrentOpens as long
+            long offLockedClose = off.lockedCloses as long
+            long offSlottedOpen = off.slottedCurrentOpens as long
+            long offSlottedClose = off.slottedCloses as long
+            long onLockedOpen = on.lockedCurrentOpens as long
+            long onLockedClose = on.lockedCloses as long
+            long onSlottedOpen = on.slottedCurrentOpens as long
+            long onSlottedClose = on.slottedCloses as long
+            long onClaimFailures = on.currentSlotClaimFailures as long
+            long retainedActivity = (off.lockedRetainedOpens as long)
+                    + (off.slottedRetainedOpens as long)
+                    + (off.retainedSlotClaimFailures as long)
+                    + (on.lockedRetainedOpens as long)
+                    + (on.slottedRetainedOpens as long)
+                    + (on.retainedSlotClaimFailures as long)
+
+            if (offLockedOpen != expectedOperations || offLockedClose != expectedOperations) {
+                failures.add("${workload} OFF locked lease count expected ${expectedOperations}/${expectedOperations} but was ${offLockedOpen}/${offLockedClose}")
+            }
+            if (offSlottedOpen != 0L || offSlottedClose != 0L) {
+                failures.add("${workload} OFF unexpectedly used slotted leases")
+            }
+            if (onLockedOpen != 0L || onLockedClose != 0L) {
+                failures.add("${workload} ON used locked snapshot-lease fallback ${onLockedOpen}/${onLockedClose}")
+            }
+            if (onSlottedOpen != expectedOperations || onSlottedClose != expectedOperations) {
+                failures.add("${workload} ON slotted lease count expected ${expectedOperations}/${expectedOperations} but was ${onSlottedOpen}/${onSlottedClose}")
+            }
+            if (onClaimFailures != 0L) {
+                failures.add("${workload} ON current slot-claim failures ${onClaimFailures} != 0")
+            }
+            if (retainedActivity != 0L) {
+                failures.add("${workload} benchmark unexpectedly exercised retained-snapshot lease paths")
+            }
+
+            double offOps = offResult.operationsPerSecond as double
+            double onOps = onResult.operationsPerSecond as double
+            decision.add(String.format(java.util.Locale.ROOT,
+                    '%s: operations=%d OFF locked=%d/%d ON slotted=%d/%d ON locked=%d/%d claimFailures=%d throughput OFF=%.0f ON=%.0f delta=%+.2f%%',
+                    workload, expectedOperations,
+                    offLockedOpen, offLockedClose,
+                    onSlottedOpen, onSlottedClose,
+                    onLockedOpen, onLockedClose,
+                    onClaimFailures,
+                    offOps, onOps, (onOps / offOps - 1.0d) * 100.0d))
+        }
+
+        File decisionFile = new File(root, 'gate10lo2a-mvcc-snapshot-lease-statement-count-proof-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException('Gate 10L-O2A failed: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: exact runtime counters prove the experimental registry removes the legacy snapshot-lease lock path for every measured READ COMMITTED HOT/DISJOINT SQL scan with zero fallback. Proceed to balanced OFF/ON performance acceptance; retain 10L-O and the original transaction-scoped 10L-O2 contract as formal failures.')
+        decisionFile.setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-O2A PASS: exact READ COMMITTED statement-snapshot lease-path removability proved.')
+    }
+}
