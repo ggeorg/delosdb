@@ -202,7 +202,7 @@ Normal execution does not build stable execution evidence. ANALYZE reuses existi
 counters and scan information. Analyze-only timing is enabled when the result-set objects are
 constructed; no additional timer or callback is inserted into ordinary row loops.
 
-The Phase 10 closeout deliberately does not add MVCC table-scan version-traversal instrumentation only
+The readable-engine implementation deliberately does not add MVCC table-scan version-traversal instrumentation only
 for diagnostics. Missing evidence is represented as `NOT_MEASURED` or `UNKNOWN` rather than paid for
 on the hot path.
 

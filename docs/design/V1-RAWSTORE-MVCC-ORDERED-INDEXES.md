@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-IMPLEMENTED BEHIND THE RAWSTORE MVCC OPT-IN
+IMPLEMENTED
 ```
 
-The opt-in RawStore-backed `delos_mvcc` format uses Derby's inherited B-tree access method for
+The RawStore-backed `delos_mvcc` format uses Derby's inherited B-tree access method for
 version-aware ordered candidates. The index has no filesystem path, page volume, WAL, checkpoint,
 recovery pass, cache, or commit decision outside Derby access and RawStore.
 

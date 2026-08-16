@@ -4,7 +4,7 @@ Status: **IMPLEMENTED BEHIND THE EXISTING RAWSTORE OPT-IN**
 
 ## Scope
 
-This slice removes the Stage 3 single-table transaction restriction for tables already using the
+This design removes the former single-table transaction restriction for tables using the
 RawStore-backed `delos_mvcc` format. Multiple such tables can now participate in one SQL transaction
 with:
 

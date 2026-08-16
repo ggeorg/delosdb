@@ -111,7 +111,7 @@ new INSERT   -> never reuse a committed MvccRowId in the same incarnation
 The inherited `MvccRowLocation` continues to compare and hash by logical row ID only. Any embedded
 physical values remain hints and do not participate in equality or ordering.
 
-The current Phase 8 page/slot hint encoding is not the accepted RawStore hint format. RawStore slot
+The legacy pre-convergence page/slot hint encoding is not the accepted RawStore hint format. RawStore slot
 numbers are unstable. If the converged format retains a physical hint, it must use a page and
 page-local record identifier and be versioned separately from logical identity.
 
@@ -321,7 +321,7 @@ the database incarnation exists.
 
 ## Required proof tests
 
-The Stage 3/4 implementation must add permanent tests for:
+Permanent tests cover:
 
 ```text
 row ID preserved across update, delete, reopen, and rebuild
@@ -351,7 +351,7 @@ physical RawStore locations are optional validated hints.
 Page movement, purge, compression, recovery, and slot/page reuse may invalidate an optimization. They
 cannot change or alias logical MVCC identity.
 
-## Next proof
+## Related search durability work
 
-DP-5 defines the Lucene/RawStore watermark crash-state matrix. No production convergence code is
-authorized yet.
+Lucene/RawStore watermark crash-state handling is a separate design concern and does not change this
+row/version identity contract.

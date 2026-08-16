@@ -105,7 +105,7 @@ build with active writers so the initial backfill and future index maintenance f
 publication boundary. `DEL-DDL-002` proves the wait and then forces the new index for the writer's
 committed key.
 
-## Stage 4 catalogue
+## Isolation catalogue
 
 ```text
 DEL-ISO-001..004       snapshot stability and documented read anomaly
@@ -147,7 +147,7 @@ release verification through the stable suite graph.
 
 ## Connection scope
 
-Stage 4 uses embedded connections so the runner can observe Derby's heavyweight lock table directly
+The isolation catalogue uses embedded connections so the runner can observe Derby's heavyweight lock table directly
 and avoid embedding network-server lifecycle management in the concurrency scheduler. DRDA transport,
 disconnect, cancellation, restart, and streaming equivalence remain covered by the established DelosDB
 system and failure-path suites.

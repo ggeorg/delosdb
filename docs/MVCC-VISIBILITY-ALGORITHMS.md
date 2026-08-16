@@ -22,7 +22,7 @@ history-pruned failure behavior, and transaction outcome publication.
 * No optimizer behavior change.
 * No storage format change.
 * No external dependency is introduced.
-* This audit does not wire any new gate into S0.
+* This audit does not wire any new gate into permanent closeout verification.
 
 ## Current algorithm inventory
 

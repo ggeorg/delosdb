@@ -4,7 +4,7 @@ Status: **IMPLEMENTED BEHIND THE EXISTING RAWSTORE OPT-IN**
 
 ## Scope
 
-This Stage 4 slice adds UPDATE and DELETE to tables already using the opt-in RawStore-backed
+This design adds UPDATE and DELETE to tables using the RawStore-backed
 `delos_mvcc` format.
 
 The implementation preserves one stable logical row identity and appends a new logical version for
@@ -142,8 +142,8 @@ XA or nested update participation
 default routing or retained-format migration
 ```
 
-The conservative container-locking proof policy remains. The retained Phase 8 implementation remains
-only the compatibility path and oracle; it is not dual-written.
+The conservative container-locking proof policy remains. The retired pre-convergence implementation
+was never dual-written with the RawStore-backed path.
 
 ## Permanent evidence
 

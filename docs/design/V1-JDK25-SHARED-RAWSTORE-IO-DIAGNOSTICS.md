@@ -23,7 +23,7 @@ WAL, or durability path is introduced.
 
 ## Why this follows positional I/O
 
-Stage 8.1 established one shared positional contract and explicit force semantics. Before page memory
+The shared positional-I/O contract established explicit force semantics. Before page memory
 or mapping ownership changes, the common path must provide evidence about transfer volume, durability
 requests, recovery, concurrency, and resource lifetime. Otherwise later performance or failure work
 would have no stable baseline and could hide leaks or retry regressions.
@@ -112,7 +112,7 @@ no persistent-media durability.
 A freshly created memory database may satisfy every logical SQL read from the page cache.
 Zero physical page reads is therefore valid until RawStore actually invokes the positional read path.
 The executable proof must not manufacture cache eviction merely to obtain a positive read counter.
-Cache replacement policy is outside the Stage 8.2 diagnostics contract.
+Cache replacement policy is outside this diagnostics contract.
 
 ## Public diagnostics
 
@@ -156,11 +156,11 @@ Permanent evidence:
 delosSharedRawStoreIoDiagnosticsStaticAnalysis
 ```
 
-Normal RawStore crash, reopen, memory, DRDA, module, and S0 gates remain authoritative for integration.
+Normal RawStore crash, reopen, memory, DRDA, module, and closeout gates remain authoritative for integration.
 
 ## Deliberately deferred
 
-Stage 8.2 does not add:
+The diagnostics contract does not add:
 
 ```text
 deterministic I/O fault injection
@@ -175,13 +175,13 @@ new page format, WAL, cache, or storage namespace
 Lucene work
 ```
 
-Stage 8.3 adds deterministic database-scoped fault injection and replay over this observable shared boundary.
+Deterministic database-scoped fault injection and replay build on this observable shared boundary.
 
 
-## Stage 8.7.2 schema version 3
+## Schema version 3
 
 Stages 8.4 and 8.5 temporarily extended the page path and diagnostics for heap-segment and native
-mirror experiments. Stage 8.7.2 removes those production representations and advances
+mirror experiments. The final representation decision removes those production representations and advances
 `DelosRawStoreIoSnapshot` to schema version 3.
 
 Schema version 3 contains only production operational evidence:

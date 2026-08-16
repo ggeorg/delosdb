@@ -437,7 +437,7 @@ Current anchor: external validation plan/report and opt-in command slots for JMH
 Algorithmic goal:
 
 * Convert slots into real repeatable benchmark/concurrency/differential profiles in later slices.
-* Keep external validation outside S0.
+* Keep external validation outside permanent closeout verification.
 
 ### JDK25 page I/O
 
@@ -445,8 +445,8 @@ Current owner: DelosDB storage I/O module.
 
 Classification: `JDK25_MODERNIZATION_CANDIDATE`, `DELOSDB_OWNED_ALGORITHM`.
 
-Current anchor: Stages 8.4 and 8.5 are verified experiments. Stage 8.7.2 removes their heap-segment
-and native-mirror adapters from production because the direct byte-array positional path is smaller,
+Current anchor: The heap-segment and native-mirror experiments are verified. The final page-I/O
+representation decision removes their adapters from production because the direct byte-array positional path is smaller,
 copy-free, and faster in the representative diagnostic workload. The older `DelosPage` use remains
 only in the quarantined retained oracle.
 
@@ -482,7 +482,7 @@ Algorithmic goal:
 ## Guardrails
 
 * This inventory is not a behavior change.
-* This inventory does not wire new feature work into S0.
+* This inventory does not wire new feature work into permanent closeout verification.
 * This inventory does not add external dependencies.
 * This inventory does not change Java production code.
 * Future overlays should update this file when they promote an algorithm from audit to implementation.
@@ -561,7 +561,7 @@ NO_BEHAVIOR_CHANGE
 ```
 
 The event is inert unless JFR recording enables it. It does not change Derby optimizer
-authority or storage behavior. Stage 8.7.3 removes the unwired Phase 8 event sketches
+authority or storage behavior. The final production closeout removed the unwired legacy event sketches
 instead of keeping dead production APIs.
 
 Verification:
@@ -634,7 +634,7 @@ reopen, ordered-index summary inspection, and consistency checks.
 | Derby SQL to RawStore-backed MVCC | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedIndexSemanticsTest#testTypedRangesNullsAndEnvelopeShapedTextSurviveReopen` |
 | Storage API typed key boundary | stable typed NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
 
-The retired Phase 8 ordered-index page-store test is not a second authority and is no longer in the
+The retired pre-convergence ordered-index page-store test is not a second authority and is no longer in the
 working tree.
 
 ## Shared lifecycle consistency report
@@ -675,7 +675,7 @@ Current code: the independent `benchmarks/jmh` build, plus the stable
 Rules:
 
 * JMH source and dependencies remain outside the normal DelosDB build.
-* S0 and module checks do not resolve JMH.
+* Permanent closeout and module checks do not resolve JMH.
 * The executable lane consumes assembled runtime jars and targets public JDBC only.
 * Package-private MVCC cache/codec measurements remain in module-local deterministic lanes rather than creating a benchmark-only production SPI.
 * JMH reports include parameter coverage checks and runtime/source fingerprints.
@@ -686,9 +686,9 @@ Rules:
 
 The stable `delosJcstressConcurrencyValidation` adapter uses the live
 `:delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'` proof as its built-in baseline and may
-run a caller-supplied external jcstress command. The retired Phase 8 in-tree probes and their
-page-volume dependencies are absent. This lane remains `VALIDATION_ALGORITHM` and is not an S0
-dependency.
+run a caller-supplied external jcstress command. The retired in-tree probes and their
+page-volume dependencies are absent. This lane remains `VALIDATION_ALGORITHM` and is not a permanent
+closeout dependency.
 
 ## DRDA concurrent client stress
 
@@ -728,11 +728,11 @@ Rules:
 * A passing differential harness does not authorize heap/MVCC shared-service
   extraction or provider authority changes.
 
-Stage 8.7.2 current anchor: the native page-I/O mirror is removed from production. Its copy, lease,
+Current anchor: the native page-I/O mirror is removed from production. Its copy, lease,
 limit, and accounting behavior remains documented and reproducible only in the representation decision
 test.
 
-## Stage 8.6 segmented mapped-region experiment
+## Segmented mapped-region experiment
 
 Classification: `VALIDATION_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, and
 `DIAGNOSTIC_ONLY_ALGORITHM`.

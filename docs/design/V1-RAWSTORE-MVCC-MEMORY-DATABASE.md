@@ -2,7 +2,7 @@
 
 ## Decision
 
-Stage 6 completes `delos_mvcc` on Derby's inherited `memory:` storage lifecycle. Memory databases do
+`delos_mvcc` supports Derby's inherited `memory:` storage lifecycle. Memory databases do
 not receive a second MVCC store, a heap-only shortcut, a filesystem shadow, or a process-global
 runtime lookup.
 
@@ -19,7 +19,7 @@ heap-backed and uses Derby's established virtual-file implementation.
 
 ## Complete feature surface
 
-The Stage 6 executable lane covers one memory database with:
+The executable lane covers one memory database with:
 
 ```text
 heap and RawStore-backed MVCC tables
@@ -135,11 +135,11 @@ file deletion.
 
 ## Non-goals
 
-Stage 6 does not:
+This design does not:
 
 - make native memory or mapped memory the default;
 - add a memory-specific WAL, checkpoint, recovery pass, or index;
 - persist memory databases across JVM termination;
 - add cross-database memory borrowing;
 - change file-database cache sizing;
-- begin Stage 7 module convergence.
+- change module ownership boundaries.

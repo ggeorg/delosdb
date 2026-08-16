@@ -1,6 +1,6 @@
 # DelosDB v1 JDK 25 segmented mapped-region experiment and decision
 
-Status: Stage 8.6 verified.
+Status: VERIFIED.
 
 ## Decision
 
@@ -9,8 +9,8 @@ NO_GO_FOR_V1_RAWSTORE
 ```
 
 DelosDB v1 does not promote mapped `MemorySegment` regions into the production RawStore page path.
-The Stage 8.1 positional byte-array `FileChannel` contract remains the production design. Stage 8.7.2
-removes the verified Stage 8.4 heap-segment and Stage 8.5 native-mirror experiments from runtime.
+The positional byte-array `FileChannel` contract remains the production design. The final representation
+decision removes the verified heap-segment and native-mirror experiments from runtime.
 
 The experiment is retained as executable evidence. It is not a dormant backend selector and is not
 packaged into a runtime artifact.
@@ -95,7 +95,7 @@ would require replacing inherited page ownership and is outside v1.
 ### Duplicate residency
 
 The inherited page cache remains required. Mapped regions add operating-system virtual-memory residency
-and address-space pressure beside it. Stage 8.7.2 also removes the bounded native experiment after
+and address-space pressure beside it. The final representation decision also removes the bounded native experiment after
 it failed to justify its additional copy and lifecycle cost.
 
 ## Production invariants
@@ -114,7 +114,7 @@ no page-format, WAL, recovery, locking, or transaction change
 
 Mapped regions may be reconsidered only for an immutable or rebuildable read-mostly subsystem with its
 own lifecycle and durability contract. A future Lucene directory may evaluate read-only mapping after
-Stage 9 establishes search ownership, but this Stage 8.6 decision does not authorize that work.
+Search ownership is a separate concern; this mapped-region decision does not authorize that work.
 
 Any RawStore reconsideration requires new cross-platform recovery, file replacement, address-space,
 resource-limit, and benchmark evidence. It must not silently relax this v1 decision.

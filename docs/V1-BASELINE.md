@@ -13,7 +13,7 @@ The tracked accepted bundle remains under:
 benchmarks/v1-baseline/accepted/
 ```
 
-It is immutable historical evidence. Normal S0 does not rerun the measurements or parse documentation
+It is immutable historical evidence. Normal permanent closeout verification does not rerun the measurements or parse documentation
 about them.
 
 ## Capture

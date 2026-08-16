@@ -73,11 +73,11 @@ No storage or MVCC change.
 No JDBC or DRDA protocol change.
 No internal JDK bytecode API.
 No external bytecode dependency.
-No S0 wiring yet.
+No permanent closeout wiring.
 ```
 
 The verifier remains an explicit lane because it audits all compiled runtime
-classes and can be more expensive than the structural S0 closeout gates.
+classes and can be more expensive than the structural permanent closeout gates.
 
 ## Relationship to generated-class architecture
 

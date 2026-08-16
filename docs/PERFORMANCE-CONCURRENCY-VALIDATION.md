@@ -1,11 +1,11 @@
 # DelosDB performance and concurrency validation
 
 Performance evidence is split into independent lanes. No wall-clock benchmark, external stress tool,
-or long-running workload is an S0 dependency.
+or long-running workload is a permanent closeout dependency.
 
 ## Current deterministic baselines
 
-The retained Phase 8 implementation-local harnesses were deleted after RawStore convergence. Stable
+The retained implementation-local harnesses from the pre-convergence MVCC implementation were deleted after RawStore convergence. Stable
 root adapters now run live production-path proofs before any optional external command:
 
 ```text
@@ -23,7 +23,7 @@ delosLongReaderVacuumSoak
 ```
 
 These built-in tests verify deterministic state, live SQL/network behavior, concurrency, purge
-horizons, and heap/MVCC equivalence. Timing evidence remains diagnostic and is never an S0 threshold.
+horizons, and heap/MVCC equivalence. Timing evidence remains diagnostic and is never a permanent closeout threshold.
 
 ## JDBC/JUnit benchmark lanes
 
@@ -57,7 +57,7 @@ metadata/directory, version storage, ordered-index directory/B-tree, and other c
 deltas must exactly match the recorded write count/bytes for every phase, recorder overflow is fatal, and
 an all-zero topology report is rejected. Semantic verification and any restoration needed by the
 two-transaction rollback shape remain outside the timed phases. The results are diagnostic evidence, not
-an S0 threshold.
+a permanent closeout threshold.
 
 ```bash
 ./gradlew :delosdb-tests:runDelosJdbcDeleteReinsertAttribution \
@@ -104,13 +104,13 @@ Caller-owned external commands remain opt-in through the documented Gradle prope
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain
 ```
 
-New captures use live Stage 8 page-I/O, fault-injection, and decision/WAL crash evidence instead of
+New captures use live page-I/O, fault-injection, and decision/WAL crash evidence instead of
 archived-oracle tests. The accepted historical baseline remains immutable evidence.
 
 ## Interpretation rules
 
 - Benchmark values are evidence, not correctness assertions.
-- No performance threshold belongs in S0.
+- No performance threshold belongs in permanent closeout verification.
 - Compare identical JDK, JVM arguments, runtime artifacts, and parameters.
 - A behavior change requires a separate correctness and compatibility proof.
 

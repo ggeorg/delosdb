@@ -3,12 +3,11 @@
 ## Status
 
 ```text
-Phase 9 / Stage 4
-IMPLEMENTED / PENDING USER VERIFICATION
+Status: IMPLEMENTED / VERIFIED
 ```
 
-This is the eleventh Stage 4 RawStore-convergence slice. It adds transactional history reclamation to
-the opt-in RawStore-backed `delos_mvcc` format without introducing another durability authority.
+This design adds transactional history reclamation to
+the RawStore-backed `delos_mvcc` format without introducing another durability authority.
 RawStore continues to own pages, logging, undo, commit, recovery, container lifecycle, and memory
 storage. MVCC owns only the visibility horizon, logical version-chain rules, and derived-index rebuild.
 
@@ -162,7 +161,7 @@ CALL SYSCS_UTIL.SYSCS_INPLACE_COMPRESS_TABLE('APP', '<TABLE>', 1, 0, 0);
 ```
 
 `MvccConglomerate.purgeConglomerate()` and `compressConglomerate()` dispatch to the RawStore vacuum for
-the opt-in format. Offline table rebuild/defragment and end-page relocation remain outside this slice.
+the RawStore-backed format. Offline table rebuild/defragment and end-page relocation remain outside this design.
 
 ## Memory databases
 
@@ -174,7 +173,7 @@ There is no filesystem fallback.
 
 It does not itself own automatic scheduling, page relocation, end truncation, incremental ordered-index
 splits or merges, overflow-page compaction, configurable retention windows, XA MVCC writes, nested
-update transactions, or migration of retained Phase 8 tables. The separate database-owned scheduling
+update transactions, or migration of retained pre-convergence tables. The separate database-owned scheduling
 and immutable evidence layer is defined by `V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md`.
 
 ## Executable proof

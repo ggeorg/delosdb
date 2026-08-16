@@ -1,9 +1,9 @@
 # DelosDB external validation tooling
 
-R6 adds a CI-friendly external validation layer for MVCC lifecycle work without
-making external tools part of S0 or normal module checks.
+DelosDB includes a CI-friendly external validation layer for MVCC lifecycle work without
+making external tools part of normal module checks or permanent closeout verification.
 
-The built-in Phase P harnesses remain the deterministic baseline. External tools
+The built-in deterministic harnesses remain the baseline. External tools
 wrap those entry points when the caller supplies an approved command.
 
 ## Plan report
@@ -20,7 +20,7 @@ The report is written to:
 build/reports/delosdb/external-mvcc-validation-plan.txt
 ```
 
-It lists every R6 validation slot, whether a command is configured, the matching
+It lists every external validation slot, whether a command is configured, the matching
 root task, and the built-in baseline task when one exists.
 
 ## Aggregate opt-in task
@@ -60,7 +60,7 @@ The first four also run their matching no-dependency built-in validation harness
 before any external command. SQLancer is external-only because it is a separate
 SQL/JDBC generator.
 
-## S0 boundary
+## Closeout boundary
 
 External validation is deliberately not wired into:
 
@@ -75,7 +75,7 @@ or release validation to opt into slower tools explicitly.
 
 The repository now contains an executable standalone JMH build under
 `benchmarks/jmh`. It consumes assembled runtime jars, targets public JDBC only,
-and remains absent from root settings, normal checks, and S0:
+and remains absent from root settings, normal checks, and permanent closeout verification:
 
 ```bash
 ./gradlew jars
@@ -99,7 +99,7 @@ records SHA-256 fingerprints of all runtime jars and benchmark inputs.
 
 ## Jcstress concurrency adapter
 
-The retired in-tree Phase 8 jcstress probes were deleted with their implementation dependencies.
+The retired in-tree jcstress probes from the pre-convergence MVCC implementation were deleted with their implementation dependencies.
 The stable `delosJcstressConcurrencyValidation` adapter first runs the live RawStore-backed MVCC
 network-concurrency proof:
 
@@ -114,7 +114,7 @@ A CI or release job may then supply an approved external jcstress command:
   -Pdelosdb.jcstress.command="<approved external jcstress command>"
 ```
 
-The adapter is opt-in and outside S0.
+The adapter is opt-in and outside permanent closeout verification.
 
 ## SQLancer profile skeleton
 
@@ -138,7 +138,7 @@ Run a CI-provided SQLancer command explicitly:
   -Pdelosdb.sqlancer.profile.command="<compile-and-run SQLancer command>"
 ```
 
-The skeleton is external validation only. It is not wired into S0, does not add
+The skeleton is external validation only. It is not wired into permanent closeout verification, does not add
 SQLancer as a normal dependency, and does not change storage, optimizer, DRDA,
 heap, or MVCC behavior. Generated failures must be minimized and promoted into a
 normal deterministic DelosDB proof before they become release gates.
@@ -154,5 +154,5 @@ SQL harness:
 ```
 
 The harness compares supported SQL behavior between inherited Derby heap tables
-and opt-in `delos_mvcc` tables. It is a normal deterministic proof, not an
+and `delos_mvcc` tables. It is a normal deterministic proof, not an
 external dependency lane.

@@ -164,7 +164,7 @@ Permanent gates:
 delosSharedStoragePositionalIoStaticAnalysis
 ```
 
-The normal heap/MVCC DRDA, crash-recovery, reopen, memory-database, and S0 lanes remain the
+The normal heap/MVCC DRDA, crash-recovery, reopen, memory-database, and closeout lanes remain the
 integration authority.
 
 ## Deliberately deferred
@@ -183,15 +183,15 @@ deterministic I/O fault injection
 per-operation event recording
 ```
 
-Stage 8.2 adds bounded shared I/O diagnostics and container-handle accounting at this boundary.
-Stage 8.3 adds deterministic fault points, Stage 8.4 adds the heap-segment proof, Stage 8.5 adds a
-bounded native mirror, and Stage 8.6 rejects mapped RawStore I/O for v1. All remain inside the one
+Bounded shared I/O diagnostics and container-handle accounting live at this boundary. Deterministic
+fault points provide replayable failure evidence. Heap-segment and bounded native-mirror experiments
+were evaluated, while mapped RawStore I/O was rejected for v1. All remain inside the one
 inherited RawStore authority.
 
 
-## Stage 8.7.2 final representation decision
+## Final representation decision
 
-Stages 8.4 and 8.5 verified heap-segment and bounded native-mirror experiments. Stage 8.7.2
+The heap-segment and bounded native-mirror experiments were verified. The final representation decision
 removes both from the v1 runtime after benchmark and code-size review. The production contract is
 again the direct byte-array positional path:
 
@@ -204,4 +204,4 @@ StorageRandomAccessFile byte[] positional methods
 
 This keeps the inherited page array authoritative, avoids a second page wrapper and native copies,
 and preserves the explicit force, interrupt-recovery, file, and memory-storage behavior proved by
-Stage 8.1. The experiments remain in test-only decision evidence.
+the shared positional-I/O contract. The experiments remain in test-only decision evidence.

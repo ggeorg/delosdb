@@ -93,5 +93,5 @@ Future compiler work must preserve:
 - the existing `JavaFactory` / `ClassBuilder` / `MethodBuilder` boundary;
 - no runtime backend selector or fallback.
 
-Phase 10.1 stable plan modelling belongs above this completed generation boundary. It must not add a
+Stable plan modelling belongs above this completed generation boundary. It must not add a
 second generated-class IR.

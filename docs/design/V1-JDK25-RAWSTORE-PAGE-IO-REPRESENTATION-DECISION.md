@@ -1,6 +1,6 @@
 # DelosDB v1 RawStore page-I/O representation decision
 
-Status: Stage 8.7.2 verified; final v1 page-I/O representation decisions are frozen.
+Status: VERIFIED — final v1 page-I/O representation decisions are frozen.
 
 ## Decision
 
@@ -12,9 +12,9 @@ REMOVE_NATIVE_PAGE_IO_MIRROR_FROM_V1_RAWSTORE
 
 The inherited RawStore `byte[]` page image remains the only page-cache, codec, and physical-I/O
 representation in the v1 runtime. `FileChannel` positional operations continue to use zero-copy
-`ByteBuffer.wrap(byte[])` views and the explicit Stage 8.1 `force(boolean metadata)` contract.
+`ByteBuffer.wrap(byte[])` views and the explicit `force(boolean metadata)` contract.
 
-The Stage 8.4 heap `MemorySegment` alias and Stage 8.5 native page-I/O mirror remain documented and
+The heap `MemorySegment` alias and native page-I/O mirror experiments remain documented and
 reproducible experiments, but their production classes, APIs, counters, lifecycle hooks, and focused
 runtime tests are removed.
 
@@ -88,7 +88,7 @@ build/reports/delosdb/stage8.7.2-page-io-representation-decision.txt
 
 ## Runtime simplification
 
-Stage 8.7.2 removes:
+The final representation decision removes:
 
 ```text
 MemorySegment positional methods from StorageRandomAccessFile
@@ -100,15 +100,15 @@ DelosRawStoreNativeMemoryDirectory
 CachedPage segment/native lease ownership
 segment/native overloads in FileContainer, RAFContainer, and RAFContainer4
 native diagnostics counters and snapshot fields
-native test bridge and old Stage 8.4/8.5 runtime tests
+native test bridge and old heap-segment/native-mirror runtime tests
 ```
 
-The Stage 8.7.1 shared `ByteBuffer` transfer helpers remain. There is still exactly one complete
+The shared `ByteBuffer` transfer helpers remain. There is still exactly one complete
 channel-read loop and one complete channel-write loop.
 
 ## Diagnostics schema
 
-Removing the Stage 8.5 native fields is an intentional diagnostics schema change. The shared
+Removing the native-mirror fields is an intentional diagnostics schema change. The shared
 snapshot advances to schema version 3 and contains only operational production state:
 
 ```text
@@ -134,7 +134,7 @@ change cache replacement or page pinning
 change WAL, recovery, locking, or transactions
 remove the JDK 25 Foreign Function & Memory API from research tests
 change the mapped-region NO_GO_FOR_V1_RAWSTORE decision
-remove the retained Phase 8 MVCC oracle
+remove the retained pre-convergence MVCC oracle
 begin Lucene work
 ```
 

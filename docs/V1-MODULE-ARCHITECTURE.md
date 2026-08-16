@@ -2,22 +2,19 @@
 
 ## Status
 
-This document records the final target module graph. It does not authorize immediate module deletion.
-The current modules remain until their responsibilities have moved and replacement gates are green.
+This document records the current v1 module graph and its permanent ownership boundaries.
 
-
-## Current migration state
+## Current module state
 
 The neutral boot and transaction-lifecycle seams live in `delosdb-derby-store-api`.
 `delosdb-storage-derby` creates database-owned access-method context and owns transaction lifecycle
-bracketing. Stage 7.1 moved the provider implementation into `delosdb-storage-mvcc` and removed the bridge.
-Stage 7.2 removed storage-io; Stage 8.7.3 deleted the retained-only page-volume source archive.
-Stage 7.3 moves 101 shared store/type contracts into `delosdb-derby-store-api`, deletes the unused
-parallel facade, and removes storage-api.
+bracketing. The MVCC provider implementation lives in `delosdb-storage-mvcc`. The former
+`delosdb-storage-bridge`, `delosdb-storage-io`, and `delosdb-storage-api` projects are retired.
+Shared store/type contracts live in `delosdb-derby-store-api`; unused parallel facade contracts were
+removed.
 
-Stage 2.3 adds a machine-readable final target and the permanent
-`delosV1ModuleArchitectureStaticAnalysis` gate. The gate enforces current provider isolation while
-remaining valid after all three storage-module retirements and while `delosdb-search-lucene` is added.
+The permanent `delosV1ModuleArchitectureStaticAnalysis` gate enforces provider isolation and the
+machine-readable target graph while remaining valid when optional provider modules are present.
 
 ## Architectural rules
 
@@ -168,7 +165,7 @@ no Lucene implementation types in neutral APIs
 The bridge is now removed. The gate requires `delosdb-storage-mvcc` to publish the sole neutral
 access-method provider directly while the engine remains implementation-independent.
 
-The Stage 2.3 task is the current implementation of the proposed `verifyStorageAuthorityModuleGraph`
+The `delosV1ModuleArchitectureStaticAnalysis` task is the current implementation of the proposed `verifyStorageAuthorityModuleGraph`
 and migration-time `verifyProviderIsolation` contracts. Final closeout additionally requires strict
 semantic equivalents of:
 
@@ -263,34 +260,33 @@ provider reaches parity.
 
 ### `delosdb-storage-bridge`
 
-Removed in Stage 7.1 after its valid provider/registration glue moved into
+Removed after its valid provider/registration glue moved into
 `delosdb-storage-mvcc`.
 
 ### `delosdb-storage-io`
 
-Removed in Stage 7.2 after its 13 retained-only page/volume sources moved into the MVCC
-the final source-retirement gate. `DelosPageVolume` does not survive in the working tree or as a production I/O authority.
+Removed after its retained-only page/volume sources were quarantined and then deleted by the final
+source-retirement gate. `DelosPageVolume` does not survive in the working tree or as a production I/O authority.
 
 ### `delosdb-storage-api`
 
-Removed in Stage 7.3 after 101 shared contracts moved to `delosdb-derby-store-api`. Twenty-seven
+Removed after 101 shared contracts moved to `delosdb-derby-store-api`. Twenty-seven
 unused parallel facade/provider-factory contracts and six unused Derby facade implementations were
 deleted; neutral external-index vocabulary remains in `delosdb-spi`.
 
-## Migration order
+## Convergence result
+
+The current module graph reflects completed storage ownership convergence:
 
 ```text
-1. design proofs
-2. neutral provider seams
-3. complete RawStore MVCC vertical slice
-4. absorb and remove bridge (complete)
-5. quarantine retained-only page-volume support and remove storage-io (complete)
-6. absorb shared store/type contracts and remove storage-api (complete)
-7. add the isolated Lucene provider module
-8. enforce final module and runtime-artifact gates
+neutral provider seams                         -> delosdb-derby-store-api
+RawStore-backed MVCC provider                  -> delosdb-storage-mvcc
+legacy bridge / storage-io / storage-api       -> retired
+optional search provider                       -> isolated provider module
+module and runtime-artifact boundaries         -> permanently enforced
 ```
 
-No module is removed before its replacement compiles, runs, and passes the required recovery and
+Retired modules were removed only after their replacement ownership passed the required recovery and
 compatibility tests.
 
 ## Final runtime artifacts

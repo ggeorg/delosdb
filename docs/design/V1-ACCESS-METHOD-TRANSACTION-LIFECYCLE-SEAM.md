@@ -3,9 +3,9 @@
 ## Status
 
 ```text
-Stage 2.2: IMPLEMENTED
-Current Phase 8 MVCC integration: unchanged
-First consumer: future RawStore-backed MVCC transaction context
+Status: IMPLEMENTED
+Current consumer: RawStore-backed MVCC transaction context
+Legacy independent MVCC integration: retired
 ```
 
 ## Purpose

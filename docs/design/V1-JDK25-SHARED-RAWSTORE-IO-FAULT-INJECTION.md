@@ -1,10 +1,10 @@
 # DelosDB v1 shared RawStore I/O fault injection and replay
 
-Status: Stage 8.3 verified.
+Status: VERIFIED.
 
 ## Decision
 
-Stage 8.3 installs one deterministic, database-scoped fault seam around the shared RawStore page-I/O
+The implementation installs one deterministic, database-scoped fault seam around the shared RawStore page-I/O
 boundary established by Stages 8.1 and 8.2. Heap and RawStore-backed MVCC therefore encounter the
 same injected physical failure. The seam is disabled by default and has no SQL, connection attribute,
 system property, service-provider, or public application control surface.
@@ -82,7 +82,7 @@ snapshots. The fault seam never owns pages, channels, transactions, caches, or d
 
 The disabled production path checks its enabled state before constructing a fault context.
 It therefore creates no per-operation hit or context objects until a focused test explicitly arms a
-schedule. Page I/O remains on the ordinary Stage 8.1 path when injection is disabled.
+schedule. Page I/O remains on the ordinary shared positional-I/O path when injection is disabled.
 
 ## Control boundary
 
@@ -98,7 +98,7 @@ the generated bridge classes patched into `org.apache.derby.engine` and with the
 test-only implementation package export. At execution time the bridge output is present only on the
 focused test classpath and is never added to an engine, storage, or distribution jar. The Gradle
 lifecycle uses the neutral `prepareRawStoreInternalTestSupportSources` and
-`compileRawStoreInternalTestSupport` task names because the patch now serves more than one Stage 8
+`compileRawStoreInternalTestSupport` task names because the test-support patch serves more than one storage-validation
 proof. This avoids an
 illegal JPMS split package without widening the production module or using reflection.
 
@@ -163,7 +163,7 @@ point and process termination.
 
 ## Non-goals
 
-Stage 8.3 does not add:
+The fault-injection contract does not add:
 
 ```text
 arbitrary byte corruption
@@ -178,13 +178,13 @@ MemorySegment ownership
 mapped files or native/off-heap pages
 ```
 
-Those require separate design and proof. Stage 8.4 implements the heap-backed `MemorySegment`
-page-buffer proof while retaining this fault/replay lane as a standing regression gate. Stage 8.5
-adds only a bounded native physical-I/O mirror, and Stage 8.6 records `NO_GO_FOR_V1_RAWSTORE` for
+Those require separate design and proof. The heap-backed `MemorySegment` page-buffer experiment and
+bounded native physical-I/O mirror retain this fault/replay lane as a standing regression gate. The
+mapped-region decision records `NO_GO_FOR_V1_RAWSTORE` for
 mapped regions.
 
-## Stage 8.5 compatibility
+## Native-mirror compatibility
 
-The bounded native mirror remains inside the existing Stage 8.3 before/after page-read, page-write,
+The bounded native mirror remains inside the existing before/after page-read, page-write,
 force, and channel-reopen boundaries. Fault occurrence and replay semantics do not depend on whether
 the physical transfer selected the heap alias or a native mirror.

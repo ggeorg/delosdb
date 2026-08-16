@@ -1,6 +1,6 @@
 # V1 database-owned external access-method boot
 
-Status: IMPLEMENTED — Stage 2.1
+Status: IMPLEMENTED
 
 ## Purpose
 
@@ -57,22 +57,19 @@ PersistentService.ROOT lookup inside MVCC
 Closing one database therefore cannot decrement, select, or close another database's runtime through
 a shared ownership registry.
 
-## Transitional physical storage
+## Physical storage ownership
 
-The current Phase 8 MVCC implementation still persists independent files. During Stage 2.1 only, the
-legacy directory is obtained from the context-owned `DataFactory.getRootDirectory()`.
+The boot seam does not create or own an independent physical store. The current MVCC provider uses
+RawStore containers owned by the database lifecycle. A filesystem root, when present, is lifecycle
+context rather than database identity.
 
-That path is a temporary physical location, not database identity. It disappears when MVCC table data
-moves to RawStore containers.
-
-Memory and other non-directory databases fail with SQLState `0A000` before the legacy external store
-opens. This avoids hidden temporary files and false memory-database support. Real MVCC memory support
-begins with the RawStore-backed table format.
+Named in-memory databases use the inherited RawStore memory lifecycle and do not create hidden
+filesystem state.
 
 ## Diagnostics
 
-Existing test and diagnostic APIs identify a database by directory. During convergence, a small weak
-lookup connects those APIs to an already-owned runtime.
+Existing test and diagnostic APIs that identify a database by directory use a small weak lookup to
+connect those APIs to an already-owned runtime.
 
 The lookup is deliberately non-owning:
 
@@ -97,10 +94,10 @@ MVCC does not read PersistentService.ROOT
 MvccDatabaseRuntime has no acquire/lease/static ownership registry
 MvccConglomerateFactory directly owns one runtime
 legacy diagnostic lookup is weak and non-owning
-memory databases fail closed before legacy MVCC storage opens
+memory databases use the inherited RawStore lifecycle
 ```
 
-## Next step
+## Transaction-lifecycle seam
 
-Stage 2.2 derives the smallest neutral transaction-lifecycle seam from the accepted Derby lifecycle
-matrix. It must not migrate table data or revive the rejected five-method participant sketch.
+The neutral transaction-lifecycle seam is derived from the accepted Derby lifecycle matrix. It does
+not own table migration and does not revive the rejected five-method participant sketch.

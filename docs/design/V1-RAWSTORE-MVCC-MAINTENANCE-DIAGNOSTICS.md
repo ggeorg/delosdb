@@ -2,20 +2,18 @@
 
 ## Scope
 
-This Stage 4 slice adds database-owned automatic reclamation and immutable operational evidence to the
-opt-in RawStore-backed `delos_mvcc` format. It schedules the already proven transactional vacuum; it does
+This design adds database-owned automatic reclamation and immutable operational evidence to the
+RawStore-backed `delos_mvcc` format. It schedules the already proven transactional vacuum; it does
 not create another reclamation algorithm, WAL, checkpoint, recovery pass, or storage authority.
 
-Automatic maintenance is deliberately explicit during convergence:
+Automatic maintenance is deliberately opt-in:
 
 ```text
-delosdb.mvcc.rawStoreVerticalSlice.enabled=true
 delosdb.mvcc.rawStoreMaintenance.enabled=true
 ```
 
-The RawStore format and its automatic worker remain opt-in until the independent Phase 8 persistence
-system is retired. Manual `SYSCS_INPLACE_COMPRESS_TABLE` vacuum remains available when automatic
-maintenance is disabled.
+The RawStore-backed format itself is the production authority. Manual `SYSCS_INPLACE_COMPRESS_TABLE`
+vacuum remains available when automatic maintenance is disabled.
 
 ## Database ownership and bounds
 
@@ -166,12 +164,11 @@ Failure text contains only the exception class, not SQL values, paths, or row pa
 
 ## What this slice does not claim
 
-It does not enable the RawStore format by default. It does not enable automatic maintenance by default
-during convergence. It does not add retention windows, forced reader expiry, page relocation,
+It does not enable automatic maintenance by default. It does not add retention windows, forced reader expiry, page relocation,
 defragmentation, end truncation, incremental ordered-index splits/merges, overflow-page compaction, XA
 MVCC writes, nested update transactions, a SQL diagnostic virtual table, JMX, external metrics export, or
-cross-process scheduling. It does not remove retained Phase 8 durability components or begin module
-retirement.
+cross-process scheduling. Retirement of the retained pre-convergence durability components and storage
+modules was handled separately.
 
 ## Executable proof
 

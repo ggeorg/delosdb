@@ -1,7 +1,7 @@
 # Heap/MVCC differential SQL harness
 
 The heap/MVCC differential SQL harness is a deterministic validation gate for
-SQL behavior that must remain equivalent between Derby heap tables and opt-in
+SQL behavior that must remain equivalent between Derby heap tables and
 `delos_mvcc` tables.
 
 It is intentionally narrower than randomized SQLancer validation. SQLancer can

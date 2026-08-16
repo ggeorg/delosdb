@@ -2,8 +2,8 @@
 
 ## Scope
 
-This milestone adds access-method-native enforcement for primary-key and unique constraints declared
-inside `CREATE TABLE ... USING delos_mvcc` for the opt-in RawStore-backed format.
+This design adds access-method-native enforcement for primary-key and unique constraints declared
+inside `CREATE TABLE ... USING delos_mvcc` for the RawStore-backed format.
 
 The SQL layer continues to create its inherited backing indexes. In addition, it passes compact,
 provider-neutral constraint metadata into base-conglomerate creation. The RawStore MVCC access method

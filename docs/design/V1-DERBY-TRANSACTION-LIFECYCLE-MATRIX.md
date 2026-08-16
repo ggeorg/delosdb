@@ -11,12 +11,12 @@ nested read transaction:     accepted read-only rule
 nested update transaction:   fail-closed for MVCC
 XA participation:            fail-closed for MVCC
 database/session teardown:   accepted cleanup rule
-exact Java callback API:     implemented in Stage 2.2
+exact Java callback API:     implemented
 ```
 
 This proof defines the lifecycle semantics preserved by the neutral access-method transaction seam.
-Stage 2.2 now implements that seam in `RAMTransaction`; the current Phase 8 MVCC persistence path
-remains unchanged until the RawStore-backed vertical slice consumes it.
+The implemented seam lives in `RAMTransaction` and is consumed by the RawStore-backed MVCC transaction
+context.
 
 ## Source seams inspected
 
@@ -55,7 +55,7 @@ contexts.
 
 ## Semantic state owned by one access transaction
 
-The future RawStore-backed MVCC path may attach transaction-local semantic state to one
+The RawStore-backed MVCC path attaches transaction-local semantic state to one
 `RAMTransaction`-equivalent owner:
 
 ```text
@@ -85,7 +85,7 @@ For a local transaction with MVCC writes:
 1. close or prepare non-held access controllers according to inherited commit behavior
 2. acquire the database commit-publication boundary
 3. mark the MVCC context FINALIZING
-4. reserve and stamp the commit sequence under the accepted DP-1 protocol
+4. reserve and stamp the commit sequence under the accepted commit-publication protocol
 5. call the RawStore commit operation
 6. after RawStore reports success, publish the committed high-water
 7. retire transaction-owned MVCC semantic state
@@ -132,10 +132,10 @@ This matches RawStore stack semantics.
 
 | Derby path | RawStore outcome | MVCC semantic action | Commit sequence | Snapshot/held-cursor action | Accepted v1 convergence rule |
 | --- | --- | --- | --- | --- | --- |
-| `userCommit()` / synchronized local commit | `commit()` ends the current unit | finalize before RawStore commit; retire after success | reserve and publish under DP-1 | transaction snapshot ends; held cursor lease may survive | supported |
+| `userCommit()` / synchronized local commit | `commit()` ends the current unit | finalize before RawStore commit; retire after success | reserve and publish under the commit-publication protocol | transaction snapshot ends; held cursor lease may survive | supported |
 | `internalCommit(true)` | same physical commit, internally requested | same as local commit | same as local commit | same ownership rule | supported |
 | `internalCommit(false)` | no RawStore commit | do not finalize or retire MVCC transaction state | none | current transaction snapshot remains | non-terminal; no lifecycle callback may treat it as commit |
-| `internalCommitNoSync(RELEASE_LOCKS)` | logical commit without requested log sync | same logical finalization as commit | reserve/publish under DP-1 after RawStore success | transaction snapshot ends; held cursor lease may survive | supported; durability remains RawStore-owned |
+| `internalCommitNoSync(RELEASE_LOCKS)` | logical commit without requested log sync | same logical finalization as commit | reserve/publish under the commit-publication protocol after RawStore success | transaction snapshot ends; held cursor lease may survive | supported; durability remains RawStore-owned |
 | `internalCommitNoSync(KEEP_LOCKS)` | logical unit commits while locks may be retained | retire old MVCC transaction unit after success; future writes require a new semantic unit | reserve/publish if MVCC writes existed | held controllers and their leases may survive independently | supported only with explicit transaction-unit reset |
 | normal `abort()` / user rollback | RawStore undoes full unit | mark aborting, then discard after abort | none | close transaction-owned snapshots/controllers | supported |
 | statement-severity error | RawStore rollback to internal savepoint | trim semantic state after RawStore rollback | none | statement resources close; transaction snapshot continues | supported |
@@ -203,7 +203,7 @@ path owned by the access transaction context.
 
 ## Interface constraints derived from the matrix
 
-Stage 2.2 implements `AccessMethodTransactionLifecycle`. The interface distinguishes:
+`AccessMethodTransactionLifecycle` implements the neutral lifecycle seam. The interface distinguishes:
 
 ```text
 local synchronized commit
@@ -252,22 +252,22 @@ recovery reconstructs publication state before snapshot acquisition
 
 ## Decision
 
-DP-2 is accepted with these boundaries:
+The transaction-lifecycle design is accepted with these boundaries:
 
 ```text
-local transaction lifecycle:     supported by the future convergence seam
+local transaction lifecycle:     supported by the current access-method seam
 statement/savepoint lifecycle:   supported with RawStore-first physical ordering
 held cursor lifecycle:           separate cursor-owned snapshot lease required
 nested read-only transaction:    supported
 nested update MVCC:              fail closed
 XA MVCC:                         fail closed
-exact Java lifecycle seam:       implemented in Stage 2.2
+exact Java lifecycle seam:       implemented
 ```
 
-The next proof is DP-3: the RawStore MVCC page/container vertical-slice design.
+The RawStore MVCC page/container design builds on this lifecycle seam.
 
 
-## Stage 2.2 implementation record
+## Implementation record
 
 The implemented seam is documented in:
 

@@ -30,7 +30,6 @@ manifests.
 | [`V1-MODULE-ARCHITECTURE.md`](V1-MODULE-ARCHITECTURE.md) | module and dependency boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |
 | [`design/V1-GENERATED-CLASS-ARCHITECTURE.md`](design/V1-GENERATED-CLASS-ARCHITECTURE.md) | JDK 25 activation-generation architecture |
-| [`design/V1-REPOSITORY-INTEGRITY-CLEANUP.md`](design/V1-REPOSITORY-INTEGRITY-CLEANUP.md) | repository-integrity model and accepted baseline |
 
 ## Current storage protocols
 

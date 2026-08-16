@@ -16,8 +16,8 @@ MVCC visibility, page format, locking, transaction behavior, durability, recover
 selected storage path. `Event.isEnabled()` keeps the disabled path bounded.
 
 No unwired event method remains. The earlier purge, checkpoint, recovery, backup,
-buffer-eviction, heap-sanity, and path-decision event sketches belonged to the retired Phase 8 oracle
-or never acquired a live producer. Stage 8.7.3 deletes those dead production surfaces rather than
+buffer-eviction, heap-sanity, and path-decision event sketches belonged to the retired pre-convergence
+MVCC oracle or never acquired a live producer. The final production closeout deleted those dead surfaces rather than
 keeping speculative APIs.
 
 ## Verification

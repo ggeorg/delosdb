@@ -2,8 +2,8 @@
 
 ## Status
 
-Stage 2.3 froze the final target. Stage 7.1 removed the bridge, Stage 7.2 removed storage-io, and
-Stage 7.3 removes storage-api after moving 101 shared contracts into `delosdb-derby-store-api` and
+The final target is frozen. The bridge, storage-io, and storage-api projects are retired after their
+valid responsibilities moved into `delosdb-storage-mvcc` or `delosdb-derby-store-api`, and
 deleting the unused parallel facade.
 
 ## Final target
@@ -11,7 +11,7 @@ deleting the unused parallel facade.
 The final graph contains 21 Gradle subprojects:
 
 ```text
-current subprojects after Stage 7.3: 20
+current subprojects after storage-module retirement: 20
 required new module: delosdb-search-lucene
 retired: delosdb-storage-api, delosdb-storage-bridge, delosdb-storage-io
 final subprojects: 21
@@ -69,7 +69,7 @@ verifyNoLegacyLucene
 verifyRetiredStorageModules
 ```
 
-## Production provider registration after Stage 7.3
+## Production provider registration
 
 `delosdb-storage-bridge` is absent. `delosdb-storage-mvcc` owns exactly one
 `ExternalAccessMethodProvider` implementation and service entry.
@@ -140,13 +140,13 @@ delosdb-storage-derby.jar
 
 ## Scope boundary
 
-Stage 7.3 completes the final transitional storage-project retirement. It does not:
+The storage-project retirement does not:
 
 ```text
 merge MVCC or Lucene implementations into the engine
 add delosdb-search-lucene
 change SQL routing or table formats
 change transaction, recovery, locking, vacuum, or maintenance semantics
-delete the quarantined Phase 8 differential oracle
+delete the quarantined pre-convergence differential oracle
 place both derby.jar and the MVCC patch jar on the runtime classpath
 ```

@@ -3,12 +3,12 @@
 ## Status
 
 ```text
-Phase 9 Stage 4 mixed heap/RawStore-MVCC transaction slice: IMPLEMENTED
+Status: IMPLEMENTED
 ```
 
 ## Decision
 
-A local SQL transaction may mutate inherited heap tables and opt-in RawStore-backed
+A local SQL transaction may mutate inherited heap tables and RawStore-backed
 `delos_mvcc` tables together.
 
 Both access methods use the same inherited `RAMTransaction` and its RawStore transaction. There is no
@@ -63,8 +63,8 @@ MVCC lifecycle afterCommit
     -> publish committed high-water in memory
 ```
 
-The retained Phase 8 external decision coordinator is not used. It remains required only for retained
-external-format MVCC writers during the migration window.
+The retired external decision coordinator is not used, and no retained external-format MVCC writer
+remains in the production path.
 
 ## Rollback and savepoints
 
@@ -155,5 +155,5 @@ vacuum or purge
 final fine-grained locking
 ```
 
-The opt-in RawStore-backed MVCC format remains transitional until the remaining Stage 4 replacement
-capabilities and Stage 5 removal gates are complete.
+The RawStore-backed MVCC format is now the production authority; the former transitional removal gates
+are complete.

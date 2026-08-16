@@ -3,17 +3,12 @@
 ## Status
 
 ```text
-IMPLEMENTED FOR THE OPT-IN RAWSTORE MVCC FORMAT
+IMPLEMENTED
 ```
 
-This milestone replaces the isolated format's provisional runtime transaction token and table-local
-publication counter with durable database-wide MVCC identity metadata owned by Derby RawStore.
-
-It does not widen the supported SQL mutation surface. The opt-in remains:
-
-```text
-delosdb.mvcc.rawStoreVerticalSlice.enabled=true
-```
+This design uses durable database-wide MVCC identity metadata owned by Derby RawStore rather than a
+runtime-only transaction token or table-local publication counter. RawStore-backed MVCC is the
+production authority; the historical vertical-slice property is no longer a routing switch.
 
 ## Ownership
 

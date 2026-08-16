@@ -54,13 +54,13 @@ Run the affected module and the smallest directly relevant proof. Examples:
 
 Do not run the full Derby language suite after every small change.
 
-## Permanent S0
+## Permanent closeout verification
 
 ```bash
 ./gradlew s0CloseoutVerification --console=plain
 ```
 
-S0 has seven direct authorities:
+Permanent closeout verification has seven direct authorities:
 
 ```text
 delosModuleDependencyBoundaryStaticAnalysis
@@ -146,7 +146,7 @@ delosSystemTests
 delosStressTests
 ```
 
-The complete Stage 4 isolation catalogue has a focused entry point:
+The complete isolation catalogue has a focused entry point:
 
 ```bash
 ./gradlew \
@@ -197,7 +197,7 @@ performance/baseline capture are explicit lanes rather than hidden `check` depen
 
 ## Baseline evidence capture
 
-Machine-specific performance and resource evidence is opt-in and is not part of S0:
+Machine-specific performance and resource evidence is opt-in and is not part of permanent closeout verification:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain

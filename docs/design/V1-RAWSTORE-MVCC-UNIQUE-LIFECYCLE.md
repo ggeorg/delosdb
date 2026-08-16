@@ -2,8 +2,8 @@
 
 ## Scope
 
-This milestone extends access-method-native uniqueness beyond inline `CREATE TABLE` definitions.
-For an opt-in RawStore-backed `delos_mvcc` table, the following SQL DDL paths now maintain the same
+This design extends access-method-native uniqueness beyond inline `CREATE TABLE` definitions.
+For a RawStore-backed `delos_mvcc` table, the following SQL DDL paths now maintain the same
 persisted RawStore metadata used by statement-time INSERT and UPDATE enforcement:
 
 ```text
