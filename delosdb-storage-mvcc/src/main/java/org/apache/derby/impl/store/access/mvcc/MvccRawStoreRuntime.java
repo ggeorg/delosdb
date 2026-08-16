@@ -562,14 +562,18 @@ final class MvccRawStoreRuntime {
             MvccSnapshotLeaseDiagnostics.currentSlotClaimFailure();
             return null;
         }
+        boolean opened = false;
         try {
             long sequence = publishedHighWater.get();
+            SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
             MvccSnapshotLeaseDiagnostics.slottedCurrentOpen();
-            return SnapshotLease.slotted(this, slot, sequence);
-        } catch (RuntimeException | Error failure) {
-            slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
-            throw failure;
+            opened = true;
+            return lease;
+        } finally {
+            if (!opened) {
+                slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
+            }
         }
     }
 
@@ -580,6 +584,7 @@ final class MvccRawStoreRuntime {
             MvccSnapshotLeaseDiagnostics.retainedSlotClaimFailure();
             return null;
         }
+        boolean opened = false;
         try {
             long published = publishedHighWater.get();
             if (sequence > published) {
@@ -587,12 +592,15 @@ final class MvccRawStoreRuntime {
                         "RawStore MVCC retained snapshot is ahead of publication: "
                                 + sequence + " > " + published);
             }
+            SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
             MvccSnapshotLeaseDiagnostics.slottedRetainedOpen();
-            return SnapshotLease.slotted(this, slot, sequence);
-        } catch (RuntimeException | Error failure) {
-            slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
-            throw failure;
+            opened = true;
+            return lease;
+        } finally {
+            if (!opened) {
+                slots.set(slot, FREE_SNAPSHOT_LEASE_SLOT);
+            }
         }
     }
 
