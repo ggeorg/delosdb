@@ -6,7 +6,7 @@ Permanent gates protect durable product and architecture invariants before slowe
 compatibility suites run. They must remain small, deterministic, and resilient to harmless source
 refactoring.
 
-## S0 authorities
+## Permanent verification authorities
 
 `./gradlew s0CloseoutVerification` has seven direct dependencies:
 
@@ -64,7 +64,7 @@ A temporary implementation gate may be useful while a migration is active. At cl
 2. merged into an existing permanent gate; or
 3. retired.
 
-Historical stage gates must not accumulate in S0. New permanent tasks require a distinct durable
+Temporary implementation checks must not accumulate in the permanent verification suite. New permanent tasks require a distinct durable
 invariant that is not already covered by the seven authorities.
 
 ## Monotonic repository integrity
@@ -96,4 +96,4 @@ to perform mechanical refactoring.
 
 Wall-clock benchmarks, JMH, JFR recordings, jcstress, SQLancer, long-reader soak tests, baseline
 capture, and destructive fault campaigns are opt-in or closeout evidence. They do not belong in
-normal S0.
+normal permanent verification.
