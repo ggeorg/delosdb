@@ -9847,7 +9847,6 @@ def registerGate10loResidentProfile = { String taskName, String suffix, boolean 
                 derbyTestsClassDir,
                 rawStoreInternalTestSupportClassDir,
                 derbyRuntimeJars)
-        task.args 'coordinator'
         task.outputs.upToDateWhen { false }
         task.outputs.dir(rootProject.layout.buildDirectory.dir("${gate10loRoot}/${suffix}"))
 
