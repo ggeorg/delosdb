@@ -1,7 +1,7 @@
 # DelosDB public documentation
 
 This directory contains the public product, architecture, compatibility, operations, and accepted
-design records for DelosDB.
+design documentation for DelosDB.
 
 Documentation describes the implementation. The build does not parse Markdown or comments to decide
 whether an architecture is valid. Executable authority comes from source structure, module and
@@ -12,11 +12,11 @@ manifests.
 
 | Document | Purpose |
 |---|---|
-| [`PROJECT-STATUS.md`](PROJECT-STATUS.md) | current completed work, metrics, and next phase |
+| [`PROJECT-STATUS.md`](PROJECT-STATUS.md) | current capabilities, repository metrics, limitations, and remaining work |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | SQL-to-result, generated-class, transaction, and storage architecture |
 | [`READABLE-ENGINE.md`](READABLE-ENGINE.md) | stable plans, EXPLAIN, EXPLAIN ANALYZE, and the end-to-end trace |
 | [`BUILDING.md`](BUILDING.md) | supported build and verification workflow |
-| [`STATIC-GATE-POLICY.md`](STATIC-GATE-POLICY.md) | seven permanent S0 authorities and gate rules |
+| [`STATIC-GATE-POLICY.md`](STATIC-GATE-POLICY.md) | permanent verification authorities and static-analysis rules |
 | [`DERBY-COMPATIBILITY.md`](DERBY-COMPATIBILITY.md) | compatibility boundaries and deliberate differences |
 | [`SECURITY.md`](SECURITY.md) | TLS, deserialization, and secure processing behavior |
 | [`sql-extensions.md`](sql-extensions.md) | DelosDB SQL syntax and `USING delos_mvcc` |
@@ -29,9 +29,8 @@ manifests.
 | [`STORAGE-ARCHITECTURE.md`](STORAGE-ARCHITECTURE.md) | RawStore, heap, and MVCC ownership |
 | [`V1-MODULE-ARCHITECTURE.md`](V1-MODULE-ARCHITECTURE.md) | module and dependency boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |
-| [`V1-RAWSTORE-CONVERGENCE-ARCHITECTURE.md`](V1-RAWSTORE-CONVERGENCE-ARCHITECTURE.md) | accepted RawStore convergence record |
 | [`design/V1-GENERATED-CLASS-ARCHITECTURE.md`](design/V1-GENERATED-CLASS-ARCHITECTURE.md) | JDK 25 activation-generation architecture |
-| [`design/V1-REPOSITORY-INTEGRITY-CLEANUP.md`](design/V1-REPOSITORY-INTEGRITY-CLEANUP.md) | permanent repository-integrity model and closeout |
+| [`design/V1-REPOSITORY-INTEGRITY-CLEANUP.md`](design/V1-REPOSITORY-INTEGRITY-CLEANUP.md) | repository-integrity model and accepted baseline |
 
 ## Current storage protocols
 
@@ -51,35 +50,22 @@ manifests.
 | [`PERFORMANCE-CONCURRENCY-VALIDATION.md`](PERFORMANCE-CONCURRENCY-VALIDATION.md) | benchmark and concurrency evidence policy |
 | [`EXTERNAL-VALIDATION.md`](EXTERNAL-VALIDATION.md) | opt-in SQLancer and external validation lanes |
 | [`RESEARCH-POSITIONING.md`](RESEARCH-POSITIONING.md) | research identity and boundaries |
-| [`RESEARCH-FEATURE-PRIORITIES.md`](RESEARCH-FEATURE-PRIORITIES.md) | v1 research foundation and post-v1 order |
+| [`RESEARCH-FEATURE-PRIORITIES.md`](RESEARCH-FEATURE-PRIORITIES.md) | research foundation and longer-term priorities |
 | [`ALGORITHM-INVENTORY.md`](ALGORITHM-INVENTORY.md) | source-backed algorithm inventory |
-| [`TEST-ORGANIZATION-AND-CONSOLIDATION.md`](TEST-ORGANIZATION-AND-CONSOLIDATION.md) | accepted test provenance, organization, and consolidation plan |
 
 ## Design records
 
-Files under [`design/`](design/) record accepted implementation decisions and proof boundaries. Many
-retain historical stage names because those names identify the change that produced the design.
-They are not active roadmaps and do not override the current documents above.
-
-## Historical records
-
-Completed phases and superseded plans live under [`history/`](history/). Historical commands and task
-names may no longer exist. History provides provenance only.
-
-## Local/private workspace
-
-`.delosdb-v1/` contains local planning, overlay workflow, research notes, and unpublished manuscript
-material. It is not part of the public product contract. Stable conclusions should be promoted into
-this public directory, source comments, tests, or release notes.
+Files under [`design/`](design/) record accepted implementation decisions and proof boundaries. They
+are supporting technical records, not roadmaps. Current product behavior is owned by the current
+documents above together with source code, tests, and permanent structural manifests.
 
 ## Documentation ownership rules
 
 - One current document owns each public topic.
 - Current documents use present-tense product language.
-- Completed stage logs are summarized or moved to history.
-- Detailed design records may preserve historical terminology but must not be listed as current plans.
-- Public behavior, durable formats, module ownership, and supported limitations must match code and
-  tests.
+- Superseded engineering plans and implementation diaries are not public product documentation.
+- Design records explain durable decisions without requiring knowledge of internal development sequencing.
+- Public behavior, durable formats, module ownership, and supported limitations must match code and tests.
 - Documentation wording, headings, line counts, and exact phrases are never build authority.
 
-- [Isolation specifications](ISOLATION-SPECIFICATIONS.md) — Stage 4 declarative concurrency format, catalogue and execution rules.
+- [Isolation specifications](ISOLATION-SPECIFICATIONS.md) — declarative concurrency format, catalogue, and execution rules.
