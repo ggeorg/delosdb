@@ -175,9 +175,9 @@ Permanent architecture gate:
 delosMvccRawStoreOrderedIndexStaticAnalysis
 ```
 
-## Current limits
+## Current boundaries
 
-This milestone does not add:
+The ordered-index implementation does not add:
 
 ```text
 SQL CREATE INDEX / DROP INDEX lifecycle for arbitrary user-defined MVCC indexes

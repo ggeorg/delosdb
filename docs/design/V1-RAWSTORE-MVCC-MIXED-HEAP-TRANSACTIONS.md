@@ -63,8 +63,7 @@ MVCC lifecycle afterCommit
     -> publish committed high-water in memory
 ```
 
-The retired external decision coordinator is not used, and no retained external-format MVCC writer
-remains in the production path.
+No second decision coordinator or alternate MVCC writer participates in the production path.
 
 ## Rollback and savepoints
 
@@ -141,19 +140,9 @@ halt after the RawStore commit record
 real memory-database commit and rollback
 ```
 
-## Current limits
+## Current boundaries
 
-This slice does not add:
-
-```text
-retained external-format MVCC mixing
-XA MVCC writes
-nested MVCC update transactions
-RawStore-backed MVCC secondary indexes
-unique constraints over MVCC versions
-vacuum or purge
-final fine-grained locking
-```
-
-The RawStore-backed MVCC format is now the production authority; the former transitional removal gates
-are complete.
+Mixed heap/MVCC transactions now coexist with RawStore-backed ordered indexes, uniqueness, vacuum, and
+the logical/physical locking model. MVCC XA writes and nested MVCC update transactions remain
+fail-closed boundaries. RawStore-backed MVCC is the production authority; there is no retained
+external-format writer participating in the transaction.

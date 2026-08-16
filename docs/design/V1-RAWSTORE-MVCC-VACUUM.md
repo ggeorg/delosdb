@@ -171,10 +171,9 @@ There is no filesystem fallback.
 
 ## What this slice does not claim
 
-It does not itself own automatic scheduling, page relocation, end truncation, incremental ordered-index
-splits or merges, overflow-page compaction, configurable retention windows, XA MVCC writes, nested
-update transactions, or migration of retained pre-convergence tables. The separate database-owned scheduling
-and immutable evidence layer is defined by `V1-RAWSTORE-MVCC-MAINTENANCE-DIAGNOSTICS.md`.
+Vacuum does not own automatic scheduling, page relocation, end truncation, overflow-page compaction,
+configurable retention windows, MVCC XA writes, or nested update transactions. Database-owned automatic
+scheduling and diagnostics are documented in [`../MVCC-MAINTENANCE.md`](../MVCC-MAINTENANCE.md).
 
 ## Executable proof
 

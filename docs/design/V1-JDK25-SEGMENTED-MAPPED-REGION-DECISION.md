@@ -63,7 +63,7 @@ lose the explicit metadata choice or require a second durability path beside the
 
 ### Fault and diagnostics boundary mismatch
 
-Stages 8.2 and 8.3 observe exact completed positional reads, writes, force operations, and before/after
+The shared I/O diagnostics observe exact completed positional reads, writes, force operations, and before/after
 fault points. Mapped access changes memory directly and operating-system write-back can occur outside
 the Java page-write call. Preserving the existing evidence model would require a separate mapped dirty
 tracking and force protocol rather than reusing the shared positional seam.

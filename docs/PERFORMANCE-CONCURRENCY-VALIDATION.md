@@ -1,12 +1,11 @@
 # DelosDB performance and concurrency validation
 
 Performance evidence is split into independent lanes. No wall-clock benchmark, external stress tool,
-or long-running workload is a permanent closeout dependency.
+or long-running workload is a permanent verification dependency.
 
 ## Current deterministic baselines
 
-The retained implementation-local harnesses from the pre-convergence MVCC implementation were deleted after RawStore convergence. Stable
-root adapters now run live production-path proofs before any optional external command:
+Stable root adapters run live production-path regressions before any optional external command:
 
 ```text
 delosJmhMicrobenchmarks
@@ -23,7 +22,7 @@ delosLongReaderVacuumSoak
 ```
 
 These built-in tests verify deterministic state, live SQL/network behavior, concurrency, purge
-horizons, and heap/MVCC equivalence. Timing evidence remains diagnostic and is never a permanent closeout threshold.
+horizons, and heap/MVCC equivalence. Timing evidence remains diagnostic and is never a permanent verification threshold.
 
 ## JDBC/JUnit benchmark lanes
 
@@ -57,7 +56,7 @@ metadata/directory, version storage, ordered-index directory/B-tree, and other c
 deltas must exactly match the recorded write count/bytes for every phase, recorder overflow is fatal, and
 an all-zero topology report is rejected. Semantic verification and any restoration needed by the
 two-transaction rollback shape remain outside the timed phases. The results are diagnostic evidence, not
-a permanent closeout threshold.
+a permanent verification threshold.
 
 ```bash
 ./gradlew :delosdb-tests:runDelosJdbcDeleteReinsertAttribution \
@@ -110,7 +109,7 @@ archived-oracle tests. The accepted historical baseline remains immutable eviden
 ## Interpretation rules
 
 - Benchmark values are evidence, not correctness assertions.
-- No performance threshold belongs in permanent closeout verification.
+- No performance threshold belongs in permanent verification.
 - Compare identical JDK, JVM arguments, runtime artifacts, and parameters.
 - A behavior change requires a separate correctness and compatibility proof.
 
@@ -138,8 +137,7 @@ split explicitly into `PRIMARY_KEY_READ_HOT`, `PRIMARY_KEY_READ_DISJOINT`, and
 `PRIMARY_KEY_READ_RANDOM`: the hot shape sends every client to id=1, the disjoint shape assigns one evenly
 spaced private id per client, and the random shape replays a deterministic precomputed key stream across
 the fixture. Key generation occurs outside the timed interval. The current write workloads remain
-`DISJOINT_INDEXED_UPDATE` and `CONTENDED_INDEXED_UPDATE`; broader read/write mixes are roadmap work, not
-silently claimed as already implemented.
+`DISJOINT_INDEXED_UPDATE` and `CONTENDED_INDEXED_UPDATE`; broader read/write mixes are not implemented by this harness and are not silently claimed as supported benchmark shapes.
 
 Concurrency results report both transactions/second and operations/second. The aggregate value
 `elapsedNanos / measuredTransactions` is reported as `inverseThroughputNanosPerTransaction`; it is the

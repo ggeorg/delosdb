@@ -58,7 +58,7 @@ architecture authority.
 
 ## Verification-check lifecycle
 
-A temporary implementation check may be useful while a migration is active. At closeout it must be:
+A temporary implementation check may be useful while a migration is active. Before it can remain in permanent verification it must be:
 
 1. promoted into a durable structural or executable invariant;
 2. merged into an existing permanent verification authority; or
@@ -95,5 +95,5 @@ to perform mechanical refactoring.
 ## Performance and external validation
 
 Wall-clock benchmarks, JMH, JFR recordings, jcstress, SQLancer, long-reader soak tests, baseline
-capture, and destructive fault campaigns are opt-in or closeout evidence. They do not belong in
+capture, and destructive fault campaigns are opt-in diagnostic evidence. They do not belong in
 normal permanent verification.

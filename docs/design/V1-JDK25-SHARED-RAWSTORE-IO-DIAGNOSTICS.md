@@ -156,7 +156,7 @@ Permanent evidence:
 delosSharedRawStoreIoDiagnosticsStaticAnalysis
 ```
 
-Normal RawStore crash, reopen, memory, DRDA, module, and closeout gates remain authoritative for integration.
+Normal RawStore crash, reopen, memory, DRDA, module, and verification gates remain authoritative for integration.
 
 ## Deliberately deferred
 
@@ -180,7 +180,7 @@ Deterministic database-scoped fault injection and replay build on this observabl
 
 ## Schema version 3
 
-Stages 8.4 and 8.5 temporarily extended the page path and diagnostics for heap-segment and native
+The completed heap-segment and native-mirror experiments temporarily extended the page path and diagnostics for
 mirror experiments. The final representation decision removes those production representations and advances
 `DelosRawStoreIoSnapshot` to schema version 3.
 

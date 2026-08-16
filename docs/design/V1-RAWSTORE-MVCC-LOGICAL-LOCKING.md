@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-IMPLEMENTED BEHIND THE RAWSTORE MVCC OPT-IN
+IMPLEMENTED
 ```
 
-This milestone adds database lock-manager identities for MVCC semantic conflicts while retaining
+RawStore-backed MVCC uses database lock-manager identities for semantic conflicts while retaining
 Derby RawStore as the only physical and transactional authority.
 
 ## Lock authority

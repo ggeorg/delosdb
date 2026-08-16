@@ -164,7 +164,7 @@ Permanent gates:
 delosSharedStoragePositionalIoStaticAnalysis
 ```
 
-The normal heap/MVCC DRDA, crash-recovery, reopen, memory-database, and closeout lanes remain the
+The normal heap/MVCC DRDA, crash-recovery, reopen, memory-database, and verification lanes remain the
 integration authority.
 
 ## Deliberately deferred

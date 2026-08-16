@@ -5,7 +5,7 @@ Status: VERIFIED.
 ## Decision
 
 The implementation installs one deterministic, database-scoped fault seam around the shared RawStore page-I/O
-boundary established by Stages 8.1 and 8.2. Heap and RawStore-backed MVCC therefore encounter the
+shared positional-I/O boundary. Heap and RawStore-backed MVCC therefore encounter the
 same injected physical failure. The seam is disabled by default and has no SQL, connection attribute,
 system property, service-provider, or public application control surface.
 

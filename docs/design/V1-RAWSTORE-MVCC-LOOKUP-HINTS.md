@@ -3,10 +3,10 @@
 ## Status
 
 ```text
-IMPLEMENTED BEHIND THE RAWSTORE MVCC OPT-IN
+IMPLEMENTED
 ```
 
-This milestone optimizes RawStore-backed MVCC version-chain lookup without changing the authority
+Validated lookup hints optimize RawStore-backed MVCC version-chain lookup without changing the authority
 model. The logical row and version identities remain authoritative. A RawStore page number and record
 identifier are only a validated hint; every missing, stale, reused, or mismatched locator takes the
 logical fallback path.
@@ -33,8 +33,7 @@ version entry
 ```
 
 The physical locator uses RawStore's stable record identifier, not a mutable slot number. The format
-version is unchanged because these fields are backward-compatible trailing fields. Rows written before
-this milestone retain the shorter valid shape and continue through logical lookup and authoritative
+version is unchanged because these fields are backward-compatible trailing fields. Rows written with the shorter compatible shape continue through logical lookup and authoritative
 version-row visibility resolution.
 
 The optional head summary repeats only the visibility fields of the directory's named current head.
@@ -104,10 +103,10 @@ lookup code exists in the MVCC path.
 
 ## Deliberate limits
 
-This milestone does not make physical locators authoritative and does not introduce a secondary index.
-The stable-row directory itself is still found by a conservative linear RawStore scan. A stale hint is
-not repaired merely by reading it; a later mutation naturally writes a current hint. Ordered indexes,
-unique constraints, vacuum/purge, relocation policy, and the final cost model remain separate slices.
+Physical locators never become authoritative. The stable-row directory logical fallback remains a
+conservative RawStore scan when a locator hint is missing or invalid. A stale hint is not repaired merely
+by reading it; a later mutation naturally writes a current hint. Ordered-index, uniqueness, vacuum, and
+costing mechanisms remain separate authorities and must preserve logical fallback correctness.
 
 ## Permanent evidence
 

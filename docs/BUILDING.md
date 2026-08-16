@@ -54,13 +54,13 @@ Run the affected module and the smallest directly relevant proof. Examples:
 
 Do not run the full Derby language suite after every small change.
 
-## Permanent closeout verification
+## Permanent verification
 
 ```bash
 ./gradlew s0CloseoutVerification --console=plain
 ```
 
-Permanent closeout verification has seven direct authorities:
+Permanent verification has seven direct authorities:
 
 ```text
 delosModuleDependencyBoundaryStaticAnalysis
@@ -74,19 +74,29 @@ delosJdk25ClassFileBytecodeVerifier
 
 The task graph will also run compilation and packaging prerequisites.
 
-## Generated-class verification
+## Generated-class and class-file verification
 
 ```bash
-./gradlew   delosGeneratedClassStaticAnalysis   :delosdb-tests:runDelosGeneratedClassProductionAcceptance   delosJdk25ClassFileBytecodeVerifier   --console=plain
+./gradlew \
+  delosGeneratedClassStaticAnalysis \
+  :delosdb-tests:runDelosGeneratedClassProductionAcceptance \
+  delosJdk25ClassFileBytecodeVerifier \
+  --console=plain
 ```
+
+`ClassFileJava` is the sole production SQL activation generator. The independent
+`DelosJdk25ClassFileVerifier` uses the standard JDK 25 `java.lang.classfile.ClassFile` API to parse
+compiled runtime classes and verify the configured class-file baseline. For JDK 25 the expected major
+version is 69. The verifier does not emit or transform bytecode and is not a second generator. Its report
+is written to `build/reports/delosdb/jdk25-classfile-bytecode-verifier.txt`.
 
 The focused acceptance does not run the full Derby language suite.
 
 ## Test inventory, provenance, authorship and stable suites
 
-Stages 1 through 3 of the accepted test-organization plan freeze the inherited Derby baseline,
-separate DelosDB-authored tests physically and provide stable purpose-oriented execution tasks.
-Verify provenance and stable-suite coverage with:
+The accepted test-organization structure freezes the inherited Derby baseline, separates
+DelosDB-authored tests physically, and provides stable purpose-oriented execution tasks. Verify
+provenance and stable-suite coverage with:
 
 ```bash
 ./gradlew \
@@ -197,7 +207,7 @@ performance/baseline capture are explicit lanes rather than hidden `check` depen
 
 ## Baseline evidence capture
 
-Machine-specific performance and resource evidence is opt-in and is not part of permanent closeout verification:
+Machine-specific performance and resource evidence is opt-in and is not part of permanent verification:
 
 ```bash
 ./gradlew :delosdb-tests:captureDelosV1Baseline --console=plain

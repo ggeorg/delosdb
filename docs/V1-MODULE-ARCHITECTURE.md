@@ -181,7 +181,7 @@ The manifest distinguishes active modules from deferred modules and verifies tha
           --console=plain
 ```
 
-The product-wide closeout task also includes these permanent structural checks:
+The product-wide verification task also includes these permanent structural checks:
 
 ```bash
 ./gradlew s0CloseoutVerification --console=plain

@@ -1,6 +1,6 @@
 # RawStore-backed MVCC UPDATE and DELETE
 
-Status: **IMPLEMENTED BEHIND THE EXISTING RAWSTORE OPT-IN**
+Status: **IMPLEMENTED**
 
 ## Scope
 
@@ -128,22 +128,12 @@ One transaction may UPDATE a row in one RawStore-backed MVCC table and DELETE a 
 mutations share one transaction ID, one commit sequence, one committed high-water update, and one
 RawStore outcome.
 
-## Current limits
+## Current boundaries
 
-This slice does not add:
-
-```text
-ordered or secondary index maintenance
-unique constraints
-vacuum or purge
-final fine-grained locking
-mixed heap/MVCC write transactions
-XA or nested update participation
-default routing or retained-format migration
-```
-
-The conservative container-locking proof policy remains. The retired pre-convergence implementation
-was never dual-written with the RawStore-backed path.
+UPDATE and DELETE participate in the same ordered-index, uniqueness, vacuum, logical-locking, physical
+locking, and accepted mixed heap/MVCC transaction mechanisms as other RawStore-backed MVCC mutations.
+MVCC XA writes and nested update transactions remain fail-closed boundaries. UPDATE and DELETE use
+only the RawStore-backed MVCC path.
 
 ## Permanent evidence
 

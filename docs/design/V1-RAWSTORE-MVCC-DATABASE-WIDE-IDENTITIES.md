@@ -7,8 +7,8 @@ IMPLEMENTED
 ```
 
 This design uses durable database-wide MVCC identity metadata owned by Derby RawStore rather than a
-runtime-only transaction token or table-local publication counter. RawStore-backed MVCC is the
-production authority; the historical vertical-slice property is no longer a routing switch.
+runtime-only transaction token or table-local publication counter. RawStore-backed MVCC is the production authority; identity allocation is database-owned and does not
+depend on a runtime routing switch.
 
 ## Ownership
 
@@ -114,23 +114,12 @@ jdbc:derby:memory:
 The metadata row, nested allocations, version stamps, and committed high-water use the inherited
 memory RawStore. No disk directory or alternate memory allocator is introduced.
 
-## Current limits
+## Current boundaries
 
-This milestone does not yet add:
-
-```text
-UPDATE or DELETE
-historical version-chain mutation
-multiple RawStore-backed MVCC tables in one transaction
-mixed heap/MVCC write transactions
-ordered indexes or uniqueness
-vacuum or purge
-XA or nested update support
-final lock granularity
-```
-
-Those capabilities must consume the database-wide identities established here rather than recreate
-another allocator.
+Database-wide identities are consumed by UPDATE/DELETE, multi-table and mixed heap/MVCC transactions,
+ordered indexes, uniqueness, vacuum, and logical/physical locking. Those mechanisms share this allocator
+rather than recreating transaction or commit-sequence authority. MVCC XA writes and nested update
+transactions remain fail-closed boundaries.
 
 ## Permanent evidence
 

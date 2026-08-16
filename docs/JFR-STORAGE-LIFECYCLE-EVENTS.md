@@ -15,10 +15,9 @@ JFR is **observability only**. Event creation and recording must not change Derb
 MVCC visibility, page format, locking, transaction behavior, durability, recovery ordering, or the
 selected storage path. `Event.isEnabled()` keeps the disabled path bounded.
 
-No unwired event method remains. The earlier purge, checkpoint, recovery, backup,
-buffer-eviction, heap-sanity, and path-decision event sketches belonged to the retired pre-convergence
-MVCC oracle or never acquired a live producer. The final production closeout deleted those dead surfaces rather than
-keeping speculative APIs.
+No unwired event method remains. Purge, checkpoint, recovery, backup, buffer-eviction, heap-sanity,
+and path-decision events are not part of the production JFR surface; only events with a live producer
+and stable observability contract are retained.
 
 ## Verification
 

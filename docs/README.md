@@ -27,6 +27,7 @@ manifests.
 |---|---|
 | [`PRODUCT-STRATEGY.md`](PRODUCT-STRATEGY.md) | v1 commitments and scope |
 | [`STORAGE-ARCHITECTURE.md`](STORAGE-ARCHITECTURE.md) | RawStore, heap, and MVCC ownership |
+| [`OPTIMIZER-AUTHORITY.md`](OPTIMIZER-AUTHORITY.md) | optimizer, statistics, and store-cost authority boundaries |
 | [`V1-MODULE-ARCHITECTURE.md`](V1-MODULE-ARCHITECTURE.md) | module and dependency boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |
 | [`design/V1-GENERATED-CLASS-ARCHITECTURE.md`](design/V1-GENERATED-CLASS-ARCHITECTURE.md) | JDK 25 activation-generation architecture |
@@ -52,9 +53,11 @@ manifests.
 
 ## Design records
 
-Files under [`design/`](design/) record accepted implementation decisions and proof boundaries. They
-are supporting technical records, not roadmaps. Current product behavior is owned by the current
-documents above together with source code, tests, and permanent structural manifests.
+Files under [`design/`](design/) record durable implementation decisions that still help contributors
+understand current code. Temporary audits, completed experiments, and superseded implementation slices
+belong in private engineering history rather than the public design directory. Current product behavior
+is owned by the current documents above together with source code, tests, and permanent structural
+manifests.
 
 ## Documentation ownership rules
 

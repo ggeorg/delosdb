@@ -1,11 +1,10 @@
 # RawStore-backed MVCC multi-table transactions
 
-Status: **IMPLEMENTED BEHIND THE EXISTING RAWSTORE OPT-IN**
+Status: **IMPLEMENTED**
 
 ## Scope
 
-This design removes the former single-table transaction restriction for tables using the
-RawStore-backed `delos_mvcc` format. Multiple such tables can now participate in one SQL transaction
+Multiple RawStore-backed `delos_mvcc` tables can participate in one SQL transaction
 with:
 
 ```text
@@ -19,8 +18,9 @@ one inherited RawStore commit record
 The invariant is one `MvccTransactionId` and one `MvccCommitSequence` for all participating
 RawStore-backed MVCC tables in that transaction.
 
-It does not extend the capability to retained external-format MVCC tables, mixed heap/MVCC writes,
-XA, nested update transactions, UPDATE, DELETE, indexes, or vacuum.
+The same transaction model now coexists with UPDATE, DELETE, ordered-index maintenance, uniqueness,
+vacuum, and accepted mixed heap/MVCC writes. MVCC XA writes and nested update transactions remain
+fail-closed boundaries.
 
 ## Transaction-local state
 
