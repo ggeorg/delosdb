@@ -165,6 +165,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
+        addProperty(command, "targets", options.targets());
         addProperty(command, "target", target.id());
         addProperty(command, "run", run);
         addProperty(command, "databaseRoot", options.databaseRoot());
