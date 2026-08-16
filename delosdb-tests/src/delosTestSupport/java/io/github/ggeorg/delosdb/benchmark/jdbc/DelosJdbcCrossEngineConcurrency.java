@@ -1685,7 +1685,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     localRead = connection.prepareStatement(
                             "select quantity from " + table + " where id = ?");
                 } else if (workload.isValues()) {
-                    localValues = connection.prepareStatement("values 1");
+                    localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isUpdate()) {
                     localUpdate = connection.prepareStatement(
                             "update " + table + " set quantity = quantity + 1 where id = ?");
