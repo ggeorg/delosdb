@@ -20,18 +20,14 @@ Closed or currently green areas include:
 ```text
 Gradle-only developer workflow
 JDK 25 Class-File API generated-bytecode backend behind JavaFactory
-opt-in delos_mvcc SQL integration
-MVCC typed durable row codec
-MVCC overflow payload lifecycle
-MVCC page checksums
-MVCC whole-page reuse and reusable-page index recovery
-MVCC page cache lifecycle and bounded eviction
-MVCC page-record headers and slot accounting
-MVCC/server static closeout gates
-DRDA server dependency hygiene
-DRDA scheduler seam and behavior gate
+RawStore-backed delos_mvcc SQL integration
+one Derby RawStore persistence/recovery authority
+MVCC transaction snapshots, visibility, indexes, maintenance, and vacuum
+repository-integrity and permanent verification gates
+DRDA server dependency hygiene and lifecycle hardening
 optional DRDA virtual-thread worker mode
 large DRDA EXTDTA temp spooling
+stable-plan, EXPLAIN, EXPLAIN ANALYZE, and readable-engine diagnostics
 ```
 
 Default behavior remains Derby-compatible heap storage. `delos_mvcc` remains explicit or property-gated.
@@ -51,18 +47,9 @@ DelosDB may add explicit opt-in SQL or runtime behavior, but default behavior sh
 
 ## MVCC rule
 
-MVCC can reuse Derby heap/raw-store patterns and self-contained services where useful:
+MVCC is an access method over the same Derby RawStore used by the inherited heap. MVCC owns logical transaction/version semantics, including transaction identity, snapshots, visibility, conflicts, version chains, retention, maintenance, and vacuum. RawStore remains the sole physical persistence, logging, checkpoint, recovery, backup, and database-lifecycle authority.
 
-```text
-typed DataValueDescriptor codec
-long-row/overflow patterns
-page checksums
-cache/buffer-pool ideas
-free-space/allocation-page ideas
-slotted-page/record-header ideas
-```
-
-But MVCC must not import Derby's log-coupled raw page layer wholesale. MVCC durable pages, overflow pages, reusable-page metadata, page cache, and record headers are MVCC-owned formats.
+Do not introduce a second MVCC file store, WAL, checkpoint stack, recovery authority, dual-write path, or runtime storage selector.
 
 ## Server rule
 

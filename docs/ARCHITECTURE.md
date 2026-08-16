@@ -101,7 +101,9 @@ the RawStore-backed MVCC implementation. The provider supports file and named me
 participates in Derby transaction, shutdown, recovery, backup, and DRDA lifecycles.
 
 Unsupported combinations fail before mutation. Current examples include MVCC `SERIALIZABLE`, XA
-writes, and durable Java-object/UDT values.
+writes, and durable Java-object/UDT values. The current `SERIALIZABLE` rejection is a truthful
+pre-1.0 implementation boundary, not the intended final v1 isolation contract; true MVCC
+`SERIALIZABLE` remains required before v1 release.
 
 ## Module boundaries
 
@@ -152,7 +154,7 @@ comments, exact report prose, and task self-inspection are not architecture auth
 
 ## Readable-engine diagnostics
 
-Phase 10 now exposes the selected optimizer plan through immutable `StablePlanModel`, deterministic
+DelosDB exposes the selected optimizer plan through immutable `StablePlanModel`, deterministic
 `EXPLAIN`, and bounded query-only `EXPLAIN ANALYZE`. Execution evidence is correlated to stable plan
 node ids through generated `resultSetNumber` identity and reuses existing Derby runtime statistics plus
 heap/MVCC scan information. It does not reconstruct a plan from runtime classes or feed diagnostics back

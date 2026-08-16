@@ -77,12 +77,15 @@ Current permanent values include:
 ```text
 dead private production methods: 0
 dead private production fields:  0
-exact duplicate groups:          48
-silent empty catches:            102
-generic catches:                 434
-methods >= 100 lines:            443
-complexity >= 20:                169
-classes >= 1000 lines:           137
+exact duplicate groups:          43
+methods in duplicate groups:     103
+estimated duplicate lines:       953
+generic catches:                 410
+methods >= 100 lines:            442
+complexity >= 20:                168
+classes >= 1000 lines:           136
+compiler authority violations:   0
+compiler compromise candidates:  0
 parse errors:                    0
 ```
 

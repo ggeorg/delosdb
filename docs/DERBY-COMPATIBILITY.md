@@ -71,7 +71,9 @@ Heap isolation preserves verified Derby behavior.
 
 The MVCC implementation provides statement snapshots for `READ COMMITTED` and transaction
 snapshots for `REPEATABLE READ`. Access to a `delos_mvcc` table at JDBC `SERIALIZABLE` rejects with
-SQLState `0A000` before a scan or write opens. Heap `SERIALIZABLE` behavior remains unchanged.
+SQLState `0A000` before a scan or write opens. Heap `SERIALIZABLE` behavior remains unchanged. This
+is a truthful current implementation boundary; true MVCC `SERIALIZABLE` remains required for the
+intended v1 contract rather than being accepted as a permanent post-v1 limitation.
 
 ## Compatibility changes
 
@@ -98,5 +100,6 @@ catalog and transaction integration
 DRDA behavior
 ```
 
-DelosDB implements MVCC-native formats when inherited code is inseparable from heap page layout,
-raw-store logging, physical row locations, or lock-manager-centered isolation.
+DelosDB implements MVCC-specific logical row/version structures as a RawStore access method when
+inherited heap structures are inseparable from heap page layout, physical row locations, or
+lock-manager-centered isolation. RawStore remains the shared physical persistence/recovery authority.

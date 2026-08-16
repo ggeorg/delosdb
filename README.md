@@ -4,10 +4,10 @@ DelosDB is a Java 25 relational database management system derived from Apache D
 It preserves Derby-compatible SQL, JDBC, catalogs, heap behavior, database formats, and DRDA while
 modernizing selected internals through explicit, tested boundaries.
 
-DelosDB is pre-1.0. The current repository has completed RawStore convergence, JDK 25 generated-class
-modernization, repository-integrity consolidation, and Phase 10's readable engine: stable selected-plan
-modeling, deterministic `EXPLAIN`, storage-aware `EXPLAIN ANALYZE`, and one executable end-to-end trace.
-Phase 11 product completeness is now the active v1 program.
+DelosDB is pre-1.0. The current repository includes RawStore-converged MVCC, JDK 25 generated-class
+modernization, repository-integrity consolidation, stable selected-plan modeling, deterministic `EXPLAIN`,
+storage-aware `EXPLAIN ANALYZE`, and an executable end-to-end query trace. Documentation is currently
+being consolidated so that public architecture, status, and reference material reflect the implementation consistently.
 
 ## Architecture
 
@@ -89,13 +89,14 @@ Completed foundations include:
 - RawStore-backed MVCC convergence with no parallel persistence runtime;
 - JDK 25 Class-File API activation generation with a frozen 52-method contract;
 - module and runtime-provider convergence;
-- repository-wide dead-code, duplicate, catch, complexity, and gate consolidation;
-- seven permanent S0 authorities based on executable or structural evidence.
+- repository-wide dead-code, duplicate, catch, complexity, and verification consolidation;
+- permanent repository-verification authorities based on executable or structural evidence.
 
-Phase 10 is complete: DelosDB has one stable selected-plan model, deterministic `EXPLAIN`, bounded
-query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison, MVCC read-path
-diagnostics and exact scan snapshot identity, plus one executable end-to-end trace shared by public
-documentation and teaching material. Phase 11 product completeness is current.
+The readable-engine foundation is implemented: DelosDB has one stable selected-plan model, deterministic
+`EXPLAIN`, bounded query-only `EXPLAIN ANALYZE` with operator timing/cardinality, estimate comparison,
+MVCC read-path diagnostics and exact scan snapshot identity, plus one executable end-to-end trace shared
+by public documentation and teaching material. Remaining pre-1.0 work is tracked as product capabilities
+and limitations rather than internal development stages.
 
 See [`docs/PROJECT-STATUS.md`](docs/PROJECT-STATUS.md).
 
@@ -113,7 +114,7 @@ The inherited Ant workflow is not a supported DelosDB build path.
 
 ## Verification
 
-Fast permanent closeout:
+Fast permanent verification:
 
 ```bash
 ./gradlew s0CloseoutVerification --console=plain
@@ -138,7 +139,7 @@ Readable-engine demonstration:
 ```
 
 The inherited Derby language suite is intentionally expensive and should be run at meaningful
-closeout boundaries rather than after every focused change:
+major verification boundaries rather than after every focused change:
 
 ```bash
 ./gradlew :delosdb-tests:derbyLanguageTests --console=plain

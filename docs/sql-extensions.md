@@ -62,7 +62,8 @@ The current `delos_mvcc` implementation has no predicate locks, range locks,
 SSI conflict tracking, or serialization-failure protocol. Presenting a
 transaction snapshot as SERIALIZABLE would therefore be misleading.
 `MvccSqlSerializableSemanticsTest` proves early rejection while preserving heap
-SERIALIZABLE and MVCC REPEATABLE READ.
+SERIALIZABLE and MVCC REPEATABLE READ. This is the current pre-1.0 behavior, not the intended final
+v1 limitation: true MVCC SERIALIZABLE remains part of the v1 product direction.
 
 ## Consistency diagnostics
 

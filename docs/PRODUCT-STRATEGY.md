@@ -36,18 +36,19 @@ SQL
 
 The production engine, not a simplified clone, is the teaching and research subject.
 
-## Immediate product truth
+## Current product truth
 
-Two ownership questions precede further architectural or research expansion:
+The ownership questions that drove the RawStore-convergence program are now resolved:
 
 ```text
-Which database owns this MVCC state?
-Which durable decision owns this transaction?
+one database-scoped MVCC runtime owns logical MVCC state
+one Derby transaction boundary owns supported transaction outcome
+one Derby RawStore owns physical persistence and recovery
 ```
 
-DelosDB v1 requires explicit database-scoped MVCC runtime ownership and one failure-atomic decision
-for every supported multi-table or mixed heap/MVCC write transaction. Unsafe combinations reject
-before mutation until that protocol is complete.
+`delos_mvcc` is an access method over RawStore, not a parallel database/storage runtime. Unsupported
+transaction or type combinations continue to reject before mutation until their product contracts are
+implemented and proven.
 
 ## Comparison-engine lessons
 
