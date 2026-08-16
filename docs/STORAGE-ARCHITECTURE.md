@@ -17,7 +17,7 @@ SQL and catalog
 ```
 
 Storage selection is persisted in table and conglomerate metadata. Production execution does not
-depend on phase-named system properties, hidden proof routes, or a second storage runtime.
+depend on development-only routing properties, hidden verification routes, or a second storage runtime.
 
 ## Derby heap
 
@@ -95,8 +95,7 @@ Derby transaction boundary. MVCC publication and visibility state must never bec
 commit authority. Failure handling derives from the RawStore transaction decision and the durable
 MVCC records stored inside that authority.
 
-See [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md) and
-[`MVCC-GROUP-COMMIT.md`](MVCC-GROUP-COMMIT.md).
+See [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md).
 
 ### Maintenance
 

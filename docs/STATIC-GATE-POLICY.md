@@ -56,15 +56,15 @@ another task's presence as text in a Gradle script
 Documentation is reviewed for correctness by humans and normal change review. It is not executable
 architecture authority.
 
-## Gate lifecycle
+## Verification-check lifecycle
 
-A temporary implementation gate may be useful while a migration is active. At closeout it must be:
+A temporary implementation check may be useful while a migration is active. At closeout it must be:
 
 1. promoted into a durable structural or executable invariant;
-2. merged into an existing permanent gate; or
+2. merged into an existing permanent verification authority; or
 3. retired.
 
-Temporary implementation checks must not accumulate in the permanent verification suite. New permanent tasks require a distinct durable
+Historical temporary checks must not accumulate in the permanent verification suite. New permanent tasks require a distinct durable
 invariant that is not already covered by the seven authorities.
 
 ## Monotonic repository integrity

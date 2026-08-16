@@ -37,7 +37,6 @@ manifests.
 |---|---|
 | [`MVCC-DATABASE-RUNTIME.md`](MVCC-DATABASE-RUNTIME.md) | database-scoped MVCC runtime ownership |
 | [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md) | transaction decision, failure, and recovery authority |
-| [`MVCC-GROUP-COMMIT.md`](MVCC-GROUP-COMMIT.md) | concurrent preparation and bounded grouping |
 | [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md) | database-owned vacuum and maintenance |
 | [`MVCC-VISIBILITY-ALGORITHMS.md`](MVCC-VISIBILITY-ALGORITHMS.md) | snapshots and version visibility |
 
@@ -49,8 +48,7 @@ manifests.
 | [`PERFORMANCE-CONCURRENCY-VALIDATION.md`](PERFORMANCE-CONCURRENCY-VALIDATION.md) | benchmark and concurrency evidence policy |
 | [`EXTERNAL-VALIDATION.md`](EXTERNAL-VALIDATION.md) | opt-in SQLancer and external validation lanes |
 | [`RESEARCH-POSITIONING.md`](RESEARCH-POSITIONING.md) | research identity and boundaries |
-| [`RESEARCH-FEATURE-PRIORITIES.md`](RESEARCH-FEATURE-PRIORITIES.md) | research foundation and longer-term priorities |
-| [`ALGORITHM-INVENTORY.md`](ALGORITHM-INVENTORY.md) | source-backed algorithm inventory |
+| [`ALGORITHM-INVENTORY.md`](ALGORITHM-INVENTORY.md) | current source-backed algorithm and ownership inventory |
 
 ## Design records
 

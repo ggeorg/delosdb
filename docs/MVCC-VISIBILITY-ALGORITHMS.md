@@ -1,214 +1,172 @@
-# MVCC Visibility Algorithms Audit
+# MVCC Visibility Algorithms
 
-This is an audit artifact, not a behavior change.
+## Purpose
 
-## Scope
+This document describes the current visibility rules for RawStore-backed `delos_mvcc` tables.
+Physical persistence and recovery remain Derby RawStore responsibilities; the MVCC access method owns
+logical version identity, snapshots, visibility, and retained-reader safety.
 
-This audit makes DelosDB's MVCC visibility algorithms explicit before any deeper
-concurrency, purge, or storage-path changes. It records the current authority
-points for snapshot visibility, statement visibility, read-your-own-writes,
-writer-borrowed reads, rollback/savepoint visibility, purge horizon protection,
-history-pruned failure behavior, and transaction outcome publication.
+## Current authority
 
-## Guardrails
+The main implementation boundaries are:
 
-* No Java runtime behavior change.
-* No MVCC visibility rule change.
-* No snapshot isolation change.
-* No purge horizon change.
-* No transaction outcome authority change.
-* No candidate-index authority change.
-* No Derby heap behavior change.
-* No optimizer behavior change.
-* No storage format change.
-* No external dependency is introduced.
-* This audit does not wire any new gate into permanent closeout verification.
+```text
+MvccRawStoreRuntime
+MvccRawStoreTransactionContext
+MvccRawStoreTable
+MvccRawStoreRowDirectory
+MvccRawStoreVersionReader
+MvccRawStoreVersionRows
+MvccRawStoreVacuum
+```
 
-## Current algorithm inventory
+The access method does not use the retired external MVCC runtime, page-volume store, transaction
+outcome log, visibility-map sidecar, or purge daemon.
 
-### Snapshot visibility
+## Snapshot frontier
 
-Current authority: `MvccSnapshot` and `MvccVisibility`.
+A snapshot is a published database-wide commit-sequence frontier.
 
-The current algorithm says that a snapshot sees transactions committed at or
-before `visibleThrough`, never sees transactions active at capture, and treats
-the owning transaction specially through `visibleThroughCommand`.
+`MvccRawStoreTransactionContext` captures the snapshot lazily on first use. The runtime obtains the
+current published sequence and opens a snapshot lease at that sequence.
 
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
+```text
+transaction needs snapshot
+    -> MvccRawStoreRuntime.openSnapshotLease()
+    -> capture published commit-sequence frontier
+    -> retain that sequence while the snapshot is live
+```
 
-Reference models:
+For isolation levels that retain one transaction snapshot, the same sequence is reused for the
+transaction. Statement-snapshot isolation obtains the appropriate statement boundary through the
+transaction lifecycle integration.
 
-* PostgreSQL snapshot visibility and command-id style self-visibility.
-* InnoDB read view / history retention as a reference model only.
+## Version visibility
 
-Risk to track:
+`MvccRawStoreVersionReader` applies the core rule directly to a decoded version record.
 
-* Any later shortcut must prove it respects `activeAtCapture`,
-  `visibleThrough`, and `visibleThroughCommand`.
+An uncommitted version is visible only to its creating transaction:
 
-### Statement snapshot and read-your-own-writes
+```text
+beginSequence == UNCOMMITTED
+    -> creatorTransactionId == currentTransactionId
+```
 
-Current authority: `MvccStatementSnapshot`, `MvccTable`, and
-`MvccInheritedTable`.
+A committed version is visible when:
 
-A statement snapshot is captured before a statement writes. Versions written by
-the current statement are stamped with that statement's command sequence, and a
-statement reads only commands before `visibleThroughCommand`. The next statement
-can then see the prior statement's writes.
+```text
+beginSequence <= snapshotSequence < endSequence
+```
 
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
+This gives read-your-own-writes without exposing another transaction's uncommitted version and keeps
+committed visibility bounded by the captured snapshot frontier.
 
-Risk to track:
+## Version-chain traversal
 
-* Access-path shortcuts must not turn statement-level self-writes into
-  premature visibility.
+The row directory identifies the current logical head. `MvccRawStoreVersionReader` follows the durable
+version chain until it finds the first version visible to the current transaction and snapshot.
 
-### Writer-borrowed reads and write-intent reads
+The traversal validates row/version identity and detects cycles. A missing required version is an
+integrity failure rather than an instruction to silently return an older or unrelated row.
 
-Current authority: `MvccInheritedTable`.
+Record handles and cached physical locations are lookup hints. Logical row/version identity remains
+authoritative.
 
-The inherited SQL bridge can read local write intents for the owning transaction
-when the command sequence is visible to the current snapshot. Current-committed
-shortcuts must remain off when a statement/snapshot requires write-intent or
-historical visibility.
+## Current-row acceleration
 
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
+`MvccRawStoreRuntime` maintains bounded current-row anchors and immutable current-version read images
+for resident read acceleration.
 
-Risk to track:
+These structures are not visibility authorities:
 
-* Ordered-index, row-id, or committed-image shortcuts must record why they are
-  safe or rejected for writer-borrowed reads.
+```text
+cache hit
+    -> validate table, row, version, begin sequence, flags, and physical hint
+    -> use the validated current version
 
-### Version-chain visibility and write conflicts
+cache miss or validation failure
+    -> fall back to RawStore row-directory and version lookup
+```
 
-Current authority: `MvccVersionChain` and `MvccVisibility`.
+Publication order ensures that a newly published commit sequence cannot expose an older cached head as
+though it were current.
 
-Version chains are newest-first. Reads search for the first visible version.
-Updates and deletes find a visible current version and then mark/append through
-transaction and command-sequence metadata. Write conflict detection is still a
-DelosDB-owned algorithm and should become jcstress-backed before broad runtime
-concurrency expansion.
+## Snapshot leases and vacuum horizon
 
-Classification: `MVCC_AUTHORITY_ALGORITHM` and `VALIDATION_ALGORITHM`.
+Live snapshots protect history through snapshot leases. The runtime uses a bounded slot registry for
+the normal path and a locked retained-snapshot registry as a correctness-preserving fallback when the
+bounded slots are exhausted.
 
-Risk to track:
+The vacuum horizon is the minimum of:
 
-* Deterministic tests prove intended behavior, but publication/interleaving
-  proofs still belong in a future jcstress visibility-probe slice.
+```text
+current published commit sequence
+all live bounded snapshot leases
+all live fallback retained snapshots
+```
 
-### Rollback and savepoint visibility
+`MvccRawStoreVacuum` may reclaim obsolete history only below the safe horizon and subject to the
+access method's row/version integrity rules.
 
-Current authority: `MvccVersionChain.rollbackTransactionChangesAfter` and
-`MvccTable.rollbackTransactionChangesAfter`.
+## Commit publication interaction
 
-Savepoint rollback removes versions created after the savepoint boundary and
-clears deletions after the boundary for the same transaction.
+A transaction reserves a commit sequence before RawStore commit when it has MVCC changes. Pending
+versions are stamped before commit, but the sequence is not published to new snapshots until the
+RawStore transaction has committed.
 
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
+The relevant order is:
 
-Risk to track:
+```text
+stage MVCC changes in the RawStore transaction
+    -> reserve commit sequence
+    -> stamp pending versions
+    -> RawStore commit
+    -> publish current-row anchors
+    -> retire writer transaction identity
+    -> publish commit sequence to new snapshots
+```
 
-* New durable write paths must continue to separate rollback-local state from
-  already-committed page-backed state.
+This ordering prevents a snapshot from admitting a committed sequence while still treating the
+corresponding writer as active or observing an older cached row head.
 
-### Purge horizon and snapshot leases
+RawStore remains the durable transaction-decision authority. Commit-sequence publication is logical
+MVCC visibility state, not a second persistence mechanism.
 
-Current authority: `MvccTransactionManager`, `MvccSnapshotLease`, `MvccTable`,
-`MvccPurgeDaemon`, and `MvccVisibilityDebtPolicy`.
+## Maintenance boundary
 
-Snapshot leases retain watermarks so vacuum/purge can keep history needed by
-open snapshots. The purge daemon rechecks retained inherited MVCC transactions
-or scans before vacuuming. Visibility debt is a scheduling heuristic only; it is
-not the final authority for whether a version may be pruned.
+Normal reads enter a table read boundary. Vacuum enters the corresponding maintenance boundary
+exclusively so that physical history cleanup cannot race an active table read through the same
+structure.
 
-Classification: `MVCC_AUTHORITY_ALGORITHM` and `DIAGNOSTIC_ONLY_ALGORITHM` for
-visibility-debt reporting.
+Maintenance operates on RawStore-backed rows and indexes and does not own an independent page cache,
+checkpoint stream, or recovery log.
 
-Reference models:
+## Current isolation boundary
 
-* PostgreSQL pruning/vacuum horizons.
-* InnoDB purge/history list.
-* HerdDB checkpoint/pin discipline as a lifecycle reference only.
+For `delos_mvcc`:
 
-Risk to track:
+```text
+READ COMMITTED and weaker
+    statement snapshot
 
-* A later long-reader purge stress slice must prove that retained snapshots keep
-  required history and that unprotected stale snapshots fail loudly.
+REPEATABLE READ
+    transaction snapshot
 
-### History-pruned failure behavior
+SERIALIZABLE
+    currently rejected with SQLState 0A000 before MVCC scan/write execution
+```
 
-Current authority: `MvccHistoryPrunedException`, `MvccPrunedVersionMarker`,
-`MvccTable`, and `MvccVersionChain`.
+The current `SERIALIZABLE` rejection is an implementation boundary, not a statement that true MVCC
+serializability is permanently outside the intended v1 contract.
 
-If a snapshot would have needed pruned history, DelosDB fails loudly instead of
-silently returning row-not-found or a newer version.
+## Invariants
 
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
-
-Risk to track:
-
-* Any future page-local pruning, purge queue drain, or visibility-map shortcut
-  must preserve the fail-loudly boundary.
-
-### Transaction outcome publication and recovery visibility
-
-Current authority: `MvccTransactionStatusStore`, `MvccTransactionOutcomeLog`,
-`MvccRecoveryReplayEngine`, and the page-backed state store.
-
-Durable transaction outcome records decide whether recovered versions are
-visible. Unknown outcomes fail loudly on strict paths, and active records can be
-recovered as `RECOVERY_PENDING` so uncommitted versions are not exposed by
-default.
-
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
-
-Risk to track:
-
-* Recovery replay and checkpoint compaction must preserve the visibility rule
-  that committed versions need a committed outcome and aborted/unknown creators
-  are not silently exposed.
-
-### Visibility map and purge queue metadata
-
-Current authority: `MvccVisibilityMapStore`, `MvccPurgeQueueStore`, and
-`PageBackedMvccTable`.
-
-Visibility-map and purge-queue metadata are lifecycle hints and reports. They
-must never override the transaction/snapshot visibility algorithm.
-
-Classification: `DIAGNOSTIC_ONLY_ALGORITHM` unless a later named gate promotes a
-specific metadata decision to authority.
-
-Risk to track:
-
-* Hints must be rebuildable from page-backed rows and transaction outcomes.
-
-## Reference-model influence
-
-* PostgreSQL is the primary reference model for snapshot visibility, HOT-safe
-  version-chain reasoning, pruning horizon discipline, and fail-safe vacuum
-  behavior.
-* InnoDB is the primary reference model for purge/history-list lifecycle and
-  durable outcome thinking.
-* HerdDB is a reference model for small-Java-engine lifecycle pinning and
-  checkpoint/purge coordination.
-* Calcite is a reference model only for future access-path diagnostics; it is
-  not a replacement optimizer.
-* JDK 25 is relevant for future jcstress/JFR/JMH proof lanes, not for changing
-  the visibility algorithm in this audit.
-
-## Future implementation candidates
-
-* `delosdb-jcstress-mvcc-visibility-probes-overlay.zip` for publication and
-  interleaving proofs.
-* `delosdb-mvcc-long-reader-purge-stress-overlay.zip` for retained-snapshot and
-  visibility-debt stress.
-* `delosdb-storage-path-diagnostics-runtime-overlay.zip` for explaining why a
-  visibility-sensitive shortcut was chosen or rejected.
-* `delosdb-jfr-storage-lifecycle-events-overlay.zip` for visibility/purge/checkpoint
-  lifecycle observability.
-
-## Status
-
-Default behavior remains unchanged. This audit records current authority and
-risk boundaries only.
+```text
+foreign uncommitted versions are never visible
+read-your-own-writes is preserved
+committed visibility is bounded by a captured commit-sequence frontier
+publication cannot precede RawStore commit
+retained snapshots prevent unsafe history reclamation
+cached current-row state is advisory and validated
+RawStore remains the sole physical persistence and recovery authority
+```

@@ -1,152 +1,99 @@
 # DelosDB v1 module-boundary enforcement
 
-## Status
+## Decision
 
-The final target is frozen. The bridge, storage-io, and storage-api projects are retired after their
-valid responsibilities moved into `delosdb-storage-mvcc` or `delosdb-derby-store-api`, and
-deleting the unused parallel facade.
+DelosDB enforces storage and provider ownership through the Gradle graph, source dependency checks,
+runtime artifact metadata, and provider discovery. The current build has 20 active subprojects. The
+retired storage bridge/API/I/O projects are absent.
 
-## Final target
-
-The final graph contains 21 Gradle subprojects:
-
-```text
-current subprojects after storage-module retirement: 20
-required new module: delosdb-search-lucene
-retired: delosdb-storage-api, delosdb-storage-bridge, delosdb-storage-io
-final subprojects: 21
-```
-
-The target is machine-readable in:
-
-```text
-gradle/static-analysis/delosdb-v1-final-module-target.txt
-```
-
-The manifest freezes:
-
-```text
-the exact 21 final module names
-the three retirement targets
-the two required provider artifacts
-the build-only RawStore patch artifact
-the forbidden production dependency edges
-the neutral API modules
-```
-
-## Permanent gate
-
-The task:
-
-```text
-delosV1ModuleArchitectureStaticAnalysis
-```
-
-checks both the current migration state and the final destination.
-
-It proves now that:
-
-```text
-delosdb-engine has no Gradle dependency on MVCC or Lucene implementations
-delosdb-storage-derby has no dependency/import on MVCC or Lucene implementations
-delosdb-storage-mvcc has no dependency/import on engine or Lucene implementations
-runtime-api, spi, and derby-store-api expose no Lucene implementation types
-RAMAccessManager discovers access methods through ExternalAccessMethodProvider
-settings.gradle contains only modules belonging to the frozen migration set
-current module count is consistent with Lucene addition and legacy-module retirement state
-```
-
-It is wired into `s0CloseoutVerification` alongside the existing objective module-dependency report.
-It implements the current `verifyStorageAuthorityModuleGraph` and migration-time
-`verifyProviderIsolation` requirements under DelosDB task naming.
-
-Final closeout later adds strict gates equivalent to:
-
-```text
-verifyNoIndependentMvccIo
-verifyNoIndependentMvccDurability
-verifyNoLegacyLucene
-verifyRetiredStorageModules
-```
-
-## Production provider registration
-
-`delosdb-storage-bridge` is absent. `delosdb-storage-mvcc` owns exactly one
-`ExternalAccessMethodProvider` implementation and service entry.
-
-The engine consumes `delosdb-storage-mvcc.jar` only through the build-time
-`derbyRuntimePatchElements` configuration. The provider implementation is incorporated into
-`derby.jar` for the current compatibility runtime and the provider jar is not simultaneously placed
-on the runtime classpath. This preserves neutral ServiceLoader discovery without a production compile
-edge or split-package runtime duplication.
-
-## Final dependency direction
+## Current active boundary
 
 ```text
 delosdb-engine
-    -> delosdb-runtime-api
-    -> delosdb-derby-store-api
-    -> delosdb-spi
+    -> neutral runtime/store/SPIs
+    -X-> delosdb-storage-mvcc implementation
 
-DelosDB RawStore implementation
-    -> delosdb-runtime-api
-    -> delosdb-derby-store-api
+delosdb-storage-derby
+    -> neutral runtime/store contracts
+    -X-> delosdb-storage-mvcc implementation
 
-DelosDB MVCC provider
-    -> delosdb-runtime-api
-    -> delosdb-derby-store-api
-    -> delosdb-spi
-
-DelosDB Lucene provider
-    -> delosdb-runtime-api
-    -> delosdb-derby-store-api
-    -> delosdb-spi
-    -> Lucene
+delosdb-storage-mvcc
+    -> neutral runtime/store/SPIs
+    -X-> delosdb-engine implementation
 ```
 
-Forbidden:
+The engine discovers the MVCC access method through the neutral
+`ExternalAccessMethodProvider` contract. `delosdb-storage-mvcc` owns exactly one production provider
+implementation and service entry.
+
+## Retired modules
+
+These projects are not part of the current build:
 
 ```text
-engine -> MVCC implementation
-engine -> Lucene implementation
-RawStore implementation -> MVCC or Lucene implementation
-MVCC -> engine or Lucene implementation
-Lucene -> engine implementation
-Lucene types -> neutral DelosDB APIs
+delosdb-storage-api
+delosdb-storage-bridge
+delosdb-storage-io
 ```
 
-## Final artifacts
+Their former responsibilities were either absorbed into `delosdb-derby-store-api` and
+`delosdb-storage-mvcc` or removed when the independent MVCC persistence stack was retired.
 
-Required provider artifacts:
+## Runtime packaging
+
+The authoritative runtime-artifact model is `gradle/delosdb-runtime-artifacts.gradle`.
+
+Current behavior is:
 
 ```text
+derby.jar
+    contains the engine plus the production MVCC provider implementation needed by the
+    Derby-compatible runtime
+
 delosdb-storage-mvcc.jar
-delosdb-search-lucene.jar
-```
+    is assembled as the provider artifact
+    is not simultaneously placed on the normal runtime classpath
 
-Build-intermediate only:
+delosdb-derby-store-api.jar
+    is assembled support code
 
-```text
 delosdb-storage-derby.jar
+    is build-only
 ```
 
-The final distribution must not advertise:
+This avoids a production compile dependency from the engine to the MVCC project while also avoiding
+split-package duplication at runtime.
+
+## Checked target manifest
+
+`gradle/static-analysis/delosdb-v1-final-module-target.txt` records both the current allowed graph and
+a deferred optional search-provider boundary.
+
+`delosdb-search-lucene` is listed there as deferred. It is not present in `settings.gradle`, is not a
+current provider artifact, and is not a current product capability.
+
+## Permanent verification
 
 ```text
-delosdb-storage-io.jar
-delosdb-storage-bridge.jar
-delosdb-storage-derby.jar
+delosModuleDependencyBoundaryStaticAnalysis
+delosV1ModuleArchitectureStaticAnalysis
+verifyDelosRuntimeStorageProviders
 ```
 
-## Scope boundary
-
-The storage-project retirement does not:
+Together these checks verify:
 
 ```text
-merge MVCC or Lucene implementations into the engine
-add delosdb-search-lucene
-change SQL routing or table formats
-change transaction, recovery, locking, vacuum, or maintenance semantics
-delete the quarantined pre-convergence differential oracle
-place both derby.jar and the MVCC patch jar on the runtime classpath
+no unexpected Gradle modules
+no missing non-deferred target modules
+no forbidden production source dependency edges
+no retired storage module on the active graph
+one production MVCC provider registration
+no retired external MVCC provider service
+runtime jar composition consistent with the declared artifact model
 ```
+
+## Scope
+
+This module decision does not define SQL semantics, table formats, transaction visibility, locking,
+vacuum behavior, or recovery policy. Those remain owned by their storage and transaction
+implementations.

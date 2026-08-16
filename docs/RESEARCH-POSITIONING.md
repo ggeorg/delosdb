@@ -45,7 +45,10 @@ more specific:
 
 The references are comparative, not product templates.
 
-## V1 research foundation
+## Current research foundation
+
+DelosDB already provides several capabilities that support controlled database-systems research while
+also strengthening the product:
 
 ```text
 immutable structured observability snapshots
@@ -54,10 +57,11 @@ storage-aware EXPLAIN ANALYZE
 reproducible experiment and benchmark manifests
 ```
 
-These capabilities support correctness, teaching, and controlled experiments inside the production
-engine.
+These capabilities operate inside the production engine and remain subordinate to normal correctness,
+compatibility, transaction, and storage invariants. They do not create a second planner, transaction
+engine, storage engine, or public plugin platform.
 
-## Post-v1 research directions
+## Longer-term research directions
 
 ```text
 transaction and row-version provenance views
@@ -69,7 +73,7 @@ what-if plans and index advice
 read-only external tools over authoritative snapshots
 ```
 
-## Directions outside v1
+## Deliberate exclusions
 
 ```text
 LLM operators in normal SQL plans
@@ -91,18 +95,6 @@ PostgreSQL wire compatibility for marketing
 - Comparison paths are temporary and removable.
 - Results include machine-readable data, semantic checksums, and reproducible metadata.
 - A research abstraction requires concrete consumers before it becomes product architecture.
-
-## Immediate prerequisite
-
-The first research obligation is not a new algorithm. It is correct ownership of:
-
-```text
-database identity
-transaction outcome
-```
-
-Until database-scoped runtime ownership and failure-atomic supported transactions are established,
-performance and research claims remain subordinate to those corrections.
 
 ## References
 

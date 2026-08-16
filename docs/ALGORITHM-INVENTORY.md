@@ -1,768 +1,190 @@
 # DelosDB Algorithm Inventory
 
-This document is the starting point for the next DelosDB phase after the ordered-index, heap-diagnostics, buffer/cache, recovery, statistics, external-validation, and heap/raw-store phase-3 work closed green.
+## Purpose
 
-The goal is not to add frameworks. The goal is to make DelosDB's algorithms explicit, classified, auditable, and measurable before deeper modernization.
+This document is a source-backed inventory of the main algorithms and execution boundaries that are
+specific to DelosDB or materially important to Derby compatibility. It is not a roadmap and it does
+not define build authority. Source code, executable tests, module metadata, and structural manifests
+remain authoritative.
 
-## North star
+## SQL compilation and generated execution
 
-DelosDB is a modern Derby-compatible database engine.
-
-Rules:
-
-* Preserve Derby compatibility.
-* Do not preserve Derby internals for their own sake.
-* Do not create a second SQL optimizer beside Derby.
-* Do not modernize heap/raw-store algorithms without compatibility gates.
-* Do not introduce shared services until both heap and MVCC have proof points.
-* Do not add Calcite, HerdDB, or MapDB as runtime dependencies in this phase.
-
-Model:
+DelosDB keeps Derby's parser, binder, optimizer, activation contract, and result-set execution model.
+Generated activations use the JDK Class-File API through the existing DelosDB generation contract.
+The important production authorities include:
 
 ```text
-DelosDB : Derby
-like
-PostgreSQL : Ingres
+ClassFileJava
+JavaFactory / ClassBuilder / MethodBuilder
+OptimizerImpl
+GenericPreparedStatement
+stable selected-plan model
+Derby ResultSet implementations
+```
+
+The compiler may expose deterministic plan and execution evidence, but diagnostics do not become a
+second optimizer or executor.
+
+## Stable plans and execution evidence
+
+`EXPLAIN` and `EXPLAIN ANALYZE` use one stable selected-plan model. Runtime evidence is attached to
+that selected plan rather than reconstructed from Java implementation classes after execution.
+
+Important boundaries include:
+
+```text
+StablePlanExecutionRenderer
+StablePlanExecutionEvidence
+ExplainNode
+ExplainAnalyzeResultSet
+```
+
+Operator timing and bounded storage evidence are diagnostic. They do not influence plan selection,
+transaction outcome, or storage behavior.
+
+## Heap and RawStore compatibility
+
+The inherited Derby heap and RawStore remain the compatibility and physical persistence foundation.
+Key inherited authorities include:
+
+```text
+TransactionController
+OpenHeap
+HeapController
+BasePage / StoredPage
+FileContainer
+AllocPage
+RawStore logging, recovery, backup, and restore
+```
+
+Changes in these areas require compatibility evidence because page formats, log behavior, catalogs,
+JDBC behavior, and DRDA behavior are product compatibility surfaces.
+
+## MVCC access method
+
+`delos_mvcc` is a RawStore-backed Derby access method. It owns logical versioning and concurrency
+semantics while RawStore owns physical persistence and recovery.
+
+Current implementation authorities include:
+
+```text
+DerbyMvccAccessMethodProvider
+MvccConglomerateFactory
+MvccRawStoreRuntime
+MvccRawStoreTransactionContext
+MvccRawStoreTable
+MvccRawStoreScanController
+MvccRawStoreConglomerateController
+MvccRawStoreRowDirectory
+MvccRawStoreVersionReader
+MvccRawStoreVersionRows
+MvccRawStoreOrderedIndex
+MvccRawStoreVacuum
+MvccRawStoreMaintenanceService
+```
+
+There is no independent MVCC page volume, custom WAL, sidecar checkpoint system, or second recovery
+authority.
+
+## MVCC snapshot visibility
+
+Visibility is based on database-wide published commit sequences and transaction identity.
+`MvccRawStoreTransactionContext` captures a snapshot sequence lazily from `MvccRawStoreRuntime`.
+`MvccRawStoreVersionReader` accepts:
+
+```text
+an uncommitted version only for its creating transaction
 or
-AMD64 : 8086
+a committed version when
+    beginSequence <= snapshotSequence < endSequence
 ```
 
-Old-compatible behavior must run. Internals may evolve behind gates.
+A bounded snapshot-lease registry protects retained-reader horizons. When the bounded slots are full,
+the runtime falls back to the locked retained-snapshot registry without changing visibility semantics.
 
-## Classification vocabulary
+Current-row anchors and immutable current-version read images are read accelerators only. A miss or
+validation failure falls back to authoritative RawStore lookup and version traversal.
 
-| Classification | Meaning |
-| --- | --- |
-| `DERBY_COMPATIBILITY_ALGORITHM` | Inherited Derby SQL, optimizer, heap, DRDA, catalog, or runtime behavior that defines compatibility. Improvements require compatibility gates. |
-| `DELOSDB_OWNED_ALGORITHM` | New DelosDB algorithmic code that is not inherited Derby behavior and can evolve behind its own proof gates. |
-| `MVCC_AUTHORITY_ALGORITHM` | Algorithm that participates in normal delos_mvcc storage authority, visibility, indexing, recovery, or lifecycle correctness. |
-| `HEAP_COMPATIBILITY_BOUNDARY` | Heap/raw-store inherited boundary where DelosDB may add diagnostics, hardening, or helper seams but must preserve format/log/catalog behavior. |
-| `SHARED_SERVICE_ALGORITHM` | Algorithm or data shape intended to serve both heap and MVCC after both sides have concrete proof points. |
-| `DIAGNOSTIC_ONLY_ALGORITHM` | Reporting, inspection, parity, or static-analysis logic that must not influence SQL/storage authority. |
-| `VALIDATION_ALGORITHM` | Test, stress, benchmark, differential, or external-validation algorithm that improves proof strength. |
-| `JDK25_MODERNIZATION_CANDIDATE` | Area where JDK 25 features can improve verification, performance, or observability without changing compatibility semantics. |
-| `REFERENCE_MODEL_ONLY` | External engine or framework idea used as an algorithm reference, not as a dependency. |
-| `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE` | Format, log, catalog, DRDA, optimizer, or codegen behavior that must not be changed without a named compatibility plan. |
+## MVCC identity and commit publication
 
-## Reference models
+The RawStore-backed runtime owns database-wide transaction IDs and commit-sequence publication.
+Table-local row and version IDs identify durable logical history inside one MVCC conglomerate.
+Transaction work is staged inside the Derby transaction boundary, stamped before RawStore commit,
+and made visible only through the runtime's published commit-sequence frontier after successful
+commit.
 
-### H2 reference model
-
-H2 remains useful for compact Java storage design, ordered persistent maps, transaction-store separation, LOB/stream storage, and store inspection. DelosDB should borrow the algorithmic style, not H2's format.
-
-### PostgreSQL reference model
-
-PostgreSQL remains the strongest reference for MVCC visibility, HOT update suppression, free-space and visibility maps, page-local pruning, vacuum, TOAST-style large values, WAL/resource-manager discipline, and table-access boundaries.
-
-### MariaDB / InnoDB reference model
-
-InnoDB remains the strongest reference for purge/history-list discipline, mini-transaction-style mutation boundaries, buffer-pool lifecycle, dirty-page flushing, external fields, and storage-engine API separation.
-
-### Calcite reference model
-
-Calcite is a reference for metadata providers, rules, traits, cost explanation, and plan/path digesting. DelosDB should not replace Derby's optimizer with Calcite. The useful DelosDB idea is explainable optimizer-adjacent metadata and storage-path decisions.
-
-### HerdDB reference model
-
-HerdDB is a useful small Java database reference for explicit index-operation decision objects, planner/storage bridge shape, checkpoint pin/unpin discipline, page replacement policies, runtime stats tables, and consistency-check surfaces.
-
-### MapDB reference model
-
-MapDB is a useful compact-storage reference for typed serializers, packed/delta encodings, binary-searchable key arrays, record-id lists, and CAS/updateAtomic-style metadata patterns. DelosDB should not use MapDB as a storage layer.
-
-### JDK 25 reference model
-
-JDK 25 should be used first as a platform for verification, observability, and controlled modernization: Class-File API verification for generated bytecode, JFR storage lifecycle events, MemorySegment/VarHandle page-codec improvements in DelosDB-owned storage, virtual-thread stress lanes, and jdeps/jdeprscan gates.
-
-## Layer inventory
-
-### SQL/codegen
-
-Current owner: Derby compatibility with the DelosDB JDK 25 Class-File API backend.
-
-Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
-
-Current anchor: `ClassFileJava` is the sole production implementation of the existing `JavaFactory`/`ClassBuilder`/`MethodBuilder` contract. The external ASM implementation, dependency, JPMS edge, runtime artifact, and migration-only oracle tasks are absent. Compiler nodes depend only on the DelosDB generation contract.
-
-Risks:
-
-* SQL execution bytecode compatibility.
-* Generated class loading behavior.
-* Derby execution semantics hidden in inherited codegen assumptions.
-
-Next proof idea:
-
-* Preserve deterministic ClassFileJava generation, class-size, allocation, class-loading, and execution evidence through the existing generation contract.
-* Keep structural generated-class dependency, module, backend-authority, behavior-fixture, JDBC/DRDA, modular-image, and SQLancer evidence green.
-
-### Optimizer/costing
-
-Current owner: Derby optimizer authority with DelosDB storage cost diagnostics and MVCC statistics lifecycle hooks.
-
-Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `DIAGNOSTIC_ONLY_ALGORITHM`, `SHARED_SERVICE_ALGORITHM`.
-
-Current anchor: `OptimizerImpl`, `DelosOptimizerStorageCostOptInDiagnostics`, `DelosStorageStatistics`, and the explicit analyze/statistics lifecycle checkpoint.
-
-Algorithmic goal:
-
-* Make optimizer-adjacent storage inputs explicit as Derby authority, safe DelosDB hints, or diagnostic-only observations.
-* Do not create a second optimizer.
-
-Reference influence:
-
-* Calcite metadata/cost explanation.
-* HerdDB planner/storage bridge.
-* PostgreSQL analyze/statistics lifecycle discipline.
-
-### Predicate pushdown
-
-Current owner: Derby compiler semantics with DelosDB gated execution shortcuts.
-
-Classification: `DERBY_COMPATIBILITY_ALGORITHM`.
-
-Algorithmic goal:
-
-* Keep predicate classification compatible with Derby SQL semantics.
-* Make shortcut legality explicit and diagnosable before pushing more work into MVCC paths.
-
-Reference influence:
-
-* Calcite rule applicability diagnostics.
-* PostgreSQL table-access predicate separation.
-
-
-### Shared-service readiness
-
-Overlay: `delosdb-shared-service-readiness-report-overlay.zip`.
-
-Current owner: DelosDB storage diagnostics API.
-
-Classification: `DIAGNOSTIC_ONLY_ALGORITHM`, `EXTRACTION_GUARD`.
-
-Current anchor: `DelosStorageSharedServiceReadinessReport`,
-`DelosStorageSharedServiceReadinessItem`, and
-`StorageSharedServiceReadinessReportTest`.
-
-Algorithmic goal:
-
-* Classify which heap/MVCC seams are ready for read-only shared reporting.
-* Keep execution authority provider-local where semantics are not yet shared.
-* Prevent premature service extraction for buffer management, page codecs,
-  ordered-index authority, and purge/vacuum.
-
-Current decision:
-
-* Diagnostics and lifecycle read models are ready for read-only shared services.
-* Statistics/cost and backup/restore are report-only.
-* Buffer, page-codec, ordered-index, and purge/vacuum remain provider-owned.
-
-Reference influence:
-
-* PostgreSQL access-method boundary discipline.
-* Derby heap/raw-store compatibility boundary preservation.
-
-### Storage dispatch
-
-Current owner: DelosDB bridge between Derby access paths and heap/MVCC providers.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`, `DIAGNOSTIC_ONLY_ALGORITHM` for the next phase.
-
-Current anchor: `MvccScanController`, `DerbyMvccAccessMethodProvider`, and storage provider lookup seams.
-
-Algorithmic rule:
-
-* Do not retain a standalone storage-path decision model without a live runtime producer.
-* Existing access paths remain owned by the Derby and RawStore/MVCC implementations that execute them.
-* Future explainability work must derive from the stable plan model or bounded live diagnostics, not a speculative parallel vocabulary.
-
-Reference influence:
-
-* HerdDB explicit index-operation objects.
-* Calcite traits and path digests.
-
-### Heap compatibility
-
-Current owner: inherited Derby heap/raw-store algorithms guarded by DelosDB compatibility gates.
-
-Classification: `HEAP_COMPATIBILITY_BOUNDARY`, `DERBY_COMPATIBILITY_ALGORITHM`, `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
-
-Current anchor: `OpenHeap`, `HeapController`, `BasePage`, `StoredPage`, `FileContainer`, `AllocPage`, raw log seams, and backup/restore seams.
-
-Allowed modernization:
-
-* Read-only diagnostics.
-* Static gates.
-* Hardening.
-* Helper extraction that preserves control flow and format behavior.
-
-Forbidden without explicit plan:
-
-* Heap page format rewrite.
-* Raw log format rewrite.
-* Catalog compatibility break.
-* DRDA behavior change.
-
-### MVCC visibility
-
-#### Visibility algorithm audit update
-
-Audit overlay: `delosdb-mvcc-visibility-algorithm-audit-overlay.zip`.
-
-Current status:
-
-* Snapshot visibility is owned by `MvccSnapshot` and `MvccVisibility`.
-* Statement visibility is bounded by `visibleThroughCommand` through `MvccStatementSnapshot`.
-* Read-your-own-writes and writer-borrowed reads are preserved through command-sequence-aware write intents in `MvccInheritedTable`.
-* Purge horizon safety is protected by retained snapshot leases and `oldestRetainedVisibleThrough`.
-* History-pruned failure behavior is explicit through `MvccHistoryPrunedException` and `MvccPrunedVersionMarker`.
-* Transaction outcome publication is authority for recovered visibility through status/outcome stores.
-* Visibility-map and purge-queue metadata remain hints, not visibility authority.
-
-Next proof candidates:
-
-* `delosdb-jcstress-mvcc-visibility-probes-overlay.zip`.
-* `delosdb-mvcc-long-reader-purge-stress-overlay.zip`.
-* `delosdb-storage-path-diagnostics-runtime-overlay.zip`.
-
-
-Current owner: DelosDB MVCC.
-
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
-
-Current anchor: `MvccSnapshot`, transaction outcome records, statement snapshots, write-front rules, history-pruned failure behavior, and purge horizon logic.
-
-Algorithmic goal:
-
-* Make visibility, read-your-own-writes, writer-borrowed reads, savepoints, rollback visibility, and purge eligibility explicit.
-* Add jcstress probes after the inventory/audit slices.
-
-Reference influence:
-
-* PostgreSQL tuple visibility.
-* InnoDB read view/history discipline.
-
-### MVCC index maintenance
-
-Current owner: DelosDB MVCC bridge and durable ordered index stores.
-
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
-
-Current anchor: `MvccInheritedIndexMaintenance`, `MvccOrderedIndexPageStore`, ordered row-id scans, typed key maintenance, and candidate/ordered parity gates.
-
-Algorithmic goal:
-
-* Audit null, multi-column, duplicate, unique, collation-sensitive, range-boundary, and large-key behavior against Derby semantics.
-* Keep candidate paths diagnostic/fallback-only; do not resurrect candidate authority.
-
-Reference influence:
-
-* PostgreSQL B-tree and HOT behavior.
-* H2 ordered maps.
-* MapDB binary-searchable key arrays.
-* HerdDB index-operation classes.
-
-### Free-space map
-
-Current owner: DelosDB MVCC.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`.
-
-Current anchor: `MvccFreeSpaceMapStore`.
-
-Algorithmic goal:
-
-* Make page reuse, space class, and update timing visible.
-* Later measure search cost and fragmentation.
-
-Reference influence:
-
-* PostgreSQL FSM.
-* InnoDB extent/page allocation discipline.
-
-### Visibility/prune map
-
-Current owner: DelosDB MVCC.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`.
-
-Current anchor: `MvccVisibilityMapStore` and page-local pruning/vacuum gates.
-
-Algorithmic goal:
-
-* Keep prune eligibility and all-visible/all-prunable summaries auditable.
-* Connect visibility debt, long readers, and purge scheduling.
-
-Reference influence:
-
-* PostgreSQL VM and lazy vacuum.
-
-### Page codecs
-
-Current owner: DelosDB-owned MVCC page and record codecs.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`.
-
-Current anchor: `MvccPageRecordCodec`, row payload codecs, version record codecs, index tuple codecs, and sidecar codecs.
-
-Algorithmic goal:
-
-* Classify stable format boundaries.
-* Identify binary-searchable key areas, packed row-id lists, and checksum-region discipline.
-* Use MemorySegment/VarHandle only in DelosDB-owned storage code until heap compatibility has a format plan.
-
-Reference influence:
-
-* MapDB serializers and packed/delta encodings.
-* PostgreSQL/InnoDB page-layout discipline.
-
-### Overflow storage
-
-Current owner: DelosDB MVCC.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`.
-
-Current anchor: `MvccOverflowPayloadStore`, descriptors, chunks, and attribute overflow row payload codec.
-
-Algorithmic goal:
-
-* Audit lifecycle of large values: insert, update, delete, purge, backup, restore, and checker behavior.
-
-Reference influence:
-
-* H2 StreamStore/LOB storage.
-* PostgreSQL TOAST.
-* InnoDB external fields.
-
-### Buffer replacement
-
-Current owner: DelosDB MVCC.
-
-Classification: `DELOSDB_OWNED_ALGORITHM`.
-
-Current anchor: `MvccBufferReplacementPolicy`, `MvccPageCache`, and dirty/pin tracking.
-
-Algorithmic goal:
-
-* Audit replacement decision quality.
-* Compare current policy against CLOCK, CLOCK-Pro, and CAR-style candidates without changing the default.
-* Add JMH after policy abstraction is testable.
-
-Reference influence:
-
-* HerdDB ClockProPolicy and ClockAdaptiveReplacement.
-* InnoDB buffer-pool lifecycle.
-
-### Purge/vacuum
-
-Current owner: DelosDB MVCC.
-
-Classification: `MVCC_AUTHORITY_ALGORITHM`.
-
-Current anchor: `MvccPurgeDaemon`, visibility debt policy, purge queue store, durable vacuum, and long-reader proofs.
-
-Algorithmic goal:
-
-* Make purge scheduling, debt thresholds, and horizon safety explainable.
-* Stress long-reader behavior before deeper policy changes.
-
-Reference influence:
-
-* PostgreSQL lazy vacuum and pruning.
-* InnoDB purge/history list.
-
-### Checkpoint/recovery
-
-Current owner: DelosDB MVCC plus Derby raw-store backup/restore hooks.
-
-Classification: `MVCC_AUTHORITY_ALGORITHM`, `HEAP_COMPATIBILITY_BOUNDARY`.
-
-Current anchor: `MvccRecoveryReplayEngine`, checkpoint stores, subsystem recovery records, recovery runner, and RawStore backup/restore control flow.
-
-Algorithmic goal:
-
-* Audit ordering: checkpoint marker, dirty-page flush, subsystem recovery records, transaction outcome replay, purge/checkpoint interaction, and backup snapshot boundary.
-
-Reference influence:
-
-* PostgreSQL WAL resource-manager discipline.
-* InnoDB mini-transaction ordering.
-* HerdDB LogSequenceNumber/checkpoint patterns.
-
-### Backup/restore
-
-Current owner: inherited Derby RawStore control flow.
-
-Classification: `HEAP_COMPATIBILITY_BOUNDARY`.
-
-Current anchor: RawStore container/log backup plus explicit rejection of retired external-format
-artifacts.
-
-Algorithmic goal:
-
-* Expand mixed heap + `delos_mvcc` backup/restore matrices.
-* Preserve one RawStore persistence image and reject any second-format artifact.
-
-### DRDA/runtime concurrency
-
-Current owner: inherited Derby DRDA with opt-in DelosDB virtual-thread support.
-
-Classification: `DERBY_COMPATIBILITY_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`.
-
-Current anchor: `DRDAConnThread`, `DrdaThreading`, and `DrdaVirtualThreadFairnessAuditTest`.
-
-Algorithmic goal:
-
-* Audit fairness, cancellation, timeout, and stress behavior.
-* Keep virtual-thread mode opt-in until compatibility/stress gates prove it.
-* Current fairness audit verifies one-dispatch-per-session coverage for both platform and virtual worker modes without changing DRDA wire semantics.
-
-### Diagnostics
-
-Current owner: DelosDB shared diagnostics and inspection surfaces.
-
-Classification: `DIAGNOSTIC_ONLY_ALGORITHM`, `SHARED_SERVICE_ALGORITHM`.
-
-Algorithmic goal:
-
-* Reports must explain algorithms, not influence SQL/storage authority unless a later gate explicitly changes behavior.
-
-### External validation
-
-Current owner: DelosDB build/reporting layer.
-
-Classification: `VALIDATION_ALGORITHM`.
-
-Current anchor: external validation plan/report and opt-in command slots for JMH, jcstress, SQLancer, two-sided workload, and long-reader soak.
-
-Algorithmic goal:
-
-* Convert slots into real repeatable benchmark/concurrency/differential profiles in later slices.
-* Keep external validation outside permanent closeout verification.
-
-### JDK25 page I/O
-
-Current owner: DelosDB storage I/O module.
-
-Classification: `JDK25_MODERNIZATION_CANDIDATE`, `DELOSDB_OWNED_ALGORITHM`.
-
-Current anchor: The heap-segment and native-mirror experiments are verified. The final page-I/O
-representation decision removes their adapters from production because the direct byte-array positional path is smaller,
-copy-free, and faster in the representative diagnostic workload. The older `DelosPage` use remains
-only in the quarantined retained oracle.
-
-Algorithmic goal:
-
-* Keep production RawStore on the direct byte-array positional path.
-* Retain Foreign Function & Memory API work only in explicit research or derived-state experiments
-  until a new benchmark-backed production decision exists.
-
-### Raw log boundary
-
-Current owner: inherited Derby RawStore/logging behavior.
-
-Classification: `DO_NOT_TOUCH_WITHOUT_COMPAT_GATE`.
-
-Algorithmic goal:
-
-* Keep raw log format and checkpoint semantics preserved unless a named compatibility/version plan exists.
-
-## Near-term execution order
-
-1. `delosdb-storage-access-decision-audit-overlay.zip`
-2. `delosdb-storage-path-diagnostics-overlay.zip`
-3. `delosdb-optimizer-cost-authority-audit-overlay.zip`
-4. `delosdb-mvcc-ordered-index-key-semantics-audit-overlay.zip`
-5. `delosdb-mvcc-checkpoint-recovery-ordering-audit-overlay.zip`
-6. `delosdb-heap-algorithm-boundary-audit-phase4-overlay.zip`
-7. `delosdb-mvcc-buffer-replacement-policy-audit-overlay.zip`
-8. `delosdb-page-codec-algorithm-audit-overlay.zip`
-9. `delosdb-mvcc-visibility-algorithm-audit-overlay.zip`
-10. `delosdb-jdk25-classfile-bytecode-verifier-overlay.zip`
-
-## Guardrails
-
-* This inventory is not a behavior change.
-* This inventory does not wire new feature work into permanent closeout verification.
-* This inventory does not add external dependencies.
-* This inventory does not change Java production code.
-* Future overlays should update this file when they promote an algorithm from audit to implementation.
-
-## JDK 25 Class-File API verifier update
-
-The algorithm inventory now includes a JDK 25 bytecode verification lane.
-
-Classification:
+The relevant current authorities include:
 
 ```text
-JDK25_MODERNIZATION_CANDIDATE
-VALIDATION_ALGORITHM
-DIAGNOSTIC_ONLY_ALGORITHM
+MvccRawStoreDatabaseMetadata
+MvccRawStoreTransactionContext
+MvccRawStoreRuntime
+MvccRawStoreTable
 ```
 
-Current owner:
+RawStore remains the durable transaction decision authority.
+
+## Ordered indexes
+
+`MvccRawStoreOrderedIndex` and related generation/predicate code maintain version-aware ordered access
+for `delos_mvcc`. The ordered index is stored in RawStore containers and follows the same Derby
+transaction, logging, recovery, and backup lifecycle as other MVCC state.
+
+Candidate hints and cached read structures do not replace authoritative logical row/version identity.
+
+## Locking
+
+`MvccRawStorePhysicalLocking` defines the RawStore physical-lock mode used by the access method.
+`MvccRawStoreLogicalLock` provides logical conflict coordination where MVCC semantics require it.
+Physical latches and locks protect RawStore structures; logical MVCC visibility remains governed by
+transaction identity and commit-sequence rules.
+
+## Vacuum and maintenance
+
+`MvccRawStoreMaintenanceService` and `MvccRawStoreVacuum` operate on RawStore-backed MVCC structures.
+The vacuum horizon is bounded by the oldest retained snapshot. Vacuum must not remove version history
+that can still be observed by a live retained reader.
+
+Maintenance does not own a second checkpoint, log, or durability system.
+
+## Optimizer statistics and cost
+
+Derby's optimizer remains authoritative. DelosDB exposes storage statistics and cost information
+through provider-neutral contracts and MVCC/heap implementations where appropriate. These inputs may
+improve costing and diagnostics but do not create a parallel optimizer.
+
+## Diagnostics and JFR
+
+Diagnostics are read-only observations. They must not select a storage provider, decide visibility,
+repair data, commit transactions, or change optimizer authority.
+
+The production storage-lifecycle JFR surface intentionally has one live MVCC analyze/statistics hook:
 
 ```text
-DelosDB build tooling
+DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics
 ```
 
-Reference model:
+Retired experimental event surfaces are not production authorities.
+
+## Differential and external validation
+
+DelosDB uses several independent evidence styles:
 
 ```text
-JDK 25 java.lang.classfile.ClassFile
+heap/MVCC differential SQL execution
+DRDA client/server compatibility
+crash and reopen recovery
+fault injection
+module-boundary structural analysis
+SQLancer and other opt-in external validation
+performance and concurrency measurement
 ```
 
-Current rule:
+Timing evidence is diagnostic. A performance result does not authorize a behavior or format change
+without separate correctness and compatibility evidence.
 
-```text
-ClassFileJava is the sole production generator.
-External ASM source, dependencies, and module edges are removed.
-The Class-File API verifies compiled runtime classes and generated production fixtures.
-Compiler nodes call only JavaFactory/ClassBuilder/MethodBuilder.
-```
+## Ownership rule
 
-Verification task:
-
-```text
-./gradlew delosJdk25ClassFileBytecodeVerifier
-```
-
-Static audit task:
-
-```text
-./gradlew delosJdk25ClassFileBytecodeVerifierStaticAnalysis
-```
-
-Generated-class baseline:
-
-```text
-./gradlew :delosdb-tests:runDelosGeneratedClassAsmBaselineTest
-```
-
-The next slice freezes the operations actually used through the inherited generation
-contract. It must not add a second general backend abstraction or a normal runtime
-backend selector.
-
-## JDK 25 JFR storage lifecycle events update
-
-DelosDB retains one observability-only JFR event for the live RawStore-backed MVCC
-analyze/statistics lifecycle:
-
-* `org.apache.derby.iapi.store.types.DelosStorageLifecycleJfr`
-* `org.apache.derby.delosdb.mvcc.AnalyzeStatistics`
-* `DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics(...)`
-
-Classification:
-
-```text
-JDK25_MODERNIZATION_CANDIDATE
-DIAGNOSTIC_ONLY_ALGORITHM
-VALIDATION_ALGORITHM
-NO_BEHAVIOR_CHANGE
-```
-
-The event is inert unless JFR recording enables it. It does not change Derby optimizer
-authority or storage behavior. The final production closeout removed the unwired legacy event sketches
-instead of keeping dead production APIs.
-
-Verification:
-
-```bash
-./gradlew delosJfrStorageLifecycleEventsStaticAnalysis
-```
-
-## Optimizer cost authority audit update
-
-DelosDB now has an explicit optimizer/cost authority audit. The audit records
-which cost inputs are Derby authority, which are DelosDB diagnostic-only, and
-which are explicit opt-in storage hints through the inherited Derby
-`StoreCostController` seam.
-
-Classification:
-
-```text
-DERBY_COMPATIBILITY_ALGORITHM
-DELOSDB_OWNED_ALGORITHM
-DIAGNOSTIC_ONLY_ALGORITHM
-VALIDATION_ALGORITHM
-REFERENCE_MODEL_ONLY
-DO_NOT_TOUCH_WITHOUT_COMPAT_GATE
-```
-
-Current authority rule:
-
-```text
-Derby optimizer remains the authority.
-Do not replace Derby optimizer.
-Do not create a parallel MVCC optimizer statistics channel.
-```
-
-Current DelosDB seams:
-
-* `StoreCostController` and `StoreCostControllerWrapper`
-* `MvccStoreCostController`
-* `CostModelDiagnostics` through `DelosOptimizerStorageCostOptInDiagnostics`
-* `DelosStorageCostIntegration`
-* `CostModelProvider` and `StoreCostControllerBridge`
-* native `CostModelProvider` diagnostics through `StoreCostControllerBridge`
-* `optimizerAuthority=derby` analyze/statistics lifecycle marker
-
-Reference models:
-
-```text
-Calcite metadata/rules/cost explanation
-HerdDB planner/storage bridge and table statistics
-PostgreSQL statistics and access-path costing discipline
-InnoDB handler/buffer/storage cost boundaries
-H2 compact Java store statistics and tooling
-JDK 25 JFR/JMH/JClassFile verification lanes
-```
-
-Verification:
-
-```bash
-./gradlew delosOptimizerCostAuthorityAuditStaticAnalysis
-```
-
-## MVCC ordered-index NULL key proof update
-
-The live proof is the RawStore-backed SQL/MVCC integration test. It preserves Derby SQL NULL
-semantics and the typed key boundary while proving that NULL-key rows survive commit, shutdown,
-reopen, ordered-index summary inspection, and consistency checks.
-
-| Layer | Algorithm | Owner | Classification | Reference model | Proof gate |
-|---|---|---|---|---|---|
-| Derby SQL to RawStore-backed MVCC | SQL NULL commit/reopen/query with typed ordered-index summaries | DelosDB bridge over Derby semantics | MVCC_AUTHORITY_ALGORITHM | Derby SQL NULL semantics | `MvccSqlTypedIndexSemanticsTest#testTypedRangesNullsAndEnvelopeShapedTextSurviveReopen` |
-| Storage API typed key boundary | stable typed NULL envelope | DelosDB storage API | JDK25_MODERNIZATION_CANDIDATE | Typed codec boundary, no generic Java serialization | `delosMvccOrderedIndexNullKeyProofStaticAnalysis` |
-
-The retired pre-convergence ordered-index page-store test is not a second authority and is no longer in the
-working tree.
-
-## Shared lifecycle consistency report
-
-The shared lifecycle consistency report aggregates heap and MVCC checkpoint, recovery, purge/vacuum, analyze/update-statistics, backup-marker, and consistency signals into read-only diagnostic snapshots. It is a `SHARED_SERVICE_ALGORITHM` and `DIAGNOSTIC_ONLY_ALGORITHM`; it must not change storage formats, Derby optimizer authority, or heap/MVCC runtime behavior.
-
-## Buffer policy abstraction status
-
-The MVCC buffer replacement policy now has a package-local testability seam:
-`MvccBufferReplacementStrategy`. The default production policy remains
-`MvccBufferReplacementPolicy` / `ACCESS_ORDER_LRU`, and the new injection path is
-for package-local proofs and deterministic buffer-policy measurement lanes only. This does not
-authorize a policy replacement or shared heap/MVCC buffer extraction.
-
-
-## Heap diagnostics performance audit
-
-Classification: HEAP_COMPATIBILITY_BOUNDARY, DIAGNOSTIC_ONLY_ALGORITHM, VALIDATION_ALGORITHM.
-
-Current code: `DelosHeapStorageDiagnostics`, `DelosHeapDiagnosticsPerformanceReport`,
-`DelosStorageDiagnosticsRegistry.inspectHeapStoragePerformance(...)`, and
-`HeapDiagnosticsPerformanceAuditTest`.
-
-Reference models: PostgreSQL inspection tooling and InnoDB status diagnostics.
-
-Rule: performance observations are read-only diagnostic measurements. They must
-not authorize heap page-format changes, raw-log changes, hidden repair, or shared
-service extraction without a separate compatibility gate.
-
-## JMH performance validation lane
-
-Classification: VALIDATION_ALGORITHM and JDK25_MODERNIZATION_CANDIDATE.
-
-Current code: the independent `benchmarks/jmh` build, plus the stable
-`delosJmhMicrobenchmarks` root adapter and the deterministic
-`:delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest` baseline.
-
-Rules:
-
-* JMH source and dependencies remain outside the normal DelosDB build.
-* Permanent closeout and module checks do not resolve JMH.
-* The executable lane consumes assembled runtime jars and targets public JDBC only.
-* Package-private MVCC cache/codec measurements remain in module-local deterministic lanes rather than creating a benchmark-only production SPI.
-* JMH reports include parameter coverage checks and runtime/source fingerprints.
-* External command execution remains opt-in through `-Pdelosdb.jmh.command`.
-* Benchmark results do not authorize behavior changes without a separate correctness and compatibility proof.
-
-## External validation algorithm lane: jcstress concurrency
-
-The stable `delosJcstressConcurrencyValidation` adapter uses the live
-`:delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'` proof as its built-in baseline and may
-run a caller-supplied external jcstress command. The retired in-tree probes and their
-page-volume dependencies are absent. This lane remains `VALIDATION_ALGORITHM` and is not a permanent
-closeout dependency.
-
-## DRDA concurrent client stress
-
-Classification: VALIDATION_ALGORITHM, DRDA_COMPATIBILITY_BOUNDARY,
-MVCC_RUNTIME_PROOF.
-
-Current proof: `MvccDrdaConcurrentClientStressTest` and
-`runDelosDrdaConcurrentClientStressTest`.
-
-The proof runs through the Derby network client with virtual DRDA worker mode
-and stresses mixed heap plus `delos_mvcc` traffic using concurrent committed
-writers, rollback-only clients, read-only probes, and MVCC compress/vacuum. It
-must remain protocol-compatible and must not justify replacing DRDA, changing
-JDBC wire behavior, or changing transaction semantics without a separate gate.
-
-## Heap/MVCC differential SQL harness
-
-Classification: VALIDATION_ALGORITHM, HEAP_COMPATIBILITY_BOUNDARY,
-MVCC_RUNTIME_PROOF.
-
-Current proof: `HeapMvccDifferentialSqlHarnessTest` and
-`delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'`.
-
-The harness executes matched SQL operations against an inherited Derby heap table
-and a `delos_mvcc` table, then compares normalized result sets at named
-checkpoints. It covers supported SQL parity for inserts, rollback-only work,
-committed update/delete/insert work, indexed lookups, ordered predicates,
-aggregates, nullable values, date values, provider maintenance, and
-shutdown/reopen persistence.
-
-Rules:
-
-* Only provider-equivalent SQL belongs in the equality probes.
-* Intentional differences must stay explicit and outside this parity harness.
-* SQLancer findings must be minimized into deterministic cases before becoming
-  normal gates.
-* A passing differential harness does not authorize heap/MVCC shared-service
-  extraction or provider authority changes.
-
-Current anchor: the native page-I/O mirror is removed from production. Its copy, lease,
-limit, and accounting behavior remains documented and reproducible only in the representation decision
-test.
-
-## Segmented mapped-region experiment
-
-Classification: `VALIDATION_ALGORITHM`, `JDK25_MODERNIZATION_CANDIDATE`, and
-`DIAGNOSTIC_ONLY_ALGORITHM`.
-
-Current code: `SharedRawStoreMappedRegionExperimentTest` and the focused
-`runDelosSharedRawStoreMappedRegionExperimentTest` lane.
-
-Decision: `NO_GO_FOR_V1_RAWSTORE`.
-
-The experiment may map aligned fixed-size regions, compare exact final state with positional writes,
-and record diagnostic timing. It must not enter production RawStore source sets, authorize a mapped
-backend, replace byte-array page authority, or create a timing threshold. A future read-only derived
-subsystem requires a separate ownership and recovery decision.
-
-
-## Generated-class architecture closeout
-
-The generated-class migration is production-closed after final verification.
-
-```text
-sole backend: ClassFileJava
-external bytecode dependency: none
-normal backend selector: none
-fallback backend: none
-class-file verifier: JDK 25 java.lang.classfile
-```
-
-Permanent verification:
-
-```text
-./gradlew delosGeneratedClassStaticAnalysis
-./gradlew :delosdb-tests:runDelosGeneratedClassProductionAcceptance
-```
+When documentation and implementation disagree, resolve the disagreement against the current source,
+executable tests, and structural manifests. Do not preserve an obsolete algorithm description merely
+because it was once part of the implementation.

@@ -4,100 +4,59 @@ Status: IMPLEMENTED
 
 ## Purpose
 
-DelosDB external access methods must be owned by the same booted database service that owns RawStore.
-They must not reconstruct database identity from a service-name string or acquire a process-global
-runtime by filesystem path.
-
-This seam is the first production step toward heap and MVCC becoming peer access methods over one
-RawStore. It changes ownership only. It does not yet move MVCC table data into RawStore containers.
+External access methods are owned by the same booted database service that owns RawStore. They do
+not reconstruct database identity from a filesystem path and do not acquire process-global storage
+runtimes.
 
 ## Boot flow
 
 ```text
 RAMAccessManager boots RawStore
-    -> resolves the owning DataFactory
-    -> obtains the owning StorageFactory
+    -> resolves the owning DataFactory and StorageFactory
     -> creates one AccessMethodBootContext
     -> discovers ExternalAccessMethodProvider
-    -> passes the context to the provider
+    -> passes the database-owned context to the provider
     -> provider boots MvccConglomerateFactory
-    -> factory creates and owns one MvccDatabaseRuntime
+    -> factory creates and owns one MvccRawStoreRuntime
 ```
 
-`AccessMethodBootContext` carries:
-
-```text
-RawStoreFactory
-DataFactory
-StorageFactory
-service properties
-create/read-only state
-database-service identity
-```
-
-The database identity is opaque. An access method may retain it for identity comparison but may not
-turn it into a path or use it as a process-global registry key.
+`AccessMethodBootContext` carries the database-owned RawStore and service context required by an
+external access method without exposing implementation-global ownership.
 
 ## Runtime lifecycle
 
-`MvccConglomerateFactory` directly owns one runtime. `RAMAccessManager` already retains lifecycle
-owners for service-loaded access methods and calls `stop()` during database shutdown. Factory stop
-closes only its runtime.
+`MvccConglomerateFactory` owns one `MvccRawStoreRuntime` for the booted database. The runtime binds
+MVCC table descriptors, transaction identity, commit-sequence publication, maintenance, diagnostics,
+and shutdown to that database.
 
-Removed ownership mechanisms:
-
-```text
-MvccDatabaseRuntime.acquire(Path)
-MvccDatabaseRuntime.Lease
-static reference counts
-static path-keyed runtime ownership map
-PersistentService.ROOT lookup inside MVCC
-```
-
-Closing one database therefore cannot decrement, select, or close another database's runtime through
-a shared ownership registry.
+Factory shutdown closes only the runtime owned by that database. Closing database A cannot select,
+decrement, or close database B through a shared path-keyed registry.
 
 ## Physical storage ownership
 
-The boot seam does not create or own an independent physical store. The current MVCC provider uses
-RawStore containers owned by the database lifecycle. A filesystem root, when present, is lifecycle
-context rather than database identity.
+The runtime does not own an independent physical store. MVCC table data, indexes, metadata, and
+transaction-relevant records live in RawStore containers owned by the database lifecycle.
 
 Named in-memory databases use the inherited RawStore memory lifecycle and do not create hidden
 filesystem state.
 
 ## Diagnostics
 
-Existing test and diagnostic APIs that identify a database by directory use a small weak lookup to
-connect those APIs to an already-owned runtime.
-
-The lookup is deliberately non-owning:
-
-```text
-weak references only
-no acquisition
-no reference counting
-no close operation
-no runtime creation
-```
-
-Production execution never selects a runtime through this diagnostic lookup.
+Diagnostics resolve explicit database-owned MVCC state. They do not select a production runtime from
+ambient "last opened" state or use filesystem path as execution authority.
 
 ## Permanent contract
-
-The runtime-ownership static gate requires:
 
 ```text
 RAMAccessManager constructs AccessMethodBootContext
 ExternalAccessMethodProvider accepts the context
-MVCC does not read PersistentService.ROOT
-MvccDatabaseRuntime has no acquire/lease/static ownership registry
-MvccConglomerateFactory directly owns one runtime
-legacy diagnostic lookup is weak and non-owning
+MvccConglomerateFactory directly owns one MvccRawStoreRuntime
+one booted database cannot close another database's MVCC runtime
+production MVCC execution uses database-owned RawStore context
 memory databases use the inherited RawStore lifecycle
 ```
 
-## Transaction-lifecycle seam
+## Transaction lifecycle
 
-The neutral transaction-lifecycle seam is derived from the accepted Derby lifecycle matrix. It does
-not own table migration and does not revive the rejected five-method participant sketch.
+The neutral transaction-lifecycle seam connects the access method to the Derby transaction boundary.
+It does not create a second transaction manager or durable commit authority.

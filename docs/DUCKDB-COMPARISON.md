@@ -22,9 +22,10 @@ for DelosDB v1.0; it does not define feature parity with DuckDB.
 DuckDB's `AttachedDatabase` owns its catalog, storage manager, transaction manager, validity, and
 close lifecycle. DelosDB must provide the same clarity for MVCC runtime state.
 
-The DelosDB v1 target is one `MvccDatabaseRuntime` per database. It owns the storage registry,
-maintenance, backup coordination, transaction coordination, diagnostics, and shutdown. Mutable
-process-global database identity is prohibited.
+The current DelosDB implementation owns one `MvccRawStoreRuntime` per booted database. It binds
+RawStore-backed MVCC table descriptors, transaction identity, commit-sequence publication, maintenance,
+diagnostics, and shutdown to explicit database ownership. Mutable process-global database identity is
+prohibited.
 
 ## Transaction lesson
 
@@ -32,9 +33,9 @@ DuckDB allows a transaction to read several attached databases but rejects write
 non-temporary attached database. Within one modified database, one transaction manager owns all
 table changes.
 
-DelosDB currently has a different product requirement: supported mixed heap/MVCC writes must be
-failure-atomic. Until one database-level decision protocol exists, unsafe combinations must reject
-before mutation.
+DelosDB has a different product requirement: supported mixed heap/MVCC writes participate in the
+same Derby/RawStore transaction boundary and must be failure-atomic. Transaction shapes that do not
+yet have a proven product contract reject before mutation.
 
 ## SQL pipeline and observability
 
