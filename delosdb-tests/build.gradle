@@ -9999,10 +9999,21 @@ tasks.register('runDelosJdbcGate10loMvccSnapshotLeaseRegistryProof') {
                 failures.add("${suffix}: jfr ThreadPark print failed: ${error.trim()}")
                 return [open: -1, close: -1, total: -1]
             }
-            int open = output.count('MvccRawStoreRuntime.openSnapshotLease()')
-            int close = output.count('MvccRawStoreRuntime.closeSnapshotLease(')
-            int total = output.count('jdk.ThreadPark {')
+            def events = output.split(/(?=jdk\.ThreadPark \{)/).findAll {
+                it.startsWith('jdk.ThreadPark {')
+            }
+            int open = events.count { event ->
+                event.contains('MvccRawStoreRuntime.openSnapshotLease()')
+                        || event.contains('MvccRawStoreRuntime.openLockedSnapshotLease()')
+            }
+            int close = events.count { event ->
+                event.contains('MvccRawStoreRuntime.closeSnapshotLease(')
+            }
+            int total = events.size()
             new File(root, "${suffix}/thread-parks.txt").setText(output, 'UTF-8')
+            new File(root, "${suffix}/thread-park-summary.txt").setText(
+                    "total=${total}\nleaseOpen=${open}\nleaseClose=${close}\n",
+                    'UTF-8')
             return [open: open, close: close, total: total]
         }
 
