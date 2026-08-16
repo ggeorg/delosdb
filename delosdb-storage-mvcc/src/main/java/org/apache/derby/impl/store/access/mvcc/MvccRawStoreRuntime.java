@@ -470,7 +470,6 @@ final class MvccRawStoreRuntime {
 
     private SnapshotLease openLockedSnapshotLease() {
         commitPublicationLock.lock();
-        MvccSnapshotLeaseDiagnostics.lockedCurrentOpen();
         try {
             long sequence = publishedHighWater.get();
             return registerLockedSnapshotLease(sequence);
@@ -490,7 +489,6 @@ final class MvccRawStoreRuntime {
 
     private SnapshotLease retainLockedSnapshot(long sequence) {
         commitPublicationLock.lock();
-        MvccSnapshotLeaseDiagnostics.lockedRetainedOpen();
         try {
             long published = publishedHighWater.get();
             if (sequence > published) {
@@ -541,7 +539,6 @@ final class MvccRawStoreRuntime {
         AtomicLongArray slots = snapshotLeaseSlots;
         int slot = claimSnapshotLeaseSlot(slots);
         if (slot < 0) {
-            MvccSnapshotLeaseDiagnostics.currentSlotClaimFailure();
             return null;
         }
         boolean opened = false;
@@ -549,7 +546,6 @@ final class MvccRawStoreRuntime {
             long sequence = publishedHighWater.get();
             SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
-            MvccSnapshotLeaseDiagnostics.slottedCurrentOpen();
             opened = true;
             return lease;
         } finally {
@@ -563,7 +559,6 @@ final class MvccRawStoreRuntime {
         AtomicLongArray slots = snapshotLeaseSlots;
         int slot = claimSnapshotLeaseSlot(slots);
         if (slot < 0) {
-            MvccSnapshotLeaseDiagnostics.retainedSlotClaimFailure();
             return null;
         }
         boolean opened = false;
@@ -576,7 +571,6 @@ final class MvccRawStoreRuntime {
             }
             SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
-            MvccSnapshotLeaseDiagnostics.slottedRetainedOpen();
             opened = true;
             return lease;
         } finally {
@@ -626,11 +620,9 @@ final class MvccRawStoreRuntime {
                 throw new IllegalStateException(
                         "RawStore MVCC snapshot lease slot changed before close: " + slot);
             }
-            MvccSnapshotLeaseDiagnostics.slottedClose();
             return;
         }
         commitPublicationLock.lock();
-        MvccSnapshotLeaseDiagnostics.lockedClose();
         try {
             retainedSnapshotSequences.remove(leaseId);
         } finally {

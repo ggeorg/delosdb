@@ -10854,3 +10854,190 @@ tasks.register('runDelosJdbcGate10lqMvccPermanentSnapshotLeaseRegistryProof') {
         logger.lifecycle('Gate 10L-Q PASS: permanent MVCC snapshot-lease registry transition proved.')
     }
 }
+
+// Gate 10L-R: remove the temporary snapshot-lease path counters from the
+// production read path, then capture a clean post-registry resident MVCC
+// profile. This is an architecture diagnosis gate, not a throughput
+// acceptance gate. 10L-P is the accepted performance authority for the
+// snapshot-lease transition.
+def gate10lrRoot = 'reports/delosdb/benchmarks/gate10lr-mvcc-post-registry-resident-profile'
+
+tasks.register('runDelosJdbcGate10lrMvccPostRegistryResidentProfile', JavaExec) { task ->
+    group = 'benchmark'
+    description = 'Captures clean permanent-MVCC 16c HOT/DISJOINT JFR evidence after snapshot-lease registry acceptance.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(gate10lrRoot))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gate 10L-R requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory.dir(gate10lrRoot).get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-gate10lr-post-registry-profile').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath':
+                        sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '16',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '20000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                // Keep the same resident-profile geometry as 10L-N so cache
+                // capacity cannot masquerade as the next HOT/DISJOINT authority.
+                'delosdb.benchmark.crossEngineConcurrency.mvccCurrentRowReadCacheSlots': '65536',
+                'delosdb.benchmark.crossEngineConcurrency.profileDelosMvccWorkers': 'true'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcGate10lrMvccPostRegistryArchitectureDiagnosis') {
+    group = 'verification'
+    description = 'Assembles Gate 10L-R clean post-registry HOT/DISJOINT JFR evidence for the next architecture decision.'
+    dependsOn tasks.named('runDelosJdbcGate10lrMvccPostRegistryResidentProfile')
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(gate10lrRoot).get().asFile
+        def failures = []
+        def decision = [
+                'Gate 10L-R permanent-MVCC post-registry resident architecture diagnosis',
+                'Purpose: profile the clean permanent path after removal of temporary snapshot-lease counters.',
+                '10L-P remains the performance acceptance authority; this gate chooses the next architecture question from clean runtime evidence.',
+                'Profile geometry: Delos MVCC only, 65536 current-row cache slots, HOT + DISJOINT, 16 clients, 20,000 transactions/client, 1 warmup, 3 measured iterations.'
+        ]
+
+        File results = new File(root, 'cross-engine-concurrency-results.csv')
+        if (!results.isFile()) {
+            failures.add('missing cross-engine-concurrency-results.csv')
+        } else {
+            def lines = results.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            if (lines.size() < 2) {
+                failures.add('resident profile results are empty')
+            } else {
+                def header = (lines[0].split(',', -1) as List).collect { it.trim() }
+                def rows = lines.drop(1).collect { line ->
+                    def fields = line.split(',', -1)
+                    def row = [:]
+                    header.eachWithIndex { name, index -> row[name] = fields[index].trim() }
+                    row
+                }.findAll { it.target == 'delos_mvcc' && it.clients == '16' }
+                ['PRIMARY_KEY_READ_HOT', 'PRIMARY_KEY_READ_DISJOINT'].each { workload ->
+                    def cell = rows.findAll { it.workload == workload }
+                    if (cell.size() != 1) {
+                        failures.add("${workload} expected one 16c MVCC observation, found ${cell.size()}")
+                    } else {
+                        def row = cell[0]
+                        long retries = Long.parseLong(row.retryableConflictRetries)
+                        long operations = Long.parseLong(row.measuredOperations)
+                        double throughput = Double.parseDouble(row.operationsPerSecond)
+                        if (retries != 0L) {
+                            failures.add("${workload} retryable conflicts=${retries}")
+                        }
+                        if (operations != 9600000L) {
+                            failures.add("${workload} measured operations expected 9600000, found ${operations}")
+                        }
+                        decision.add(String.format(java.util.Locale.ROOT,
+                                '%s 16c: throughput=%.0f op/s operations=%d retries=%d fingerprint=%s',
+                                workload, throughput, operations, retries, row.semanticFingerprint))
+                    }
+                }
+            }
+        }
+
+        File profileDir = new File(root, 'profiles')
+        def recordings = profileDir.isDirectory()
+                ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }
+                : []
+        if (recordings.size() != 1) {
+            failures.add("expected exactly one JFR recording, found ${recordings.size()}")
+        } else {
+            File jfr = recordings[0]
+            File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+            ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '220',
+                            '--cell-height', '30', view, jfr.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    failures.add("jfr view ${view} failed: ${error.trim()}")
+                } else {
+                    new File(root, "${view}.txt").setText(output, 'UTF-8')
+                }
+            }
+            [
+                    'execution-samples': 'jdk.ExecutionSample',
+                    'allocation-samples': 'jdk.ObjectAllocationSample',
+                    'thread-parks': 'jdk.ThreadPark',
+                    'garbage-collections': 'jdk.GarbageCollection'
+            ].each { name, event ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'print', '--events', event, jfr.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    failures.add("jfr print ${event} failed: ${error.trim()}")
+                } else {
+                    new File(root, "${name}.txt").setText(output, 'UTF-8')
+                }
+            }
+            decision.add("JFR recording: ${jfr.name} (${jfr.length()} bytes)")
+        }
+
+        File decisionFile = new File(root,
+                'gate10lr-mvcc-post-registry-resident-profile-decision.txt')
+        if (!failures.isEmpty()) {
+            decision.add('')
+            decision.add('FAIL: ' + failures.join('; '))
+            decisionFile.setText(
+                    decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+            throw new GradleException(
+                    'Gate 10L-R evidence incomplete: ' + failures.join('; '))
+        }
+        decision.add('')
+        decision.add('PASS: clean post-registry resident profile captured. Inspect the JFR stacks against the current-first MVCC source/research model before selecting the next production experiment.')
+        decisionFile.setText(
+                decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle('Gate 10L-R PASS: clean post-registry resident HOT/DISJOINT architecture profile captured.')
+    }
+}
