@@ -1210,143 +1210,6 @@ tasks.register('runDelosJdbcRangeAlgorithmDecomposition', JavaExec) {
 
 
 
-// First workload-2 removability experiment: keep the default materialized MVCC
-// scan untouched and compare it with an opt-in bounded indexed cursor/batch path.
-def mvccBoundedIndexedScanRoot = 'reports/delosdb/benchmarks/mvcc-bounded-indexed-scan-experiment'
-def mvccBoundedIndexedScanTasks = []
-[baseline: false, bounded: true].each { variant, enabled ->
-    def taskName = "runDelosJdbcMvccBoundedIndexedScan${variant.capitalize()}"
-    mvccBoundedIndexedScanTasks.add(taskName)
-    tasks.register(taskName, JavaExec) { task ->
-        group = 'benchmark'
-        description = "Runs the MVCC range scan ${variant} variant for the bounded indexed-scan removability experiment."
-        dependsOn tasks.named('compileTestJava'), ':jars'
-
-        task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
-        task.classpath = rootProject.files(derbyTestsClassDir)
-        task.outputs.upToDateWhen { false }
-        task.outputs.dir(rootProject.layout.buildDirectory.dir("${mvccBoundedIndexedScanRoot}/${variant}"))
-
-        task.doFirst {
-            def saneValue = providers.gradleProperty('delosdb.sane')
-                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
-            if (saneValue != 'false') {
-                throw new GradleException(
-                        'MVCC bounded indexed-scan experiment requires a release build; rerun with -Pdelosdb.sane=false')
-            }
-            File reportDir = rootProject.layout.buildDirectory
-                    .dir("${mvccBoundedIndexedScanRoot}/${variant}").get().asFile
-            File databaseRoot = rootProject.layout.buildDirectory
-                    .dir("tmp/delos-jdbc-mvcc-bounded-indexed-scan-${variant}").get().asFile
-            project.delete(reportDir)
-            project.delete(databaseRoot)
-            reportDir.mkdirs()
-            databaseRoot.mkdirs()
-            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
-            task.systemProperties([
-                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
-                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
-                            rootProject.projectDir.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
-                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
-                            derbyTestsClassDir.get().asFile.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
-                            rootProject.files(derbyRuntimeJars).asPath,
-                    'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
-                    'delosdb.benchmark.crossEngineConcurrency.mvccBoundedIndexedScan':
-                            enabled.toString(),
-                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
-                            databaseRoot.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
-                            reportDir.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
-                    'delosdb.benchmark.crossEngineConcurrency.clients': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
-                    'delosdb.benchmark.crossEngineConcurrency.workloads':
-                            'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000',
-                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient':
-                            providers.gradleProperty(
-                                    'delosdb.benchmark.mvccBoundedIndexedScan.targetRowsPerClient')
-                                    .getOrElse('1000000'),
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
-                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
-                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
-                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
-                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
-                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
-                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
-            ])
-        }
-    }
-}
-
-tasks.register('runDelosJdbcMvccBoundedIndexedScanExperiment') {
-    group = 'benchmark'
-    description = 'A/B compares default MVCC range materialization with the opt-in bounded indexed cursor/batch path.'
-    dependsOn mvccBoundedIndexedScanTasks.collect { tasks.named(it) }
-
-    doLast {
-        File root = rootProject.layout.buildDirectory
-                .dir(mvccBoundedIndexedScanRoot).get().asFile
-        def readRows = { String variant ->
-            File throughput = new File(new File(root, variant), 'range-scan-throughput.csv')
-            if (!throughput.isFile()) {
-                throw new GradleException(
-                        "MVCC bounded indexed-scan ${variant} run is missing range-scan-throughput.csv")
-            }
-            def lines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
-            if (lines.size() < 2) {
-                throw new GradleException(
-                        "MVCC bounded indexed-scan ${variant} run produced no measurements")
-            }
-            def header = lines[0].split(',', -1) as List
-            lines.drop(1).collect { line ->
-                def fields = line.split(',', -1)
-                if (fields.length != header.size()) {
-                    throw new GradleException(
-                            "Malformed MVCC bounded indexed-scan ${variant} row: ${line}")
-                }
-                def row = [:]
-                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
-                row
-            }
-        }
-
-        def baselineRows = readRows('baseline')
-        def boundedRows = readRows('bounded')
-        def workloads = ['RANGE_SCAN_INDEX_ONLY_1000', 'RANGE_SCAN_1000']
-        StringBuilder out = new StringBuilder(
-                'workload,baselineRowsPerSecond,boundedRowsPerSecond,boundedOverBaseline,percentChange\n')
-        workloads.each { workload ->
-            def baseline = baselineRows.find { it.target == 'delos_mvcc' && it.workload == workload }
-            def bounded = boundedRows.find { it.target == 'delos_mvcc' && it.workload == workload }
-            if (baseline == null || bounded == null) {
-                throw new GradleException(
-                        "Missing MVCC bounded indexed-scan comparison row for ${workload}")
-            }
-            double baselineRate = Double.parseDouble(baseline.medianRowsPerSecond)
-            double boundedRate = Double.parseDouble(bounded.medianRowsPerSecond)
-            double ratio = boundedRate / baselineRate
-            out.append(workload).append(',')
-                    .append(String.format(java.util.Locale.ROOT, '%.3f', baselineRate)).append(',')
-                    .append(String.format(java.util.Locale.ROOT, '%.3f', boundedRate)).append(',')
-                    .append(String.format(java.util.Locale.ROOT, '%.6f', ratio)).append(',')
-                    .append(String.format(java.util.Locale.ROOT, '%.3f', (ratio - 1.0d) * 100.0d))
-                    .append('\n')
-        }
-        new File(root, 'mvcc-bounded-indexed-scan-comparison.csv')
-                .setText(out.toString(), 'UTF-8')
-        logger.lifecycle(
-                'MVCC bounded indexed-scan experiment PASS: inspect mvcc-bounded-indexed-scan-comparison.csv; keep or revert only from measured evidence.')
-    }
-}
-
-
 // Performance modernization workload 2 diagnostic: attribute the steady-state
 // range-scan CPU/allocation path after the five-engine baseline has established
 // where the curves diverge. JFR-enabled throughput is diagnostic only.
@@ -12024,5 +11887,155 @@ tasks.register('runDelosJdbcGate10ltFiveEngineReadStackDecomposition', JavaExec)
         decisionFile.setText(
                 decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
         logger.lifecycle('Gate 10L-T PASS: five-engine read-stack decomposition captured.')
+    }
+}
+
+
+// Workload-2 diagnostic: vary Derby's inherited compiler bulk-fetch default without
+// changing production code. This measures whether larger index traversal groups
+// materially reduce the proven index-to-base range-scan cost.
+def rangeBulkFetchSweepRoot = 'reports/delosdb/benchmarks/range-bulk-fetch-sweep'
+def rangeBulkFetchSweepSizes = [1, 16, 64, 256, 1024]
+def rangeBulkFetchSweepTasks = []
+
+rangeBulkFetchSweepSizes.each { fetchSize ->
+    def taskName = "runDelosJdbcRangeBulkFetch${fetchSize}"
+    rangeBulkFetchSweepTasks.add(taskName)
+    tasks.register(taskName, JavaExec) { task ->
+        group = 'benchmark'
+        description = "Runs Heap/Derby 1000-row range scans with derby.language.bulkFetchDefault=${fetchSize}."
+        dependsOn tasks.named('compileTestJava'), ':jars'
+
+        task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        task.classpath = rootProject.files(derbyTestsClassDir)
+        task.outputs.upToDateWhen { false }
+        task.outputs.dir(rootProject.layout.buildDirectory.dir(
+                "${rangeBulkFetchSweepRoot}/bulk-${fetchSize}"))
+
+        task.doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Range bulk-fetch sweep requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${rangeBulkFetchSweepRoot}/bulk-${fetchSize}").get().asFile
+            File databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-range-bulk-fetch-${fetchSize}").get().asFile
+            project.delete(reportDir)
+            project.delete(databaseRoot)
+            reportDir.mkdirs()
+            databaseRoot.mkdirs()
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            task.systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeBulkFetchDefault':
+                            fetchSize.toString(),
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                            databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                            reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads':
+                            'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient':
+                            providers.gradleProperty(
+                                    'delosdb.benchmark.rangeBulkFetch.targetRowsPerClient')
+                                    .getOrElse('2000000'),
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+    }
+}
+
+tasks.register('runDelosJdbcRangeBulkFetchSweep') {
+    group = 'benchmark'
+    description = 'Sweeps Derby inherited bulk-fetch defaults 1/16/64/256/1024 for Heap and upstream Derby range scans.'
+    dependsOn rangeBulkFetchSweepTasks.collect { tasks.named(it) }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(rangeBulkFetchSweepRoot).get().asFile
+        def rows = []
+        rangeBulkFetchSweepSizes.each { fetchSize ->
+            File throughput = new File(new File(root, "bulk-${fetchSize}"), 'range-scan-throughput.csv')
+            if (!throughput.isFile()) {
+                throw new GradleException("Missing range bulk-fetch throughput for ${fetchSize}")
+            }
+            def lines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def header = lines[0].split(',', -1) as List
+            lines.drop(1).each { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+                row.bulkFetchDefault = fetchSize.toString()
+                rows.add(row)
+            }
+        }
+
+        StringBuilder out = new StringBuilder(
+                'target,workload,bulkFetchDefault,medianRowsPerSecond,q1RowsPerSecond,' +
+                        'q3RowsPerSecond,iqrRowsPerSecond,madRowsPerSecond,ratioTo16,percentChangeFrom16\n')
+        ['delos_heap', 'upstream_derby'].each { target ->
+            ['RANGE_SCAN_INDEX_ONLY_1000', 'RANGE_SCAN_1000'].each { workload ->
+                def baseline = rows.find {
+                    it.target == target && it.workload == workload && it.bulkFetchDefault == '16'
+                }
+                if (baseline == null) {
+                    throw new GradleException(
+                            "Missing bulk-fetch=16 baseline target=${target}, workload=${workload}")
+                }
+                double baselineRate = Double.parseDouble(baseline.medianRowsPerSecond)
+                rangeBulkFetchSweepSizes.each { fetchSize ->
+                    def row = rows.find {
+                        it.target == target
+                                && it.workload == workload
+                                && it.bulkFetchDefault == fetchSize.toString()
+                    }
+                    if (row == null) {
+                        throw new GradleException(
+                                "Missing bulk-fetch result target=${target}, workload=${workload}, size=${fetchSize}")
+                    }
+                    double rate = Double.parseDouble(row.medianRowsPerSecond)
+                    double ratio = rate / baselineRate
+                    out.append(target).append(',')
+                            .append(workload).append(',')
+                            .append(fetchSize).append(',')
+                            .append(row.medianRowsPerSecond).append(',')
+                            .append(row.q1RowsPerSecond).append(',')
+                            .append(row.q3RowsPerSecond).append(',')
+                            .append(row.iqrRowsPerSecond).append(',')
+                            .append(row.madRowsPerSecond).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.6f', ratio)).append(',')
+                            .append(String.format(java.util.Locale.ROOT, '%.3f',
+                                    (ratio - 1.0d) * 100.0d)).append('\n')
+                }
+            }
+        }
+        new File(root, 'range-bulk-fetch-sweep.csv').setText(out.toString(), 'UTF-8')
+        logger.lifecycle(
+                'Range bulk-fetch sweep PASS: inspect range-bulk-fetch-sweep.csv before designing page-local index-to-base fetching.')
     }
 }

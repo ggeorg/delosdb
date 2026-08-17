@@ -154,9 +154,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + leaseSlots);
                 }
             }
-            if (Boolean.getBoolean(PREFIX + "mvccBoundedIndexedScan")) {
-                command.add("-Ddelosdb.experimental.mvccBoundedIndexedScan=true");
-            }
+        }
+        String rangeBulkFetchDefault = System.getProperty(
+                PREFIX + "rangeBulkFetchDefault", "").trim();
+        if (!rangeBulkFetchDefault.isEmpty()) {
+            command.add("-D" + PREFIX + "rangeBulkFetchDefault=" + rangeBulkFetchDefault);
         }
         if (shouldProfileWorker(target)) {
             Path profileDirectory = options.reportDirectory().resolve("profiles");
@@ -582,6 +584,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String productVersion = csvSafe(metadata.getDatabaseProductVersion());
             String driverVersion = csvSafe(metadata.getDriverVersion());
             List<String> tables = prepareTables(verifier, options, spec, config);
+            configureRangeBulkFetchDefault(verifier, options, spec);
             if (options.target() == Target.SQLITE) {
                 writeSqliteRuntimeMetadata(verifier, options, spec, config, tables);
             }
@@ -1363,6 +1366,35 @@ public final class DelosJdbcCrossEngineConcurrency {
                 output, out.toString(), StandardCharsets.UTF_8,
                 java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static void configureRangeBulkFetchDefault(
+            Connection connection, Options options, Spec spec) throws SQLException {
+        String value = System.getProperty(PREFIX + "rangeBulkFetchDefault", "").trim();
+        if (value.isEmpty()) {
+            return;
+        }
+        if (!spec.workload().isRangeScan()
+                || (options.target() != Target.DELOS_HEAP
+                        && options.target() != Target.UPSTREAM_DERBY)) {
+            throw new IllegalStateException(
+                    "rangeBulkFetchDefault is valid only for Delos heap/upstream Derby range scans");
+        }
+        int parsed;
+        try {
+            parsed = Integer.parseInt(value);
+        } catch (NumberFormatException failure) {
+            throw new IllegalArgumentException("Invalid rangeBulkFetchDefault=" + value, failure);
+        }
+        if (parsed < 1) {
+            throw new IllegalArgumentException("rangeBulkFetchDefault must be >= 1");
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "call syscs_util.syscs_set_database_property("
+                        + "'derby.language.bulkFetchDefault','" + parsed + "')")) {
+            statement.execute();
+        }
+        connection.commit();
     }
 
     private static List<String> prepareTables(

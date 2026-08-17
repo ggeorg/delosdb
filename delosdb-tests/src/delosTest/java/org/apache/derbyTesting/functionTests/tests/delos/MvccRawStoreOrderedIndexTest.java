@@ -40,8 +40,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final String BOUNDED_INDEXED_SCAN_PROPERTY =
-            "delosdb.experimental.mvccBoundedIndexedScan";
 
     public void testEqualityRangeCandidateLookupAndReopenUseRawStoreIndex() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index");
@@ -225,7 +223,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             throws Exception {
         String database = databaseName("mvcc-raw-store-covering-index");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -315,7 +312,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
     public void testCoveringCandidateFallsBackForHistoricalSnapshot() throws Exception {
         String database = databaseName("mvcc-raw-store-covering-snapshot");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -368,7 +364,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             throws Exception {
         String database = databaseName("mvcc-raw-store-directory-head-summary");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
@@ -574,49 +569,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testBoundedIndexedScanExperimentPreservesRangeAndSnapshotSemantics()
-            throws Exception {
-        String database = databaseName("mvcc-raw-store-bounded-indexed-scan");
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope bounded = setSystemProperty(BOUNDED_INDEXED_SCAN_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table bounded_scan_t (id int primary key, quantity int) using delos_mvcc");
-                try (PreparedStatement insert = setup.prepareStatement(
-                        "insert into bounded_scan_t values (?, ?)")) {
-                    for (int id = 1; id <= 192; id++) {
-                        insert.setInt(1, id);
-                        insert.setInt(2, id * 10);
-                        assertEquals(1, insert.executeUpdate());
-                    }
-                }
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-
-                assertBoundedIndexedRange(historical, 32, 160, -1, -1);
-
-                executeUpdate(writer,
-                        "update bounded_scan_t set quantity = 999 where id = 96");
-                executeUpdate(writer, "delete from bounded_scan_t where id = 64");
-                writer.commit();
-
-                assertBoundedIndexedRange(historical, 32, 160, -1, -1);
-                historical.commit();
-
-                assertBoundedIndexedRange(historical, 32, 160, 64, 999);
-                historical.commit();
-            }
-            shutdownDatabase(database);
-        }
-    }
-
     public void testOrderedIndexSurvivesBothRawStoreCrashBoundaries() throws Exception {
         verifyCrashBoundary("after-stamp-before-raw-commit", 91, false);
         verifyCrashBoundary("after-raw-commit-before-publication", 92, true);
@@ -793,61 +745,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 .toList();
         assertEquals(expectedKeys.size(), keys.size());
         assertEquals(expectedKeys, Set.copyOf(keys));
-    }
-
-    private static void assertBoundedIndexedRange(
-            Connection connection,
-            int lowerInclusive,
-            int upperExclusive,
-            int missingId,
-            int changedQuantity) throws Exception {
-        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
-        try (PreparedStatement query = connection.prepareStatement(
-                "select id from bounded_scan_t where id >= ? and id < ? order by id")) {
-            query.setInt(1, lowerInclusive);
-            query.setInt(2, upperExclusive);
-            try (ResultSet resultSet = query.executeQuery()) {
-                for (int id = lowerInclusive; id < upperExclusive; id++) {
-                    if (id == missingId) {
-                        continue;
-                    }
-                    assertTrue("missing bounded index-only row " + id, resultSet.next());
-                    assertEquals(id, resultSet.getInt(1));
-                }
-                assertFalse(resultSet.next());
-            }
-        }
-        String indexOnlyStatistics = runtimeStatistics(connection);
-        assertTrue(
-                "expected bounded RawStore MVCC ordered-index scan; statistics="
-                        + indexOnlyStatistics,
-                indexOnlyStatistics.contains("delos_mvcc_rawstore_ordered_index"));
-
-        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
-        try (PreparedStatement query = connection.prepareStatement(
-                "select id, quantity from bounded_scan_t where id >= ? and id < ? order by id")) {
-            query.setInt(1, lowerInclusive);
-            query.setInt(2, upperExclusive);
-            try (ResultSet resultSet = query.executeQuery()) {
-                for (int id = lowerInclusive; id < upperExclusive; id++) {
-                    if (id == missingId) {
-                        continue;
-                    }
-                    assertTrue("missing bounded index-to-base row " + id, resultSet.next());
-                    assertEquals(id, resultSet.getInt(1));
-                    int expectedQuantity = id == 96 && changedQuantity >= 0
-                            ? changedQuantity
-                            : id * 10;
-                    assertEquals(expectedQuantity, resultSet.getInt(2));
-                }
-                assertFalse(resultSet.next());
-            }
-        }
-        String indexToBaseStatistics = runtimeStatistics(connection);
-        assertTrue(
-                "expected bounded RawStore MVCC index-to-base scan; statistics="
-                        + indexToBaseStatistics,
-                indexToBaseStatistics.contains("delos_mvcc_rawstore_ordered_index"));
     }
 
     private static String assertCoveringIndexedRows(

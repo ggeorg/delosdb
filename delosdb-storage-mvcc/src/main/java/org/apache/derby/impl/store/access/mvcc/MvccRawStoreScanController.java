@@ -26,18 +26,8 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
-/**
- * RawStore-backed MVCC scan.
- *
- * <p>The default path preserves the existing materialized scan. An opt-in
- * diagnostic path streams ordered-index candidates through bounded batches so
- * range-scan materialization can be measured without changing the production
- * default.</p>
- */
+/** Materialized scan over RawStore directory and version rows. */
 final class MvccRawStoreScanController implements ScanManager {
-    private static final String BOUNDED_INDEXED_SCAN_PROPERTY =
-            "delosdb.experimental.mvccBoundedIndexedScan";
-    private static final int INDEXED_SCAN_BATCH_SIZE = 64;
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
@@ -63,13 +53,6 @@ final class MvccRawStoreScanController implements ScanManager {
     private boolean coveringIndexScan;
     private MvccRawStoreIndexedReadMetrics.Snapshot indexedReadMetrics =
             MvccRawStoreIndexedReadMetrics.EMPTY;
-    private MvccRawStoreOrderedIndex.CandidateCursor indexedCandidateCursor;
-    private MvccRawStoreIndexedReader indexedReader;
-    private MvccRawStoreRuntime.TableReadBoundary indexedReadBoundary;
-    private boolean boundedIndexedScan;
-    private boolean boundedCoveringEligible;
-    private boolean boundedAllCovered;
-    private boolean boundedSawCandidate;
 
     MvccRawStoreScanController(
             MvccRawStoreRuntime runtime,
@@ -101,7 +84,7 @@ final class MvccRawStoreScanController implements ScanManager {
         if (statementSnapshot) {
             // READ COMMITTED and weaker isolation levels require a fresh
             // committed horizon for every SQL scan. Keep the lease until the
-            // scan closes so vacuum cannot cross that statement.
+            // materialized scan closes so vacuum cannot cross that statement.
             this.heldSnapshotLease = runtime.openSnapshotLease();
             this.snapshotSequence = heldSnapshotLease.sequence();
         } else {
@@ -131,7 +114,6 @@ final class MvccRawStoreScanController implements ScanManager {
     public void close() {
         if (!closed) {
             closed = true;
-            closeBoundedIndexedResources();
             rows = List.of();
             current = null;
             if (heldSnapshotLease != null) {
@@ -338,29 +320,25 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public boolean next() throws StandardException {
         ensureOpen();
-        while (true) {
-            while (nextIndex < rows.size()) {
-                MvccRawStoreTable.VisibleRow candidate = rows.get(nextIndex++);
-                rowsVisited++;
-                if (qualifies(candidate.values())) {
-                    if (readCommittedUpdateRecheck) {
-                        candidate = lockAndRefresh(candidate);
-                        if (candidate == null || !qualifies(candidate.values())) {
-                            continue;
-                        }
+        while (nextIndex < rows.size()) {
+            MvccRawStoreTable.VisibleRow candidate = rows.get(nextIndex++);
+            rowsVisited++;
+            if (qualifies(candidate.values())) {
+                if (readCommittedUpdateRecheck) {
+                    candidate = lockAndRefresh(candidate);
+                    if (candidate == null || !qualifies(candidate.values())) {
+                        continue;
                     }
-                    rowsQualified++;
-                    current = candidate;
-                    currentDeleted = false;
-                    return true;
                 }
-            }
-            if (!boundedIndexedScan || !loadNextBoundedIndexedBatch()) {
-                current = null;
+                rowsQualified++;
+                current = candidate;
                 currentDeleted = false;
-                return false;
+                return true;
             }
         }
+        current = null;
+        currentDeleted = false;
+        return false;
     }
 
 
@@ -438,30 +416,7 @@ final class MvccRawStoreScanController implements ScanManager {
     }
 
     private void reload() throws StandardException {
-        closeBoundedIndexedResources();
-        boundedIndexedScan = false;
-        boundedCoveringEligible = false;
-        boundedAllCovered = false;
-        boundedSawCandidate = false;
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
-        boolean boundedIndexedScanEnabled = Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY)
-                && !forUpdate
-                && !hold;
-        if (boundedIndexedScanEnabled) {
-            loadBoundedIndexedScan(context);
-        } else {
-            loadMaterializedScan(context);
-        }
-        nextIndex = 0;
-        current = null;
-        currentDeleted = false;
-        rowsVisited = 0L;
-        rowsQualified = 0L;
-        estimatedRowCount = boundedIndexedScan ? 0L : rows.size();
-    }
-
-    private void loadMaterializedScan(MvccRawStoreTransactionContext context)
-            throws StandardException {
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
             java.util.Optional<List<MvccRawStoreOrderedIndex.Candidate>> candidates =
                     MvccRawStoreTable.orderedIndexCandidatesForAt(
@@ -495,119 +450,24 @@ final class MvccRawStoreScanController implements ScanManager {
                 orderedIndexScan = true;
                 coveringIndexScan = allCovered;
             } else {
-                loadMaterializedTableScan(context);
+                rows = MvccRawStoreTable.scanVisibleAt(
+                        rawTransaction,
+                        table,
+                        snapshotSequence,
+                        versionProjection,
+                        context);
+                orderedIndexScan = false;
+                coveringIndexScan = false;
+                indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
             }
         }
+        nextIndex = 0;
+        current = null;
+        currentDeleted = false;
+        rowsVisited = 0L;
+        rowsQualified = 0L;
+        estimatedRowCount = rows.size();
     }
-
-    private void loadBoundedIndexedScan(MvccRawStoreTransactionContext context)
-            throws StandardException {
-        MvccRawStoreRuntime.TableReadBoundary boundary = runtime.enterTableRead(table);
-        boolean retainBoundary = false;
-        try {
-            java.util.Optional<MvccRawStoreOrderedIndex.CandidateCursor> candidates =
-                    MvccRawStoreOrderedIndex.openCandidateCursorForAt(
-                            transactionManager,
-                            table,
-                            context.orderedIndexForRead(table),
-                            qualifiers,
-                            context,
-                            compiledInfo);
-            if (candidates.isEmpty()) {
-                loadMaterializedTableScan(context);
-                return;
-            }
-
-            indexedCandidateCursor = candidates.get();
-            indexedReader = new MvccRawStoreIndexedReader(
-                    rawTransaction,
-                    table,
-                    snapshotSequence,
-                    versionProjection,
-                    context);
-            indexedReadBoundary = boundary;
-            retainBoundary = true;
-            boundedIndexedScan = true;
-            boundedCoveringEligible = coveringEligible(indexedCandidateCursor.columnId());
-            boundedAllCovered = true;
-            boundedSawCandidate = false;
-            rows = List.of();
-            orderedIndexScan = true;
-            coveringIndexScan = false;
-            indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
-        } catch (StandardException | RuntimeException | Error failure) {
-            closeBoundedIndexedResources();
-            throw failure;
-        } finally {
-            if (!retainBoundary) {
-                boundary.close();
-            }
-        }
-    }
-
-    private void loadMaterializedTableScan(MvccRawStoreTransactionContext context)
-            throws StandardException {
-        rows = MvccRawStoreTable.scanVisibleAt(
-                rawTransaction,
-                table,
-                snapshotSequence,
-                versionProjection,
-                context);
-        orderedIndexScan = false;
-        coveringIndexScan = false;
-        indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
-    }
-
-    private boolean loadNextBoundedIndexedBatch() throws StandardException {
-        while (true) {
-            List<MvccRawStoreOrderedIndex.Candidate> candidates =
-                    indexedCandidateCursor.nextBatch(INDEXED_SCAN_BATCH_SIZE);
-            if (candidates.isEmpty()) {
-                indexedReadMetrics = indexedReader.metrics();
-                coveringIndexScan = boundedSawCandidate && boundedAllCovered;
-                closeBoundedIndexedResources();
-                rows = List.of();
-                nextIndex = 0;
-                return false;
-            }
-
-            boundedSawCandidate = true;
-            List<MvccRawStoreIndexedReader.Result> results = indexedReader.read(
-                    candidates,
-                    boundedCoveringEligible);
-            java.util.ArrayList<MvccRawStoreTable.VisibleRow> visibleRows =
-                    new java.util.ArrayList<>(results.size());
-            for (MvccRawStoreIndexedReader.Result result : results) {
-                boundedAllCovered &= result.covered();
-                if (result.row() != null) {
-                    visibleRows.add(result.row());
-                }
-            }
-            indexedReadMetrics = indexedReader.metrics();
-            rows = visibleRows.isEmpty() ? List.of() : List.copyOf(visibleRows);
-            nextIndex = 0;
-            if (!rows.isEmpty()) {
-                return true;
-            }
-        }
-    }
-
-    private void closeBoundedIndexedResources() {
-        if (indexedReader != null) {
-            indexedReader.close();
-            indexedReader = null;
-        }
-        if (indexedCandidateCursor != null) {
-            indexedCandidateCursor.close();
-            indexedCandidateCursor = null;
-        }
-        if (indexedReadBoundary != null) {
-            indexedReadBoundary.close();
-            indexedReadBoundary = null;
-        }
-        boundedIndexedScan = false;
-    }
-
 
     private boolean coveringEligible(int indexedColumn) {
         if (forUpdate || scanColumnList == null) {
