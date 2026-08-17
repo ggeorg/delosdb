@@ -1077,6 +1077,139 @@ tasks.register('runDelosJdbcRangeScanBaseline', JavaExec) {
 
 
 
+
+// Performance modernization workload 2: decompose the primary-key range path
+// into index-only versus index-to-base-row execution before changing production code.
+tasks.register('runDelosJdbcRangeAlgorithmDecomposition', JavaExec) {
+    group = 'benchmark'
+    description = 'Compares index-only and index-to-base-row ordered PK ranges across the five embedded engines.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/range-algorithm-decomposition'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Range algorithm decomposition requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                        .dir('tmp/delos-jdbc-range-algorithm-decomposition').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/range-algorithm-decomposition').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'RANGE_SCAN_INDEX_ONLY_100,RANGE_SCAN_100,' +
+                                'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeAlgorithm.targetRowsPerClient').getOrElse('1000000'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.rangeAlgorithm.warmups').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.rangeAlgorithm.iterations').getOrElse('3'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/range-algorithm-decomposition').get().asFile
+        File throughput = new File(root, 'range-scan-throughput.csv')
+        if (!throughput.isFile()) {
+            throw new GradleException(
+                    'Range algorithm decomposition is missing range-scan-throughput.csv')
+        }
+        def lines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+        if (lines.size() < 2) {
+            throw new GradleException('Range algorithm decomposition produced no measurements')
+        }
+        def header = lines[0].split(',', -1) as List
+        def rows = lines.drop(1).collect { line ->
+            def fields = line.split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Malformed decomposition row: ${line}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row
+        }
+        def targets = ['delos_heap', 'delos_mvcc', 'upstream_derby', 'h2', 'sqlite']
+        def sizes = [100, 1000]
+        int expected = targets.size() * sizes.size() * 2
+        if (rows.size() != expected) {
+            throw new GradleException(
+                    "Range algorithm decomposition expected ${expected} rows but found ${rows.size()}")
+        }
+
+        File summary = new File(root, 'range-algorithm-decomposition.csv')
+        StringBuilder out = new StringBuilder(
+                'target,rangeRows,indexOnlyRowsPerSecond,indexToBaseRowsPerSecond,' +
+                        'indexToBaseOverIndexOnly,indexOnlyOverIndexToBase\n')
+        targets.each { target ->
+            sizes.each { size ->
+                def indexOnlyName = "RANGE_SCAN_INDEX_ONLY_${size}"
+                def indexToBaseName = "RANGE_SCAN_${size}"
+                def indexOnly = rows.find { it.target == target && it.workload == indexOnlyName }
+                def indexToBase = rows.find { it.target == target && it.workload == indexToBaseName }
+                if (indexOnly == null || indexToBase == null) {
+                    throw new GradleException(
+                            "Missing range decomposition pair target=${target}, rangeRows=${size}")
+                }
+                double indexOnlyRate = Double.parseDouble(indexOnly.medianRowsPerSecond)
+                double indexToBaseRate = Double.parseDouble(indexToBase.medianRowsPerSecond)
+                if (indexOnlyRate <= 0.0d || indexToBaseRate <= 0.0d) {
+                    throw new GradleException(
+                            "Non-positive range decomposition throughput target=${target}, rangeRows=${size}")
+                }
+                out.append(target).append(',')
+                        .append(size).append(',')
+                        .append(String.format(java.util.Locale.ROOT, '%.3f', indexOnlyRate)).append(',')
+                        .append(String.format(java.util.Locale.ROOT, '%.3f', indexToBaseRate)).append(',')
+                        .append(String.format(java.util.Locale.ROOT, '%.6f',
+                                indexToBaseRate / indexOnlyRate)).append(',')
+                        .append(String.format(java.util.Locale.ROOT, '%.6f',
+                                indexOnlyRate / indexToBaseRate)).append('\n')
+            }
+        }
+        summary.setText(out.toString(), 'UTF-8')
+        logger.lifecycle(
+                'Range algorithm decomposition PASS: inspect range-algorithm-decomposition.csv to quantify the index-to-base-row boundary before production changes.')
+    }
+}
+
+
+
 // Performance modernization workload 2 diagnostic: attribute the steady-state
 // range-scan CPU/allocation path after the five-engine baseline has established
 // where the curves diverge. JFR-enabled throughput is diagnostic only.
@@ -1168,6 +1301,13 @@ rangeScanJfrProfiles.each { suffix, workload ->
                 throw new GradleException(
                         "${workload}: expected ${expectedRecordings} JFR recordings but found ${recordings.size()}")
             }
+            def compilationLogs = profileDir.isDirectory()
+                    ? profileDir.listFiles().findAll { it.name.endsWith('-hotspot.log') }.sort { it.name }
+                    : []
+            if (compilationLogs.size() != expectedRecordings) {
+                throw new GradleException(
+                        "${workload}: expected ${expectedRecordings} HotSpot compilation logs but found ${compilationLogs.size()}")
+            }
             File viewDir = new File(reportDir, 'jfr-views')
             viewDir.mkdirs()
             File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
@@ -1194,7 +1334,8 @@ rangeScanJfrProfiles.each { suffix, workload ->
                             'Targets=delos_heap,delos_mvcc,upstream_derby\n' +
                             'Clients=1\n' +
                             'JFR settings=profile; stackdepth=256\n' +
-                            'Interpretation=CPU/allocation/contention attribution only; JFR-enabled throughput is not acceptance throughput.\n',
+                            'HotSpot=-XX:+LogCompilation, one log per profiled worker\n' +
+                            'Interpretation=CPU/allocation/contention/JIT attribution only; JFR-enabled throughput is not acceptance throughput.\n',
                     'UTF-8')
         }
     }

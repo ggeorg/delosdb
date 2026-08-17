@@ -47,51 +47,80 @@ public final class DelosJdbcRangeScanSurfaceValidation {
             int rangeRows = Math.min(requestedRows, config.rowCount());
             int start = 1 + (config.rowCount() - rangeRows) / 3;
             int endExclusive = start + rangeRows;
-            RangeSemantic first = executeRange(connection, scenario.tableName(), start, endExclusive);
-            RangeSemantic second = executeRange(connection, scenario.tableName(), start, endExclusive);
+            RangeSemantic first = executeRange(connection, scenario.tableName(), start, endExclusive, false);
+            RangeSemantic second = executeRange(connection, scenario.tableName(), start, endExclusive, false);
+            RangeSemantic indexOnlyFirst = executeRange(
+                    connection, scenario.tableName(), start, endExclusive, true);
+            RangeSemantic indexOnlySecond = executeRange(
+                    connection, scenario.tableName(), start, endExclusive, true);
             if (!first.equals(second)) {
                 throw new IllegalStateException("Repeated range scan changed for provider=" + provider
                         + ", rangeRows=" + rangeRows + ": first=" + first + ", second=" + second);
             }
-            if (first.rows() != rangeRows) {
+            if (!indexOnlyFirst.equals(indexOnlySecond)) {
+                throw new IllegalStateException("Repeated index-only range scan changed for provider=" + provider
+                        + ", rangeRows=" + rangeRows + ": first=" + indexOnlyFirst
+                        + ", second=" + indexOnlySecond);
+            }
+            if (first.rows() != rangeRows || indexOnlyFirst.rows() != rangeRows) {
                 throw new IllegalStateException("Range scan returned " + first.rows()
                         + " rows instead of " + rangeRows + " for provider=" + provider);
             }
-            semantics.put(rangeRows, first);
+            if (first.indexOnlyFingerprint() != indexOnlyFirst.indexOnlyFingerprint()) {
+                throw new IllegalStateException("Index-only and index-to-base scans disagree on ordered ids for provider="
+                        + provider + ", rangeRows=" + rangeRows);
+            }
+            semantics.put(rangeRows, new RangeSemantic(
+                    first.rows(),
+                    indexOnlyFirst.indexOnlyFingerprint(),
+                    first.indexToBaseFingerprint()));
         }
         connection.rollback();
         return Map.copyOf(semantics);
     }
 
     private static RangeSemantic executeRange(
-            Connection connection, String table, int start, int endExclusive) throws Exception {
-        long fingerprint = 1L;
+            Connection connection,
+            String table,
+            int start,
+            int endExclusive,
+            boolean indexOnly) throws Exception {
+        long indexOnlyFingerprint = 1L;
+        long indexToBaseFingerprint = 1L;
         int rows = 0;
-        try (PreparedStatement statement = connection.prepareStatement(
-                "select id, quantity from " + table + " where id >= ? and id < ? order by id")) {
+        String sql = indexOnly
+                ? "select id from " + table + " where id >= ? and id < ? order by id"
+                : "select id, quantity from " + table + " where id >= ? and id < ? order by id";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, start);
             statement.setInt(2, endExclusive);
             try (ResultSet resultSet = statement.executeQuery()) {
                 int expectedId = start;
                 while (resultSet.next()) {
                     int id = resultSet.getInt(1);
-                    int quantity = resultSet.getInt(2);
                     if (id != expectedId++) {
                         throw new IllegalStateException("Range scan returned unexpected id order: id=" + id
                                 + ", expected=" + (expectedId - 1));
                     }
-                    fingerprint = mix(mix(fingerprint, id), quantity);
+                    indexOnlyFingerprint = mix(indexOnlyFingerprint, id);
+                    if (!indexOnly) {
+                        int quantity = resultSet.getInt(2);
+                        indexToBaseFingerprint = mix(mix(indexToBaseFingerprint, id), quantity);
+                    }
                     rows++;
                 }
             }
         }
-        return new RangeSemantic(rows, fingerprint);
+        return new RangeSemantic(rows, indexOnlyFingerprint, indexToBaseFingerprint);
     }
 
     private static long mix(long current, long value) {
         return 31L * current + value;
     }
 
-    private record RangeSemantic(int rows, long fingerprint) {
+    private record RangeSemantic(
+            int rows,
+            long indexOnlyFingerprint,
+            long indexToBaseFingerprint) {
     }
 }

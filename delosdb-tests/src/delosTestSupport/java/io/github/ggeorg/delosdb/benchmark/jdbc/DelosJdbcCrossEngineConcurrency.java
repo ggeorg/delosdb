@@ -44,6 +44,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
+    private static final List<Target> RANGE_SCAN_JFR_TARGETS = List.of(
+            Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
@@ -152,17 +154,22 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + leaseSlots);
                 }
             }
-            if (shouldProfileWorker(target)) {
-                Path profileDirectory = options.reportDirectory().resolve("profiles");
-                Files.createDirectories(profileDirectory);
-                Path recording = profileDirectory.resolve(String.format(
-                        Locale.ROOT, "%02d-%s.jfr", run, target.id()));
-                if (!System.getProperty(PREFIX + "profileTargets", "").isBlank()) {
-                    command.add("-XX:FlightRecorderOptions=stackdepth=256");
-                }
-                command.add("-XX:StartFlightRecording=filename=" + recording
-                        + ",settings=profile,dumponexit=true,maxsize=512m");
+        }
+        if (shouldProfileWorker(target)) {
+            Path profileDirectory = options.reportDirectory().resolve("profiles");
+            Files.createDirectories(profileDirectory);
+            Path recording = profileDirectory.resolve(String.format(
+                    Locale.ROOT, "%02d-%s.jfr", run, target.id()));
+            Path compilationLog = profileDirectory.resolve(String.format(
+                    Locale.ROOT, "%02d-%s-hotspot.log", run, target.id()));
+            if (!System.getProperty(PREFIX + "profileTargets", "").isBlank()) {
+                command.add("-XX:FlightRecorderOptions=stackdepth=256");
             }
+            command.add("-XX:+UnlockDiagnosticVMOptions");
+            command.add("-XX:+LogCompilation");
+            command.add("-XX:LogFile=" + compilationLog);
+            command.add("-XX:StartFlightRecording=filename=" + recording
+                    + ",settings=profile,dumponexit=true,maxsize=512m");
         }
         if (target == Target.SQLITE) {
             command.add("--enable-native-access=ALL-UNNAMED");
@@ -1599,8 +1606,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         int startCount = rowCount - expectedRangeRows + 1;
                         rangeStart = 1 + (int) (((long) client * startCount) / spec.clients());
                         rangeEndExclusive = rangeStart + expectedRangeRows;
-                        expectedRangeFingerprint = rangeFingerprint(
-                                fixtureQuantities, rangeStart, rangeEndExclusive);
+                        expectedRangeFingerprint = spec.workload().isIndexOnlyRangeScan()
+                                ? rangeIdFingerprint(rangeStart, rangeEndExclusive)
+                                : rangeFingerprint(fixtureQuantities, rangeStart, rangeEndExclusive);
                     } else if (spec.workload().isUpdate()) {
                         int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
                         updateId = mutationIds[targetIndex];
@@ -1805,8 +1813,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "select quantity from " + table + " where id = ?");
                 } else if (workload.isRangeScan()) {
                     localRangeRead = connection.prepareStatement(
-                            "select id, quantity from " + table
-                                    + " where id >= ? and id < ? order by id");
+                            workload.isIndexOnlyRangeScan()
+                                    ? "select id from " + table
+                                            + " where id >= ? and id < ? order by id"
+                                    : "select id, quantity from " + table
+                                            + " where id >= ? and id < ? order by id");
                 } else if (workload.isValues()) {
                     localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isUpdate()) {
@@ -1870,8 +1881,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 try (ResultSet resultSet = rangeRead.executeQuery()) {
                                     while (resultSet.next()) {
                                         int id = resultSet.getInt(1);
-                                        int quantity = resultSet.getInt(2);
-                                        rangeFingerprint = mix(mix(rangeFingerprint, id), quantity);
+                                        if (workload.isIndexOnlyRangeScan()) {
+                                            rangeFingerprint = mix(rangeFingerprint, id);
+                                        } else {
+                                            int quantity = resultSet.getInt(2);
+                                            rangeFingerprint = mix(mix(rangeFingerprint, id), quantity);
+                                        }
                                         rows++;
                                     }
                                 }
@@ -2023,6 +2038,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             quantities[id] = random.nextInt(10_000);
         }
         return quantities;
+    }
+
+    private static long rangeIdFingerprint(int startInclusive, int endExclusive) {
+        long fingerprint = 1L;
+        for (int id = startInclusive; id < endExclusive; id++) {
+            fingerprint = mix(fingerprint, id);
+        }
+        return fingerprint;
     }
 
     private static long rangeFingerprint(
@@ -2657,6 +2680,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         RANGE_SCAN_100(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_FULL(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_INDEX_ONLY_100(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_INDEX_ONLY_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -2692,7 +2717,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == RANGE_SCAN_10
                     || this == RANGE_SCAN_100
                     || this == RANGE_SCAN_1000
-                    || this == RANGE_SCAN_FULL;
+                    || this == RANGE_SCAN_FULL
+                    || this == RANGE_SCAN_INDEX_ONLY_100
+                    || this == RANGE_SCAN_INDEX_ONLY_1000;
+        }
+
+        boolean isIndexOnlyRangeScan() {
+            return this == RANGE_SCAN_INDEX_ONLY_100
+                    || this == RANGE_SCAN_INDEX_ONLY_1000;
         }
 
         boolean usesFixtureQuantities() {
@@ -2703,8 +2735,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             return switch (this) {
                 case RANGE_SCAN_1 -> 1;
                 case RANGE_SCAN_10 -> Math.min(10, rowCount);
-                case RANGE_SCAN_100 -> Math.min(100, rowCount);
-                case RANGE_SCAN_1000 -> Math.min(1000, rowCount);
+                case RANGE_SCAN_100, RANGE_SCAN_INDEX_ONLY_100 -> Math.min(100, rowCount);
+                case RANGE_SCAN_1000, RANGE_SCAN_INDEX_ONLY_1000 -> Math.min(1000, rowCount);
                 case RANGE_SCAN_FULL -> rowCount;
                 default -> throw new IllegalStateException("Not a range-scan workload: " + this);
             };
@@ -3098,9 +3130,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
                     && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)
+                    && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
                     && !mvccOnlyDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", diagnostic " + READ_DECOMPOSITION_TARGETS
+                        + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
                         + ", or MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
