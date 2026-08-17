@@ -817,6 +817,11 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkSurfaceValidationTest.class'])
 
 registerDelosFocusedTest(
+        'runDelosJdbcRangeScanSurfaceValidation',
+        'Proves ordered primary-key range-scan benchmark semantics on heap and MVCC.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/JdbcRangeScanBenchmarkSupportTest.class'])
+
+registerDelosFocusedTest(
         'runDelosJdbcBenchmarkBaseline',
         'Runs the provider-neutral heap/MVCC JDBC performance baseline under the established JUnit runtime.',
         ['org/apache/derbyTesting/functionTests/tests/delos/JdbcBenchmarkBaselineTest.class'],
@@ -935,6 +940,138 @@ tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': providers.gradleProperty(
                         'delosdb.benchmark.crossEngineConcurrency.childHeap').getOrElse('1g')
         ])
+    }
+}
+
+
+// Performance modernization workload 2: ordered primary-key range scans.
+// This is a measurement baseline only; it changes no production behavior.
+tasks.register('runDelosJdbcRangeScanBaseline', JavaExec) {
+    group = 'benchmark'
+    description = 'Measures ordered PK range scans across Delos heap/MVCC, Derby, H2, and SQLite with adaptive returned-row budgets.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/range-scan-baseline'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true')
+                .trim()
+                .toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Range-scan baseline requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                        .dir('tmp/delos-jdbc-range-scan-baseline').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/range-scan-baseline').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.rows').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.clients': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.clients').getOrElse('1'),
+                'delosdb.benchmark.crossEngineConcurrency.widths': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.widths').getOrElse('10'),
+                'delosdb.benchmark.crossEngineConcurrency.workloads': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.workloads').getOrElse(
+                        'RANGE_SCAN_1,RANGE_SCAN_10,RANGE_SCAN_100,RANGE_SCAN_1000,RANGE_SCAN_FULL'),
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.targetRowsPerClient').getOrElse('1000000'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.minQueriesPerClient').getOrElse('100'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.maxQueriesPerClient').getOrElse('10000'),
+                'delosdb.benchmark.crossEngineConcurrency.payload': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.payload').getOrElse('128'),
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.fixtureBatch').getOrElse('100'),
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.warmups').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.iterations').getOrElse('3'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.runs').getOrElse('4'),
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.caseTimeoutSeconds').getOrElse('180'),
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.workerTimeoutSeconds').getOrElse('1800'),
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': providers.gradleProperty(
+                        'delosdb.benchmark.rangeScan.childHeap').getOrElse('1g')
+        ])
+    }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/range-scan-baseline').get().asFile
+        File merged = new File(root, 'cross-engine-concurrency-results.csv')
+        File dispersion = new File(root, 'cross-engine-concurrency-dispersion.csv')
+        File rangeThroughput = new File(root, 'range-scan-throughput.csv')
+        if (!merged.isFile() || !dispersion.isFile() || !rangeThroughput.isFile()) {
+            throw new GradleException(
+                    'Range-scan baseline is missing merged, dispersion, or range-throughput evidence')
+        }
+
+        def rangeLines = rangeThroughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+        if (rangeLines.size() < 2) {
+            throw new GradleException('Range-scan baseline produced no range-throughput measurements')
+        }
+        def header = rangeLines[0].split(',', -1) as List
+        def expectedColumns = [
+                'rowCount', 'workload', 'rangeRows', 'clients', 'operationsPerTransaction',
+                'target', 'runs', 'medianQueriesPerSecond', 'medianRowsPerSecond',
+                'q1RowsPerSecond', 'q3RowsPerSecond', 'iqrRowsPerSecond', 'madRowsPerSecond',
+                'minRowsPerSecond', 'maxRowsPerSecond', 'iqrToMedian', 'madToMedian'
+        ]
+        if (header != expectedColumns) {
+            throw new GradleException("Unexpected range-scan throughput header: ${header}")
+        }
+        def rows = rangeLines.drop(1).collect { line ->
+            def fields = line.split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Malformed range-scan row: ${line}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row
+        }
+        def requestedWorkloads = providers.gradleProperty('delosdb.benchmark.rangeScan.workloads')
+                .getOrElse('RANGE_SCAN_1,RANGE_SCAN_10,RANGE_SCAN_100,RANGE_SCAN_1000,RANGE_SCAN_FULL')
+                .split(',')*.trim()
+        def requestedClients = providers.gradleProperty('delosdb.benchmark.rangeScan.clients')
+                .getOrElse('1').split(',')*.trim()
+        def requestedRowCounts = providers.gradleProperty('delosdb.benchmark.rangeScan.rows')
+                .getOrElse('10000').split(',')*.trim()
+        int expectedRows = 5 * requestedWorkloads.size() * requestedClients.size() * requestedRowCounts.size()
+        if (rows.size() != expectedRows) {
+            throw new GradleException(
+                    "Range-scan baseline expected ${expectedRows} aggregated rows but found ${rows.size()}")
+        }
+        if (rows.any { Double.parseDouble(it.medianRowsPerSecond) <= 0.0d }) {
+            throw new GradleException('Range-scan baseline contains non-positive median row throughput')
+        }
+        logger.lifecycle(
+                'Range-scan baseline PASS: five-engine ordered-PK range matrix is complete; inspect range-scan-throughput.csv and dispersion before profiling or changing production code.')
     }
 }
 

@@ -110,6 +110,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         writeRatioCsv(options, rows);
         writeScalingCsv(options, rows);
         writeDispersionCsv(options, rows);
+        writeRangeScanCsv(options, rows);
         writeCapabilityCsv(options);
         writeSummary(options, rows);
         if (options.containerMode()) {
@@ -178,6 +179,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
+        addProperty(command, "rangeScanTargetRowsPerClient", options.rangeScanTargetRowsPerClient());
+        addProperty(command, "rangeScanMinQueriesPerClient", options.rangeScanMinQueriesPerClient());
+        addProperty(command, "rangeScanMaxQueriesPerClient", options.rangeScanMaxQueriesPerClient());
         addProperty(command, "payload", options.payload());
         addProperty(command, "fixtureBatch", options.fixtureBatch());
         addProperty(command, "warmups", options.warmups());
@@ -633,7 +637,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 long[] mvccSnapshotLeaseDiagnostics = mvccSnapshotLeaseDiagnosticsEnabled()
                         ? snapshotMvccSnapshotLeaseDiagnostics()
                         : null;
-                int transactionsPerClient = options.transactionsPerClient(spec);
+                int transactionsPerClient = options.transactionsPerClient(spec, config.rowCount());
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
                         options.iterations());
@@ -1542,13 +1546,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.spec = spec;
             this.verifier = verifier;
             this.table = tables.get(0);
-            this.transactionsPerClient = options.transactionsPerClient(spec);
+            this.transactionsPerClient = options.transactionsPerClient(spec, rowCount);
             this.mutationIds = mutationIds(spec, rowCount);
             this.mutationBaseline = new int[mutationIds.length];
             for (int index = 0; index < mutationIds.length; index++) {
                 mutationBaseline[index] = quantity(verifier, this.table, mutationIds[index]);
             }
-            int[] fixtureQuantities = spec.workload().isPrimaryKeyRead() ? fixtureQuantities(rowCount) : null;
+            int[] fixtureQuantities = spec.workload().usesFixtureQuantities() ? fixtureQuantities(rowCount) : null;
             verifier.rollback();
             this.clients = new ArrayList<>(spec.clients());
             try {
@@ -1562,6 +1566,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     int updateId = 0;
                     int[] readIds = null;
                     int[] expectedReadQuantities = null;
+                    int rangeStart = 0;
+                    int rangeEndExclusive = 0;
+                    int expectedRangeRows = 0;
+                    long expectedRangeFingerprint = 0L;
                     if (spec.workload().isPrimaryKeyRead()) {
                         int operations = Math.multiplyExact(
                                 transactionsPerClient, spec.operationsPerTransaction());
@@ -1570,6 +1578,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                         for (int operation = 0; operation < readIds.length; operation++) {
                             expectedReadQuantities[operation] = fixtureQuantities[readIds[operation]];
                         }
+                    } else if (spec.workload().isRangeScan()) {
+                        expectedRangeRows = spec.workload().rangeRows(rowCount);
+                        int startCount = rowCount - expectedRangeRows + 1;
+                        rangeStart = 1 + (int) (((long) client * startCount) / spec.clients());
+                        rangeEndExclusive = rangeStart + expectedRangeRows;
+                        expectedRangeFingerprint = rangeFingerprint(
+                                fixtureQuantities, rangeStart, rangeEndExclusive);
                     } else if (spec.workload().isUpdate()) {
                         int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
                         updateId = mutationIds[targetIndex];
@@ -1579,6 +1594,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             : this.table;
                     clients.add(new Client(
                             connection, clientTable, spec, updateId, readIds, expectedReadQuantities,
+                            rangeStart, rangeEndExclusive, expectedRangeRows, expectedRangeFingerprint,
                             options.target()));
                 }
             } catch (SQLException failure) {
@@ -1730,8 +1746,13 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int updateId;
         private final int[] readIds;
         private final int[] expectedReadQuantities;
+        private final int rangeStart;
+        private final int rangeEndExclusive;
+        private final int expectedRangeRows;
+        private final long expectedRangeFingerprint;
         private final Target target;
         private final PreparedStatement read;
+        private final PreparedStatement rangeRead;
         private final PreparedStatement values;
         private final PreparedStatement update;
 
@@ -1742,6 +1763,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int updateId,
                 int[] readIds,
                 int[] expectedReadQuantities,
+                int rangeStart,
+                int rangeEndExclusive,
+                int expectedRangeRows,
+                long expectedRangeFingerprint,
                 Target target)
                 throws SQLException {
             this.connection = connection;
@@ -1749,14 +1774,23 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.updateId = updateId;
             this.readIds = readIds;
             this.expectedReadQuantities = expectedReadQuantities;
+            this.rangeStart = rangeStart;
+            this.rangeEndExclusive = rangeEndExclusive;
+            this.expectedRangeRows = expectedRangeRows;
+            this.expectedRangeFingerprint = expectedRangeFingerprint;
             this.target = target;
             PreparedStatement localRead = null;
+            PreparedStatement localRangeRead = null;
             PreparedStatement localValues = null;
             PreparedStatement localUpdate = null;
             try {
                 if (workload.isPrimaryKeyRead()) {
                     localRead = connection.prepareStatement(
                             "select quantity from " + table + " where id = ?");
+                } else if (workload.isRangeScan()) {
+                    localRangeRead = connection.prepareStatement(
+                            "select id, quantity from " + table
+                                    + " where id >= ? and id < ? order by id");
                 } else if (workload.isValues()) {
                     localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isUpdate()) {
@@ -1764,11 +1798,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "update " + table + " set quantity = quantity + 1 where id = ?");
                 }
                 this.read = localRead;
+                this.rangeRead = localRangeRead;
                 this.values = localValues;
                 this.update = localUpdate;
             } catch (SQLException failure) {
                 closeStatement(localUpdate, failure);
                 closeStatement(localValues, failure);
+                closeStatement(localRangeRead, failure);
                 closeStatement(localRead, failure);
                 throw failure;
             }
@@ -1810,6 +1846,28 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     }
                                 }
                                 transactionFingerprint = mix(transactionFingerprint, id);
+                            } else if (workload.isRangeScan()) {
+                                rangeRead.setInt(1, rangeStart);
+                                rangeRead.setInt(2, rangeEndExclusive);
+                                long rangeFingerprint = 1L;
+                                int rows = 0;
+                                try (ResultSet resultSet = rangeRead.executeQuery()) {
+                                    while (resultSet.next()) {
+                                        int id = resultSet.getInt(1);
+                                        int quantity = resultSet.getInt(2);
+                                        rangeFingerprint = mix(mix(rangeFingerprint, id), quantity);
+                                        rows++;
+                                    }
+                                }
+                                if (rows != expectedRangeRows
+                                        || rangeFingerprint != expectedRangeFingerprint) {
+                                    throw new SQLException("Concurrent range scan changed: expectedRows="
+                                            + expectedRangeRows + ", actualRows=" + rows
+                                            + ", expectedFingerprint=" + expectedRangeFingerprint
+                                            + ", actualFingerprint=" + rangeFingerprint);
+                                }
+                                transactionFingerprint = mix(transactionFingerprint, rows);
+                                transactionFingerprint = mix(transactionFingerprint, rangeFingerprint);
                             } else if (workload.isUpdate()) {
                                 update.setInt(1, updateId);
                                 if (update.executeUpdate() != 1) {
@@ -1855,6 +1913,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             } catch (SQLException closeFailure) {
                 failure = closeFailure;
+            }
+            try {
+                if (rangeRead != null) {
+                    rangeRead.close();
+                }
+            } catch (SQLException closeFailure) {
+                if (failure == null) {
+                    failure = closeFailure;
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
             }
             try {
                 if (values != null) {
@@ -1938,6 +2007,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             quantities[id] = random.nextInt(10_000);
         }
         return quantities;
+    }
+
+    private static long rangeFingerprint(
+            int[] fixtureQuantities, int startInclusive, int endExclusive) {
+        long fingerprint = 1L;
+        for (int id = startInclusive; id < endExclusive; id++) {
+            fingerprint = mix(mix(fingerprint, id), fixtureQuantities[id]);
+        }
+        return fingerprint;
     }
 
     private static int quantity(Connection connection, String table, int id) throws SQLException {
@@ -2215,6 +2293,55 @@ public final class DelosJdbcCrossEngineConcurrency {
                 out.toString(), StandardCharsets.UTF_8);
     }
 
+    private static void writeRangeScanCsv(Options options, List<Row> rows) throws IOException {
+        boolean requested = options.workloadValues().stream().anyMatch(Workload::isRangeScan);
+        if (!requested) {
+            return;
+        }
+        Map<ShapeTargetKey, List<Double>> values = new HashMap<>();
+        for (Row row : rows) {
+            if (!row.workload().isRangeScan()) {
+                continue;
+            }
+            values.computeIfAbsent(
+                    new ShapeTargetKey(row.shape(), Target.parse(row.target())),
+                    ignored -> new ArrayList<>()).add(row.operationsPerSecond());
+        }
+        List<ShapeTargetKey> keys = new ArrayList<>(values.keySet());
+        keys.sort(Comparator.comparing((ShapeTargetKey key) -> key.shape().rowCount())
+                .thenComparing(key -> key.shape().workload())
+                .thenComparingInt(key -> key.shape().clients())
+                .thenComparing(ShapeTargetKey::target));
+        StringBuilder out = new StringBuilder(
+                "rowCount,workload,rangeRows,clients,operationsPerTransaction,target,runs,"
+                        + "medianQueriesPerSecond,medianRowsPerSecond,q1RowsPerSecond,q3RowsPerSecond,"
+                        + "iqrRowsPerSecond,madRowsPerSecond,minRowsPerSecond,maxRowsPerSecond,"
+                        + "iqrToMedian,madToMedian\n");
+        for (ShapeTargetKey key : keys) {
+            Distribution distribution = distribution(values.get(key));
+            int rangeRows = key.shape().workload().rangeRows(key.shape().rowCount());
+            out.append(key.shape().rowCount()).append(',')
+                    .append(key.shape().workload()).append(',')
+                    .append(rangeRows).append(',')
+                    .append(key.shape().clients()).append(',')
+                    .append(key.shape().operationsPerTransaction()).append(',')
+                    .append(key.target().id()).append(',')
+                    .append(distribution.count()).append(',')
+                    .append(format(distribution.median())).append(',')
+                    .append(format(distribution.median() * rangeRows)).append(',')
+                    .append(format(distribution.q1() * rangeRows)).append(',')
+                    .append(format(distribution.q3() * rangeRows)).append(',')
+                    .append(format(distribution.iqr() * rangeRows)).append(',')
+                    .append(format(distribution.mad() * rangeRows)).append(',')
+                    .append(format(distribution.min() * rangeRows)).append(',')
+                    .append(format(distribution.max() * rangeRows)).append(',')
+                    .append(format(distribution.iqr() / distribution.median())).append(',')
+                    .append(format(distribution.mad() / distribution.median())).append('\n');
+        }
+        Files.writeString(options.reportDirectory().resolve("range-scan-throughput.csv"),
+                out.toString(), StandardCharsets.UTF_8);
+    }
+
     private static void writeCapabilityCsv(Options options) throws IOException {
         StringBuilder out = new StringBuilder("target,workload,supported,executionModel,notes\n");
         for (Target target : options.targetValues()) {
@@ -2256,25 +2383,54 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append('\n')
                 .append("Fixed-workload operation budget per client/interval: ")
                 .append(options.fixedWorkloadOperationBudgetPerClient()).append('\n')
+                .append("Range-scan target rows per client/interval: ")
+                .append(options.rangeScanTargetRowsPerClient()).append('\n')
+                .append("Range-scan query bounds per client/interval: ")
+                .append(options.rangeScanMinQueriesPerClient()).append("..").append(
+                        options.rangeScanMaxQueriesPerClient()).append('\n')
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
-                .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n")
-                .append("PRIMARY_KEY_READ_HOT: every client repeatedly reads id=1.\n")
-                .append("PRIMARY_KEY_READ_DISJOINT: each client repeatedly reads one evenly spaced private id.\n")
-                .append("PRIMARY_KEY_READ_RANDOM: each client replays a deterministic precomputed key stream "
-                        + "across the fixture; random generation is outside the timed interval.\n")
-                .append("Gate 1 decomposition workloads: EMPTY_TRANSACTION, VALUES_1, VALUES_10, "
-                        + "PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU.\n")
-                .append("Gate 1 PK reads are DISJOINT: each client repeatedly reads one evenly spaced private id.\n")
-                .append("PK_READ_10_RU changes only isolation from READ_COMMITTED to READ_UNCOMMITTED; "
-                        + "its causal interpretation is Derby/Delos-specific.\n")
-                .append("Gate 2 locality workloads: SAME_TABLE_DISJOINT and PRIVATE_TABLE_DISJOINT, "
-                        + "both READ_COMMITTED with 100 PK reads per transaction.\n")
-                .append("Gate 2 prepares one full fixture table per client for BOTH shapes so database size, "
-                        + "fixture count, and cache population pressure are matched.\n")
-                .append("SAME_TABLE_DISJOINT routes every client to the first table; PRIVATE_TABLE_DISJOINT routes "
-                        + "each client to its own heap conglomerate, PK B-tree, root/internal pages, and data pages.\n")
-                .append("Disjoint-update client rows are evenly spread across the fixture.\n")
-                .append("Timed interval: synchronized client execution through final commit.\n")
+                .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
+        List<Workload> requestedWorkloads = options.workloadValues();
+        if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
+            out.append("PRIMARY_KEY_READ_HOT: every client repeatedly reads id=1.\n");
+        }
+        if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_DISJOINT)) {
+            out.append("PRIMARY_KEY_READ_DISJOINT: each client repeatedly reads one evenly spaced private id.\n");
+        }
+        if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_RANDOM)) {
+            out.append("PRIMARY_KEY_READ_RANDOM: each client replays a deterministic precomputed key stream "
+                    + "across the fixture; random generation is outside the timed interval.\n");
+        }
+        if (requestedWorkloads.stream().anyMatch(Workload::isRangeScan)) {
+            out.append("RANGE_SCAN_*: each client repeatedly consumes an ordered primary-key range; "
+                    + "range checks and result consumption are inside the timed interval.\n")
+                    .append("Range-scan query counts adapt to a returned-row budget with configured min/max bounds.\n");
+        }
+        if (requestedWorkloads.stream().anyMatch(workload -> workload == Workload.EMPTY_TRANSACTION
+                || workload == Workload.VALUES_1 || workload == Workload.VALUES_10
+                || workload == Workload.PK_READ_1_RC || workload == Workload.PK_READ_10_RC
+                || workload == Workload.PK_READ_100_RC || workload == Workload.PK_READ_10_RU)) {
+            out.append("Read-stack decomposition workloads: EMPTY_TRANSACTION, VALUES_1, VALUES_10, "
+                    + "PK_READ_1_RC, PK_READ_10_RC, PK_READ_100_RC, PK_READ_10_RU.\n")
+                    .append("Decomposition PK reads are DISJOINT: each client repeatedly reads one evenly spaced "
+                            + "private id.\n")
+                    .append("PK_READ_10_RU changes only isolation from READ_COMMITTED to READ_UNCOMMITTED; "
+                            + "its causal interpretation is Derby/Delos-specific.\n");
+        }
+        if (requestedWorkloads.contains(Workload.SAME_TABLE_DISJOINT)
+                || requestedWorkloads.contains(Workload.PRIVATE_TABLE_DISJOINT)) {
+            out.append("Locality workloads: SAME_TABLE_DISJOINT and PRIVATE_TABLE_DISJOINT, "
+                    + "both READ_COMMITTED with 100 PK reads per transaction.\n")
+                    .append("Locality comparison prepares one full fixture table per client for BOTH shapes so "
+                            + "database size, fixture count, and cache population pressure are matched.\n")
+                    .append("SAME_TABLE_DISJOINT routes every client to the first table; "
+                            + "PRIVATE_TABLE_DISJOINT routes each client to its own heap conglomerate, PK B-tree, "
+                            + "root/internal pages, and data pages.\n");
+        }
+        if (requestedWorkloads.contains(Workload.DISJOINT_INDEXED_UPDATE)) {
+            out.append("Disjoint-update client rows are evenly spread across the fixture.\n");
+        }
+        out.append("Timed interval: synchronized client execution through final commit.\n")
                 .append("operationsPerSecond is measuredOperations / shared wall-clock interval.\n")
                 .append("inverseThroughputNanosPerTransaction is elapsedNanos / aggregate completed transactions; "
                         + "it is NOT observed client transaction latency.\n")
@@ -2480,6 +2636,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         PRIMARY_KEY_READ_HOT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         PRIMARY_KEY_READ_DISJOINT(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         PRIMARY_KEY_READ_RANDOM(true, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_1(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_10(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_100(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_FULL(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -2508,6 +2669,29 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         boolean isValues() {
             return values;
+        }
+
+        boolean isRangeScan() {
+            return this == RANGE_SCAN_1
+                    || this == RANGE_SCAN_10
+                    || this == RANGE_SCAN_100
+                    || this == RANGE_SCAN_1000
+                    || this == RANGE_SCAN_FULL;
+        }
+
+        boolean usesFixtureQuantities() {
+            return isPrimaryKeyRead() || isRangeScan();
+        }
+
+        int rangeRows(int rowCount) {
+            return switch (this) {
+                case RANGE_SCAN_1 -> 1;
+                case RANGE_SCAN_10 -> Math.min(10, rowCount);
+                case RANGE_SCAN_100 -> Math.min(100, rowCount);
+                case RANGE_SCAN_1000 -> Math.min(1000, rowCount);
+                case RANGE_SCAN_FULL -> rowCount;
+                default -> throw new IllegalStateException("Not a range-scan workload: " + this);
+            };
         }
 
         boolean isConglomerateLocalityDiagnostic() {
@@ -2819,6 +3003,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean sqliteSharedCache,
             int transactionsPerClient,
             int fixedWorkloadOperationBudgetPerClient,
+            long rangeScanTargetRowsPerClient,
+            int rangeScanMinQueriesPerClient,
+            int rangeScanMaxQueriesPerClient,
             int payload,
             int fixtureBatch,
             int warmups,
@@ -2865,6 +3052,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Boolean.parseBoolean(System.getProperty(PREFIX + "sqliteSharedCache", "false")),
                     Integer.parseInt(System.getProperty(PREFIX + "transactionsPerClient", "50")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixedWorkloadOperationBudgetPerClient", "0")),
+                    Long.parseLong(System.getProperty(PREFIX + "rangeScanTargetRowsPerClient", "1000000")),
+                    Integer.parseInt(System.getProperty(PREFIX + "rangeScanMinQueriesPerClient", "100")),
+                    Integer.parseInt(System.getProperty(PREFIX + "rangeScanMaxQueriesPerClient", "10000")),
                     Integer.parseInt(System.getProperty(PREFIX + "payload", "128")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "2")),
@@ -2914,6 +3104,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
+                    || rangeScanTargetRowsPerClient < 1L || rangeScanMinQueriesPerClient < 1
+                    || rangeScanMaxQueriesPerClient < rangeScanMinQueriesPerClient
                     || payload < 16 || fixtureBatch < 1 || warmups < 0
                     || iterations < 1 || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
                     || containerStartupTimeoutSeconds < 1) {
@@ -2950,7 +3142,17 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
 
-        int transactionsPerClient(Spec spec) {
+        int transactionsPerClient(Spec spec, int rowCount) {
+            if (spec.workload().isRangeScan()) {
+                int rangeRows = spec.workload().rangeRows(rowCount);
+                long byRowBudget = rangeScanTargetRowsPerClient / rangeRows;
+                long queries = Math.max(
+                        rangeScanMinQueriesPerClient,
+                        Math.min((long) rangeScanMaxQueriesPerClient, byRowBudget));
+                long transactions = (queries + spec.operationsPerTransaction() - 1L)
+                        / spec.operationsPerTransaction();
+                return Math.toIntExact(Math.max(1L, transactions));
+            }
             if (fixedWorkloadOperationBudgetPerClient == 0
                     || spec.workload().fixedOperationsPerTransaction() < 0) {
                 return transactionsPerClient;
