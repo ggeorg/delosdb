@@ -32,12 +32,14 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 
 import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
 import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.PageLocalBatchFetchController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.TransactionController;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
@@ -58,7 +60,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 
 public class HeapController 
     extends GenericConglomerateController 
-    implements ConglomerateController
+    implements ConglomerateController, PageLocalBatchFetchController
 {
     /**************************************************************************
      * Fields of the class
@@ -88,6 +90,95 @@ public class HeapController
             HeapRowLocation.from(row_loc).getRecordHandle(
                 open_conglom.getContainer());
         pos.current_rh_qualified = true;
+    }
+
+    /**
+     * Experimental read-only batch fetch which preserves row-location order
+     * and keeps a heap page latched across consecutive rows on that page.
+     */
+    @Override
+    public int fetchPageLocalBatch(
+            StoreRowLocation[] locations,
+            StoreDataValue[][] destinationRows,
+            FormatableBitSet validColumns,
+            boolean[] rowExists,
+            int rowCount) throws StandardException {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(!open_conglom.isForUpdate(),
+                    "page-local batch fetch is read-only");
+            SanityManager.ASSERT(locations != null && destinationRows != null
+                    && rowExists != null, "batch fetch arrays must be non-null");
+            SanityManager.ASSERT(rowCount >= 0 && rowCount <= locations.length
+                    && rowCount <= destinationRows.length && rowCount <= rowExists.length,
+                    "invalid page-local batch row count");
+        }
+        if (rowCount == 0) {
+            return 0;
+        }
+
+        final ContainerHandle container = open_conglom.getContainer();
+        final FetchDescriptor fetchDescriptor = new FetchDescriptor(
+                destinationRows[0].length, validColumns, null);
+        final RowPosition pos = new RowPosition();
+        pos.init();
+        int pageAcquisitions = 0;
+        long currentPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
+
+        try {
+            for (int index = 0; index < rowCount; index++) {
+                rowExists[index] = false;
+                HeapRowLocation location = HeapRowLocation.from(locations[index]);
+                RecordHandle requested = location.getRecordHandle(container);
+                long pageNumber = requested.getPageNumber();
+
+                if (pos.current_page == null || currentPageNumber != pageNumber) {
+                    pos.unlatch();
+                    pos.current_rh = requested;
+                    pos.current_rh_qualified = true;
+                    if (!open_conglom.latchPage(pos)) {
+                        currentPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
+                        continue;
+                    }
+                    pageAcquisitions++;
+                    currentPageNumber = pos.current_page.getPageNumber();
+                } else {
+                    RecordHandle current = pos.current_page.getRecordHandle(requested.getId());
+                    if (current == null) {
+                        continue;
+                    }
+                    pos.current_rh = current;
+                    pos.current_slot = current.getSlotNumberHint();
+                    pos.current_rh_qualified = true;
+                }
+
+                boolean lockedWithLatch = open_conglom.lockPositionForRead(
+                        pos, (RowPosition) null, false, true);
+                if (!lockedWithLatch && pos.current_page != null) {
+                    // lockPositionForRead() had to release and reacquire the page.
+                    pageAcquisitions++;
+                }
+                if (pos.current_page == null) {
+                    currentPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
+                    continue;
+                }
+                currentPageNumber = pos.current_page.getPageNumber();
+
+                rowExists[index] = pos.current_page.fetchFromSlot(
+                        pos.current_rh,
+                        pos.current_slot,
+                        destinationRows[index],
+                        fetchDescriptor,
+                        false) != null;
+
+                if (!open_conglom.isForUpdate()) {
+                    open_conglom.unlockPositionAfterRead(pos);
+                }
+            }
+        } finally {
+            pos.unlatch();
+        }
+
+        return pageAcquisitions;
     }
 
     protected void queueDeletePostCommitWork(

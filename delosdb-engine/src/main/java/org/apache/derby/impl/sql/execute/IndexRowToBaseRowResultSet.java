@@ -33,6 +33,7 @@ import org.apache.derby.iapi.sql.execute.ExecRow;
 import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
+import org.apache.derby.iapi.store.access.PageLocalBatchFetchController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -67,6 +68,19 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	private boolean                 closeBaseCCHere;
 	private boolean					forUpdate;
 	private DataValueDescriptor[]	rowArray;
+
+    // Experimental bounded page-local index-to-base read state.
+    private boolean pageLocalBatchEnabled;
+    private BulkTableScanResultSet pageLocalSource;
+    private PageLocalBatchFetchController pageLocalBase;
+    private DataValueDescriptor[][] pageLocalSourceRows;
+    private DataValueDescriptor[][] pageLocalHeapRows;
+    private RowLocation[] pageLocalLocations;
+    private boolean[] pageLocalRowExists;
+    private ExecRow[] pageLocalOutputRows;
+    private int[] pageLocalCompactToBase;
+    private int pageLocalBatchSize;
+    private int pageLocalBatchPosition;
 
 	// changed a whole bunch
 	RowLocation	baseRowLocation;
@@ -303,6 +317,8 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			closeBaseCCHere = true;
 		}
 
+        configurePageLocalBatch();
+
 		isOpen = true;
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -324,6 +340,8 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 		beginTime = getCurrentTimeMillis();
 
 		source.reopenCore();
+        pageLocalBatchSize = 0;
+        pageLocalBatchPosition = 0;
 
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -345,6 +363,10 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	public ExecRow	getNextRowCore() throws StandardException {
 		if( isXplainOnlyMode() )
 			return null;
+
+        if (pageLocalBatchEnabled) {
+            return getNextPageLocalIndexBaseRow();
+        }
 
 	    ExecRow sourceRow = null;
 		ExecRow retval = null;
@@ -463,6 +485,142 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
     	return retval;
 	}
 
+    private void configurePageLocalBatch() throws StandardException {
+        pageLocalBatchEnabled = false;
+        pageLocalBatchSize = 0;
+        pageLocalBatchPosition = 0;
+        if (!HeapPageLocalIndexBaseAccess.enabled()
+                || forUpdate
+                || restriction != null
+                || _includeRowLocation
+                || activation.getResultSetHoldability()
+                || !source.requiresRelocking()
+                || !(source instanceof BulkTableScanResultSet bulkSource)
+                || !bulkSource.supportsIndexToBaseBatch()
+                || !(baseCC instanceof PageLocalBatchFetchController batchBase)) {
+            return;
+        }
+
+        pageLocalSource = bulkSource;
+        pageLocalBase = batchBase;
+        int capacity = pageLocalSource.indexToBaseBatchCapacity();
+        int sourceWidth = pageLocalSource.indexToBaseBatchWidth();
+        int compactWidth = compactRow.nColumns();
+
+        pageLocalSourceRows = new DataValueDescriptor[capacity][sourceWidth];
+        pageLocalHeapRows = new DataValueDescriptor[capacity][rowArray.length];
+        pageLocalLocations = new RowLocation[capacity];
+        pageLocalRowExists = new boolean[capacity];
+        pageLocalOutputRows = new ExecRow[capacity];
+        pageLocalCompactToBase = compactToBaseColumnMap(compactWidth);
+
+        for (int row = 0; row < capacity; row++) {
+            for (int column = 0; column < rowArray.length; column++) {
+                if (rowArray[column] != null) {
+                    pageLocalHeapRows[row][column] = (DataValueDescriptor)
+                            rowArray[column].getNewNull();
+                }
+            }
+            pageLocalOutputRows[row] = new ValueRow(compactWidth);
+        }
+        pageLocalBatchEnabled = true;
+    }
+
+    private int[] compactToBaseColumnMap(int compactWidth) {
+        int[] mapping = new int[compactWidth];
+        if (accessedAllCols == null) {
+            for (int index = 0; index < compactWidth; index++) {
+                mapping[index] = index;
+            }
+            return mapping;
+        }
+
+        int compactIndex = 0;
+        for (int baseIndex = accessedAllCols.anySetBit();
+                baseIndex != -1 && compactIndex < compactWidth;
+                baseIndex = accessedAllCols.anySetBit(baseIndex)) {
+            mapping[compactIndex++] = baseIndex;
+        }
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(compactIndex == compactWidth,
+                    "incomplete compact-to-base column map");
+        }
+        return mapping;
+    }
+
+    private ExecRow getNextPageLocalIndexBaseRow() throws StandardException {
+        beginTime = getCurrentTimeMillis();
+        if (!isOpen) {
+            throw StandardException.newException(SQLState.LANG_RESULT_SET_NOT_OPEN, "next");
+        }
+
+        for (;;) {
+            if (pageLocalBatchPosition >= pageLocalBatchSize) {
+                pageLocalBatchSize = loadPageLocalIndexBaseBatch();
+                pageLocalBatchPosition = 0;
+                if (pageLocalBatchSize == 0) {
+                    clearCurrentRow();
+                    baseRowLocation = null;
+                    nextTime += getElapsedMillis(beginTime);
+                    return null;
+                }
+            }
+
+            int rowIndex = pageLocalBatchPosition++;
+            rowsSeen++;
+            if (!pageLocalRowExists[rowIndex]) {
+                rowsFiltered++;
+                continue;
+            }
+
+            baseRowLocation = pageLocalLocations[rowIndex];
+            currentRow = pageLocalOutputRows[rowIndex];
+            setCurrentRow(currentRow);
+            nextTime += getElapsedMillis(beginTime);
+            return currentRow;
+        }
+    }
+
+    private int loadPageLocalIndexBaseBatch() throws StandardException {
+        int rowCount = pageLocalSource.fetchIndexToBaseBatch(pageLocalSourceRows);
+        if (rowCount == 0) {
+            return 0;
+        }
+
+        int sourceLocationColumn = pageLocalSourceRows[0].length - 1;
+        for (int row = 0; row < rowCount; row++) {
+            DataValueDescriptor location = pageLocalSourceRows[row][sourceLocationColumn];
+            if (SanityManager.DEBUG) {
+                SanityManager.ASSERT(location instanceof RowLocation,
+                        "last index batch column is not a RowLocation");
+            }
+            pageLocalLocations[row] = (RowLocation) location;
+        }
+
+        int pageAcquisitions = pageLocalBase.fetchPageLocalBatch(
+                pageLocalLocations,
+                pageLocalHeapRows,
+                accessedHeapCols,
+                pageLocalRowExists,
+                rowCount);
+        HeapPageLocalIndexBaseAccess.recordBatch(rowCount, pageAcquisitions);
+
+        for (int row = 0; row < rowCount; row++) {
+            if (!pageLocalRowExists[row]) {
+                continue;
+            }
+            ExecRow output = pageLocalOutputRows[row];
+            for (int compactColumn = 0; compactColumn < indexCols.length; compactColumn++) {
+                int sourceColumn = indexCols[compactColumn];
+                DataValueDescriptor value = sourceColumn == -1
+                        ? pageLocalHeapRows[row][pageLocalCompactToBase[compactColumn]]
+                        : pageLocalSourceRows[row][sourceColumn];
+                output.setColumn(compactColumn + 1, value);
+            }
+        }
+        return rowCount;
+    }
+
 	/**
 	 * If the result set has been opened,
 	 * close the open scan.
@@ -500,6 +658,18 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			 */
 			baseCC = null;
 	        source.close();
+
+            pageLocalBatchEnabled = false;
+            pageLocalSource = null;
+            pageLocalBase = null;
+            pageLocalSourceRows = null;
+            pageLocalHeapRows = null;
+            pageLocalLocations = null;
+            pageLocalRowExists = null;
+            pageLocalOutputRows = null;
+            pageLocalCompactToBase = null;
+            pageLocalBatchSize = 0;
+            pageLocalBatchPosition = 0;
 
 			super.close();
 	    }

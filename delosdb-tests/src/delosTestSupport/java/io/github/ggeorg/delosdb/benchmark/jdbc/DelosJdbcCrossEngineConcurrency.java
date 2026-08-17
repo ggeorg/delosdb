@@ -137,6 +137,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 && Boolean.getBoolean("delosdb.experimental.fastRecordReadLock")) {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
+        if (target == Target.DELOS_HEAP
+                && Boolean.getBoolean("delosdb.experimental.heapPageLocalIndexBaseFetch")) {
+            command.add("-Ddelosdb.experimental.heapPageLocalIndexBaseFetch=true");
+        }
         if (target == Target.DELOS_MVCC) {
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
