@@ -34,7 +34,6 @@ import org.apache.derby.iapi.store.access.AccessFactoryGlobals;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
-import org.apache.derby.iapi.store.access.ReusableFetchDescriptorController;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.TransactionController;
 
@@ -59,7 +58,7 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 
 public class HeapController 
     extends GenericConglomerateController 
-    implements ConglomerateController, ReusableFetchDescriptorController
+    implements ConglomerateController
 {
     /**************************************************************************
      * Fields of the class

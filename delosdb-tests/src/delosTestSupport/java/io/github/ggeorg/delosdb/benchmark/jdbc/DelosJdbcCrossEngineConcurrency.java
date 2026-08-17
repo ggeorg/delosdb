@@ -134,12 +134,16 @@ public final class DelosJdbcCrossEngineConcurrency {
             command.add("-Ddelosdb.experimental.heapPageReadImage=true");
         }
         if (target == Target.DELOS_HEAP
-                && Boolean.getBoolean("delosdb.experimental.fastRecordReadLock")) {
-            command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
+                && Boolean.getBoolean("delosdb.diagnostic.heapPageReadImage")) {
+            command.add("-Ddelosdb.diagnostic.heapPageReadImage=true");
         }
         if (target == Target.DELOS_HEAP
-                && Boolean.getBoolean("delosdb.experimental.heapReusableFetchDescriptor")) {
-            command.add("-Ddelosdb.experimental.heapReusableFetchDescriptor=true");
+                && Boolean.getBoolean(PREFIX + "heapPageReadImageDiagnostics")) {
+            addProperty(command, "heapPageReadImageDiagnostics", true);
+        }
+        if (target == Target.DELOS_HEAP
+                && Boolean.getBoolean("delosdb.experimental.fastRecordReadLock")) {
+            command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
         if (target == Target.DELOS_MVCC) {
             String slots = System.getProperty(

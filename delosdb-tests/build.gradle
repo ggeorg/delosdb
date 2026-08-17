@@ -73,8 +73,6 @@ def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def heapPageReadImageDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java')
-def heapReusableFetchDescriptorDiagnosticTestSupportSource = file(
-        'src/delosTestSupport/java/org/apache/derby/impl/sql/execute/HeapReusableFetchDescriptorDiagnosticTestSupport.java')
 def btreePointReadDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
@@ -337,7 +335,6 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
-            exclude 'org/apache/derby/impl/sql/execute/HeapReusableFetchDescriptorDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
@@ -373,9 +370,6 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     }
     from(heapPageReadImageDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
-    }
-    from(heapReusableFetchDescriptorDiagnosticTestSupportSource) {
-        into 'org/apache/derby/impl/sql/execute'
     }
     from(btreePointReadDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/access/btree'
@@ -974,6 +968,11 @@ tasks.register('runDelosJdbcRangeScanBaseline', JavaExec) {
         }
         def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
         systemProperties([
+                // Delos Heap range authority must use the already-accepted
+                // Gate 10I-A / 10K fast read architecture. The coordinator
+                // forwards these properties only to the Delos Heap worker.
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -1106,6 +1105,11 @@ tasks.register('runDelosJdbcRangeAlgorithmDecomposition', JavaExec) {
         }
         def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
         systemProperties([
+                // Delos Heap range authority must use the already-accepted
+                // Gate 10I-A / 10K fast read architecture. The coordinator
+                // forwards these properties only to the Delos Heap worker.
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -1256,7 +1260,14 @@ rangeScanJfrProfiles.each { suffix, workload ->
             databaseRoot.mkdirs()
             def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
             task.systemProperties([
-                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    // Delos Heap range authority must use the already-accepted
+                // Gate 10I-A / 10K fast read architecture. The coordinator
+                // forwards these properties only to the Delos Heap worker.
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.diagnostic.heapPageReadImage': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapPageReadImageDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
                             rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -11935,7 +11946,12 @@ rangeBulkFetchSweepSizes.each { fetchSize ->
             databaseRoot.mkdirs()
             def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
             task.systemProperties([
-                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    // Delos Heap range authority must use the already-accepted
+                // Gate 10I-A / 10K fast read architecture. The coordinator
+                // forwards these properties only to the Delos Heap worker.
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
                             rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -12045,168 +12061,5 @@ tasks.register('runDelosJdbcRangeBulkFetchSweep') {
         new File(root, 'range-bulk-fetch-sweep.csv').setText(out.toString(), 'UTF-8')
         logger.lifecycle(
                 'Range bulk-fetch sweep PASS: inspect range-bulk-fetch-sweep.csv before designing page-local index-to-base fetching.')
-    }
-}
-
-
-// Workload-2 removability experiment: preserve the exact inherited one-row-at-a-time
-// index-to-base algorithm while reusing only the immutable FetchDescriptor and its
-// precomputed valid-column array. Upstream Derby runs beside both arms as an
-// environmental control. Both arms use bulk-fetch=64 so index traversal is held
-// at the best measured inherited setting while this experiment isolates base-row
-// descriptor construction.
-def heapReusableFetchDescriptorRoot =
-        'reports/delosdb/benchmarks/heap-reusable-fetch-descriptor-experiment'
-
-def registerHeapReusableFetchDescriptorRun = { String taskName,
-                                                 String reportName,
-                                                 boolean experimentEnabled ->
-    tasks.register(taskName, JavaExec) { task ->
-        group = 'benchmark'
-        description = experimentEnabled
-                ? 'Runs the Heap reusable FetchDescriptor removability experiment.'
-                : 'Runs the matching one-row-at-a-time index-to-base baseline.'
-        dependsOn tasks.named('compileTestJava'), ':jars'
-
-        task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
-        task.classpath = rootProject.files(derbyTestsClassDir)
-        task.outputs.upToDateWhen { false }
-        task.outputs.dir(rootProject.layout.buildDirectory.dir(
-                "${heapReusableFetchDescriptorRoot}/${reportName}"))
-
-        task.doFirst {
-            def saneValue = providers.gradleProperty('delosdb.sane')
-                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
-            if (saneValue != 'false') {
-                throw new GradleException(
-                        'Heap reusable FetchDescriptor experiment requires a release build; rerun with -Pdelosdb.sane=false')
-            }
-            File reportDir = rootProject.layout.buildDirectory
-                    .dir("${heapReusableFetchDescriptorRoot}/${reportName}").get().asFile
-            File databaseRoot = rootProject.layout.buildDirectory
-                    .dir("tmp/delos-jdbc-heap-reusable-fetch-descriptor-${reportName}").get().asFile
-            project.delete(reportDir)
-            project.delete(databaseRoot)
-            reportDir.mkdirs()
-            databaseRoot.mkdirs()
-
-            task.systemProperties([
-                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
-                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
-                            rootProject.projectDir.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
-                            new File(System.getProperty('java.home'), 'bin/java').absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
-                            derbyTestsClassDir.get().asFile.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
-                            rootProject.files(derbyRuntimeJars).asPath,
-                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
-                            upstreamDerbyBenchmarkRuntime.asPath,
-                    'delosdb.benchmark.crossEngineConcurrency.targets':
-                            'delos_heap,upstream_derby',
-                    'delosdb.benchmark.crossEngineConcurrency.rangeBulkFetchDefault': '64',
-                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
-                            databaseRoot.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
-                            reportDir.absolutePath,
-                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
-                    'delosdb.benchmark.crossEngineConcurrency.clients': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
-                    'delosdb.benchmark.crossEngineConcurrency.workloads':
-                            'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000',
-                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient':
-                            providers.gradleProperty(
-                                    'delosdb.benchmark.heapReusableFetchDescriptor.targetRowsPerClient')
-                                    .getOrElse('2000000'),
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
-                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
-                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
-                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
-                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
-                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
-                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
-                    'delosdb.experimental.heapReusableFetchDescriptor':
-                            Boolean.toString(experimentEnabled)
-            ])
-        }
-    }
-}
-
-registerHeapReusableFetchDescriptorRun(
-        'runDelosJdbcHeapReusableFetchDescriptorBaseline', 'baseline', false)
-registerHeapReusableFetchDescriptorRun(
-        'runDelosJdbcHeapReusableFetchDescriptorExperimental', 'experimental', true)
-
-tasks.register('runDelosJdbcHeapReusableFetchDescriptorExperiment') {
-    group = 'benchmark'
-    description = 'Runs baseline/experimental Heap reusable FetchDescriptor A/B with upstream Derby control.'
-    dependsOn tasks.named('runDelosJdbcHeapReusableFetchDescriptorBaseline')
-    dependsOn tasks.named('runDelosJdbcHeapReusableFetchDescriptorExperimental')
-
-    doLast {
-        File root = rootProject.layout.buildDirectory.dir(heapReusableFetchDescriptorRoot).get().asFile
-        def loadThroughput = { String reportName ->
-            File file = new File(new File(root, reportName), 'range-scan-throughput.csv')
-            if (!file.isFile()) {
-                throw new GradleException("Missing reusable-fetch range throughput: ${file}")
-            }
-            def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
-            def header = lines[0].split(',', -1) as List
-            def result = []
-            lines.drop(1).each { line ->
-                def fields = line.split(',', -1)
-                def row = [:]
-                header.eachWithIndex { name, index ->
-                    row[name] = fields[index].toString().trim()
-                }
-                result.add(row)
-            }
-            result
-        }
-
-        def baselineRows = loadThroughput('baseline')
-        def experimentalRows = loadThroughput('experimental')
-        StringBuilder out = new StringBuilder(
-                'target,workload,baselineMedianRowsPerSecond,experimentalMedianRowsPerSecond,' +
-                        'experimentalOverBaseline,percentChange,baselineIqrRowsPerSecond,' +
-                        'experimentalIqrRowsPerSecond,baselineMadRowsPerSecond,' +
-                        'experimentalMadRowsPerSecond\n')
-        ['delos_heap', 'upstream_derby'].each { target ->
-            ['RANGE_SCAN_INDEX_ONLY_1000', 'RANGE_SCAN_1000'].each { workload ->
-                def baseline = baselineRows.find {
-                    it.target == target && it.workload == workload
-                }
-                def experimental = experimentalRows.find {
-                    it.target == target && it.workload == workload
-                }
-                if (baseline == null || experimental == null) {
-                    throw new GradleException(
-                            "Missing reusable-fetch A/B row target=${target}, workload=${workload}")
-                }
-                double baselineRate = Double.parseDouble(baseline.medianRowsPerSecond)
-                double experimentalRate = Double.parseDouble(experimental.medianRowsPerSecond)
-                double ratio = experimentalRate / baselineRate
-                out.append(target).append(',')
-                        .append(workload).append(',')
-                        .append(baseline.medianRowsPerSecond).append(',')
-                        .append(experimental.medianRowsPerSecond).append(',')
-                        .append(String.format(java.util.Locale.ROOT, '%.6f', ratio)).append(',')
-                        .append(String.format(java.util.Locale.ROOT, '%.3f',
-                                (ratio - 1.0d) * 100.0d)).append(',')
-                        .append(baseline.iqrRowsPerSecond).append(',')
-                        .append(experimental.iqrRowsPerSecond).append(',')
-                        .append(baseline.madRowsPerSecond).append(',')
-                        .append(experimental.madRowsPerSecond).append('\n')
-            }
-        }
-        new File(root, 'heap-reusable-fetch-descriptor-comparison.csv')
-                .setText(out.toString(), 'UTF-8')
-        logger.lifecycle(
-                'Heap reusable FetchDescriptor A/B complete: inspect heap-reusable-fetch-descriptor-comparison.csv and KEEP/REVERT from evidence.')
     }
 }

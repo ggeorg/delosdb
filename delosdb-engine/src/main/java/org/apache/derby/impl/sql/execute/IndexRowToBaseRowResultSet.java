@@ -34,10 +34,8 @@ import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
 import org.apache.derby.iapi.sql.execute.NoPutResultSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
-import org.apache.derby.iapi.store.access.ReusableFetchDescriptorController;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.sql.GenericPreparedStatement;
@@ -69,10 +67,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	private boolean                 closeBaseCCHere;
 	private boolean					forUpdate;
 	private DataValueDescriptor[]	rowArray;
-
-    // Experimental one-row-at-a-time fetch-descriptor reuse.
-    private ReusableFetchDescriptorController reusableFetchBase;
-    private FetchDescriptor reusableFetchDescriptor;
 
 	// changed a whole bunch
 	RowLocation	baseRowLocation;
@@ -309,8 +303,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			closeBaseCCHere = true;
 		}
 
-        configureReusableFetchDescriptor();
-
 		isOpen = true;
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -388,7 +380,13 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 						sourceRow.getColumn(sourceRow.nColumns());
 
 				// Fetch the columns coming from the heap
-				boolean row_exists = fetchBaseRow(baseRowLocation);
+				boolean row_exists = 
+                    baseCC.fetch
+                    (
+                     baseRowLocation,
+                     rowArray,
+                     _includeRowLocation ? _heapColsWithoutRowLocation : accessedHeapCols
+                     );
 
                 if (row_exists)
                 {
@@ -465,33 +463,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
     	return retval;
 	}
 
-    private void configureReusableFetchDescriptor() {
-        reusableFetchBase = null;
-        reusableFetchDescriptor = null;
-        if (!HeapReusableFetchDescriptorAccess.enabled()
-                || forUpdate
-                || _includeRowLocation
-                || !(baseCC instanceof ReusableFetchDescriptorController reusableBase)) {
-            return;
-        }
-        FormatableBitSet validColumns = accessedHeapCols;
-        reusableFetchBase = reusableBase;
-        reusableFetchDescriptor = new FetchDescriptor(
-                rowArray.length, validColumns, null);
-    }
-
-    private boolean fetchBaseRow(RowLocation location) throws StandardException {
-        FormatableBitSet validColumns =
-                _includeRowLocation ? _heapColsWithoutRowLocation : accessedHeapCols;
-        if (reusableFetchBase == null) {
-            return baseCC.fetch(location, rowArray, validColumns);
-        }
-        boolean exists = reusableFetchBase.fetchWithDescriptor(
-                location, rowArray, reusableFetchDescriptor);
-        HeapReusableFetchDescriptorAccess.recordFetch();
-        return exists;
-    }
-
 	/**
 	 * If the result set has been opened,
 	 * close the open scan.
@@ -528,8 +499,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			 * in the StatementContext.
 			 */
 			baseCC = null;
-            reusableFetchBase = null;
-            reusableFetchDescriptor = null;
 	        source.close();
 
 			super.close();
