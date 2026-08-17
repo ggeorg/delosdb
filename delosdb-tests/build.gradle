@@ -1220,6 +1220,155 @@ tasks.register('runDelosJdbcRangeAlgorithmDecomposition', JavaExec) {
 
 
 
+
+// Performance modernization workload 2 mechanism proof: approximate the
+// row-bearing/clustered-primary principle used by H2/SQLite/InnoDB without
+// changing Delos storage format. A forced (id, quantity) covering index removes
+// the Derby-family index->base lookup while preserving the same SQL projection.
+tasks.register('runDelosJdbcRangeRowBearingProxyExperiment', JavaExec) {
+    group = 'benchmark'
+    description = 'Compares PK index-to-base ranges with a forced row-bearing covering-index proxy.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/range-row-bearing-proxy-experiment'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Range row-bearing proxy experiment requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                // Keep Delos Heap on its accepted read architecture so the only
+                // physical variable is index->base versus row-bearing covering access.
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,upstream_derby',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                        .dir('tmp/delos-jdbc-range-row-bearing-proxy-experiment').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/range-row-bearing-proxy-experiment').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000,RANGE_SCAN_COVERING_1000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingProxy.targetRowsPerClient').getOrElse('1000000'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingProxy.warmups').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingProxy.iterations').getOrElse('3'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/range-row-bearing-proxy-experiment').get().asFile
+        File throughput = new File(root, 'range-scan-throughput.csv')
+        if (!throughput.isFile()) {
+            throw new GradleException(
+                    'Range row-bearing proxy experiment is missing range-scan-throughput.csv')
+        }
+        def lines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+        if (lines.size() < 2) {
+            throw new GradleException('Range row-bearing proxy experiment produced no measurements')
+        }
+        def header = lines[0].split(',', -1) as List
+        def rows = lines.drop(1).collect { line ->
+            def fields = line.split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Malformed row-bearing proxy row: ${line}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row
+        }
+
+        def targets = ['delos_heap', 'upstream_derby']
+        int expected = targets.size() * 3
+        if (rows.size() != expected) {
+            throw new GradleException(
+                    "Range row-bearing proxy experiment expected ${expected} rows but found ${rows.size()}")
+        }
+
+        File summary = new File(root, 'range-row-bearing-proxy-comparison.csv')
+        StringBuilder out = new StringBuilder(
+                'target,indexOnlyRowsPerSecond,indexToBaseRowsPerSecond,coveringRowsPerSecond,' +
+                        'coveringOverIndexToBase,percentChangeVsIndexToBase,' +
+                        'coveringOverIndexOnly,indexOnlyOverIndexToBase,' +
+                        'indexToBaseIqrToMedian,coveringIqrToMedian,' +
+                        'indexToBaseMadToMedian,coveringMadToMedian\n')
+        targets.each { target ->
+            def indexOnly = rows.find {
+                it.target == target && it.workload == 'RANGE_SCAN_INDEX_ONLY_1000'
+            }
+            def indexToBase = rows.find {
+                it.target == target && it.workload == 'RANGE_SCAN_1000'
+            }
+            def covering = rows.find {
+                it.target == target && it.workload == 'RANGE_SCAN_COVERING_1000'
+            }
+            if (indexOnly == null || indexToBase == null || covering == null) {
+                throw new GradleException("Missing row-bearing proxy triplet for target=${target}")
+            }
+            double indexOnlyRate = Double.parseDouble(indexOnly.medianRowsPerSecond)
+            double indexToBaseRate = Double.parseDouble(indexToBase.medianRowsPerSecond)
+            double coveringRate = Double.parseDouble(covering.medianRowsPerSecond)
+            if (indexOnlyRate <= 0.0d || indexToBaseRate <= 0.0d || coveringRate <= 0.0d) {
+                throw new GradleException(
+                        "Non-positive row-bearing proxy throughput for target=${target}")
+            }
+            double coveringOverBase = coveringRate / indexToBaseRate
+            out.append(target).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.3f', indexOnlyRate)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.3f', indexToBaseRate)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.3f', coveringRate)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.6f', coveringOverBase)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.3f',
+                            (coveringOverBase - 1.0d) * 100.0d)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.6f',
+                            coveringRate / indexOnlyRate)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.6f',
+                            indexOnlyRate / indexToBaseRate)).append(',')
+                    .append(indexToBase.iqrToMedian).append(',')
+                    .append(covering.iqrToMedian).append(',')
+                    .append(indexToBase.madToMedian).append(',')
+                    .append(covering.madToMedian).append('\n')
+        }
+        summary.setText(out.toString(), 'UTF-8')
+        logger.lifecycle(
+                'Range row-bearing proxy PASS: inspect range-row-bearing-proxy-comparison.csv before choosing clustered/current-row storage or a lean separate index->heap cursor.')
+    }
+}
+
+
 // Performance modernization workload 2 diagnostic: attribute the steady-state
 // range-scan CPU/allocation path after the five-engine baseline has established
 // where the curves diverge. JFR-enabled throughput is diagnostic only.

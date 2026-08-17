@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -75,8 +76,75 @@ public final class DelosJdbcRangeScanSurfaceValidation {
                     indexOnlyFirst.indexOnlyFingerprint(),
                     first.indexToBaseFingerprint()));
         }
+        if (provider == DelosBenchmarkProvider.HEAP) {
+            validateCoveringRangeProxy(connection, scenario.tableName(), semantics, config.rowCount());
+        }
         connection.rollback();
         return Map.copyOf(semantics);
+    }
+
+    private static void validateCoveringRangeProxy(
+            Connection connection,
+            String table,
+            Map<Integer, RangeSemantic> baselineSemantics,
+            int rowCount) throws Exception {
+        String index = table + "_PK_COVER_IDX";
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("create index " + index + " on " + table + " (id, quantity)");
+        }
+        connection.commit();
+
+        int rangeRows = Math.min(500, rowCount);
+        int start = 1 + (rowCount - rangeRows) / 3;
+        int endExclusive = start + rangeRows;
+        RangeSemantic expected = baselineSemantics.get(rangeRows);
+        if (expected == null) {
+            throw new IllegalStateException("Missing baseline semantics for covering proxy range=" + rangeRows);
+        }
+
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("call syscs_util.syscs_set_runtimestatistics(1)");
+        }
+        RangeSemantic covering = executeCoveringRange(connection, table, index, start, endExclusive);
+        if (covering.rows() != expected.rows()
+                || covering.indexOnlyFingerprint() != expected.indexOnlyFingerprint()
+                || covering.indexToBaseFingerprint() != expected.indexToBaseFingerprint()) {
+            throw new IllegalStateException("Heap covering range proxy changed semantics: expected="
+                    + expected + ", actual=" + covering);
+        }
+
+        String statistics = runtimeStatistics(connection);
+        if (!statistics.toUpperCase(java.util.Locale.ROOT).contains(index.toUpperCase(java.util.Locale.ROOT))) {
+            throw new IllegalStateException("Heap covering range did not use forced covering index "
+                    + index + ": " + statistics);
+        }
+        if (statistics.contains("Index Row to Base Row ResultSet")) {
+            throw new IllegalStateException("Heap covering range unexpectedly fetched the base row: "
+                    + statistics);
+        }
+    }
+
+    private static RangeSemantic executeCoveringRange(
+            Connection connection,
+            String table,
+            String index,
+            int start,
+            int endExclusive) throws Exception {
+        String sql = "select id, quantity from " + table
+                + " --DERBY-PROPERTIES index=" + index + "\n"
+                + " where id >= ? and id < ? order by id";
+        return executeRangeSql(connection, sql, start, endExclusive, false);
+    }
+
+    private static String runtimeStatistics(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery(
+                        "values syscs_util.syscs_get_runtimestatistics()")) {
+            if (!resultSet.next()) {
+                throw new IllegalStateException("Runtime statistics query returned no row");
+            }
+            return resultSet.getString(1);
+        }
     }
 
     private static RangeSemantic executeRange(
@@ -85,12 +153,21 @@ public final class DelosJdbcRangeScanSurfaceValidation {
             int start,
             int endExclusive,
             boolean indexOnly) throws Exception {
-        long indexOnlyFingerprint = 1L;
-        long indexToBaseFingerprint = 1L;
-        int rows = 0;
         String sql = indexOnly
                 ? "select id from " + table + " where id >= ? and id < ? order by id"
                 : "select id, quantity from " + table + " where id >= ? and id < ? order by id";
+        return executeRangeSql(connection, sql, start, endExclusive, indexOnly);
+    }
+
+    private static RangeSemantic executeRangeSql(
+            Connection connection,
+            String sql,
+            int start,
+            int endExclusive,
+            boolean indexOnly) throws Exception {
+        long indexOnlyFingerprint = 1L;
+        long indexToBaseFingerprint = 1L;
+        int rows = 0;
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, start);
             statement.setInt(2, endExclusive);
