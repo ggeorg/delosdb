@@ -72,6 +72,9 @@ public final class DelosJdbcBenchmarkScenario {
             statement.executeUpdate("create index " + table + "_CATEGORY_IDX on " + table + " (category)");
             statement.executeUpdate("create index " + table + "_RANGE_IDX on " + table + " (bucket, quantity)");
         }
+        // Publish fixture metadata before preparing DML. Some server engines keep DDL
+        // transactional, so preparing the insert before commit can observe no table.
+        connection.commit();
 
         int indexedUpdateId = config.rowCount() / 3;
         Random random = new Random(config.seed());
