@@ -73,8 +73,8 @@ def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def heapPageReadImageDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java')
-def heapPageLocalIndexBaseDiagnosticTestSupportSource = file(
-        'src/delosTestSupport/java/org/apache/derby/impl/sql/execute/HeapPageLocalIndexBaseDiagnosticTestSupport.java')
+def heapReusableFetchDescriptorDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/sql/execute/HeapReusableFetchDescriptorDiagnosticTestSupport.java')
 def btreePointReadDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
@@ -337,7 +337,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
-            exclude 'org/apache/derby/impl/sql/execute/HeapPageLocalIndexBaseDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/sql/execute/HeapReusableFetchDescriptorDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
@@ -374,7 +374,7 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(heapPageReadImageDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
-    from(heapPageLocalIndexBaseDiagnosticTestSupportSource) {
+    from(heapReusableFetchDescriptorDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/sql/execute'
     }
     from(btreePointReadDiagnosticTestSupportSource) {
@@ -12049,42 +12049,42 @@ tasks.register('runDelosJdbcRangeBulkFetchSweep') {
 }
 
 
-// Workload-2 removability experiment: preserve ordered index output and batch
-// only the index-to-heap boundary. A Heap-only opt-in path reuses one latched
-// heap page across consecutive row locations already on that page. Upstream
-// Derby runs beside both arms as an environmental control. Both arms use the
-// measured bulk-fetch=64 index traversal setting so the A/B isolates base-row
-// resolution rather than the inherited group-size effect.
-def heapPageLocalIndexBaseRoot =
-        'reports/delosdb/benchmarks/heap-page-local-index-base-experiment'
+// Workload-2 removability experiment: preserve the exact inherited one-row-at-a-time
+// index-to-base algorithm while reusing only the immutable FetchDescriptor and its
+// precomputed valid-column array. Upstream Derby runs beside both arms as an
+// environmental control. Both arms use bulk-fetch=64 so index traversal is held
+// at the best measured inherited setting while this experiment isolates base-row
+// descriptor construction.
+def heapReusableFetchDescriptorRoot =
+        'reports/delosdb/benchmarks/heap-reusable-fetch-descriptor-experiment'
 
-def registerHeapPageLocalIndexBaseRun = { String taskName,
-                                           String reportName,
-                                           boolean experimentEnabled ->
+def registerHeapReusableFetchDescriptorRun = { String taskName,
+                                                 String reportName,
+                                                 boolean experimentEnabled ->
     tasks.register(taskName, JavaExec) { task ->
         group = 'benchmark'
         description = experimentEnabled
-                ? 'Runs the ordered Heap page-local index-to-base removability experiment.'
-                : 'Runs the matching materialized per-row index-to-base baseline.'
+                ? 'Runs the Heap reusable FetchDescriptor removability experiment.'
+                : 'Runs the matching one-row-at-a-time index-to-base baseline.'
         dependsOn tasks.named('compileTestJava'), ':jars'
 
         task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
         task.classpath = rootProject.files(derbyTestsClassDir)
         task.outputs.upToDateWhen { false }
         task.outputs.dir(rootProject.layout.buildDirectory.dir(
-                "${heapPageLocalIndexBaseRoot}/${reportName}"))
+                "${heapReusableFetchDescriptorRoot}/${reportName}"))
 
         task.doFirst {
             def saneValue = providers.gradleProperty('delosdb.sane')
                     .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
             if (saneValue != 'false') {
                 throw new GradleException(
-                        'Heap page-local index-to-base experiment requires a release build; rerun with -Pdelosdb.sane=false')
+                        'Heap reusable FetchDescriptor experiment requires a release build; rerun with -Pdelosdb.sane=false')
             }
             File reportDir = rootProject.layout.buildDirectory
-                    .dir("${heapPageLocalIndexBaseRoot}/${reportName}").get().asFile
+                    .dir("${heapReusableFetchDescriptorRoot}/${reportName}").get().asFile
             File databaseRoot = rootProject.layout.buildDirectory
-                    .dir("tmp/delos-jdbc-heap-page-local-index-base-${reportName}").get().asFile
+                    .dir("tmp/delos-jdbc-heap-reusable-fetch-descriptor-${reportName}").get().asFile
             project.delete(reportDir)
             project.delete(databaseRoot)
             reportDir.mkdirs()
@@ -12105,7 +12105,6 @@ def registerHeapPageLocalIndexBaseRun = { String taskName,
                     'delosdb.benchmark.crossEngineConcurrency.targets':
                             'delos_heap,upstream_derby',
                     'delosdb.benchmark.crossEngineConcurrency.rangeBulkFetchDefault': '64',
-                    'delosdb.benchmark.crossEngineConcurrency.closeCursorsAtCommit': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
                             databaseRoot.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
@@ -12119,7 +12118,7 @@ def registerHeapPageLocalIndexBaseRun = { String taskName,
                     'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
                     'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient':
                             providers.gradleProperty(
-                                    'delosdb.benchmark.heapPageLocalIndexBase.targetRowsPerClient')
+                                    'delosdb.benchmark.heapReusableFetchDescriptor.targetRowsPerClient')
                                     .getOrElse('2000000'),
                     'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
                     'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
@@ -12131,30 +12130,30 @@ def registerHeapPageLocalIndexBaseRun = { String taskName,
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                     'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
-                    'delosdb.experimental.heapPageLocalIndexBaseFetch':
+                    'delosdb.experimental.heapReusableFetchDescriptor':
                             Boolean.toString(experimentEnabled)
             ])
         }
     }
 }
 
-registerHeapPageLocalIndexBaseRun(
-        'runDelosJdbcHeapPageLocalIndexBaseBaseline', 'baseline', false)
-registerHeapPageLocalIndexBaseRun(
-        'runDelosJdbcHeapPageLocalIndexBaseExperimental', 'experimental', true)
+registerHeapReusableFetchDescriptorRun(
+        'runDelosJdbcHeapReusableFetchDescriptorBaseline', 'baseline', false)
+registerHeapReusableFetchDescriptorRun(
+        'runDelosJdbcHeapReusableFetchDescriptorExperimental', 'experimental', true)
 
-tasks.register('runDelosJdbcHeapPageLocalIndexBaseExperiment') {
+tasks.register('runDelosJdbcHeapReusableFetchDescriptorExperiment') {
     group = 'benchmark'
-    description = 'Runs baseline/experimental ordered page-local index-to-base A/B with upstream Derby control.'
-    dependsOn tasks.named('runDelosJdbcHeapPageLocalIndexBaseBaseline')
-    dependsOn tasks.named('runDelosJdbcHeapPageLocalIndexBaseExperimental')
+    description = 'Runs baseline/experimental Heap reusable FetchDescriptor A/B with upstream Derby control.'
+    dependsOn tasks.named('runDelosJdbcHeapReusableFetchDescriptorBaseline')
+    dependsOn tasks.named('runDelosJdbcHeapReusableFetchDescriptorExperimental')
 
     doLast {
-        File root = rootProject.layout.buildDirectory.dir(heapPageLocalIndexBaseRoot).get().asFile
+        File root = rootProject.layout.buildDirectory.dir(heapReusableFetchDescriptorRoot).get().asFile
         def loadThroughput = { String reportName ->
             File file = new File(new File(root, reportName), 'range-scan-throughput.csv')
             if (!file.isFile()) {
-                throw new GradleException("Missing page-local range throughput: ${file}")
+                throw new GradleException("Missing reusable-fetch range throughput: ${file}")
             }
             def lines = file.readLines('UTF-8').findAll { !it.trim().isEmpty() }
             def header = lines[0].split(',', -1) as List
@@ -12187,7 +12186,7 @@ tasks.register('runDelosJdbcHeapPageLocalIndexBaseExperiment') {
                 }
                 if (baseline == null || experimental == null) {
                     throw new GradleException(
-                            "Missing page-local A/B row target=${target}, workload=${workload}")
+                            "Missing reusable-fetch A/B row target=${target}, workload=${workload}")
                 }
                 double baselineRate = Double.parseDouble(baseline.medianRowsPerSecond)
                 double experimentalRate = Double.parseDouble(experimental.medianRowsPerSecond)
@@ -12205,9 +12204,9 @@ tasks.register('runDelosJdbcHeapPageLocalIndexBaseExperiment') {
                         .append(experimental.madRowsPerSecond).append('\n')
             }
         }
-        new File(root, 'heap-page-local-index-base-comparison.csv')
+        new File(root, 'heap-reusable-fetch-descriptor-comparison.csv')
                 .setText(out.toString(), 'UTF-8')
         logger.lifecycle(
-                'Heap page-local index-to-base A/B complete: inspect heap-page-local-index-base-comparison.csv and KEEP/REVERT from evidence.')
+                'Heap reusable FetchDescriptor A/B complete: inspect heap-reusable-fetch-descriptor-comparison.csv and KEEP/REVERT from evidence.')
     }
 }

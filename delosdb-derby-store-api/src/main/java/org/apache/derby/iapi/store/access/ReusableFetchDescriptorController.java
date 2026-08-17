@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.iapi.store.access.PageLocalBatchFetchController
+   Derby - Class org.apache.derby.iapi.store.access.ReusableFetchDescriptorController
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,28 +18,21 @@
    limitations under the License.
 
  */
+
 package org.apache.derby.iapi.store.access;
 
-import org.apache.derby.iapi.services.io.FormatableBitSet;
+import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
-import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * Experimental read-only capability for fetching an ordered row-location
- * batch while retaining a heap page latch across consecutive locations on
- * that same page.
- *
- * <p>The input order is authoritative and must not be changed. Implementations
- * return the number of page acquisitions performed while filling the batch.
- * The capability does not change transaction, locking, logging, or recovery
- * ownership.</p>
+ * Internal capability for callers which can safely reuse one immutable
+ * {@link FetchDescriptor} across repeated read-only row fetches.
  */
-public interface PageLocalBatchFetchController {
-    int fetchPageLocalBatch(
-            StoreRowLocation[] locations,
-            StoreDataValue[][] destinationRows,
-            FormatableBitSet validColumns,
-            boolean[] rowExists,
-            int rowCount) throws StandardException;
+public interface ReusableFetchDescriptorController {
+    boolean fetchWithDescriptor(
+            StoreRowLocation location,
+            StoreDataValue[] row,
+            FetchDescriptor fetchDescriptor) throws StandardException;
 }

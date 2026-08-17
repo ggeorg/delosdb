@@ -138,8 +138,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
         if (target == Target.DELOS_HEAP
-                && Boolean.getBoolean("delosdb.experimental.heapPageLocalIndexBaseFetch")) {
-            command.add("-Ddelosdb.experimental.heapPageLocalIndexBaseFetch=true");
+                && Boolean.getBoolean("delosdb.experimental.heapReusableFetchDescriptor")) {
+            command.add("-Ddelosdb.experimental.heapReusableFetchDescriptor=true");
         }
         if (target == Target.DELOS_MVCC) {
             String slots = System.getProperty(

@@ -266,6 +266,34 @@ public abstract class GenericConglomerateController
     FormatableBitSet                 validColumns) 
 		throws StandardException
 	{
+        return fetchInternal(loc, row, validColumns, null);
+    }
+
+    /**
+     * Internal read-only fetch entry point for callers which have already
+     * prepared the immutable descriptor for this repeated fetch shape.
+     */
+    public boolean fetchWithDescriptor(
+    StoreRowLocation        loc,
+    StoreDataValue[]        row,
+    FetchDescriptor         fetchDesc)
+        throws StandardException
+    {
+        if (SanityManager.DEBUG)
+        {
+            SanityManager.ASSERT(fetchDesc != null,
+                    "reusable fetch descriptor must be non-null");
+        }
+        return fetchInternal(loc, row, fetchDesc.getValidColumns(), fetchDesc);
+    }
+
+    private boolean fetchInternal(
+    StoreRowLocation        loc,
+    StoreDataValue[]        row,
+    FormatableBitSet        validColumns,
+    FetchDescriptor         suppliedFetchDesc)
+        throws StandardException
+    {
         if (open_conglom.isClosed())
         {
             if (open_conglom.getHold())
@@ -307,8 +335,9 @@ public abstract class GenericConglomerateController
 
         getRowPositionFromRowLocation(loc, pos);
 
-        FetchDescriptor fetchDesc = new FetchDescriptor(
-                row.length, validColumns, (Qualifier[][]) null);
+        FetchDescriptor fetchDesc = suppliedFetchDesc != null
+                ? suppliedFetchDesc
+                : new FetchDescriptor(row.length, validColumns, (Qualifier[][]) null);
         if (tryFetchFromImmutablePage(pos, row, fetchDesc)) {
             return true;
         }
