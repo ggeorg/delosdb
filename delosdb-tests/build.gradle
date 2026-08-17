@@ -1369,6 +1369,251 @@ tasks.register('runDelosJdbcRangeRowBearingProxyExperiment', JavaExec) {
 }
 
 
+
+// Performance modernization workload 2: compare the Derby-family row-bearing
+// covering proxy directly with H2's natural row-bearing primary-key range.
+// This is the machine-work attribution gate before any RawStore format change.
+def rangeRowBearingH2Root = 'reports/delosdb/benchmarks/range-row-bearing-h2-attribution'
+
+tasks.register('runDelosJdbcRangeRowBearingH2Benchmark', JavaExec) { task ->
+    group = 'benchmark'
+    description = 'Benchmarks the same row-bearing 1000-row range on Delos Heap, upstream Derby, and H2.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir("${rangeRowBearingH2Root}/throughput"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Row-bearing H2 benchmark requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${rangeRowBearingH2Root}/throughput").get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-range-row-bearing-h2-throughput').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,upstream_derby,h2',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_ROW_BEARING_1000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingH2.targetRowsPerClient').getOrElse('1000000'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingH2.warmups').getOrElse('2'),
+                'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingH2.iterations').getOrElse('3'),
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    task.doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir("${rangeRowBearingH2Root}/throughput").get().asFile
+        File throughput = new File(root, 'range-scan-throughput.csv')
+        if (!throughput.isFile()) {
+            throw new GradleException('Row-bearing H2 benchmark is missing range-scan-throughput.csv')
+        }
+        def lines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+        def header = lines[0].split(',', -1) as List
+        def rows = lines.drop(1).collect { line ->
+            def fields = line.split(',', -1)
+            if (fields.length != header.size()) {
+                throw new GradleException("Malformed row-bearing H2 row: ${line}")
+            }
+            def row = [:]
+            header.eachWithIndex { name, index -> row[name] = fields[index].toString().trim() }
+            row
+        }
+        if (rows.size() != 3) {
+            throw new GradleException("Row-bearing H2 benchmark expected 3 rows but found ${rows.size()}")
+        }
+        def byTarget = rows.collectEntries { [(it.target): it] }
+        for (String target : ['delos_heap', 'upstream_derby', 'h2']) {
+            if (!byTarget.containsKey(target)) {
+                throw new GradleException("Missing row-bearing H2 target=${target}")
+            }
+        }
+        double h2 = Double.parseDouble(byTarget.h2.medianRowsPerSecond)
+        StringBuilder out = new StringBuilder(
+                'target,medianRowsPerSecond,targetOverH2,h2OverTarget,iqrToMedian,madToMedian\n')
+        ['delos_heap', 'upstream_derby', 'h2'].each { target ->
+            def row = byTarget[target]
+            double rate = Double.parseDouble(row.medianRowsPerSecond)
+            out.append(target).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.3f', rate)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.6f', rate / h2)).append(',')
+                    .append(String.format(java.util.Locale.ROOT, '%.6f', h2 / rate)).append(',')
+                    .append(row.iqrToMedian).append(',')
+                    .append(row.madToMedian).append('\n')
+        }
+        new File(root, 'row-bearing-h2-comparison.csv').setText(out.toString(), 'UTF-8')
+        logger.lifecycle(
+                'Row-bearing H2 benchmark PASS: inspect row-bearing-h2-comparison.csv before interpreting JFR attribution.')
+    }
+}
+
+tasks.register('runDelosJdbcRangeRowBearingH2Jfr', JavaExec) { task ->
+    group = 'benchmark'
+    description = 'Captures JFR/HotSpot attribution for row-bearing Delos Heap, upstream Derby, and H2 ranges.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir("${rangeRowBearingH2Root}/jfr"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Row-bearing H2 JFR attribution requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${rangeRowBearingH2Root}/jfr").get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-range-row-bearing-h2-jfr').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.experimental.heapPageReadImage': 'true',
+                'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,upstream_derby,h2',
+                'delosdb.benchmark.crossEngineConcurrency.profileTargets':
+                        'delos_heap,upstream_derby,h2',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_ROW_BEARING_1000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                        'delosdb.benchmark.rangeRowBearingH2Jfr.targetRowsPerClient').getOrElse('3000000'),
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '30000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${rangeRowBearingH2Root}/jfr").get().asFile
+        File profileDir = new File(reportDir, 'profiles')
+        def recordings = profileDir.isDirectory()
+                ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }.sort { it.name }
+                : []
+        int expectedRecordings = 3 * 4
+        if (recordings.size() != expectedRecordings) {
+            throw new GradleException(
+                    "Row-bearing H2 JFR expected ${expectedRecordings} recordings but found ${recordings.size()}")
+        }
+        def compilationLogs = profileDir.isDirectory()
+                ? profileDir.listFiles().findAll { it.name.endsWith('-hotspot.log') }.sort { it.name }
+                : []
+        if (compilationLogs.size() != expectedRecordings) {
+            throw new GradleException(
+                    "Row-bearing H2 JFR expected ${expectedRecordings} HotSpot logs but found ${compilationLogs.size()}")
+        }
+        File viewDir = new File(reportDir, 'jfr-views')
+        viewDir.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            recordings.each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '40', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "Row-bearing H2 JFR view ${view} failed for ${recording.name}: ${error.trim()}")
+                }
+                new File(viewDir, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(output, 'UTF-8')
+            }
+        }
+        new File(reportDir, 'PROFILE-NOTES.txt').setText(
+                'Workload=RANGE_SCAN_ROW_BEARING_1000\n' +
+                        'Targets=delos_heap,upstream_derby,h2\n' +
+                        'Delos/Derby physical path=forced covering (id, quantity) B-tree\n' +
+                        'H2 physical path=natural primary MVPrimaryIndex row value\n' +
+                        'Clients=1\n' +
+                        'JFR settings=profile; stackdepth=256\n' +
+                        'HotSpot=-XX:+LogCompilation, one log per profiled worker\n' +
+                        'Interpretation=remaining row-bearing machine-work gap; JFR throughput is diagnostic only.\n',
+                'UTF-8')
+    }
+}
+
+tasks.register('runDelosJdbcRangeRowBearingH2Attribution') {
+    group = 'benchmark'
+    description = 'Runs clean throughput plus JFR/HotSpot attribution for the row-bearing Delos/Derby/H2 range path.'
+    dependsOn tasks.named('runDelosJdbcRangeRowBearingH2Benchmark'),
+            tasks.named('runDelosJdbcRangeRowBearingH2Jfr')
+}
+
+
 // Performance modernization workload 2 diagnostic: attribute the steady-state
 // range-scan CPU/allocation path after the five-engine baseline has established
 // where the curves diverge. JFR-enabled throughput is diagnostic only.

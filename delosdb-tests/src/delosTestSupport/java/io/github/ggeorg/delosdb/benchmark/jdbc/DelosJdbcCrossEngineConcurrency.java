@@ -1422,7 +1422,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     verifier, targetId, options.target().createTableSuffix(),
                     options.target().isContainer(), config);
             scenario.prepare();
-            if (spec.workload().isCoveringRangeScan()) {
+            if (spec.workload().isCoveringRangeScan()
+                    || (spec.workload().isRowBearingComparisonRangeScan()
+                            && (options.target() == Target.DELOS_HEAP
+                                    || options.target() == Target.UPSTREAM_DERBY))) {
                 String coveringIndex = rangeCoveringIndexName(scenario.tableName());
                 try (java.sql.Statement statement = verifier.createStatement()) {
                     statement.executeUpdate("create index " + coveringIndex + " on "
@@ -1871,7 +1874,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     if (workload.isIndexOnlyRangeScan()) {
                         rangeSql = "select id from " + table
                                 + " where id >= ? and id < ? order by id";
-                    } else if (workload.isCoveringRangeScan()) {
+                    } else if (workload.isCoveringRangeScan()
+                            || (workload.isRowBearingComparisonRangeScan()
+                                    && (target == Target.DELOS_HEAP
+                                            || target == Target.UPSTREAM_DERBY))) {
                         rangeSql = "select id, quantity from " + table
                                 + " --DERBY-PROPERTIES index=" + rangeCoveringIndexName(table) + "\n"
                                 + " where id >= ? and id < ? order by id";
@@ -2780,6 +2786,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         RANGE_SCAN_INDEX_ONLY_100(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_INDEX_ONLY_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_COVERING_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_ROW_BEARING_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -2818,7 +2825,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == RANGE_SCAN_FULL
                     || this == RANGE_SCAN_INDEX_ONLY_100
                     || this == RANGE_SCAN_INDEX_ONLY_1000
-                    || this == RANGE_SCAN_COVERING_1000;
+                    || this == RANGE_SCAN_COVERING_1000
+                    || this == RANGE_SCAN_ROW_BEARING_1000;
         }
 
         boolean isIndexOnlyRangeScan() {
@@ -2830,6 +2838,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             return this == RANGE_SCAN_COVERING_1000;
         }
 
+        boolean isRowBearingComparisonRangeScan() {
+            return this == RANGE_SCAN_ROW_BEARING_1000;
+        }
+
         boolean usesFixtureQuantities() {
             return isPrimaryKeyRead() || isRangeScan();
         }
@@ -2839,8 +2851,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 case RANGE_SCAN_1 -> 1;
                 case RANGE_SCAN_10 -> Math.min(10, rowCount);
                 case RANGE_SCAN_100, RANGE_SCAN_INDEX_ONLY_100 -> Math.min(100, rowCount);
-                case RANGE_SCAN_1000, RANGE_SCAN_INDEX_ONLY_1000, RANGE_SCAN_COVERING_1000 ->
-                    Math.min(1000, rowCount);
+                case RANGE_SCAN_1000, RANGE_SCAN_INDEX_ONLY_1000, RANGE_SCAN_COVERING_1000,
+                        RANGE_SCAN_ROW_BEARING_1000 -> Math.min(1000, rowCount);
                 case RANGE_SCAN_FULL -> rowCount;
                 default -> throw new IllegalStateException("Not a range-scan workload: " + this);
             };
@@ -3255,6 +3267,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)) {
                 throw new IllegalArgumentException(
                         "covering range proxy is valid only for Delos Heap and upstream Derby: "
+                                + configuredTargets);
+            }
+            if (configuredWorkloads.stream().anyMatch(Workload::isRowBearingComparisonRangeScan)
+                    && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)) {
+                throw new IllegalArgumentException(
+                        "row-bearing H2 comparison requires Delos Heap, upstream Derby, and H2: "
                                 + configuredTargets);
             }
             int maxClients = clientValues().stream().mapToInt(Integer::intValue).max().orElseThrow();
