@@ -46,6 +46,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
     private static final List<Target> RANGE_SCAN_JFR_TARGETS = List.of(
             Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY);
+    private static final List<Target> RANGE_BULK_FETCH_TARGETS = List.of(
+            Target.DELOS_HEAP, Target.UPSTREAM_DERBY);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
@@ -2278,6 +2280,19 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append(format(heap / derby)).append(',')
                         .append(format(mvcc / derby)).append('\n');
             }
+        } else if (options.targetValues().equals(RANGE_BULK_FETCH_TARGETS)) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,"
+                            + "upstreamDerbyMedianTps,delosHeapToDerby\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP, key);
+                double derby = require(values, Target.UPSTREAM_DERBY, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(derby)).append(',')
+                        .append(format(heap / derby)).append('\n');
+            }
         } else {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,delosMvccMedianTps,"
@@ -3184,10 +3199,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(container)
                     && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)
                     && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
+                    && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
                     && !mvccOnlyDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", diagnostic " + READ_DECOMPOSITION_TARGETS
                         + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
+                        + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
                         + ", or MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {

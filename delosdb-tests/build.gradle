@@ -11937,6 +11937,8 @@ rangeBulkFetchSweepSizes.each { fetchSize ->
                             derbyTestsClassDir.get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
                             rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                            upstreamDerbyBenchmarkRuntime.asPath,
                     'delosdb.benchmark.crossEngineConcurrency.targets':
                             'delos_heap,upstream_derby',
                     'delosdb.benchmark.crossEngineConcurrency.rangeBulkFetchDefault':
