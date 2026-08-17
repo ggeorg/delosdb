@@ -491,7 +491,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
         pageLocalBatchPosition = 0;
         if (!HeapPageLocalIndexBaseAccess.enabled()
                 || forUpdate
-                || restriction != null
                 || _includeRowLocation
                 || activation.getResultSetHoldability()
                 || !source.requiresRelocking()
@@ -576,9 +575,27 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
             baseRowLocation = pageLocalLocations[rowIndex];
             currentRow = pageLocalOutputRows[rowIndex];
             setCurrentRow(currentRow);
+            if (!pageLocalRestrictionQualifies()) {
+                rowsFiltered++;
+                clearCurrentRow();
+                baseRowLocation = null;
+                continue;
+            }
             nextTime += getElapsedMillis(beginTime);
             return currentRow;
         }
+    }
+
+    private boolean pageLocalRestrictionQualifies() throws StandardException {
+        if (restriction == null) {
+            return true;
+        }
+        long restrictionBegin = getCurrentTimeMillis();
+        DataValueDescriptor restrictionValue =
+                (DataValueDescriptor) restriction.invoke(activation);
+        restrictionTime += getElapsedMillis(restrictionBegin);
+        return restrictionValue == null
+                || (!restrictionValue.isNull() && restrictionValue.getBoolean());
     }
 
     private int loadPageLocalIndexBaseBatch() throws StandardException {

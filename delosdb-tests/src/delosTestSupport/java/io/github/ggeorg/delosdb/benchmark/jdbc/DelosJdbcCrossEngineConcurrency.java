@@ -208,6 +208,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "warmups", options.warmups());
         addProperty(command, "iterations", options.iterations());
         addProperty(command, "caseTimeoutSeconds", options.caseTimeoutSeconds());
+        addProperty(command, "closeCursorsAtCommit",
+                Boolean.getBoolean(PREFIX + "closeCursorsAtCommit"));
         if (endpoint != null) {
             addProperty(command, "remoteJdbcUrl", endpoint.jdbcUrl());
             addProperty(command, "remoteUser", endpoint.user());

@@ -12105,6 +12105,7 @@ def registerHeapPageLocalIndexBaseRun = { String taskName,
                     'delosdb.benchmark.crossEngineConcurrency.targets':
                             'delos_heap,upstream_derby',
                     'delosdb.benchmark.crossEngineConcurrency.rangeBulkFetchDefault': '64',
+                    'delosdb.benchmark.crossEngineConcurrency.closeCursorsAtCommit': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
                             databaseRoot.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
