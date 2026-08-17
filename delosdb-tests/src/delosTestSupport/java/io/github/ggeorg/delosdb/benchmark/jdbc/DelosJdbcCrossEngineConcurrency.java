@@ -154,6 +154,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + leaseSlots);
                 }
             }
+            if (Boolean.getBoolean(PREFIX + "mvccBoundedIndexedScan")) {
+                command.add("-Ddelosdb.experimental.mvccBoundedIndexedScan=true");
+            }
         }
         if (shouldProfileWorker(target)) {
             Path profileDirectory = options.reportDirectory().resolve("profiles");
@@ -2224,6 +2227,24 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append(format(heap)).append(',').append(format(derby)).append(',')
                         .append(format(h2)).append(',')
                         .append(format(heap / derby)).append(',').append(format(heap / h2)).append('\n');
+            }
+        } else if (options.targetValues().equals(RANGE_SCAN_JFR_TARGETS)) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapMedianTps,"
+                            + "delosMvccMedianTps,upstreamDerbyMedianTps,"
+                            + "delosMvccToHeap,delosHeapToDerby,delosMvccToDerby\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP, key);
+                double mvcc = require(values, Target.DELOS_MVCC, key);
+                double derby = require(values, Target.UPSTREAM_DERBY, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(mvcc)).append(',')
+                        .append(format(derby)).append(',')
+                        .append(format(mvcc / heap)).append(',')
+                        .append(format(heap / derby)).append(',')
+                        .append(format(mvcc / derby)).append('\n');
             }
         } else {
             out = new StringBuilder(
