@@ -299,6 +299,7 @@ tasks.named('delosSystemTests', Test) {
 // only the frozen pre-Stage-3 performance authority through this aggregate.
 def performanceFocusedTasks = [
         'runDelosHeapDiagnosticsPerformanceAuditTest',
+        'runDelosHeapPageReadImageCorrectnessProof',
         'runDelosJdbcBenchmarkBaseline',
         'runDelosJdbcBenchmarkBatchScaling',
         'runDelosJdbcBenchmarkRowScaling',
@@ -306,6 +307,12 @@ def performanceFocusedTasks = [
         'runDelosJdbcRangeScanSurfaceValidation',
         'runDelosJdbcBenchmarkTransactions',
         'runDelosJdbcDeleteReinsertAttribution',
+        'runDelosMvccCurrentRowAnchorTest',
+        'runDelosMvccCurrentRowArchitectureBoundedCacheTest',
+        'runDelosMvccCurrentRowArchitectureLifecycleSafetyTest',
+        'runDelosMvccCurrentRowArchitecturePermanentDefaultTest',
+        'runDelosMvccCurrentVersionReadImageTest',
+        'runDelosPrimaryKeyReadPhysicalAccounting',
         'runDelosSharedRawStoreMappedRegionExperimentTest',
         'runDelosSharedRawStorePageIoRepresentationDecisionTest',
         'runDelosV1BaselineOperationalCapture'
@@ -361,6 +368,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
 
         Set<String> expectedPerformanceClasses = [
                 'org.apache.derbyTesting.functionTests.tests.delos.HeapDiagnosticsPerformanceAuditTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.HeapPageReadImageArchitectureProofTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBaselineTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBatchScalingTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkRowScalingTest',
@@ -368,6 +376,12 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcRangeScanBenchmarkSupportTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkTransactionsTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcDeleteReinsertAttributionTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowAnchorTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowArchitectureBoundedCacheTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowArchitectureLifecycleTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowArchitecturePermanentTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentVersionReadImageTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.PrimaryKeyReadPhysicalAccountingTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStoreMappedRegionExperimentTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStorePageIoRepresentationDecisionTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.V1BaselineCaptureTest'
