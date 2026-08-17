@@ -175,6 +175,16 @@ def upstreamDerbyBenchmarkRuntime = configurations.create('upstreamDerbyBenchmar
     canBeResolved = true
     transitive = true
 }
+def upstreamDerbyNetworkServerRuntime = configurations.create('upstreamDerbyNetworkServerRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
+def upstreamDerbyNetworkClientRuntime = configurations.create('upstreamDerbyNetworkClientRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
 def h2BenchmarkRuntime = configurations.create('h2BenchmarkRuntime') {
     canBeConsumed = false
     canBeResolved = true
@@ -195,6 +205,11 @@ def mariadbBenchmarkRuntime = configurations.create('mariadbBenchmarkRuntime') {
     canBeResolved = true
     transitive = true
 }
+def firebirdBenchmarkRuntime = configurations.create('firebirdBenchmarkRuntime') {
+    canBeConsumed = false
+    canBeResolved = true
+    transitive = true
+}
 def upstreamDerbyBenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.crossEngine.derbyVersion').getOrElse('10.17.1.0')
 def h2BenchmarkVersion = providers.gradleProperty(
@@ -205,6 +220,8 @@ def postgresqlBenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.serverContainer.postgresqlDriverVersion').getOrElse('42.7.13')
 def mariadbBenchmarkVersion = providers.gradleProperty(
         'delosdb.benchmark.serverContainer.mariadbDriverVersion').getOrElse('3.5.10')
+def firebirdBenchmarkVersion = providers.gradleProperty(
+        'delosdb.benchmark.serverContainer.firebirdDriverVersion').getOrElse('6.0.5')
 
 def thirdPartyTestModules = rootProject.files(
         'tools/java/junit.jar',
@@ -295,10 +312,17 @@ dependencies {
     add('gradleJUnitRuntime', 'junit:junit:4.13.2')
     add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derby:${upstreamDerbyBenchmarkVersion}")
     add('upstreamDerbyBenchmarkRuntime', "org.apache.derby:derbyshared:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkServerRuntime', "org.apache.derby:derby:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkServerRuntime', "org.apache.derby:derbyshared:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkServerRuntime', "org.apache.derby:derbynet:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkServerRuntime', "org.apache.derby:derbytools:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkClientRuntime', "org.apache.derby:derbyclient:${upstreamDerbyBenchmarkVersion}")
+    add('upstreamDerbyNetworkClientRuntime', "org.apache.derby:derbyshared:${upstreamDerbyBenchmarkVersion}")
     add('h2BenchmarkRuntime', "com.h2database:h2:${h2BenchmarkVersion}")
     add('sqliteBenchmarkRuntime', "org.xerial:sqlite-jdbc:${sqliteBenchmarkVersion}")
     add('postgresqlBenchmarkRuntime', "org.postgresql:postgresql:${postgresqlBenchmarkVersion}")
     add('mariadbBenchmarkRuntime', "org.mariadb.jdbc:mariadb-java-client:${mariadbBenchmarkVersion}")
+    add('firebirdBenchmarkRuntime', "org.firebirdsql.jdbc:jaybird:${firebirdBenchmarkVersion}")
 
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
@@ -3779,10 +3803,20 @@ tasks.register('runDelosMvccCommitPublicationJfr', JavaExec) {
 
 
 
+def upstreamDerbyNetworkServerRuntimeDirectory = rootProject.layout.buildDirectory.dir(
+        'tmp/upstream-derby-network-server-runtime')
+
+tasks.register('prepareUpstreamDerbyNetworkServerRuntime', Sync) {
+    from upstreamDerbyNetworkServerRuntime
+    into upstreamDerbyNetworkServerRuntimeDirectory
+}
+
+
+
 tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
     group = 'benchmark'
-    description = 'Compares DelosDB DRDA heap/MVCC with PostgreSQL and MariaDB through TCP/JDBC containers.'
-    dependsOn tasks.named('compileTestJava'), ':jars'
+    description = 'Compares DelosDB DRDA heap/MVCC and upstream Derby Network Server with PostgreSQL, MariaDB, and Firebird through TCP/JDBC containers.'
+    dependsOn tasks.named('compileTestJava'), ':jars', tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
 
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     def delosNetworkClientClasspath = rootProject.files(
@@ -3792,7 +3826,8 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
             derbyTestsClassDir,
             delosNetworkClientClasspath,
             postgresqlBenchmarkRuntime,
-            mariadbBenchmarkRuntime)
+            mariadbBenchmarkRuntime,
+            firebirdBenchmarkRuntime)
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(
             'reports/delosdb/benchmarks/server-container'))
@@ -3816,24 +3851,37 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
                         derbyTestsClassDir.get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.targets':
-                        'delos_heap_drda,delos_mvcc_drda,postgresql,mariadb',
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,postgresql,mariadb,firebird',
                 'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
                         delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
                 'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
                         postgresqlBenchmarkRuntime.asPath,
                 'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
                         mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.firebirdClasspath':
+                        firebirdBenchmarkRuntime.asPath,
                 'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
                         rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.delosServerImage': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.delosServerImage')
+                        .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage': providers.gradleProperty(
+                        'delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
                         .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
                 'delosdb.benchmark.crossEngineConcurrency.postgresqlImage': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.postgresqlImage').getOrElse('postgres:18.4'),
                 'delosdb.benchmark.crossEngineConcurrency.mariadbImage': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.mariadbImage').getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.firebirdImage': providers.gradleProperty(
+                        'delosdb.benchmark.serverContainer.firebirdImage').getOrElse('firebirdsql/firebird:5.0.4'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
                 'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
                 'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.firebirdDriverVersion': firebirdBenchmarkVersion,
                 'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
                         .dir('tmp/delos-jdbc-server-container').get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
@@ -3869,6 +3917,199 @@ tasks.register('runDelosJdbcServerContainerComparison', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': providers.gradleProperty(
                         'delosdb.benchmark.serverContainer.childHeap').getOrElse('1g')
         ])
+    }
+}
+
+
+def registerDelosServerReadBenchmark = {
+    String taskName,
+    String descriptionText,
+    String reportLeaf,
+    String databaseLeaf,
+    String clientsDefault,
+    String widthsDefault,
+    String workloadsDefault,
+    String transactionsPerClientDefault,
+    String rangeRowsDefault,
+    String rangeMinQueriesDefault,
+    String rangeMaxQueriesDefault ->
+
+    tasks.register(taskName, JavaExec) {
+        group = 'benchmark'
+        description = descriptionText
+        dependsOn tasks.named('compileTestJava'), ':jars',
+                tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        def delosNetworkClientClasspath = rootProject.files(
+                rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+                rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+        classpath = rootProject.files(
+                derbyTestsClassDir,
+                delosNetworkClientClasspath,
+                postgresqlBenchmarkRuntime,
+                mariadbBenchmarkRuntime,
+                firebirdBenchmarkRuntime)
+        outputs.upToDateWhen { false }
+        outputs.dir(rootProject.layout.buildDirectory.dir(
+                "reports/delosdb/benchmarks/server-read-comparison/${reportLeaf}"))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true')
+                    .trim()
+                    .toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Server-read comparison requires a release build; ' +
+                                'rerun with -Pdelosdb.sane=false')
+            }
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                            rootProject.version.toString(),
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,postgresql,mariadb,firebird',
+                    'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                            delosNetworkClientClasspath.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                            upstreamDerbyNetworkClientRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                            postgresqlBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                            mariadbBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.firebirdClasspath':
+                            firebirdBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                            rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                            upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                    .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                    .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                    .getOrElse('postgres:18.4'),
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                    .getOrElse('mariadb:12.3.2'),
+                    'delosdb.benchmark.crossEngineConcurrency.firebirdImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.firebirdImage')
+                                    .getOrElse('firebirdsql/firebird:5.0.4'),
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion':
+                            upstreamDerbyBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion':
+                            postgresqlBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion':
+                            mariadbBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.firebirdDriverVersion':
+                            firebirdBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                            rootProject.layout.buildDirectory.dir(
+                                    "tmp/delos-jdbc-server-read/${databaseLeaf}").get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                            rootProject.layout.buildDirectory.dir(
+                                    "reports/delosdb/benchmarks/server-read-comparison/${reportLeaf}")
+                                    .get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.rows').getOrElse('10000'),
+                    'delosdb.benchmark.crossEngineConcurrency.clients':
+                            providers.gradleProperty("delosdb.benchmark.serverRead.${reportLeaf}.clients")
+                                    .getOrElse(clientsDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.widths':
+                            providers.gradleProperty("delosdb.benchmark.serverRead.${reportLeaf}.widths")
+                                    .getOrElse(widthsDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.workloads':
+                            providers.gradleProperty("delosdb.benchmark.serverRead.${reportLeaf}.workloads")
+                                    .getOrElse(workloadsDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient':
+                            providers.gradleProperty(
+                                    "delosdb.benchmark.serverRead.${reportLeaf}.transactionsPerClient")
+                                    .getOrElse(transactionsPerClientDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient':
+                            providers.gradleProperty(
+                                    "delosdb.benchmark.serverRead.${reportLeaf}.rangeScanTargetRowsPerClient")
+                                    .getOrElse(rangeRowsDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient':
+                            providers.gradleProperty(
+                                    "delosdb.benchmark.serverRead.${reportLeaf}.rangeScanMinQueriesPerClient")
+                                    .getOrElse(rangeMinQueriesDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient':
+                            providers.gradleProperty(
+                                    "delosdb.benchmark.serverRead.${reportLeaf}.rangeScanMaxQueriesPerClient")
+                                    .getOrElse(rangeMaxQueriesDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.payload':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.payload').getOrElse('128'),
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.fixtureBatch').getOrElse('100'),
+                    'delosdb.benchmark.crossEngineConcurrency.warmups':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.warmups').getOrElse('2'),
+                    'delosdb.benchmark.crossEngineConcurrency.iterations':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.iterations').getOrElse('3'),
+                    'delosdb.benchmark.crossEngineConcurrency.runs':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.runs').getOrElse('4'),
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.caseTimeoutSeconds')
+                                    .getOrElse('180'),
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.workerTimeoutSeconds')
+                                    .getOrElse('3600'),
+                    'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.startupTimeoutSeconds')
+                                    .getOrElse('120'),
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap':
+                            providers.gradleProperty('delosdb.benchmark.serverRead.childHeap').getOrElse('1g')
+            ])
+        }
+    }
+}
+
+registerDelosServerReadBenchmark(
+        'runDelosJdbcServerSimpleIndexedReads',
+        'Compares prepared primary-key reads across Delos Heap/MVCC DRDA, Derby Network Server, PostgreSQL, MariaDB, and Firebird.',
+        'simple-indexed-reads',
+        'simple-indexed-reads',
+        '1,2,4,8',
+        '1,10',
+        'PRIMARY_KEY_READ_HOT,PRIMARY_KEY_READ_DISJOINT',
+        '200',
+        '1000000',
+        '100',
+        '10000')
+
+registerDelosServerReadBenchmark(
+        'runDelosJdbcServerRangeIndexScans',
+        'Compares single-client ordered primary-key range/index scans across Delos Heap/MVCC DRDA, Derby Network Server, PostgreSQL, MariaDB, and Firebird.',
+        'range-index-scans',
+        'range-index-scans',
+        '1',
+        '10',
+        'RANGE_SCAN_INDEX_ONLY_100,RANGE_SCAN_100,RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000,RANGE_SCAN_FULL',
+        '50',
+        '1000000',
+        '100',
+        '10000')
+
+tasks.named('runDelosJdbcServerRangeIndexScans') {
+    mustRunAfter tasks.named('runDelosJdbcServerSimpleIndexedReads')
+}
+
+tasks.register('runDelosJdbcServerReadComparison') {
+    group = 'benchmark'
+    description = 'Runs server-mode simple indexed reads and range/index scans across Delos Heap/MVCC, Derby, PostgreSQL, MariaDB, and Firebird.'
+    dependsOn tasks.named('runDelosJdbcServerSimpleIndexedReads'),
+            tasks.named('runDelosJdbcServerRangeIndexScans')
+    doLast {
+        logger.lifecycle('Server read comparison PASS: inspect simple-indexed-reads and range-index-scans reports.')
     }
 }
 
