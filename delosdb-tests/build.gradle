@@ -1077,6 +1077,136 @@ tasks.register('runDelosJdbcRangeScanBaseline', JavaExec) {
 
 
 
+// Performance modernization workload 2 diagnostic: attribute the steady-state
+// range-scan CPU/allocation path after the five-engine baseline has established
+// where the curves diverge. JFR-enabled throughput is diagnostic only.
+def rangeScanJfrRoot = 'reports/delosdb/benchmarks/range-scan-jfr-attribution'
+def rangeScanJfrProfiles = [
+        range100 : 'RANGE_SCAN_100',
+        range1000: 'RANGE_SCAN_1000'
+]
+
+def rangeScanJfrTasks = []
+rangeScanJfrProfiles.each { suffix, workload ->
+    def taskName = "runDelosJdbcRangeScanJfr${suffix.capitalize()}"
+    rangeScanJfrTasks.add(taskName)
+    tasks.register(taskName, JavaExec) { task ->
+        group = 'benchmark'
+        description = "Profiles ${workload} for Delos heap/MVCC and upstream Derby with JFR."
+        dependsOn tasks.named('compileTestJava'), ':jars'
+
+        task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        task.classpath = rootProject.files(derbyTestsClassDir)
+        task.outputs.upToDateWhen { false }
+        task.outputs.dir(rootProject.layout.buildDirectory.dir("${rangeScanJfrRoot}/${suffix}"))
+
+        task.doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Range-scan JFR attribution requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${rangeScanJfrRoot}/${suffix}").get().asFile
+            File databaseRoot = rootProject.layout.buildDirectory
+                    .dir("tmp/delos-jdbc-range-scan-jfr-${suffix}").get().asFile
+            project.delete(reportDir)
+            project.delete(databaseRoot)
+            reportDir.mkdirs()
+            databaseRoot.mkdirs()
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            task.systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                            upstreamDerbyBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap,delos_mvcc,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.profileTargets':
+                            'delos_heap,delos_mvcc,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': workload,
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': providers.gradleProperty(
+                            'delosdb.benchmark.rangeScanJfr.targetRowsPerClient').getOrElse('3000000'),
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '30000',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+
+        task.doLast {
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${rangeScanJfrRoot}/${suffix}").get().asFile
+            File profileDir = new File(reportDir, 'profiles')
+            def recordings = profileDir.isDirectory()
+                    ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }.sort { it.name }
+                    : []
+            int expectedRecordings = 3 * 4
+            if (recordings.size() != expectedRecordings) {
+                throw new GradleException(
+                        "${workload}: expected ${expectedRecordings} JFR recordings but found ${recordings.size()}")
+            }
+            File viewDir = new File(reportDir, 'jfr-views')
+            viewDir.mkdirs()
+            File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+            ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+                recordings.each { recording ->
+                    def execOutput = providers.exec {
+                        commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                                '--cell-height', '40', view, recording.absolutePath
+                        ignoreExitValue = true
+                    }
+                    def result = execOutput.result.get()
+                    def output = execOutput.standardOutput.asText.get()
+                    def error = execOutput.standardError.asText.get()
+                    if (result.exitValue != 0) {
+                        throw new GradleException(
+                                "${workload}: jfr view ${view} failed for ${recording.name}: ${error.trim()}")
+                    }
+                    new File(viewDir, recording.name.replace('.jfr', "-${view}.txt"))
+                            .setText(output, 'UTF-8')
+                }
+            }
+            new File(reportDir, 'PROFILE-NOTES.txt').setText(
+                    "Workload=${workload}\n" +
+                            'Targets=delos_heap,delos_mvcc,upstream_derby\n' +
+                            'Clients=1\n' +
+                            'JFR settings=profile; stackdepth=256\n' +
+                            'Interpretation=CPU/allocation/contention attribution only; JFR-enabled throughput is not acceptance throughput.\n',
+                    'UTF-8')
+        }
+    }
+}
+
+tasks.register('runDelosJdbcRangeScanJfrAttribution') {
+    group = 'benchmark'
+    description = 'Captures RANGE_SCAN_100 and RANGE_SCAN_1000 JFR attribution for Delos heap/MVCC and upstream Derby.'
+    dependsOn rangeScanJfrTasks.collect { tasks.named(it) }
+}
+
+
 // Gate 1 diagnostic: localize the inherited Derby-family 2->4 reader cliff before profiling.
 tasks.register('runDelosJdbcReadConcurrencyDecomposition', JavaExec) {
     group = 'benchmark'

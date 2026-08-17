@@ -152,13 +152,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + leaseSlots);
                 }
             }
-            if (Boolean.getBoolean(PREFIX + "profileDelosMvccWorkers")) {
+            if (shouldProfileWorker(target)) {
                 Path profileDirectory = options.reportDirectory().resolve("profiles");
                 Files.createDirectories(profileDirectory);
                 Path recording = profileDirectory.resolve(String.format(
                         Locale.ROOT, "%02d-%s.jfr", run, target.id()));
+                if (!System.getProperty(PREFIX + "profileTargets", "").isBlank()) {
+                    command.add("-XX:FlightRecorderOptions=stackdepth=256");
+                }
                 command.add("-XX:StartFlightRecording=filename=" + recording
-                        + ",settings=profile,dumponexit=true");
+                        + ",settings=profile,dumponexit=true,maxsize=512m");
             }
         }
         if (target == Target.SQLITE) {
@@ -228,6 +231,19 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean waitForUnbounded(Process process) throws InterruptedException {
         process.waitFor();
         return true;
+    }
+
+    private static boolean shouldProfileWorker(Target target) {
+        String configuredTargets = System.getProperty(PREFIX + "profileTargets", "").trim();
+        if (!configuredTargets.isEmpty()) {
+            for (String configured : configuredTargets.split(",")) {
+                if (target.id().equalsIgnoreCase(configured.trim())) {
+                    return true;
+                }
+            }
+        }
+        return target == Target.DELOS_MVCC
+                && Boolean.getBoolean(PREFIX + "profileDelosMvccWorkers");
     }
 
     private static void addProperty(List<String> command, String name, Object value) {
