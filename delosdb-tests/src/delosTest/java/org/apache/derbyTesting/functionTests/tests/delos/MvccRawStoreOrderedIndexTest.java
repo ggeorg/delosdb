@@ -224,77 +224,98 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
     public void testCoveringCandidateUsesVisibleHeadAndFallsBackForChangedHead()
             throws Exception {
         String database = databaseName("mvcc-raw-store-covering-index");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection,
-                    "create table covering_t (id int primary key, category int, "
-                            + "payload varchar(600)) using delos_mvcc");
-            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "COVERING_T", 1, 0);
-            executeUpdate(connection,
-                    "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
-            executeUpdate(connection,
-                    "insert into covering_t values (2, 7, '" + "y".repeat(500) + "')");
-            connection.commit();
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table covering_t (id int primary key, category int, "
+                                + "payload varchar(600)) using delos_mvcc");
+                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "COVERING_T", 1, 0);
+                executeUpdate(setup,
+                        "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
+                executeUpdate(setup,
+                        "insert into covering_t values (2, 7, '" + "y".repeat(500) + "')");
+                setup.commit();
+            }
 
-            assertCoveringIndexedRows(connection,
-                    "select id from covering_t where id = 2",
-                    "2");
-            assertCoveringIndexedRows(connection,
-                    "select category from covering_t where category = 7",
-                    "7",
-                    "7");
-            String coveringStatistics = assertCoveringIndexedRows(connection,
-                    "select count(*) from covering_t where category = 7",
-                    "2");
-            assertScanMetric(coveringStatistics, "mvccOrderedCandidates", 2L);
-            assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
-            assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
-            assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 1L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryPageBatchCandidates", 2L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryPageReuseHits", 1L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);
-            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
-            assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 0L);
-            assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 0L);
-            assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
-            assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
-            assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
-            assertNonCoveringIndexedRows(connection,
-                    "select id, category from covering_t where category = 7 order by id",
-                    "1|7",
-                    "2|7");
+            // The permanent current-row architecture publishes transient anchors at commit.
+            // Reopen once so this test still proves the colder directory-summary covering path
+            // rather than accidentally asserting against the accepted warm-anchor fast path.
+            shutdownDatabase(database);
+            try (Connection connection = openDatabase(database, false)) {
+                connection.setAutoCommit(false);
+                String coveringStatistics = assertCoveringIndexedRows(connection,
+                        "select count(*) from covering_t where category = 7",
+                        "2");
+                assertScanMetric(coveringStatistics, "mvccOrderedCandidates", 2L);
+                assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
+                assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
+                assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 1L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryPageBatchCandidates", 2L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryPageReuseHits", 1L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);
+                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
+                assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 0L);
+                assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 0L);
+                assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
+                assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
+                assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
 
-            executeUpdate(connection,
-                    "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
-            connection.commit();
-            assertNonCoveringIndexedRows(connection,
-                    "select category from covering_t where category = 7",
-                    "7",
-                    "7");
+                String currentIdStatistics = assertNonCoveringIndexedRows(connection,
+                        "select id from covering_t where id = 2",
+                        "2");
+                assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorChecks", 1L);
+                assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorHits", 1L);
+                assertScanMetric(currentIdStatistics, "mvccDirectoryPageAcquisitions", 0L);
 
-            executeUpdate(connection,
-                    "update covering_t set category = 9 where id = 2");
-            connection.commit();
-            assertCoveringIndexedRows(connection,
-                    "select category from covering_t where category = 9",
-                    "9");
+                String currentCategoryStatistics = assertNonCoveringIndexedRows(connection,
+                        "select category from covering_t where category = 7",
+                        "7",
+                        "7");
+                assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorChecks", 2L);
+                assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorHits", 2L);
+                assertScanMetric(currentCategoryStatistics, "mvccDirectoryPageAcquisitions", 0L);
 
-            executeUpdate(connection, "delete from covering_t where id = 1");
-            connection.commit();
-            assertNonCoveringIndexedRows(connection,
-                    "select category from covering_t where category = 7");
-            connection.commit();
+                assertNonCoveringIndexedRows(connection,
+                        "select id, category from covering_t where category = 7 order by id",
+                        "1|7",
+                        "2|7");
+
+                executeUpdate(connection,
+                        "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
+                connection.commit();
+                assertNonCoveringIndexedRows(connection,
+                        "select category from covering_t where category = 7",
+                        "7",
+                        "7");
+
+                executeUpdate(connection,
+                        "update covering_t set category = 9 where id = 2");
+                connection.commit();
+                String changedHeadStatistics = assertNonCoveringIndexedRows(connection,
+                        "select category from covering_t where category = 9",
+                        "9");
+                assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
+                assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
+
+                executeUpdate(connection, "delete from covering_t where id = 1");
+                connection.commit();
+                assertNonCoveringIndexedRows(connection,
+                        "select category from covering_t where category = 7");
+                connection.commit();
+            }
+            shutdownDatabase(database);
         }
-        shutdownDatabase(database);
     }
 
     public void testCoveringCandidateFallsBackForHistoricalSnapshot() throws Exception {
         String database = databaseName("mvcc-raw-store-covering-snapshot");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -307,6 +328,9 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 setup.commit();
             }
 
+            // Start this proof without the transient anchor published by fixture commit so the
+            // first read exercises the directory-head covering authority.
+            shutdownDatabase(database);
             try (Connection historical = openDatabase(database, false);
                  Connection writer = openDatabase(database, false)) {
                 historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
@@ -320,13 +344,20 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                         "update covering_snapshot_t set category = 9 where id = 1");
                 writer.commit();
 
-                assertNonCoveringIndexedRows(historical,
+                String historicalStatistics = assertNonCoveringIndexedRows(historical,
                         "select category from covering_snapshot_t where category = 7",
                         "7");
+                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorChecks", 1L);
+                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorHits", 0L);
+                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
                 historical.commit();
-                assertCoveringIndexedRows(historical,
+
+                String currentStatistics = assertNonCoveringIndexedRows(historical,
                         "select category from covering_snapshot_t where category = 9",
                         "9");
+                assertScanMetric(currentStatistics, "mvccCurrentRowAnchorChecks", 1L);
+                assertScanMetric(currentStatistics, "mvccCurrentRowAnchorHits", 1L);
+                assertScanMetric(currentStatistics, "mvccDirectoryPageAcquisitions", 0L);
                 historical.commit();
             }
             shutdownDatabase(database);
@@ -337,6 +368,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
             throws Exception {
         String database = databaseName("mvcc-raw-store-directory-head-summary");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
+            assertFalse(Boolean.getBoolean(BOUNDED_INDEXED_SCAN_PROPERTY));
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection,
@@ -371,25 +403,35 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 executeUpdate(writer,
                         "update head_summary_t set category = 9 where id = 1");
 
-                assertNonCoveringIndexedRows(reader,
+                String committedHeadStatistics = assertNonCoveringIndexedRows(reader,
                         "select category from head_summary_t where category = 7",
                         "7");
+                assertScanMetric(
+                        committedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
+                assertScanMetric(
+                        committedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
+
                 String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
                         "select category from head_summary_t where category = 9");
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
+                        otherTransactionStatistics, "mvccCurrentRowAnchorChecks", 1L);
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryHits", 0L);
+                        otherTransactionStatistics, "mvccCurrentRowAnchorHits", 1L);
                 assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryFallbacks", 1L);
+                        otherTransactionStatistics, "mvccCurrentVersionReadImageHits", 1L);
+                assertScanMetric(
+                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 0L);
+                assertScanMetric(otherTransactionStatistics, "mvccVersionPageAcquisitions", 0L);
 
                 writer.rollback();
                 reader.commit();
-                String restoredStatistics = assertCoveringIndexedRows(reader,
+                String restoredStatistics = assertNonCoveringIndexedRows(reader,
                         "select category from head_summary_t where category = 7",
                         "7");
                 assertScanMetric(
-                        restoredStatistics, "mvccDirectoryHeadSummaryHits", 1L);
+                        restoredStatistics, "mvccCurrentRowAnchorHits", 1L);
+                assertScanMetric(
+                        restoredStatistics, "mvccCurrentVersionReadImageHits", 1L);
                 assertScanMetric(restoredStatistics, "mvccVersionPageAcquisitions", 0L);
                 reader.commit();
             }
