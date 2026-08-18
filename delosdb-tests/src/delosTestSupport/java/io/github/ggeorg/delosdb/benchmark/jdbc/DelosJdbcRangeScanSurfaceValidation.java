@@ -78,9 +78,60 @@ public final class DelosJdbcRangeScanSurfaceValidation {
         }
         if (provider == DelosBenchmarkProvider.HEAP) {
             validateCoveringRangeProxy(connection, scenario.tableName(), semantics, config.rowCount());
+        } else if (provider == DelosBenchmarkProvider.MVCC) {
+            validateMvccNaturalOrder(connection, scenario.tableName(), semantics, config.rowCount());
         }
         connection.rollback();
         return Map.copyOf(semantics);
+    }
+
+    private static void validateMvccNaturalOrder(
+            Connection connection,
+            String table,
+            Map<Integer, RangeSemantic> baselineSemantics,
+            int rowCount) throws Exception {
+        int rangeRows = Math.min(500, rowCount);
+        int start = 1 + (rowCount - rangeRows) / 3;
+        int endExclusive = start + rangeRows;
+        RangeSemantic expected = baselineSemantics.get(rangeRows);
+        if (expected == null) {
+            throw new IllegalStateException(
+                    "Missing MVCC baseline semantics for natural-order range=" + rangeRows);
+        }
+
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("call syscs_util.syscs_set_runtimestatistics(1)");
+        }
+        RangeSemantic ordered = executeRange(connection, table, start, endExclusive, false);
+        String orderedStatistics = runtimeStatistics(connection);
+
+        String naturalSql = "select id, quantity from " + table
+                + " where id >= ? and id < ?";
+        RangeSemantic natural = executeRangeSql(
+                connection, naturalSql, start, endExclusive, false);
+        String naturalStatistics = runtimeStatistics(connection);
+
+        if (!expected.equals(ordered) || !expected.equals(natural)) {
+            throw new IllegalStateException(
+                    "MVCC natural ordered-index range changed semantics: expected=" + expected
+                            + ", ordered=" + ordered + ", natural=" + natural);
+        }
+        if (!orderedStatistics.contains("delos_mvcc_rawstore_ordered_index")
+                || !naturalStatistics.contains("delos_mvcc_rawstore_ordered_index")) {
+            throw new IllegalStateException(
+                    "MVCC range did not use RawStore ordered index in both arms; ordered="
+                            + orderedStatistics + ", natural=" + naturalStatistics);
+        }
+        if (!orderedStatistics.contains("Sort ResultSet:")) {
+            throw new IllegalStateException(
+                    "MVCC ORDER BY range unexpectedly avoided the SQL sort; statistics="
+                            + orderedStatistics);
+        }
+        if (naturalStatistics.contains("Sort ResultSet:")) {
+            throw new IllegalStateException(
+                    "MVCC natural-order range unexpectedly used a SQL sort; statistics="
+                            + naturalStatistics);
+        }
     }
 
     private static void validateCoveringRangeProxy(

@@ -1946,6 +1946,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         rangeSql = "select id, quantity from " + table
                                 + " --DERBY-PROPERTIES index=" + rangeCoveringIndexName(table) + "\n"
                                 + " where id >= ? and id < ? order by id";
+                    } else if (workload.isMvccNaturalOrderRangeScan()) {
+                        rangeSql = "select id, quantity from " + table
+                                + " where id >= ? and id < ?";
                     } else {
                         rangeSql = "select id, quantity from " + table
                                 + " where id >= ? and id < ? order by id";
@@ -2866,6 +2869,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         RANGE_SCAN_INDEX_ONLY_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_COVERING_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         RANGE_SCAN_ROW_BEARING_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
+        RANGE_SCAN_MVCC_NATURAL_ORDER_1000(false, false, true, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -2905,7 +2909,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == RANGE_SCAN_INDEX_ONLY_100
                     || this == RANGE_SCAN_INDEX_ONLY_1000
                     || this == RANGE_SCAN_COVERING_1000
-                    || this == RANGE_SCAN_ROW_BEARING_1000;
+                    || this == RANGE_SCAN_ROW_BEARING_1000
+                    || this == RANGE_SCAN_MVCC_NATURAL_ORDER_1000;
         }
 
         boolean isIndexOnlyRangeScan() {
@@ -2921,6 +2926,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             return this == RANGE_SCAN_ROW_BEARING_1000;
         }
 
+        boolean isMvccNaturalOrderRangeScan() {
+            return this == RANGE_SCAN_MVCC_NATURAL_ORDER_1000;
+        }
+
         boolean usesFixtureQuantities() {
             return isPrimaryKeyRead() || isRangeScan();
         }
@@ -2931,7 +2940,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 case RANGE_SCAN_10 -> Math.min(10, rowCount);
                 case RANGE_SCAN_100, RANGE_SCAN_INDEX_ONLY_100 -> Math.min(100, rowCount);
                 case RANGE_SCAN_1000, RANGE_SCAN_INDEX_ONLY_1000, RANGE_SCAN_COVERING_1000,
-                        RANGE_SCAN_ROW_BEARING_1000 -> Math.min(1000, rowCount);
+                        RANGE_SCAN_ROW_BEARING_1000, RANGE_SCAN_MVCC_NATURAL_ORDER_1000 ->
+                        Math.min(1000, rowCount);
                 case RANGE_SCAN_FULL -> rowCount;
                 default -> throw new IllegalStateException("Not a range-scan workload: " + this);
             };
@@ -3388,6 +3398,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)) {
                 throw new IllegalArgumentException(
                         "row-bearing H2 comparison requires Delos Heap, upstream Derby, and H2: "
+                                + configuredTargets);
+            }
+            if (configuredWorkloads.stream().anyMatch(Workload::isMvccNaturalOrderRangeScan)
+                    && !configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS)) {
+                throw new IllegalArgumentException(
+                        "MVCC natural-order range diagnostic requires Delos MVCC only: "
                                 + configuredTargets);
             }
             int maxClients = clientValues().stream().mapToInt(Integer::intValue).max().orElseThrow();
