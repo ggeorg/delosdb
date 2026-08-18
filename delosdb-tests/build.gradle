@@ -3932,7 +3932,8 @@ def registerDelosServerReadBenchmark = {
     String transactionsPerClientDefault,
     String rangeRowsDefault,
     String rangeMinQueriesDefault,
-    String rangeMaxQueriesDefault ->
+    String rangeMaxQueriesDefault,
+    String h2RangeFetchSizeDefault ->
 
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
@@ -4046,6 +4047,10 @@ def registerDelosServerReadBenchmark = {
                             providers.gradleProperty(
                                     "delosdb.benchmark.serverRead.${reportLeaf}.rangeScanMaxQueriesPerClient")
                                     .getOrElse(rangeMaxQueriesDefault),
+                    'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize':
+                            providers.gradleProperty(
+                                    "delosdb.benchmark.serverRead.${reportLeaf}.h2RangeFetchSize")
+                                    .getOrElse(h2RangeFetchSizeDefault),
                     'delosdb.benchmark.crossEngineConcurrency.payload':
                             providers.gradleProperty('delosdb.benchmark.serverRead.payload').getOrElse('128'),
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch':
@@ -4083,7 +4088,8 @@ registerDelosServerReadBenchmark(
         '200',
         '1000000',
         '100',
-        '10000')
+        '10000',
+        '0')
 
 registerDelosServerReadBenchmark(
         'runDelosJdbcServerRangeIndexScans',
@@ -4096,6 +4102,21 @@ registerDelosServerReadBenchmark(
         '50',
         '1000000',
         '100',
+        '10000',
+        '0')
+
+registerDelosServerReadBenchmark(
+        'runDelosJdbcServerH2RangeFetchBoundary',
+        'Measures the H2 TCP large-result fetch boundary with fetch size 10000 while rerunning the unchanged six-server controls.',
+        'h2-range-fetch-boundary',
+        'h2-range-fetch-boundary',
+        '1',
+        '10',
+        'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000,RANGE_SCAN_FULL',
+        '50',
+        '1000000',
+        '100',
+        '10000',
         '10000')
 
 tasks.named('runDelosJdbcServerRangeIndexScans') {

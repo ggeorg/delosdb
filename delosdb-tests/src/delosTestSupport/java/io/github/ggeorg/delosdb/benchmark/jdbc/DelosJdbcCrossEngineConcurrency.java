@@ -214,6 +214,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "rangeScanTargetRowsPerClient", options.rangeScanTargetRowsPerClient());
         addProperty(command, "rangeScanMinQueriesPerClient", options.rangeScanMinQueriesPerClient());
         addProperty(command, "rangeScanMaxQueriesPerClient", options.rangeScanMaxQueriesPerClient());
+        addProperty(command, "h2RangeFetchSize", options.h2RangeFetchSize());
         addProperty(command, "payload", options.payload());
         addProperty(command, "fixtureBatch", options.fixtureBatch());
         addProperty(command, "warmups", options.warmups());
@@ -533,6 +534,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("PostgreSQL JDBC: ").append(options.postgresqlDriverVersion()).append('\n')
                 .append("MariaDB Connector/J: ").append(options.mariadbDriverVersion()).append('\n')
                 .append("H2 JDBC/TCP: ").append(options.h2DriverVersion()).append('\n')
+                .append("H2 range fetch size override: ").append(options.h2RangeFetchSize())
+                .append(" (0=driver default)\n")
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -1738,7 +1741,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     clients.add(new Client(
                             connection, clientTable, spec, updateId, readIds, expectedReadQuantities,
                             rangeStart, rangeEndExclusive, expectedRangeRows, expectedRangeFingerprint,
-                            options.target()));
+                            options.target(), options.h2RangeFetchSize()));
                 }
             } catch (SQLException failure) {
                 closeClients(failure);
@@ -1910,7 +1913,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int rangeEndExclusive,
                 int expectedRangeRows,
                 long expectedRangeFingerprint,
-                Target target)
+                Target target,
+                int h2RangeFetchSize)
                 throws SQLException {
             this.connection = connection;
             this.workload = spec.workload();
@@ -1947,6 +1951,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 + " where id >= ? and id < ? order by id";
                     }
                     localRangeRead = connection.prepareStatement(rangeSql);
+                    if (target == Target.H2_SERVER && h2RangeFetchSize > 0) {
+                        localRangeRead.setFetchSize(h2RangeFetchSize);
+                    }
                 } else if (workload.isValues()) {
                     localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isUpdate()) {
@@ -2596,6 +2603,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Range-scan query bounds per client/interval: ")
                 .append(options.rangeScanMinQueriesPerClient()).append("..").append(
                         options.rangeScanMaxQueriesPerClient()).append('\n')
+                .append("H2 range fetch size override: ").append(options.h2RangeFetchSize())
+                .append(" (0=driver default)\n")
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
@@ -3264,6 +3273,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             long rangeScanTargetRowsPerClient,
             int rangeScanMinQueriesPerClient,
             int rangeScanMaxQueriesPerClient,
+            int h2RangeFetchSize,
             int payload,
             int fixtureBatch,
             int warmups,
@@ -3324,6 +3334,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Long.parseLong(System.getProperty(PREFIX + "rangeScanTargetRowsPerClient", "1000000")),
                     Integer.parseInt(System.getProperty(PREFIX + "rangeScanMinQueriesPerClient", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "rangeScanMaxQueriesPerClient", "10000")),
+                    Integer.parseInt(System.getProperty(PREFIX + "h2RangeFetchSize", "0")),
                     Integer.parseInt(System.getProperty(PREFIX + "payload", "128")),
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "2")),
@@ -3390,6 +3401,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
                     || rangeScanTargetRowsPerClient < 1L || rangeScanMinQueriesPerClient < 1
                     || rangeScanMaxQueriesPerClient < rangeScanMinQueriesPerClient
+                    || h2RangeFetchSize < 0
                     || payload < 16 || fixtureBatch < 1 || warmups < 0
                     || iterations < 1 || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
                     || containerStartupTimeoutSeconds < 1) {
