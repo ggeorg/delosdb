@@ -869,6 +869,28 @@ tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
 }
 
 
+tasks.register('runDelosArchitectureFitnessSentinelMatrix', JavaExec) {
+    group = 'benchmark'
+    description = 'Freezes the compact 30-case sentinel surface for all 13 DelosDB architecture fitness families.'
+    dependsOn tasks.named('compileTestJava')
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessSentinelMatrix'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix'))
+
+    systemProperties([
+            'delosdb.benchmark.fitnessMatrix.projectDirectory':
+                    rootProject.projectDir.absolutePath,
+            'delosdb.benchmark.fitnessMatrix.reportDirectory':
+                    rootProject.layout.buildDirectory
+                            .dir('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix')
+                            .get().asFile.absolutePath
+    ])
+}
+
+
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
