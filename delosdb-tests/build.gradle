@@ -93,6 +93,8 @@ def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def mvccSnapshotLeaseDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java')
+def mvccCurrentRowTopologyTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -369,6 +371,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -423,6 +426,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     from(mvccSnapshotLeaseDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/mvcc'
+    }
+    from(mvccCurrentRowTopologyTestSupportSource) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     into rawStoreInternalTestSupportGeneratedSourceDir
@@ -13045,4 +13051,72 @@ tasks.register('runDelosJdbcRangeBulkFetchSweep') {
         logger.lifecycle(
                 'Range bulk-fetch sweep PASS: inspect range-bulk-fetch-sweep.csv before designing page-local index-to-base fetching.')
     }
+}
+
+
+// Stage 2 MVCC algorithm gate: compare the production ordered-index/version topology
+// with two RawStore-backed current-row-first leaf-stream designs below SQL. This is a
+// mechanism proof only: no production storage format, optimizer, or cache setting changes.
+def mvccCurrentRowTopologyReportRoot =
+        'reports/delosdb/benchmarks/mvcc-current-row-topology-mechanism'
+
+def configureMvccCurrentRowTopologyTask = { JavaExec task, boolean validationOnly ->
+    task.group = validationOnly ? 'verification' : 'benchmark'
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosMvccCurrentRowTopologyMechanism'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.outputs.upToDateWhen { false }
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!validationOnly && saneValue != 'false') {
+            throw new GradleException(
+                    'MVCC current-row topology mechanism proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir(validationOnly
+                        ? "${mvccCurrentRowTopologyReportRoot}/validation"
+                        : mvccCurrentRowTopologyReportRoot)
+                .get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir(validationOnly
+                        ? 'tmp/delos-mvcc-current-row-topology-validation'
+                        : 'tmp/delos-mvcc-current-row-topology-mechanism')
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.parentFile.mkdirs()
+
+        task.systemProperties([
+                'delosdb.benchmark.mvccCurrentRowTopology.database': databaseRoot.absolutePath,
+                'delosdb.benchmark.mvccCurrentRowTopology.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.mvccCurrentRowTopology.validationOnly': validationOnly.toString(),
+                'delosdb.benchmark.mvccCurrentRowTopology.rows': validationOnly ? '2000' : '10000',
+                'delosdb.benchmark.mvccCurrentRowTopology.updateRows': validationOnly ? '200' : '1000',
+                'delosdb.benchmark.mvccCurrentRowTopology.warmups': validationOnly ? '0' : '1',
+                'delosdb.benchmark.mvccCurrentRowTopology.iterations': validationOnly ? '1' : '2',
+                'delosdb.benchmark.mvccCurrentRowTopology.runs': validationOnly ? '1' : '4',
+                'delosdb.benchmark.mvccCurrentRowTopology.targetRows': validationOnly ? '200' : '250000',
+                // Give the production baseline enough resident capacity that this gate measures
+                // topology rather than the already-proven 4096-slot collision confound.
+                'delosdb.mvcc.currentRowReadCache.slots': '65536'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcMvccCurrentRowTopologyValidation', JavaExec) { task ->
+    task.description = 'Validates identical current/historical MVCC semantics across existing, anchor, and row-bearing RawStore topology algorithms.'
+    configureMvccCurrentRowTopologyTask(task, true)
+}
+
+tasks.register('runDelosJdbcMvccCurrentRowTopologyMechanism', JavaExec) { task ->
+    task.description = 'Benchmarks existing vs stable-anchor vs row-bearing-interval MVCC current-row algorithms below SQL.'
+    configureMvccCurrentRowTopologyTask(task, false)
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(mvccCurrentRowTopologyReportRoot))
 }
