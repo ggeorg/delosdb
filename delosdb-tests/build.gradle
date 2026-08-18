@@ -95,6 +95,8 @@ def mvccSnapshotLeaseDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java')
 def mvccCurrentRowTopologyTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java')
+def mvccRowBearingBTreeMechanismTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java')
 def rawStoreInternalTestSupportGeneratedSourceDir = layout.buildDirectory.dir(
         'generated/sources/raw-store-internal-test-support')
 def rawStoreInternalTestSupportClassDir = layout.buildDirectory.dir(
@@ -372,6 +374,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
         }
         resources.setSrcDirs([])
@@ -429,6 +432,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     from(mvccCurrentRowTopologyTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/mvcc'
+    }
+    from(mvccRowBearingBTreeMechanismTestSupportSource) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     into rawStoreInternalTestSupportGeneratedSourceDir
@@ -840,6 +846,28 @@ registerDelosFocusedTest(
 tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
+
+tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
+    group = 'benchmark'
+    description = 'Audits reusable benchmark assets for the frozen 13-family DelosDB architecture fitness matrix.'
+    dependsOn tasks.named('compileTestJava')
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessInventory'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/architecture-fitness-inventory'))
+
+    systemProperties([
+            'delosdb.benchmark.fitnessInventory.projectDirectory':
+                    rootProject.projectDir.absolutePath,
+            'delosdb.benchmark.fitnessInventory.reportDirectory':
+                    rootProject.layout.buildDirectory
+                            .dir('reports/delosdb/benchmarks/architecture-fitness-inventory')
+                            .get().asFile.absolutePath
+    ])
+}
+
 
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
@@ -13120,3 +13148,81 @@ tasks.register('runDelosJdbcMvccCurrentRowTopologyMechanism', JavaExec) { task -
     configureMvccCurrentRowTopologyTask(task, false)
     task.outputs.dir(rootProject.layout.buildDirectory.dir(mvccCurrentRowTopologyReportRoot))
 }
+
+// Stage 2 MVCC row-bearing maintenance gate. The prior leaf-stream mechanism selected
+// row-bearing current entries. This test-only persistent B-tree gate compares compact
+// replace-current maintenance with append/interval maintenance across INSERT, payload
+// UPDATE, primary-key UPDATE, DELETE, and DELETE/reinsert before any production format change.
+def mvccRowBearingBTreeMaintenanceReportRoot =
+        'reports/delosdb/benchmarks/mvcc-row-bearing-btree-maintenance'
+
+def configureMvccRowBearingBTreeMaintenanceTask = { JavaExec task, boolean validationOnly ->
+    task.group = validationOnly ? 'verification' : 'benchmark'
+    task.dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    task.mainClass =
+            'io.github.ggeorg.delosdb.benchmark.jdbc.DelosMvccRowBearingBTreeMaintenanceMechanism'
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    task.outputs.upToDateWhen { false }
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!validationOnly && saneValue != 'false') {
+            throw new GradleException(
+                    'MVCC row-bearing B-tree maintenance proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir(validationOnly
+                        ? "${mvccRowBearingBTreeMaintenanceReportRoot}/validation"
+                        : mvccRowBearingBTreeMaintenanceReportRoot)
+                .get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir(validationOnly
+                        ? 'tmp/delos-mvcc-row-bearing-btree-maintenance-validation'
+                        : 'tmp/delos-mvcc-row-bearing-btree-maintenance')
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.parentFile.mkdirs()
+
+        task.systemProperties([
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.database':
+                        databaseRoot.absolutePath,
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.reportDirectory':
+                        reportDir.absolutePath,
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.validationOnly':
+                        validationOnly.toString(),
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.rows':
+                        validationOnly ? '2000' : '10000',
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.mutationRows':
+                        validationOnly ? '200' : '1000',
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.runs':
+                        validationOnly ? '1' : '4',
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.warmups':
+                        validationOnly ? '0' : '1',
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.readIterations':
+                        validationOnly ? '1' : '2',
+                'delosdb.benchmark.mvccRowBearingBTreeMaintenance.readTargetRows':
+                        validationOnly ? '1000' : '250000',
+                // Keep the production read baseline out of the known 4096-slot collision regime.
+                'delosdb.mvcc.currentRowReadCache.slots': '65536'
+        ])
+    }
+}
+
+tasks.register('runDelosJdbcMvccRowBearingBTreeMaintenanceValidation', JavaExec) { task ->
+    task.description = 'Validates row-bearing B-tree INSERT/UPDATE/key-change/DELETE/reinsert semantics across replace-current and append-interval maintenance.'
+    configureMvccRowBearingBTreeMaintenanceTask(task, true)
+}
+
+tasks.register('runDelosJdbcMvccRowBearingBTreeMaintenanceMechanism', JavaExec) { task ->
+    task.description = 'Benchmarks row-bearing B-tree write maintenance and post-update current/historical reads below SQL.'
+    configureMvccRowBearingBTreeMaintenanceTask(task, false)
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(mvccRowBearingBTreeMaintenanceReportRoot))
+}
+
