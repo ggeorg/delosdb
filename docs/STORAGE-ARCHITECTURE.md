@@ -30,6 +30,11 @@ CREATE TABLE t (id INTEGER PRIMARY KEY, value VARCHAR(100));
 It preserves Derby heap/raw-store formats, row locations, logging, locking, recovery, catalog
 behavior, and compatibility with supported existing databases.
 
+Performance modernization does not weaken this role: Heap may change algorithms, caching, scan
+machinery, code generation, batching, and other implementation details, but an accepted Heap change
+must not require an incompatible physical Derby database format. Delos-native physical changes belong
+in `delos_mvcc` when they cannot satisfy that constraint.
+
 ## `delos_mvcc`
 
 The MVCC access method is selected explicitly:
@@ -50,6 +55,11 @@ Derby statement and result-set execution
 
 There is no external `delos_mvcc` directory, page-volume store, second WAL, independent checkpoint
 stack, sidecar recovery authority, or dual-write persistence path.
+
+Unlike Heap, `delos_mvcc` has no Derby physical-format compatibility requirement. Its RawStore-backed
+row, ordered-index, and version topology may evolve independently when benchmark, profiling, recovery,
+and concurrency evidence supports the change. That freedom is confined below the shared physical-access
+boundary; SQL semantics and higher execution machinery remain shared with Heap.
 
 ### Logical MVCC authority
 

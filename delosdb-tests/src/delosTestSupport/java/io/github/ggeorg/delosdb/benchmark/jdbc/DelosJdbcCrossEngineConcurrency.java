@@ -52,9 +52,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.DELOS_HEAP_DRDA,
             Target.DELOS_MVCC_DRDA,
             Target.UPSTREAM_DERBY_DRDA,
+            Target.H2_SERVER,
             Target.POSTGRESQL,
-            Target.MARIADB,
-            Target.FIREBIRD);
+            Target.MARIADB);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
@@ -363,6 +363,20 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "org.apache.derby.drda.NetworkServerControl", "start",
                         "-h", "0.0.0.0", "-p", Integer.toString(target.containerPort())));
             }
+            case H2_SERVER -> {
+                command.add("--mount");
+                command.add("type=bind,src=" + options.h2ServerJar().toAbsolutePath().normalize()
+                        + ",dst=/opt/h2/h2.jar,readonly");
+                command.add("--workdir");
+                command.add("/var/lib/h2");
+                command.add(target.containerImage(options));
+                command.addAll(List.of(
+                        "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
+                        "-XX:+AlwaysPreTouch", "-cp", "/opt/h2/h2.jar",
+                        "org.h2.tools.Server", "-tcp",
+                        "-tcpPort", Integer.toString(target.containerPort()),
+                        "-tcpAllowOthers", "-baseDir", "/var/lib/h2", "-ifNotExists"));
+            }
             case POSTGRESQL -> {
                 command.addAll(List.of(
                         "-e", "POSTGRES_USER=delosbench",
@@ -485,8 +499,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         StringBuilder out = new StringBuilder()
                 .append("DelosDB server-container concurrency comparison manifest\n")
                 .append("Captured: ").append(Instant.now()).append('\n')
-                .append("Question: compare DelosDB DRDA heap/MVCC and upstream Derby Network Server "
-                        + "with PostgreSQL, MariaDB, and Firebird through equivalent TCP/JDBC boundaries.\n")
+                .append("Question: compare DelosDB DRDA heap/MVCC, upstream Derby Network Server, and H2 TCP Server "
+                        + "with PostgreSQL and MariaDB through equivalent TCP/JDBC boundaries.\n")
                 .append("Targets: ").append(options.targets()).append('\n')
                 .append("Project version: ").append(options.projectVersion()).append('\n')
                 .append("Client JDK: ").append(System.getProperty("java.runtime.version")).append('\n')
@@ -518,7 +532,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Upstream Derby version: ").append(options.upstreamDerbyVersion()).append('\n')
                 .append("PostgreSQL JDBC: ").append(options.postgresqlDriverVersion()).append('\n')
                 .append("MariaDB Connector/J: ").append(options.mariadbDriverVersion()).append('\n')
-                .append("Firebird Jaybird: ").append(options.firebirdDriverVersion()).append('\n')
+                .append("H2 JDBC/TCP: ").append(options.h2DriverVersion()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -538,6 +552,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 out.append("Upstream Derby server artifact: ")
                         .append(file.getFileName()).append(" sha256=").append(sha256(file)).append('\n');
             }
+        }
+        if (Files.isRegularFile(options.h2ServerJar())) {
+            out.append("H2 server artifact: ").append(options.h2ServerJar().getFileName())
+                    .append(" sha256=").append(sha256(options.h2ServerJar())).append('\n');
         }
         Files.writeString(options.reportDirectory().resolve("server-container-manifest.txt"),
                 out.toString(), StandardCharsets.UTF_8);
@@ -2298,29 +2316,29 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (options.containerMode()) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,delosHeapDrdaMedianTps,"
-                            + "delosMvccDrdaMedianTps,upstreamDerbyDrdaMedianTps,postgresqlMedianTps,"
-                            + "mariadbMedianTps,firebirdMedianTps,"
+                            + "delosMvccDrdaMedianTps,upstreamDerbyDrdaMedianTps,h2ServerMedianTps,"
+                            + "postgresqlMedianTps,mariadbMedianTps,"
                             + "delosHeapToDerby,delosMvccToDerby,"
+                            + "delosHeapToH2Server,delosMvccToH2Server,"
                             + "delosHeapToPostgresql,delosMvccToPostgresql,"
-                            + "delosHeapToMariadb,delosMvccToMariadb,"
-                            + "delosHeapToFirebird,delosMvccToFirebird\n");
+                            + "delosHeapToMariadb,delosMvccToMariadb\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
                 ShapeKey key = entry.getKey();
                 EnumMap<Target, Double> values = entry.getValue();
                 double heap = require(values, Target.DELOS_HEAP_DRDA, key);
                 double mvcc = require(values, Target.DELOS_MVCC_DRDA, key);
                 double derby = require(values, Target.UPSTREAM_DERBY_DRDA, key);
+                double h2Server = require(values, Target.H2_SERVER, key);
                 double postgres = require(values, Target.POSTGRESQL, key);
                 double mariadb = require(values, Target.MARIADB, key);
-                double firebird = require(values, Target.FIREBIRD, key);
                 out.append(key.csv()).append(',')
                         .append(format(heap)).append(',').append(format(mvcc)).append(',')
-                        .append(format(derby)).append(',').append(format(postgres)).append(',')
-                        .append(format(mariadb)).append(',').append(format(firebird)).append(',')
+                        .append(format(derby)).append(',').append(format(h2Server)).append(',')
+                        .append(format(postgres)).append(',').append(format(mariadb)).append(',')
                         .append(format(heap / derby)).append(',').append(format(mvcc / derby)).append(',')
+                        .append(format(heap / h2Server)).append(',').append(format(mvcc / h2Server)).append(',')
                         .append(format(heap / postgres)).append(',').append(format(mvcc / postgres)).append(',')
-                        .append(format(heap / mariadb)).append(',').append(format(mvcc / mariadb)).append(',')
-                        .append(format(heap / firebird)).append(',').append(format(mvcc / firebird)).append('\n');
+                        .append(format(heap / mariadb)).append(',').append(format(mvcc / mariadb)).append('\n');
             }
         } else if (options.targetValues().equals(MVCC_ONLY_DIAGNOSTIC_TARGETS)) {
             out = new StringBuilder(
@@ -2944,6 +2962,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         DELOS_HEAP_DRDA("delos_heap_drda", ""),
         DELOS_MVCC_DRDA("delos_mvcc_drda", " using delos_mvcc"),
         UPSTREAM_DERBY_DRDA("upstream_derby_drda", ""),
+        H2_SERVER("h2_server", ""),
         POSTGRESQL("postgresql", ""),
         MARIADB("mariadb", ""),
         FIREBIRD("firebird", "");
@@ -2970,13 +2989,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         boolean isContainer() {
             return this == DELOS_HEAP_DRDA || this == DELOS_MVCC_DRDA
-                    || this == UPSTREAM_DERBY_DRDA
+                    || this == UPSTREAM_DERBY_DRDA || this == H2_SERVER
                     || this == POSTGRESQL || this == MARIADB || this == FIREBIRD;
         }
 
         int containerPort() {
             return switch (this) {
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA, UPSTREAM_DERBY_DRDA -> 1527;
+                case H2_SERVER -> 9092;
                 case POSTGRESQL -> 5432;
                 case MARIADB -> 3306;
                 case FIREBIRD -> 3050;
@@ -2988,6 +3008,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             return switch (this) {
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> options.delosServerImage();
                 case UPSTREAM_DERBY_DRDA -> options.upstreamDerbyServerImage();
+                case H2_SERVER -> options.delosServerImage();
                 case POSTGRESQL -> options.postgresqlImage();
                 case MARIADB -> options.mariadbImage();
                 case FIREBIRD -> options.firebirdImage();
@@ -2999,6 +3020,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             return switch (this) {
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA, UPSTREAM_DERBY_DRDA -> new ServerEndpoint(
                         "jdbc:derby://127.0.0.1:" + hostPort + "/delosbench;create=true", "", "");
+                case H2_SERVER -> new ServerEndpoint(
+                        "jdbc:h2:tcp://127.0.0.1:" + hostPort + "/delosbench", "sa", "");
                 case POSTGRESQL -> new ServerEndpoint(
                         "jdbc:postgresql://127.0.0.1:" + hostPort + "/delosbench", "delosbench", "delosbench");
                 case MARIADB -> new ServerEndpoint(
@@ -3214,6 +3237,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String targets,
             Path delosRuntimeDirectory,
             Path upstreamDerbyServerRuntimeDirectory,
+            Path h2ServerJar,
             String delosServerImage,
             String upstreamDerbyServerImage,
             String postgresqlImage,
@@ -3223,6 +3247,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             String postgresqlDriverVersion,
             String mariadbDriverVersion,
             String firebirdDriverVersion,
+            String h2DriverVersion,
             String projectVersion,
             String remoteJdbcUrl,
             String remoteUser,
@@ -3269,6 +3294,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     path(PREFIX + "delosRuntimeDirectory", "build/libs"),
                     path(PREFIX + "upstreamDerbyServerRuntimeDirectory",
                             "build/tmp/upstream-derby-network-server-runtime"),
+                    path(PREFIX + "h2ServerJar", "build/tmp/h2-server/h2.jar"),
                     System.getProperty(PREFIX + "delosServerImage", "eclipse-temurin:25.0.3_9-jre-noble"),
                     System.getProperty(PREFIX + "upstreamDerbyServerImage",
                             "eclipse-temurin:25.0.3_9-jre-noble"),
@@ -3279,6 +3305,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "postgresqlDriverVersion", "42.7.13"),
                     System.getProperty(PREFIX + "mariadbDriverVersion", "3.5.10"),
                     System.getProperty(PREFIX + "firebirdDriverVersion", "6.0.5"),
+                    System.getProperty(PREFIX + "h2DriverVersion", "2.4.240"),
                     System.getProperty(PREFIX + "projectVersion", "unknown"),
                     System.getProperty(PREFIX + "remoteJdbcUrl", ""),
                     System.getProperty(PREFIX + "remoteUser", ""),
@@ -3380,20 +3407,27 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
-                if (!Files.isDirectory(delosRuntimeDirectory)) {
-                    throw new IllegalArgumentException("Delos runtime directory does not exist: "
-                            + delosRuntimeDirectory);
-                }
-                if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
-                    throw new IllegalArgumentException("Upstream Derby server runtime directory does not exist: "
-                            + upstreamDerbyServerRuntimeDirectory);
-                }
                 if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
-                        || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()
-                        || firebirdClasspath.isBlank()
-                        || delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()
-                        || postgresqlImage.isBlank() || mariadbImage.isBlank() || firebirdImage.isBlank()) {
-                    throw new IllegalArgumentException("Server benchmark classpaths and images are required");
+                        || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
+                    throw new IllegalArgumentException("Server benchmark client classpaths are required");
+                }
+                if (target == null) {
+                    if (!Files.isDirectory(delosRuntimeDirectory)) {
+                        throw new IllegalArgumentException("Delos runtime directory does not exist: "
+                                + delosRuntimeDirectory);
+                    }
+                    if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
+                        throw new IllegalArgumentException(
+                                "Upstream Derby server runtime directory does not exist: "
+                                        + upstreamDerbyServerRuntimeDirectory);
+                    }
+                    if (!Files.isRegularFile(h2ServerJar)) {
+                        throw new IllegalArgumentException("H2 server jar does not exist: " + h2ServerJar);
+                    }
+                    if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()
+                            || postgresqlImage.isBlank() || mariadbImage.isBlank()) {
+                        throw new IllegalArgumentException("Server benchmark images are required");
+                    }
                 }
             }
             if (target != null) {
@@ -3483,6 +3517,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 case SQLITE -> sqliteClasspath;
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> delosClientClasspath;
                 case UPSTREAM_DERBY_DRDA -> upstreamDerbyClientClasspath;
+                case H2_SERVER -> h2Classpath;
                 case POSTGRESQL -> postgresqlClasspath;
                 case MARIADB -> mariadbClasspath;
                 case FIREBIRD -> firebirdClasspath;

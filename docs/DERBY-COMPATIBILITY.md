@@ -11,6 +11,21 @@ old.
 
 ## Protected boundaries
 
+### Storage-mode compatibility rule
+
+Derby physical/database-file compatibility is a Heap contract, not a global DelosDB storage constraint.
+DelosDB improves both storage modes aggressively, but a performance change that requires breaking
+Apache Derby physical compatibility must not be applied to Heap. Heap remains the compatibility and
+migration anchor.
+
+`delos_mvcc` is Delos-native physical storage and is not required to preserve Derby heap, `RowLocation`,
+B-tree, or record-layout topology. It may adopt a different RawStore-backed current-row/version
+organization when evidence justifies it, provided SQL/JDBC/DRDA behavior, transaction semantics, and
+RawStore's sole persistence/WAL/recovery authority remain intact.
+
+Shared optimizer, generated execution, expression, operator, and future batch machinery must not be
+duplicated per storage mode merely because the physical providers differ.
+
 ### Heap and raw-store formats
 
 The inherited heap and raw store remain the default storage path and the durable compatibility
