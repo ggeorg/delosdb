@@ -891,6 +891,31 @@ tasks.register('runDelosArchitectureFitnessSentinelMatrix', JavaExec) {
 }
 
 
+
+tasks.register('runDelosSqlSemanticOracleValidation', JavaExec) {
+    group = 'benchmark'
+    description = 'Validates the Phase 0A SQL-authoritative semantic-oracle contract on Heap and MVCC.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosSqlSemanticOracleValidation'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/sql-semantic-oracle'))
+
+    systemProperties([
+            'delosdb.benchmark.sqlOracle.databaseRoot':
+                    rootProject.layout.buildDirectory
+                            .dir('tmp/delos-sql-semantic-oracle')
+                            .get().asFile.absolutePath,
+            'delosdb.benchmark.sqlOracle.reportDirectory':
+                    rootProject.layout.buildDirectory
+                            .dir('reports/delosdb/benchmarks/sql-semantic-oracle')
+                            .get().asFile.absolutePath
+    ])
+}
+
+
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
