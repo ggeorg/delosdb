@@ -83,7 +83,10 @@ public final class DelosHeapPhysicalCompatibilityWorker {
             assertConsistency(connection);
             checkpoint(connection);
             DelosSqlSemanticOracle.Result state = stateFingerprint(connection);
-            return metadataResult(connection, state.fingerprint(), state.fingerprint(), state.fingerprint());
+            WorkerResult result = metadataResult(
+                    connection, state.fingerprint(), state.fingerprint(), state.fingerprint());
+            connection.rollback();
+            return result;
         }
     }
 
@@ -129,11 +132,13 @@ public final class DelosHeapPhysicalCompatibilityWorker {
             assertConsistency(connection);
             checkpoint(connection);
             DelosSqlSemanticOracle.Result finalState = stateFingerprint(connection);
-            return metadataResult(
+            WorkerResult result = metadataResult(
                     connection,
                     before.fingerprint(),
                     afterRollback.fingerprint(),
                     finalState.fingerprint());
+            connection.rollback();
+            return result;
         }
     }
 
@@ -143,8 +148,10 @@ public final class DelosHeapPhysicalCompatibilityWorker {
             requireStage(connection, "FINAL");
             assertConsistency(connection);
             DelosSqlSemanticOracle.Result state = stateFingerprint(connection);
+            WorkerResult result = metadataResult(
+                    connection, state.fingerprint(), state.fingerprint(), state.fingerprint());
             connection.rollback();
-            return metadataResult(connection, state.fingerprint(), state.fingerprint(), state.fingerprint());
+            return result;
         }
     }
 
