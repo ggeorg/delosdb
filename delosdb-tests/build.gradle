@@ -916,6 +916,70 @@ tasks.register('runDelosSqlSemanticOracleValidation', JavaExec) {
 }
 
 
+tasks.register('runDelosHeapDerbyStaticCompatibilityContract', JavaExec) {
+    group = 'verification'
+    description = 'Enforces the Phase 0B.1 exact-byte tripwire for production files classified as unmodified Derby 10.17.1.0.'
+    dependsOn tasks.named('compileTestJava')
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosHeapDerbyStaticCompatibilityContract'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    inputs.file(rootProject.file('gradle/compatibility/derby-10.17.1.0-unmodified-production-baseline.tsv'))
+    inputs.file(rootProject.file('gradle/static-analysis/delosdb-authored-production-files.txt'))
+    inputs.file(rootProject.file('gradle/static-analysis/delosdb-modified-inherited-production-files.txt'))
+    inputs.file(rootProject.file('gradle/static-analysis/delosdb-derby-module-parity.txt'))
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/heap-derby-physical-compatibility/static'))
+
+    systemProperties([
+            'delosdb.compatibility.heapStatic.projectDirectory': rootProject.projectDir.absolutePath,
+            'delosdb.compatibility.heapStatic.reportDirectory':
+                    rootProject.layout.buildDirectory
+                            .dir('reports/delosdb/benchmarks/heap-derby-physical-compatibility/static')
+                            .get().asFile.absolutePath
+    ])
+}
+
+
+tasks.register('runDelosHeapDerbyDynamicCompatibilityContract', JavaExec) {
+    group = 'verification'
+    description = 'Proves Phase 0B.2 bidirectional on-disk interoperability between stock Derby 10.17.1.0 and Delos Heap.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosHeapPhysicalCompatibilityContract'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/heap-derby-physical-compatibility/dynamic'))
+
+    doFirst {
+        systemProperties([
+                'delosdb.compatibility.heapDynamic.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.compatibility.heapDynamic.databaseRoot':
+                        rootProject.layout.buildDirectory
+                                .dir('tmp/delos-heap-derby-physical-compatibility')
+                                .get().asFile.absolutePath,
+                'delosdb.compatibility.heapDynamic.reportDirectory':
+                        rootProject.layout.buildDirectory
+                                .dir('reports/delosdb/benchmarks/heap-derby-physical-compatibility/dynamic')
+                                .get().asFile.absolutePath,
+                'delosdb.compatibility.heapDynamic.workerClasses': derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.compatibility.heapDynamic.delosClasspath': rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.compatibility.heapDynamic.upstreamClasspath': upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.compatibility.heapDynamic.upstreamVersion': upstreamDerbyBenchmarkVersion
+        ])
+    }
+}
+
+
+tasks.register('runDelosHeapDerbyPhysicalCompatibilityContract') {
+    group = 'verification'
+    description = 'Runs the complete Phase 0B Heap Derby static and dynamic physical-compatibility contract.'
+    dependsOn tasks.named('runDelosHeapDerbyStaticCompatibilityContract')
+    dependsOn tasks.named('runDelosHeapDerbyDynamicCompatibilityContract')
+}
+
+
 registerDelosFocusedTest(
         'runDelosJdbcBenchmarkSurfaceValidation',
         'Runs the provider-neutral deterministic JDBC benchmark surface validation.',
