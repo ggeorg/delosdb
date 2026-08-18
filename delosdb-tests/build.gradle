@@ -1359,6 +1359,220 @@ tasks.register('runDelosJdbcMvccRangeNaturalOrderExperiment', JavaExec) {
 }
 
 
+// Performance modernization workload 2 MVCC diagnosis: the permanent
+// current-row anchor/current-version read-image cache is direct-mapped and
+// bounded. Sweep only its slot count to determine whether capacity/collision
+// misses materially explain the sustained ordered-range gap before changing
+// scan topology or physical format.
+def mvccRangeCacheSweepRoot =
+        'reports/delosdb/benchmarks/mvcc-range-current-row-cache-sweep'
+
+def configureMvccRangeCacheSweep = { JavaExec task, int slots ->
+    task.group = 'benchmark'
+    task.description = "Measures MVCC ordered ranges with ${slots} current-row cache slots."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${mvccRangeCacheSweepRoot}/slots-${slots}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'MVCC range current-row cache sweep requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${mvccRangeCacheSweepRoot}/slots-${slots}").get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-jdbc-mvcc-range-cache-slots-${slots}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_1000,RANGE_SCAN_FULL',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '1000000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '2400',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.mvccCurrentRowReadCacheSlots':
+                        Integer.toString(slots)
+        ])
+    }
+}
+
+def mvccRangeCacheSweepTasks = [:]
+[4096, 16384, 65536].each { slots ->
+    mvccRangeCacheSweepTasks[slots] = tasks.register(
+            "runDelosJdbcMvccRangeCurrentRowCacheSlots${slots}", JavaExec) { task ->
+        configureMvccRangeCacheSweep(task, slots)
+    }
+}
+mvccRangeCacheSweepTasks[16384].configure {
+    mustRunAfter mvccRangeCacheSweepTasks[4096]
+}
+mvccRangeCacheSweepTasks[65536].configure {
+    mustRunAfter mvccRangeCacheSweepTasks[16384]
+}
+
+tasks.register('runDelosJdbcMvccRangeCurrentRowCacheSweep') {
+    group = 'benchmark'
+    description = 'Sweeps MVCC current-row cache slots across sustained ordered ranges and reports capacity/collision sensitivity.'
+    dependsOn mvccRangeCacheSweepTasks.values()
+    outputs.upToDateWhen { false }
+
+    doLast {
+        File root = rootProject.layout.buildDirectory.dir(mvccRangeCacheSweepRoot).get().asFile
+        def slotValues = [4096, 16384, 65536]
+        def workloads = [
+                'RANGE_SCAN_INDEX_ONLY_1000',
+                'RANGE_SCAN_1000',
+                'RANGE_SCAN_FULL'
+        ]
+        def throughputBySlot = [:]
+        def fingerprintsByWorkload = [:].withDefault { [] }
+
+        slotValues.each { slots ->
+            File throughput = new File(root, "slots-${slots}/range-scan-throughput.csv")
+            File results = new File(root, "slots-${slots}/cross-engine-concurrency-results.csv")
+            if (!throughput.isFile() || !results.isFile()) {
+                throw new GradleException(
+                        "MVCC range cache sweep is missing reports for slots=${slots}")
+            }
+
+            def throughputLines = throughput.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def throughputHeader = throughputLines[0].split(',', -1) as List
+            def throughputRows = throughputLines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                if (fields.length != throughputHeader.size()) {
+                    throw new GradleException("Malformed cache-sweep throughput row: ${line}")
+                }
+                def row = [:]
+                throughputHeader.eachWithIndex { name, index ->
+                    row[name.trim()] = fields[index].trim()
+                }
+                row
+            }
+            if (throughputRows.size() != 3) {
+                throw new GradleException(
+                        "MVCC range cache sweep slots=${slots} expected 3 throughput rows, found ${throughputRows.size()}")
+            }
+            throughputBySlot[slots] = throughputRows.collectEntries { row ->
+                [(row.workload): row]
+            }
+
+            def resultLines = results.readLines('UTF-8').findAll { !it.trim().isEmpty() }
+            def resultHeader = resultLines[0].split(',', -1) as List
+            def resultRows = resultLines.drop(1).collect { line ->
+                def fields = line.split(',', -1)
+                def row = [:]
+                resultHeader.eachWithIndex { name, index -> row[name.trim()] = fields[index].trim() }
+                row
+            }
+            workloads.each { workload ->
+                def cell = resultRows.findAll {
+                    it.target == 'delos_mvcc' && it.workload == workload
+                }
+                if (cell.size() != 4) {
+                    throw new GradleException(
+                            "MVCC range cache sweep slots=${slots} ${workload} expected 4 runs, found ${cell.size()}")
+                }
+                if (cell.collect { it.semanticFingerprint }.unique().size() != 1) {
+                    throw new GradleException(
+                            "MVCC range cache sweep semantic mismatch for slots=${slots} ${workload}")
+                }
+                if (cell.any { it.retryableConflictRetries != '0' }) {
+                    throw new GradleException(
+                            "MVCC range cache sweep observed retryable conflicts for slots=${slots} ${workload}")
+                }
+                fingerprintsByWorkload[workload].add(cell[0].semanticFingerprint)
+            }
+        }
+
+        workloads.each { workload ->
+            if (fingerprintsByWorkload[workload].unique().size() != 1) {
+                throw new GradleException(
+                        "MVCC range cache sweep semantic fingerprint changed across slot counts for ${workload}")
+            }
+        }
+
+        File comparison = new File(root, 'mvcc-range-current-row-cache-sweep.csv')
+        comparison.text = 'slots,workload,medianRowsPerSecond,iqrToMedian,madToMedian,' +
+                'over4096,percentChangeVs4096\n'
+        slotValues.each { slots ->
+            workloads.each { workload ->
+                def row = throughputBySlot[slots][workload]
+                def baseline = throughputBySlot[4096][workload]
+                double rate = Double.parseDouble(row.medianRowsPerSecond)
+                double baseRate = Double.parseDouble(baseline.medianRowsPerSecond)
+                comparison << String.format(java.util.Locale.ROOT,
+                        '%d,%s,%.3f,%s,%s,%.6f,%.3f%n',
+                        slots,
+                        workload,
+                        rate,
+                        row.iqrToMedian,
+                        row.madToMedian,
+                        rate / baseRate,
+                        ((rate / baseRate) - 1.0d) * 100.0d)
+            }
+        }
+
+        def decision = [
+                'MVCC sustained-range current-row cache capacity/collision diagnosis',
+                'Only delosdb.mvcc.currentRowReadCache.slots changes: 4096 -> 16384 -> 65536.',
+                'Workloads: RANGE_SCAN_INDEX_ONLY_1000, RANGE_SCAN_1000, RANGE_SCAN_FULL; 1 client; 4 runs.',
+                'All slot counts must preserve identical semantic fingerprints and zero retryable conflicts.',
+                'Interpretation: a >=10% 65536-vs-4096 gain that also exceeds ordinary run dispersion is material evidence that the permanent direct-mapped 4096-slot cache is throttling sustained ranges.'
+        ]
+        workloads.each { workload ->
+            double baseRate = Double.parseDouble(throughputBySlot[4096][workload].medianRowsPerSecond)
+            double s16Rate = Double.parseDouble(throughputBySlot[16384][workload].medianRowsPerSecond)
+            double s64Rate = Double.parseDouble(throughputBySlot[65536][workload].medianRowsPerSecond)
+            decision.add(String.format(java.util.Locale.ROOT,
+                    '%s: 4096=%.0f 16384=%.0f (%+.2f%%) 65536=%.0f (%+.2f%%)',
+                    workload,
+                    baseRate,
+                    s16Rate,
+                    (s16Rate / baseRate - 1.0d) * 100.0d,
+                    s64Rate,
+                    (s64Rate / baseRate - 1.0d) * 100.0d))
+        }
+        new File(root, 'mvcc-range-current-row-cache-decision.txt')
+                .setText(decision.join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+        logger.lifecycle(
+                'MVCC range current-row cache sweep PASS: inspect mvcc-range-current-row-cache-sweep.csv and decision file before changing cache or scan architecture.')
+    }
+}
+
+
 // Performance modernization workload 2 mechanism proof: approximate the
 // row-bearing/clustered-primary principle used by H2/SQLite/InnoDB without
 // changing Delos storage format. A forced (id, quantity) covering index removes
