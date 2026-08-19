@@ -233,6 +233,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "fixtureBatch", options.fixtureBatch());
         addProperty(command, "warmups", options.warmups());
         addProperty(command, "iterations", options.iterations());
+        addProperty(command, "minimumMeasuredSeconds", options.minimumMeasuredSeconds());
+        addProperty(command, "maximumMeasuredIterations", options.maximumMeasuredIterations());
         addProperty(command, "caseTimeoutSeconds", options.caseTimeoutSeconds());
         addProperty(command, "closeCursorsAtCommit",
                 Boolean.getBoolean(PREFIX + "closeCursorsAtCommit"));
@@ -728,15 +730,54 @@ public final class DelosJdbcCrossEngineConcurrency {
                 long elapsed = 0L;
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
-                for (int iteration = 0; iteration < options.iterations(); iteration++) {
-                    boolean captureOracle = sqlSemanticOracleEnabled()
-                            && iteration == options.iterations() - 1;
-                    Interval interval = concurrentCase.runInterval(captureOracle);
-                    elapsed = Math.addExact(elapsed, interval.elapsedNanos());
-                    retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
-                    measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
-                            "measured iteration " + iteration);
-                    if (captureOracle) {
+                int measuredIterations = 0;
+                long minimumMeasuredNanos = options.minimumMeasuredSeconds() <= 0.0
+                        ? 0L
+                        : Math.max(1L, (long) Math.ceil(
+                                options.minimumMeasuredSeconds() * 1_000_000_000.0));
+                if (minimumMeasuredNanos == 0L) {
+                    for (int iteration = 0; iteration < options.iterations(); iteration++) {
+                        boolean captureOracle = sqlSemanticOracleEnabled()
+                                && iteration == options.iterations() - 1;
+                        Interval interval = concurrentCase.runInterval(captureOracle);
+                        elapsed = Math.addExact(elapsed, interval.elapsedNanos());
+                        retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
+                        measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
+                                "measured iteration " + iteration);
+                        measuredIterations++;
+                        if (captureOracle) {
+                            sqlOracleResult = Objects.requireNonNull(
+                                    interval.sqlOracleResult(),
+                                    "Phase 0A SQL oracle result");
+                        }
+                    }
+                } else {
+                    while (measuredIterations < options.iterations() || elapsed < minimumMeasuredNanos) {
+                        if (measuredIterations >= options.maximumMeasuredIterations()) {
+                            throw new IllegalStateException(
+                                    "Unable to reach minimum measured duration "
+                                            + options.minimumMeasuredSeconds() + "s within "
+                                            + options.maximumMeasuredIterations() + " intervals: " + spec);
+                        }
+                        Interval interval = concurrentCase.runInterval(false);
+                        elapsed = Math.addExact(elapsed, interval.elapsedNanos());
+                        retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
+                        measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
+                                "measured iteration " + measuredIterations);
+                        measuredIterations++;
+                    }
+                    if (sqlSemanticOracleEnabled()) {
+                        if (measuredIterations >= options.maximumMeasuredIterations()) {
+                            throw new IllegalStateException(
+                                    "No interval remains for Phase 0A SQL oracle capture after adaptive measurement: "
+                                            + spec);
+                        }
+                        Interval interval = concurrentCase.runInterval(true);
+                        elapsed = Math.addExact(elapsed, interval.elapsedNanos());
+                        retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
+                        measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
+                                "oracle-bearing measured iteration " + measuredIterations);
+                        measuredIterations++;
                         sqlOracleResult = Objects.requireNonNull(
                                 interval.sqlOracleResult(),
                                 "Phase 0A SQL oracle result");
@@ -775,7 +816,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int transactionsPerClient = options.transactionsPerClient(spec, config.rowCount());
                 long measuredTransactions = Math.multiplyExact(
                         Math.multiplyExact((long) spec.clients(), transactionsPerClient),
-                        options.iterations());
+                        measuredIterations);
                 long measuredOperations = Math.multiplyExact(
                         measuredTransactions, spec.operationsPerTransaction());
                 if (pageLatchDiagnostics != null) {
@@ -823,7 +864,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
                         transactionsPerClient, config.rowCount(), config.payloadSize(),
-                        config.commitBatchSize(), options.warmups(), options.iterations(),
+                        config.commitBatchSize(), options.warmups(), measuredIterations,
                         measuredTransactions, measuredOperations, retryableRollbacks, elapsed,
                         measuredTransactions * 1_000_000_000.0 / elapsed,
                         measuredOperations * 1_000_000_000.0 / elapsed,
@@ -2878,6 +2919,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         options.rangeScanMaxQueriesPerClient()).append('\n')
                 .append("H2 range fetch size override: ").append(options.h2RangeFetchSize())
                 .append(" (0=driver default)\n")
+                .append("Minimum measured seconds per run: ").append(options.minimumMeasuredSeconds()).append('\n')
+                .append("Maximum measured intervals per run: ").append(options.maximumMeasuredIterations()).append('\n')
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
@@ -3611,6 +3654,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             int fixtureBatch,
             int warmups,
             int iterations,
+            double minimumMeasuredSeconds,
+            int maximumMeasuredIterations,
             int runs,
             int caseTimeoutSeconds,
             int workerTimeoutSeconds,
@@ -3672,6 +3717,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "2")),
                     Integer.parseInt(System.getProperty(PREFIX + "iterations", "3")),
+                    Double.parseDouble(System.getProperty(PREFIX + "minimumMeasuredSeconds", "0")),
+                    Integer.parseInt(System.getProperty(PREFIX + "maximumMeasuredIterations", "10000")),
                     Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
                     Integer.parseInt(System.getProperty(PREFIX + "caseTimeoutSeconds", "120")),
                     Integer.parseInt(System.getProperty(PREFIX + "workerTimeoutSeconds", "0")),
@@ -3747,7 +3794,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || rangeScanMaxQueriesPerClient < rangeScanMinQueriesPerClient
                     || h2RangeFetchSize < 0
                     || payload < 16 || fixtureBatch < 1 || warmups < 0
-                    || iterations < 1 || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
+                    || iterations < 1
+                    || !Double.isFinite(minimumMeasuredSeconds) || minimumMeasuredSeconds < 0.0
+                    || maximumMeasuredIterations < iterations
+                    || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
                     || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
             }

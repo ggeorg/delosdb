@@ -46,8 +46,11 @@ public final class DelosArchitectureFitnessReuseNowSuite {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1 || !("contract".equals(args[0]) || "report".equals(args[0]))) {
-            throw new IllegalArgumentException("Expected exactly one argument: contract or report");
+        if (args.length != 1 || !("contract".equals(args[0])
+                || "report".equals(args[0])
+                || "strict-report".equals(args[0]))) {
+            throw new IllegalArgumentException(
+                    "Expected exactly one argument: contract, report, or strict-report");
         }
         Path reportDirectory = Path.of(required(PREFIX + "reportDirectory"));
         Path matrixTsv = Path.of(required(PREFIX + "matrixTsv"));
@@ -74,9 +77,9 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         writeManifest(
                 reportDirectory.resolve("architecture-fitness-reuse-now-manifest.properties"),
                 rows, environment, suite, measurementGate);
-        if (suite == GateStatus.INVALID) {
+        if ("strict-report".equals(args[0]) && suite == GateStatus.INVALID) {
             throw new IllegalStateException(
-                    "Phase-1 REUSE_NOW fitness run is INVALID; inspect "
+                    "Phase-1 REUSE_NOW strict decision gate is INVALID; inspect "
                             + reportDirectory.resolve("architecture-fitness-reuse-now.txt"));
         }
         System.out.println("DelosDB Phase-1 REUSE_NOW fitness report complete: "
@@ -173,7 +176,11 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 Semantic authority: Phase-0A DelosSqlSemanticOracle over JDBC SQL-visible state.
                 Performance substrate: existing DelosJdbcCrossEngineConcurrency; no second benchmark engine.
                 Measurement validity: consume Phase-0C VALID/NOISY/INVALID gate; INVALID forbids conclusions.
+                Sample adequacy: exactly 8 independent runs, >=2 warmups, >=3 measured intervals, and >=1.0s timed work per run.
                 Dispersion: <=5% VALID, >5%-15% NOISY, >15% INVALID using max(IQR/median, MAD/median).
+                Evidence semantics: report/suite execution is tri-state and preserves INVALID rows without failing
+                Phase-1 infrastructure. A separate strict-report mode hard-fails INVALID when an architecture
+                acceptance decision actually requires decision-quality evidence.
                 Server protocol: protocol class is mandatory in the common schema; wire-level round-trip/fetch/byte
                 instrumentation remains a separate Phase-1 infrastructure tranche and is not fabricated here.
                 Optimization freeze: this suite changes no production performance behavior.
@@ -189,8 +196,10 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         for (Lane lane : Lane.values()) {
             Path leaf = sourceRoot.resolve(lane.directory()).resolve(spec.reportGroup());
             Path dispersion = leaf.resolve("cross-engine-concurrency-dispersion.csv");
+            Path results = leaf.resolve("cross-engine-concurrency-results.csv");
             Path oracle = leaf.resolve("sql-semantic-oracle.csv");
             Map<Shape, String> oracleFingerprints = readOracle(oracle);
+            Map<SampleKey, SampleEvidence> samples = readSamples(results);
             List<String> lines = Files.readAllLines(dispersion, StandardCharsets.UTF_8);
             if (lines.isEmpty() || !lines.getFirst().startsWith(
                     "rowCount,workload,clients,operationsPerTransaction,target,runs,")) {
@@ -229,12 +238,20 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 double iqr = Double.parseDouble(fields[20]);
                 double mad = Double.parseDouble(fields[21]);
                 double governing = Math.max(iqr, mad);
-                GateStatus caseStatus = GateStatus.fromDispersion(governing);
+                SampleEvidence sample = samples.get(new SampleKey(shape, target));
+                if (sample == null) {
+                    throw new IllegalStateException(
+                            "Missing sample-duration evidence for " + shape + " target=" + target + " in " + results);
+                }
+                GateStatus dispersionStatus = GateStatus.fromDispersion(governing);
+                GateStatus sampleStatus = sample.status();
+                GateStatus caseStatus = GateStatus.worst(dispersionStatus, sampleStatus);
                 GateStatus finalStatus = GateStatus.worst(environment, caseStatus);
                 rows.add(new FitnessRow(
                         spec, lane, target, clients, Integer.parseInt(fields[5]),
                         Double.parseDouble(fields[13]), iqr, mad, governing,
-                        caseStatus, environment, finalStatus, fingerprint,
+                        sample.runs(), sample.minElapsedSeconds(), sample.minWarmups(), sample.minIterations(),
+                        sampleStatus, dispersionStatus, caseStatus, environment, finalStatus, fingerprint,
                         lane == Lane.SERVER ? "CLASSIFIED_NOT_WIRE_INSTRUMENTED" : "NOT_APPLICABLE"));
             }
             if (!seenTargets.equals(expectedTargets)) {
@@ -265,6 +282,41 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             if (prior != null && !prior.equals(fields[7])) {
                 throw new IllegalStateException("Phase-0A oracle drift for " + shape);
             }
+        }
+        return Map.copyOf(values);
+    }
+
+    private static Map<SampleKey, SampleEvidence> readSamples(Path results) throws IOException {
+        List<String> lines = Files.readAllLines(results, StandardCharsets.UTF_8);
+        if (lines.isEmpty() || !lines.getFirst().startsWith(
+                "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,")) {
+            throw new IllegalStateException("Unexpected concurrency results CSV: " + results);
+        }
+        Map<SampleKey, MutableSample> mutable = new HashMap<>();
+        for (int index = 1; index < lines.size(); index++) {
+            if (lines.get(index).isBlank()) {
+                continue;
+            }
+            String[] fields = lines.get(index).split(",", -1);
+            if (fields.length != 22) {
+                throw new IllegalStateException("Unexpected concurrency result row: " + lines.get(index));
+            }
+            Shape shape = new Shape(
+                    Integer.parseInt(fields[8]), fields[4], Integer.parseInt(fields[5]),
+                    Integer.parseInt(fields[6]));
+            SampleKey key = new SampleKey(shape, fields[0]);
+            MutableSample sample = mutable.computeIfAbsent(key, ignored -> new MutableSample());
+            sample.runs++;
+            sample.minElapsedSeconds = Math.min(
+                    sample.minElapsedSeconds, Long.parseLong(fields[16]) / 1_000_000_000.0);
+            sample.minWarmups = Math.min(sample.minWarmups, Integer.parseInt(fields[11]));
+            sample.minIterations = Math.min(sample.minIterations, Integer.parseInt(fields[12]));
+        }
+        Map<SampleKey, SampleEvidence> values = new HashMap<>();
+        for (Map.Entry<SampleKey, MutableSample> entry : mutable.entrySet()) {
+            MutableSample sample = entry.getValue();
+            values.put(entry.getKey(), new SampleEvidence(
+                    sample.runs, sample.minElapsedSeconds, sample.minWarmups, sample.minIterations));
         }
         return Map.copyOf(values);
     }
@@ -307,7 +359,8 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         StringBuilder text = new StringBuilder();
         text.append("caseId\tfamilyId\tworkloadFamily\tlane\ttarget\tclients\toperationsPerTransaction\t")
                 .append("medianOperationsPerSecond\tiqrToMedian\tmadToMedian\tgoverningDispersion\t")
-                .append("caseStatus\tenvironmentStatus\tfinalStatus\tsqlOracleFingerprint\t")
+                .append("sampleRuns\tminElapsedSeconds\tminWarmups\tminMeasuredIterations\t")
+                .append("sampleStatus\tdispersionStatus\tcaseStatus\tenvironmentStatus\tfinalStatus\tsqlOracleFingerprint\t")
                 .append("serverProtocolClass\tprotocolEvidenceStatus\n");
         for (FitnessRow row : ordered) {
             text.append(row.spec().caseId()).append('\t')
@@ -321,6 +374,12 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                     .append(format(row.iqr())).append('\t')
                     .append(format(row.mad())).append('\t')
                     .append(format(row.governing())).append('\t')
+                    .append(row.sampleRuns()).append('\t')
+                    .append(format(row.minElapsedSeconds())).append('\t')
+                    .append(row.minWarmups()).append('\t')
+                    .append(row.minMeasuredIterations()).append('\t')
+                    .append(row.sampleStatus()).append('\t')
+                    .append(row.dispersionStatus()).append('\t')
                     .append(row.caseStatus()).append('\t')
                     .append(row.environmentStatus()).append('\t')
                     .append(row.finalStatus()).append('\t')
@@ -344,6 +403,16 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             suite = GateStatus.worst(suite, row.finalStatus());
             counts.merge(row.finalStatus(), 1, Integer::sum);
         }
+        long sampleInadequate = rows.stream()
+                .filter(row -> row.sampleStatus() == GateStatus.INVALID)
+                .count();
+        List<FitnessRow> invalidRows = rows.stream()
+                .filter(row -> row.caseStatus() == GateStatus.INVALID)
+                .sorted(Comparator.comparingDouble(FitnessRow::governing).reversed())
+                .toList();
+        FitnessRow worst = rows.stream()
+                .max(Comparator.comparingDouble(FitnessRow::governing))
+                .orElseThrow();
         StringBuilder text = new StringBuilder();
         text.append("DelosDB Phase-1 REUSE_NOW architecture fitness\n")
                 .append("=============================================\n\n")
@@ -356,13 +425,38 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 .append("Rows VALID: ").append(counts.get(GateStatus.VALID)).append('\n')
                 .append("Rows NOISY: ").append(counts.get(GateStatus.NOISY)).append('\n')
                 .append("Rows INVALID: ").append(counts.get(GateStatus.INVALID)).append('\n')
-                .append("Overall suite status: ").append(suite).append("\n\n")
+                .append("Rows SAMPLE_INADEQUATE: ").append(sampleInadequate).append('\n')
+                .append("Overall suite status: ").append(suite).append('\n')
+                .append("Worst row: ").append(worst.spec().caseId()).append(' ')
+                .append(worst.lane()).append(' ')
+                .append(worst.target()).append(" clients=").append(worst.clients())
+                .append(" governingDispersion=").append(format(worst.governing()))
+                .append(" minElapsedSeconds=").append(format(worst.minElapsedSeconds())).append("\n\n")
                 .append("Interpretation:\n")
                 .append("- VALID: ordinary architecture-performance comparisons allowed.\n")
                 .append("- NOISY: only effects materially larger than observed noise are decision-quality.\n")
-                .append("- INVALID: no architecture-performance conclusion is allowed.\n")
+                .append("- INVALID: no architecture-performance conclusion is allowed for the affected row/case.\n")
+                .append("- SAMPLE_INADEQUATE: <8 runs, <2 warmups, <3 measured intervals, or <1.0s timed work/run.\n")
+                .append("- INVALID evidence is preserved during Phase-1 infrastructure work; it does not erase a\n")
+                .append("  completed correctness/coverage run or force production optimization during the freeze.\n")
+                .append("- The strict-report mode remains available for later architecture acceptance decisions.\n")
                 .append("- Server protocol classes are present in the schema; wire round-trip/fetch/byte instrumentation\n")
                 .append("  is intentionally not fabricated and remains the next Phase-1 infrastructure tranche.\n");
+        if (!invalidRows.isEmpty()) {
+            text.append("\nINVALID rows (decision blocked for these observations):\n");
+            for (FitnessRow row : invalidRows) {
+                text.append("- ").append(row.spec().caseId()).append(' ')
+                        .append(row.lane()).append(' ')
+                        .append(row.target()).append(" clients=").append(row.clients())
+                        .append(" IQR/median=").append(format(row.iqr()))
+                        .append(" MAD/median=").append(format(row.mad()))
+                        .append(" governing=").append(format(row.governing()))
+                        .append(" sampleStatus=").append(row.sampleStatus())
+                        .append(" runs=").append(row.sampleRuns())
+                        .append(" minElapsedSeconds=").append(format(row.minElapsedSeconds()))
+                        .append('\n');
+            }
+        }
         Files.writeString(output, text.toString(), StandardCharsets.UTF_8);
         return suite;
     }
@@ -385,6 +479,10 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         properties.setProperty("measurement.validity.file", measurementGate.toAbsolutePath().normalize().toString());
         properties.setProperty("measurement.validity.status", environment.name());
         properties.setProperty("suite.status", suite.name());
+        properties.setProperty("sample.minimum.runs", "8");
+        properties.setProperty("sample.minimum.warmups", "2");
+        properties.setProperty("sample.minimum.measured.iterations", "3");
+        properties.setProperty("sample.minimum.elapsed.seconds", "1.0");
         properties.setProperty("server.protocol.schema", "CLASSIFIED_NOT_WIRE_INSTRUMENTED");
         try (var writer = Files.newBufferedWriter(output, StandardCharsets.UTF_8)) {
             properties.store(writer, "DelosDB Phase-1 REUSE_NOW fitness manifest");
@@ -452,6 +550,30 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             int operationsPerTransaction) {
     }
 
+    private record SampleKey(Shape shape, String target) {
+    }
+
+    private static final class MutableSample {
+        private int runs;
+        private double minElapsedSeconds = Double.POSITIVE_INFINITY;
+        private int minWarmups = Integer.MAX_VALUE;
+        private int minIterations = Integer.MAX_VALUE;
+    }
+
+    private record SampleEvidence(
+            int runs,
+            double minElapsedSeconds,
+            int minWarmups,
+            int minIterations) {
+        GateStatus status() {
+            return runs == 8
+                    && minElapsedSeconds >= 1.0
+                    && minWarmups >= 2
+                    && minIterations >= 3
+                    ? GateStatus.VALID : GateStatus.INVALID;
+        }
+    }
+
     private record FitnessRow(
             CaseSpec spec,
             Lane lane,
@@ -462,6 +584,12 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             double iqr,
             double mad,
             double governing,
+            int sampleRuns,
+            double minElapsedSeconds,
+            int minWarmups,
+            int minMeasuredIterations,
+            GateStatus sampleStatus,
+            GateStatus dispersionStatus,
             GateStatus caseStatus,
             GateStatus environmentStatus,
             GateStatus finalStatus,

@@ -13674,9 +13674,11 @@ def registerDelosFitnessReuseNowEmbedded = {
                     'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize': '0',
                     'delosdb.benchmark.crossEngineConcurrency.payload': '128',
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '1.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '8',
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                     'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -13777,9 +13779,11 @@ def registerDelosFitnessReuseNowServer = {
                     'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize': '0',
                     'delosdb.benchmark.crossEngineConcurrency.payload': '128',
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
-                    'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
-                    'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '1.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '8',
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                     'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
@@ -13868,6 +13872,76 @@ tasks.register('runDelosArchitectureFitnessReuseNowReport', JavaExec) {
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessReuseNowSuite'
     classpath = rootProject.files(derbyTestsClassDir)
     args 'report'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosFitnessReuseNowReportRoot))
+    doFirst {
+        File measurementGate = rootProject.layout.buildDirectory
+                .file('reports/delosdb/benchmarks/measurement-validity/baseline-validation/'
+                        + 'measurement-validity-gate.txt')
+                .get().asFile
+        if (!measurementGate.isFile()) {
+            throw new GradleException(
+                    'Phase-1 fitness requires an existing Phase-0C measurement-validity gate report')
+        }
+        systemProperties([
+                'delosdb.benchmark.fitnessReuseNow.reportDirectory': rootProject.layout.buildDirectory
+                        .dir(delosFitnessReuseNowReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.sourceRoot': rootProject.layout.buildDirectory
+                        .dir(delosFitnessReuseNowReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.matrixTsv': rootProject.layout.buildDirectory
+                        .file('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix/'
+                                + 'architecture-fitness-sentinel-matrix.tsv')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.measurementGate': measurementGate.absolutePath
+        ])
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessReuseNowAnalyzeExisting', JavaExec) {
+    group = 'verification'
+    description = 'Re-analyzes existing Phase-1 REUSE_NOW benchmark outputs without rerunning benchmarks.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('runDelosArchitectureFitnessReuseNowContract')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessReuseNowSuite'
+    classpath = rootProject.files(derbyTestsClassDir)
+    args 'report'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosFitnessReuseNowReportRoot))
+    doFirst {
+        File measurementGate = rootProject.layout.buildDirectory
+                .file('reports/delosdb/benchmarks/measurement-validity/baseline-validation/'
+                        + 'measurement-validity-gate.txt')
+                .get().asFile
+        if (!measurementGate.isFile()) {
+            throw new GradleException(
+                    'Phase-1 fitness requires an existing Phase-0C measurement-validity gate report')
+        }
+        File benchmarkReport = rootProject.layout.buildDirectory
+                .dir(delosFitnessReuseNowReportRoot).get().asFile
+        if (!benchmarkReport.isDirectory()) {
+            throw new GradleException(
+                    'No existing Phase-1 REUSE_NOW benchmark outputs found; run the suite first')
+        }
+        systemProperties([
+                'delosdb.benchmark.fitnessReuseNow.reportDirectory': rootProject.layout.buildDirectory
+                        .dir(delosFitnessReuseNowReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.sourceRoot': rootProject.layout.buildDirectory
+                        .dir(delosFitnessReuseNowReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.matrixTsv': rootProject.layout.buildDirectory
+                        .file('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix/'
+                                + 'architecture-fitness-sentinel-matrix.tsv')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessReuseNow.measurementGate': measurementGate.absolutePath
+        ])
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessReuseNowStrictDecisionGate', JavaExec) {
+    group = 'verification'
+    description = 'Strictly rejects existing Phase-1 REUSE_NOW evidence when any observation is INVALID.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('runDelosArchitectureFitnessReuseNowContract')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessReuseNowSuite'
+    classpath = rootProject.files(derbyTestsClassDir)
+    args 'strict-report'
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(delosFitnessReuseNowReportRoot))
     doFirst {
