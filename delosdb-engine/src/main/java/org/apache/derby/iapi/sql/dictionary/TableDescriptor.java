@@ -367,8 +367,9 @@ public class TableDescriptor extends UniqueSQLObjectDescriptor
     /**
      * Gets the DelosDB storage provider associated with this table.
      *
-     * <p>The value selects the Derby heap or DelosDB MVCC access-method bridge;
-     * it is catalog state rather than a public storage-provider SPI.</p>
+     * <p>The value selects the Derby heap or DelosDB MVCC access-method bridge.
+     * Persistent descriptors reconstruct it from the base conglomerate's factory
+     * id so DelosDB does not extend Derby's on-disk SYS.SYSTABLES row format.</p>
      *
      * @return normalized storage provider name
      */

@@ -145,6 +145,8 @@ import org.apache.derby.iapi.store.access.Qualifier;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
+import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.DataValueFactory;
@@ -2392,11 +2394,39 @@ public final class	DataDictionaryImpl
 			{
 				getColumnDescriptorsScan(td);
 				getConglomerateDescriptorsScan(td);
+                restoreStorageProviderFromBaseConglomerate(td);
 			}
 		}
 
 		return td;
 	}
+
+    /**
+     * Reconstruct DelosDB table-provider identity from the persistent base
+     * conglomerate id rather than extending Derby's SYS.SYSTABLES row shape.
+     *
+     * <p>RAMAccessManager encodes the owning conglomerate-factory id in the
+     * low four bits of every conglomerate number.  The normal Derby heap uses
+     * factory id 0 and DelosDB MVCC uses factory id 2.  Keeping provider
+     * identity in that existing persistent access-method metadata preserves
+     * the stock Derby five-column SYSTABLES format while still restoring
+     * {@code USING delos_mvcc} semantics after a database reopen.</p>
+     */
+    private static void restoreStorageProviderFromBaseConglomerate(TableDescriptor td)
+            throws StandardException
+    {
+        if (td.getTableType() != TableDescriptor.BASE_TABLE_TYPE)
+        {
+            return;
+        }
+
+        long baseConglomerateId = td.getHeapConglomerateId();
+        int factoryId = (int) (baseConglomerateId & 0x0fL);
+        if (factoryId == ConglomerateFactory.MVCC_FACTORY_ID)
+        {
+            td.setStorageProviderName(DelosStorageProviderIds.MVCC_PROVIDER_ID);
+        }
+    }
 
 	/**
 	 * Indicate whether there is anything in the 

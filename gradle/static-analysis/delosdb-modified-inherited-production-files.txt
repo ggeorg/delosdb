@@ -160,7 +160,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/LanguageDbPropertySetter.
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DropDependencyFilter.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSROLESRowFactory.java
-delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTABLESRowFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/TabInfoImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/XPLAINResultSetDescriptor.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/XPLAINResultSetTimingsDescriptor.java

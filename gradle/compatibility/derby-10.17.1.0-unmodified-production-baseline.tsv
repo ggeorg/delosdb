@@ -1,8 +1,3 @@
-# DelosDB Phase 0B static Heap-compatibility tripwire.
-# Authority: accepted Apache Derby 10.17.1.0 provenance classification in the current repository.
-# Exact current bytes of production Java files classified as unmodified inherited Derby.
-# A hash change is not automatically incompatible; it creates an explicit compatibility-review/reclassification obligation.
-# sha256	repository_relative_path
 13d5aafd98d958faf61e8b5c39d83c7943357fb035855f4d28aae1e2c732c4f9	delosdb-buildtools/src/main/java/org/apache/derbyBuild/ClassSizeCrawler.java
 80cbd11a7ff2895b5595e48f519f22c73e075e90c509a4cbd7f9405dc682679b	delosdb-buildtools/src/main/java/org/apache/derbyBuild/ElementFacade.java
 bf1afbcbaa2a77410469006c7558750aacb687488107234111c829848838a8c9	delosdb-buildtools/src/main/java/org/apache/derbyBuild/GeneratorBase.java
@@ -615,6 +610,7 @@ a3406f5bd11bad95ed503e371d01503b04f01c63a7b8520acdf60b0118d68127	delosdb-engine/
 6767ec4210217b221e9e1505486215cb38dfbf5e19b5c7d6fba70b2b909394da	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSSTATEMENTSRowFactory.java
 46a295061bdb3f420cb6feef6159b97e90354667fb67299069d0feb83c74998c	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSSTATISTICSRowFactory.java
 e9c4bc9a3b10c80e678f0c307b2415a431138892b9deee39649530414fe44c42	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTABLEPERMSRowFactory.java
+2e973ac968a20ab51fa8d45839559f264c28ef2f9d0335dd13ac2f1a4b655178	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTABLESRowFactory.java
 96e445600afbde395bf2d56612153b6e1a9664ab8d6696ebcddb3f99e55f870a	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSTRIGGERSRowFactory.java
 e614230c8eb1d61e387af784dfdc75855dcd232e2daecadf15fc9ed5ed5abc21	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSUSERSRowFactory.java
 ebaa09b0c98afb6dbfd3a6dd7aefd09dd97672602f243a7b955d4eaefbdea714	delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSVIEWSRowFactory.java
