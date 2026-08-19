@@ -13339,8 +13339,8 @@ tasks.register('runDelosJdbcMvccRowBearingBTreeMaintenanceMechanism', JavaExec) 
 
 
 // Phase 0C measurement-validity contract. These tasks establish validity policy first,
-// then capture unchanged reference-engine canaries. Delos Heap/MVCC participate in the
-// source benchmark runs for semantic comparability but are never environmental canaries.
+// then capture unchanged reference-engine canaries. Delos Heap/MVCC are excluded from
+// the canary runs because they are the systems under active change.
 tasks.register('runDelosMeasurementValidityContract', JavaExec) {
     group = 'verification'
     description = 'Validates Phase 0C benchmark noise, JMH error, and frozen-engine drift policy.'
@@ -13360,9 +13360,9 @@ tasks.register('runDelosMeasurementValidityContract', JavaExec) {
 
 tasks.register('runDelosMeasurementValidityEmbeddedCanaryCapture', JavaExec) {
     group = 'benchmark'
-    description = 'Captures embedded reference-engine canaries using the existing isolated five-engine JDBC coordinator.'
+    description = 'Captures fixed-shape embedded external-engine canaries through the existing concurrency runner.'
     dependsOn tasks.named('compileTestJava'), ':jars'
-    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineCoordinator'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     classpath = rootProject.files(derbyTestsClassDir)
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(
@@ -13377,32 +13377,38 @@ tasks.register('runDelosMeasurementValidityEmbeddedCanaryCapture', JavaExec) {
         }
         def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
         systemProperties([
-                'delosdb.benchmark.crossEngine.sane': saneValue,
-                'delosdb.benchmark.crossEngine.projectDirectory': rootProject.projectDir.absolutePath,
-                'delosdb.benchmark.crossEngine.javaExecutable': javaExecutable,
-                'delosdb.benchmark.crossEngine.benchmarkClasses': derbyTestsClassDir.get().asFile.absolutePath,
-                'delosdb.benchmark.crossEngine.delosClasspath': rootProject.files(derbyRuntimeJars).asPath,
-                'delosdb.benchmark.crossEngine.upstreamDerbyClasspath': upstreamDerbyBenchmarkRuntime.asPath,
-                'delosdb.benchmark.crossEngine.h2Classpath': h2BenchmarkRuntime.asPath,
-                'delosdb.benchmark.crossEngine.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
-                'delosdb.benchmark.crossEngine.databaseRoot': rootProject.layout.buildDirectory
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                // External engines only: Delos Heap/MVCC are systems under test, never canaries.
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'upstream_derby,h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
                         .dir('tmp/delos-measurement-validity-embedded-canary').get().asFile.absolutePath,
-                'delosdb.benchmark.crossEngine.reportDirectory': rootProject.layout.buildDirectory
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
                         .dir('reports/delosdb/benchmarks/measurement-validity/embedded-canary')
                         .get().asFile.absolutePath,
-                'delosdb.benchmark.crossEngine.rows': '1000',
-                'delosdb.benchmark.crossEngine.readWidths': '1',
-                'delosdb.benchmark.crossEngine.writeWidths': '1',
-                'delosdb.benchmark.crossEngine.cycles': '10',
-                'delosdb.benchmark.crossEngine.payload': '128',
-                'delosdb.benchmark.crossEngine.fixtureBatch': '100',
-                'delosdb.benchmark.crossEngine.warmups': '2',
-                'delosdb.benchmark.crossEngine.iterations': '5',
-                'delosdb.benchmark.crossEngine.runs': '8',
-                'delosdb.benchmark.crossEngine.childHeap': '1g',
-                'delosdb.benchmark.crossEngine.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
-                'delosdb.benchmark.crossEngine.h2Version': h2BenchmarkVersion,
-                'delosdb.benchmark.crossEngine.sqliteVersion': sqliteBenchmarkVersion
+                // Frozen canary shape. Long enough that every measured run must exceed one second.
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_DISJOINT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
     }
 }
@@ -13441,7 +13447,7 @@ tasks.register('runDelosMeasurementValidityServerCanaryCapture', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
                 'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses': derbyTestsClassDir.get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.targets':
-                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                        'upstream_derby_drda,h2_server,postgresql,mariadb',
                 'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
                         delosNetworkClientClasspath.asPath,
                 'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
@@ -13480,7 +13486,7 @@ tasks.register('runDelosMeasurementValidityServerCanaryCapture', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.clients': '1',
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_DISJOINT',
-                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '500',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '1000000',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
@@ -13489,7 +13495,7 @@ tasks.register('runDelosMeasurementValidityServerCanaryCapture', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',

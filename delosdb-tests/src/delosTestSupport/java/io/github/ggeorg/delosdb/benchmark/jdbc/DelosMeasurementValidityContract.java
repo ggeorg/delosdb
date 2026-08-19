@@ -18,6 +18,8 @@ public final class DelosMeasurementValidityContract {
     public static final double HEALTHY_DISPERSION_LIMIT = 0.05d;
     public static final double INVALID_DISPERSION_LIMIT = 0.15d;
     public static final double INVALID_CANARY_DRIFT_LIMIT = 0.20d;
+    public static final int MINIMUM_BASELINE_CANARY_RUNS = 8;
+    public static final long MINIMUM_BASELINE_CANARY_ELAPSED_NANOS = 1_000_000_000L;
 
     private static final String PREFIX = "delosdb.benchmark.measurementValidity.";
 
@@ -42,6 +44,9 @@ public final class DelosMeasurementValidityContract {
     }
 
     public record CanaryDecision(Status status, double baseline, double current, double absoluteDriftRatio) {
+    }
+
+    public record CanarySampleDecision(Status status, int runs, long minElapsedNanos) {
     }
 
     private DelosMeasurementValidityContract() {
@@ -74,6 +79,14 @@ public final class DelosMeasurementValidityContract {
                 baseline,
                 current,
                 drift);
+    }
+
+    public static CanarySampleDecision classifyCanarySample(int runs, long minElapsedNanos) {
+        Status status = runs >= MINIMUM_BASELINE_CANARY_RUNS
+                        && minElapsedNanos >= MINIMUM_BASELINE_CANARY_ELAPSED_NANOS
+                ? Status.VALID
+                : Status.INVALID;
+        return new CanarySampleDecision(status, runs, minElapsedNanos);
     }
 
     public static Status combine(Status... values) {
@@ -126,6 +139,10 @@ public final class DelosMeasurementValidityContract {
         require(Status.INVALID, classifyCanary(100.0d, 121.0d).status(), "21 percent canary drift");
         require(Status.INVALID, classifyCanary(0.0d, 100.0d).status(), "invalid canary baseline");
 
+        require(Status.VALID, classifyCanarySample(8, 1_000_000_000L).status(), "adequate canary sample");
+        require(Status.INVALID, classifyCanarySample(7, 1_000_000_000L).status(), "too few canary runs");
+        require(Status.INVALID, classifyCanarySample(8, 999_999_999L).status(), "canary run too short");
+
         require(Status.INVALID, combine(Status.VALID, Status.NOISY, Status.INVALID), "status composition");
     }
 
@@ -152,6 +169,7 @@ public final class DelosMeasurementValidityContract {
                 - Any INVALID component invalidates the experiment.
                 - NOISY results may describe only effects materially larger than the observed noise; they are not baseline-quality canaries.
                 - Canary baselines are captured from unchanged external engines on the current accepted environment, then frozen explicitly.
+                - Baseline canaries require at least 8 independent runs and every measured run must last at least 1 second.
                 - Delos Heap/MVCC are never environmental canaries because they are the systems under active change.
 
                 Canary policy:
@@ -162,6 +180,8 @@ public final class DelosMeasurementValidityContract {
                 healthyDispersionLimit=%.4f
                 invalidDispersionLimit=%.4f
                 invalidCanaryDriftLimit=%.4f
+                minimumBaselineCanaryRuns=%d
+                minimumBaselineCanaryElapsedNanos=%d
 
                 Contract self-validation: PASS
                 Generated: %s
@@ -172,6 +192,8 @@ public final class DelosMeasurementValidityContract {
                 HEALTHY_DISPERSION_LIMIT,
                 INVALID_DISPERSION_LIMIT,
                 INVALID_CANARY_DRIFT_LIMIT,
+                MINIMUM_BASELINE_CANARY_RUNS,
+                MINIMUM_BASELINE_CANARY_ELAPSED_NANOS,
                 Instant.now(),
                 System.getProperty("java.runtime.version"),
                 System.getProperty("os.name"),

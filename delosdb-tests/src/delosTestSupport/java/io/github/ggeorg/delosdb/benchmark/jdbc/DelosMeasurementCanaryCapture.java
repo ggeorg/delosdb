@@ -17,9 +17,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Extracts stable external-engine canaries from the standard embedded and server benchmark reports. */
+/** Extracts stable external-engine canaries from fixed-shape concurrency benchmark reports. */
 public final class DelosMeasurementCanaryCapture {
     private static final String PREFIX = "delosdb.benchmark.measurementValidity.";
+    private static final String SHAPE =
+            "PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000";
 
     private DelosMeasurementCanaryCapture() {
     }
@@ -31,8 +33,11 @@ public final class DelosMeasurementCanaryCapture {
         Files.createDirectories(outputDirectory);
 
         List<Canary> canaries = new ArrayList<>();
-        canaries.addAll(readEmbedded(embeddedDirectory));
-        canaries.addAll(readServer(serverDirectory));
+        canaries.addAll(readConcurrencyLane(
+                "embedded", embeddedDirectory, List.of("upstream_derby", "h2", "sqlite")));
+        canaries.addAll(readConcurrencyLane(
+                "server", serverDirectory,
+                List.of("upstream_derby_drda", "h2_server", "postgresql", "mariadb")));
         validateCoverage(canaries);
         writeCapture(outputDirectory, canaries, embeddedDirectory, serverDirectory);
 
@@ -47,35 +52,16 @@ public final class DelosMeasurementCanaryCapture {
                 + outputDirectory.resolve("measurement-canary-capture.txt"));
     }
 
-    private static List<Canary> readEmbedded(Path directory) throws IOException {
-        Path dispersionCsv = directory.resolve("cross-engine-dispersion.csv");
-        Path resultsCsv = directory.resolve("cross-engine-results.csv");
-        List<Map<String, String>> dispersion = readCsv(dispersionCsv);
-        List<Map<String, String>> results = readCsv(resultsCsv);
-        List<Canary> canaries = new ArrayList<>();
-        for (String target : List.of("upstream_derby", "h2", "sqlite")) {
-            Map<String, String> key = Map.of(
-                    "rowCount", "1000",
-                    "workload", "PRIMARY_KEY_READ",
-                    "outcome", "COMMIT",
-                    "operationsPerTransaction", "1",
-                    "target", target);
-            Map<String, String> row = unique(dispersion, key, dispersionCsv);
-            Map<String, String> identity = first(results, key, resultsCsv);
-            canaries.add(canary(
-                    "embedded", target, "PRIMARY_KEY_READ/COMMIT/width=1/rows=1000",
-                    "medianNanos", row, identity, "medianNanos", dispersionCsv));
-        }
-        return canaries;
-    }
-
-    private static List<Canary> readServer(Path directory) throws IOException {
+    private static List<Canary> readConcurrencyLane(
+            String lane,
+            Path directory,
+            List<String> targets) throws IOException {
         Path dispersionCsv = directory.resolve("cross-engine-concurrency-dispersion.csv");
         Path resultsCsv = directory.resolve("cross-engine-concurrency-results.csv");
         List<Map<String, String>> dispersion = readCsv(dispersionCsv);
         List<Map<String, String>> results = readCsv(resultsCsv);
         List<Canary> canaries = new ArrayList<>();
-        for (String target : List.of("upstream_derby_drda", "h2_server", "postgresql", "mariadb")) {
+        for (String target : targets) {
             Map<String, String> key = Map.of(
                     "rowCount", "10000",
                     "workload", "PRIMARY_KEY_READ_DISJOINT",
@@ -83,10 +69,20 @@ public final class DelosMeasurementCanaryCapture {
                     "operationsPerTransaction", "1",
                     "target", target);
             Map<String, String> row = unique(dispersion, key, dispersionCsv);
-            Map<String, String> identity = first(results, key, resultsCsv);
+            List<Map<String, String>> samples = matches(results, key);
+            if (samples.isEmpty()) {
+                throw new IllegalStateException(
+                        "Missing canary samples for " + key + " in " + resultsCsv);
+            }
             canaries.add(canary(
-                    "server", target, "PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000",
-                    "medianOpsPerSecond", row, identity, "medianOpsPerSecond", dispersionCsv));
+                    lane,
+                    target,
+                    SHAPE,
+                    "medianOpsPerSecond",
+                    row,
+                    samples,
+                    "medianOpsPerSecond",
+                    dispersionCsv));
         }
         return canaries;
     }
@@ -97,14 +93,25 @@ public final class DelosMeasurementCanaryCapture {
             String shape,
             String metric,
             Map<String, String> row,
-            Map<String, String> identity,
+            List<Map<String, String>> samples,
             String medianColumn,
             Path source) {
+        Map<String, String> identity = samples.get(0);
         double median = Double.parseDouble(row.get(medianColumn));
         double iqr = Double.parseDouble(row.get("iqrToMedian"));
         double mad = Double.parseDouble(row.get("madToMedian"));
-        DelosMeasurementValidityContract.DispersionDecision decision =
+        DelosMeasurementValidityContract.DispersionDecision dispersionDecision =
                 DelosMeasurementValidityContract.classifyCustom(iqr, mad);
+
+        long minElapsedNanos = samples.stream()
+                .mapToLong(sample -> Long.parseLong(sample.get("elapsedNanos")))
+                .min()
+                .orElseThrow();
+        DelosMeasurementValidityContract.CanarySampleDecision sampleDecision =
+                DelosMeasurementValidityContract.classifyCanarySample(samples.size(), minElapsedNanos);
+        DelosMeasurementValidityContract.Status status = DelosMeasurementValidityContract.combine(
+                dispersionDecision.status(), sampleDecision.status());
+
         return new Canary(
                 lane,
                 target,
@@ -116,7 +123,9 @@ public final class DelosMeasurementCanaryCapture {
                 median,
                 iqr,
                 mad,
-                decision.status(),
+                samples.size(),
+                minElapsedNanos,
+                status,
                 source.toString());
     }
 
@@ -144,7 +153,7 @@ public final class DelosMeasurementCanaryCapture {
             Path serverDirectory) throws IOException {
         StringBuilder tsv = new StringBuilder(
                 "lane\ttarget\tshape\tmetric\tproduct\tproductVersion\tdriverVersion\tmedian\t"
-                        + "iqrToMedian\tmadToMedian\tstatus\tsource\n");
+                        + "iqrToMedian\tmadToMedian\truns\tminElapsedSeconds\tstatus\tsource\n");
         for (Canary value : values) {
             tsv.append(value.lane()).append('\t')
                     .append(value.target()).append('\t')
@@ -156,6 +165,8 @@ public final class DelosMeasurementCanaryCapture {
                     .append(format(value.median())).append('\t')
                     .append(format(value.iqrToMedian())).append('\t')
                     .append(format(value.madToMedian())).append('\t')
+                    .append(value.runs()).append('\t')
+                    .append(format(value.minElapsedNanos() / 1_000_000_000.0d)).append('\t')
                     .append(value.status()).append('\t')
                     .append(value.source()).append('\n');
         }
@@ -167,6 +178,12 @@ public final class DelosMeasurementCanaryCapture {
                 .append("==============================================\n\n")
                 .append("Purpose: capture candidate frozen reference-engine baselines; this file is not the frozen baseline yet.\n")
                 .append("Baseline eligibility requires every canary to be VALID (<= 5% governing dispersion).\n")
+                .append("Baseline eligibility also requires at least ")
+                .append(DelosMeasurementValidityContract.MINIMUM_BASELINE_CANARY_RUNS)
+                .append(" independent runs and at least ")
+                .append(format(DelosMeasurementValidityContract.MINIMUM_BASELINE_CANARY_ELAPSED_NANOS
+                        / 1_000_000_000.0d))
+                .append(" measured seconds in every run.\n")
                 .append("Product/driver identity is recorded and must remain compatible with the frozen baseline.\n")
                 .append("Embedded source: ").append(embeddedDirectory).append('\n')
                 .append("Server source: ").append(serverDirectory).append('\n')
@@ -184,6 +201,9 @@ public final class DelosMeasurementCanaryCapture {
                     .append(" median=").append(format(value.median()))
                     .append(" iqr/median=").append(format(value.iqrToMedian()))
                     .append(" mad/median=").append(format(value.madToMedian()))
+                    .append(" runs=").append(value.runs())
+                    .append(" minElapsedSeconds=")
+                    .append(format(value.minElapsedNanos() / 1_000_000_000.0d))
                     .append(" status=").append(value.status()).append('\n');
         }
         boolean baselineQuality = values.stream()
@@ -192,7 +212,7 @@ public final class DelosMeasurementCanaryCapture {
                 .append("Decision: ")
                 .append(baselineQuality
                         ? "UPLOAD/FREEZE candidate values only after review."
-                        : "RERUN; do not freeze noisy or invalid canaries.")
+                        : "DO NOT FREEZE; inspect noise/sample adequacy before rerunning.")
                 .append('\n');
         Files.writeString(outputDirectory.resolve("measurement-canary-capture.txt"),
                 text.toString(), StandardCharsets.UTF_8);
@@ -239,17 +259,6 @@ public final class DelosMeasurementCanaryCapture {
         return matches.get(0);
     }
 
-    private static Map<String, String> first(
-            List<Map<String, String>> rows,
-            Map<String, String> required,
-            Path source) {
-        List<Map<String, String>> matches = matches(rows, required);
-        if (matches.isEmpty()) {
-            throw new IllegalStateException("Missing canary identity row for " + required + " in " + source);
-        }
-        return matches.get(0);
-    }
-
     private static List<Map<String, String>> matches(
             List<Map<String, String>> rows,
             Map<String, String> required) {
@@ -286,6 +295,8 @@ public final class DelosMeasurementCanaryCapture {
             double median,
             double iqrToMedian,
             double madToMedian,
+            int runs,
+            long minElapsedNanos,
             DelosMeasurementValidityContract.Status status,
             String source) {
     }
