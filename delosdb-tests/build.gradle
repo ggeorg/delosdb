@@ -13520,19 +13520,14 @@ tasks.named('runDelosMeasurementValidityServerCanaryCapture') {
     mustRunAfter tasks.named('runDelosMeasurementValidityEmbeddedCanaryCapture')
 }
 
-tasks.register('runDelosMeasurementValidityCanaryCapture', JavaExec) {
-    group = 'benchmark'
-    description = 'Runs embedded/server reference canaries and emits one baseline-candidate Phase 0C capture.'
-    dependsOn tasks.named('runDelosMeasurementValidityContract'),
-            tasks.named('runDelosMeasurementValidityEmbeddedCanaryCapture'),
-            tasks.named('runDelosMeasurementValidityServerCanaryCapture')
-    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosMeasurementCanaryCapture'
-    classpath = rootProject.files(derbyTestsClassDir)
-    outputs.upToDateWhen { false }
-    outputs.dir(rootProject.layout.buildDirectory.dir(
+def configureMeasurementValidityCanaryAggregation = { JavaExec task, boolean requireBaselineQuality ->
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosMeasurementCanaryCapture'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
             'reports/delosdb/benchmarks/measurement-validity/canary-capture'))
-    doFirst {
-        systemProperties([
+    task.doFirst {
+        task.systemProperties([
                 'delosdb.benchmark.measurementValidity.embeddedReportDirectory':
                         rootProject.layout.buildDirectory
                                 .dir('reports/delosdb/benchmarks/measurement-validity/embedded-canary')
@@ -13544,7 +13539,68 @@ tasks.register('runDelosMeasurementValidityCanaryCapture', JavaExec) {
                 'delosdb.benchmark.measurementValidity.captureReportDirectory':
                         rootProject.layout.buildDirectory
                                 .dir('reports/delosdb/benchmarks/measurement-validity/canary-capture')
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.measurementValidity.requireBaselineQuality':
+                        Boolean.toString(requireBaselineQuality)
+        ])
+    }
+}
+
+tasks.register('runDelosMeasurementValidityCanaryCapture', JavaExec) { task ->
+    group = 'benchmark'
+    description = 'Runs embedded/server reference canaries and emits a strict baseline-candidate Phase 0C capture.'
+    dependsOn tasks.named('runDelosMeasurementValidityContract'),
+            tasks.named('runDelosMeasurementValidityEmbeddedCanaryCapture'),
+            tasks.named('runDelosMeasurementValidityServerCanaryCapture')
+    configureMeasurementValidityCanaryAggregation(task, true)
+}
+
+tasks.register('runDelosMeasurementValidityCurrentCanaryCapture', JavaExec) { task ->
+    group = 'verification'
+    description = 'Runs embedded/server reference canaries and preserves VALID/NOISY/INVALID current observations.'
+    dependsOn tasks.named('runDelosMeasurementValidityContract'),
+            tasks.named('runDelosMeasurementValidityEmbeddedCanaryCapture'),
+            tasks.named('runDelosMeasurementValidityServerCanaryCapture')
+    configureMeasurementValidityCanaryAggregation(task, false)
+}
+
+// Phase 0C Step 5B: freeze the reviewed seven-engine baseline and enforce
+// exact engine identity, current sample quality, and <=20% median drift.
+tasks.register('runDelosMeasurementValidityBaselineValidation', JavaExec) {
+    group = 'verification'
+    description = 'Validates current external-engine canaries against the frozen Phase 0C baseline.'
+    dependsOn tasks.named('compileTestJava')
+    mustRunAfter tasks.named('runDelosMeasurementValidityCanaryCapture'),
+            tasks.named('runDelosMeasurementValidityCurrentCanaryCapture')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosMeasurementCanaryBaselineValidation'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/measurement-validity/baseline-validation'))
+    doFirst {
+        rootProject.delete(rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/measurement-validity/baseline-validation')
+                .get().asFile)
+        systemProperties([
+                'delosdb.benchmark.measurementValidity.baselineFile':
+                        project.file('src/delosTestSupport/resources/io/github/ggeorg/delosdb/benchmark/jdbc/'
+                                + 'measurement-validity-canary-baseline.tsv').absolutePath,
+                'delosdb.benchmark.measurementValidity.captureFile':
+                        rootProject.layout.buildDirectory
+                                .file('reports/delosdb/benchmarks/measurement-validity/canary-capture/'
+                                        + 'measurement-canary-capture.tsv')
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.measurementValidity.baselineValidationReportDirectory':
+                        rootProject.layout.buildDirectory
+                                .dir('reports/delosdb/benchmarks/measurement-validity/baseline-validation')
                                 .get().asFile.absolutePath
         ])
     }
+}
+
+tasks.register('runDelosMeasurementValidityGate') {
+    group = 'verification'
+    description = 'Runs the complete Phase 0C external-engine validity gate against the frozen baseline.'
+    dependsOn tasks.named('runDelosMeasurementValidityCurrentCanaryCapture'),
+            tasks.named('runDelosMeasurementValidityBaselineValidation')
 }

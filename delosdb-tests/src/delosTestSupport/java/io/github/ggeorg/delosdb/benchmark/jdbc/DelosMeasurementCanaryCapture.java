@@ -30,6 +30,8 @@ public final class DelosMeasurementCanaryCapture {
         Path embeddedDirectory = Path.of(required(PREFIX + "embeddedReportDirectory"));
         Path serverDirectory = Path.of(required(PREFIX + "serverReportDirectory"));
         Path outputDirectory = Path.of(required(PREFIX + "captureReportDirectory"));
+        boolean requireBaselineQuality = Boolean.parseBoolean(
+                System.getProperty(PREFIX + "requireBaselineQuality", "true"));
         Files.createDirectories(outputDirectory);
 
         List<Canary> canaries = new ArrayList<>();
@@ -39,16 +41,19 @@ public final class DelosMeasurementCanaryCapture {
                 "server", serverDirectory,
                 List.of("upstream_derby_drda", "h2_server", "postgresql", "mariadb")));
         validateCoverage(canaries);
-        writeCapture(outputDirectory, canaries, embeddedDirectory, serverDirectory);
+        writeCapture(
+                outputDirectory, canaries, embeddedDirectory, serverDirectory, requireBaselineQuality);
 
         boolean baselineQuality = canaries.stream()
                 .allMatch(canary -> canary.status() == DelosMeasurementValidityContract.Status.VALID);
-        if (!baselineQuality) {
+        if (requireBaselineQuality && !baselineQuality) {
             throw new IllegalStateException(
                     "Reference-engine canary capture is not baseline quality; inspect "
                             + outputDirectory.resolve("measurement-canary-capture.txt"));
         }
-        System.out.println("DelosDB measurement canary capture passed: "
+        System.out.println((requireBaselineQuality
+                ? "DelosDB measurement baseline-candidate capture passed: "
+                : "DelosDB current measurement canary capture completed: ")
                 + outputDirectory.resolve("measurement-canary-capture.txt"));
     }
 
@@ -150,7 +155,8 @@ public final class DelosMeasurementCanaryCapture {
             Path outputDirectory,
             List<Canary> values,
             Path embeddedDirectory,
-            Path serverDirectory) throws IOException {
+            Path serverDirectory,
+            boolean requireBaselineQuality) throws IOException {
         StringBuilder tsv = new StringBuilder(
                 "lane\ttarget\tshape\tmetric\tproduct\tproductVersion\tdriverVersion\tmedian\t"
                         + "iqrToMedian\tmadToMedian\truns\tminElapsedSeconds\tstatus\tsource\n");
@@ -176,7 +182,9 @@ public final class DelosMeasurementCanaryCapture {
         StringBuilder text = new StringBuilder()
                 .append("DelosDB v1 measurement-validity canary capture\n")
                 .append("==============================================\n\n")
-                .append("Purpose: capture candidate frozen reference-engine baselines; this file is not the frozen baseline yet.\n")
+                .append(requireBaselineQuality
+                        ? "Purpose: capture candidate frozen reference-engine baselines; this file is not the frozen baseline yet.\n"
+                        : "Purpose: capture the current reference-engine environment for comparison with the frozen baseline.\n")
                 .append("Baseline eligibility requires every canary to be VALID (<= 5% governing dispersion).\n")
                 .append("Baseline eligibility also requires at least ")
                 .append(DelosMeasurementValidityContract.MINIMUM_BASELINE_CANARY_RUNS)
@@ -208,11 +216,18 @@ public final class DelosMeasurementCanaryCapture {
         }
         boolean baselineQuality = values.stream()
                 .allMatch(value -> value.status() == DelosMeasurementValidityContract.Status.VALID);
+        DelosMeasurementValidityContract.Status observationStatus = values.stream()
+                .map(Canary::status)
+                .reduce(DelosMeasurementValidityContract.Status.VALID,
+                        DelosMeasurementValidityContract.Status::worst);
         text.append("\nBaseline-quality capture: ").append(baselineQuality ? "YES" : "NO").append('\n')
+                .append("Observation status: ").append(observationStatus).append('\n')
                 .append("Decision: ")
-                .append(baselineQuality
-                        ? "UPLOAD/FREEZE candidate values only after review."
-                        : "DO NOT FREEZE; inspect noise/sample adequacy before rerunning.")
+                .append(requireBaselineQuality
+                        ? (baselineQuality
+                                ? "UPLOAD/FREEZE candidate values only after review."
+                                : "DO NOT FREEZE; inspect noise/sample adequacy before rerunning.")
+                        : "COMPARE WITH FROZEN BASELINE; NOISY is reportable, INVALID forbids architecture conclusions.")
                 .append('\n');
         Files.writeString(outputDirectory.resolve("measurement-canary-capture.txt"),
                 text.toString(), StandardCharsets.UTF_8);

@@ -1,0 +1,14 @@
+# DelosDB Phase 0C frozen external-engine canary baseline
+# baselineName=phase0c-step5a3-2026-08-19
+# captured=2026-08-19T03:39:52.049871Z
+# jdk=25.0.3+9-LTS-195
+# os=Mac OS X 26.5.2 aarch64
+# processors=16
+lane	target	shape	metric	product	productVersion	driverVersion	median	iqrToMedian	madToMedian	runs	minElapsedSeconds
+embedded	upstream_derby	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	Apache Derby	10.17.1.0 - (1913217)	10.17.1.0 - (1913217)	1042390.572146000	0.016278000	0.009691000	8	5.562867542
+embedded	h2	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	H2	2.4.240 (2025-09-22)	2.4.240 (2025-09-22)	2237595.566118000	0.045646000	0.026409000	8	2.545923957
+embedded	sqlite	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	SQLite	3.53.2	3.53.2.1	599505.692351000	0.016889000	0.009640000	8	9.842958959
+server	upstream_derby_drda	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	Apache Derby	10.17.1.0 - (1913217)	10.17.1.0 - (1913217)	2613.731940000	0.028646000	0.011456000	8	11.324795792
+server	h2_server	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	H2	2.4.240 (2025-09-22)	2.4.240 (2025-09-22)	2602.248608000	0.021239000	0.010900000	8	11.188335126
+server	postgresql	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	PostgreSQL	18.4 (Debian 18.4-1.pgdg13+1)	42.7.13	2555.880485000	0.033218000	0.018342000	8	11.433211458
+server	mariadb	PRIMARY_KEY_READ_DISJOINT/clients=1/width=1/rows=10000	medianOpsPerSecond	MariaDB	12.3.2-MariaDB-ubu2404	3.5.10	2369.548014000	0.019641000	0.012111000	8	12.420347375
