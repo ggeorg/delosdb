@@ -66,6 +66,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + "measuredTransactions,measuredOperations,retryableConflictRetries,elapsedNanos,"
                     + "transactionsPerSecond,operationsPerSecond,inverseThroughputNanosPerTransaction,"
                     + "semanticFingerprint,run";
+    private static final String ORACLE_CSV_HEADER =
+            "target,workload,clients,operationsPerTransaction,rowCount,kind,count,fingerprint,run";
 
     private DelosJdbcCrossEngineConcurrency() {
     }
@@ -121,6 +123,11 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         List<Row> rows = loadRows(options);
         validateRows(options, rows);
+        if (sqlSemanticOracleEnabled()) {
+            List<OracleEvidence> oracleEvidence = loadOracleEvidence(options);
+            validateOracleEvidence(options, oracleEvidence);
+            writeOracleEvidence(options, oracleEvidence);
+        }
         writeMergedCsv(options, rows);
         writeRatioCsv(options, rows);
         writeScalingCsv(options, rows);
@@ -199,6 +206,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (target == Target.SQLITE) {
             command.add("--enable-native-access=ALL-UNNAMED");
+        }
+        if (sqlSemanticOracleEnabled()) {
+            addProperty(command, "sqlSemanticOracle", true);
         }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
@@ -608,6 +618,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static void runWorker(Options options) throws Exception {
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
+        List<OracleEvidence> oracleEvidence = new ArrayList<>();
         List<Spec> specs = specsForRun(options);
         for (int rows : ordered(options.rowCounts(), options.run())) {
             DelosBenchmarkConfig config = new DelosBenchmarkConfig(
@@ -620,7 +631,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         spec.clients(), spec.operationsPerTransaction());
                 System.out.flush();
                 try {
-                    measurements.add(measureSpec(options, config, spec));
+                    MeasuredSpec measured = measureSpec(options, config, spec);
+                    measurements.add(measured.measurement());
+                    if (measured.oracleEvidence() != null) {
+                        oracleEvidence.add(measured.oracleEvidence());
+                    }
                     System.out.printf(Locale.ROOT,
                             "DONE run=%d target=%s rows=%d workload=%s clients=%d width=%d elapsedSeconds=%.3f%n",
                             options.run(), options.target().id(), config.rowCount(), spec.workload().name(),
@@ -639,9 +654,12 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
         writeWorkerCsv(options, measurements);
+        if (sqlSemanticOracleEnabled()) {
+            writeWorkerOracleEvidence(options, oracleEvidence);
+        }
     }
 
-    private static Measurement measureSpec(Options options, DelosBenchmarkConfig config, Spec spec)
+    private static MeasuredSpec measureSpec(Options options, DelosBenchmarkConfig config, Spec spec)
             throws Exception {
         String specId = spec.workload().name().toLowerCase(Locale.ROOT)
                 + "-c" + spec.clients() + "-w" + spec.operationsPerTransaction();
@@ -658,6 +676,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         Throwable failure = null;
         Measurement measurement = null;
+        DelosSqlSemanticOracle.Result sqlOracleResult = null;
         try (Connection verifier = connect(options, database)) {
             DatabaseMetaData metadata = verifier.getMetaData();
             String product = csvSafe(metadata.getDatabaseProductName());
@@ -678,7 +697,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     options, spec, database, verifier, tables, config.rowCount())) {
                 Long expectedSemantic = null;
                 for (int warmup = 0; warmup < options.warmups(); warmup++) {
-                    Interval interval = concurrentCase.runInterval();
+                    Interval interval = concurrentCase.runInterval(false);
                     expectedSemantic = sameSemantic(expectedSemantic, interval.semanticFingerprint(), spec,
                             "warmup " + warmup);
                 }
@@ -710,11 +729,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
                 for (int iteration = 0; iteration < options.iterations(); iteration++) {
-                    Interval interval = concurrentCase.runInterval();
+                    boolean captureOracle = sqlSemanticOracleEnabled()
+                            && iteration == options.iterations() - 1;
+                    Interval interval = concurrentCase.runInterval(captureOracle);
                     elapsed = Math.addExact(elapsed, interval.elapsedNanos());
                     retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
                     measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
                             "measured iteration " + iteration);
+                    if (captureOracle) {
+                        sqlOracleResult = Objects.requireNonNull(
+                                interval.sqlOracleResult(),
+                                "Phase 0A SQL oracle result");
+                    }
                 }
                 long[] pageLatchDiagnostics = pageLatchDiagnosticsEnabled()
                         ? snapshotPageLatchDiagnostics()
@@ -821,7 +847,21 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (failure != null) {
             throwFailure(failure);
         }
-        return measurement;
+        OracleEvidence evidence = sqlOracleResult == null ? null : new OracleEvidence(
+                options.target().id(),
+                spec.workload(),
+                spec.clients(),
+                spec.operationsPerTransaction(),
+                config.rowCount(),
+                sqlOracleResult.kind(),
+                sqlOracleResult.count(),
+                sqlOracleResult.fingerprint(),
+                options.run());
+        return new MeasuredSpec(measurement, evidence);
+    }
+
+    private static boolean sqlSemanticOracleEnabled() {
+        return Boolean.getBoolean(PREFIX + "sqlSemanticOracle");
     }
 
     private static boolean mvccSnapshotLeaseDiagnosticsEnabled() {
@@ -1678,6 +1718,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final Spec spec;
         private final Connection verifier;
         private final String table;
+        private final int rowCount;
         private final int transactionsPerClient;
         private final int[] mutationIds;
         private final int[] mutationBaseline;
@@ -1695,6 +1736,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.spec = spec;
             this.verifier = verifier;
             this.table = tables.get(0);
+            this.rowCount = rowCount;
             this.transactionsPerClient = options.transactionsPerClient(spec, rowCount);
             this.mutationIds = mutationIds(spec, rowCount);
             this.mutationBaseline = new int[mutationIds.length];
@@ -1755,7 +1797,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     spec.clients(), Thread.ofPlatform().daemon().name("delos-bench-client-", 0).factory());
         }
 
-        private Interval runInterval() throws Exception {
+        private Interval runInterval(boolean captureSqlOracle) throws Exception {
             CountDownLatch ready = new CountDownLatch(spec.clients());
             CountDownLatch start = new CountDownLatch(1);
             List<Future<ClientRun>> futures = new ArrayList<>(spec.clients());
@@ -1801,8 +1843,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 cancelFutures(futures);
                 throwFailure(failure);
             }
-            long stateFingerprint = verifyAndRestore();
-            return new Interval(elapsed, mix(executionFingerprint, stateFingerprint), retryableRollbacks);
+            Verification verification = verifyAndRestore(captureSqlOracle);
+            return new Interval(
+                    elapsed,
+                    mix(executionFingerprint, verification.legacyFingerprint()),
+                    retryableRollbacks,
+                    verification.sqlOracleResult());
         }
 
         private static void cancelFutures(List<? extends Future<?>> futures) {
@@ -1811,12 +1857,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
 
-        private long verifyAndRestore() throws SQLException {
+        private Verification verifyAndRestore(boolean captureSqlOracle) throws SQLException {
             try {
                 long fingerprint = mix(spec.clients(), spec.operationsPerTransaction());
                 if (spec.workload().isReadOnly()) {
+                    DelosSqlSemanticOracle.Result oracle = captureSqlOracle
+                            ? authoritativeReadOracle(verifier, table, spec, rowCount)
+                            : null;
                     verifier.rollback();
-                    return fingerprint;
+                    return new Verification(fingerprint, oracle);
                 }
                 int increment = Math.multiplyExact(transactionsPerClient, spec.operationsPerTransaction());
                 for (int index = 0; index < mutationIds.length; index++) {
@@ -1833,6 +1882,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                     fingerprint = mix(mix(fingerprint, mutationIds[index]), actual);
                 }
+                DelosSqlSemanticOracle.Result oracle = null;
+                if (captureSqlOracle) {
+                    DelosSqlSemanticOracle.Result finalState =
+                            authoritativeMutationState(verifier, table, mutationIds);
+                    long affectedRows = Math.multiplyExact(
+                            Math.multiplyExact((long) spec.clients(), transactionsPerClient),
+                            spec.operationsPerTransaction());
+                    oracle = DelosSqlSemanticOracle.mutation(affectedRows, finalState);
+                }
                 try (PreparedStatement restore = verifier.prepareStatement(
                         "update " + table + " set quantity = ? where id = ?")) {
                     for (int index = 0; index < mutationIds.length; index++) {
@@ -1845,7 +1903,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                 }
                 verifier.commit();
-                return fingerprint;
+                return new Verification(fingerprint, oracle);
             } catch (SQLException | RuntimeException | Error failure) {
                 try {
                     verifier.rollback();
@@ -1853,6 +1911,94 @@ public final class DelosJdbcCrossEngineConcurrency {
                     failure.addSuppressed(rollbackFailure);
                 }
                 throw failure;
+            }
+        }
+
+        private static DelosSqlSemanticOracle.Result authoritativeReadOracle(
+                Connection connection,
+                String table,
+                Spec spec,
+                int rowCount) throws SQLException {
+            if (spec.workload() == Workload.PRIMARY_KEY_READ_HOT) {
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "select quantity from " + table + " where id = ?")) {
+                    statement.setInt(1, 1);
+                    try (ResultSet resultSet = statement.executeQuery()) {
+                        return DelosSqlSemanticOracle.query(
+                                resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
+                    }
+                }
+            }
+            if (spec.workload() == Workload.PRIMARY_KEY_READ_DISJOINT) {
+                Map<String, DelosSqlSemanticOracle.Result> clients = new LinkedHashMap<>();
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "select quantity from " + table + " where id = ?")) {
+                    for (int client = 0; client < spec.clients(); client++) {
+                        int id = 1 + (int) (((long) client * rowCount) / spec.clients());
+                        statement.setInt(1, id);
+                        try (ResultSet resultSet = statement.executeQuery()) {
+                            clients.put(
+                                    String.format(Locale.ROOT, "client-%03d", client),
+                                    DelosSqlSemanticOracle.query(
+                                            resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED));
+                        }
+                    }
+                }
+                return DelosSqlSemanticOracle.composite("FITNESS_POINT_READ", clients);
+            }
+            if (spec.workload().isRangeScan()
+                    && !spec.workload().isCoveringRangeScan()
+                    && !spec.workload().isRowBearingComparisonRangeScan()
+                    && !spec.workload().isMvccNaturalOrderRangeScan()) {
+                Map<String, DelosSqlSemanticOracle.Result> clients = new LinkedHashMap<>();
+                int rangeRows = spec.workload().rangeRows(rowCount);
+                int startCount = rowCount - rangeRows + 1;
+                String projection = spec.workload().isIndexOnlyRangeScan() ? "id" : "id, quantity";
+                String sql = "select " + projection + " from " + table
+                        + " where id >= ? and id < ? order by id";
+                try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                    for (int client = 0; client < spec.clients(); client++) {
+                        int start = 1 + (int) (((long) client * startCount) / spec.clients());
+                        statement.setInt(1, start);
+                        statement.setInt(2, start + rangeRows);
+                        try (ResultSet resultSet = statement.executeQuery()) {
+                            clients.put(
+                                    String.format(Locale.ROOT, "client-%03d", client),
+                                    DelosSqlSemanticOracle.query(
+                                            resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED));
+                        }
+                    }
+                }
+                return DelosSqlSemanticOracle.composite("FITNESS_RANGE_SCAN", clients);
+            }
+            throw new SQLException(
+                    "Phase 0A SQL oracle is not wired for fitness workload " + spec.workload());
+        }
+
+        private static DelosSqlSemanticOracle.Result authoritativeMutationState(
+                Connection connection,
+                String table,
+                int[] mutationIds) throws SQLException {
+            if (mutationIds.length == 0) {
+                throw new SQLException("Mutation SQL oracle requires at least one mutation id");
+            }
+            StringBuilder sql = new StringBuilder(
+                    "select id, quantity from " + table + " where id in (");
+            for (int index = 0; index < mutationIds.length; index++) {
+                if (index != 0) {
+                    sql.append(',');
+                }
+                sql.append('?');
+            }
+            sql.append(") order by id");
+            try (PreparedStatement statement = connection.prepareStatement(sql.toString())) {
+                for (int index = 0; index < mutationIds.length; index++) {
+                    statement.setInt(index + 1, mutationIds[index]);
+                }
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    return DelosSqlSemanticOracle.query(
+                            resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
+                }
             }
         }
 
@@ -2268,6 +2414,114 @@ public final class DelosJdbcCrossEngineConcurrency {
             out.append(value.csv()).append('\n');
         }
         Files.writeString(output, out.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static void writeWorkerOracleEvidence(
+            Options options,
+            List<OracleEvidence> values) throws IOException {
+        int expected = options.rowCounts().size() * specsPerRun(options);
+        if (values.size() != expected) {
+            throw new IllegalStateException(
+                    "Phase 0A SQL oracle evidence count mismatch for worker "
+                            + options.target().id() + " run=" + options.run()
+                            + ": expected=" + expected + ", actual=" + values.size());
+        }
+        Path output = options.reportDirectory().resolve(
+                "sql-semantic-oracle-" + options.target().id() + "-run-" + options.run() + ".csv");
+        StringBuilder out = new StringBuilder(ORACLE_CSV_HEADER).append('\n');
+        for (OracleEvidence value : values) {
+            out.append(value.csv()).append('\n');
+        }
+        Files.writeString(output, out.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static List<OracleEvidence> loadOracleEvidence(Options options) throws IOException {
+        List<OracleEvidence> evidence = new ArrayList<>();
+        for (int run = 1; run <= options.runs(); run++) {
+            for (Target target : options.targetValues()) {
+                Path file = options.reportDirectory().resolve("workers")
+                        .resolve("sql-semantic-oracle-" + target.id() + "-run-" + run + ".csv");
+                List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                if (lines.isEmpty() || !ORACLE_CSV_HEADER.equals(lines.getFirst())) {
+                    throw new IllegalStateException(
+                            "Unexpected Phase 0A SQL oracle CSV header: " + file);
+                }
+                for (int index = 1; index < lines.size(); index++) {
+                    if (!lines.get(index).isBlank()) {
+                        evidence.add(OracleEvidence.parse(lines.get(index)));
+                    }
+                }
+            }
+        }
+        evidence.sort(Comparator.comparingInt(OracleEvidence::rowCount)
+                .thenComparing(value -> value.workload().name())
+                .thenComparingInt(OracleEvidence::operationsPerTransaction)
+                .thenComparingInt(OracleEvidence::clients)
+                .thenComparing(OracleEvidence::target)
+                .thenComparingInt(OracleEvidence::run));
+        return List.copyOf(evidence);
+    }
+
+    private static void validateOracleEvidence(
+            Options options,
+            List<OracleEvidence> evidence) {
+        int expected = options.targetValues().size() * options.runs() * options.rowCounts().size()
+                * specsPerRun(options);
+        if (evidence.size() != expected) {
+            throw new IllegalStateException(
+                    "Phase 0A SQL oracle evidence count mismatch: expected="
+                            + expected + ", actual=" + evidence.size());
+        }
+        Map<ShapeKey, String> fingerprints = new HashMap<>();
+        for (OracleEvidence value : evidence) {
+            ShapeKey key = value.shape();
+            String prior = fingerprints.putIfAbsent(key, value.fingerprint());
+            if (prior != null && !prior.equals(value.fingerprint())) {
+                throw new IllegalStateException(
+                        "Phase 0A SQL oracle mismatch for " + key
+                                + ": expected=" + prior
+                                + ", actual=" + value.fingerprint()
+                                + ", target=" + value.target()
+                                + ", run=" + value.run());
+            }
+        }
+    }
+
+    private static void writeOracleEvidence(
+            Options options,
+            List<OracleEvidence> evidence) throws IOException {
+        StringBuilder csv = new StringBuilder(ORACLE_CSV_HEADER).append('\n');
+        for (OracleEvidence value : evidence) {
+            csv.append(value.csv()).append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve("sql-semantic-oracle.csv"),
+                csv.toString(),
+                StandardCharsets.UTF_8);
+
+        Map<ShapeKey, OracleEvidence> shapes = new LinkedHashMap<>();
+        for (OracleEvidence value : evidence) {
+            shapes.putIfAbsent(value.shape(), value);
+        }
+        StringBuilder summary = new StringBuilder();
+        summary.append("DelosDB Phase 0A SQL-authoritative oracle evidence\n")
+                .append("================================================\n\n")
+                .append("Authority: canonical JDBC SQL-visible values; storage-engine internals are diagnostic only.\n")
+                .append("Cross-target/run equality: PASS\n")
+                .append("Shapes: ").append(shapes.size()).append('\n')
+                .append("Evidence rows: ").append(evidence.size()).append("\n\n");
+        for (Map.Entry<ShapeKey, OracleEvidence> entry : shapes.entrySet()) {
+            OracleEvidence value = entry.getValue();
+            summary.append("- ").append(entry.getKey().csv())
+                    .append(" kind=").append(value.kind())
+                    .append(" count=").append(value.count())
+                    .append(" fingerprint=").append(value.fingerprint())
+                    .append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve("sql-semantic-oracle.txt"),
+                summary.toString(),
+                StandardCharsets.UTF_8);
     }
 
     private static List<Row> loadRows(Options options) throws IOException {
@@ -3145,7 +3399,21 @@ public final class DelosJdbcCrossEngineConcurrency {
     private record ClientRun(long fingerprint, long retryableRollbacks) {
     }
 
-    private record Interval(long elapsedNanos, long semanticFingerprint, long retryableRollbacks) {
+    private record Interval(
+            long elapsedNanos,
+            long semanticFingerprint,
+            long retryableRollbacks,
+            DelosSqlSemanticOracle.Result sqlOracleResult) {
+    }
+
+    private record Verification(
+            long legacyFingerprint,
+            DelosSqlSemanticOracle.Result sqlOracleResult) {
+    }
+
+    private record MeasuredSpec(
+            Measurement measurement,
+            OracleEvidence oracleEvidence) {
     }
 
     private record Measurement(
@@ -3254,6 +3522,45 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private record Distribution(
             int count, double median, double q1, double q3, double iqr, double mad, double min, double max) {
+    }
+
+    private record OracleEvidence(
+            String target,
+            Workload workload,
+            int clients,
+            int operationsPerTransaction,
+            int rowCount,
+            String kind,
+            long count,
+            String fingerprint,
+            int run) {
+
+        private ShapeKey shape() {
+            return new ShapeKey(rowCount, workload, clients, operationsPerTransaction);
+        }
+
+        private String csv() {
+            return target + ',' + workload + ',' + clients + ',' + operationsPerTransaction + ','
+                    + rowCount + ',' + kind + ',' + count + ',' + fingerprint + ',' + run;
+        }
+
+        private static OracleEvidence parse(String line) {
+            String[] fields = line.split(",", -1);
+            if (fields.length != 9) {
+                throw new IllegalArgumentException(
+                        "Unexpected Phase 0A SQL oracle CSV row: " + line);
+            }
+            return new OracleEvidence(
+                    fields[0],
+                    Workload.valueOf(fields[1]),
+                    Integer.parseInt(fields[2]),
+                    Integer.parseInt(fields[3]),
+                    Integer.parseInt(fields[4]),
+                    fields[5],
+                    Long.parseLong(fields[6]),
+                    fields[7],
+                    Integer.parseInt(fields[8]));
+        }
     }
 
     private record Options(
