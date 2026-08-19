@@ -55,6 +55,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.H2_SERVER,
             Target.POSTGRESQL,
             Target.MARIADB);
+    private static final List<Target> EMBEDDED_REFERENCE_CANARY_TARGETS = List.of(
+            Target.UPSTREAM_DERBY, Target.H2, Target.SQLITE);
+    private static final List<Target> SERVER_REFERENCE_CANARY_TARGETS = List.of(
+            Target.UPSTREAM_DERBY_DRDA, Target.H2_SERVER, Target.POSTGRESQL, Target.MARIADB);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
@@ -2323,7 +2327,19 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static void writeRatioCsv(Options options, List<Row> rows) throws IOException {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         StringBuilder out;
-        if (options.containerMode()) {
+        if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
+                || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                for (Target target : options.targetValues()) {
+                    out.append(key.csv()).append(',')
+                            .append(target.id()).append(',')
+                            .append(format(require(entry.getValue(), target, key))).append('\n');
+                }
+            }
+        } else if (options.containerMode()) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,delosHeapDrdaMedianTps,"
                             + "delosMvccDrdaMedianTps,upstreamDerbyDrdaMedianTps,h2ServerMedianTps,"
@@ -3366,16 +3382,21 @@ public final class DelosJdbcCrossEngineConcurrency {
             List<Target> embedded = List.of(
                     Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2, Target.SQLITE);
             List<Target> container = SERVER_PRODUCT_TARGETS;
+            boolean referenceCanaryTargets = configuredTargets.equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
+                    || configuredTargets.equals(SERVER_REFERENCE_CANARY_TARGETS);
             boolean mvccOnlyDiagnostic = configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS);
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
+                    && !referenceCanaryTargets
                     && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)
                     && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
                     && !mvccOnlyDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
-                        + container + ", diagnostic " + READ_DECOMPOSITION_TARGETS
+                        + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
+                        + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
+                        + ", diagnostic " + READ_DECOMPOSITION_TARGETS
                         + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
                         + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
                         + ", or MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS + ": " + configuredTargets);

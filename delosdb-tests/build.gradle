@@ -13369,6 +13369,12 @@ tasks.register('runDelosMeasurementValidityEmbeddedCanaryCapture', JavaExec) {
             'reports/delosdb/benchmarks/measurement-validity/embedded-canary'))
 
     doFirst {
+        rootProject.delete(rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/measurement-validity/embedded-canary')
+                .get().asFile)
+        rootProject.delete(rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/measurement-validity/canary-capture')
+                .get().asFile)
         def saneValue = providers.gradleProperty('delosdb.sane')
                 .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
         if (saneValue != 'false') {
@@ -13401,7 +13407,7 @@ tasks.register('runDelosMeasurementValidityEmbeddedCanaryCapture', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.clients': '1',
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_DISJOINT',
-                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2000000',
                 'delosdb.benchmark.crossEngineConcurrency.payload': '128',
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
@@ -13433,6 +13439,12 @@ tasks.register('runDelosMeasurementValidityServerCanaryCapture', JavaExec) {
             'reports/delosdb/benchmarks/measurement-validity/server-canary'))
 
     doFirst {
+        rootProject.delete(rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/measurement-validity/server-canary')
+                .get().asFile)
+        rootProject.delete(rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/measurement-validity/canary-capture')
+                .get().asFile)
         def saneValue = providers.gradleProperty('delosdb.sane')
                 .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
         if (saneValue != 'false') {
@@ -13486,7 +13498,7 @@ tasks.register('runDelosMeasurementValidityServerCanaryCapture', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.clients': '1',
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_DISJOINT',
-                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '10000',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '1000000',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
                 'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
