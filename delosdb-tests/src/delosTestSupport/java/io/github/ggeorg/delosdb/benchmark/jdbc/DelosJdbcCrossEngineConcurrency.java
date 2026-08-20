@@ -3035,7 +3035,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         StringBuilder out;
         if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
-                || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)) {
+                || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)
+                || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
