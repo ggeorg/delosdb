@@ -233,6 +233,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "fixtureBatch", options.fixtureBatch());
         addProperty(command, "warmups", options.warmups());
         addProperty(command, "iterations", options.iterations());
+        addProperty(command, "minimumWarmupSeconds", options.minimumWarmupSeconds());
+        addProperty(command, "maximumWarmupIterations", options.maximumWarmupIterations());
         addProperty(command, "minimumMeasuredSeconds", options.minimumMeasuredSeconds());
         addProperty(command, "maximumMeasuredIterations", options.maximumMeasuredIterations());
         addProperty(command, "caseTimeoutSeconds", options.caseTimeoutSeconds());
@@ -542,6 +544,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Payload bytes: ").append(options.payload()).append('\n')
                 .append("Fixture batch: ").append(options.fixtureBatch()).append('\n')
                 .append("Warmups: ").append(options.warmups()).append('\n')
+                .append("Minimum warmup seconds per run: ").append(options.minimumWarmupSeconds()).append('\n')
+                .append("Maximum warmup intervals per run: ").append(options.maximumWarmupIterations()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append('\n')
                 .append("Case timeout seconds: ").append(options.caseTimeoutSeconds()).append('\n')
@@ -698,10 +702,34 @@ public final class DelosJdbcCrossEngineConcurrency {
             try (ConcurrentCase concurrentCase = new ConcurrentCase(
                     options, spec, database, verifier, tables, config.rowCount())) {
                 Long expectedSemantic = null;
-                for (int warmup = 0; warmup < options.warmups(); warmup++) {
-                    Interval interval = concurrentCase.runInterval(false);
-                    expectedSemantic = sameSemantic(expectedSemantic, interval.semanticFingerprint(), spec,
-                            "warmup " + warmup);
+                long warmupElapsed = 0L;
+                int warmupIterations = 0;
+                long minimumWarmupNanos = options.minimumWarmupSeconds() <= 0.0
+                        ? 0L
+                        : Math.max(1L, (long) Math.ceil(
+                                options.minimumWarmupSeconds() * 1_000_000_000.0));
+                if (minimumWarmupNanos == 0L) {
+                    for (int warmup = 0; warmup < options.warmups(); warmup++) {
+                        Interval interval = concurrentCase.runInterval(false);
+                        expectedSemantic = sameSemantic(expectedSemantic, interval.semanticFingerprint(), spec,
+                                "warmup " + warmup);
+                        warmupElapsed = Math.addExact(warmupElapsed, interval.elapsedNanos());
+                        warmupIterations++;
+                    }
+                } else {
+                    while (warmupIterations < options.warmups() || warmupElapsed < minimumWarmupNanos) {
+                        if (warmupIterations >= options.maximumWarmupIterations()) {
+                            throw new IllegalStateException(
+                                    "Unable to reach minimum warmup duration "
+                                            + options.minimumWarmupSeconds() + "s within "
+                                            + options.maximumWarmupIterations() + " intervals: " + spec);
+                        }
+                        Interval interval = concurrentCase.runInterval(false);
+                        expectedSemantic = sameSemantic(expectedSemantic, interval.semanticFingerprint(), spec,
+                                "warmup " + warmupIterations);
+                        warmupElapsed = Math.addExact(warmupElapsed, interval.elapsedNanos());
+                        warmupIterations++;
+                    }
                 }
                 if (pageLatchDiagnosticsEnabled()) {
                     resetPageLatchDiagnostics();
@@ -864,7 +892,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
                         transactionsPerClient, config.rowCount(), config.payloadSize(),
-                        config.commitBatchSize(), options.warmups(), measuredIterations,
+                        config.commitBatchSize(), warmupIterations, measuredIterations,
                         measuredTransactions, measuredOperations, retryableRollbacks, elapsed,
                         measuredTransactions * 1_000_000_000.0 / elapsed,
                         measuredOperations * 1_000_000_000.0 / elapsed,
@@ -2919,6 +2947,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         options.rangeScanMaxQueriesPerClient()).append('\n')
                 .append("H2 range fetch size override: ").append(options.h2RangeFetchSize())
                 .append(" (0=driver default)\n")
+                .append("Minimum warmup seconds per run: ").append(options.minimumWarmupSeconds()).append('\n')
+                .append("Maximum warmup intervals per run: ").append(options.maximumWarmupIterations()).append('\n')
                 .append("Minimum measured seconds per run: ").append(options.minimumMeasuredSeconds()).append('\n')
                 .append("Maximum measured intervals per run: ").append(options.maximumMeasuredIterations()).append('\n')
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
@@ -2973,6 +3003,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         : "Fresh database per target/run/matrix cell: true\n")
                 .append("Target and matrix order orthogonalized across four-run blocks: true\n")
                 .append("Warmups: ").append(options.warmups()).append('\n')
+                .append("Minimum warmup seconds per run: ").append(options.minimumWarmupSeconds()).append('\n')
+                .append("Maximum warmup intervals per run: ").append(options.maximumWarmupIterations()).append('\n')
                 .append("Iterations: ").append(options.iterations()).append('\n')
                 .append("Runs: ").append(options.runs()).append('\n')
                 .append("Capability matrix: cross-engine-concurrency-capabilities.csv\n")
@@ -3654,6 +3686,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             int fixtureBatch,
             int warmups,
             int iterations,
+            double minimumWarmupSeconds,
+            int maximumWarmupIterations,
             double minimumMeasuredSeconds,
             int maximumMeasuredIterations,
             int runs,
@@ -3717,6 +3751,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.parseInt(System.getProperty(PREFIX + "fixtureBatch", "100")),
                     Integer.parseInt(System.getProperty(PREFIX + "warmups", "2")),
                     Integer.parseInt(System.getProperty(PREFIX + "iterations", "3")),
+                    Double.parseDouble(System.getProperty(PREFIX + "minimumWarmupSeconds", "0")),
+                    Integer.parseInt(System.getProperty(PREFIX + "maximumWarmupIterations", "10000")),
                     Double.parseDouble(System.getProperty(PREFIX + "minimumMeasuredSeconds", "0")),
                     Integer.parseInt(System.getProperty(PREFIX + "maximumMeasuredIterations", "10000")),
                     Integer.parseInt(System.getProperty(PREFIX + "runs", "4")),
@@ -3795,6 +3831,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || h2RangeFetchSize < 0
                     || payload < 16 || fixtureBatch < 1 || warmups < 0
                     || iterations < 1
+                    || !Double.isFinite(minimumWarmupSeconds) || minimumWarmupSeconds < 0.0
+                    || maximumWarmupIterations < Math.max(1, warmups)
                     || !Double.isFinite(minimumMeasuredSeconds) || minimumMeasuredSeconds < 0.0
                     || maximumMeasuredIterations < iterations
                     || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0

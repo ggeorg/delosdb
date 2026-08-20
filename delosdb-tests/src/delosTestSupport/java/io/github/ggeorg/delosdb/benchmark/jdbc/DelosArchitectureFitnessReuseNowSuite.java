@@ -176,7 +176,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 Semantic authority: Phase-0A DelosSqlSemanticOracle over JDBC SQL-visible state.
                 Performance substrate: existing DelosJdbcCrossEngineConcurrency; no second benchmark engine.
                 Measurement validity: consume Phase-0C VALID/NOISY/INVALID gate; INVALID forbids conclusions.
-                Sample adequacy: exactly 8 independent runs, >=2 warmups, >=3 measured intervals, and >=1.0s timed work per run.
+                Sample adequacy: exactly 8 independent runs, adaptive warmup >=2.0s, >=3 measured intervals, and >=2.0s timed work per run.
                 Dispersion: <=5% VALID, >5%-15% NOISY, >15% INVALID using max(IQR/median, MAD/median).
                 Evidence semantics: report/suite execution is tri-state and preserves INVALID rows without failing
                 Phase-1 infrastructure. A separate strict-report mode hard-fails INVALID when an architecture
@@ -198,6 +198,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             Path dispersion = leaf.resolve("cross-engine-concurrency-dispersion.csv");
             Path results = leaf.resolve("cross-engine-concurrency-results.csv");
             Path oracle = leaf.resolve("sql-semantic-oracle.csv");
+            validateSamplingProfile(leaf.resolve("cross-engine-concurrency-summary.txt"));
             Map<Shape, String> oracleFingerprints = readOracle(oracle);
             Map<SampleKey, SampleEvidence> samples = readSamples(results);
             List<String> lines = Files.readAllLines(dispersion, StandardCharsets.UTF_8);
@@ -261,6 +262,24 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             }
         }
         return List.copyOf(rows);
+    }
+
+    private static void validateSamplingProfile(Path summary) throws IOException {
+        String text = Files.readString(summary, StandardCharsets.UTF_8);
+        List<String> required = List.of(
+                "Warmups: 2",
+                "Minimum warmup seconds per run: 2.0",
+                "Maximum warmup intervals per run: 5000",
+                "Iterations: 3",
+                "Minimum measured seconds per run: 2.0",
+                "Maximum measured intervals per run: 5000",
+                "Runs: 8");
+        for (String line : required) {
+            if (!text.contains(line + "\n") && !text.endsWith(line)) {
+                throw new IllegalStateException(
+                        "Step-6 sampling profile mismatch; missing '" + line + "' in " + summary);
+            }
+        }
     }
 
     private static Map<Shape, String> readOracle(Path oracle) throws IOException {
@@ -436,7 +455,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 .append("- VALID: ordinary architecture-performance comparisons allowed.\n")
                 .append("- NOISY: only effects materially larger than observed noise are decision-quality.\n")
                 .append("- INVALID: no architecture-performance conclusion is allowed for the affected row/case.\n")
-                .append("- SAMPLE_INADEQUATE: <8 runs, <2 warmups, <3 measured intervals, or <1.0s timed work/run.\n")
+                .append("- SAMPLE_INADEQUATE: sampling-profile mismatch, <8 runs, <2 warmup intervals, <3 measured intervals, or <2.0s timed work/run.\n")
                 .append("- INVALID evidence is preserved during Phase-1 infrastructure work; it does not erase a\n")
                 .append("  completed correctness/coverage run or force production optimization during the freeze.\n")
                 .append("- The strict-report mode remains available for later architecture acceptance decisions.\n")
@@ -567,7 +586,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             int minIterations) {
         GateStatus status() {
             return runs == 8
-                    && minElapsedSeconds >= 1.0
+                    && minElapsedSeconds >= 2.0
                     && minWarmups >= 2
                     && minIterations >= 3
                     ? GateStatus.VALID : GateStatus.INVALID;
