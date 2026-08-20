@@ -251,7 +251,8 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 rows.add(new FitnessRow(
                         spec, lane, target, clients, Integer.parseInt(fields[5]),
                         Double.parseDouble(fields[13]), iqr, mad, governing,
-                        sample.runs(), sample.minElapsedSeconds(), sample.minWarmups(), sample.minIterations(),
+                        sample.runs(), sample.minElapsedSeconds(), sample.minWarmups(),
+                        sample.minWarmupElapsedSeconds(), sample.minIterations(),
                         sampleStatus, dispersionStatus, caseStatus, environment, finalStatus, fingerprint,
                         lane == Lane.SERVER ? "CLASSIFIED_NOT_WIRE_INSTRUMENTED" : "NOT_APPLICABLE"));
             }
@@ -307,35 +308,65 @@ public final class DelosArchitectureFitnessReuseNowSuite {
 
     private static Map<SampleKey, SampleEvidence> readSamples(Path results) throws IOException {
         List<String> lines = Files.readAllLines(results, StandardCharsets.UTF_8);
-        if (lines.isEmpty() || !lines.getFirst().startsWith(
-                "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,")) {
-            throw new IllegalStateException("Unexpected concurrency results CSV: " + results);
+        if (lines.isEmpty()) {
+            throw new IllegalStateException("Empty concurrency results CSV: " + results);
         }
+        String[] header = lines.getFirst().split(",", -1);
+        Map<String, Integer> columns = new HashMap<>();
+        for (int index = 0; index < header.length; index++) {
+            columns.put(header[index], index);
+        }
+        List<String> requiredColumns = List.of(
+                "target", "workload", "clients", "operationsPerTransaction", "rowCount",
+                "warmups", "iterations", "elapsedNanos");
+        for (String requiredColumn : requiredColumns) {
+            if (!columns.containsKey(requiredColumn)) {
+                throw new IllegalStateException(
+                        "Missing concurrency result column '" + requiredColumn + "' in " + results);
+            }
+        }
+        Integer warmupElapsedColumn = columns.get("warmupElapsedNanos");
         Map<SampleKey, MutableSample> mutable = new HashMap<>();
         for (int index = 1; index < lines.size(); index++) {
             if (lines.get(index).isBlank()) {
                 continue;
             }
             String[] fields = lines.get(index).split(",", -1);
-            if (fields.length != 22) {
+            if (fields.length != header.length) {
                 throw new IllegalStateException("Unexpected concurrency result row: " + lines.get(index));
             }
             Shape shape = new Shape(
-                    Integer.parseInt(fields[8]), fields[4], Integer.parseInt(fields[5]),
-                    Integer.parseInt(fields[6]));
-            SampleKey key = new SampleKey(shape, fields[0]);
+                    Integer.parseInt(fields[columns.get("rowCount")]),
+                    fields[columns.get("workload")],
+                    Integer.parseInt(fields[columns.get("clients")]),
+                    Integer.parseInt(fields[columns.get("operationsPerTransaction")]));
+            SampleKey key = new SampleKey(shape, fields[columns.get("target")]);
             MutableSample sample = mutable.computeIfAbsent(key, ignored -> new MutableSample());
             sample.runs++;
             sample.minElapsedSeconds = Math.min(
-                    sample.minElapsedSeconds, Long.parseLong(fields[16]) / 1_000_000_000.0);
-            sample.minWarmups = Math.min(sample.minWarmups, Integer.parseInt(fields[11]));
-            sample.minIterations = Math.min(sample.minIterations, Integer.parseInt(fields[12]));
+                    sample.minElapsedSeconds,
+                    Long.parseLong(fields[columns.get("elapsedNanos")]) / 1_000_000_000.0);
+            sample.minWarmups = Math.min(
+                    sample.minWarmups, Integer.parseInt(fields[columns.get("warmups")]));
+            sample.minIterations = Math.min(
+                    sample.minIterations, Integer.parseInt(fields[columns.get("iterations")]));
+            if (warmupElapsedColumn != null) {
+                sample.warmupElapsedObserved = true;
+                sample.minWarmupElapsedSeconds = Math.min(
+                        sample.minWarmupElapsedSeconds,
+                        Long.parseLong(fields[warmupElapsedColumn]) / 1_000_000_000.0);
+            }
         }
         Map<SampleKey, SampleEvidence> values = new HashMap<>();
         for (Map.Entry<SampleKey, MutableSample> entry : mutable.entrySet()) {
             MutableSample sample = entry.getValue();
             values.put(entry.getKey(), new SampleEvidence(
-                    sample.runs, sample.minElapsedSeconds, sample.minWarmups, sample.minIterations));
+                    sample.runs,
+                    sample.minElapsedSeconds,
+                    sample.minWarmups,
+                    sample.warmupElapsedObserved,
+                    sample.minWarmupElapsedSeconds,
+                    sample.minIterations));
         }
         return Map.copyOf(values);
     }
@@ -378,7 +409,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         StringBuilder text = new StringBuilder();
         text.append("caseId\tfamilyId\tworkloadFamily\tlane\ttarget\tclients\toperationsPerTransaction\t")
                 .append("medianOperationsPerSecond\tiqrToMedian\tmadToMedian\tgoverningDispersion\t")
-                .append("sampleRuns\tminElapsedSeconds\tminWarmups\tminMeasuredIterations\t")
+                .append("sampleRuns\tminElapsedSeconds\tminWarmups\tminWarmupElapsedSeconds\tminMeasuredIterations\t")
                 .append("sampleStatus\tdispersionStatus\tcaseStatus\tenvironmentStatus\tfinalStatus\tsqlOracleFingerprint\t")
                 .append("serverProtocolClass\tprotocolEvidenceStatus\n");
         for (FitnessRow row : ordered) {
@@ -396,6 +427,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                     .append(row.sampleRuns()).append('\t')
                     .append(format(row.minElapsedSeconds())).append('\t')
                     .append(row.minWarmups()).append('\t')
+                    .append(format(row.minWarmupElapsedSeconds())).append('\t')
                     .append(row.minMeasuredIterations()).append('\t')
                     .append(row.sampleStatus()).append('\t')
                     .append(row.dispersionStatus()).append('\t')
@@ -450,12 +482,13 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                 .append(worst.lane()).append(' ')
                 .append(worst.target()).append(" clients=").append(worst.clients())
                 .append(" governingDispersion=").append(format(worst.governing()))
+                .append(" minWarmupElapsedSeconds=").append(format(worst.minWarmupElapsedSeconds()))
                 .append(" minElapsedSeconds=").append(format(worst.minElapsedSeconds())).append("\n\n")
                 .append("Interpretation:\n")
                 .append("- VALID: ordinary architecture-performance comparisons allowed.\n")
                 .append("- NOISY: only effects materially larger than observed noise are decision-quality.\n")
                 .append("- INVALID: no architecture-performance conclusion is allowed for the affected row/case.\n")
-                .append("- SAMPLE_INADEQUATE: sampling-profile mismatch, <8 runs, <2 warmup intervals, <3 measured intervals, or <2.0s timed work/run.\n")
+                .append("- SAMPLE_INADEQUATE: sampling-profile mismatch, <8 runs, <2 warmup intervals, missing/<2.0s observed warmup, <3 measured intervals, or <2.0s timed work/run.\n")
                 .append("- INVALID evidence is preserved during Phase-1 infrastructure work; it does not erase a\n")
                 .append("  completed correctness/coverage run or force production optimization during the freeze.\n")
                 .append("- The strict-report mode remains available for later architecture acceptance decisions.\n")
@@ -472,6 +505,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
                         .append(" governing=").append(format(row.governing()))
                         .append(" sampleStatus=").append(row.sampleStatus())
                         .append(" runs=").append(row.sampleRuns())
+                        .append(" minWarmupElapsedSeconds=").append(format(row.minWarmupElapsedSeconds()))
                         .append(" minElapsedSeconds=").append(format(row.minElapsedSeconds()))
                         .append('\n');
             }
@@ -500,8 +534,10 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         properties.setProperty("suite.status", suite.name());
         properties.setProperty("sample.minimum.runs", "8");
         properties.setProperty("sample.minimum.warmups", "2");
+        properties.setProperty("sample.minimum.warmup.seconds", "2.0");
         properties.setProperty("sample.minimum.measured.iterations", "3");
-        properties.setProperty("sample.minimum.elapsed.seconds", "1.0");
+        properties.setProperty("sample.minimum.elapsed.seconds", "2.0");
+        properties.setProperty("sample.minimum.measured.seconds", "2.0");
         properties.setProperty("server.protocol.schema", "CLASSIFIED_NOT_WIRE_INSTRUMENTED");
         try (var writer = Files.newBufferedWriter(output, StandardCharsets.UTF_8)) {
             properties.store(writer, "DelosDB Phase-1 REUSE_NOW fitness manifest");
@@ -576,6 +612,8 @@ public final class DelosArchitectureFitnessReuseNowSuite {
         private int runs;
         private double minElapsedSeconds = Double.POSITIVE_INFINITY;
         private int minWarmups = Integer.MAX_VALUE;
+        private boolean warmupElapsedObserved;
+        private double minWarmupElapsedSeconds = Double.POSITIVE_INFINITY;
         private int minIterations = Integer.MAX_VALUE;
     }
 
@@ -583,11 +621,15 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             int runs,
             double minElapsedSeconds,
             int minWarmups,
+            boolean warmupElapsedObserved,
+            double minWarmupElapsedSeconds,
             int minIterations) {
         GateStatus status() {
             return runs == 8
                     && minElapsedSeconds >= 2.0
                     && minWarmups >= 2
+                    && warmupElapsedObserved
+                    && minWarmupElapsedSeconds >= 2.0
                     && minIterations >= 3
                     ? GateStatus.VALID : GateStatus.INVALID;
         }
@@ -606,6 +648,7 @@ public final class DelosArchitectureFitnessReuseNowSuite {
             int sampleRuns,
             double minElapsedSeconds,
             int minWarmups,
+            double minWarmupElapsedSeconds,
             int minMeasuredIterations,
             GateStatus sampleStatus,
             GateStatus dispersionStatus,

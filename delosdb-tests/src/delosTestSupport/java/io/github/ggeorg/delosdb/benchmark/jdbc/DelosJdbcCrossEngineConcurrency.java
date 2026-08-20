@@ -8,6 +8,7 @@ package io.github.ggeorg.delosdb.benchmark.jdbc;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,7 +63,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
-                    + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,iterations,"
+                    + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,warmupElapsedNanos,iterations,"
                     + "measuredTransactions,measuredOperations,retryableConflictRetries,elapsedNanos,"
                     + "transactionsPerSecond,operationsPerSecond,inverseThroughputNanosPerTransaction,"
                     + "semanticFingerprint,run";
@@ -99,25 +100,45 @@ public final class DelosJdbcCrossEngineConcurrency {
             prepareContainerEnvironment(options);
         }
 
-        for (int run = 1; run <= options.runs(); run++) {
-            List<Target> targets = new ArrayList<>(options.targetValues());
-            if (((run - 1) & 2) != 0) {
-                Collections.reverse(targets);
-            }
-            for (Target target : targets) {
-                if (target.isContainer()) {
-                    try (ContainerServer server = startContainer(options, target, run)) {
-                        try {
-                            launchWorker(options, target, run, server.endpoint());
-                        } catch (Throwable failure) {
-                            failure.addSuppressed(new IllegalStateException(
-                                    "Container log for " + target.id() + ":\n" + server.logs()));
-                            throw failure;
+        if (hostStateDiagnosticsEnabled()) {
+            writeHostStateDiagnosticHeader(options);
+            captureHostState(options, "SUITE_START", 0, "-");
+        }
+
+        try {
+            for (int run = 1; run <= options.runs(); run++) {
+                List<Target> targets = new ArrayList<>(options.targetValues());
+                if (((run - 1) & 2) != 0) {
+                    Collections.reverse(targets);
+                }
+                for (Target target : targets) {
+                    if (hostStateDiagnosticsEnabled()) {
+                        captureHostState(options, "BEFORE_WORKER", run, target.id());
+                    }
+                    try {
+                        if (target.isContainer()) {
+                            try (ContainerServer server = startContainer(options, target, run)) {
+                                try {
+                                    launchWorker(options, target, run, server.endpoint());
+                                } catch (Throwable failure) {
+                                    failure.addSuppressed(new IllegalStateException(
+                                            "Container log for " + target.id() + ":\n" + server.logs()));
+                                    throw failure;
+                                }
+                            }
+                        } else {
+                            launchWorker(options, target, run, null);
+                        }
+                    } finally {
+                        if (hostStateDiagnosticsEnabled()) {
+                            captureHostState(options, "AFTER_WORKER", run, target.id());
                         }
                     }
-                } else {
-                    launchWorker(options, target, run, null);
                 }
+            }
+        } finally {
+            if (hostStateDiagnosticsEnabled()) {
+                captureHostState(options, "SUITE_END", options.runs(), "-");
             }
         }
 
@@ -892,7 +913,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
                         transactionsPerClient, config.rowCount(), config.payloadSize(),
-                        config.commitBatchSize(), warmupIterations, measuredIterations,
+                        config.commitBatchSize(), warmupIterations, warmupElapsed, measuredIterations,
                         measuredTransactions, measuredOperations, retryableRollbacks, elapsed,
                         measuredTransactions * 1_000_000_000.0 / elapsed,
                         measuredOperations * 1_000_000_000.0 / elapsed,
@@ -931,6 +952,70 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean sqlSemanticOracleEnabled() {
         return Boolean.getBoolean(PREFIX + "sqlSemanticOracle");
+    }
+
+    private static boolean hostStateDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "hostStateDiagnostics");
+    }
+
+    private static void writeHostStateDiagnosticHeader(Options options) throws IOException {
+        Files.writeString(
+                options.reportDirectory().resolve("host-state-diagnostics.tsv"),
+                "capturedAtUtc\tstage\trun\ttarget\tsystemLoadAverage\tavailableProcessors\t"
+                        + "pmsetTherm\tpmsetSysload\tpmsetBattery\n",
+                StandardCharsets.UTF_8);
+    }
+
+    private static void captureHostState(
+            Options options, String stage, int run, String target) {
+        try {
+            var operatingSystem = ManagementFactory.getOperatingSystemMXBean();
+            String row = Instant.now() + "\t"
+                    + stage + "\t"
+                    + run + "\t"
+                    + target + "\t"
+                    + format(operatingSystem.getSystemLoadAverage()) + "\t"
+                    + operatingSystem.getAvailableProcessors() + "\t"
+                    + tsvField(pmset("therm")) + "\t"
+                    + tsvField(pmset("sysload")) + "\t"
+                    + tsvField(pmset("batt")) + "\n";
+            Files.writeString(
+                    options.reportDirectory().resolve("host-state-diagnostics.tsv"),
+                    row,
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (Throwable failure) {
+            try {
+                Files.writeString(
+                        options.reportDirectory().resolve("host-state-diagnostics.tsv"),
+                        Instant.now() + "\t" + stage + "\t" + run + "\t" + target
+                                + "\tNaN\t0\t" + tsvField("capture-failed: " + failure)
+                                + "\t\t\n",
+                        StandardCharsets.UTF_8,
+                        java.nio.file.StandardOpenOption.APPEND);
+            } catch (IOException ignored) {
+                // Host diagnostics must never alter benchmark execution semantics.
+            }
+        }
+    }
+
+    private static String pmset(String argument) {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            return "UNAVAILABLE_NON_MACOS";
+        }
+        try {
+            CommandResult result = runCommand(5, List.of("pmset", "-g", argument));
+            return "exit=" + result.exitCode() + " " + result.output().trim();
+        } catch (Throwable failure) {
+            return "UNAVAILABLE " + failure;
+        }
+    }
+
+    private static String tsvField(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\t", "\\t")
+                .replace("\r", "")
+                .replace("\n", "\\n");
     }
 
     private static boolean mvccSnapshotLeaseDiagnosticsEnabled() {
@@ -3504,6 +3589,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int payloadSize,
             int fixtureCommitBatchSize,
             int warmups,
+            long warmupElapsedNanos,
             int iterations,
             long measuredTransactions,
             long measuredOperations,
@@ -3519,7 +3605,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.toString(clients), Integer.toString(operationsPerTransaction),
                     Integer.toString(transactionsPerClient), Integer.toString(rowCount),
                     Integer.toString(payloadSize), Integer.toString(fixtureCommitBatchSize),
-                    Integer.toString(warmups), Integer.toString(iterations),
+                    Integer.toString(warmups), Long.toString(warmupElapsedNanos), Integer.toString(iterations),
                     Long.toString(measuredTransactions), Long.toString(measuredOperations),
                     Long.toString(retryableRollbacks), Long.toString(elapsedNanos), format(transactionsPerSecond),
                     format(operationsPerSecond), format(inverseThroughputNanosPerTransaction),
@@ -3541,6 +3627,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int payloadSize,
             int fixtureCommitBatchSize,
             int warmups,
+            long warmupElapsedNanos,
             int iterations,
             long measuredTransactions,
             long measuredOperations,
@@ -3553,17 +3640,17 @@ public final class DelosJdbcCrossEngineConcurrency {
             int run) {
         static Row parse(String line) {
             String[] fields = line.split(",", -1);
-            if (fields.length != 22) {
+            if (fields.length != 23) {
                 throw new IllegalArgumentException(
-                        "Expected 22 concurrency CSV fields, found " + fields.length + ": " + line);
+                        "Expected 23 concurrency CSV fields, found " + fields.length + ": " + line);
             }
             return new Row(fields[0], fields[1], fields[2], fields[3], Workload.valueOf(fields[4]),
                     Integer.parseInt(fields[5]), Integer.parseInt(fields[6]), Integer.parseInt(fields[7]),
                     Integer.parseInt(fields[8]), Integer.parseInt(fields[9]), Integer.parseInt(fields[10]),
-                    Integer.parseInt(fields[11]), Integer.parseInt(fields[12]), Long.parseLong(fields[13]),
+                    Integer.parseInt(fields[11]), Long.parseLong(fields[12]), Integer.parseInt(fields[13]),
                     Long.parseLong(fields[14]), Long.parseLong(fields[15]), Long.parseLong(fields[16]),
-                    Double.parseDouble(fields[17]), Double.parseDouble(fields[18]), Double.parseDouble(fields[19]),
-                    Long.parseLong(fields[20]), Integer.parseInt(fields[21]));
+                    Long.parseLong(fields[17]), Double.parseDouble(fields[18]), Double.parseDouble(fields[19]),
+                    Double.parseDouble(fields[20]), Long.parseLong(fields[21]), Integer.parseInt(fields[22]));
         }
 
         ShapeKey shape() {
@@ -3573,7 +3660,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         String csv() {
             return new Measurement(target, product, productVersion, driverVersion, workload, clients,
                     operationsPerTransaction, transactionsPerClient, rowCount, payloadSize,
-                    fixtureCommitBatchSize, warmups, iterations, measuredTransactions, measuredOperations,
+                    fixtureCommitBatchSize, warmups, warmupElapsedNanos, iterations,
+                    measuredTransactions, measuredOperations,
                     retryableRollbacks, elapsedNanos, transactionsPerSecond, operationsPerSecond,
                     inverseThroughputNanosPerTransaction, semanticFingerprint, run).csv();
         }
@@ -3822,7 +3910,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
-            if (target == null && !mvccOnlyDiagnostic && !clientValues().contains(1)) {
+            if (target == null && !mvccOnlyDiagnostic
+                    && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
