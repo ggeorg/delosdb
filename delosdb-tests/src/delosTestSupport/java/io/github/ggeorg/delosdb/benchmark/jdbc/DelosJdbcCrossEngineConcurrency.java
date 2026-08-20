@@ -61,6 +61,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final List<Target> SERVER_REFERENCE_CANARY_TARGETS = List.of(
             Target.UPSTREAM_DERBY_DRDA, Target.H2_SERVER, Target.POSTGRESQL, Target.MARIADB);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
+    private static final List<Target> HOST_RECOVERY_DIAGNOSTIC_TARGETS = List.of(Target.H2, Target.SQLITE);
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,warmupElapsedNanos,iterations,"
@@ -104,6 +105,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             writeHostStateDiagnosticHeader(options);
             captureHostState(options, "SUITE_START", 0, "-");
         }
+        if (hostProcessDiagnosticsEnabled()) {
+            writeHostProcessDiagnosticHeader(options);
+            captureHostProcessSample(options, "SUITE_START", 0, "-", null);
+        }
+        if (hostStateRecoveryEnabled()) {
+            writeHostRecoveryConfiguration(options);
+        }
 
         try {
             for (int run = 1; run <= options.runs(); run++) {
@@ -135,10 +143,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                         }
                     }
                 }
+                if (hostStateRecoveryEnabled() && run == hostStateCooldownAfterRun()) {
+                    coolDownHost(options, run);
+                }
             }
         } finally {
             if (hostStateDiagnosticsEnabled()) {
                 captureHostState(options, "SUITE_END", options.runs(), "-");
+            }
+            if (hostProcessDiagnosticsEnabled()) {
+                captureHostProcessSample(options, "SUITE_END", options.runs(), "-", null);
             }
         }
 
@@ -276,18 +290,26 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile())
                 .start();
-        boolean completed = options.workerTimeoutSeconds() == 0
-                ? waitForUnbounded(process)
-                : process.waitFor(options.workerTimeoutSeconds(), TimeUnit.SECONDS);
-        if (!completed) {
-            process.destroy();
-            if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(10, TimeUnit.SECONDS);
+        Thread hostSampler = hostProcessDiagnosticsEnabled()
+                ? startHostProcessSampler(options, target, run, process)
+                : null;
+        boolean completed;
+        try {
+            completed = options.workerTimeoutSeconds() == 0
+                    ? waitForUnbounded(process)
+                    : process.waitFor(options.workerTimeoutSeconds(), TimeUnit.SECONDS);
+            if (!completed) {
+                process.destroy();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    process.waitFor(10, TimeUnit.SECONDS);
+                }
+                throw new IllegalStateException("Concurrency worker timed out: target=" + target.id()
+                        + ", run=" + run + ", workerTimeoutSeconds=" + options.workerTimeoutSeconds()
+                        + ", log=" + log);
             }
-            throw new IllegalStateException("Concurrency worker timed out: target=" + target.id()
-                    + ", run=" + run + ", workerTimeoutSeconds=" + options.workerTimeoutSeconds()
-                    + ", log=" + log);
+        } finally {
+            stopHostProcessSampler(hostSampler);
         }
         int status = process.exitValue();
         if (status != 0) {
@@ -958,24 +980,69 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "hostStateDiagnostics");
     }
 
+    private static boolean hostProcessDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "hostProcessDiagnostics");
+    }
+
+    private static boolean hostStateRecoveryEnabled() {
+        return Boolean.getBoolean(PREFIX + "hostStateRecovery");
+    }
+
+    private static int hostProcessSampleSeconds() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostProcessSampleSeconds", "5"));
+    }
+
+    private static int hostStateCooldownAfterRun() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostStateCooldownAfterRun", "0"));
+    }
+
+    private static int hostStateCooldownMinimumSeconds() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostStateCooldownMinimumSeconds", "60"));
+    }
+
+    private static int hostStateCooldownMaximumSeconds() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostStateCooldownMaximumSeconds", "300"));
+    }
+
+    private static int hostStateCooldownSampleSeconds() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostStateCooldownSampleSeconds", "10"));
+    }
+
+    private static int hostStateCooldownQuietSamples() {
+        return Integer.parseInt(System.getProperty(PREFIX + "hostStateCooldownQuietSamples", "2"));
+    }
+
+    private static double hostStateCooldownMaximumCpuLoad() {
+        return Double.parseDouble(System.getProperty(PREFIX + "hostStateCooldownMaximumCpuLoad", "0.35"));
+    }
+
+    private static double hostStateCooldownMaximumLoadPerProcessor() {
+        return Double.parseDouble(System.getProperty(
+                PREFIX + "hostStateCooldownMaximumLoadPerProcessor", "1.25"));
+    }
+
     private static void writeHostStateDiagnosticHeader(Options options) throws IOException {
         Files.writeString(
                 options.reportDirectory().resolve("host-state-diagnostics.tsv"),
-                "capturedAtUtc\tstage\trun\ttarget\tsystemLoadAverage\tavailableProcessors\t"
-                        + "pmsetTherm\tpmsetSysload\tpmsetBattery\n",
+                "capturedAtUtc\tstage\trun\ttarget\tsystemLoadAverage\tsystemCpuLoad"
+                        + "\tavailableProcessors\tfreeMemoryBytes\ttotalMemoryBytes"
+                        + "\tpmsetTherm\tpmsetSysload\tpmsetBattery\n",
                 StandardCharsets.UTF_8);
     }
 
-    private static void captureHostState(
+    private static HostState captureHostState(
             Options options, String stage, int run, String target) {
+        HostState state = currentHostState();
         try {
-            var operatingSystem = ManagementFactory.getOperatingSystemMXBean();
             String row = Instant.now() + "\t"
                     + stage + "\t"
                     + run + "\t"
                     + target + "\t"
-                    + format(operatingSystem.getSystemLoadAverage()) + "\t"
-                    + operatingSystem.getAvailableProcessors() + "\t"
+                    + format(state.systemLoadAverage()) + "\t"
+                    + format(state.systemCpuLoad()) + "\t"
+                    + state.availableProcessors() + "\t"
+                    + state.freeMemoryBytes() + "\t"
+                    + state.totalMemoryBytes() + "\t"
                     + tsvField(pmset("therm")) + "\t"
                     + tsvField(pmset("sysload")) + "\t"
                     + tsvField(pmset("batt")) + "\n";
@@ -989,13 +1056,237 @@ public final class DelosJdbcCrossEngineConcurrency {
                 Files.writeString(
                         options.reportDirectory().resolve("host-state-diagnostics.tsv"),
                         Instant.now() + "\t" + stage + "\t" + run + "\t" + target
-                                + "\tNaN\t0\t" + tsvField("capture-failed: " + failure)
-                                + "\t\t\n",
+                                + "\tNaN\tNaN\t0\t-1\t-1\t"
+                                + tsvField("capture-failed: " + failure) + "\t\t\n",
                         StandardCharsets.UTF_8,
                         java.nio.file.StandardOpenOption.APPEND);
             } catch (IOException ignored) {
                 // Host diagnostics must never alter benchmark execution semantics.
             }
+        }
+        return state;
+    }
+
+    private static HostState currentHostState() {
+        var bean = ManagementFactory.getOperatingSystemMXBean();
+        Number cpuLoad = operatingSystemNumber("CpuLoad", "SystemCpuLoad");
+        Number freeMemory = operatingSystemNumber("FreeMemorySize", "FreePhysicalMemorySize");
+        Number totalMemory = operatingSystemNumber("TotalMemorySize", "TotalPhysicalMemorySize");
+        return new HostState(
+                bean.getSystemLoadAverage(),
+                cpuLoad == null ? Double.NaN : cpuLoad.doubleValue(),
+                bean.getAvailableProcessors(),
+                freeMemory == null ? -1L : freeMemory.longValue(),
+                totalMemory == null ? -1L : totalMemory.longValue());
+    }
+
+    private static Number operatingSystemNumber(String... attributeNames) {
+        try {
+            var server = ManagementFactory.getPlatformMBeanServer();
+            var operatingSystem = new javax.management.ObjectName(
+                    ManagementFactory.OPERATING_SYSTEM_MXBEAN_NAME);
+            for (String attributeName : attributeNames) {
+                try {
+                    Object value = server.getAttribute(operatingSystem, attributeName);
+                    if (value instanceof Number number) {
+                        return number;
+                    }
+                } catch (javax.management.JMException ignored) {
+                    // Try the compatibility attribute name, if one was supplied.
+                }
+            }
+        } catch (javax.management.JMException ignored) {
+            // Host diagnostics are optional; callers retain NaN/-1 fallbacks.
+        }
+        return null;
+    }
+
+    private static void writeHostProcessDiagnosticHeader(Options options) throws IOException {
+        Files.writeString(
+                options.reportDirectory().resolve("host-process-diagnostics.tsv"),
+                "capturedAtUtc\tstage\trun\ttarget\tworkerPid\tworkerAlive\tworkerCpuSeconds"
+                        + "\tsystemLoadAverage\tsystemCpuLoad\tavailableProcessors"
+                        + "\tfreeMemoryBytes\ttotalMemoryBytes\ttopProcesses\tvmStat\tswapUsage\n",
+                StandardCharsets.UTF_8);
+    }
+
+    private static Thread startHostProcessSampler(
+            Options options, Target target, int run, Process process) {
+        Thread sampler = new Thread(() -> {
+            while (!Thread.currentThread().isInterrupted() && process.isAlive()) {
+                captureHostProcessSample(options, "WORKER_SAMPLE", run, target.id(), process);
+                try {
+                    TimeUnit.SECONDS.sleep(hostProcessSampleSeconds());
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }, "delos-host-process-sampler-" + run + '-' + target.id());
+        sampler.setDaemon(true);
+        sampler.start();
+        return sampler;
+    }
+
+    private static void stopHostProcessSampler(Thread sampler) {
+        if (sampler == null) {
+            return;
+        }
+        sampler.interrupt();
+        try {
+            sampler.join(TimeUnit.SECONDS.toMillis(2));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void captureHostProcessSample(
+            Options options, String stage, int run, String target, Process worker) {
+        try {
+            HostState state = currentHostState();
+            long workerPid = worker == null ? 0L : worker.pid();
+            boolean workerAlive = worker != null && worker.isAlive();
+            double workerCpuSeconds = worker == null
+                    ? Double.NaN
+                    : worker.info().totalCpuDuration()
+                            .map(duration -> duration.toNanos() / 1_000_000_000.0)
+                            .orElse(Double.NaN);
+            String row = Instant.now() + "\t"
+                    + stage + "\t"
+                    + run + "\t"
+                    + target + "\t"
+                    + workerPid + "\t"
+                    + workerAlive + "\t"
+                    + format(workerCpuSeconds) + "\t"
+                    + format(state.systemLoadAverage()) + "\t"
+                    + format(state.systemCpuLoad()) + "\t"
+                    + state.availableProcessors() + "\t"
+                    + state.freeMemoryBytes() + "\t"
+                    + state.totalMemoryBytes() + "\t"
+                    + tsvField(topProcessSnapshot()) + "\t"
+                    + tsvField(vmStat()) + "\t"
+                    + tsvField(swapUsage()) + "\n";
+            Files.writeString(
+                    options.reportDirectory().resolve("host-process-diagnostics.tsv"),
+                    row,
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (Throwable ignored) {
+            // External host sampling is diagnostic only and must not fail the benchmark.
+        }
+    }
+
+    private static String topProcessSnapshot() {
+        try {
+            boolean mac = System.getProperty("os.name", "")
+                    .toLowerCase(Locale.ROOT).contains("mac");
+            List<String> command = mac
+                    ? List.of("ps", "-A", "-r", "-o",
+                            "pid=,ppid=,%cpu=,%mem=,state=,etime=,command=")
+                    : List.of("ps", "-eo",
+                            "pid=,ppid=,%cpu=,%mem=,stat=,etime=,command=", "--sort=-%cpu");
+            CommandResult result = runCommand(5, command);
+            if (result.exitCode() != 0) {
+                return "exit=" + result.exitCode() + " " + result.output().trim();
+            }
+            String[] lines = result.output().split("\\R");
+            int limit = Math.min(lines.length, 20);
+            return String.join("\n", Arrays.asList(lines).subList(0, limit));
+        } catch (Throwable failure) {
+            return "UNAVAILABLE " + failure;
+        }
+    }
+
+    private static String vmStat() {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            return "UNAVAILABLE_NON_MACOS";
+        }
+        try {
+            CommandResult result = runCommand(5, List.of("vm_stat"));
+            return "exit=" + result.exitCode() + " " + result.output().trim();
+        } catch (Throwable failure) {
+            return "UNAVAILABLE " + failure;
+        }
+    }
+
+    private static String swapUsage() {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")) {
+            return "UNAVAILABLE_NON_MACOS";
+        }
+        try {
+            CommandResult result = runCommand(5, List.of("sysctl", "vm.swapusage"));
+            return "exit=" + result.exitCode() + " " + result.output().trim();
+        } catch (Throwable failure) {
+            return "UNAVAILABLE " + failure;
+        }
+    }
+
+    private static void writeHostRecoveryConfiguration(Options options) throws IOException {
+        Files.writeString(
+                options.reportDirectory().resolve("host-recovery.txt"),
+                "status=PENDING\n"
+                        + "cooldownAfterRun=" + hostStateCooldownAfterRun() + "\n"
+                        + "minimumCooldownSeconds=" + hostStateCooldownMinimumSeconds() + "\n"
+                        + "maximumCooldownSeconds=" + hostStateCooldownMaximumSeconds() + "\n"
+                        + "sampleSeconds=" + hostStateCooldownSampleSeconds() + "\n"
+                        + "requiredQuietSamples=" + hostStateCooldownQuietSamples() + "\n"
+                        + "maximumCpuLoad=" + hostStateCooldownMaximumCpuLoad() + "\n"
+                        + "maximumLoadPerProcessor=" + hostStateCooldownMaximumLoadPerProcessor() + "\n",
+                StandardCharsets.UTF_8);
+    }
+
+    private static void coolDownHost(Options options, int run) {
+        long started = System.nanoTime();
+        int quietSamples = 0;
+        int samples = 0;
+        String status = "TIMEOUT";
+        captureHostState(options, "COOLDOWN_BEGIN", run, "-");
+        captureHostProcessSample(options, "COOLDOWN_BEGIN", run, "-", null);
+        while (TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started)
+                < hostStateCooldownMaximumSeconds()) {
+            try {
+                TimeUnit.SECONDS.sleep(hostStateCooldownSampleSeconds());
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                status = "INTERRUPTED";
+                break;
+            }
+            samples++;
+            HostState state = captureHostState(options, "COOLDOWN_SAMPLE", run, "-");
+            captureHostProcessSample(options, "COOLDOWN_SAMPLE", run, "-", null);
+            long elapsedSeconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+            boolean minimumElapsed = elapsedSeconds >= hostStateCooldownMinimumSeconds();
+            boolean cpuQuiet = Double.isFinite(state.systemCpuLoad())
+                    && state.systemCpuLoad() >= 0.0
+                    && state.systemCpuLoad() <= hostStateCooldownMaximumCpuLoad();
+            boolean loadQuiet = Double.isFinite(state.systemLoadAverage())
+                    && state.systemLoadAverage() >= 0.0
+                    && state.systemLoadAverage()
+                            <= state.availableProcessors() * hostStateCooldownMaximumLoadPerProcessor();
+            if (minimumElapsed && cpuQuiet && loadQuiet) {
+                quietSamples++;
+                if (quietSamples >= hostStateCooldownQuietSamples()) {
+                    status = "QUIET";
+                    break;
+                }
+            } else {
+                quietSamples = 0;
+            }
+        }
+        HostState end = captureHostState(options, "COOLDOWN_END_" + status, run, "-");
+        captureHostProcessSample(options, "COOLDOWN_END_" + status, run, "-", null);
+        try {
+            Files.writeString(
+                    options.reportDirectory().resolve("host-recovery.txt"),
+                    "status=" + status + "\n"
+                            + "samples=" + samples + "\n"
+                            + "elapsedSeconds="
+                            + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started) + "\n"
+                            + "finalSystemLoadAverage=" + format(end.systemLoadAverage()) + "\n"
+                            + "finalSystemCpuLoad=" + format(end.systemCpuLoad()) + "\n",
+                    StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException ignored) {
+            // Diagnostic summary must not alter benchmark execution semantics.
         }
     }
 
@@ -1016,6 +1307,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .replace("\t", "\\t")
                 .replace("\r", "")
                 .replace("\n", "\\n");
+    }
+
+    private record HostState(
+            double systemLoadAverage,
+            double systemCpuLoad,
+            int availableProcessors,
+            long freeMemoryBytes,
+            long totalMemoryBytes) {
     }
 
     private static boolean mvccSnapshotLeaseDiagnosticsEnabled() {
@@ -3863,6 +4162,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean referenceCanaryTargets = configuredTargets.equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
                     || configuredTargets.equals(SERVER_REFERENCE_CANARY_TARGETS);
             boolean mvccOnlyDiagnostic = configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS);
+            boolean hostRecoveryDiagnostic = hostStateRecoveryEnabled()
+                    && configuredTargets.equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS);
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
@@ -3870,14 +4171,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(READ_DECOMPOSITION_TARGETS)
                     && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
-                    && !mvccOnlyDiagnostic) {
+                    && !mvccOnlyDiagnostic
+                    && !hostRecoveryDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
                         + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
                         + ", diagnostic " + READ_DECOMPOSITION_TARGETS
                         + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
                         + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
-                        + ", or MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS + ": " + configuredTargets);
+                        + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
+                        + ", or host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
+                        + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
                 throw new IllegalArgumentException(
@@ -3927,6 +4231,23 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || caseTimeoutSeconds < 1 || workerTimeoutSeconds < 0
                     || containerStartupTimeoutSeconds < 1) {
                 throw new IllegalArgumentException("Invalid concurrency benchmark numeric option");
+            }
+            if (hostProcessDiagnosticsEnabled() && hostProcessSampleSeconds() < 1) {
+                throw new IllegalArgumentException("hostProcessSampleSeconds must be positive");
+            }
+            if (hostStateRecoveryEnabled()) {
+                if (hostStateCooldownAfterRun() < 1 || hostStateCooldownAfterRun() >= runs
+                        || hostStateCooldownMinimumSeconds() < 0
+                        || hostStateCooldownMaximumSeconds() < hostStateCooldownMinimumSeconds()
+                        || hostStateCooldownSampleSeconds() < 1
+                        || hostStateCooldownQuietSamples() < 1
+                        || !Double.isFinite(hostStateCooldownMaximumCpuLoad())
+                        || hostStateCooldownMaximumCpuLoad() < 0.0
+                        || hostStateCooldownMaximumCpuLoad() > 1.0
+                        || !Double.isFinite(hostStateCooldownMaximumLoadPerProcessor())
+                        || hostStateCooldownMaximumLoadPerProcessor() <= 0.0) {
+                    throw new IllegalArgumentException("Invalid host-state recovery diagnostic option");
+                }
             }
             if (target == null && !mvccOnlyDiagnostic && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");

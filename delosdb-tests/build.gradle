@@ -13895,6 +13895,85 @@ tasks.register('runDelosArchitectureFitnessStep6HostStateDiagnostic', JavaExec) 
     }
 }
 
+// Step 6F determines whether the late-run cross-engine collapse is caused by host contention
+// and whether performance recovers after the host returns to a quiet state. Host sampling runs
+// in the coordinator, outside the benchmark worker and outside its timed intervals.
+tasks.register('runDelosArchitectureFitnessStep6HostRecoveryDiagnostic', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs the focused Step-6 host-process and recovery diagnostic on H2 and SQLite.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/architecture-fitness/step6-host-recovery-diagnostic'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Step-6 host recovery diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.hostProcessDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.hostProcessSampleSeconds': '5',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateRecovery': 'true',
+                // Runs 1-6 reproduce sustained load. Runs 7-8 are the post-cooldown proof.
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownAfterRun': '6',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownMinimumSeconds': '60',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownMaximumSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownSampleSeconds': '10',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownQuietSamples': '2',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownMaximumCpuLoad': '0.35',
+                'delosdb.benchmark.crossEngineConcurrency.hostStateCooldownMaximumLoadPerProcessor': '1.25',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                // H2 exercises the high-throughput JDK path; SQLite keeps the proof JVM-independent.
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'h2,sqlite',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                        .dir('tmp/delos-architecture-fitness-step6-host-recovery-diagnostic')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/architecture-fitness/step6-host-recovery-diagnostic')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize': '0',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '15.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '15.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
 // Keep benchmark groups sequential even when Gradle parallel execution is enabled;
 // concurrent benchmark groups would invalidate their dispersion evidence.
 def delosFitnessReuseNowTasks = [
