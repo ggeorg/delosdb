@@ -187,6 +187,11 @@ public final class DelosJdbcCrossEngineConcurrency {
             validateDrdaProtocolEvidence(options, protocolEvidence);
             writeDrdaProtocolEvidence(options, protocolEvidence);
         }
+        if (drdaServerPhaseEvidenceEnabled()) {
+            List<DrdaServerPhaseEvidence> serverEvidence = loadDrdaServerPhaseEvidence(options);
+            validateDrdaServerPhaseEvidence(options, serverEvidence);
+            writeDrdaServerPhaseEvidence(options, serverEvidence);
+        }
         writeMergedCsv(options, rows);
         writeRatioCsv(options, rows);
         writeScalingCsv(options, rows);
@@ -433,6 +438,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add("-Ddelosdb.experimental.heapPageReadImage=true");
                     javaCommand.add("-Ddelosdb.experimental.fastRecordReadLock=true");
                 }
+                if (drdaServerPhaseEvidenceEnabled()) {
+                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
+                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.skipOpenQueries=20");
+                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.captureOpenQueries=20");
+                }
                 javaCommand.addAll(List.of(
                         "-cp", "/opt/delos/lib/*",
                         "org.apache.derby.drda.NetworkServerControl", "start",
@@ -498,7 +508,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         int port = publishedPort(name, target.containerPort());
         ServerEndpoint endpoint = target.endpoint(port);
-        ContainerServer server = new ContainerServer(name, endpoint);
+        Path serverEvidenceLog = drdaServerPhaseEvidenceEnabled()
+                && (target == Target.DELOS_HEAP_DRDA || target == Target.DELOS_MVCC_DRDA)
+                ? options.reportDirectory().resolve("server-phase-logs").resolve(
+                        String.format(Locale.ROOT, "%02d-%s.log", run, target.id()))
+                : null;
+        ContainerServer server = new ContainerServer(name, endpoint, serverEvidenceLog);
         try {
             awaitReady(options, target, endpoint);
             return server;
@@ -1026,6 +1041,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean drdaProtocolEvidenceEnabled() {
         return Boolean.getBoolean(PREFIX + "drdaProtocolEvidence");
+    }
+
+    private static boolean drdaServerPhaseEvidenceEnabled() {
+        return Boolean.getBoolean(PREFIX + "drdaServerPhaseEvidence");
     }
 
     private static void resetDrdaProtocolEvidence() {
@@ -3149,6 +3168,176 @@ public final class DelosJdbcCrossEngineConcurrency {
         return List.copyOf(evidence);
     }
 
+    private static List<DrdaServerPhaseEvidence> loadDrdaServerPhaseEvidence(Options options)
+            throws IOException {
+        Path directory = options.reportDirectory().resolve("server-phase-logs");
+        if (!Files.isDirectory(directory)) {
+            throw new IllegalStateException("Missing DRDA server phase log directory: " + directory);
+        }
+        List<DrdaServerPhaseEvidence> evidence = new ArrayList<>();
+        try (var stream = Files.list(directory)) {
+            for (Path log : stream.filter(Files::isRegularFile).sorted().toList()) {
+                String file = log.getFileName().toString();
+                int dash = file.indexOf('-');
+                int dot = file.lastIndexOf('.');
+                if (dash < 0 || dot <= dash) {
+                    continue;
+                }
+                int run = Integer.parseInt(file.substring(0, dash));
+                String target = file.substring(dash + 1, dot);
+                for (String line : Files.readAllLines(log, StandardCharsets.UTF_8)) {
+                    int marker = line.indexOf("DELOS_DRDA_SERVER_PHASE_EVIDENCE|");
+                    if (marker < 0) {
+                        continue;
+                    }
+                    Map<String, String> values = parseServerPhaseEvidenceLine(line.substring(marker));
+                    long openQueries = parseServerEvidenceLong(values, "openQueries");
+                    long continueQueries = parseServerEvidenceLong(values, "continueQueries");
+                    int resultColumns = Math.toIntExact(parseServerEvidenceLong(values, "resultColumns"));
+                    Workload workload;
+                    if (continueQueries > 0L) {
+                        workload = Workload.RANGE_SCAN_FULL;
+                    } else if (resultColumns == 1) {
+                        workload = Workload.RANGE_SCAN_INDEX_ONLY_1000;
+                    } else {
+                        workload = Workload.RANGE_SCAN_1000;
+                    }
+                    evidence.add(new DrdaServerPhaseEvidence(
+                            target, workload, run,
+                            parseServerEvidenceLong(values, "connection"),
+                            parseServerEvidenceLong(values, "captureFirst"),
+                            parseServerEvidenceLong(values, "captureLast"),
+                            openQueries, continueQueries, resultColumns,
+                            parseServerEvidenceLong(values, "sqlHash"),
+                            parseServerEvidenceLong(values, "openRows"),
+                            parseServerEvidenceLong(values, "continueRows"),
+                            parseServerEvidenceLong(values, "openParseNanos"),
+                            parseServerEvidenceLong(values, "openExecuteNanos"),
+                            parseServerEvidenceLong(values, "openMetadataNanos"),
+                            parseServerEvidenceLong(values, "openQueryDataNanos"),
+                            parseServerEvidenceLong(values, "openSendNanos"),
+                            parseServerEvidenceLong(values, "openTotalNanos"),
+                            parseServerEvidenceLong(values, "continueParseNanos"),
+                            parseServerEvidenceLong(values, "continueMetadataNanos"),
+                            parseServerEvidenceLong(values, "continueQueryDataNanos"),
+                            parseServerEvidenceLong(values, "continueSendNanos"),
+                            parseServerEvidenceLong(values, "continueTotalNanos")));
+                }
+            }
+        }
+        return evidence;
+    }
+
+    private static Map<String, String> parseServerPhaseEvidenceLine(String line) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String token : line.split("\\|")) {
+            int equals = token.indexOf('=');
+            if (equals > 0) {
+                values.put(token.substring(0, equals), token.substring(equals + 1));
+            }
+        }
+        return values;
+    }
+
+    private static long parseServerEvidenceLong(Map<String, String> values, String name) {
+        String value = values.get(name);
+        if (value == null) {
+            throw new IllegalStateException("Missing DRDA server phase field: " + name + " in " + values);
+        }
+        return Long.parseLong(value);
+    }
+
+    private static void validateDrdaServerPhaseEvidence(
+            Options options, List<DrdaServerPhaseEvidence> evidence) {
+        List<Target> expectedTargets = List.of(Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
+        if (!options.targetValues().equals(expectedTargets)) {
+            throw new IllegalStateException(
+                    "DRDA server phase evidence requires Delos Heap/MVCC DRDA targets: "
+                            + options.targetValues());
+        }
+        int expected = expectedTargets.size() * options.runs() * 3;
+        if (evidence.size() != expected) {
+            throw new IllegalStateException(
+                    "DRDA server phase evidence count mismatch: expected=" + expected
+                            + ", actual=" + evidence.size() + ", evidence=" + evidence);
+        }
+        Map<String, DrdaServerPhaseEvidence> unique = new LinkedHashMap<>();
+        for (DrdaServerPhaseEvidence value : evidence) {
+            if (value.captureFirst() != 21L || value.captureLast() != 40L
+                    || value.openQueries() != 20L) {
+                throw new IllegalStateException("Unexpected measured query window: " + value);
+            }
+            long expectedContinue = value.workload() == Workload.RANGE_SCAN_FULL ? 60L : 0L;
+            if (value.continueQueries() != expectedContinue) {
+                throw new IllegalStateException("Unexpected CNTQRY count: " + value);
+            }
+            int expectedColumns = value.workload() == Workload.RANGE_SCAN_INDEX_ONLY_1000 ? 1 : 2;
+            if (value.resultColumns() != expectedColumns) {
+                throw new IllegalStateException("Unexpected result-column shape: " + value);
+            }
+            if (value.openRows() <= 0L || value.openTotalNanos() <= 0L
+                    || value.openQueryDataNanos() <= 0L || value.openSendNanos() <= 0L) {
+                throw new IllegalStateException("Missing OPNQRY server phase evidence: " + value);
+            }
+            if (value.workload() == Workload.RANGE_SCAN_FULL
+                    && (value.continueRows() <= 0L || value.continueTotalNanos() <= 0L
+                            || value.continueQueryDataNanos() <= 0L || value.continueSendNanos() <= 0L)) {
+                throw new IllegalStateException("Missing CNTQRY server phase evidence: " + value);
+            }
+            if (value.openAccountedNanos() > value.openTotalNanos()) {
+                throw new IllegalStateException("OPNQRY phase accounting exceeds total: " + value);
+            }
+            if (value.continueAccountedNanos() > value.continueTotalNanos()) {
+                throw new IllegalStateException("CNTQRY phase accounting exceeds total: " + value);
+            }
+            String key = value.target() + '|' + value.workload() + '|' + value.run();
+            if (unique.put(key, value) != null) {
+                throw new IllegalStateException("Duplicate DRDA server phase evidence: " + key);
+            }
+        }
+    }
+
+    private static void writeDrdaServerPhaseEvidence(
+            Options options, List<DrdaServerPhaseEvidence> evidence) throws IOException {
+        List<DrdaServerPhaseEvidence> sorted = new ArrayList<>(evidence);
+        sorted.sort(Comparator.comparing(DrdaServerPhaseEvidence::workload)
+                .thenComparing(DrdaServerPhaseEvidence::target)
+                .thenComparingInt(DrdaServerPhaseEvidence::run));
+        String header = "target,workload,run,connection,openQueries,continueQueries,resultColumns,"
+                + "openRows,continueRows,openParseNanos,openExecuteNanos,openMetadataNanos,"
+                + "openQueryDataNanos,openSendNanos,openResidualNanos,openTotalNanos,"
+                + "continueParseNanos,continueMetadataNanos,continueQueryDataNanos,continueSendNanos,"
+                + "continueResidualNanos,continueTotalNanos,averageOpenTotalMicros,"
+                + "averageOpenExecuteMicros,averageOpenQueryDataMicros,averageOpenSendMicros,"
+                + "openExecuteShare,openQueryDataShare,openSendShare,averageContinueTotalMicros,"
+                + "averageContinueQueryDataMicros,averageContinueSendMicros,continueQueryDataShare,"
+                + "continueSendShare";
+        StringBuilder csv = new StringBuilder(header).append('\n');
+        StringBuilder text = new StringBuilder()
+                .append("DelosDB Phase-1 DRDA server phase evidence\n")
+                .append("=========================================\n\n")
+                .append("Authority: Delos Network Server command processing for measured query ordinals 21-40.\n")
+                .append("Granularity: command-sized phases only; no per-row or per-column timers.\n")
+                .append("Evidence rows: ").append(sorted.size()).append("\n\n");
+        for (DrdaServerPhaseEvidence value : sorted) {
+            csv.append(value.toCsv()).append('\n');
+            text.append(value.target()).append(' ')
+                    .append(value.workload()).append(" run=").append(value.run())
+                    .append(" openTotalUs=").append(format(value.averageOpenTotalMicros()))
+                    .append(" executeUs=").append(format(value.averageOpenExecuteMicros()))
+                    .append(" qrydtaUs=").append(format(value.averageOpenQueryDataMicros()))
+                    .append(" sendUs=").append(format(value.averageOpenSendMicros()))
+                    .append(" qrydtaShare=").append(format(value.openQueryDataShare()))
+                    .append(" continueTotalUs=").append(format(value.averageContinueTotalMicros()))
+                    .append(" continueQrydtaUs=").append(format(value.averageContinueQueryDataMicros()))
+                    .append('\n');
+        }
+        Files.writeString(options.reportDirectory().resolve("drda-server-phase-evidence.csv"),
+                csv, StandardCharsets.UTF_8);
+        Files.writeString(options.reportDirectory().resolve("drda-server-phase-evidence.txt"),
+                text, StandardCharsets.UTF_8);
+    }
+
     private static void validateDrdaProtocolEvidence(
             Options options,
             List<DrdaProtocolEvidence> evidence) {
@@ -4100,6 +4289,127 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+    private record DrdaServerPhaseEvidence(
+            String target,
+            Workload workload,
+            int run,
+            long connection,
+            long captureFirst,
+            long captureLast,
+            long openQueries,
+            long continueQueries,
+            int resultColumns,
+            long sqlHash,
+            long openRows,
+            long continueRows,
+            long openParseNanos,
+            long openExecuteNanos,
+            long openMetadataNanos,
+            long openQueryDataNanos,
+            long openSendNanos,
+            long openTotalNanos,
+            long continueParseNanos,
+            long continueMetadataNanos,
+            long continueQueryDataNanos,
+            long continueSendNanos,
+            long continueTotalNanos) {
+
+        long openAccountedNanos() {
+            return openParseNanos + openExecuteNanos + openMetadataNanos
+                    + openQueryDataNanos + openSendNanos;
+        }
+
+        long continueAccountedNanos() {
+            return continueParseNanos + continueMetadataNanos
+                    + continueQueryDataNanos + continueSendNanos;
+        }
+
+        long openResidualNanos() {
+            return Math.max(0L, openTotalNanos - openAccountedNanos());
+        }
+
+        long continueResidualNanos() {
+            return Math.max(0L, continueTotalNanos - continueAccountedNanos());
+        }
+
+        double averageOpenTotalMicros() {
+            return micros(openTotalNanos, openQueries);
+        }
+
+        double averageOpenExecuteMicros() {
+            return micros(openExecuteNanos, openQueries);
+        }
+
+        double averageOpenQueryDataMicros() {
+            return micros(openQueryDataNanos, openQueries);
+        }
+
+        double averageOpenSendMicros() {
+            return micros(openSendNanos, openQueries);
+        }
+
+        double averageContinueTotalMicros() {
+            return micros(continueTotalNanos, continueQueries);
+        }
+
+        double averageContinueQueryDataMicros() {
+            return micros(continueQueryDataNanos, continueQueries);
+        }
+
+        double averageContinueSendMicros() {
+            return micros(continueSendNanos, continueQueries);
+        }
+
+        double openExecuteShare() {
+            return share(openExecuteNanos, openTotalNanos);
+        }
+
+        double openQueryDataShare() {
+            return share(openQueryDataNanos, openTotalNanos);
+        }
+
+        double openSendShare() {
+            return share(openSendNanos, openTotalNanos);
+        }
+
+        double continueQueryDataShare() {
+            return share(continueQueryDataNanos, continueTotalNanos);
+        }
+
+        double continueSendShare() {
+            return share(continueSendNanos, continueTotalNanos);
+        }
+
+        String toCsv() {
+            return String.join(",",
+                    target, workload.name(), Integer.toString(run), Long.toString(connection),
+                    Long.toString(openQueries), Long.toString(continueQueries),
+                    Integer.toString(resultColumns), Long.toString(openRows), Long.toString(continueRows),
+                    Long.toString(openParseNanos), Long.toString(openExecuteNanos),
+                    Long.toString(openMetadataNanos), Long.toString(openQueryDataNanos),
+                    Long.toString(openSendNanos), Long.toString(openResidualNanos()),
+                    Long.toString(openTotalNanos), Long.toString(continueParseNanos),
+                    Long.toString(continueMetadataNanos), Long.toString(continueQueryDataNanos),
+                    Long.toString(continueSendNanos), Long.toString(continueResidualNanos()),
+                    Long.toString(continueTotalNanos), format(averageOpenTotalMicros()),
+                    format(averageOpenExecuteMicros()), format(averageOpenQueryDataMicros()),
+                    format(averageOpenSendMicros()), format(openExecuteShare()),
+                    format(openQueryDataShare()), format(openSendShare()),
+                    format(averageContinueTotalMicros()),
+                    format(averageContinueQueryDataMicros()),
+                    format(averageContinueSendMicros()),
+                    format(continueQueryDataShare()), format(continueSendShare()));
+        }
+
+        private static double micros(long nanos, long count) {
+            return count == 0L ? 0.0 : nanos / (count * 1_000.0);
+        }
+
+        private static double share(long part, long total) {
+            return total == 0L ? 0.0 : (double) part / total;
+        }
+    }
+
     private record ServerEndpoint(String jdbcUrl, String user, String password) {
     }
 
@@ -4109,11 +4419,13 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final class ContainerServer implements AutoCloseable {
         private final String name;
         private final ServerEndpoint endpoint;
+        private final Path capturedLog;
         private boolean closed;
 
-        private ContainerServer(String name, ServerEndpoint endpoint) {
+        private ContainerServer(String name, ServerEndpoint endpoint, Path capturedLog) {
             this.name = name;
             this.endpoint = endpoint;
+            this.capturedLog = capturedLog;
         }
 
         ServerEndpoint endpoint() {
@@ -4134,6 +4446,20 @@ public final class DelosJdbcCrossEngineConcurrency {
                 return;
             }
             closed = true;
+            if (capturedLog != null) {
+                try {
+                    Files.createDirectories(capturedLog.getParent());
+                    CommandResult captured = runCommand(20, List.of("docker", "logs", name));
+                    Files.writeString(capturedLog, captured.output(), StandardCharsets.UTF_8);
+                } catch (Exception failure) {
+                    try {
+                        Files.writeString(capturedLog,
+                                "Could not capture container log: " + failure + System.lineSeparator(),
+                                StandardCharsets.UTF_8);
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
             try {
                 runCommand(30, List.of("docker", "rm", "-f", name));
             } catch (Exception ignored) {

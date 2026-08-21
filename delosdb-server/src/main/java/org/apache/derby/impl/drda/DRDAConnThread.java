@@ -103,6 +103,8 @@ class DRDAConnThread extends Thread {
     private DDMReader reader;
     private DDMWriter writer;
     private DRDAXAProtocol xaProto;
+    private DRDAServerPhaseEvidence serverPhaseEvidence =
+            DRDAServerPhaseEvidence.enabled() ? new DRDAServerPhaseEvidence() : null;
 
     private static int [] ACCRDB_REQUIRED = {CodePoint.RDBACCCL, 
                                              CodePoint.CRRTKN,
@@ -656,6 +658,10 @@ class DRDAConnThread extends Thread {
         database = session.database;
         appRequester = session.appRequester;
 
+        if (DRDAServerPhaseEvidence.enabled()) {
+            serverPhaseEvidence = new DRDAServerPhaseEvidence();
+        }
+
         // set sqlamLevel
         if (session.state == Session.ATTEXC) {
             sqlamLevel = appRequester.getManagerLevel(CodePoint.SQLAM);
@@ -761,10 +767,27 @@ class DRDAConnThread extends Thread {
             {
                 case CodePoint.CNTQRY:
                     try{
+                        if (serverPhaseEvidence != null) {
+                            serverPhaseEvidence.beginContinueQuery();
+                        }
+                        long parseStarted = serverPhaseEvidence == null
+                                ? 0L : serverPhaseEvidence.startPhase();
                         stmt = parseCNTQRY();
+                        if (serverPhaseEvidence != null) {
+                            serverPhaseEvidence.recordParse(parseStarted);
+                        }
                         if (stmt != null)
                         {
+                            long queryDataStarted = serverPhaseEvidence == null
+                                    ? 0L : serverPhaseEvidence.startPhase();
+                            long rowsBefore = stmt.rowCount;
                             writeQRYDTA(stmt);
+                            if (serverPhaseEvidence != null) {
+                                serverPhaseEvidence.recordQueryData(
+                                        queryDataStarted, stmt.rowCount - rowsBefore);
+                            }
+                            long metadataStarted = serverPhaseEvidence == null
+                                    ? 0L : serverPhaseEvidence.startPhase();
                             if (stmt.rsIsClosed())
                             {
                                 writeENDQRYRM(CodePoint.SVRCOD_WARNING);
@@ -773,6 +796,9 @@ class DRDAConnThread extends Thread {
                             // Send any warnings if JCC can handle them
                             checkWarning(null, null, stmt.getResultSet(), 0, false, sendWarningsOnCNTQRY);
                             writePBSD();
+                            if (serverPhaseEvidence != null) {
+                                serverPhaseEvidence.recordMetadata(metadataStarted);
+                            }
                         }
                     }
                     catch(SQLException e)
@@ -874,7 +900,15 @@ class DRDAConnThread extends Thread {
                             writeOPNQFLRM(null);
                             break;
                         }
+                        if (serverPhaseEvidence != null) {
+                            serverPhaseEvidence.beginOpenQuery();
+                        }
+                        long parseStarted = serverPhaseEvidence == null
+                                ? 0L : serverPhaseEvidence.startPhase();
                         Pkgnamcsn pkgnamcsn = parseOPNQRY();
+                        if (serverPhaseEvidence != null) {
+                            serverPhaseEvidence.recordParse(parseStarted);
+                        }
                         if (pkgnamcsn != null)
                         {
                             stmt = database.getDRDAStatement(pkgnamcsn);
@@ -884,7 +918,16 @@ class DRDAConnThread extends Thread {
                                 ps.setQueryTimeout(pendingStatementTimeout);
                                 pendingStatementTimeout = -1;
                             }
+                            long executeStarted = serverPhaseEvidence == null
+                                    ? 0L : serverPhaseEvidence.startPhase();
                             stmt.execute();
+                            if (serverPhaseEvidence != null) {
+                                serverPhaseEvidence.recordExecute(executeStarted);
+                                serverPhaseEvidence.recordStatementShape(stmt);
+                            }
+
+                            long metadataStarted = serverPhaseEvidence == null
+                                    ? 0L : serverPhaseEvidence.startPhase();
                             writeOPNQRYRM(false, stmt);
                             checkWarning(null, ps, null, 0, false, true);
 
@@ -912,6 +955,9 @@ class DRDAConnThread extends Thread {
                             writeQRYDSC(stmt, false);
 
                             stmt.rsSuspend();
+                            if (serverPhaseEvidence != null) {
+                                serverPhaseEvidence.recordMetadata(metadataStarted);
+                            }
 
                             if (stmt.getQryprctyp() == CodePoint.LMTBLKPRC &&
                                     stmt.getQryrowset() != 0) {
@@ -923,7 +969,14 @@ class DRDAConnThread extends Thread {
                                 try {
                                     if (drdars != null &&
                                         !drdars.hasLobColumns()) {
+                                        long queryDataStarted = serverPhaseEvidence == null
+                                                ? 0L : serverPhaseEvidence.startPhase();
+                                        long rowsBefore = stmt.rowCount;
                                         writeQRYDTA(stmt);
+                                        if (serverPhaseEvidence != null) {
+                                            serverPhaseEvidence.recordQueryData(
+                                                    queryDataStarted, stmt.rowCount - rowsBefore);
+                                        }
                                     }
                                 } catch (SQLException sqle) {
                                     cleanUpAndCloseResultSet(stmt, sqle,
@@ -931,7 +984,12 @@ class DRDAConnThread extends Thread {
                                 }
                             }
                         }
+                        long postMetadataStarted = serverPhaseEvidence == null
+                                ? 0L : serverPhaseEvidence.startPhase();
                         writePBSD();
+                        if (serverPhaseEvidence != null) {
+                            serverPhaseEvidence.recordMetadata(postMetadataStarted);
+                        }
                     }
                     catch (SQLException e)
                     {
@@ -1148,7 +1206,13 @@ class DRDAConnThread extends Thread {
             // reply DSS(es) we just wrote.  If we've reached
             // the end of the chain, this method will send
             // the DSS(es) across.
+            long sendStarted = serverPhaseEvidence == null
+                    ? 0L : serverPhaseEvidence.startPhase();
             finalizeChain();
+            if (serverPhaseEvidence != null) {
+                serverPhaseEvidence.recordSend(sendStarted);
+                serverPhaseEvidence.completeCommand();
+            }
 
         }
         while (reader.isChainedWithSameID() || reader.isChainedWithDiffID());
@@ -8725,6 +8789,9 @@ class DRDAConnThread extends Thread {
         }
 
         server.removeFromSessionTable(session.connNum);
+        if (serverPhaseEvidence != null) {
+            serverPhaseEvidence.finishSession(session.connNum);
+        }
         try {
             session.close();
         } catch (SQLException se)
