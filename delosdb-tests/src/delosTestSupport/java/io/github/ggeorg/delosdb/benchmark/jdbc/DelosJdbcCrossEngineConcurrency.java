@@ -64,6 +64,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final List<Target> HOST_RECOVERY_DIAGNOSTIC_TARGETS = List.of(Target.H2, Target.SQLITE);
     private static final List<Target> DRDA_PROTOCOL_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
+    private static final List<Target> DRDA_SERVER_PHASE_EVIDENCE_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
     private static final int DRDA_PROTOCOL_COUNTER_COUNT = 16;
     private static final int DRDA_PREPARE_COMMANDS = 4;
     private static final int DRDA_OPEN_QUERY_FLOW_NANOS = 12;
@@ -277,6 +279,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (drdaProtocolEvidenceEnabled() && target.isDrda()) {
             command.add("-Ddelosdb.diagnostic.drdaProtocolEvidence=true");
             addProperty(command, "drdaProtocolEvidence", true);
+        }
+        if (drdaServerPhaseEvidenceEnabled() && target.isDrda()) {
+            addProperty(command, "drdaServerPhaseEvidence", true);
         }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
@@ -604,8 +609,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         StringBuilder out = new StringBuilder()
                 .append("DelosDB server-container concurrency comparison manifest\n")
                 .append("Captured: ").append(Instant.now()).append('\n')
-                .append("Question: compare DelosDB DRDA heap/MVCC, upstream Derby Network Server, and H2 TCP Server "
-                        + "with PostgreSQL and MariaDB through equivalent TCP/JDBC boundaries.\n")
+                .append(drdaServerPhaseEvidenceEnabled()
+                        && options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)
+                        ? "Question: decompose Delos Heap/MVCC DRDA server command phases for focused evidence.\n"
+                        : "Question: compare DelosDB DRDA heap/MVCC, upstream Derby Network Server, and H2 TCP Server "
+                                + "with PostgreSQL and MariaDB through equivalent TCP/JDBC boundaries.\n")
                 .append("Targets: ").append(options.targets()).append('\n')
                 .append("Project version: ").append(options.projectVersion()).append('\n')
                 .append("Client JDK: ").append(System.getProperty("java.runtime.version")).append('\n')
@@ -656,13 +664,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 out.append("Delos artifact: ").append(jar).append(" sha256=").append(sha256(file)).append('\n');
             }
         }
-        try (var stream = Files.list(options.upstreamDerbyServerRuntimeDirectory())) {
-            for (Path file : stream.filter(Files::isRegularFile).sorted().toList()) {
-                out.append("Upstream Derby server artifact: ")
-                        .append(file.getFileName()).append(" sha256=").append(sha256(file)).append('\n');
+        if (options.targetValues().contains(Target.UPSTREAM_DERBY_DRDA)) {
+            try (var stream = Files.list(options.upstreamDerbyServerRuntimeDirectory())) {
+                for (Path file : stream.filter(Files::isRegularFile).sorted().toList()) {
+                    out.append("Upstream Derby server artifact: ")
+                            .append(file.getFileName()).append(" sha256=").append(sha256(file)).append('\n');
+                }
             }
         }
-        if (Files.isRegularFile(options.h2ServerJar())) {
+        if (options.targetValues().contains(Target.H2_SERVER) && Files.isRegularFile(options.h2ServerJar())) {
             out.append("H2 server artifact: ").append(options.h2ServerJar().getFileName())
                     .append(" sha256=").append(sha256(options.h2ServerJar())).append('\n');
         }
@@ -3249,7 +3259,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void validateDrdaServerPhaseEvidence(
             Options options, List<DrdaServerPhaseEvidence> evidence) {
-        List<Target> expectedTargets = List.of(Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
+        List<Target> expectedTargets = DRDA_SERVER_PHASE_EVIDENCE_TARGETS;
         if (!options.targetValues().equals(expectedTargets)) {
             throw new IllegalStateException(
                     "DRDA server phase evidence requires Delos Heap/MVCC DRDA targets: "
@@ -3509,7 +3519,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)
-                || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)) {
+                || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)
+                || options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
@@ -4943,6 +4954,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS);
             boolean drdaProtocolDiagnostic = drdaProtocolEvidenceEnabled()
                     && configuredTargets.equals(DRDA_PROTOCOL_EVIDENCE_TARGETS);
+            boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
+                    && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
@@ -4952,7 +4965,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
                     && !mvccOnlyDiagnostic
                     && !hostRecoveryDiagnostic
-                    && !drdaProtocolDiagnostic) {
+                    && !drdaProtocolDiagnostic
+                    && !drdaServerPhaseDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
                         + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
@@ -4961,7 +4975,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
                         + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
                         + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
-                        + ", or DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
+                        + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
+                        + ", or DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
                         + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
@@ -5031,11 +5046,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             if (target == null && !mvccOnlyDiagnostic && !drdaProtocolDiagnostic
-                    && (runs < 4 || (runs & 3) != 0)) {
+                    && !drdaServerPhaseDiagnostic && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");
             }
             if (target == null && drdaProtocolDiagnostic && runs < 2) {
                 throw new IllegalArgumentException("DRDA protocol evidence requires at least two runs");
+            }
+            if (target == null && drdaServerPhaseDiagnostic && runs < 2) {
+                throw new IllegalArgumentException("DRDA server phase evidence requires at least two runs");
             }
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");
@@ -5046,10 +5064,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
-                if (drdaProtocolDiagnostic) {
+                if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic) {
                     if (delosClientClasspath.isBlank()) {
                         throw new IllegalArgumentException(
-                                "Delos network client classpath is required for DRDA protocol evidence");
+                                "Delos network client classpath is required for DRDA diagnostics");
                     }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
@@ -5060,16 +5078,26 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException("Delos runtime directory does not exist: "
                                 + delosRuntimeDirectory);
                     }
-                    if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
-                        throw new IllegalArgumentException(
-                                "Upstream Derby server runtime directory does not exist: "
-                                        + upstreamDerbyServerRuntimeDirectory);
-                    }
                     if (drdaProtocolDiagnostic) {
+                        if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
+                            throw new IllegalArgumentException(
+                                    "Upstream Derby server runtime directory does not exist: "
+                                            + upstreamDerbyServerRuntimeDirectory);
+                        }
                         if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
                             throw new IllegalArgumentException("DRDA server benchmark images are required");
                         }
+                    } else if (drdaServerPhaseDiagnostic) {
+                        if (delosServerImage.isBlank()) {
+                            throw new IllegalArgumentException(
+                                    "Delos server image is required for DRDA server phase evidence");
+                        }
                     } else {
+                        if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
+                            throw new IllegalArgumentException(
+                                    "Upstream Derby server runtime directory does not exist: "
+                                            + upstreamDerbyServerRuntimeDirectory);
+                        }
                         if (!Files.isRegularFile(h2ServerJar)) {
                             throw new IllegalArgumentException("H2 server jar does not exist: " + h2ServerJar);
                         }
