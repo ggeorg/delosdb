@@ -13605,6 +13605,41 @@ tasks.register('runDelosMeasurementValidityGate') {
             tasks.named('runDelosMeasurementValidityBaselineValidation')
 }
 
+// Long performance acceptance must fail fast on a busy development laptop rather than
+// spending hours producing dispersion-invalid evidence. Step 6E/6F proved that external
+// multi-core host load can dominate H2/SQLite without any DelosDB engine defect.
+def registerDelosPerformanceAcceptanceHostGate = { String taskName, String reportLeaf ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = 'Requires a quiet, reproducible host before long DelosDB performance acceptance.'
+        dependsOn tasks.named('compileTestJava')
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosBenchmarkHostPreflight'
+        classpath = rootProject.files(derbyTestsClassDir)
+        outputs.upToDateWhen { false }
+        outputs.dir(rootProject.layout.buildDirectory.dir(
+                "reports/delosdb/benchmarks/measurement-validity/host-preflight/${reportLeaf}"))
+        doFirst {
+            systemProperties([
+                    'delosdb.benchmark.hostPreflight.reportDirectory': rootProject.layout.buildDirectory
+                            .dir("reports/delosdb/benchmarks/measurement-validity/host-preflight/${reportLeaf}")
+                            .get().asFile.absolutePath,
+                    'delosdb.benchmark.hostPreflight.sampleSeconds': '5',
+                    'delosdb.benchmark.hostPreflight.requiredQuietSamples': '3',
+                    'delosdb.benchmark.hostPreflight.maximumSeconds': '60',
+                    'delosdb.benchmark.hostPreflight.maximumCpuLoad': '0.35',
+                    'delosdb.benchmark.hostPreflight.maximumLoadPerProcessor': '1.25',
+                    // Long MacBook acceptance runs must not use battery-power scheduling/power policy.
+                    'delosdb.benchmark.hostPreflight.requireAcPowerOnMac': 'true'
+            ])
+        }
+    }
+}
+
+registerDelosPerformanceAcceptanceHostGate(
+        'runDelosPerformanceAcceptanceHostPreflight', 'before-canaries')
+registerDelosPerformanceAcceptanceHostGate(
+        'runDelosPerformanceAcceptanceHostReadyGate', 'before-step6')
+
 // Phase 1 Step 6: first executable architecture-fitness tranche.
 // Reuse the existing cross-engine concurrency runner for the nine frozen
 // REUSE_NOW sentinels; do not add a second benchmark engine.
@@ -13994,10 +14029,20 @@ delosFitnessReuseNowTasks.collate(2, 1, false).each { taskPair ->
     }
 }
 
-// A long acceptance run must not silently consume a stale Phase-0C gate.
-// The gate is refreshed immediately before the first Step-6 benchmark group.
-tasks.named(delosFitnessReuseNowTasks[0]) {
+// A long acceptance run must not silently consume a stale Phase-0C gate, and must
+// not start either the canaries or the fitness workload on a busy host. Re-check host
+// readiness after the canaries because they are themselves sustained benchmark work.
+tasks.named('runDelosMeasurementValidityEmbeddedCanaryCapture') {
+    mustRunAfter tasks.named('runDelosPerformanceAcceptanceHostPreflight')
+}
+tasks.named('runDelosMeasurementValidityGate') {
+    mustRunAfter tasks.named('runDelosPerformanceAcceptanceHostPreflight')
+}
+tasks.named('runDelosPerformanceAcceptanceHostReadyGate') {
     mustRunAfter tasks.named('runDelosMeasurementValidityGate')
+}
+tasks.named(delosFitnessReuseNowTasks[0]) {
+    mustRunAfter tasks.named('runDelosPerformanceAcceptanceHostReadyGate')
 }
 
 tasks.register('runDelosArchitectureFitnessReuseNowContract', JavaExec) {
@@ -14026,7 +14071,9 @@ tasks.register('runDelosArchitectureFitnessReuseNowReport', JavaExec) {
     description = 'Merges the nine REUSE_NOW embedded/server sentinels into the common Phase-1 fitness schema.'
     dependsOn delosFitnessReuseNowTasks
     dependsOn tasks.named('runDelosArchitectureFitnessReuseNowContract'),
-            tasks.named('runDelosMeasurementValidityGate')
+            tasks.named('runDelosPerformanceAcceptanceHostPreflight'),
+            tasks.named('runDelosMeasurementValidityGate'),
+            tasks.named('runDelosPerformanceAcceptanceHostReadyGate')
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessReuseNowSuite'
     classpath = rootProject.files(derbyTestsClassDir)
     args 'report'
