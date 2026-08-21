@@ -166,7 +166,7 @@ final class DRDAServerPhaseEvidence {
             } else if (resultColumns != columns) {
                 resultColumns = -2;
             }
-            String source = stmt.getPreparedStatement().getSource();
+            String source = stmt.getSQLText();
             int hash = source == null ? 0 : source.hashCode();
             if (!sqlHashSet) {
                 sqlHash = hash;

@@ -1693,7 +1693,7 @@ class DRDAStatement
      * or BrokeredPreparedStatement.
      * @return SQL text
      */
-    private String getSQLText() 
+    String getSQLText() 
     {
        String retVal = null;
         Class[] emptyPARAM = {};
