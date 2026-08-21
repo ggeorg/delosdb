@@ -61,6 +61,7 @@ public final class NetProtocolEvidence {
     private static final ThreadLocal<long[]> FLOW_STARTS = ENABLED
             ? ThreadLocal.withInitial(() -> new long[4])
             : null;
+    private static volatile boolean flowTimingActive;
 
     private NetProtocolEvidence() {
     }
@@ -150,7 +151,7 @@ public final class NetProtocolEvidence {
     }
 
     private static void beginFlow(int flow) {
-        if (!ENABLED) {
+        if (!ENABLED || !flowTimingActive) {
             return;
         }
         long[] starts = FLOW_STARTS.get();
@@ -161,7 +162,7 @@ public final class NetProtocolEvidence {
     }
 
     private static void endFlow(int flow, AtomicLong totalNanos) {
-        if (!ENABLED) {
+        if (!ENABLED || !flowTimingActive) {
             return;
         }
         long[] starts = FLOW_STARTS.get();
@@ -171,6 +172,29 @@ public final class NetProtocolEvidence {
         }
         starts[flow] = 0L;
         totalNanos.addAndGet(System.nanoTime() - started);
+    }
+
+
+    /** Arm flow-latency timing for the benchmark interval only. */
+    public static void beginTimingWindow() {
+        if (!ENABLED) {
+            return;
+        }
+        if (flowTimingActive) {
+            throw new IllegalStateException("DRDA diagnostic timing window already active");
+        }
+        flowTimingActive = true;
+    }
+
+    /** Disarm flow-latency timing after all measured client work has completed. */
+    public static void endTimingWindow() {
+        if (!ENABLED) {
+            return;
+        }
+        if (!flowTimingActive) {
+            throw new IllegalStateException("DRDA diagnostic timing window is not active");
+        }
+        flowTimingActive = false;
     }
 
     /** Reset all counters. */

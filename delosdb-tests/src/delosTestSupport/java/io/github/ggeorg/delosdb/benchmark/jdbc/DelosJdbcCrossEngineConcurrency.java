@@ -1035,6 +1035,20 @@ public final class DelosJdbcCrossEngineConcurrency {
         invokeDrdaProtocolEvidence("reset");
     }
 
+    private static void beginDrdaProtocolTimingWindow() {
+        if (!drdaProtocolEvidenceEnabled()) {
+            return;
+        }
+        invokeDrdaProtocolEvidence("beginTimingWindow");
+    }
+
+    private static void endDrdaProtocolTimingWindow() {
+        if (!drdaProtocolEvidenceEnabled()) {
+            return;
+        }
+        invokeDrdaProtocolEvidence("endTimingWindow");
+    }
+
     private static long[] snapshotDrdaProtocolEvidence() {
         if (!drdaProtocolEvidenceEnabled()) {
             return null;
@@ -2370,31 +2384,39 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (drdaProtocolEvidenceEnabled()) {
                 resetDrdaProtocolEvidence();
+                beginDrdaProtocolTimingWindow();
             }
             long started = System.nanoTime();
             long deadline = started + TimeUnit.SECONDS.toNanos(options.caseTimeoutSeconds());
-            start.countDown();
             long executionFingerprint = 1L;
             long retryableRollbacks = 0L;
             Throwable failure = null;
-            for (Future<ClientRun> future : futures) {
-                try {
-                    long remaining = deadline - System.nanoTime();
-                    if (remaining <= 0L) {
-                        throw new TimeoutException("concurrency interval deadline exceeded");
+            long elapsed;
+            try {
+                start.countDown();
+                for (Future<ClientRun> future : futures) {
+                    try {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0L) {
+                            throw new TimeoutException("concurrency interval deadline exceeded");
+                        }
+                        ClientRun clientRun = future.get(remaining, TimeUnit.NANOSECONDS);
+                        executionFingerprint = mix(executionFingerprint, clientRun.fingerprint());
+                        retryableRollbacks = Math.addExact(retryableRollbacks, clientRun.retryableRollbacks());
+                    } catch (TimeoutException timeout) {
+                        cancelFutures(futures);
+                        throw new IllegalStateException("concurrency interval exceeded "
+                                + options.caseTimeoutSeconds() + " seconds: " + spec, timeout);
+                    } catch (Throwable clientFailure) {
+                        failure = preserve(failure, clientFailure);
                     }
-                    ClientRun clientRun = future.get(remaining, TimeUnit.NANOSECONDS);
-                    executionFingerprint = mix(executionFingerprint, clientRun.fingerprint());
-                    retryableRollbacks = Math.addExact(retryableRollbacks, clientRun.retryableRollbacks());
-                } catch (TimeoutException timeout) {
-                    cancelFutures(futures);
-                    throw new IllegalStateException("concurrency interval exceeded "
-                            + options.caseTimeoutSeconds() + " seconds: " + spec, timeout);
-                } catch (Throwable clientFailure) {
-                    failure = preserve(failure, clientFailure);
+                }
+                elapsed = System.nanoTime() - started;
+            } finally {
+                if (drdaProtocolEvidenceEnabled()) {
+                    endDrdaProtocolTimingWindow();
                 }
             }
-            long elapsed = System.nanoTime() - started;
             if (failure != null) {
                 cancelFutures(futures);
                 throwFailure(failure);
