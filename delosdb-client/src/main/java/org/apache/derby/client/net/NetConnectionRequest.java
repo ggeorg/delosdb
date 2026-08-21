@@ -102,6 +102,7 @@ class NetConnectionRequest extends Request
     }
 
     public void writeLocalCommit(NetConnection connection) throws SqlException {
+        NetProtocolEvidence.beginCommitFlow();
         buildRDBCMM();
     }
 
@@ -179,6 +180,7 @@ class NetConnectionRequest extends Request
     private void buildRDBCMM() throws SqlException {
         createCommand();
         writeLengthCodePoint(0x04, CodePoint.RDBCMM);
+        NetProtocolEvidence.commitCommand();
     }
 
     // RDB Rollback Unit of Work(RDBRLLBCK) Command rolls back
@@ -190,6 +192,7 @@ class NetConnectionRequest extends Request
     private void buildRDBRLLBCK() throws SqlException {
         createCommand();
         writeLengthCodePoint(0x04, CodePoint.RDBRLLBCK);
+        NetProtocolEvidence.rollbackCommand();
     }
 
     // build the Exchange Server Attributes Command.

@@ -40,21 +40,33 @@ class NetResultSetReply extends NetStatementReply
     //----------------------------- entry points ---------------------------------
 
     public void readFetch(ResultSetCallbackInterface resultSet) throws DisconnectException {
-        startSameIdChainParse();
-        parseCNTQRYreply(resultSet, true); // true means we expect row data
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseCNTQRYreply(resultSet, true); // true means we expect row data
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endContinueQueryFlow();
+        }
     }
 
     public void readPositioningFetch(ResultSetCallbackInterface resultSet) throws DisconnectException {
-        startSameIdChainParse();
-        parseCNTQRYreply(resultSet, false);  // false means return data is not expected
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseCNTQRYreply(resultSet, false);  // false means return data is not expected
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endContinueQueryFlow();
+        }
     }
 
     public void readScrollableFetch(ResultSetCallbackInterface resultSet) throws DisconnectException {
-        startSameIdChainParse();
-        parseCNTQRYreply(resultSet, true);   // true means return data is expected
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseCNTQRYreply(resultSet, true);   // true means return data is expected
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endContinueQueryFlow();
+        }
     }
 
     public void readCursorClose(ResultSetCallbackInterface resultSet) throws DisconnectException {

@@ -62,6 +62,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.UPSTREAM_DERBY_DRDA, Target.H2_SERVER, Target.POSTGRESQL, Target.MARIADB);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
     private static final List<Target> HOST_RECOVERY_DIAGNOSTIC_TARGETS = List.of(Target.H2, Target.SQLITE);
+    private static final List<Target> DRDA_PROTOCOL_EVIDENCE_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
+    private static final int DRDA_PROTOCOL_COUNTER_COUNT = 16;
+    private static final int DRDA_PREPARE_COMMANDS = 4;
+    private static final int DRDA_OPEN_QUERY_FLOW_NANOS = 12;
+    private static final int DRDA_CONTINUE_QUERY_FLOW_NANOS = 13;
+    private static final int DRDA_EXECUTE_FLOW_NANOS = 14;
+    private static final int DRDA_COMMIT_FLOW_NANOS = 15;
     private static final String CSV_HEADER =
             "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,"
                     + "transactionsPerClient,rowCount,payloadSize,fixtureCommitBatchSize,warmups,warmupElapsedNanos,iterations,"
@@ -70,6 +78,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + "semanticFingerprint,run";
     private static final String ORACLE_CSV_HEADER =
             "target,workload,clients,operationsPerTransaction,rowCount,kind,count,fingerprint,run";
+    private static final String DRDA_PROTOCOL_CSV_HEADER =
+            "target,product,productVersion,driverVersion,workload,clients,operationsPerTransaction,rowCount,run,"
+                    + "measuredTransactions,measuredOperations,measuredResultRows,setupPrepareCommands,"
+                    + "requestFlushes,requestBytes,replySocketReads,replyBytes,measuredPrepareCommands,"
+                    + "openQueryCommands,continueQueryCommands,executeCommands,commitCommands,rollbackCommands,"
+                    + "closeQueryCommands,queryDataBlocks,fetchRequests,requestFlushesPerOperation,"
+                    + "requestFlushesPerTransaction,rowsPerFetchRequest,replyBytesPerResultRow,"
+                    + "measuredElapsedNanos,openQueryFlowNanos,continueQueryFlowNanos,executeFlowNanos,"
+                    + "commitFlowNanos,totalTimedFlowNanos,averageOpenQueryFlowMicros,"
+                    + "averageContinueQueryFlowMicros,averageExecuteFlowMicros,averageCommitFlowMicros,"
+                    + "timedFlowShareOfMeasuredElapsed";
 
     private DelosJdbcCrossEngineConcurrency() {
     }
@@ -163,6 +182,11 @@ public final class DelosJdbcCrossEngineConcurrency {
             validateOracleEvidence(options, oracleEvidence);
             writeOracleEvidence(options, oracleEvidence);
         }
+        if (drdaProtocolEvidenceEnabled()) {
+            List<DrdaProtocolEvidence> protocolEvidence = loadDrdaProtocolEvidence(options);
+            validateDrdaProtocolEvidence(options, protocolEvidence);
+            writeDrdaProtocolEvidence(options, protocolEvidence);
+        }
         writeMergedCsv(options, rows);
         writeRatioCsv(options, rows);
         writeScalingCsv(options, rows);
@@ -244,6 +268,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (sqlSemanticOracleEnabled()) {
             addProperty(command, "sqlSemanticOracle", true);
+        }
+        if (drdaProtocolEvidenceEnabled() && target.isDrda()) {
+            command.add("-Ddelosdb.diagnostic.drdaProtocolEvidence=true");
+            addProperty(command, "drdaProtocolEvidence", true);
         }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
@@ -668,6 +696,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
         List<OracleEvidence> oracleEvidence = new ArrayList<>();
+        List<DrdaProtocolEvidence> protocolEvidence = new ArrayList<>();
         List<Spec> specs = specsForRun(options);
         for (int rows : ordered(options.rowCounts(), options.run())) {
             DelosBenchmarkConfig config = new DelosBenchmarkConfig(
@@ -684,6 +713,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     measurements.add(measured.measurement());
                     if (measured.oracleEvidence() != null) {
                         oracleEvidence.add(measured.oracleEvidence());
+                    }
+                    if (measured.protocolEvidence() != null) {
+                        protocolEvidence.add(measured.protocolEvidence());
                     }
                     System.out.printf(Locale.ROOT,
                             "DONE run=%d target=%s rows=%d workload=%s clients=%d width=%d elapsedSeconds=%.3f%n",
@@ -706,6 +738,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (sqlSemanticOracleEnabled()) {
             writeWorkerOracleEvidence(options, oracleEvidence);
         }
+        if (drdaProtocolEvidenceEnabled()) {
+            writeWorkerDrdaProtocolEvidence(options, protocolEvidence);
+        }
     }
 
     private static MeasuredSpec measureSpec(Options options, DelosBenchmarkConfig config, Spec spec)
@@ -725,6 +760,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         Throwable failure = null;
         Measurement measurement = null;
+        DrdaProtocolEvidence protocolEvidence = null;
         DelosSqlSemanticOracle.Result sqlOracleResult = null;
         try (Connection verifier = connect(options, database)) {
             DatabaseMetaData metadata = verifier.getMetaData();
@@ -802,6 +838,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 long retryableRollbacks = 0L;
                 Long measuredSemantic = expectedSemantic;
                 int measuredIterations = 0;
+                long[] measuredProtocolEvidence = drdaProtocolEvidenceEnabled()
+                        ? new long[DRDA_PROTOCOL_COUNTER_COUNT]
+                        : null;
                 long minimumMeasuredNanos = options.minimumMeasuredSeconds() <= 0.0
                         ? 0L
                         : Math.max(1L, (long) Math.ceil(
@@ -811,6 +850,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         boolean captureOracle = sqlSemanticOracleEnabled()
                                 && iteration == options.iterations() - 1;
                         Interval interval = concurrentCase.runInterval(captureOracle);
+                        addDrdaProtocolEvidence(measuredProtocolEvidence, interval.drdaProtocolEvidence());
                         elapsed = Math.addExact(elapsed, interval.elapsedNanos());
                         retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
                         measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
@@ -831,6 +871,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                                             + options.maximumMeasuredIterations() + " intervals: " + spec);
                         }
                         Interval interval = concurrentCase.runInterval(false);
+                        addDrdaProtocolEvidence(measuredProtocolEvidence, interval.drdaProtocolEvidence());
                         elapsed = Math.addExact(elapsed, interval.elapsedNanos());
                         retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
                         measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
@@ -844,6 +885,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                                             + spec);
                         }
                         Interval interval = concurrentCase.runInterval(true);
+                        addDrdaProtocolEvidence(measuredProtocolEvidence, interval.drdaProtocolEvidence());
                         elapsed = Math.addExact(elapsed, interval.elapsedNanos());
                         retryableRollbacks = Math.addExact(retryableRollbacks, interval.retryableRollbacks());
                         measuredSemantic = sameSemantic(measuredSemantic, interval.semanticFingerprint(), spec,
@@ -931,6 +973,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                             options, spec, config, measuredTransactions,
                             mvccSnapshotLeaseDiagnostics);
                 }
+                protocolEvidence = drdaProtocolEvidenceEnabled()
+                        ? DrdaProtocolEvidence.from(
+                                options, spec, config, product, productVersion, driverVersion,
+                                measuredTransactions, measuredOperations, elapsed,
+                                concurrentCase.setupDrdaProtocolEvidence(), measuredProtocolEvidence)
+                        : null;
                 measurement = new Measurement(
                         options.target().id(), product, productVersion, driverVersion,
                         spec.workload(), spec.clients(), spec.operationsPerTransaction(),
@@ -969,11 +1017,54 @@ public final class DelosJdbcCrossEngineConcurrency {
                 sqlOracleResult.count(),
                 sqlOracleResult.fingerprint(),
                 options.run());
-        return new MeasuredSpec(measurement, evidence);
+        return new MeasuredSpec(measurement, evidence, protocolEvidence);
     }
 
     private static boolean sqlSemanticOracleEnabled() {
         return Boolean.getBoolean(PREFIX + "sqlSemanticOracle");
+    }
+
+    private static boolean drdaProtocolEvidenceEnabled() {
+        return Boolean.getBoolean(PREFIX + "drdaProtocolEvidence");
+    }
+
+    private static void resetDrdaProtocolEvidence() {
+        if (!drdaProtocolEvidenceEnabled()) {
+            return;
+        }
+        invokeDrdaProtocolEvidence("reset");
+    }
+
+    private static long[] snapshotDrdaProtocolEvidence() {
+        if (!drdaProtocolEvidenceEnabled()) {
+            return null;
+        }
+        Object value = invokeDrdaProtocolEvidence("snapshot");
+        if (!(value instanceof long[] snapshot) || snapshot.length != DRDA_PROTOCOL_COUNTER_COUNT) {
+            throw new IllegalStateException("Unexpected DRDA protocol evidence snapshot");
+        }
+        return snapshot;
+    }
+
+    private static Object invokeDrdaProtocolEvidence(String method) {
+        try {
+            Class<?> evidence = Class.forName("org.apache.derby.client.net.NetProtocolEvidence");
+            return evidence.getMethod(method).invoke(null);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("DRDA protocol evidence unavailable: " + method, failure);
+        }
+    }
+
+    private static void addDrdaProtocolEvidence(long[] total, long[] delta) {
+        if (total == null || delta == null) {
+            return;
+        }
+        if (total.length != delta.length) {
+            throw new IllegalStateException("DRDA protocol evidence shape mismatch");
+        }
+        for (int index = 0; index < total.length; index++) {
+            total[index] = Math.addExact(total[index], delta[index]);
+        }
     }
 
     private static boolean hostStateDiagnosticsEnabled() {
@@ -2176,6 +2267,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int[] mutationIds;
         private final int[] mutationBaseline;
         private final List<Client> clients;
+        private final long[] setupDrdaProtocolEvidence;
         private final ExecutorService executor;
 
         private ConcurrentCase(
@@ -2198,6 +2290,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             int[] fixtureQuantities = spec.workload().usesFixtureQuantities() ? fixtureQuantities(rowCount) : null;
             verifier.rollback();
+            if (drdaProtocolEvidenceEnabled()) {
+                resetDrdaProtocolEvidence();
+            }
             this.clients = new ArrayList<>(spec.clients());
             try {
                 for (int client = 0; client < spec.clients(); client++) {
@@ -2246,8 +2341,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 closeClients(failure);
                 throw failure;
             }
+            this.setupDrdaProtocolEvidence = snapshotDrdaProtocolEvidence();
             this.executor = Executors.newFixedThreadPool(
                     spec.clients(), Thread.ofPlatform().daemon().name("delos-bench-client-", 0).factory());
+        }
+
+        private long[] setupDrdaProtocolEvidence() {
+            return setupDrdaProtocolEvidence;
         }
 
         private Interval runInterval(boolean captureSqlOracle) throws Exception {
@@ -2267,6 +2367,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 start.countDown();
                 cancelFutures(futures);
                 throw new IllegalStateException("concurrency readiness barrier timed out");
+            }
+            if (drdaProtocolEvidenceEnabled()) {
+                resetDrdaProtocolEvidence();
             }
             long started = System.nanoTime();
             long deadline = started + TimeUnit.SECONDS.toNanos(options.caseTimeoutSeconds());
@@ -2296,12 +2399,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                 cancelFutures(futures);
                 throwFailure(failure);
             }
+            long[] protocolEvidence = snapshotDrdaProtocolEvidence();
             Verification verification = verifyAndRestore(captureSqlOracle);
             return new Interval(
                     elapsed,
                     mix(executionFingerprint, verification.legacyFingerprint()),
                     retryableRollbacks,
-                    verification.sqlOracleResult());
+                    verification.sqlOracleResult(),
+                    protocolEvidence);
         }
 
         private static void cancelFutures(List<? extends Future<?>> futures) {
@@ -2977,6 +3082,162 @@ public final class DelosJdbcCrossEngineConcurrency {
                 StandardCharsets.UTF_8);
     }
 
+    private static void writeWorkerDrdaProtocolEvidence(
+            Options options,
+            List<DrdaProtocolEvidence> values) throws IOException {
+        int expected = options.rowCounts().size() * specsPerRun(options);
+        if (values.size() != expected) {
+            throw new IllegalStateException(
+                    "DRDA protocol evidence count mismatch for worker "
+                            + options.target().id() + " run=" + options.run()
+                            + ": expected=" + expected + ", actual=" + values.size());
+        }
+        Path output = options.reportDirectory().resolve(
+                "drda-protocol-evidence-" + options.target().id() + "-run-" + options.run() + ".csv");
+        StringBuilder out = new StringBuilder(DRDA_PROTOCOL_CSV_HEADER).append('\n');
+        for (DrdaProtocolEvidence value : values) {
+            out.append(value.csv()).append('\n');
+        }
+        Files.writeString(output, out.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static List<DrdaProtocolEvidence> loadDrdaProtocolEvidence(Options options) throws IOException {
+        List<DrdaProtocolEvidence> evidence = new ArrayList<>();
+        for (int run = 1; run <= options.runs(); run++) {
+            for (Target target : options.targetValues()) {
+                Path file = options.reportDirectory().resolve("workers")
+                        .resolve("drda-protocol-evidence-" + target.id() + "-run-" + run + ".csv");
+                List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+                if (lines.isEmpty() || !DRDA_PROTOCOL_CSV_HEADER.equals(lines.getFirst())) {
+                    throw new IllegalStateException("Unexpected DRDA protocol evidence CSV header: " + file);
+                }
+                for (int index = 1; index < lines.size(); index++) {
+                    if (!lines.get(index).isBlank()) {
+                        evidence.add(DrdaProtocolEvidence.parse(lines.get(index)));
+                    }
+                }
+            }
+        }
+        evidence.sort(Comparator.comparingInt(DrdaProtocolEvidence::rowCount)
+                .thenComparing(value -> value.workload().name())
+                .thenComparingInt(DrdaProtocolEvidence::operationsPerTransaction)
+                .thenComparingInt(DrdaProtocolEvidence::clients)
+                .thenComparing(DrdaProtocolEvidence::target)
+                .thenComparingInt(DrdaProtocolEvidence::run));
+        return List.copyOf(evidence);
+    }
+
+    private static void validateDrdaProtocolEvidence(
+            Options options,
+            List<DrdaProtocolEvidence> evidence) {
+        if (!options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)) {
+            throw new IllegalStateException(
+                    "DRDA protocol evidence requires the shared-client DRDA target set: "
+                            + options.targetValues());
+        }
+        int expected = options.targetValues().size() * options.runs() * options.rowCounts().size()
+                * specsPerRun(options);
+        if (evidence.size() != expected) {
+            throw new IllegalStateException(
+                    "DRDA protocol evidence count mismatch: expected=" + expected
+                            + ", actual=" + evidence.size());
+        }
+        for (DrdaProtocolEvidence value : evidence) {
+            if (value.measuredPrepareCommands() != 0L) {
+                throw new IllegalStateException(
+                        "Prepared statement was re-prepared inside measured DRDA interval: " + value);
+            }
+            if (value.setupPrepareCommands() < value.clients()) {
+                throw new IllegalStateException(
+                        "Expected at least one setup prepare per DRDA benchmark client: " + value);
+            }
+            if (value.requestFlushes() <= 0L || value.requestBytes() <= 0L
+                    || value.replySocketReads() <= 0L || value.replyBytes() <= 0L) {
+                throw new IllegalStateException("Missing authoritative DRDA wire evidence: " + value);
+            }
+            if (value.commitCommands() != value.measuredTransactions()) {
+                throw new IllegalStateException(
+                        "DRDA RDBCMM count does not match measured transactions: " + value);
+            }
+            if (value.measuredElapsedNanos() <= 0L || value.totalTimedFlowNanos() <= 0L) {
+                throw new IllegalStateException("Missing DRDA latency evidence: " + value);
+            }
+            if (value.commitCommands() > 0L && value.commitFlowNanos() <= 0L) {
+                throw new IllegalStateException("Missing DRDA commit-flow latency evidence: " + value);
+            }
+            if (value.clients() == 1 && value.totalTimedFlowNanos() > value.measuredElapsedNanos()) {
+                throw new IllegalStateException(
+                        "Single-client DRDA timed flows exceed measured interval: " + value);
+            }
+            if (value.workload().isRangeScan() || value.workload().isPrimaryKeyRead() || value.workload().isValues()) {
+                if (value.openQueryCommands() != value.measuredOperations()) {
+                    throw new IllegalStateException(
+                            "DRDA OPNQRY count does not match measured query operations: " + value);
+                }
+                if (value.openQueryFlowNanos() <= 0L) {
+                    throw new IllegalStateException("Missing DRDA open-query latency evidence: " + value);
+                }
+                if (value.continueQueryCommands() > 0L && value.continueQueryFlowNanos() <= 0L) {
+                    throw new IllegalStateException("Missing DRDA continue-query latency evidence: " + value);
+                }
+                if (value.fetchRequests() < value.openQueryCommands() || value.queryDataBlocks() <= 0L) {
+                    throw new IllegalStateException("DRDA fetch/query-data count is inconsistent: " + value);
+                }
+            } else if (value.workload().isUpdate()) {
+                if (value.executeCommands() != value.measuredOperations()) {
+                    throw new IllegalStateException(
+                            "DRDA EXCSQLSTT count does not match measured update operations: " + value);
+                }
+                if (value.executeFlowNanos() <= 0L) {
+                    throw new IllegalStateException("Missing DRDA execute latency evidence: " + value);
+                }
+            }
+        }
+    }
+
+    private static void writeDrdaProtocolEvidence(
+            Options options,
+            List<DrdaProtocolEvidence> evidence) throws IOException {
+        StringBuilder csv = new StringBuilder(DRDA_PROTOCOL_CSV_HEADER).append('\n');
+        for (DrdaProtocolEvidence value : evidence) {
+            csv.append(value.csv()).append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve("drda-protocol-evidence.csv"),
+                csv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder summary = new StringBuilder();
+        summary.append("DelosDB Phase-1 DRDA protocol evidence\n")
+                .append("======================================\n\n")
+                .append("Authority: Delos network-client DRDA command builders and socket boundaries.\n")
+                .append("Client: one Delos network client implementation is used for all three DRDA servers.\n")
+                .append("Targets: delos_heap_drda, delos_mvcc_drda, upstream_derby_drda.\n")
+                .append("Measured interval excludes Phase-0 SQL-oracle and fixture restore traffic.\n")
+                .append("Evidence rows: ").append(evidence.size()).append("\n\n");
+        for (DrdaProtocolEvidence value : evidence) {
+            summary.append(value.target()).append(' ')
+                    .append(value.workload()).append(" c=").append(value.clients())
+                    .append(" w=").append(value.operationsPerTransaction())
+                    .append(" run=").append(value.run())
+                    .append(" flows/op=").append(format(value.requestFlushesPerOperation()))
+                    .append(" flows/tx=").append(format(value.requestFlushesPerTransaction()))
+                    .append(" fetches=").append(value.fetchRequests())
+                    .append(" rows/fetch=").append(format(value.rowsPerFetchRequest()))
+                    .append(" replyBytes/row=").append(format(value.replyBytesPerResultRow()))
+                    .append(" openUs=").append(format(value.averageOpenQueryFlowMicros()))
+                    .append(" continueUs=").append(format(value.averageContinueQueryFlowMicros()))
+                    .append(" executeUs=").append(format(value.averageExecuteFlowMicros()))
+                    .append(" commitUs=").append(format(value.averageCommitFlowMicros()))
+                    .append(" timedFlowShare=").append(format(value.timedFlowShareOfMeasuredElapsed()))
+                    .append(" commits=").append(value.commitCommands())
+                    .append(" setupPrepares=").append(value.setupPrepareCommands())
+                    .append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve("drda-protocol-evidence.txt"),
+                summary.toString(), StandardCharsets.UTF_8);
+    }
+
     private static List<Row> loadRows(Options options) throws IOException {
         List<Row> rows = new ArrayList<>();
         for (int run = 1; run <= options.runs(); run++) {
@@ -3036,7 +3297,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         StringBuilder out;
         if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)
-                || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)) {
+                || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)
+                || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
@@ -3742,6 +4004,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == POSTGRESQL || this == MARIADB || this == FIREBIRD;
         }
 
+        boolean isDrda() {
+            return this == DELOS_HEAP_DRDA || this == DELOS_MVCC_DRDA || this == UPSTREAM_DERBY_DRDA;
+        }
+
         int containerPort() {
             return switch (this) {
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA, UPSTREAM_DERBY_DRDA -> 1527;
@@ -3863,7 +4129,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             long elapsedNanos,
             long semanticFingerprint,
             long retryableRollbacks,
-            DelosSqlSemanticOracle.Result sqlOracleResult) {
+            DelosSqlSemanticOracle.Result sqlOracleResult,
+            long[] drdaProtocolEvidence) {
     }
 
     private record Verification(
@@ -3873,7 +4140,168 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private record MeasuredSpec(
             Measurement measurement,
-            OracleEvidence oracleEvidence) {
+            OracleEvidence oracleEvidence,
+            DrdaProtocolEvidence protocolEvidence) {
+    }
+
+    private record DrdaProtocolEvidence(
+            String target,
+            String product,
+            String productVersion,
+            String driverVersion,
+            Workload workload,
+            int clients,
+            int operationsPerTransaction,
+            int rowCount,
+            int run,
+            long measuredTransactions,
+            long measuredOperations,
+            long measuredResultRows,
+            long setupPrepareCommands,
+            long requestFlushes,
+            long requestBytes,
+            long replySocketReads,
+            long replyBytes,
+            long measuredPrepareCommands,
+            long openQueryCommands,
+            long continueQueryCommands,
+            long executeCommands,
+            long commitCommands,
+            long rollbackCommands,
+            long closeQueryCommands,
+            long queryDataBlocks,
+            long fetchRequests,
+            double requestFlushesPerOperation,
+            double requestFlushesPerTransaction,
+            double rowsPerFetchRequest,
+            double replyBytesPerResultRow,
+            long measuredElapsedNanos,
+            long openQueryFlowNanos,
+            long continueQueryFlowNanos,
+            long executeFlowNanos,
+            long commitFlowNanos,
+            long totalTimedFlowNanos,
+            double averageOpenQueryFlowMicros,
+            double averageContinueQueryFlowMicros,
+            double averageExecuteFlowMicros,
+            double averageCommitFlowMicros,
+            double timedFlowShareOfMeasuredElapsed) {
+
+        static DrdaProtocolEvidence from(
+                Options options,
+                Spec spec,
+                DelosBenchmarkConfig config,
+                String product,
+                String productVersion,
+                String driverVersion,
+                long measuredTransactions,
+                long measuredOperations,
+                long measuredElapsedNanos,
+                long[] setup,
+                long[] measured) {
+            if (measured == null || measured.length != DRDA_PROTOCOL_COUNTER_COUNT) {
+                throw new IllegalStateException("Missing measured DRDA protocol evidence for " + spec);
+            }
+            long setupPrepare = setup == null ? 0L : setup[DRDA_PREPARE_COMMANDS];
+            long resultRows;
+            if (spec.workload().isRangeScan()) {
+                resultRows = Math.multiplyExact(
+                        measuredOperations, spec.workload().rangeRows(config.rowCount()));
+            } else if (spec.workload().isPrimaryKeyRead() || spec.workload().isValues()) {
+                resultRows = measuredOperations;
+            } else {
+                resultRows = 0L;
+            }
+            long fetchRequests = Math.addExact(measured[5], measured[6]);
+            long openQueryFlowNanos = measured[DRDA_OPEN_QUERY_FLOW_NANOS];
+            long continueQueryFlowNanos = measured[DRDA_CONTINUE_QUERY_FLOW_NANOS];
+            long executeFlowNanos = measured[DRDA_EXECUTE_FLOW_NANOS];
+            long commitFlowNanos = measured[DRDA_COMMIT_FLOW_NANOS];
+            long totalTimedFlowNanos = Math.addExact(
+                    Math.addExact(openQueryFlowNanos, continueQueryFlowNanos),
+                    Math.addExact(executeFlowNanos, commitFlowNanos));
+            return new DrdaProtocolEvidence(
+                    options.target().id(), product, productVersion, driverVersion,
+                    spec.workload(), spec.clients(), spec.operationsPerTransaction(), config.rowCount(),
+                    options.run(), measuredTransactions, measuredOperations, resultRows, setupPrepare,
+                    measured[0], measured[1], measured[2], measured[3], measured[4], measured[5],
+                    measured[6], measured[7], measured[8], measured[9], measured[10], measured[11],
+                    fetchRequests,
+                    ratio(measured[0], measuredOperations),
+                    ratio(measured[0], measuredTransactions),
+                    ratio(resultRows, fetchRequests),
+                    ratio(measured[3], resultRows),
+                    measuredElapsedNanos,
+                    openQueryFlowNanos,
+                    continueQueryFlowNanos,
+                    executeFlowNanos,
+                    commitFlowNanos,
+                    totalTimedFlowNanos,
+                    averageMicros(openQueryFlowNanos, measured[5]),
+                    averageMicros(continueQueryFlowNanos, measured[6]),
+                    averageMicros(executeFlowNanos, measured[7]),
+                    averageMicros(commitFlowNanos, measured[8]),
+                    ratio(totalTimedFlowNanos, measuredElapsedNanos));
+        }
+
+        private static double ratio(long numerator, long denominator) {
+            return denominator == 0L ? 0.0 : numerator / (double) denominator;
+        }
+
+        private static double averageMicros(long totalNanos, long count) {
+            return count == 0L ? 0.0 : totalNanos / (count * 1_000.0);
+        }
+
+        String csv() {
+            return String.join(",",
+                    target, product, productVersion, driverVersion, workload.name(),
+                    Integer.toString(clients), Integer.toString(operationsPerTransaction),
+                    Integer.toString(rowCount), Integer.toString(run),
+                    Long.toString(measuredTransactions), Long.toString(measuredOperations),
+                    Long.toString(measuredResultRows), Long.toString(setupPrepareCommands),
+                    Long.toString(requestFlushes), Long.toString(requestBytes),
+                    Long.toString(replySocketReads), Long.toString(replyBytes),
+                    Long.toString(measuredPrepareCommands), Long.toString(openQueryCommands),
+                    Long.toString(continueQueryCommands), Long.toString(executeCommands),
+                    Long.toString(commitCommands), Long.toString(rollbackCommands),
+                    Long.toString(closeQueryCommands), Long.toString(queryDataBlocks),
+                    Long.toString(fetchRequests), format(requestFlushesPerOperation),
+                    format(requestFlushesPerTransaction), format(rowsPerFetchRequest),
+                    format(replyBytesPerResultRow), Long.toString(measuredElapsedNanos),
+                    Long.toString(openQueryFlowNanos), Long.toString(continueQueryFlowNanos),
+                    Long.toString(executeFlowNanos), Long.toString(commitFlowNanos),
+                    Long.toString(totalTimedFlowNanos), format(averageOpenQueryFlowMicros),
+                    format(averageContinueQueryFlowMicros), format(averageExecuteFlowMicros),
+                    format(averageCommitFlowMicros), format(timedFlowShareOfMeasuredElapsed));
+        }
+
+        static DrdaProtocolEvidence parse(String line) {
+            String[] fields = line.split(",", -1);
+            if (fields.length != 41) {
+                throw new IllegalArgumentException(
+                        "Expected 41 DRDA protocol CSV fields, found " + fields.length + ": " + line);
+            }
+            return new DrdaProtocolEvidence(
+                    fields[0], fields[1], fields[2], fields[3], Workload.valueOf(fields[4]),
+                    Integer.parseInt(fields[5]), Integer.parseInt(fields[6]), Integer.parseInt(fields[7]),
+                    Integer.parseInt(fields[8]), Long.parseLong(fields[9]), Long.parseLong(fields[10]),
+                    Long.parseLong(fields[11]), Long.parseLong(fields[12]), Long.parseLong(fields[13]),
+                    Long.parseLong(fields[14]), Long.parseLong(fields[15]), Long.parseLong(fields[16]),
+                    Long.parseLong(fields[17]), Long.parseLong(fields[18]), Long.parseLong(fields[19]),
+                    Long.parseLong(fields[20]), Long.parseLong(fields[21]), Long.parseLong(fields[22]),
+                    Long.parseLong(fields[23]), Long.parseLong(fields[24]), Long.parseLong(fields[25]),
+                    Double.parseDouble(fields[26]), Double.parseDouble(fields[27]),
+                    Double.parseDouble(fields[28]), Double.parseDouble(fields[29]),
+                    Long.parseLong(fields[30]), Long.parseLong(fields[31]), Long.parseLong(fields[32]),
+                    Long.parseLong(fields[33]), Long.parseLong(fields[34]), Long.parseLong(fields[35]),
+                    Double.parseDouble(fields[36]), Double.parseDouble(fields[37]),
+                    Double.parseDouble(fields[38]), Double.parseDouble(fields[39]),
+                    Double.parseDouble(fields[40]));
+        }
+
+        ShapeKey shape() {
+            return new ShapeKey(rowCount, workload, clients, operationsPerTransaction);
+        }
     }
 
     private record Measurement(
@@ -4165,6 +4593,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean mvccOnlyDiagnostic = configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS);
             boolean hostRecoveryDiagnostic = hostStateRecoveryEnabled()
                     && configuredTargets.equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS);
+            boolean drdaProtocolDiagnostic = drdaProtocolEvidenceEnabled()
+                    && configuredTargets.equals(DRDA_PROTOCOL_EVIDENCE_TARGETS);
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
@@ -4173,7 +4603,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
                     && !mvccOnlyDiagnostic
-                    && !hostRecoveryDiagnostic) {
+                    && !hostRecoveryDiagnostic
+                    && !drdaProtocolDiagnostic) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
                         + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
@@ -4181,7 +4612,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
                         + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
                         + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
-                        + ", or host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
+                        + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
+                        + ", or DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
                         + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
@@ -4250,8 +4682,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException("Invalid host-state recovery diagnostic option");
                 }
             }
-            if (target == null && !mvccOnlyDiagnostic && (runs < 4 || (runs & 3) != 0)) {
+            if (target == null && !mvccOnlyDiagnostic && !drdaProtocolDiagnostic
+                    && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");
+            }
+            if (target == null && drdaProtocolDiagnostic && runs < 2) {
+                throw new IllegalArgumentException("DRDA protocol evidence requires at least two runs");
             }
             if (childHeap.isBlank()) {
                 throw new IllegalArgumentException("childHeap is required");
@@ -4262,7 +4698,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
-                if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
+                if (drdaProtocolDiagnostic) {
+                    if (delosClientClasspath.isBlank()) {
+                        throw new IllegalArgumentException(
+                                "Delos network client classpath is required for DRDA protocol evidence");
+                    }
+                } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
                     throw new IllegalArgumentException("Server benchmark client classpaths are required");
                 }
@@ -4276,12 +4717,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 "Upstream Derby server runtime directory does not exist: "
                                         + upstreamDerbyServerRuntimeDirectory);
                     }
-                    if (!Files.isRegularFile(h2ServerJar)) {
-                        throw new IllegalArgumentException("H2 server jar does not exist: " + h2ServerJar);
-                    }
-                    if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()
-                            || postgresqlImage.isBlank() || mariadbImage.isBlank()) {
-                        throw new IllegalArgumentException("Server benchmark images are required");
+                    if (drdaProtocolDiagnostic) {
+                        if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
+                            throw new IllegalArgumentException("DRDA server benchmark images are required");
+                        }
+                    } else {
+                        if (!Files.isRegularFile(h2ServerJar)) {
+                            throw new IllegalArgumentException("H2 server jar does not exist: " + h2ServerJar);
+                        }
+                        if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()
+                                || postgresqlImage.isBlank() || mariadbImage.isBlank()) {
+                            throw new IllegalArgumentException("Server benchmark images are required");
+                        }
                     }
                 }
             }
@@ -4371,7 +4818,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 case H2 -> h2Classpath;
                 case SQLITE -> sqliteClasspath;
                 case DELOS_HEAP_DRDA, DELOS_MVCC_DRDA -> delosClientClasspath;
-                case UPSTREAM_DERBY_DRDA -> upstreamDerbyClientClasspath;
+                case UPSTREAM_DERBY_DRDA -> drdaProtocolEvidenceEnabled()
+                        ? delosClientClasspath
+                        : upstreamDerbyClientClasspath;
                 case H2_SERVER -> h2Classpath;
                 case POSTGRESQL -> postgresqlClasspath;
                 case MARIADB -> mariadbClasspath;

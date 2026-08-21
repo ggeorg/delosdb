@@ -161,6 +161,7 @@ class NetResultSetRequest extends NetStatementRequest
         buildPKGNAMCSN(section);
         buildQRYINSID(queryInstanceIdentifier);
         updateLengthBytes();
+        NetProtocolEvidence.closeQueryCommand();
     }
 
     private void buildCNTQRY(Section section,
@@ -192,8 +193,10 @@ class NetResultSetRequest extends NetStatementRequest
                                  long queryInstanceIdentifier,
                                  int qryrowsetSize)
             throws SqlException {
+        NetProtocolEvidence.beginContinueQueryFlow();
         createCommand();
         markLengthBytes(CodePoint.CNTQRY);
+        NetProtocolEvidence.continueQueryCommand();
 
         buildPKGNAMCSN(section); // 1. packageNameAndConsistencyToken
         buildQRYBLKSZ(); // 2. qryblksz
@@ -250,8 +253,10 @@ class NetResultSetRequest extends NetStatementRequest
                                         long queryInstanceIdentifier,
                                         int qryrowsetSize)
             throws SqlException {
+        NetProtocolEvidence.beginContinueQueryFlow();
         createCommand();
         markLengthBytes(CodePoint.CNTQRY);
+        NetProtocolEvidence.continueQueryCommand();
 
         buildPKGNAMCSN(section); // 1. pkgnamcsn
         buildQRYBLKSZ(); // 2. qryblksz

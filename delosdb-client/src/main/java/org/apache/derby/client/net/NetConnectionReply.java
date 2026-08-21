@@ -92,9 +92,13 @@ class NetConnectionReply extends Reply
     }
 
     public void readLocalCommit(ConnectionCallbackInterface connection) throws DisconnectException {
-        startSameIdChainParse();
-        parseRDBCMMreply(connection);
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseRDBCMMreply(connection);
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endCommitFlow();
+        }
     }
 
     public void readLocalRollback(ConnectionCallbackInterface connection) throws DisconnectException {

@@ -1197,8 +1197,10 @@ class Request {
             throws IOException {
         try {
             netAgent_.markWriteChainAsDirty();
-            socketOutputStream.write(buffer.array(), 0, buffer.position());
+            int bytes = buffer.position();
+            socketOutputStream.write(buffer.array(), 0, bytes);
             socketOutputStream.flush();
+            NetProtocolEvidence.requestFlushed(bytes);
         } finally {
             if (netAgent_.logWriter_ != null && passwordIncluded_) {
                 // if password is in the buffer, need to mask it out.

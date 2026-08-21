@@ -354,6 +354,7 @@ class NetStatementRequest extends NetPackageRequest
     private void buildOPNQRY(Section section,
                      boolean sendQueryRowSet,
                      int fetchSize) throws SqlException {
+        NetProtocolEvidence.beginOpenQueryFlow();
         createCommand();
         markLengthBytes(CodePoint.OPNQRY);
 
@@ -373,6 +374,7 @@ class NetStatementRequest extends NetPackageRequest
         }
 
         updateLengthBytes();  // opnqry is complete
+        NetProtocolEvidence.openQueryCommand();
     }
 
     // Build the Execute Immediate SQL Statement Command to
@@ -417,6 +419,7 @@ class NetStatementRequest extends NetPackageRequest
         }
 
         updateLengthBytes();
+        NetProtocolEvidence.prepareCommand();
     }
 
     // Build the command to execute an SQL SET Statement.
@@ -474,6 +477,7 @@ class NetStatementRequest extends NetPackageRequest
                         int resultSetFlag,
                         boolean sendQryrowset,
                         int qryrowset) throws SqlException {
+        NetProtocolEvidence.beginExecuteFlow();
         createCommand();
         markLengthBytes(CodePoint.EXCSQLSTT);
 
@@ -502,6 +506,7 @@ class NetStatementRequest extends NetPackageRequest
         }
 
         updateLengthBytes();  // command is complete, update the length bytes
+        NetProtocolEvidence.executeCommand();
     }
 
     // Build the Describe SQL Statement command.

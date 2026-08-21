@@ -185,6 +185,7 @@ class Reply {
             }
             // DERBY-2747: only count if we actually read something
             if (actualBytesRead > 0) {
+                NetProtocolEvidence.replySocketRead(actualBytesRead);
                 count_ += actualBytesRead;
                 totalBytesRead += actualBytesRead;
             }

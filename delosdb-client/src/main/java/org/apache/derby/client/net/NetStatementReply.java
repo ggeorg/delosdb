@@ -62,15 +62,23 @@ class NetStatementReply extends NetPackageReply
     }
 
     public void readOpenQuery(StatementCallbackInterface statement) throws DisconnectException {
-        startSameIdChainParse();
-        parseOPNQRYreply(statement);
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseOPNQRYreply(statement);
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endOpenQueryFlow();
+        }
     }
 
     public void readExecute(PreparedStatementCallbackInterface preparedStatement) throws DisconnectException {
-        startSameIdChainParse();
-        parseEXCSQLSTTreply(preparedStatement);
-        endOfSameIdChainData();
+        try {
+            startSameIdChainParse();
+            parseEXCSQLSTTreply(preparedStatement);
+            endOfSameIdChainData();
+        } finally {
+            NetProtocolEvidence.endExecuteFlow();
+        }
     }
 
     public void readPrepare(StatementCallbackInterface statement) throws DisconnectException {
@@ -1480,6 +1488,7 @@ class NetStatementReply extends NetPackageReply
         } else {
             longValueForDecryption_ = null;
         }
+        NetProtocolEvidence.queryDataBlock();
         if (longBufferForDecryption_ != null) {
             buffer_ = longBufferForDecryption_;
             pos_ = longPosForDecryption_;
