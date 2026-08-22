@@ -18,6 +18,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -2117,6 +2118,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     verifier, targetId, options.target().createTableSuffix(),
                     options.target().isContainer(), config);
             scenario.prepare();
+            if (spec.workload() == Workload.JOIN_INDEXED_1TO1) {
+                prepareJoinDimensionFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), config.commitBatchSize());
+            } else if (spec.workload() == Workload.GROUP_HIGH_CARD) {
+                prepareHighCardGroupFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), config.commitBatchSize());
+            }
             if (spec.workload().isCoveringRangeScan()
                     || (spec.workload().isRowBearingComparisonRangeScan()
                             && (options.target() == Target.DELOS_HEAP
@@ -2249,7 +2259,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("pageSize=").append(pragmaValue(connection, "page_size")).append('\n')
                 .append("cacheSize=").append(pragmaValue(connection, "cache_size")).append('\n')
                 .append("mmapSize=").append(pragmaValue(connection, "mmap_size")).append('\n')
-                .append("benchmarkDdl=").append(sqliteBenchmarkDdl(tables)).append('\n')
+                .append("benchmarkDdl=").append(sqliteBenchmarkDdl(tables, spec.workload())).append('\n')
                 .append("compileOptions=").append(sqliteCompileOptions(connection)).append('\n')
                 .append('\n');
         Path output = options.reportDirectory().resolve(
@@ -2260,7 +2270,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 java.nio.file.StandardOpenOption.APPEND);
     }
 
-    private static String sqliteBenchmarkDdl(List<String> tables) {
+    private static String sqliteBenchmarkDdl(List<String> tables, Workload workload) {
         StringBuilder ddl = new StringBuilder();
         for (String table : tables) {
             if (ddl.length() != 0) {
@@ -2273,6 +2283,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                     .append(table).append(" (category); ")
                     .append("create index ").append(table).append("_RANGE_IDX on ")
                     .append(table).append(" (bucket, quantity)");
+            if (workload == Workload.JOIN_INDEXED_1TO1) {
+                ddl.append("; create table ").append(joinDimensionTableName(table))
+                        .append(" (id int not null primary key)");
+            } else if (workload == Workload.GROUP_HIGH_CARD) {
+                ddl.append("; create table ").append(highCardGroupTableName(table))
+                        .append(" (id int not null primary key, group_key int not null, quantity int not null)");
+            }
         }
         return ddl.toString();
     }
@@ -2311,6 +2328,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int[] mutationBaseline;
         private final int[] deleteReinsertIds;
         private final DelosSqlSemanticOracle.Result deleteReinsertBaseline;
+        private final int insertFirstId;
+        private final int insertLastId;
         private final List<Client> clients;
         private final Connection longReaderConnection;
         private final PreparedStatement longReaderScan;
@@ -2344,6 +2363,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.deleteReinsertBaseline = spec.workload().isDeleteReinsert()
                     ? authoritativeDeleteReinsertState(verifier, this.table, deleteReinsertIds)
                     : null;
+            long insertedRows = spec.workload().isInsert()
+                    ? Math.multiplyExact(
+                            Math.multiplyExact((long) spec.clients(), this.transactionsPerClient),
+                            spec.operationsPerTransaction())
+                    : 0L;
+            this.insertFirstId = spec.workload().isInsert() ? Math.addExact(rowCount, 1) : 0;
+            this.insertLastId = spec.workload().isInsert()
+                    ? Math.toIntExact(Math.addExact((long) rowCount, insertedRows))
+                    : 0;
             this.longReaderStart = spec.workload().isLongReaderWriter()
                     ? 1 + rowCount / 4
                     : 0;
@@ -2376,7 +2404,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     int expectedRangeRows = 0;
                     long expectedRangeFingerprint = 0L;
                     DeleteRow[] deleteRows = null;
-                    int expectedPromotedRows = 0;
+                    int expectedFitnessRows = 0;
+                    int insertBaseId = 0;
                     if (spec.workload().isPrimaryKeyRead()) {
                         int operations = Math.multiplyExact(
                                 transactionsPerClient, spec.operationsPerTransaction());
@@ -2393,8 +2422,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         expectedRangeFingerprint = spec.workload().isIndexOnlyRangeScan()
                                 ? rangeIdFingerprint(rangeStart, rangeEndExclusive)
                                 : rangeFingerprint(fixtureQuantities, rangeStart, rangeEndExclusive);
-                    } else if (spec.workload().isPromotedRead()) {
-                        expectedPromotedRows = expectedPromotedRows(spec.workload(), rowCount);
+                    } else if (spec.workload().isFitnessRead()) {
+                        expectedFitnessRows = expectedFitnessRows(spec.workload(), rowCount);
+                    } else if (spec.workload().isInsert()) {
+                        int insertsPerClient = Math.multiplyExact(
+                                transactionsPerClient, spec.operationsPerTransaction());
+                        insertBaseId = Math.addExact(rowCount + 1, Math.multiplyExact(client, insertsPerClient));
                     } else if (spec.workload().isDeleteReinsert()) {
                         int width = spec.operationsPerTransaction();
                         deleteRows = new DeleteRow[width];
@@ -2415,7 +2448,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     clients.add(new Client(
                             connection, clientTable, spec, updateId, readIds, expectedReadQuantities,
                             rangeStart, rangeEndExclusive, expectedRangeRows, expectedRangeFingerprint,
-                            deleteRows, expectedPromotedRows, options.target(), options.h2RangeFetchSize()));
+                            deleteRows, expectedFitnessRows, insertBaseId, options.payload(),
+                            options.target(), options.h2RangeFetchSize()));
                 }
             } catch (SQLException failure) {
                 closeClients(failure);
@@ -2672,6 +2706,32 @@ public final class DelosJdbcCrossEngineConcurrency {
                     verifier.rollback();
                     return new Verification(fingerprint, oracle);
                 }
+                if (spec.workload().isInsert()) {
+                    long expectedRows = Math.multiplyExact(
+                            Math.multiplyExact((long) spec.clients(), transactionsPerClient),
+                            spec.operationsPerTransaction());
+                    long insertedFingerprint = verifyInsertedState(
+                            verifier, table, insertFirstId, insertLastId, rowCount, expectedRows,
+                            options.payload());
+                    DelosSqlSemanticOracle.Result oracle = captureSqlOracle
+                            ? DelosSqlSemanticOracle.mutation(
+                                    expectedRows,
+                                    authoritativeInsertState(verifier, table, insertFirstId, insertLastId))
+                            : null;
+                    try (PreparedStatement cleanup = verifier.prepareStatement(
+                            "delete from " + table + " where id >= ? and id <= ?")) {
+                        cleanup.setInt(1, insertFirstId);
+                        cleanup.setInt(2, insertLastId);
+                        int deleted = cleanup.executeUpdate();
+                        if (deleted != expectedRows) {
+                            throw new SQLException(
+                                    "INSERT fitness cleanup row-count drift for " + spec
+                                            + ": expected=" + expectedRows + ", actual=" + deleted);
+                        }
+                    }
+                    verifier.commit();
+                    return new Verification(mix(fingerprint, insertedFingerprint), oracle);
+                }
                 if (spec.workload().isDeleteReinsert()) {
                     DelosSqlSemanticOracle.Result current =
                             authoritativeDeleteReinsertState(verifier, table, deleteReinsertIds);
@@ -2798,14 +2858,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 return DelosSqlSemanticOracle.composite("FITNESS_RANGE_SCAN", clients);
             }
-            if (spec.workload().isPromotedRead()) {
-                String sql = promotedReadSql(spec.workload(), table);
+            if (spec.workload().isFitnessRead()) {
+                String sql = fitnessReadSql(spec.workload(), table);
                 try (PreparedStatement statement = connection.prepareStatement(sql)) {
-                    bindPromotedRead(statement, spec.workload());
+                    bindFitnessRead(statement, spec.workload());
                     try (ResultSet resultSet = statement.executeQuery()) {
-                        DelosSqlSemanticOracle.RowOrder order = spec.workload() == Workload.PROJECTION_COVERED
-                                ? DelosSqlSemanticOracle.RowOrder.UNORDERED
-                                : DelosSqlSemanticOracle.RowOrder.ORDERED;
+                        DelosSqlSemanticOracle.RowOrder order =
+                                spec.workload() == Workload.PROJECTION_COVERED
+                                        || spec.workload() == Workload.JOIN_INDEXED_1TO1
+                                        ? DelosSqlSemanticOracle.RowOrder.UNORDERED
+                                        : DelosSqlSemanticOracle.RowOrder.ORDERED;
                         return DelosSqlSemanticOracle.query(resultSet, order);
                     }
                 }
@@ -2966,12 +3028,14 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final PreparedStatement read;
         private final PreparedStatement rangeRead;
         private final PreparedStatement values;
-        private final PreparedStatement promotedRead;
+        private final PreparedStatement fitnessRead;
         private final PreparedStatement update;
         private final PreparedStatement deleteRow;
         private final PreparedStatement insertRow;
         private final DeleteRow[] deleteRows;
-        private final int expectedPromotedRows;
+        private final int expectedFitnessRows;
+        private final int insertBaseId;
+        private final int payloadSize;
 
         private Client(
                 Connection connection,
@@ -2985,7 +3049,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int expectedRangeRows,
                 long expectedRangeFingerprint,
                 DeleteRow[] deleteRows,
-                int expectedPromotedRows,
+                int expectedFitnessRows,
+                int insertBaseId,
+                int payloadSize,
                 Target target,
                 int h2RangeFetchSize)
                 throws SQLException {
@@ -2999,12 +3065,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.expectedRangeRows = expectedRangeRows;
             this.expectedRangeFingerprint = expectedRangeFingerprint;
             this.deleteRows = deleteRows == null ? new DeleteRow[0] : deleteRows.clone();
-            this.expectedPromotedRows = expectedPromotedRows;
+            this.expectedFitnessRows = expectedFitnessRows;
+            this.insertBaseId = insertBaseId;
+            this.payloadSize = payloadSize;
             this.target = target;
             PreparedStatement localRead = null;
             PreparedStatement localRangeRead = null;
             PreparedStatement localValues = null;
-            PreparedStatement localPromotedRead = null;
+            PreparedStatement localFitnessRead = null;
             PreparedStatement localUpdate = null;
             PreparedStatement localDeleteRow = null;
             PreparedStatement localInsertRow = null;
@@ -3037,11 +3105,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                 } else if (workload.isValues()) {
                     localValues = connection.prepareStatement("values (1)");
-                } else if (workload.isPromotedRead()) {
-                    localPromotedRead = connection.prepareStatement(promotedReadSql(workload, table));
+                } else if (workload.isFitnessRead()) {
+                    localFitnessRead = connection.prepareStatement(fitnessReadSql(workload, table));
                 } else if (workload.isIndexedUpdate()) {
                     localUpdate = connection.prepareStatement(
                             "update " + table + " set quantity = quantity + 1 where id = ?");
+                } else if (workload.isInsert()) {
+                    localInsertRow = connection.prepareStatement(
+                            "insert into " + table
+                                    + " (id, category, bucket, quantity, payload) values (?, ?, ?, ?, ?)");
                 } else if (workload.isDeleteReinsert()) {
                     localDeleteRow = connection.prepareStatement("delete from " + table + " where id = ?");
                     localInsertRow = connection.prepareStatement(
@@ -3051,7 +3123,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 this.read = localRead;
                 this.rangeRead = localRangeRead;
                 this.values = localValues;
-                this.promotedRead = localPromotedRead;
+                this.fitnessRead = localFitnessRead;
                 this.update = localUpdate;
                 this.deleteRow = localDeleteRow;
                 this.insertRow = localInsertRow;
@@ -3059,7 +3131,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 closeStatement(localInsertRow, failure);
                 closeStatement(localDeleteRow, failure);
                 closeStatement(localUpdate, failure);
-                closeStatement(localPromotedRead, failure);
+                closeStatement(localFitnessRead, failure);
                 closeStatement(localValues, failure);
                 closeStatement(localRangeRead, failure);
                 closeStatement(localRead, failure);
@@ -3075,7 +3147,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 while (true) {
                     long transactionFingerprint = 1L;
                     try {
-                        for (int operation = 0; operation < operationsPerTransaction; operation++) {
+                        if (workload.isInsert()) {
+                            transactionFingerprint = executeInsertTransaction(
+                                    transaction, operationsPerTransaction);
+                        }
+                        for (int operation = 0;
+                                !workload.isInsert() && operation < operationsPerTransaction;
+                                operation++) {
                             int operationIndex = transaction * operationsPerTransaction + operation;
                             if (workload.isValues()) {
                                 try (ResultSet resultSet = values.executeQuery()) {
@@ -3129,10 +3207,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 }
                                 transactionFingerprint = mix(transactionFingerprint, rows);
                                 transactionFingerprint = mix(transactionFingerprint, rangeFingerprint);
-                            } else if (workload.isPromotedRead()) {
+                            } else if (workload.isFitnessRead()) {
                                 transactionFingerprint = mix(
                                         transactionFingerprint,
-                                        executePromotedRead(promotedRead, workload, expectedPromotedRows));
+                                        executeFitnessRead(fitnessRead, workload, expectedFitnessRows));
                             } else if (workload.isDeleteReinsert()) {
                                 DeleteRow row = deleteRows[operation % deleteRows.length];
                                 deleteRow.setInt(1, row.id());
@@ -3179,6 +3257,39 @@ public final class DelosJdbcCrossEngineConcurrency {
             return new ClientRun(fingerprint, retryableRollbacks);
         }
 
+        private long executeInsertTransaction(int transaction, int operationsPerTransaction)
+                throws SQLException {
+            long fingerprint = 1L;
+            if (operationsPerTransaction == 1) {
+                int id = insertBaseId + transaction;
+                bindFitnessInsert(insertRow, id, payloadSize);
+                if (insertRow.executeUpdate() != 1) {
+                    throw new SQLException("INSERT-1 did not affect exactly one row: id=" + id);
+                }
+                return mix(fingerprint, id);
+            }
+
+            insertRow.clearBatch();
+            for (int operation = 0; operation < operationsPerTransaction; operation++) {
+                int id = insertBaseId + transaction * operationsPerTransaction + operation;
+                bindFitnessInsert(insertRow, id, payloadSize);
+                insertRow.addBatch();
+                fingerprint = mix(fingerprint, id);
+            }
+            int[] counts = insertRow.executeBatch();
+            if (counts.length != operationsPerTransaction) {
+                throw new SQLException(
+                        "INSERT batch count length drift: expected=" + operationsPerTransaction
+                                + ", actual=" + counts.length);
+            }
+            for (int count : counts) {
+                if (count != 1 && count != Statement.SUCCESS_NO_INFO) {
+                    throw new SQLException("INSERT batch returned unexpected update count: " + count);
+                }
+            }
+            return fingerprint;
+        }
+
         @Override
         public void close() throws SQLException {
             SQLException failure = null;
@@ -3219,8 +3330,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             try {
-                if (promotedRead != null) {
-                    promotedRead.close();
+                if (fitnessRead != null) {
+                    fitnessRead.close();
                 }
             } catch (SQLException closeFailure) {
                 if (failure == null) {
@@ -3277,9 +3388,169 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+    private static String joinDimensionTableName(String table) {
+        return table + "_JOIN_DIM";
+    }
+
+    private static String highCardGroupTableName(String table) {
+        return table + "_GROUP";
+    }
+
+    private static void prepareJoinDimensionFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int commitBatchSize) throws SQLException {
+        String dimension = joinDimensionTableName(table);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create table " + dimension + " (id int not null primary key)" + createTableSuffix);
+        }
+        connection.commit();
+        int rows = Math.min(1000, rowCount);
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into " + dimension + " (id) values (?)")) {
+            for (int id = 1; id <= rows; id++) {
+                insert.setInt(1, id);
+                insert.addBatch();
+                if (id % commitBatchSize == 0) {
+                    insert.executeBatch();
+                    connection.commit();
+                }
+            }
+            if (rows % commitBatchSize != 0) {
+                insert.executeBatch();
+                connection.commit();
+            }
+        }
+    }
+
+    private static void prepareHighCardGroupFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int commitBatchSize) throws SQLException {
+        String groupTable = highCardGroupTableName(table);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create table " + groupTable
+                            + " (id int not null primary key, group_key int not null, quantity int not null)"
+                            + createTableSuffix);
+        }
+        connection.commit();
+        int[] quantities = fixtureQuantities(rowCount);
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into " + groupTable + " (id, group_key, quantity) values (?, ?, ?)")) {
+            for (int id = 1; id <= rowCount; id++) {
+                insert.setInt(1, id);
+                insert.setInt(2, id % Math.min(1000, rowCount));
+                insert.setInt(3, quantities[id]);
+                insert.addBatch();
+                if (id % commitBatchSize == 0) {
+                    insert.executeBatch();
+                    connection.commit();
+                }
+            }
+            if (rowCount % commitBatchSize != 0) {
+                insert.executeBatch();
+                connection.commit();
+            }
+        }
+    }
+
+    private static void bindFitnessInsert(PreparedStatement statement, int id, int payloadSize)
+            throws SQLException {
+        statement.setInt(1, id);
+        statement.setInt(2, id % 17);
+        statement.setInt(3, id % 11);
+        statement.setInt(4, fitnessInsertQuantity(id));
+        statement.setString(5, fitnessPayload(id, payloadSize));
+    }
+
+    private static int fitnessInsertQuantity(int id) {
+        return Math.floorMod(id * 31, 10_000);
+    }
+
+    private static String fitnessPayload(int id, int length) {
+        String prefix = "insert-" + id + '-';
+        StringBuilder value = new StringBuilder(length);
+        while (value.length() < length) {
+            value.append(prefix);
+        }
+        return value.substring(0, length);
+    }
+
+    private static long verifyInsertedState(
+            Connection connection,
+            String table,
+            int firstId,
+            int lastId,
+            int baselineRowCount,
+            long expectedRows,
+            int payloadSize) throws SQLException {
+        if (firstId != baselineRowCount + 1 || lastId < firstId) {
+            throw new SQLException(
+                    "Invalid INSERT verification range: " + firstId + ".." + lastId);
+        }
+        long rows = 0L;
+        long fingerprint = 1L;
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select id, category, bucket, quantity, payload from " + table
+                        + " where id >= ? and id <= ? order by id")) {
+            statement.setInt(1, firstId);
+            statement.setInt(2, lastId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    int id = resultSet.getInt(1);
+                    int category = resultSet.getInt(2);
+                    int bucket = resultSet.getInt(3);
+                    int quantity = resultSet.getInt(4);
+                    String payload = resultSet.getString(5);
+                    if (id != firstId + rows
+                            || category != id % 17
+                            || bucket != id % 11
+                            || quantity != fitnessInsertQuantity(id)
+                            || !fitnessPayload(id, payloadSize).equals(payload)) {
+                        throw new SQLException("INSERT fitness post-state drift at id=" + id);
+                    }
+                    fingerprint = mix(fingerprint, id);
+                    fingerprint = mix(fingerprint, category);
+                    fingerprint = mix(fingerprint, bucket);
+                    fingerprint = mix(fingerprint, quantity);
+                    fingerprint = mix(fingerprint, payload.hashCode());
+                    rows++;
+                }
+            }
+        }
+        if (rows != expectedRows) {
+            throw new SQLException(
+                    "INSERT fitness row-count drift: expected=" + expectedRows + ", actual=" + rows);
+        }
+        return mix(fingerprint, rows);
+    }
+
+    private static DelosSqlSemanticOracle.Result authoritativeInsertState(
+            Connection connection,
+            String table,
+            int firstId,
+            int lastId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select id, category, bucket, quantity, payload from " + table
+                        + " where id >= ? and id <= ? order by id")) {
+            statement.setInt(1, firstId);
+            statement.setInt(2, lastId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return DelosSqlSemanticOracle.query(
+                        resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
+            }
+        }
+    }
+
     private static final int FITNESS_CATEGORY = 7;
 
-    private static String promotedReadSql(Workload workload, String table) {
+    private static String fitnessReadSql(Workload workload, String table) {
         return switch (workload) {
             case PROJECTION_COVERED ->
                     "select category from " + table + " where category = ?";
@@ -3291,13 +3562,19 @@ public final class DelosJdbcCrossEngineConcurrency {
             case GROUP_LOW_CARD ->
                     "select category, count(*), sum(quantity) from " + table
                             + " group by category order by category";
+            case JOIN_INDEXED_1TO1 ->
+                    "select a.id from " + table + " a join " + joinDimensionTableName(table)
+                            + " b on a.id = b.id";
+            case GROUP_HIGH_CARD ->
+                    "select group_key, count(*), sum(quantity) from " + highCardGroupTableName(table)
+                            + " group by group_key order by group_key";
             case SORT_FULL ->
                     "select id, quantity from " + table + " order by quantity desc, id";
-            default -> throw new IllegalArgumentException("Not a promoted read workload: " + workload);
+            default -> throw new IllegalArgumentException("Not a fitness read workload: " + workload);
         };
     }
 
-    private static void bindPromotedRead(PreparedStatement statement, Workload workload) throws SQLException {
+    private static void bindFitnessRead(PreparedStatement statement, Workload workload) throws SQLException {
         if (workload == Workload.PROJECTION_COVERED
                 || workload == Workload.PROJECTION_TWO_COLUMN
                 || workload == Workload.PROJECTION_FULL_ROW) {
@@ -3305,7 +3582,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
-    private static int expectedPromotedRows(Workload workload, int rowCount) {
+    private static int expectedFitnessRows(Workload workload, int rowCount) {
         return switch (workload) {
             case PROJECTION_COVERED, PROJECTION_TWO_COLUMN, PROJECTION_FULL_ROW -> {
                 int count = 0;
@@ -3317,16 +3594,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 yield count;
             }
             case GROUP_LOW_CARD -> Math.min(17, rowCount);
+            case JOIN_INDEXED_1TO1, GROUP_HIGH_CARD -> Math.min(1000, rowCount);
             case SORT_FULL -> rowCount;
-            default -> throw new IllegalArgumentException("Not a promoted read workload: " + workload);
+            default -> throw new IllegalArgumentException("Not a fitness read workload: " + workload);
         };
     }
 
-    private static long executePromotedRead(
+    private static long executeFitnessRead(
             PreparedStatement statement,
             Workload workload,
             int expectedRows) throws SQLException {
-        bindPromotedRead(statement, workload);
+        bindFitnessRead(statement, workload);
         int rows = 0;
         long fingerprint = 1L;
         try (ResultSet resultSet = statement.executeQuery()) {
@@ -3342,19 +3620,21 @@ public final class DelosJdbcCrossEngineConcurrency {
                         fingerprint = mix(fingerprint, resultSet.getInt(4));
                         fingerprint = mix(fingerprint, resultSet.getString(5).hashCode());
                     }
-                    case GROUP_LOW_CARD -> {
+                    case GROUP_LOW_CARD, GROUP_HIGH_CARD -> {
                         fingerprint = mix(fingerprint, resultSet.getInt(1));
                         fingerprint = mix(fingerprint, resultSet.getLong(2));
                         fingerprint = mix(fingerprint, resultSet.getLong(3));
                     }
-                    default -> throw new SQLException("Unexpected promoted read workload: " + workload);
+                    case JOIN_INDEXED_1TO1 ->
+                            fingerprint += mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
+                    default -> throw new SQLException("Unexpected fitness read workload: " + workload);
                 }
                 rows++;
             }
         }
         if (rows != expectedRows) {
             throw new SQLException(
-                    "Promoted fitness read row-count drift for " + workload
+                    "Fitness read row-count drift for " + workload
                             + ": expected=" + expectedRows + ", actual=" + rows);
         }
         return mix(fingerprint, rows);
@@ -4612,7 +4892,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         PROJECTION_TWO_COLUMN(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         PROJECTION_FULL_ROW(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_LOW_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_INDEXED_1TO1(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        GROUP_HIGH_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        INSERT_1(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
+        INSERT_100(false, false, false, 100, Connection.TRANSACTION_READ_COMMITTED),
         DELETE_REINSERT(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
@@ -4701,12 +4985,18 @@ public final class DelosJdbcCrossEngineConcurrency {
             return this == PRIVATE_TABLE_DISJOINT;
         }
 
-        boolean isPromotedRead() {
+        boolean isFitnessRead() {
             return this == PROJECTION_COVERED
                     || this == PROJECTION_TWO_COLUMN
                     || this == PROJECTION_FULL_ROW
                     || this == GROUP_LOW_CARD
+                    || this == JOIN_INDEXED_1TO1
+                    || this == GROUP_HIGH_CARD
                     || this == SORT_FULL;
+        }
+
+        boolean isInsert() {
+            return this == INSERT_1 || this == INSERT_100;
         }
 
         boolean isDeleteReinsert() {
