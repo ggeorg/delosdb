@@ -42,7 +42,7 @@
  * </div>
  *
  */
-@SuppressWarnings("module")
+@SuppressWarnings({"module", "opens"})
 module org.apache.derby.server
 {
     //

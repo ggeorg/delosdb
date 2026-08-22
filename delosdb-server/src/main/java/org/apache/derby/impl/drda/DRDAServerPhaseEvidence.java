@@ -159,23 +159,19 @@ final class DRDAServerPhaseEvidence {
         if (!ENABLED || !currentCaptured || stmt == null) {
             return;
         }
-        try {
-            int columns = stmt.getNumRsCols();
-            if (resultColumns < 0) {
-                resultColumns = columns;
-            } else if (resultColumns != columns) {
-                resultColumns = -2;
-            }
-            String source = stmt.getSQLText();
-            int hash = source == null ? 0 : source.hashCode();
-            if (!sqlHashSet) {
-                sqlHash = hash;
-                sqlHashSet = true;
-            } else if (sqlHash != hash) {
-                sqlHash = 0;
-            }
-        } catch (Exception ignored) {
-            // Diagnostic metadata must not affect request execution.
+        int columns = stmt.getNumRsCols();
+        if (resultColumns < 0) {
+            resultColumns = columns;
+        } else if (resultColumns != columns) {
+            resultColumns = -2;
+        }
+        String source = stmt.getSQLText();
+        int hash = source == null ? 0 : source.hashCode();
+        if (!sqlHashSet) {
+            sqlHash = hash;
+            sqlHashSet = true;
+        } else if (sqlHash != hash) {
+            sqlHash = 0;
         }
     }
 
