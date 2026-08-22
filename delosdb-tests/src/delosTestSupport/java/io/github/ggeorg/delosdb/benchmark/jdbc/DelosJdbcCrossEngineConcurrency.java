@@ -2312,6 +2312,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int[] deleteReinsertIds;
         private final DelosSqlSemanticOracle.Result deleteReinsertBaseline;
         private final List<Client> clients;
+        private final Connection longReaderConnection;
+        private final PreparedStatement longReaderScan;
+        private final int longReaderStart;
+        private final int longReaderEndExclusive;
+        private final DelosSqlSemanticOracle.Result longReaderBaseline;
         private final long[] setupDrdaProtocolEvidence;
         private final ExecutorService executor;
 
@@ -2338,6 +2343,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                     : new int[0];
             this.deleteReinsertBaseline = spec.workload().isDeleteReinsert()
                     ? authoritativeDeleteReinsertState(verifier, this.table, deleteReinsertIds)
+                    : null;
+            this.longReaderStart = spec.workload().isLongReaderWriter()
+                    ? 1 + rowCount / 4
+                    : 0;
+            this.longReaderEndExclusive = spec.workload().isLongReaderWriter()
+                    ? 1 + (3 * rowCount) / 4
+                    : 0;
+            this.longReaderBaseline = spec.workload().isLongReaderWriter()
+                    ? authoritativeLongReaderState(
+                            verifier, this.table, longReaderStart, longReaderEndExclusive)
                     : null;
             int[] fixtureQuantities = spec.workload().usesFixtureQuantities() ? fixtureQuantities(rowCount) : null;
             verifier.rollback();
@@ -2389,7 +2404,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     connection, this.table, deleteReinsertIds[offset + operation]);
                         }
                     } else if (spec.workload().isIndexedUpdate()) {
-                        int targetIndex = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE ? client : 0;
+                        boolean disjoint = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE
+                                || spec.workload() == Workload.LONG_READER_DISJOINT_WRITER;
+                        int targetIndex = disjoint ? client : 0;
                         updateId = mutationIds[targetIndex];
                     }
                     String clientTable = spec.workload().usesPrivateTablePerClient()
@@ -2404,6 +2421,30 @@ public final class DelosJdbcCrossEngineConcurrency {
                 closeClients(failure);
                 throw failure;
             }
+            Connection localLongReaderConnection = null;
+            PreparedStatement localLongReaderScan = null;
+            try {
+                if (spec.workload().isLongReaderWriter()) {
+                    localLongReaderConnection = connect(options, database);
+                    localLongReaderConnection.setAutoCommit(false);
+                    localLongReaderConnection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                    localLongReaderScan = localLongReaderConnection.prepareStatement(
+                            "select id, quantity from " + this.table
+                                    + " where id >= ? and id < ? order by id");
+                }
+            } catch (SQLException failure) {
+                if (localLongReaderConnection != null) {
+                    try {
+                        localLongReaderConnection.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
+                closeClients(failure);
+                throw failure;
+            }
+            this.longReaderConnection = localLongReaderConnection;
+            this.longReaderScan = localLongReaderScan;
             this.setupDrdaProtocolEvidence = snapshotDrdaProtocolEvidence();
             this.executor = Executors.newFixedThreadPool(
                     spec.clients(), Thread.ofPlatform().daemon().name("delos-bench-client-", 0).factory());
@@ -2414,6 +2455,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         private Interval runInterval(boolean captureSqlOracle) throws Exception {
+            if (spec.workload().isLongReaderWriter()) {
+                return runLongReaderWriterInterval(captureSqlOracle);
+            }
             CountDownLatch ready = new CountDownLatch(spec.clients());
             CountDownLatch start = new CountDownLatch(1);
             List<Future<ClientRun>> futures = new ArrayList<>(spec.clients());
@@ -2480,6 +2524,138 @@ public final class DelosJdbcCrossEngineConcurrency {
                     protocolEvidence);
         }
 
+        private Interval runLongReaderWriterInterval(boolean captureSqlOracle) throws Exception {
+            if (longReaderConnection == null || longReaderScan == null || longReaderBaseline == null) {
+                throw new IllegalStateException("Long-reader/writer case is not initialized: " + spec);
+            }
+            try {
+                longReaderConnection.rollback();
+                longReaderScan.setInt(1, longReaderStart);
+                longReaderScan.setInt(2, longReaderEndExclusive);
+
+                CountDownLatch ready = new CountDownLatch(spec.clients());
+                CountDownLatch startWriters = new CountDownLatch(1);
+                List<Future<ClientRun>> futures = new ArrayList<>(spec.clients());
+                for (Client client : clients) {
+                    futures.add(executor.submit(() -> {
+                        ready.countDown();
+                        if (!startWriters.await(options.caseTimeoutSeconds(), TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("long-reader writer start barrier timed out");
+                        }
+                        return client.runTransactions(transactionsPerClient, spec.operationsPerTransaction());
+                    }));
+                }
+                if (!ready.await(options.caseTimeoutSeconds(), TimeUnit.SECONDS)) {
+                    startWriters.countDown();
+                    cancelFutures(futures);
+                    throw new IllegalStateException("long-reader writer readiness barrier timed out");
+                }
+
+                if (drdaProtocolEvidenceEnabled()) {
+                    resetDrdaProtocolEvidence();
+                    beginDrdaProtocolTimingWindow();
+                }
+                long started = System.nanoTime();
+                long deadline = started + TimeUnit.SECONDS.toNanos(options.caseTimeoutSeconds());
+                DelosSqlSemanticOracle.Result readerSnapshot;
+                long executionFingerprint = 1L;
+                long retryableRollbacks = 0L;
+                Throwable failure = null;
+                int completedBeforeReaderRelease;
+                long elapsed;
+                try {
+                    try (ResultSet resultSet = longReaderScan.executeQuery()) {
+                        readerSnapshot = DelosSqlSemanticOracle.query(
+                                resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
+                    }
+                    if (readerSnapshot.count() != longReaderBaseline.count()
+                            || !readerSnapshot.fingerprint().equals(longReaderBaseline.fingerprint())) {
+                        throw new IllegalStateException(
+                                "Long-reader snapshot drift for " + spec
+                                        + ": expected=" + longReaderBaseline
+                                        + ", actual=" + readerSnapshot);
+                    }
+
+                    startWriters.countDown();
+                    Thread.sleep(25L);
+                    completedBeforeReaderRelease = 0;
+                    for (Future<ClientRun> future : futures) {
+                        if (future.isDone()) {
+                            completedBeforeReaderRelease++;
+                        }
+                    }
+                    longReaderConnection.rollback();
+
+                    executionFingerprint = mix(executionFingerprint, readerSnapshot.fingerprint().hashCode());
+                    for (Future<ClientRun> future : futures) {
+                        try {
+                            long remaining = deadline - System.nanoTime();
+                            if (remaining <= 0L) {
+                                throw new TimeoutException("long-reader/writer interval deadline exceeded");
+                            }
+                            ClientRun clientRun = future.get(remaining, TimeUnit.NANOSECONDS);
+                            executionFingerprint = mix(executionFingerprint, clientRun.fingerprint());
+                            retryableRollbacks = Math.addExact(
+                                    retryableRollbacks, clientRun.retryableRollbacks());
+                        } catch (TimeoutException timeout) {
+                            cancelFutures(futures);
+                            throw new IllegalStateException(
+                                    "long-reader/writer interval exceeded "
+                                            + options.caseTimeoutSeconds() + " seconds: " + spec,
+                                    timeout);
+                        } catch (Throwable clientFailure) {
+                            failure = preserve(failure, clientFailure);
+                        }
+                    }
+                    elapsed = System.nanoTime() - started;
+                } finally {
+                    try {
+                        longReaderConnection.rollback();
+                    } catch (SQLException rollbackFailure) {
+                        failure = preserve(failure, rollbackFailure);
+                    }
+                    if (drdaProtocolEvidenceEnabled()) {
+                        endDrdaProtocolTimingWindow();
+                    }
+                }
+                if (failure != null) {
+                    cancelFutures(futures);
+                    throwFailure(failure);
+                }
+
+                long[] protocolEvidence = snapshotDrdaProtocolEvidence();
+                Verification verification = verifyAndRestore(captureSqlOracle);
+                DelosSqlSemanticOracle.Result oracle = null;
+                if (captureSqlOracle) {
+                    Map<String, DelosSqlSemanticOracle.Result> components = new LinkedHashMap<>();
+                    components.put("reader-snapshot", readerSnapshot);
+                    components.put("writer-mutation", Objects.requireNonNull(
+                            verification.sqlOracleResult(), "writer mutation oracle"));
+                    oracle = DelosSqlSemanticOracle.composite(
+                            "FITNESS_LONG_READER_WRITER", components);
+                }
+                System.out.printf(
+                        Locale.ROOT,
+                        "F12_PROGRESS run=%d target=%s workload=%s writersCompletedBeforeReaderRelease=%d/%d holdMillis=25%n",
+                        options.run(), options.target().id(), spec.workload().name(),
+                        completedBeforeReaderRelease, spec.clients());
+                return new Interval(
+                        elapsed,
+                        mix(executionFingerprint, verification.legacyFingerprint()),
+                        retryableRollbacks,
+                        oracle,
+                        protocolEvidence);
+            } catch (Throwable failure) {
+                try {
+                    longReaderConnection.rollback();
+                } catch (SQLException rollbackFailure) {
+                    failure.addSuppressed(rollbackFailure);
+                }
+                throwFailure(failure);
+                throw new AssertionError("unreachable");
+            }
+        }
+
         private static void cancelFutures(List<? extends Future<?>> futures) {
             for (Future<?> future : futures) {
                 future.cancel(true);
@@ -2519,9 +2695,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int increment = Math.multiplyExact(transactionsPerClient, spec.operationsPerTransaction());
                 for (int index = 0; index < mutationIds.length; index++) {
                     int expected = mutationBaseline[index];
-                    if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
+                    if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE
+                            || spec.workload() == Workload.LONG_READER_DISJOINT_WRITER) {
                         expected += increment;
-                    } else if (spec.workload() == Workload.CONTENDED_INDEXED_UPDATE) {
+                    } else if (spec.workload() == Workload.CONTENDED_INDEXED_UPDATE
+                            || spec.workload() == Workload.LONG_READER_HOT_WRITER) {
                         expected += Math.multiplyExact(spec.clients(), increment);
                     }
                     int actual = quantity(verifier, table, mutationIds[index]);
@@ -2663,6 +2841,23 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
         }
 
+        private static DelosSqlSemanticOracle.Result authoritativeLongReaderState(
+                Connection connection,
+                String table,
+                int startInclusive,
+                int endExclusive) throws SQLException {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "select id, quantity from " + table
+                            + " where id >= ? and id < ? order by id")) {
+                statement.setInt(1, startInclusive);
+                statement.setInt(2, endExclusive);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    return DelosSqlSemanticOracle.query(
+                            resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
+                }
+            }
+        }
+
         private static DelosSqlSemanticOracle.Result authoritativeMutationState(
                 Connection connection,
                 String table,
@@ -2694,7 +2889,40 @@ public final class DelosJdbcCrossEngineConcurrency {
         public void close() throws Exception {
             executor.shutdownNow();
             if (executor.awaitTermination(10, TimeUnit.SECONDS)) {
-                closeClients(null);
+                SQLException failure = null;
+                if (longReaderScan != null) {
+                    try {
+                        longReaderScan.close();
+                    } catch (SQLException closeFailure) {
+                        failure = closeFailure;
+                    }
+                }
+                if (longReaderConnection != null) {
+                    try {
+                        if (!longReaderConnection.getAutoCommit()) {
+                            longReaderConnection.rollback();
+                        }
+                        longReaderConnection.close();
+                    } catch (SQLException closeFailure) {
+                        if (failure == null) {
+                            failure = closeFailure;
+                        } else {
+                            failure.addSuppressed(closeFailure);
+                        }
+                    }
+                }
+                try {
+                    closeClients(failure);
+                } catch (SQLException closeFailure) {
+                    if (failure == null) {
+                        failure = closeFailure;
+                    } else if (failure != closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
+                if (failure != null) {
+                    throw failure;
+                }
             } else {
                 System.err.println("Benchmark client tasks did not terminate after cancellation; "
                         + "leaving JDBC connections to isolated worker-process teardown");
@@ -3172,6 +3400,15 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static int[] mutationIds(Spec spec, int rowCount) {
+        if (spec.workload() == Workload.LONG_READER_DISJOINT_WRITER) {
+            if (spec.clients() != 4 || rowCount < 8) {
+                throw new IllegalArgumentException(
+                        "F12 disjoint long-reader sentinel requires 4 writers and at least 8 rows: " + spec);
+            }
+            int start = 1 + rowCount / 4;
+            int endExclusive = 1 + (3 * rowCount) / 4;
+            return new int[]{1, start, endExclusive - 1, rowCount};
+        }
         if (spec.workload() == Workload.DISJOINT_INDEXED_UPDATE) {
             if (spec.clients() > rowCount) {
                 throw new IllegalArgumentException(
@@ -3183,6 +3420,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 ids[index] = 1 + (int) (((long) index * rowCount) / ids.length);
             }
             return ids;
+        }
+        if (spec.workload() == Workload.LONG_READER_HOT_WRITER) {
+            if (spec.clients() != 4 || rowCount < 4) {
+                throw new IllegalArgumentException(
+                        "F12 hot long-reader sentinel requires 4 writers and at least 4 rows: " + spec);
+            }
+            return new int[]{1 + rowCount / 2};
         }
         return spec.workload() == Workload.CONTENDED_INDEXED_UPDATE ? new int[]{1} : new int[0];
     }
@@ -4371,7 +4615,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         DELETE_REINSERT(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
-        CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED);
+        CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
+        LONG_READER_DISJOINT_WRITER(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
+        LONG_READER_HOT_WRITER(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED);
 
         private final boolean primaryKeyRead;
         private final boolean values;
@@ -4471,8 +4717,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             return readOnly;
         }
 
+        boolean isLongReaderWriter() {
+            return this == LONG_READER_DISJOINT_WRITER || this == LONG_READER_HOT_WRITER;
+        }
+
         boolean isIndexedUpdate() {
-            return this == DISJOINT_INDEXED_UPDATE || this == CONTENDED_INDEXED_UPDATE;
+            return this == DISJOINT_INDEXED_UPDATE
+                    || this == CONTENDED_INDEXED_UPDATE
+                    || isLongReaderWriter();
         }
 
         boolean isUpdate() {
@@ -5295,6 +5547,16 @@ public final class DelosJdbcCrossEngineConcurrency {
             parsePositive(clients, "clients", 1);
             parsePositive(widths, "widths", 1);
             List<Workload> configuredWorkloads = workloadValues();
+            boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
+                    && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
+            if (configuredWorkloads.stream().anyMatch(Workload::isLongReaderWriter)
+                    && (!longReaderWriterFitness
+                            || !clientValues().equals(List.of(4))
+                            || !widthValues().equals(List.of(1)))) {
+                throw new IllegalArgumentException(
+                        "F12 long-reader/writer fitness requires only F12 workloads, exactly 4 writers, "
+                                + "and width 1");
+            }
             if (configuredWorkloads.stream().anyMatch(Workload::isCoveringRangeScan)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)) {
                 throw new IllegalArgumentException(
@@ -5318,7 +5580,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
-            if (target == null && !mvccOnlyDiagnostic
+            if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
