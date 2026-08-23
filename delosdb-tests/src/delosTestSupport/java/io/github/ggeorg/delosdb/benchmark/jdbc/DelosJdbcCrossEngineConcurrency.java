@@ -2126,6 +2126,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 prepareHighCardGroupFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+            } else if (spec.workload() == Workload.BANK_TRANSACTION) {
+                prepareBankFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), config.commitBatchSize());
+            } else if (spec.workload() == Workload.ORDER_ENTRY_MIX) {
+                prepareOrderEntryFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), spec.clients(), options.transactionsPerClient(spec, config.rowCount()),
+                        config.commitBatchSize());
             }
             if (spec.workload().isCoveringRangeScan()
                     || (spec.workload().isRowBearingComparisonRangeScan()
@@ -2446,7 +2455,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             ? tables.get(client)
                             : this.table;
                     clients.add(new Client(
-                            connection, clientTable, spec, updateId, readIds, expectedReadQuantities,
+                            connection, clientTable, spec, client, transactionsPerClient, rowCount,
+                            updateId, readIds, expectedReadQuantities,
                             rangeStart, rangeEndExclusive, expectedRangeRows, expectedRangeFingerprint,
                             deleteRows, expectedFitnessRows, insertBaseId, options.payload(),
                             options.target(), options.h2RangeFetchSize()));
@@ -2706,6 +2716,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     verifier.rollback();
                     return new Verification(fingerprint, oracle);
                 }
+                if (spec.workload().isRealisticTransaction()) {
+                    return verifyAndRestoreRealisticTransaction(captureSqlOracle, fingerprint);
+                }
                 if (spec.workload().isInsert()) {
                     long expectedRows = Math.multiplyExact(
                             Math.multiplyExact((long) spec.clients(), transactionsPerClient),
@@ -2798,6 +2811,339 @@ public final class DelosJdbcCrossEngineConcurrency {
                     failure.addSuppressed(rollbackFailure);
                 }
                 throw failure;
+            }
+        }
+
+
+        private Verification verifyAndRestoreRealisticTransaction(
+                boolean captureSqlOracle, long fingerprint) throws SQLException {
+            return spec.workload() == Workload.BANK_TRANSACTION
+                    ? verifyAndRestoreBankTransaction(captureSqlOracle, fingerprint)
+                    : verifyAndRestoreOrderEntry(captureSqlOracle, fingerprint);
+        }
+
+        private Verification verifyAndRestoreBankTransaction(
+                boolean captureSqlOracle, long fingerprint) throws SQLException {
+            int[] quantities = fixtureQuantities(rowCount);
+            Map<Integer, Integer> accountDelta = new java.util.TreeMap<>();
+            Map<Integer, Long> tellerDelta = new java.util.TreeMap<>();
+            Map<Integer, Long> branchDelta = new java.util.TreeMap<>();
+            long expectedTotal = 0L;
+            int expectedTransactions = Math.multiplyExact(spec.clients(), transactionsPerClient);
+            for (int client = 0; client < spec.clients(); client++) {
+                for (int transaction = 0; transaction < transactionsPerClient; transaction++) {
+                    int globalOrdinal = client * transactionsPerClient + transaction;
+                    int accountId = bankAccountId(globalOrdinal, rowCount);
+                    int branchId = bankBranchId(accountId, rowCount);
+                    int tellerId = bankTellerId(branchId, globalOrdinal);
+                    int delta = bankDelta(globalOrdinal);
+                    accountDelta.merge(accountId, delta, Math::addExact);
+                    tellerDelta.merge(tellerId, (long) delta, Math::addExact);
+                    branchDelta.merge(branchId, (long) delta, Math::addExact);
+                    expectedTotal = Math.addExact(expectedTotal, delta);
+                }
+            }
+
+            long actualAccountTotal = 0L;
+            for (Map.Entry<Integer, Integer> entry : accountDelta.entrySet()) {
+                int actual = quantity(verifier, table, entry.getKey());
+                int expected = Math.addExact(quantities[entry.getKey()], entry.getValue());
+                if (actual != expected) {
+                    throw new IllegalStateException("Bank account state drift: id=" + entry.getKey()
+                            + ", expected=" + expected + ", actual=" + actual);
+                }
+                actualAccountTotal = Math.addExact(
+                        actualAccountTotal, (long) actual - quantities[entry.getKey()]);
+                fingerprint = mix(mix(fingerprint, entry.getKey()), actual);
+            }
+            long actualTellerTotal = verifyBalanceTable(
+                    verifier, bankTellerTableName(table), tellerDelta, "bank teller");
+            long actualBranchTotal = verifyBalanceTable(
+                    verifier, bankBranchTableName(table), branchDelta, "bank branch");
+            long actualHistoryTotal = 0L;
+            int historyRows = 0;
+            try (Statement statement = verifier.createStatement();
+                    ResultSet resultSet = statement.executeQuery(
+                            "select tx_id, account_id, teller_id, branch_id, amount from "
+                                    + bankHistoryTableName(table) + " order by tx_id")) {
+                while (resultSet.next()) {
+                    int txId = resultSet.getInt(1);
+                    int globalOrdinal = txId - 1;
+                    if (globalOrdinal < 0 || globalOrdinal >= expectedTransactions) {
+                        throw new IllegalStateException("Unexpected bank history tx_id=" + txId);
+                    }
+                    int expectedAccount = bankAccountId(globalOrdinal, rowCount);
+                    int expectedBranch = bankBranchId(expectedAccount, rowCount);
+                    int expectedTeller = bankTellerId(expectedBranch, globalOrdinal);
+                    int expectedDelta = bankDelta(globalOrdinal);
+                    if (resultSet.getInt(2) != expectedAccount
+                            || resultSet.getInt(3) != expectedTeller
+                            || resultSet.getInt(4) != expectedBranch
+                            || resultSet.getInt(5) != expectedDelta) {
+                        throw new IllegalStateException("Bank history state drift for tx_id=" + txId);
+                    }
+                    actualHistoryTotal = Math.addExact(actualHistoryTotal, expectedDelta);
+                    historyRows++;
+                }
+            }
+            if (historyRows != expectedTransactions) {
+                throw new IllegalStateException("Bank history row-count drift: expected="
+                        + expectedTransactions + ", actual=" + historyRows);
+            }
+            if (actualAccountTotal != expectedTotal
+                    || actualTellerTotal != expectedTotal
+                    || actualBranchTotal != expectedTotal
+                    || actualHistoryTotal != expectedTotal) {
+                throw new IllegalStateException(
+                        "Bank invariant drift: expectedTotal=" + expectedTotal
+                                + ", account=" + actualAccountTotal
+                                + ", teller=" + actualTellerTotal
+                                + ", branch=" + actualBranchTotal
+                                + ", history=" + actualHistoryTotal);
+            }
+
+            DelosSqlSemanticOracle.Result oracle = null;
+            if (captureSqlOracle) {
+                Map<String, DelosSqlSemanticOracle.Result> components = new LinkedHashMap<>();
+                components.put("accounts", queryOracle(verifier,
+                        "select id, quantity from " + table + " order by id"));
+                components.put("tellers", queryOracle(verifier,
+                        "select id, branch_id, balance from " + bankTellerTableName(table) + " order by id"));
+                components.put("branches", queryOracle(verifier,
+                        "select id, balance from " + bankBranchTableName(table) + " order by id"));
+                components.put("history", queryOracle(verifier,
+                        "select tx_id, account_id, teller_id, branch_id, amount from "
+                                + bankHistoryTableName(table) + " order by tx_id"));
+                oracle = DelosSqlSemanticOracle.composite("FITNESS_BANK_TRANSACTION", components);
+            }
+
+            try (PreparedStatement restore = verifier.prepareStatement(
+                            "update " + table + " set quantity = ? where id = ?");
+                    Statement cleanup = verifier.createStatement()) {
+                for (int accountId : accountDelta.keySet()) {
+                    restore.setInt(1, quantities[accountId]);
+                    restore.setInt(2, accountId);
+                    if (restore.executeUpdate() != 1) {
+                        throw new SQLException("Bank account restore failed for id=" + accountId);
+                    }
+                }
+                cleanup.executeUpdate("update " + bankTellerTableName(table) + " set balance = 0");
+                cleanup.executeUpdate("update " + bankBranchTableName(table) + " set balance = 0");
+                cleanup.executeUpdate("delete from " + bankHistoryTableName(table));
+            }
+            verifier.commit();
+            return new Verification(mix(fingerprint, expectedTotal), oracle);
+        }
+
+        private Verification verifyAndRestoreOrderEntry(
+                boolean captureSqlOracle, long fingerprint) throws SQLException {
+            int customerCount = Math.min(ORDER_CUSTOMERS, rowCount);
+            int[] quantities = fixtureQuantities(rowCount);
+            Map<Integer, Integer> stockDelta = new java.util.TreeMap<>();
+            Map<Integer, Long> customerBalance = new java.util.TreeMap<>();
+            Map<Integer, Integer> customerLastOrder = new java.util.TreeMap<>();
+            Map<Integer, Long> warehouseBalance = new java.util.TreeMap<>();
+            Map<Integer, ExpectedOrder> expectedOrders = new java.util.TreeMap<>();
+            Map<OrderLineKey, ExpectedOrderLine> expectedLines = new java.util.TreeMap<>();
+
+            for (int client = 0; client < spec.clients(); client++) {
+                for (int transaction = 0; transaction < transactionsPerClient; transaction++) {
+                    int globalOrdinal = client * transactionsPerClient + transaction;
+                    int customerId = orderCustomerId(client, transaction, spec.clients(), customerCount);
+                    int warehouseId = orderWarehouseId(client);
+                    switch (orderEntryType(transaction)) {
+                        case NEW_ORDER -> {
+                            int orderId = ORDER_NEW_BASE + globalOrdinal;
+                            expectedOrders.put(orderId, new ExpectedOrder(customerId, 0, 33));
+                            customerLastOrder.put(customerId, orderId);
+                            for (int line = 1; line <= 3; line++) {
+                                int stockId = orderStockId(globalOrdinal, line, rowCount);
+                                int amount = 10 + line;
+                                stockDelta.merge(stockId, -1, Math::addExact);
+                                expectedLines.put(
+                                        new OrderLineKey(orderId, line),
+                                        new ExpectedOrderLine(stockId, 1, amount));
+                            }
+                        }
+                        case PAYMENT -> {
+                            int amount = orderPaymentAmount(globalOrdinal);
+                            customerBalance.merge(customerId, (long) amount, Math::addExact);
+                            warehouseBalance.merge(warehouseId, (long) amount, Math::addExact);
+                        }
+                        case ORDER_STATUS, STOCK_LEVEL -> {
+                            // Read-only members of the deterministic mix.
+                        }
+                        case DELIVERY -> {
+                            int orderId = ORDER_DELIVERY_BASE + globalOrdinal;
+                            expectedOrders.put(orderId, new ExpectedOrder(customerId, 1, 50));
+                            customerBalance.merge(customerId, 50L, Math::addExact);
+                        }
+                        case NEW_ORDER_ROLLBACK -> {
+                            // Deliberate rollback: no SQL-visible state is allowed to remain.
+                        }
+                    }
+                }
+            }
+
+            for (Map.Entry<Integer, Integer> entry : stockDelta.entrySet()) {
+                int actual = quantity(verifier, table, entry.getKey());
+                int expected = Math.addExact(quantities[entry.getKey()], entry.getValue());
+                if (actual != expected) {
+                    throw new IllegalStateException("Order Entry stock drift: id=" + entry.getKey()
+                            + ", expected=" + expected + ", actual=" + actual);
+                }
+                fingerprint = mix(mix(fingerprint, entry.getKey()), actual);
+            }
+
+            try (Statement statement = verifier.createStatement();
+                    ResultSet resultSet = statement.executeQuery(
+                            "select id, balance, last_order from " + orderCustomerTableName(table)
+                                    + " order by id")) {
+                int rows = 0;
+                while (resultSet.next()) {
+                    int id = resultSet.getInt(1);
+                    long expectedBalance = customerBalance.getOrDefault(id, 0L);
+                    int expectedLastOrder = customerLastOrder.getOrDefault(id, 0);
+                    if (resultSet.getLong(2) != expectedBalance || resultSet.getInt(3) != expectedLastOrder) {
+                        throw new IllegalStateException("Order Entry customer drift: id=" + id
+                                + ", expectedBalance=" + expectedBalance
+                                + ", actualBalance=" + resultSet.getLong(2)
+                                + ", expectedLastOrder=" + expectedLastOrder
+                                + ", actualLastOrder=" + resultSet.getInt(3));
+                    }
+                    rows++;
+                }
+                if (rows != customerCount) {
+                    throw new IllegalStateException("Order Entry customer row-count drift: expected="
+                            + customerCount + ", actual=" + rows);
+                }
+            }
+            long verifiedWarehouseTotal = verifyBalanceTable(
+                    verifier, orderWarehouseTableName(table), warehouseBalance, "order warehouse");
+            long expectedWarehouseTotal = 0L;
+            for (long amount : warehouseBalance.values()) {
+                expectedWarehouseTotal = Math.addExact(expectedWarehouseTotal, amount);
+            }
+            if (verifiedWarehouseTotal != expectedWarehouseTotal) {
+                throw new IllegalStateException("Order Entry warehouse invariant drift");
+            }
+
+            try (Statement statement = verifier.createStatement();
+                    ResultSet resultSet = statement.executeQuery(
+                            "select id, customer_id, status, amount from " + orderTableName(table)
+                                    + " order by id")) {
+                int rows = 0;
+                while (resultSet.next()) {
+                    int id = resultSet.getInt(1);
+                    ExpectedOrder expected = expectedOrders.get(id);
+                    if (expected == null) {
+                        throw new IllegalStateException("Unexpected Order Entry order row id=" + id);
+                    }
+                    if (resultSet.getInt(2) != expected.customerId()
+                            || resultSet.getInt(3) != expected.status()
+                            || resultSet.getInt(4) != expected.amount()) {
+                        throw new IllegalStateException("Order Entry order drift: id=" + id);
+                    }
+                    rows++;
+                }
+                if (rows != expectedOrders.size()) {
+                    throw new IllegalStateException("Order Entry order row-count drift: expected="
+                            + expectedOrders.size() + ", actual=" + rows);
+                }
+            }
+
+            try (Statement statement = verifier.createStatement();
+                    ResultSet resultSet = statement.executeQuery(
+                            "select order_id, line_no, stock_id, quantity, amount from "
+                                    + orderLineTableName(table) + " order by order_id, line_no")) {
+                int rows = 0;
+                while (resultSet.next()) {
+                    OrderLineKey key = new OrderLineKey(resultSet.getInt(1), resultSet.getInt(2));
+                    ExpectedOrderLine expected = expectedLines.get(key);
+                    if (expected == null) {
+                        throw new IllegalStateException("Unexpected Order Entry line " + key);
+                    }
+                    if (resultSet.getInt(3) != expected.stockId()
+                            || resultSet.getInt(4) != expected.quantity()
+                            || resultSet.getInt(5) != expected.amount()) {
+                        throw new IllegalStateException("Order Entry line drift: " + key);
+                    }
+                    rows++;
+                }
+                if (rows != expectedLines.size()) {
+                    throw new IllegalStateException("Order Entry line row-count drift: expected="
+                            + expectedLines.size() + ", actual=" + rows);
+                }
+            }
+
+            DelosSqlSemanticOracle.Result oracle = null;
+            if (captureSqlOracle) {
+                Map<String, DelosSqlSemanticOracle.Result> components = new LinkedHashMap<>();
+                components.put("stock", queryOracle(verifier,
+                        "select id, quantity from " + table + " order by id"));
+                components.put("warehouses", queryOracle(verifier,
+                        "select id, balance from " + orderWarehouseTableName(table) + " order by id"));
+                components.put("customers", queryOracle(verifier,
+                        "select id, balance, last_order from " + orderCustomerTableName(table) + " order by id"));
+                components.put("orders", queryOracle(verifier,
+                        "select id, customer_id, status, amount from " + orderTableName(table) + " order by id"));
+                components.put("lines", queryOracle(verifier,
+                        "select order_id, line_no, stock_id, quantity, amount from "
+                                + orderLineTableName(table) + " order by order_id, line_no"));
+                oracle = DelosSqlSemanticOracle.composite("FITNESS_ORDER_ENTRY_MIX", components);
+            }
+
+            try (PreparedStatement restore = verifier.prepareStatement(
+                            "update " + table + " set quantity = ? where id = ?");
+                    Statement cleanup = verifier.createStatement()) {
+                for (int stockId : stockDelta.keySet()) {
+                    restore.setInt(1, quantities[stockId]);
+                    restore.setInt(2, stockId);
+                    if (restore.executeUpdate() != 1) {
+                        throw new SQLException("Order Entry stock restore failed for id=" + stockId);
+                    }
+                }
+                cleanup.executeUpdate("update " + orderCustomerTableName(table)
+                        + " set balance = 0, last_order = 0");
+                cleanup.executeUpdate("update " + orderWarehouseTableName(table) + " set balance = 0");
+                cleanup.executeUpdate("delete from " + orderLineTableName(table));
+                cleanup.executeUpdate("delete from " + orderTableName(table) + " where id >= " + ORDER_NEW_BASE);
+                cleanup.executeUpdate("update " + orderTableName(table)
+                        + " set status = 0 where id >= " + ORDER_DELIVERY_BASE + " and id < " + ORDER_NEW_BASE);
+            }
+            verifier.commit();
+            return new Verification(mix(fingerprint, expectedOrders.size()), oracle);
+        }
+
+        private static long verifyBalanceTable(
+                Connection connection,
+                String table,
+                Map<Integer, Long> expectedBalances,
+                String label) throws SQLException {
+            long total = 0L;
+            try (Statement statement = connection.createStatement();
+                    ResultSet resultSet = statement.executeQuery(
+                            "select id, balance from " + table + " order by id")) {
+                while (resultSet.next()) {
+                    int id = resultSet.getInt(1);
+                    long actual = resultSet.getLong(2);
+                    long expected = expectedBalances.getOrDefault(id, 0L);
+                    if (actual != expected) {
+                        throw new IllegalStateException(label + " balance drift: id=" + id
+                                + ", expected=" + expected + ", actual=" + actual);
+                    }
+                    total = Math.addExact(total, actual);
+                }
+            }
+            return total;
+        }
+
+        private static DelosSqlSemanticOracle.Result queryOracle(
+                Connection connection, String sql) throws SQLException {
+            try (Statement statement = connection.createStatement();
+                    ResultSet resultSet = statement.executeQuery(sql)) {
+                return DelosSqlSemanticOracle.query(
+                        resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED);
             }
         }
 
@@ -3014,6 +3360,368 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+
+    private record ExpectedOrder(int customerId, int status, int amount) {
+    }
+
+    private record OrderLineKey(int orderId, int lineNo) implements Comparable<OrderLineKey> {
+        @Override
+        public int compareTo(OrderLineKey other) {
+            int byOrder = Integer.compare(orderId, other.orderId);
+            return byOrder != 0 ? byOrder : Integer.compare(lineNo, other.lineNo);
+        }
+    }
+
+    private record ExpectedOrderLine(int stockId, int quantity, int amount) {
+    }
+
+    private static final class RealisticTransactionClient implements AutoCloseable {
+        private final Connection connection;
+        private final String table;
+        private final Workload workload;
+        private final int clientIndex;
+        private final int transactionsPerClient;
+        private final int clients;
+        private final int rowCount;
+        private final int customerCount;
+        private final PreparedStatement bankUpdateAccount;
+        private final PreparedStatement bankInsertHistory;
+        private final PreparedStatement bankUpdateTeller;
+        private final PreparedStatement bankUpdateBranch;
+        private final PreparedStatement bankReadAccount;
+        private final PreparedStatement oeInsertOrder;
+        private final PreparedStatement oeInsertLine;
+        private final PreparedStatement oeUpdateStock;
+        private final PreparedStatement oeUpdateLastOrder;
+        private final PreparedStatement oePaymentCustomer;
+        private final PreparedStatement oePaymentWarehouse;
+        private final PreparedStatement oeReadCustomer;
+        private final PreparedStatement oeReadOrder;
+        private final PreparedStatement oeDeliverOrder;
+        private final PreparedStatement oeDeliverCustomer;
+        private final PreparedStatement oeStockLevel;
+
+        private RealisticTransactionClient(
+                Connection connection,
+                String table,
+                Workload workload,
+                int clientIndex,
+                int transactionsPerClient,
+                int clients,
+                int rowCount) throws SQLException {
+            this.connection = connection;
+            this.table = table;
+            this.workload = workload;
+            this.clientIndex = clientIndex;
+            this.transactionsPerClient = transactionsPerClient;
+            this.clients = clients;
+            this.rowCount = rowCount;
+            this.customerCount = Math.min(ORDER_CUSTOMERS, rowCount);
+
+            PreparedStatement localBankUpdateAccount = null;
+            PreparedStatement localBankInsertHistory = null;
+            PreparedStatement localBankUpdateTeller = null;
+            PreparedStatement localBankUpdateBranch = null;
+            PreparedStatement localBankReadAccount = null;
+            PreparedStatement localOeInsertOrder = null;
+            PreparedStatement localOeInsertLine = null;
+            PreparedStatement localOeUpdateStock = null;
+            PreparedStatement localOeUpdateLastOrder = null;
+            PreparedStatement localOePaymentCustomer = null;
+            PreparedStatement localOePaymentWarehouse = null;
+            PreparedStatement localOeReadCustomer = null;
+            PreparedStatement localOeReadOrder = null;
+            PreparedStatement localOeDeliverOrder = null;
+            PreparedStatement localOeDeliverCustomer = null;
+            PreparedStatement localOeStockLevel = null;
+            try {
+                if (workload == Workload.BANK_TRANSACTION) {
+                    localBankUpdateAccount = connection.prepareStatement(
+                            "update " + table + " set quantity = quantity + ? where id = ?");
+                    localBankInsertHistory = connection.prepareStatement(
+                            "insert into " + bankHistoryTableName(table)
+                                    + " (tx_id, account_id, teller_id, branch_id, amount) values (?, ?, ?, ?, ?)");
+                    localBankUpdateTeller = connection.prepareStatement(
+                            "update " + bankTellerTableName(table)
+                                    + " set balance = balance + ? where id = ?");
+                    localBankUpdateBranch = connection.prepareStatement(
+                            "update " + bankBranchTableName(table)
+                                    + " set balance = balance + ? where id = ?");
+                    localBankReadAccount = connection.prepareStatement(
+                            "select quantity from " + table + " where id = ?");
+                } else if (workload == Workload.ORDER_ENTRY_MIX) {
+                    localOeInsertOrder = connection.prepareStatement(
+                            "insert into " + orderTableName(table)
+                                    + " (id, customer_id, status, amount) values (?, ?, 0, ?)");
+                    localOeInsertLine = connection.prepareStatement(
+                            "insert into " + orderLineTableName(table)
+                                    + " (order_id, line_no, stock_id, quantity, amount) values (?, ?, ?, ?, ?)");
+                    localOeUpdateStock = connection.prepareStatement(
+                            "update " + table + " set quantity = quantity - ? where id = ?");
+                    localOeUpdateLastOrder = connection.prepareStatement(
+                            "update " + orderCustomerTableName(table)
+                                    + " set last_order = ? where id = ?");
+                    localOePaymentCustomer = connection.prepareStatement(
+                            "update " + orderCustomerTableName(table)
+                                    + " set balance = balance + ? where id = ?");
+                    localOePaymentWarehouse = connection.prepareStatement(
+                            "update " + orderWarehouseTableName(table)
+                                    + " set balance = balance + ? where id = ?");
+                    localOeReadCustomer = connection.prepareStatement(
+                            "select balance, last_order from " + orderCustomerTableName(table)
+                                    + " where id = ?");
+                    localOeReadOrder = connection.prepareStatement(
+                            "select status, amount from " + orderTableName(table) + " where id = ?");
+                    localOeDeliverOrder = connection.prepareStatement(
+                            "update " + orderTableName(table) + " set status = 1 where id = ? and status = 0");
+                    localOeDeliverCustomer = connection.prepareStatement(
+                            "update " + orderCustomerTableName(table)
+                                    + " set balance = balance + 50 where id = ?");
+                    localOeStockLevel = connection.prepareStatement(
+                            "select count(*) from " + table + " where quantity < ?");
+                } else {
+                    throw new SQLException("Not a realistic transaction workload: " + workload);
+                }
+            } catch (SQLException failure) {
+                PreparedStatement[] statements = {
+                        localBankUpdateAccount, localBankInsertHistory, localBankUpdateTeller,
+                        localBankUpdateBranch, localBankReadAccount, localOeInsertOrder,
+                        localOeInsertLine, localOeUpdateStock, localOeUpdateLastOrder,
+                        localOePaymentCustomer, localOePaymentWarehouse, localOeReadCustomer,
+                        localOeReadOrder, localOeDeliverOrder, localOeDeliverCustomer,
+                        localOeStockLevel};
+                for (PreparedStatement statement : statements) {
+                    closeStatement(statement, failure);
+                }
+                throw failure;
+            }
+            this.bankUpdateAccount = localBankUpdateAccount;
+            this.bankInsertHistory = localBankInsertHistory;
+            this.bankUpdateTeller = localBankUpdateTeller;
+            this.bankUpdateBranch = localBankUpdateBranch;
+            this.bankReadAccount = localBankReadAccount;
+            this.oeInsertOrder = localOeInsertOrder;
+            this.oeInsertLine = localOeInsertLine;
+            this.oeUpdateStock = localOeUpdateStock;
+            this.oeUpdateLastOrder = localOeUpdateLastOrder;
+            this.oePaymentCustomer = localOePaymentCustomer;
+            this.oePaymentWarehouse = localOePaymentWarehouse;
+            this.oeReadCustomer = localOeReadCustomer;
+            this.oeReadOrder = localOeReadOrder;
+            this.oeDeliverOrder = localOeDeliverOrder;
+            this.oeDeliverCustomer = localOeDeliverCustomer;
+            this.oeStockLevel = localOeStockLevel;
+        }
+
+        private long execute(int transaction) throws SQLException {
+            return workload == Workload.BANK_TRANSACTION
+                    ? executeBankTransaction(transaction)
+                    : executeOrderEntryTransaction(transaction);
+        }
+
+        private long executeBankTransaction(int transaction) throws SQLException {
+            int globalOrdinal = clientIndex * transactionsPerClient + transaction;
+            int accountId = bankAccountId(globalOrdinal, rowCount);
+            int branchId = bankBranchId(accountId, rowCount);
+            int tellerId = bankTellerId(branchId, globalOrdinal);
+            int delta = bankDelta(globalOrdinal);
+            int txId = globalOrdinal + 1;
+
+            bankUpdateAccount.setInt(1, delta);
+            bankUpdateAccount.setInt(2, accountId);
+            requireOne(bankUpdateAccount.executeUpdate(), "bank account update", accountId);
+
+            bankInsertHistory.setInt(1, txId);
+            bankInsertHistory.setInt(2, accountId);
+            bankInsertHistory.setInt(3, tellerId);
+            bankInsertHistory.setInt(4, branchId);
+            bankInsertHistory.setInt(5, delta);
+            requireOne(bankInsertHistory.executeUpdate(), "bank history insert", txId);
+
+            bankUpdateTeller.setInt(1, delta);
+            bankUpdateTeller.setInt(2, tellerId);
+            requireOne(bankUpdateTeller.executeUpdate(), "bank teller update", tellerId);
+
+            bankUpdateBranch.setInt(1, delta);
+            bankUpdateBranch.setInt(2, branchId);
+            requireOne(bankUpdateBranch.executeUpdate(), "bank branch update", branchId);
+
+            bankReadAccount.setInt(1, accountId);
+            try (ResultSet resultSet = bankReadAccount.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("Bank account read returned no row: id=" + accountId);
+                }
+                resultSet.getInt(1);
+                if (resultSet.next()) {
+                    throw new SQLException("Bank account read returned duplicate row: id=" + accountId);
+                }
+            }
+            connection.commit();
+            long fingerprint = mix(txId, accountId);
+            fingerprint = mix(fingerprint, tellerId);
+            fingerprint = mix(fingerprint, branchId);
+            return mix(fingerprint, delta);
+        }
+
+        private long executeOrderEntryTransaction(int transaction) throws SQLException {
+            int globalOrdinal = clientIndex * transactionsPerClient + transaction;
+            int customerId = orderCustomerId(
+                    clientIndex, transaction, clients, customerCount);
+            int warehouseId = orderWarehouseId(clientIndex);
+            OrderEntryType type = orderEntryType(transaction);
+            long fingerprint = mix(globalOrdinal + 1L, type.ordinal());
+            fingerprint = mix(fingerprint, customerId);
+            switch (type) {
+                case NEW_ORDER -> {
+                    int orderId = ORDER_NEW_BASE + globalOrdinal;
+                    int totalAmount = 0;
+                    oeInsertOrder.setInt(1, orderId);
+                    oeInsertOrder.setInt(2, customerId);
+                    oeInsertOrder.setInt(3, 33);
+                    requireOne(oeInsertOrder.executeUpdate(), "new-order header insert", orderId);
+                    for (int line = 1; line <= 3; line++) {
+                        int stockId = orderStockId(globalOrdinal, line, rowCount);
+                        int amount = 10 + line;
+                        totalAmount += amount;
+                        oeUpdateStock.setInt(1, 1);
+                        oeUpdateStock.setInt(2, stockId);
+                        requireOne(oeUpdateStock.executeUpdate(), "new-order stock update", stockId);
+                        oeInsertLine.setInt(1, orderId);
+                        oeInsertLine.setInt(2, line);
+                        oeInsertLine.setInt(3, stockId);
+                        oeInsertLine.setInt(4, 1);
+                        oeInsertLine.setInt(5, amount);
+                        requireOne(oeInsertLine.executeUpdate(), "new-order line insert", orderId);
+                    }
+                    if (totalAmount != 33) {
+                        throw new SQLException("Order Entry amount construction drift: " + totalAmount);
+                    }
+                    oeUpdateLastOrder.setInt(1, orderId);
+                    oeUpdateLastOrder.setInt(2, customerId);
+                    requireOne(oeUpdateLastOrder.executeUpdate(), "new-order customer update", customerId);
+                    connection.commit();
+                    return mix(fingerprint, orderId);
+                }
+                case PAYMENT -> {
+                    int amount = orderPaymentAmount(globalOrdinal);
+                    oePaymentCustomer.setInt(1, amount);
+                    oePaymentCustomer.setInt(2, customerId);
+                    requireOne(oePaymentCustomer.executeUpdate(), "payment customer update", customerId);
+                    oePaymentWarehouse.setInt(1, amount);
+                    oePaymentWarehouse.setInt(2, warehouseId);
+                    requireOne(oePaymentWarehouse.executeUpdate(), "payment warehouse update", warehouseId);
+                    readCustomer(customerId);
+                    connection.commit();
+                    return mix(fingerprint, amount);
+                }
+                case ORDER_STATUS -> {
+                    int lastOrder = readCustomer(customerId);
+                    if (lastOrder != 0) {
+                        oeReadOrder.setInt(1, lastOrder);
+                        try (ResultSet resultSet = oeReadOrder.executeQuery()) {
+                            if (!resultSet.next()) {
+                                throw new SQLException("Order status could not find last order " + lastOrder);
+                            }
+                            resultSet.getInt(1);
+                            resultSet.getInt(2);
+                            if (resultSet.next()) {
+                                throw new SQLException("Order status returned duplicate order " + lastOrder);
+                            }
+                        }
+                    }
+                    connection.commit();
+                    return fingerprint;
+                }
+                case DELIVERY -> {
+                    int orderId = ORDER_DELIVERY_BASE + globalOrdinal;
+                    oeDeliverOrder.setInt(1, orderId);
+                    requireOne(oeDeliverOrder.executeUpdate(), "delivery order update", orderId);
+                    oeDeliverCustomer.setInt(1, customerId);
+                    requireOne(oeDeliverCustomer.executeUpdate(), "delivery customer update", customerId);
+                    connection.commit();
+                    return mix(fingerprint, orderId);
+                }
+                case STOCK_LEVEL -> {
+                    oeStockLevel.setInt(1, 20);
+                    try (ResultSet resultSet = oeStockLevel.executeQuery()) {
+                        if (!resultSet.next()) {
+                            throw new SQLException("Stock-level query returned no row");
+                        }
+                        resultSet.getLong(1);
+                        if (resultSet.next()) {
+                            throw new SQLException("Stock-level query returned multiple rows");
+                        }
+                    }
+                    connection.commit();
+                    return fingerprint;
+                }
+                case NEW_ORDER_ROLLBACK -> {
+                    int orderId = ORDER_ROLLBACK_BASE + globalOrdinal;
+                    int stockId = orderStockId(globalOrdinal, 1, rowCount);
+                    oeInsertOrder.setInt(1, orderId);
+                    oeInsertOrder.setInt(2, customerId);
+                    oeInsertOrder.setInt(3, 11);
+                    requireOne(oeInsertOrder.executeUpdate(), "rollback order insert", orderId);
+                    oeUpdateStock.setInt(1, 1);
+                    oeUpdateStock.setInt(2, stockId);
+                    requireOne(oeUpdateStock.executeUpdate(), "rollback stock update", stockId);
+                    connection.rollback();
+                    return mix(fingerprint, orderId);
+                }
+            }
+            throw new SQLException("Unhandled Order Entry type " + type);
+        }
+
+        private int readCustomer(int customerId) throws SQLException {
+            oeReadCustomer.setInt(1, customerId);
+            try (ResultSet resultSet = oeReadCustomer.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("Order Entry customer read returned no row: id=" + customerId);
+                }
+                resultSet.getLong(1);
+                int lastOrder = resultSet.getInt(2);
+                if (resultSet.next()) {
+                    throw new SQLException("Order Entry customer read returned duplicate row: id=" + customerId);
+                }
+                return lastOrder;
+            }
+        }
+
+        private static void requireOne(int count, String operation, int id) throws SQLException {
+            if (count != 1) {
+                throw new SQLException(operation + " did not affect exactly one row: id=" + id
+                        + ", count=" + count);
+            }
+        }
+
+        @Override
+        public void close() throws SQLException {
+            SQLException failure = null;
+            PreparedStatement[] statements = {
+                    bankUpdateAccount, bankInsertHistory, bankUpdateTeller, bankUpdateBranch,
+                    bankReadAccount, oeInsertOrder, oeInsertLine, oeUpdateStock, oeUpdateLastOrder,
+                    oePaymentCustomer, oePaymentWarehouse, oeReadCustomer, oeReadOrder,
+                    oeDeliverOrder, oeDeliverCustomer, oeStockLevel};
+            for (PreparedStatement statement : statements) {
+                if (statement == null) {
+                    continue;
+                }
+                try {
+                    statement.close();
+                } catch (SQLException closeFailure) {
+                    if (failure == null) {
+                        failure = closeFailure;
+                    } else {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
+        }
+    }
+
     private static final class Client implements AutoCloseable {
         private final Connection connection;
         private final Workload workload;
@@ -3036,11 +3744,15 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final int expectedFitnessRows;
         private final int insertBaseId;
         private final int payloadSize;
+        private final RealisticTransactionClient realisticTransaction;
 
         private Client(
                 Connection connection,
                 String table,
                 Spec spec,
+                int clientIndex,
+                int transactionsPerClient,
+                int rowCount,
                 int updateId,
                 int[] readIds,
                 int[] expectedReadQuantities,
@@ -3076,6 +3788,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             PreparedStatement localUpdate = null;
             PreparedStatement localDeleteRow = null;
             PreparedStatement localInsertRow = null;
+            RealisticTransactionClient localRealisticTransaction = null;
             try {
                 if (workload.isPrimaryKeyRead()) {
                     localRead = connection.prepareStatement(
@@ -3107,6 +3820,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isFitnessRead()) {
                     localFitnessRead = connection.prepareStatement(fitnessReadSql(workload, table));
+                } else if (workload.isRealisticTransaction()) {
+                    localRealisticTransaction = new RealisticTransactionClient(
+                            connection, table, workload, clientIndex, transactionsPerClient,
+                            spec.clients(), rowCount);
                 } else if (workload.isIndexedUpdate()) {
                     localUpdate = connection.prepareStatement(
                             "update " + table + " set quantity = quantity + 1 where id = ?");
@@ -3127,7 +3844,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 this.update = localUpdate;
                 this.deleteRow = localDeleteRow;
                 this.insertRow = localInsertRow;
+                this.realisticTransaction = localRealisticTransaction;
             } catch (SQLException failure) {
+                if (localRealisticTransaction != null) {
+                    try {
+                        localRealisticTransaction.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
                 closeStatement(localInsertRow, failure);
                 closeStatement(localDeleteRow, failure);
                 closeStatement(localUpdate, failure);
@@ -3147,6 +3872,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 while (true) {
                     long transactionFingerprint = 1L;
                     try {
+                        if (workload.isRealisticTransaction()) {
+                            transactionFingerprint = Objects.requireNonNull(
+                                    realisticTransaction, "realistic transaction client")
+                                    .execute(transaction);
+                            fingerprint = mix(fingerprint, transactionFingerprint);
+                            break;
+                        }
                         if (workload.isInsert()) {
                             transactionFingerprint = executeInsertTransaction(
                                     transaction, operationsPerTransaction);
@@ -3299,6 +4031,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             } catch (SQLException rollbackFailure) {
                 failure = rollbackFailure;
+            }
+            if (realisticTransaction != null) {
+                try {
+                    realisticTransaction.close();
+                } catch (SQLException closeFailure) {
+                    if (failure == null) {
+                        failure = closeFailure;
+                    } else {
+                        failure.addSuppressed(closeFailure);
+                    }
+                }
             }
             try {
                 if (read != null) {
@@ -3458,6 +4201,233 @@ public final class DelosJdbcCrossEngineConcurrency {
                 connection.commit();
             }
         }
+    }
+
+
+    private static final int BANK_BRANCHES = 10;
+    private static final int BANK_TELLERS_PER_BRANCH = 10;
+    private static final int ORDER_CUSTOMERS = 1000;
+    private static final int ORDER_WAREHOUSES = 4;
+    private static final int ORDER_DELIVERY_BASE = 100_000;
+    private static final int ORDER_NEW_BASE = 1_000_000;
+    private static final int ORDER_ROLLBACK_BASE = 2_000_000;
+
+    private static String bankBranchTableName(String table) {
+        return table + "_BANK_BRANCH";
+    }
+
+    private static String bankTellerTableName(String table) {
+        return table + "_BANK_TELLER";
+    }
+
+    private static String bankHistoryTableName(String table) {
+        return table + "_BANK_HISTORY";
+    }
+
+    private static String orderWarehouseTableName(String table) {
+        return table + "_OE_WAREHOUSE";
+    }
+
+    private static String orderCustomerTableName(String table) {
+        return table + "_OE_CUSTOMER";
+    }
+
+    private static String orderTableName(String table) {
+        return table + "_OE_ORDER";
+    }
+
+    private static String orderLineTableName(String table) {
+        return table + "_OE_LINE";
+    }
+
+    private static void prepareBankFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int commitBatchSize) throws SQLException {
+        if (rowCount < 100) {
+            throw new SQLException("Bank transaction fitness requires at least 100 account rows");
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("create table " + bankBranchTableName(table)
+                    + " (id int not null primary key, balance bigint not null)" + createTableSuffix);
+            statement.executeUpdate("create table " + bankTellerTableName(table)
+                    + " (id int not null primary key, branch_id int not null, balance bigint not null)"
+                    + createTableSuffix);
+            statement.executeUpdate("create table " + bankHistoryTableName(table)
+                    + " (tx_id int not null primary key, account_id int not null, teller_id int not null, "
+                    + "branch_id int not null, amount int not null)" + createTableSuffix);
+        }
+        connection.commit();
+        try (PreparedStatement branch = connection.prepareStatement(
+                        "insert into " + bankBranchTableName(table) + " (id, balance) values (?, 0)");
+                PreparedStatement teller = connection.prepareStatement(
+                        "insert into " + bankTellerTableName(table)
+                                + " (id, branch_id, balance) values (?, ?, 0)")) {
+            for (int branchId = 1; branchId <= BANK_BRANCHES; branchId++) {
+                branch.setInt(1, branchId);
+                branch.addBatch();
+            }
+            branch.executeBatch();
+            for (int tellerId = 1; tellerId <= BANK_BRANCHES * BANK_TELLERS_PER_BRANCH; tellerId++) {
+                teller.setInt(1, tellerId);
+                teller.setInt(2, 1 + (tellerId - 1) / BANK_TELLERS_PER_BRANCH);
+                teller.addBatch();
+                if (tellerId % commitBatchSize == 0) {
+                    teller.executeBatch();
+                    connection.commit();
+                }
+            }
+            if ((BANK_BRANCHES * BANK_TELLERS_PER_BRANCH) % commitBatchSize != 0) {
+                teller.executeBatch();
+            }
+            connection.commit();
+        }
+    }
+
+    private static void prepareOrderEntryFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int clients,
+            int transactionsPerClient,
+            int commitBatchSize) throws SQLException {
+        if (rowCount < 1000) {
+            throw new SQLException("Order Entry fitness requires at least 1000 stock rows");
+        }
+        int customerCount = Math.min(ORDER_CUSTOMERS, rowCount);
+        if (customerCount < clients) {
+            throw new SQLException("Order Entry customer fixture is smaller than client count");
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("create table " + orderWarehouseTableName(table)
+                    + " (id int not null primary key, balance bigint not null)" + createTableSuffix);
+            statement.executeUpdate("create table " + orderCustomerTableName(table)
+                    + " (id int not null primary key, balance bigint not null, last_order int not null)"
+                    + createTableSuffix);
+            statement.executeUpdate("create table " + orderTableName(table)
+                    + " (id int not null primary key, customer_id int not null, status int not null, amount int not null)"
+                    + createTableSuffix);
+            statement.executeUpdate("create table " + orderLineTableName(table)
+                    + " (order_id int not null, line_no int not null, stock_id int not null, quantity int not null, "
+                    + "amount int not null, primary key (order_id, line_no))" + createTableSuffix);
+        }
+        connection.commit();
+        try (PreparedStatement warehouse = connection.prepareStatement(
+                        "insert into " + orderWarehouseTableName(table) + " (id, balance) values (?, 0)");
+                PreparedStatement customer = connection.prepareStatement(
+                        "insert into " + orderCustomerTableName(table)
+                                + " (id, balance, last_order) values (?, 0, 0)");
+                PreparedStatement seedOrder = connection.prepareStatement(
+                        "insert into " + orderTableName(table)
+                                + " (id, customer_id, status, amount) values (?, ?, 0, 50)")) {
+            for (int warehouseId = 1; warehouseId <= ORDER_WAREHOUSES; warehouseId++) {
+                warehouse.setInt(1, warehouseId);
+                warehouse.addBatch();
+            }
+            warehouse.executeBatch();
+            for (int customerId = 1; customerId <= customerCount; customerId++) {
+                customer.setInt(1, customerId);
+                customer.addBatch();
+                if (customerId % commitBatchSize == 0) {
+                    customer.executeBatch();
+                    connection.commit();
+                }
+            }
+            if (customerCount % commitBatchSize != 0) {
+                customer.executeBatch();
+            }
+            connection.commit();
+            for (int client = 0; client < clients; client++) {
+                for (int transaction = 0; transaction < transactionsPerClient; transaction++) {
+                    if (orderEntryType(transaction) != OrderEntryType.DELIVERY) {
+                        continue;
+                    }
+                    int globalOrdinal = client * transactionsPerClient + transaction;
+                    seedOrder.setInt(1, ORDER_DELIVERY_BASE + globalOrdinal);
+                    seedOrder.setInt(2, orderCustomerId(client, transaction, clients, customerCount));
+                    seedOrder.addBatch();
+                }
+            }
+            seedOrder.executeBatch();
+            connection.commit();
+        }
+    }
+
+    private static int bankAccountId(int globalOrdinal, int rowCount) {
+        return 1 + Math.floorMod(globalOrdinal * 7919, rowCount);
+    }
+
+    private static int bankBranchId(int accountId, int rowCount) {
+        return 1 + Math.min(BANK_BRANCHES - 1,
+                (int) (((long) (accountId - 1) * BANK_BRANCHES) / rowCount));
+    }
+
+    private static int bankTellerId(int branchId, int globalOrdinal) {
+        return (branchId - 1) * BANK_TELLERS_PER_BRANCH
+                + 1 + Math.floorMod(globalOrdinal * 7, BANK_TELLERS_PER_BRANCH);
+    }
+
+    private static int bankDelta(int globalOrdinal) {
+        int delta = Math.floorMod(globalOrdinal * 37 + 17, 199) - 99;
+        return delta == 0 ? 1 : delta;
+    }
+
+    private static int orderCustomerId(
+            int clientIndex,
+            int transaction,
+            int clients,
+            int customerCount) {
+        int logicalTransaction = orderEntryType(transaction) == OrderEntryType.ORDER_STATUS
+                ? (transaction / 20) * 20
+                : transaction;
+        int partition = customerCount / clients;
+        if (partition == 0) {
+            return 1 + Math.floorMod(clientIndex + logicalTransaction, customerCount);
+        }
+        int base = clientIndex * partition;
+        int limit = clientIndex == clients - 1 ? customerCount - base : partition;
+        return 1 + base + Math.floorMod(logicalTransaction * 13 + 3, limit);
+    }
+
+    private static int orderWarehouseId(int clientIndex) {
+        return 1 + Math.floorMod(clientIndex, ORDER_WAREHOUSES);
+    }
+
+    private static int orderStockId(int globalOrdinal, int line, int rowCount) {
+        return 1 + Math.floorMod(globalOrdinal * 3 + line * 97, rowCount);
+    }
+
+    private static int orderPaymentAmount(int globalOrdinal) {
+        return 5 + Math.floorMod(globalOrdinal * 11, 20);
+    }
+
+    private static OrderEntryType orderEntryType(int transaction) {
+        int slot = Math.floorMod(transaction, 20);
+        if (slot < 8) {
+            return OrderEntryType.NEW_ORDER;
+        }
+        if (slot < 16) {
+            return OrderEntryType.PAYMENT;
+        }
+        return switch (slot) {
+            case 16 -> OrderEntryType.ORDER_STATUS;
+            case 17 -> OrderEntryType.DELIVERY;
+            case 18 -> OrderEntryType.STOCK_LEVEL;
+            case 19 -> OrderEntryType.NEW_ORDER_ROLLBACK;
+            default -> throw new IllegalStateException("Unexpected Order Entry mix slot: " + slot);
+        };
+    }
+
+    private enum OrderEntryType {
+        NEW_ORDER,
+        PAYMENT,
+        ORDER_STATUS,
+        DELIVERY,
+        STOCK_LEVEL,
+        NEW_ORDER_ROLLBACK
     }
 
     private static void bindFitnessInsert(PreparedStatement statement, int id, int payloadSize)
@@ -4897,6 +5867,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         INSERT_1(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         INSERT_100(false, false, false, 100, Connection.TRANSACTION_READ_COMMITTED),
+        BANK_TRANSACTION(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
+        ORDER_ENTRY_MIX(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         DELETE_REINSERT(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
@@ -4997,6 +5969,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         boolean isInsert() {
             return this == INSERT_1 || this == INSERT_100;
+        }
+
+        boolean isRealisticTransaction() {
+            return this == BANK_TRANSACTION || this == ORDER_ENTRY_MIX;
         }
 
         boolean isDeleteReinsert() {
@@ -5847,6 +6823,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "F12 long-reader/writer fitness requires only F12 workloads, exactly 4 writers, "
                                 + "and width 1");
             }
+            boolean realisticTransactionFitness = !configuredWorkloads.isEmpty()
+                    && configuredWorkloads.stream().allMatch(Workload::isRealisticTransaction);
+            if (configuredWorkloads.stream().anyMatch(Workload::isRealisticTransaction)
+                    && (!realisticTransactionFitness || !widthValues().equals(List.of(1)))) {
+                throw new IllegalArgumentException(
+                        "F13 realistic transaction fitness requires only F13 workloads and width 1");
+            }
+            if (configuredWorkloads.contains(Workload.ORDER_ENTRY_MIX)
+                    && (transactionsPerClient < 20 || transactionsPerClient % 20 != 0)) {
+                throw new IllegalArgumentException(
+                        "F13 ORDER_ENTRY_MIX requires transactionsPerClient to be a positive multiple of 20");
+            }
             if (configuredWorkloads.stream().anyMatch(Workload::isCoveringRangeScan)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)) {
                 throw new IllegalArgumentException(
@@ -5867,6 +6855,12 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             int maxClients = clientValues().stream().mapToInt(Integer::intValue).max().orElseThrow();
             int minRows = rowCounts().stream().mapToInt(Integer::intValue).min().orElseThrow();
+            if (configuredWorkloads.contains(Workload.ORDER_ENTRY_MIX) && minRows < 1000) {
+                throw new IllegalArgumentException("F13 ORDER_ENTRY_MIX requires at least 1000 fixture rows");
+            }
+            if (configuredWorkloads.contains(Workload.BANK_TRANSACTION) && minRows < 100) {
+                throw new IllegalArgumentException("F13 BANK_TRANSACTION requires at least 100 fixture rows");
+            }
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
