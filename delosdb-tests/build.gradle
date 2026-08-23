@@ -15708,3 +15708,167 @@ tasks.register('runDelosArchitectureFitnessBuildNewBSuite') {
             tasks.named('runDelosArchitectureFitnessBuildNewBEmbeddedF11'),
             tasks.named('runDelosArchitectureFitnessBuildNewBServerF11')
 }
+
+// Phase 1 current-engine baseline: run the completed 30-sentinel infrastructure
+// against untouched Delos Heap/MVCC only. Reuse every existing workload task;
+// the runner narrows the normal cross-engine target set when this mode is active
+// and redirects outputs under a dedicated current-baseline root.
+def delosFitnessCurrentBaselineReportRoot =
+        'reports/delosdb/benchmarks/architecture-fitness/current-baseline'
+def delosFitnessCurrentBaselineDatabaseRoot =
+        'tmp/delos-architecture-fitness-current-baseline'
+def delosFitnessCurrentBaselineWorkloadTasks = [
+        'runDelosArchitectureFitnessReuseNowEmbeddedF01Hot',
+        'runDelosArchitectureFitnessReuseNowEmbeddedF01Disjoint',
+        'runDelosArchitectureFitnessReuseNowEmbeddedF02Range',
+        'runDelosArchitectureFitnessReuseNowEmbeddedF09Update',
+        'runDelosArchitectureFitnessReuseNowServerF01Hot',
+        'runDelosArchitectureFitnessReuseNowServerF01Disjoint',
+        'runDelosArchitectureFitnessReuseNowServerF02Range',
+        'runDelosArchitectureFitnessReuseNowServerF09Update',
+        'runDelosArchitectureFitnessPromoteExistingAEmbeddedF03',
+        'runDelosArchitectureFitnessPromoteExistingAEmbeddedF06F07',
+        'runDelosArchitectureFitnessPromoteExistingAEmbeddedF10',
+        'runDelosArchitectureFitnessPromoteExistingAServerF03',
+        'runDelosArchitectureFitnessPromoteExistingAServerF06F07',
+        'runDelosArchitectureFitnessPromoteExistingAServerF10',
+        'runDelosArchitectureFitnessPromoteExistingBEmbeddedF12',
+        'runDelosArchitectureFitnessPromoteExistingBServerF12',
+        'runDelosArchitectureFitnessAdaptReferenceAEmbeddedF04F06',
+        'runDelosArchitectureFitnessAdaptReferenceAEmbeddedF08Insert1',
+        'runDelosArchitectureFitnessAdaptReferenceAEmbeddedF08Insert100',
+        'runDelosArchitectureFitnessAdaptReferenceAServerF04F06',
+        'runDelosArchitectureFitnessAdaptReferenceAServerF08Insert1',
+        'runDelosArchitectureFitnessAdaptReferenceAServerF08Insert100',
+        'runDelosArchitectureFitnessAdaptReferenceBEmbeddedF13',
+        'runDelosArchitectureFitnessAdaptReferenceBServerF13',
+        'runDelosArchitectureFitnessBuildNewAEmbeddedJoins',
+        'runDelosArchitectureFitnessBuildNewAServerJoins',
+        'runDelosArchitectureFitnessBuildNewBEmbeddedF11',
+        'runDelosArchitectureFitnessBuildNewBServerF11'
+]
+
+def delosFitnessCurrentBaselineRequested = providers.gradleProperty('delosdb.fitness.currentBaseline')
+        .getOrElse('false').trim().toBoolean()
+if (delosFitnessCurrentBaselineRequested) {
+    def currentBaselineReportRoot = rootProject.layout.buildDirectory
+            .dir(delosFitnessCurrentBaselineReportRoot).get().asFile.absolutePath
+    def currentBaselineDatabaseRoot = rootProject.layout.buildDirectory
+            .dir(delosFitnessCurrentBaselineDatabaseRoot).get().asFile.absolutePath
+    delosFitnessCurrentBaselineWorkloadTasks.eachWithIndex { String taskName, int index ->
+        tasks.named(taskName, JavaExec) {
+            environment 'DELOSDB_CURRENT_BASELINE', 'true'
+            environment 'DELOSDB_CURRENT_BASELINE_REPORT_ROOT', currentBaselineReportRoot
+            environment 'DELOSDB_CURRENT_BASELINE_DATABASE_ROOT', currentBaselineDatabaseRoot
+            mustRunAfter tasks.named('runDelosPerformanceAcceptanceHostReadyGate')
+            if (index > 0) {
+                mustRunAfter tasks.named(delosFitnessCurrentBaselineWorkloadTasks[index - 1])
+            }
+        }
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessCurrentBaselineContract', JavaExec) {
+    group = 'verification'
+    description = 'Validates the exact 30-sentinel untouched-current Heap/MVCC baseline mapping.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('runDelosArchitectureFitnessSentinelMatrix'),
+            tasks.named('runDelosArchitectureFitnessBuildNewBContract')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessCurrentBaseline'
+    classpath = rootProject.files(derbyTestsClassDir)
+    args 'contract'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosFitnessCurrentBaselineReportRoot))
+    doFirst {
+        systemProperties([
+                'delosdb.benchmark.fitnessCurrentBaseline.reportDirectory': rootProject.layout.buildDirectory
+                        .dir(delosFitnessCurrentBaselineReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.matrixTsv': rootProject.layout.buildDirectory
+                        .file('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix/'
+                                + 'architecture-fitness-sentinel-matrix.tsv')
+                        .get().asFile.absolutePath
+        ])
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessCurrentBaselineWorkloads', GradleBuild) {
+    group = 'benchmark'
+    description = 'Runs all 30 sentinels against untouched Delos Heap/MVCC embedded and DRDA targets.'
+    dependsOn project.tasks.named('runDelosArchitectureFitnessCurrentBaselineContract')
+    dir = rootProject.projectDir
+    tasks = [
+            ':delosdb-tests:runDelosPerformanceAcceptanceHostPreflight',
+            ':delosdb-tests:runDelosMeasurementValidityGate',
+            ':delosdb-tests:runDelosPerformanceAcceptanceHostReadyGate'
+    ] + delosFitnessCurrentBaselineWorkloadTasks.collect { ':delosdb-tests:' + it }
+    def nestedProperties = new LinkedHashMap<String, String>(gradle.startParameter.projectProperties)
+    nestedProperties.put('delosdb.sane', 'false')
+    nestedProperties.put('delosdb.fitness.currentBaseline', 'true')
+    startParameter.projectProperties = nestedProperties
+}
+
+tasks.register('runDelosArchitectureFitnessCurrentBaselineReport', JavaExec) {
+    group = 'verification'
+    description = 'Merges the complete untouched-current Heap/MVCC sentinel baseline into one Phase-1 report.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('runDelosArchitectureFitnessCurrentBaselineWorkloads')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessCurrentBaseline'
+    classpath = rootProject.files(derbyTestsClassDir)
+    args 'report'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosFitnessCurrentBaselineReportRoot))
+    doFirst {
+        File measurementGate = rootProject.layout.buildDirectory
+                .file('reports/delosdb/benchmarks/measurement-validity/baseline-validation/'
+                        + 'measurement-validity-gate.txt')
+                .get().asFile
+        if (!measurementGate.isFile()) {
+            throw new GradleException('Current baseline requires a fresh Phase-0C measurement-validity gate')
+        }
+        systemProperties([
+                'delosdb.benchmark.fitnessCurrentBaseline.reportDirectory': rootProject.layout.buildDirectory
+                        .dir(delosFitnessCurrentBaselineReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.sourceRoot': rootProject.layout.buildDirectory
+                        .dir(delosFitnessCurrentBaselineReportRoot).get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.matrixTsv': rootProject.layout.buildDirectory
+                        .file('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix/'
+                                + 'architecture-fitness-sentinel-matrix.tsv')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.measurementGate': measurementGate.absolutePath
+        ])
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessCurrentBaselineAnalyzeExisting', JavaExec) {
+    group = 'verification'
+    description = 'Re-analyzes existing untouched-current baseline outputs without rerunning benchmarks.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('runDelosArchitectureFitnessCurrentBaselineContract')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosArchitectureFitnessCurrentBaseline'
+    classpath = rootProject.files(derbyTestsClassDir)
+    args 'report'
+    outputs.upToDateWhen { false }
+    doFirst {
+        File measurementGate = rootProject.layout.buildDirectory
+                .file('reports/delosdb/benchmarks/measurement-validity/baseline-validation/'
+                        + 'measurement-validity-gate.txt')
+                .get().asFile
+        File sourceRoot = rootProject.layout.buildDirectory
+                .dir(delosFitnessCurrentBaselineReportRoot).get().asFile
+        if (!measurementGate.isFile() || !sourceRoot.isDirectory()) {
+            throw new GradleException('No complete current-baseline evidence exists to analyze')
+        }
+        systemProperties([
+                'delosdb.benchmark.fitnessCurrentBaseline.reportDirectory': sourceRoot.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.sourceRoot': sourceRoot.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.matrixTsv': rootProject.layout.buildDirectory
+                        .file('reports/delosdb/benchmarks/architecture-fitness-sentinel-matrix/'
+                                + 'architecture-fitness-sentinel-matrix.tsv')
+                        .get().asFile.absolutePath,
+                'delosdb.benchmark.fitnessCurrentBaseline.measurementGate': measurementGate.absolutePath
+        ])
+    }
+}
+
+tasks.register('runDelosArchitectureFitnessCurrentBaselineSuite') {
+    group = 'verification'
+    description = 'Runs and reports the untouched-current 30-sentinel Delos Heap/MVCC Phase-1 baseline.'
+    dependsOn tasks.named('runDelosArchitectureFitnessCurrentBaselineReport')
+}

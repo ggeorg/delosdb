@@ -67,6 +67,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
     private static final List<Target> DRDA_SERVER_PHASE_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
+    private static final List<Target> CURRENT_BASELINE_EMBEDDED_TARGETS = List.of(
+            Target.DELOS_HEAP, Target.DELOS_MVCC);
+    private static final List<Target> CURRENT_BASELINE_SERVER_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
+    private static final String CURRENT_BASELINE_ENV = "DELOSDB_CURRENT_BASELINE";
+    private static final String CURRENT_BASELINE_REPORT_ROOT_ENV = "DELOSDB_CURRENT_BASELINE_REPORT_ROOT";
+    private static final String CURRENT_BASELINE_DATABASE_ROOT_ENV = "DELOSDB_CURRENT_BASELINE_DATABASE_ROOT";
     private static final int DRDA_PROTOCOL_COUNTER_COUNT = 16;
     private static final int DRDA_PREPARE_COMMANDS = 4;
     private static final int DRDA_OPEN_QUERY_FLOW_NANOS = 12;
@@ -286,7 +293,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
-        addProperty(command, "targets", options.targets());
+        addProperty(command, "targets", targetIds(options.targetValues()));
         addProperty(command, "target", target.id());
         addProperty(command, "run", run);
         addProperty(command, "databaseRoot", options.databaseRoot());
@@ -615,7 +622,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         ? "Question: decompose Delos Heap/MVCC DRDA server command phases for focused evidence.\n"
                         : "Question: compare DelosDB DRDA heap/MVCC, upstream Derby Network Server, and H2 TCP Server "
                                 + "with PostgreSQL and MariaDB through equivalent TCP/JDBC boundaries.\n")
-                .append("Targets: ").append(options.targets()).append('\n')
+                .append("Targets: ").append(targetIds(options.targetValues())).append('\n')
                 .append("Project version: ").append(options.projectVersion()).append('\n')
                 .append("Client JDK: ").append(System.getProperty("java.runtime.version")).append('\n')
                 .append("OS: ").append(System.getProperty("os.name")).append(' ')
@@ -701,6 +708,17 @@ public final class DelosJdbcCrossEngineConcurrency {
         } catch (java.security.NoSuchAlgorithmException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    private static String targetIds(List<Target> targets) {
+        StringBuilder value = new StringBuilder();
+        for (Target target : targets) {
+            if (!value.isEmpty()) {
+                value.append(',');
+            }
+            value.append(target.id());
+        }
+        return value.toString();
     }
 
     private static String sha256(Path file) throws IOException {
@@ -5660,7 +5678,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)
                 || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)
-                || options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)) {
+                || options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)
+                || options.targetValues().equals(CURRENT_BASELINE_EMBEDDED_TARGETS)
+                || options.targetValues().equals(CURRENT_BASELINE_SERVER_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
@@ -5940,7 +5960,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         out.append(options.containerMode()
                         ? "DelosDB JDBC server-container concurrency comparison\n"
                         : "DelosDB JDBC embedded concurrency comparison\n")
-                .append("Targets: ").append(options.targets()).append('\n')
+                .append("Targets: ").append(targetIds(options.targetValues())).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Clients: ").append(options.clients()).append('\n')
                 .append("Generic operations-per-transaction widths: ").append(options.widths()).append('\n')
@@ -7078,6 +7098,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             int run) {
         static Options fromSystemProperties() {
             String targetValue = System.getProperty(PREFIX + "target");
+            Path databaseRoot = path(PREFIX + "databaseRoot", "build/tmp/delos-jdbc-cross-engine-concurrency");
+            Path reportDirectory = path(PREFIX + "reportDirectory",
+                    "build/reports/delosdb/benchmarks/cross-engine-concurrency");
+            if (currentBaselineEnabled()) {
+                Path suffix = currentBaselineSuffix(reportDirectory);
+                reportDirectory = requiredEnvironmentPath(CURRENT_BASELINE_REPORT_ROOT_ENV).resolve(suffix);
+                databaseRoot = requiredEnvironmentPath(CURRENT_BASELINE_DATABASE_ROOT_ENV).resolve(suffix);
+            }
             return new Options(
                     path(PREFIX + "projectDirectory", "."),
                     path(PREFIX + "javaExecutable", Path.of(System.getProperty("java.home"), "bin", "java").toString()),
@@ -7111,8 +7139,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.getProperty(PREFIX + "remoteJdbcUrl", ""),
                     System.getProperty(PREFIX + "remoteUser", ""),
                     System.getProperty(PREFIX + "remotePassword", ""),
-                    path(PREFIX + "databaseRoot", "build/tmp/delos-jdbc-cross-engine-concurrency"),
-                    path(PREFIX + "reportDirectory", "build/reports/delosdb/benchmarks/cross-engine-concurrency"),
+                    databaseRoot,
+                    reportDirectory,
                     System.getProperty(PREFIX + "rows", "10000"),
                     System.getProperty(PREFIX + "clients", "1,2,4,8"),
                     System.getProperty(PREFIX + "widths", "1,10"),
@@ -7160,6 +7188,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(DRDA_PROTOCOL_EVIDENCE_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
+            boolean currentBaselineTargets = currentBaselineEnabled()
+                    && (configuredTargets.equals(CURRENT_BASELINE_EMBEDDED_TARGETS)
+                            || configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS));
             if (target == null
                     && !configuredTargets.equals(embedded)
                     && !configuredTargets.equals(container)
@@ -7170,7 +7201,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !mvccOnlyDiagnostic
                     && !hostRecoveryDiagnostic
                     && !drdaProtocolDiagnostic
-                    && !drdaServerPhaseDiagnostic) {
+                    && !drdaServerPhaseDiagnostic
+                    && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
                         + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
@@ -7180,7 +7212,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
                         + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
                         + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
-                        + ", or DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
+                        + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
+                        + ", or Phase-1 current baseline " + CURRENT_BASELINE_EMBEDDED_TARGETS
+                        + "/" + CURRENT_BASELINE_SERVER_TARGETS
                         + ": " + configuredTargets);
             }
             if (target != null && !configuredTargets.contains(target)) {
@@ -7258,7 +7292,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
             if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
-                    && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
+                    && !mixedReaderWriterFitness && !hostStateDiagnosticsEnabled()
+                    && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
@@ -7427,7 +7462,68 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 values.add(value);
             }
-            return List.copyOf(values);
+            List<Target> configured = List.copyOf(values);
+            if (!currentBaselineEnabled()) {
+                return configured;
+            }
+            List<Target> embedded = List.of(
+                    Target.DELOS_HEAP, Target.DELOS_MVCC, Target.UPSTREAM_DERBY, Target.H2, Target.SQLITE);
+            if (configured.equals(embedded) || configured.equals(CURRENT_BASELINE_EMBEDDED_TARGETS)) {
+                return CURRENT_BASELINE_EMBEDDED_TARGETS;
+            }
+            if (configured.equals(SERVER_PRODUCT_TARGETS) || configured.equals(CURRENT_BASELINE_SERVER_TARGETS)) {
+                return CURRENT_BASELINE_SERVER_TARGETS;
+            }
+            throw new IllegalArgumentException(
+                    "Phase-1 current baseline only supports the standard embedded/server fitness target sets: "
+                            + configured);
+        }
+
+        private static boolean currentBaselineEnabled() {
+            return Boolean.parseBoolean(System.getenv().getOrDefault(CURRENT_BASELINE_ENV, "false"));
+        }
+
+        private static Path requiredEnvironmentPath(String name) {
+            String value = System.getenv().getOrDefault(name, "").trim();
+            if (value.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Phase-1 current baseline requires environment variable " + name);
+            }
+            return Path.of(value);
+        }
+
+        private static Path currentBaselineSuffix(Path reportDirectory) {
+            Path baselineRoot = requiredEnvironmentPath(CURRENT_BASELINE_REPORT_ROOT_ENV)
+                    .toAbsolutePath().normalize();
+            Path absoluteReport = reportDirectory.toAbsolutePath().normalize();
+            if (absoluteReport.startsWith(baselineRoot)) {
+                Path suffix = baselineRoot.relativize(absoluteReport);
+                if (!suffix.toString().isEmpty()) {
+                    return suffix;
+                }
+            }
+            for (int index = 0; index < reportDirectory.getNameCount(); index++) {
+                if (!"architecture-fitness".equals(reportDirectory.getName(index).toString())) {
+                    continue;
+                }
+                int start = index + 1;
+                if (start < reportDirectory.getNameCount()
+                        && "current-baseline".equals(reportDirectory.getName(start).toString())) {
+                    start++;
+                }
+                Path suffix = Path.of("");
+                for (int part = start; part < reportDirectory.getNameCount(); part++) {
+                    suffix = suffix.resolve(reportDirectory.getName(part).toString());
+                }
+                if (suffix.toString().isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Unable to derive current-baseline report suffix from " + reportDirectory);
+                }
+                return suffix;
+            }
+            throw new IllegalArgumentException(
+                    "Phase-1 current baseline expects reportDirectory below an architecture-fitness root: "
+                            + reportDirectory);
         }
 
         boolean containerMode() {
