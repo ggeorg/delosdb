@@ -3020,11 +3020,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                     switch (orderEntryType(transaction)) {
                         case NEW_ORDER -> {
                             int orderId = ORDER_NEW_BASE + globalOrdinal;
-                            expectedOrders.put(orderId, new ExpectedOrder(customerId, 0, 33));
+                            expectedOrders.put(
+                                    orderId, new ExpectedOrder(customerId, 0, orderNewTotalAmount()));
                             customerLastOrder.put(customerId, orderId);
-                            for (int line = 1; line <= 3; line++) {
+                            for (int line = 1; line <= ORDER_NEW_LINE_COUNT; line++) {
                                 int stockId = orderStockId(globalOrdinal, line, rowCount);
-                                int amount = 10 + line;
+                                int amount = orderNewLineAmount(line);
                                 stockDelta.merge(stockId, -1, Math::addExact);
                                 expectedLines.put(
                                         new OrderLineKey(orderId, line),
@@ -3642,14 +3643,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             switch (type) {
                 case NEW_ORDER -> {
                     int orderId = ORDER_NEW_BASE + globalOrdinal;
+                    int expectedTotalAmount = orderNewTotalAmount();
                     int totalAmount = 0;
                     oeInsertOrder.setInt(1, orderId);
                     oeInsertOrder.setInt(2, customerId);
-                    oeInsertOrder.setInt(3, 33);
+                    oeInsertOrder.setInt(3, expectedTotalAmount);
                     requireOne(oeInsertOrder.executeUpdate(), "new-order header insert", orderId);
-                    for (int line = 1; line <= 3; line++) {
+                    for (int line = 1; line <= ORDER_NEW_LINE_COUNT; line++) {
                         int stockId = orderStockId(globalOrdinal, line, rowCount);
-                        int amount = 10 + line;
+                        int amount = orderNewLineAmount(line);
                         totalAmount += amount;
                         oeUpdateStock.setInt(1, 1);
                         oeUpdateStock.setInt(2, stockId);
@@ -3661,8 +3663,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                         oeInsertLine.setInt(5, amount);
                         requireOne(oeInsertLine.executeUpdate(), "new-order line insert", orderId);
                     }
-                    if (totalAmount != 33) {
-                        throw new SQLException("Order Entry amount construction drift: " + totalAmount);
+                    if (totalAmount != expectedTotalAmount) {
+                        throw new SQLException(
+                                "Order Entry amount construction drift: expected="
+                                        + expectedTotalAmount + ", actual=" + totalAmount);
                     }
                     oeUpdateLastOrder.setInt(1, orderId);
                     oeUpdateLastOrder.setInt(2, customerId);
@@ -4292,6 +4296,33 @@ public final class DelosJdbcCrossEngineConcurrency {
         return table + "_GROUP";
     }
 
+    private static void resetAuxiliaryTables(Connection connection, String... tableNames) throws SQLException {
+        for (int index = tableNames.length - 1; index >= 0; index--) {
+            String tableName = tableNames[index];
+            if (!databaseTableExists(connection, tableName)) {
+                continue;
+            }
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("drop table " + tableName);
+            }
+            connection.commit();
+        }
+    }
+
+    private static boolean databaseTableExists(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        String lookupName = tableName;
+        if (metadata.storesUpperCaseIdentifiers()) {
+            lookupName = tableName.toUpperCase(Locale.ROOT);
+        } else if (metadata.storesLowerCaseIdentifiers()) {
+            lookupName = tableName.toLowerCase(Locale.ROOT);
+        }
+        try (ResultSet tables = metadata.getTables(
+                connection.getCatalog(), null, lookupName, new String[] {"TABLE"})) {
+            return tables.next();
+        }
+    }
+
     private static void prepareJoinDimensionFixture(
             Connection connection,
             String table,
@@ -4299,6 +4330,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int rowCount,
             int commitBatchSize) throws SQLException {
         String dimension = joinDimensionTableName(table);
+        resetAuxiliaryTables(connection, dimension);
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "create table " + dimension + " (id int not null primary key)" + createTableSuffix);
@@ -4370,6 +4402,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int commitBatchSize) throws SQLException {
         String parent = joinFanoutParentTableName(table);
         String child = joinFanoutChildTableName(table);
+        resetAuxiliaryTables(connection, parent, child);
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "create table " + parent + " (id int not null primary key)" + createTableSuffix);
@@ -4420,6 +4453,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         String order = multiJoinOrderTableName(table);
         String line = multiJoinLineTableName(table);
         String item = multiJoinItemTableName(table);
+        resetAuxiliaryTables(connection, customer, order, line, item);
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "create table " + customer
@@ -4501,6 +4535,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             int rowCount,
             int commitBatchSize) throws SQLException {
         String groupTable = highCardGroupTableName(table);
+        resetAuxiliaryTables(connection, groupTable);
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "create table " + groupTable
@@ -4533,6 +4568,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final int BANK_TELLERS_PER_BRANCH = 10;
     private static final int ORDER_CUSTOMERS = 1000;
     private static final int ORDER_WAREHOUSES = 4;
+    private static final int ORDER_NEW_LINE_COUNT = 3;
     private static final int ORDER_DELIVERY_BASE = 100_000;
     private static final int ORDER_NEW_BASE = 1_000_000;
     private static final int ORDER_ROLLBACK_BASE = 2_000_000;
@@ -4574,6 +4610,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (rowCount < 100) {
             throw new SQLException("Bank transaction fitness requires at least 100 account rows");
         }
+        resetAuxiliaryTables(
+                connection,
+                bankBranchTableName(table),
+                bankTellerTableName(table),
+                bankHistoryTableName(table));
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table " + bankBranchTableName(table)
                     + " (id int not null primary key, balance bigint not null)" + createTableSuffix);
@@ -4626,6 +4667,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (customerCount < clients) {
             throw new SQLException("Order Entry customer fixture is smaller than client count");
         }
+        resetAuxiliaryTables(
+                connection,
+                orderWarehouseTableName(table),
+                orderCustomerTableName(table),
+                orderTableName(table),
+                orderLineTableName(table));
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table " + orderWarehouseTableName(table)
                     + " (id int not null primary key, balance bigint not null)" + createTableSuffix);
@@ -4723,6 +4770,21 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static int orderStockId(int globalOrdinal, int line, int rowCount) {
         return 1 + Math.floorMod(globalOrdinal * 3 + line * 97, rowCount);
+    }
+
+    private static int orderNewLineAmount(int line) {
+        if (line < 1 || line > ORDER_NEW_LINE_COUNT) {
+            throw new IllegalArgumentException("Unexpected Order Entry line number: " + line);
+        }
+        return 10 + line;
+    }
+
+    private static int orderNewTotalAmount() {
+        int total = 0;
+        for (int line = 1; line <= ORDER_NEW_LINE_COUNT; line++) {
+            total = Math.addExact(total, orderNewLineAmount(line));
+        }
+        return total;
     }
 
     private static int orderPaymentAmount(int globalOrdinal) {
