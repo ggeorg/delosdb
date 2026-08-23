@@ -15709,6 +15709,123 @@ tasks.register('runDelosArchitectureFitnessBuildNewBSuite') {
             tasks.named('runDelosArchitectureFitnessBuildNewBServerF11')
 }
 
+// Execute newly built/adapted Phase-1 workload paths once before any long baseline campaign.
+// These are functional smoke gates, not performance evidence.
+def registerDelosArchitectureFitnessEmbeddedWorkerSmoke = {
+        String taskName,
+        String descriptionText,
+        String reportSuffix,
+        String workloadsValue,
+        String clientsValue,
+        String rowsValue,
+        String transactionsValue ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = descriptionText
+        dependsOn tasks.named('compileTestJava'), ':jars'
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        // Direct worker execution must carry the Delos runtime jars in this JVM.
+        // The coordinator path normally supplies them to a child worker via delosClasspath.
+        classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+        args 'worker'
+        outputs.upToDateWhen { false }
+        outputs.dir(rootProject.layout.buildDirectory.dir(
+                "reports/delosdb/benchmarks/architecture-fitness/execution-smoke/${reportSuffix}"))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Phase-1 architecture fitness requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            systemProperties([
+                    'delosdb.experimental.heapPageReadImage': 'true',
+                    'delosdb.experimental.fastRecordReadLock': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                            upstreamDerbyBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
+                    'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                    'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                            .dir("tmp/delos-architecture-fitness-execution-smoke/${reportSuffix}")
+                            .get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
+                            .dir("reports/delosdb/benchmarks/architecture-fitness/execution-smoke/${reportSuffix}")
+                            .get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': rowsValue,
+                    'delosdb.benchmark.crossEngineConcurrency.clients': clientsValue,
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': workloadsValue,
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': transactionsValue,
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '60',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '512m'
+            ])
+        }
+    }
+}
+
+registerDelosArchitectureFitnessEmbeddedWorkerSmoke(
+        'runDelosArchitectureFitnessAdaptReferenceBOrderEntrySmoke',
+        'Executes one real 20-transaction Order Entry cycle on Delos Heap.',
+        'adapt-reference-b-order-entry',
+        'ORDER_ENTRY_MIX',
+        '1',
+        '1000',
+        '20')
+
+registerDelosArchitectureFitnessEmbeddedWorkerSmoke(
+        'runDelosArchitectureFitnessBuildNewAJoinSmoke',
+        'Executes the three newly built join sentinels once on Delos Heap.',
+        'build-new-a-joins',
+        'JOIN_INDEXED_FANOUT,JOIN_3WAY_SELECTIVE,JOIN_4WAY_FANOUT',
+        '1',
+        '1000',
+        '1')
+
+registerDelosArchitectureFitnessEmbeddedWorkerSmoke(
+        'runDelosArchitectureFitnessBuildNewBMixedSmoke',
+        'Executes the two newly built mixed reader/writer sentinels once on Delos Heap.',
+        'build-new-b-mixed',
+        'MIXED_80R20W,MIXED_50R50W_HOT',
+        '8',
+        '1000',
+        '10')
+
+tasks.register('runDelosArchitectureFitnessPhase1NewWorkloadExecutionSmoke') {
+    group = 'verification'
+    description = 'Executes all newly adapted/built Phase-1 workload paths once before long performance runs.'
+    dependsOn tasks.named('runDelosArchitectureFitnessAdaptReferenceBOrderEntrySmoke'),
+            tasks.named('runDelosArchitectureFitnessBuildNewAJoinSmoke'),
+            tasks.named('runDelosArchitectureFitnessBuildNewBMixedSmoke')
+}
+
 // Phase 1 current-engine baseline: run the completed 30-sentinel infrastructure
 // against untouched Delos Heap/MVCC only. Reuse every existing workload task;
 // the runner narrows the normal cross-engine target set when this mode is active
@@ -15793,7 +15910,8 @@ tasks.register('runDelosArchitectureFitnessCurrentBaselineContract', JavaExec) {
 tasks.register('runDelosArchitectureFitnessCurrentBaselineWorkloads', GradleBuild) {
     group = 'benchmark'
     description = 'Runs all 30 sentinels against untouched Delos Heap/MVCC embedded and DRDA targets.'
-    dependsOn project.tasks.named('runDelosArchitectureFitnessCurrentBaselineContract')
+    dependsOn project.tasks.named('runDelosArchitectureFitnessCurrentBaselineContract'),
+            project.tasks.named('runDelosArchitectureFitnessPhase1NewWorkloadExecutionSmoke')
     dir = rootProject.projectDir
     tasks = [
             ':delosdb-tests:runDelosPerformanceAcceptanceHostPreflight',
