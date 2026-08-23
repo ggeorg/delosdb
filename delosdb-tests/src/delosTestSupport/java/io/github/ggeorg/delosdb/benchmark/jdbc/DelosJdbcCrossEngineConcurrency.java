@@ -2477,6 +2477,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                             deleteRows[operation] = readDeleteRow(
                                     connection, this.table, deleteReinsertIds[offset + operation]);
                         }
+                    } else if (spec.workload().isMixedReaderWriter()) {
+                        updateId = spec.workload() == Workload.MIXED_80R20W
+                                ? mutationIds[client]
+                                : mutationIds[client % mutationIds.length];
                     } else if (spec.workload().isIndexedUpdate()) {
                         boolean disjoint = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE
                                 || spec.workload() == Workload.LONG_READER_DISJOINT_WRITER;
@@ -2806,6 +2810,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     } else if (spec.workload() == Workload.CONTENDED_INDEXED_UPDATE
                             || spec.workload() == Workload.LONG_READER_HOT_WRITER) {
                         expected += Math.multiplyExact(spec.clients(), increment);
+                    } else if (spec.workload() == Workload.MIXED_80R20W) {
+                        expected += transactionsPerClient / 5;
+                    } else if (spec.workload() == Workload.MIXED_50R50W_HOT) {
+                        int writersPerKey = spec.clients() / mutationIds.length;
+                        expected += Math.multiplyExact(writersPerKey, transactionsPerClient / 2);
                     }
                     int actual = quantity(verifier, table, mutationIds[index]);
                     if (actual != expected) {
@@ -2818,9 +2827,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (captureSqlOracle) {
                     DelosSqlSemanticOracle.Result finalState =
                             authoritativeMutationState(verifier, table, mutationIds);
-                    long affectedRows = Math.multiplyExact(
-                            Math.multiplyExact((long) spec.clients(), transactionsPerClient),
-                            spec.operationsPerTransaction());
+                    long affectedRows;
+                    if (spec.workload() == Workload.MIXED_80R20W) {
+                        affectedRows = Math.multiplyExact((long) spec.clients(), transactionsPerClient / 5);
+                    } else if (spec.workload() == Workload.MIXED_50R50W_HOT) {
+                        affectedRows = Math.multiplyExact((long) spec.clients(), transactionsPerClient / 2);
+                    } else {
+                        affectedRows = Math.multiplyExact(
+                                Math.multiplyExact((long) spec.clients(), transactionsPerClient),
+                                spec.operationsPerTransaction());
+                    }
                     oracle = DelosSqlSemanticOracle.mutation(affectedRows, finalState);
                 }
                 try (PreparedStatement restore = verifier.prepareStatement(
@@ -3759,6 +3775,11 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final class Client implements AutoCloseable {
         private final Connection connection;
         private final Workload workload;
+        private final int clientIndex;
+        private final int clientCount;
+        private final int rowCount;
+        private final int transactionsPerClient;
+        private final int[] mixedBaselineQuantities;
         private final int updateId;
         private final int[] readIds;
         private final int[] expectedReadQuantities;
@@ -3803,6 +3824,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throws SQLException {
             this.connection = connection;
             this.workload = spec.workload();
+            this.clientIndex = clientIndex;
+            this.clientCount = spec.clients();
+            this.rowCount = rowCount;
+            this.transactionsPerClient = transactionsPerClient;
+            this.mixedBaselineQuantities = spec.workload().isMixedReaderWriter()
+                    ? fixtureQuantities(rowCount)
+                    : null;
             this.updateId = updateId;
             this.readIds = readIds;
             this.expectedReadQuantities = expectedReadQuantities;
@@ -3854,6 +3882,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     localValues = connection.prepareStatement("values (1)");
                 } else if (workload.isFitnessRead()) {
                     localFitnessRead = connection.prepareStatement(fitnessReadSql(workload, table));
+                } else if (workload.isMixedReaderWriter()) {
+                    localRead = connection.prepareStatement(
+                            "select quantity from " + table + " where id = ?");
+                    localUpdate = connection.prepareStatement(
+                            "update " + table + " set quantity = quantity + 1 where id = ?");
                 } else if (workload.isRealisticTransaction()) {
                     localRealisticTransaction = new RealisticTransactionClient(
                             connection, table, workload, clientIndex, transactionsPerClient,
@@ -3910,6 +3943,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                             transactionFingerprint = Objects.requireNonNull(
                                     realisticTransaction, "realistic transaction client")
                                     .execute(transaction);
+                            fingerprint = mix(fingerprint, transactionFingerprint);
+                            break;
+                        }
+                        if (workload.isMixedReaderWriter()) {
+                            transactionFingerprint = executeMixedTransaction(transaction);
+                            connection.commit();
                             fingerprint = mix(fingerprint, transactionFingerprint);
                             break;
                         }
@@ -4021,6 +4060,68 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             return new ClientRun(fingerprint, retryableRollbacks);
+        }
+
+        private long executeMixedTransaction(int transaction) throws SQLException {
+            if (workload == Workload.MIXED_80R20W) {
+                if (transaction % 5 == 4) {
+                    update.setInt(1, updateId);
+                    if (update.executeUpdate() != 1) {
+                        throw new SQLException(
+                                "F11 80R20W update did not affect one row: id=" + updateId);
+                    }
+                    return mix(1L, updateId);
+                }
+                int readId = rowCount - clientIndex;
+                int expected = mixedBaselineQuantities[readId];
+                read.setInt(1, readId);
+                try (ResultSet resultSet = read.executeQuery()) {
+                    if (!resultSet.next()) {
+                        throw new SQLException("F11 80R20W read row missing: id=" + readId);
+                    }
+                    int actual = resultSet.getInt(1);
+                    if (actual != expected || resultSet.next()) {
+                        throw new SQLException(
+                                "F11 80R20W stable read drift: id=" + readId
+                                        + ", expected=" + expected + ", actual=" + actual);
+                    }
+                    return mix(mix(1L, readId), actual);
+                }
+            }
+
+            if (workload != Workload.MIXED_50R50W_HOT) {
+                throw new IllegalStateException("Not an F11 mixed workload: " + workload);
+            }
+            if ((transaction & 1) != 0) {
+                update.setInt(1, updateId);
+                if (update.executeUpdate() != 1) {
+                    throw new SQLException(
+                            "F11 50R50W hot update did not affect one row: id=" + updateId);
+                }
+                return mix(1L, updateId);
+            }
+
+            int hotKeyCount = 4;
+            int readId = 1 + Math.floorMod(clientIndex + transaction / 2, hotKeyCount);
+            int baseline = mixedBaselineQuantities[readId];
+            int writersPerKey = clientCount / hotKeyCount;
+            int writesPerClient = transactionsPerClient / 2;
+            int maximum = Math.addExact(baseline, Math.multiplyExact(writersPerKey, writesPerClient));
+            read.setInt(1, readId);
+            try (ResultSet resultSet = read.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("F11 50R50W hot read row missing: id=" + readId);
+                }
+                int actual = resultSet.getInt(1);
+                if (actual < baseline || actual > maximum || resultSet.next()) {
+                    throw new SQLException(
+                            "F11 50R50W hot read outside legal committed bounds: id=" + readId
+                                    + ", baseline=" + baseline + ", maximum=" + maximum
+                                    + ", actual=" + actual);
+                }
+                // Do not mix the timing-dependent observed quantity into the semantic fingerprint.
+                return mix(1L, readId);
+            }
         }
 
         private long executeInsertTransaction(int transaction, int operationsPerTransaction)
@@ -4897,6 +4998,24 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static int[] mutationIds(Spec spec, int rowCount) {
+        if (spec.workload() == Workload.MIXED_80R20W) {
+            if (spec.clients() != 8 || rowCount < 16) {
+                throw new IllegalArgumentException(
+                        "F11 80R20W sentinel requires exactly 8 clients and at least 16 rows: " + spec);
+            }
+            int[] ids = new int[spec.clients()];
+            for (int index = 0; index < ids.length; index++) {
+                ids[index] = 1 + index;
+            }
+            return ids;
+        }
+        if (spec.workload() == Workload.MIXED_50R50W_HOT) {
+            if (spec.clients() != 8 || rowCount < 16) {
+                throw new IllegalArgumentException(
+                        "F11 50R50W hot sentinel requires exactly 8 clients and at least 16 rows: " + spec);
+            }
+            return new int[]{1, 2, 3, 4};
+        }
         if (spec.workload() == Workload.LONG_READER_DISJOINT_WRITER) {
             if (spec.clients() != 4 || rowCount < 8) {
                 throw new IllegalArgumentException(
@@ -6122,6 +6241,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         DELETE_REINSERT(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
+        MIXED_80R20W(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
+        MIXED_50R50W_HOT(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         LONG_READER_DISJOINT_WRITER(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         LONG_READER_HOT_WRITER(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED);
 
@@ -6183,7 +6304,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         boolean usesFixtureQuantities() {
-            return isPrimaryKeyRead() || isRangeScan();
+            return isPrimaryKeyRead() || isRangeScan() || isMixedReaderWriter();
         }
 
         int rangeRows(int rowCount) {
@@ -6234,6 +6355,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         boolean isReadOnly() {
             return readOnly;
+        }
+
+        boolean isMixedReaderWriter() {
+            return this == MIXED_80R20W || this == MIXED_50R50W_HOT;
         }
 
         boolean isLongReaderWriter() {
@@ -7088,6 +7213,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "F13 ORDER_ENTRY_MIX requires transactionsPerClient to be a positive multiple of 20");
             }
+            boolean mixedReaderWriterFitness = !configuredWorkloads.isEmpty()
+                    && configuredWorkloads.stream().allMatch(Workload::isMixedReaderWriter);
+            if (configuredWorkloads.stream().anyMatch(Workload::isMixedReaderWriter)
+                    && (!mixedReaderWriterFitness
+                            || !clientValues().equals(List.of(8))
+                            || !widthValues().equals(List.of(1))
+                            || transactionsPerClient < 10
+                            || transactionsPerClient % 10 != 0)) {
+                throw new IllegalArgumentException(
+                        "F11 mixed reader/writer fitness requires only F11 workloads, exactly 8 clients, "
+                                + "width 1, and transactionsPerClient as a positive multiple of 10");
+            }
             if (configuredWorkloads.stream().anyMatch(Workload::isCoveringRangeScan)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)) {
                 throw new IllegalArgumentException(
@@ -7113,6 +7250,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (configuredWorkloads.contains(Workload.BANK_TRANSACTION) && minRows < 100) {
                 throw new IllegalArgumentException("F13 BANK_TRANSACTION requires at least 100 fixture rows");
+            }
+            if (configuredWorkloads.stream().anyMatch(Workload::isMixedReaderWriter) && minRows < 16) {
+                throw new IllegalArgumentException("F11 mixed reader/writer fitness requires at least 16 fixture rows");
             }
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
