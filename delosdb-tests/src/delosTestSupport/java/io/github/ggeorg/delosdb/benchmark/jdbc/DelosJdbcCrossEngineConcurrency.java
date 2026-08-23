@@ -2122,6 +2122,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 prepareJoinDimensionFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+            } else if (spec.workload() == Workload.JOIN_INDEXED_FANOUT) {
+                prepareJoinFanoutFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), config.commitBatchSize());
+            } else if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                    || spec.workload() == Workload.JOIN_4WAY_FANOUT) {
+                prepareMultiJoinFixture(
+                        verifier, scenario.tableName(), options.target().createTableSuffix(),
+                        config.rowCount(), config.commitBatchSize());
             } else if (spec.workload() == Workload.GROUP_HIGH_CARD) {
                 prepareHighCardGroupFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
@@ -2294,6 +2303,29 @@ public final class DelosJdbcCrossEngineConcurrency {
                     .append(table).append(" (bucket, quantity)");
             if (workload == Workload.JOIN_INDEXED_1TO1) {
                 ddl.append("; create table ").append(joinDimensionTableName(table))
+                        .append(" (id int not null primary key)");
+            } else if (workload == Workload.JOIN_INDEXED_FANOUT) {
+                ddl.append("; create table ").append(joinFanoutParentTableName(table))
+                        .append(" (id int not null primary key)")
+                        .append("; create table ").append(joinFanoutChildTableName(table))
+                        .append(" (id int not null primary key, parent_id int not null)")
+                        .append("; create index ").append(joinFanoutChildTableName(table)).append("_P_IDX on ")
+                        .append(joinFanoutChildTableName(table)).append(" (parent_id)");
+            } else if (workload == Workload.JOIN_3WAY_SELECTIVE
+                    || workload == Workload.JOIN_4WAY_FANOUT) {
+                ddl.append("; create table ").append(multiJoinCustomerTableName(table))
+                        .append(" (id int not null primary key, bucket int not null)")
+                        .append("; create index ").append(multiJoinCustomerTableName(table)).append("_B_IDX on ")
+                        .append(multiJoinCustomerTableName(table)).append(" (bucket)")
+                        .append("; create table ").append(multiJoinOrderTableName(table))
+                        .append(" (id int not null primary key, customer_id int not null)")
+                        .append("; create index ").append(multiJoinOrderTableName(table)).append("_C_IDX on ")
+                        .append(multiJoinOrderTableName(table)).append(" (customer_id)")
+                        .append("; create table ").append(multiJoinLineTableName(table))
+                        .append(" (id int not null primary key, order_id int not null, line_no int not null, item_id int not null)")
+                        .append("; create index ").append(multiJoinLineTableName(table)).append("_O_IDX on ")
+                        .append(multiJoinLineTableName(table)).append(" (order_id)")
+                        .append("; create table ").append(multiJoinItemTableName(table))
                         .append(" (id int not null primary key)");
             } else if (workload == Workload.GROUP_HIGH_CARD) {
                 ddl.append("; create table ").append(highCardGroupTableName(table))
@@ -3212,6 +3244,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         DelosSqlSemanticOracle.RowOrder order =
                                 spec.workload() == Workload.PROJECTION_COVERED
                                         || spec.workload() == Workload.JOIN_INDEXED_1TO1
+                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                                        || spec.workload() == Workload.JOIN_4WAY_FANOUT
                                         ? DelosSqlSemanticOracle.RowOrder.UNORDERED
                                         : DelosSqlSemanticOracle.RowOrder.ORDERED;
                         return DelosSqlSemanticOracle.query(resultSet, order);
@@ -4169,6 +4203,178 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+    private static String joinFanoutParentTableName(String table) {
+        return table + "_JOIN_PARENT";
+    }
+
+    private static String joinFanoutChildTableName(String table) {
+        return table + "_JOIN_CHILD";
+    }
+
+    private static String multiJoinCustomerTableName(String table) {
+        return table + "_MJ_CUSTOMER";
+    }
+
+    private static String multiJoinOrderTableName(String table) {
+        return table + "_MJ_ORDER";
+    }
+
+    private static String multiJoinLineTableName(String table) {
+        return table + "_MJ_LINE";
+    }
+
+    private static String multiJoinItemTableName(String table) {
+        return table + "_MJ_ITEM";
+    }
+
+    private static int joinParentRows(int rowCount) {
+        return Math.min(1000, Math.max(1, rowCount / 10));
+    }
+
+    private static int joinSelectiveParents(int rowCount) {
+        return Math.min(100, joinParentRows(rowCount));
+    }
+
+    private static int joinBucketParents(int rowCount, int bucket) {
+        int parents = joinParentRows(rowCount);
+        if (parents < bucket) {
+            return 0;
+        }
+        return ((parents - bucket) / 10) + 1;
+    }
+
+    private static void prepareJoinFanoutFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int commitBatchSize) throws SQLException {
+        String parent = joinFanoutParentTableName(table);
+        String child = joinFanoutChildTableName(table);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create table " + parent + " (id int not null primary key)" + createTableSuffix);
+            statement.executeUpdate(
+                    "create table " + child
+                            + " (id int not null primary key, parent_id int not null)" + createTableSuffix);
+            statement.executeUpdate("create index " + child + "_P_IDX on " + child + " (parent_id)");
+        }
+        connection.commit();
+
+        int parents = joinParentRows(rowCount);
+        try (PreparedStatement insertParent = connection.prepareStatement(
+                        "insert into " + parent + " (id) values (?)");
+                PreparedStatement insertChild = connection.prepareStatement(
+                        "insert into " + child + " (id, parent_id) values (?, ?)")) {
+            int pending = 0;
+            for (int parentId = 1; parentId <= parents; parentId++) {
+                insertParent.setInt(1, parentId);
+                insertParent.addBatch();
+                for (int childNo = 1; childNo <= 10; childNo++) {
+                    insertChild.setInt(1, (parentId - 1) * 10 + childNo);
+                    insertChild.setInt(2, parentId);
+                    insertChild.addBatch();
+                    pending++;
+                }
+                if (pending >= commitBatchSize) {
+                    insertParent.executeBatch();
+                    insertChild.executeBatch();
+                    connection.commit();
+                    pending = 0;
+                }
+            }
+            if (pending != 0) {
+                insertParent.executeBatch();
+                insertChild.executeBatch();
+                connection.commit();
+            }
+        }
+    }
+
+    private static void prepareMultiJoinFixture(
+            Connection connection,
+            String table,
+            String createTableSuffix,
+            int rowCount,
+            int commitBatchSize) throws SQLException {
+        String customer = multiJoinCustomerTableName(table);
+        String order = multiJoinOrderTableName(table);
+        String line = multiJoinLineTableName(table);
+        String item = multiJoinItemTableName(table);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create table " + customer
+                            + " (id int not null primary key, bucket int not null)" + createTableSuffix);
+            statement.executeUpdate("create index " + customer + "_B_IDX on " + customer + " (bucket)");
+            statement.executeUpdate(
+                    "create table " + order
+                            + " (id int not null primary key, customer_id int not null)" + createTableSuffix);
+            statement.executeUpdate("create index " + order + "_C_IDX on " + order + " (customer_id)");
+            statement.executeUpdate(
+                    "create table " + line
+                            + " (id int not null primary key, order_id int not null,"
+                            + " line_no int not null, item_id int not null)" + createTableSuffix);
+            statement.executeUpdate("create index " + line + "_O_IDX on " + line + " (order_id)");
+            statement.executeUpdate(
+                    "create table " + item + " (id int not null primary key)" + createTableSuffix);
+        }
+        connection.commit();
+
+        int customers = joinParentRows(rowCount);
+        int items = Math.min(128, Math.max(1, customers));
+        try (PreparedStatement insertItem = connection.prepareStatement(
+                "insert into " + item + " (id) values (?)")) {
+            for (int itemId = 1; itemId <= items; itemId++) {
+                insertItem.setInt(1, itemId);
+                insertItem.addBatch();
+            }
+            insertItem.executeBatch();
+            connection.commit();
+        }
+
+        try (PreparedStatement insertCustomer = connection.prepareStatement(
+                        "insert into " + customer + " (id, bucket) values (?, ?)");
+                PreparedStatement insertOrder = connection.prepareStatement(
+                        "insert into " + order + " (id, customer_id) values (?, ?)");
+                PreparedStatement insertLine = connection.prepareStatement(
+                        "insert into " + line + " (id, order_id, line_no, item_id) values (?, ?, ?, ?)")) {
+            int pending = 0;
+            for (int customerId = 1; customerId <= customers; customerId++) {
+                insertCustomer.setInt(1, customerId);
+                insertCustomer.setInt(2, customerId % 10);
+                insertCustomer.addBatch();
+                for (int orderNo = 1; orderNo <= 4; orderNo++) {
+                    int orderId = (customerId - 1) * 4 + orderNo;
+                    insertOrder.setInt(1, orderId);
+                    insertOrder.setInt(2, customerId);
+                    insertOrder.addBatch();
+                    for (int lineNo = 1; lineNo <= 3; lineNo++) {
+                        int lineId = (orderId - 1) * 3 + lineNo;
+                        insertLine.setInt(1, lineId);
+                        insertLine.setInt(2, orderId);
+                        insertLine.setInt(3, lineNo);
+                        insertLine.setInt(4, 1 + ((lineId - 1) % items));
+                        insertLine.addBatch();
+                        pending++;
+                    }
+                }
+                if (pending >= commitBatchSize) {
+                    insertCustomer.executeBatch();
+                    insertOrder.executeBatch();
+                    insertLine.executeBatch();
+                    connection.commit();
+                    pending = 0;
+                }
+            }
+            if (pending != 0) {
+                insertCustomer.executeBatch();
+                insertOrder.executeBatch();
+                insertLine.executeBatch();
+                connection.commit();
+            }
+        }
+    }
+
     private static void prepareHighCardGroupFixture(
             Connection connection,
             String table,
@@ -4535,6 +4741,21 @@ public final class DelosJdbcCrossEngineConcurrency {
             case JOIN_INDEXED_1TO1 ->
                     "select a.id from " + table + " a join " + joinDimensionTableName(table)
                             + " b on a.id = b.id";
+            case JOIN_INDEXED_FANOUT ->
+                    "select p.id, c.id from " + joinFanoutParentTableName(table) + " p join "
+                            + joinFanoutChildTableName(table)
+                            + " c on c.parent_id = p.id where p.id between ? and ? order by p.id, c.id";
+            case JOIN_3WAY_SELECTIVE ->
+                    "select c.id, o.id, l.id from " + multiJoinCustomerTableName(table) + " c join "
+                            + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
+                            + multiJoinLineTableName(table)
+                            + " l on l.order_id = o.id where c.id between ? and ?";
+            case JOIN_4WAY_FANOUT ->
+                    "select c.id, o.id, l.line_no, i.id from " + multiJoinCustomerTableName(table)
+                            + " c join " + multiJoinOrderTableName(table)
+                            + " o on o.customer_id = c.id join " + multiJoinLineTableName(table)
+                            + " l on l.order_id = o.id join " + multiJoinItemTableName(table)
+                            + " i on i.id = l.item_id where c.bucket = ?";
             case GROUP_HIGH_CARD ->
                     "select group_key, count(*), sum(quantity) from " + highCardGroupTableName(table)
                             + " group by group_key order by group_key";
@@ -4549,6 +4770,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || workload == Workload.PROJECTION_TWO_COLUMN
                 || workload == Workload.PROJECTION_FULL_ROW) {
             statement.setInt(1, FITNESS_CATEGORY);
+        } else if (workload == Workload.JOIN_INDEXED_FANOUT
+                || workload == Workload.JOIN_3WAY_SELECTIVE) {
+            statement.setInt(1, 1);
+            statement.setInt(2, 100);
+        } else if (workload == Workload.JOIN_4WAY_FANOUT) {
+            statement.setInt(1, 7);
         }
     }
 
@@ -4565,6 +4792,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             case GROUP_LOW_CARD -> Math.min(17, rowCount);
             case JOIN_INDEXED_1TO1, GROUP_HIGH_CARD -> Math.min(1000, rowCount);
+            case JOIN_INDEXED_FANOUT -> joinSelectiveParents(rowCount) * 10;
+            case JOIN_3WAY_SELECTIVE -> joinSelectiveParents(rowCount) * 4 * 3;
+            case JOIN_4WAY_FANOUT -> joinBucketParents(rowCount, 7) * 4 * 3;
             case SORT_FULL -> rowCount;
             default -> throw new IllegalArgumentException("Not a fitness read workload: " + workload);
         };
@@ -4597,6 +4827,23 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                     case JOIN_INDEXED_1TO1 ->
                             fingerprint += mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
+                    case JOIN_INDEXED_FANOUT -> {
+                        fingerprint = mix(fingerprint, resultSet.getInt(1));
+                        fingerprint = mix(fingerprint, resultSet.getInt(2));
+                    }
+                    case JOIN_3WAY_SELECTIVE -> {
+                        long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
+                        tuple = mix(tuple, resultSet.getInt(2));
+                        tuple = mix(tuple, resultSet.getInt(3));
+                        fingerprint += tuple;
+                    }
+                    case JOIN_4WAY_FANOUT -> {
+                        long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
+                        tuple = mix(tuple, resultSet.getInt(2));
+                        tuple = mix(tuple, resultSet.getInt(3));
+                        tuple = mix(tuple, resultSet.getInt(4));
+                        fingerprint += tuple;
+                    }
                     default -> throw new SQLException("Unexpected fitness read workload: " + workload);
                 }
                 rows++;
@@ -5863,6 +6110,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         PROJECTION_FULL_ROW(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_LOW_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_INDEXED_1TO1(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_INDEXED_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_3WAY_SELECTIVE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_4WAY_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_HIGH_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         INSERT_1(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
@@ -5963,6 +6213,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == PROJECTION_FULL_ROW
                     || this == GROUP_LOW_CARD
                     || this == JOIN_INDEXED_1TO1
+                    || this == JOIN_INDEXED_FANOUT
+                    || this == JOIN_3WAY_SELECTIVE
+                    || this == JOIN_4WAY_FANOUT
                     || this == GROUP_HIGH_CARD
                     || this == SORT_FULL;
         }
