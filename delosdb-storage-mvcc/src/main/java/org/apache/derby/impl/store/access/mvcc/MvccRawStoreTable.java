@@ -776,7 +776,8 @@ final class MvccRawStoreTable {
         ContainerHandle container = rawTransaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
-                ContainerHandle.MODE_READONLY);
+                ContainerHandle.MODE_READONLY
+                        | (table.temporary() ? ContainerHandle.MODE_TEMP_IS_KEPT : 0));
         if (container == null) {
             return rows;
         }
@@ -976,6 +977,46 @@ final class MvccRawStoreTable {
             container.close();
         }
         return versions;
+    }
+
+    // The metadata container's RawStore row-count estimate is the persistent
+    // logical-row estimate for the MVCC base conglomerate. The container is
+    // initialized to zero after its control rows are created, so later
+    // directory-row deltas track logical inserts rather than metadata rows.
+    static long estimatedRowCount(
+            Transaction rawTransaction, Descriptor table) throws StandardException {
+        ContainerHandle container = rawTransaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
+                ContainerHandle.MODE_READONLY
+                        | (table.temporary() ? ContainerHandle.MODE_TEMP_IS_KEPT : 0));
+        if (container == null) {
+            return 0L;
+        }
+        try {
+            return Math.max(0L, container.getEstimatedRowCount(0));
+        } finally {
+            container.close();
+        }
+    }
+
+    // Persist scan/statistics row-count feedback so subsequently opened cost
+    // controllers see it, matching the Derby heap RowCountable contract.
+    static void setEstimatedRowCount(
+            Transaction rawTransaction, Descriptor table, long count) throws StandardException {
+        ContainerHandle container = rawTransaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
+                ContainerHandle.MODE_READONLY
+                        | (table.temporary() ? ContainerHandle.MODE_TEMP_IS_KEPT : 0));
+        if (container == null) {
+            return;
+        }
+        try {
+            container.setEstimatedRowCount(Math.max(0L, count), 0);
+        } finally {
+            container.close();
+        }
     }
 
     static void drop(

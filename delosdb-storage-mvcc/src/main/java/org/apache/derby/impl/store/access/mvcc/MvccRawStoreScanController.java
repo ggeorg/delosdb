@@ -76,6 +76,7 @@ final class MvccRawStoreScanController implements ScanManager {
         this.versionProjection = MvccRawStoreVersionRows.projection(table, scanColumnList);
         this.qualifiers = qualifiers;
         this.compiledInfo = compiledInfo;
+        this.estimatedRowCount = MvccRawStoreTable.estimatedRowCount(rawTransaction, table);
         MvccRawStoreTransactionContext context = runtime.context(
                 transactionManager,
                 rawTransaction);
@@ -209,8 +210,9 @@ final class MvccRawStoreScanController implements ScanManager {
     }
 
     @Override
-    public void setEstimatedRowCount(long count) {
-        estimatedRowCount = count;
+    public void setEstimatedRowCount(long count) throws StandardException {
+        estimatedRowCount = Math.max(0L, count);
+        MvccRawStoreTable.setEstimatedRowCount(rawTransaction, table, estimatedRowCount);
     }
 
     @Override

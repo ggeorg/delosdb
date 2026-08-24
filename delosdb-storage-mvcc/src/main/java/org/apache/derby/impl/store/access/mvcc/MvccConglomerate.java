@@ -270,8 +270,8 @@ public final class MvccConglomerate
     @Override
     public StoreCostController openStoreCost(
             TransactionManager xactManager,
-            Transaction rawtran) {
-        return new MvccStoreCostController(this);
+            Transaction rawtran) throws StandardException {
+        return new MvccStoreCostController(this, rawtran, requireTable());
     }
 
     @Override

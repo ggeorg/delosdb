@@ -24,17 +24,28 @@ package org.apache.derby.impl.store.access.mvcc;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.StoreCostResult;
+import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
+import org.apache.derby.shared.common.error.StandardException;
 
 /** Conservative optimizer cost model for RawStore-backed MVCC scans. */
 final class MvccStoreCostController implements StoreCostController {
     private final MvccConglomerate conglomerate;
-    private long estimatedRowCount = 1L;
+    private final Transaction rawTransaction;
+    private final MvccRawStoreTable.Descriptor table;
+    private long estimatedRowCount;
     private boolean closed;
 
-    MvccStoreCostController(MvccConglomerate conglomerate) {
+    MvccStoreCostController(
+            MvccConglomerate conglomerate,
+            Transaction rawTransaction,
+            MvccRawStoreTable.Descriptor table) throws StandardException {
         this.conglomerate = java.util.Objects.requireNonNull(conglomerate, "conglomerate");
+        this.rawTransaction = java.util.Objects.requireNonNull(rawTransaction, "rawTransaction");
+        this.table = java.util.Objects.requireNonNull(table, "table");
+        long persistedRowCount = MvccRawStoreTable.estimatedRowCount(rawTransaction, table);
+        this.estimatedRowCount = persistedRowCount > 0L ? persistedRowCount : 1L;
     }
 
     @Override
@@ -101,9 +112,11 @@ final class MvccStoreCostController implements StoreCostController {
     }
 
     @Override
-    public void setEstimatedRowCount(long count) {
+    public void setEstimatedRowCount(long count) throws StandardException {
         ensureOpen();
-        estimatedRowCount = Math.max(0L, count);
+        long persistedRowCount = Math.max(0L, count);
+        MvccRawStoreTable.setEstimatedRowCount(rawTransaction, table, persistedRowCount);
+        estimatedRowCount = persistedRowCount > 0L ? persistedRowCount : 1L;
     }
 
     private long fallbackRows(long rowCount) {
