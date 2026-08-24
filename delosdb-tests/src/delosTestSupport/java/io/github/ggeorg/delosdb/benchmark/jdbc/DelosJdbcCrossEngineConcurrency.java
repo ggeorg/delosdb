@@ -32,6 +32,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.SplittableRandom;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -43,6 +45,7 @@ import java.util.concurrent.TimeoutException;
 /** JDBC concurrency comparison with deterministic semantic verification. */
 public final class DelosJdbcCrossEngineConcurrency {
     private static final String PREFIX = "delosdb.benchmark.crossEngineConcurrency.";
+    private static final String PHASE2A_PREFIX = "delosdb.phase2.f05JoinDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -104,6 +107,10 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "phase2a-f05-join-decomposition".equals(args[0])) {
+            runPhase2AF05JoinDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -111,9 +118,273 @@ public final class DelosJdbcCrossEngineConcurrency {
         } else if (args.length == 0) {
             runCoordinator(options);
         } else {
-            throw new IllegalArgumentException("Expected no argument or exactly 'worker'");
+            throw new IllegalArgumentException(
+                    "Expected no argument, exactly 'worker', or exactly 'phase2a-f05-join-decomposition'");
         }
     }
+
+    private static void runPhase2AF05JoinDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2APath("reportDirectory");
+        Path databaseRoot = requiredPhase2APath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        Path database = databaseRoot.resolve("f05-join-3way-selective");
+        String heapBase = "P2A_HEAP";
+        String mvccBase = "P2A_MVCC";
+        int rowCount = 10_000;
+        int commitBatchSize = 100;
+        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
+        if (expectedRows != 1_200) {
+            throw new IllegalStateException(
+                    "Phase-2A F05 fixture cardinality drift: expected 1200, actual=" + expectedRows);
+        }
+
+        String jdbcUrl = "jdbc:derby:" + database.toAbsolutePath() + ";create=true";
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareMultiJoinFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        String heapSql = fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, heapBase);
+        String mvccSql = fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase);
+        ExplainCapture heapExplain;
+        ExplainCapture mvccExplain;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapExplain = capturePhase2AExplain(connection, heapSql, false);
+            mvccExplain = capturePhase2AExplain(connection, mvccSql, false);
+            connection.rollback();
+        }
+
+        ExplainCapture heapAnalyze;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapAnalyze = capturePhase2AExplain(connection, heapSql, true);
+            connection.rollback();
+        }
+        ExplainCapture mvccAnalyze;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            mvccAnalyze = capturePhase2AExplain(connection, mvccSql, true);
+            connection.rollback();
+        }
+
+        long heapFingerprint;
+        long mvccFingerprint;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapFingerprint = executePhase2AQuery(connection, heapSql, expectedRows);
+            mvccFingerprint = executePhase2AQuery(connection, mvccSql, expectedRows);
+            connection.rollback();
+        }
+        if (heapFingerprint != mvccFingerprint) {
+            throw new IllegalStateException(
+                    "Phase-2A SQL semantic drift: heap=" + heapFingerprint
+                            + ", mvcc=" + mvccFingerprint);
+        }
+
+        writePhase2ACapture(reportDirectory, "heap-explain", heapExplain);
+        writePhase2ACapture(reportDirectory, "mvcc-explain", mvccExplain);
+        writePhase2ACapture(reportDirectory, "heap-explain-analyze", heapAnalyze);
+        writePhase2ACapture(reportDirectory, "mvcc-explain-analyze", mvccAnalyze);
+
+        String heapShape = normalizePhase2APlanShape(heapExplain.text(), heapBase, "heap");
+        String mvccShape = normalizePhase2APlanShape(mvccExplain.text(), mvccBase, "delos_mvcc");
+        Files.writeString(
+                reportDirectory.resolve("heap-plan-shape-normalized.txt"),
+                heapShape,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("mvcc-plan-shape-normalized.txt"),
+                mvccShape,
+                StandardCharsets.UTF_8);
+
+        boolean samePhysicalShape = heapShape.equals(mvccShape);
+        String[] metricNames = {
+            "PAGES_VISITED",
+            "ROWS_VISITED",
+            "ROWS_QUALIFIED",
+            "MVCC_ORDERED_CANDIDATES",
+            "MVCC_COVERING_CANDIDATES",
+            "MVCC_COVERED_CANDIDATES",
+            "MVCC_FALLBACK_CANDIDATES",
+            "MVCC_DIRECTORY_PAGE_ACQUISITIONS",
+            "MVCC_DIRECTORY_PAGE_BATCH_CANDIDATES",
+            "MVCC_DIRECTORY_PAGE_REUSE_HITS",
+            "MVCC_DIRECTORY_LOGICAL_FALLBACKS",
+            "MVCC_DIRECTORY_HEAD_SUMMARY_CHECKS",
+            "MVCC_DIRECTORY_HEAD_SUMMARY_HITS",
+            "MVCC_DIRECTORY_HEAD_SUMMARY_FALLBACKS",
+            "MVCC_VERSION_PAGE_ACQUISITIONS",
+            "MVCC_VERSION_SLOT_FETCHES",
+            "MVCC_VISIBILITY_CHECKS",
+            "MVCC_VERSION_CHAIN_STEPS",
+            "MVCC_VERSION_LOGICAL_FALLBACKS"
+        };
+        StringBuilder metrics = new StringBuilder("metric\theap\tmvcc\n");
+        for (String metricName : metricNames) {
+            metrics.append(metricName).append('\t')
+                    .append(sumPhase2AMetric(heapAnalyze.text(), metricName)).append('\t')
+                    .append(sumPhase2AMetric(mvccAnalyze.text(), metricName)).append('\n');
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2a-f05-storage-metrics.tsv"),
+                metrics.toString(),
+                StandardCharsets.UTF_8);
+
+        long heapOpenMillis = sumPhase2AField(heapAnalyze.text(), "openMillis");
+        long heapNextMillis = sumPhase2AField(heapAnalyze.text(), "nextMillis");
+        long mvccOpenMillis = sumPhase2AField(mvccAnalyze.text(), "openMillis");
+        long mvccNextMillis = sumPhase2AField(mvccAnalyze.text(), "nextMillis");
+        long heapOpens = sumPhase2AField(heapAnalyze.text(), "opens");
+        long mvccOpens = sumPhase2AField(mvccAnalyze.text(), "opens");
+        long mvccOrderedCandidates = sumPhase2AMetric(
+                mvccAnalyze.text(), "MVCC_ORDERED_CANDIDATES");
+        long mvccFallbackCandidates = sumPhase2AMetric(
+                mvccAnalyze.text(), "MVCC_FALLBACK_CANDIDATES");
+        long mvccDirectoryAcquisitions = sumPhase2AMetric(
+                mvccAnalyze.text(), "MVCC_DIRECTORY_PAGE_ACQUISITIONS");
+        long mvccVersionPageAcquisitions = sumPhase2AMetric(
+                mvccAnalyze.text(), "MVCC_VERSION_PAGE_ACQUISITIONS");
+        long mvccVersionSlotFetches = sumPhase2AMetric(
+                mvccAnalyze.text(), "MVCC_VERSION_SLOT_FETCHES");
+
+        String classification;
+        if (!samePhysicalShape) {
+            classification = "PLAN_SHAPE_DIFFERENCE_REQUIRES_OPTIMIZER_COSTING_DECOMPOSITION";
+        } else if (mvccOrderedCandidates > 0
+                && mvccOpenMillis > Math.max(1L, heapOpenMillis) * 10L) {
+            classification = "SAME_PLAN_MVCC_INDEX_OPEN_MATERIALIZATION_DOMINATES";
+        } else if (mvccNextMillis > Math.max(1L, heapNextMillis) * 10L) {
+            classification = "SAME_PLAN_MVCC_ROW_CONSUMPTION_DOMINATES";
+        } else {
+            classification = "MIXED_OR_UNRESOLVED_REQUIRES_JFR_SOURCE_CORRELATION";
+        }
+
+        String summary = "DelosDB Phase-2A F05 three-way selective join decomposition\n"
+                + "rows=" + rowCount + "\n"
+                + "expectedResultRows=" + expectedRows + "\n"
+                + "semanticFingerprint=" + heapFingerprint + "\n"
+                + "samePhysicalPlanShape=" + samePhysicalShape + "\n"
+                + "heapExplainAnalyzeWallMillis=" + heapAnalyze.wallMillis() + "\n"
+                + "mvccExplainAnalyzeWallMillis=" + mvccAnalyze.wallMillis() + "\n"
+                + "heapTotalNodeOpens=" + heapOpens + "\n"
+                + "mvccTotalNodeOpens=" + mvccOpens + "\n"
+                + "heapTotalOpenMillis=" + heapOpenMillis + "\n"
+                + "mvccTotalOpenMillis=" + mvccOpenMillis + "\n"
+                + "heapTotalNextMillis=" + heapNextMillis + "\n"
+                + "mvccTotalNextMillis=" + mvccNextMillis + "\n"
+                + "mvccOrderedCandidates=" + mvccOrderedCandidates + "\n"
+                + "mvccFallbackCandidates=" + mvccFallbackCandidates + "\n"
+                + "mvccDirectoryPageAcquisitions=" + mvccDirectoryAcquisitions + "\n"
+                + "mvccVersionPageAcquisitions=" + mvccVersionPageAcquisitions + "\n"
+                + "mvccVersionSlotFetches=" + mvccVersionSlotFetches + "\n"
+                + "classification=" + classification + "\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2a-f05-join-decomposition-summary.txt"),
+                summary,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("query-shapes.txt"),
+                "Heap SQL:\n" + heapSql + "\n\nMVCC SQL:\n" + mvccSql + "\n",
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static Connection openPhase2AConnection(String jdbcUrl) throws SQLException {
+        Connection connection = DriverManager.getConnection(jdbcUrl);
+        connection.setAutoCommit(false);
+        connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        return connection;
+    }
+
+    private static Path requiredPhase2APath(String key) {
+        String value = System.getProperty(PHASE2A_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2A_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private static long executePhase2AQuery(
+            Connection connection, String sql, int expectedRows) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            bindFitnessRead(statement, Workload.JOIN_3WAY_SELECTIVE);
+            return executeFitnessRead(statement, Workload.JOIN_3WAY_SELECTIVE, expectedRows);
+        }
+    }
+
+    private static ExplainCapture capturePhase2AExplain(
+            Connection connection, String sql, boolean analyze) throws SQLException {
+        long started = System.nanoTime();
+        try (PreparedStatement statement = connection.prepareStatement(
+                (analyze ? "explain analyze " : "explain ") + sql)) {
+            bindFitnessRead(statement, Workload.JOIN_3WAY_SELECTIVE);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("EXPLAIN returned no row");
+                }
+                String text = resultSet.getString(1);
+                String json = resultSet.getString(2);
+                if (resultSet.next()) {
+                    throw new SQLException("EXPLAIN returned more than one row");
+                }
+                return new ExplainCapture(
+                        text,
+                        json,
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+        }
+    }
+
+    private static void writePhase2ACapture(
+            Path reportDirectory, String baseName, ExplainCapture capture) throws IOException {
+        Files.writeString(
+                reportDirectory.resolve(baseName + ".txt"),
+                capture.text(),
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve(baseName + ".json"),
+                capture.json(),
+                StandardCharsets.UTF_8);
+    }
+
+    private static String normalizePhase2APlanShape(
+            String planText, String baseName, String storageMode) {
+        int execution = planText.indexOf("EXECUTION schemaVersion=");
+        String planOnly = execution >= 0 ? planText.substring(0, execution) : planText;
+        return planOnly
+                .replace(baseName, "P2A")
+                .replace(baseName.toUpperCase(Locale.ROOT), "P2A")
+                .replace("storage=" + storageMode, "storage=<STORAGE>")
+                .replaceAll("statementId=[^ ]+", "statementId=<ID>")
+                .replaceAll(" rows=[^ ]+", " rows=<ESTIMATED_ROWS>")
+                .replaceAll(" cost=[^ ]+", " cost=<ESTIMATED_COST>")
+                .replaceAll(" reason=[^ ]+", " reason=<DECISION_REASON>");
+    }
+
+    private static long sumPhase2AMetric(String text, String metricName) {
+        Pattern pattern = Pattern.compile(Pattern.quote(metricName) + "=(\\d+)");
+        Matcher matcher = pattern.matcher(text);
+        long total = 0L;
+        while (matcher.find()) {
+            total = Math.addExact(total, Long.parseLong(matcher.group(1)));
+        }
+        return total;
+    }
+
+    private static long sumPhase2AField(String text, String fieldName) {
+        Pattern pattern = Pattern.compile("(?:^|\\s)" + Pattern.quote(fieldName) + "=(\\d+)");
+        Matcher matcher = pattern.matcher(text);
+        long total = 0L;
+        while (matcher.find()) {
+            total = Math.addExact(total, Long.parseLong(matcher.group(1)));
+        }
+        return total;
+    }
+
+    private record ExplainCapture(String text, String json, long wallMillis) {}
 
     private static void runCoordinator(Options options) throws Exception {
         if (!"false".equals(System.getProperty(PREFIX + "sane"))) {

@@ -15990,3 +15990,36 @@ tasks.register('runDelosArchitectureFitnessCurrentBaselineSuite') {
     description = 'Runs and reports the untouched-current 30-sentinel Delos Heap/MVCC Phase-1 baseline.'
     dependsOn tasks.named('runDelosArchitectureFitnessCurrentBaselineReport')
 }
+
+// Phase 2A: short embedded decomposition of the first catastrophic baseline gap.
+// Reuse the exact F05 three-way fixture/query logic and Delos EXPLAIN ANALYZE
+// surface; do not modify production algorithms in this phase.
+tasks.register('runDelosPhase2AF05JoinDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Decomposes Heap vs MVCC F05 three-way selective join plan and storage work.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2a-f05-join-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-join-decomposition')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2a-f05-join-decomposition')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05JoinDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05JoinDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+        def jfrFile = new File(
+                reportDir.get().asFile,
+                'phase2a-f05-join-decomposition.jfr')
+        jvmArgs "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile,dumponexit=true"
+    }
+}
