@@ -46,6 +46,7 @@ import java.util.concurrent.TimeoutException;
 public final class DelosJdbcCrossEngineConcurrency {
     private static final String PREFIX = "delosdb.benchmark.crossEngineConcurrency.";
     private static final String PHASE2A_PREFIX = "delosdb.phase2.f05JoinDecomposition.";
+    private static final String PHASE2B_PREFIX = "delosdb.phase2.f05CardinalityCostingProof.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -111,6 +112,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2AF05JoinDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2b-f05-cardinality-costing-proof".equals(args[0])) {
+            runPhase2BF05CardinalityCostingProof();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -119,8 +124,235 @@ public final class DelosJdbcCrossEngineConcurrency {
             runCoordinator(options);
         } else {
             throw new IllegalArgumentException(
-                    "Expected no argument, exactly 'worker', or exactly 'phase2a-f05-join-decomposition'");
+                    "Expected no argument, exactly 'worker', exactly 'phase2a-f05-join-decomposition',"
+                            + " or exactly 'phase2b-f05-cardinality-costing-proof'");
         }
+    }
+
+    private static void runPhase2BF05CardinalityCostingProof() throws Exception {
+        Path reportDirectory = requiredPhase2BPath("reportDirectory");
+        Path databaseRoot = requiredPhase2BPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 1_000;
+        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
+        String mvccBase = "P2B_MVCC";
+        String database = databaseRoot.resolve("f05-cardinality-costing").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareMultiJoinFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        String currentSql = fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase);
+        long customerRows;
+        long orderRows;
+        long lineRows;
+        String customerPkIndex;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            customerRows = phase2BCountRows(connection, multiJoinCustomerTableName(mvccBase));
+            orderRows = phase2BCountRows(connection, multiJoinOrderTableName(mvccBase));
+            lineRows = phase2BCountRows(connection, multiJoinLineTableName(mvccBase));
+            customerPkIndex = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(mvccBase), "ID");
+            connection.rollback();
+        }
+        if (customerRows != 1_000L || orderRows != 4_000L || lineRows != 12_000L) {
+            throw new IllegalStateException(
+                    "Phase-2B fixture cardinality drift: customer=" + customerRows
+                            + ", order=" + orderRows + ", line=" + lineRows);
+        }
+
+        ExplainCapture beforeStats;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            beforeStats = capturePhase2AExplain(connection, currentSql, false);
+            connection.rollback();
+        }
+
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            phase2BUpdateStatistics(connection, multiJoinCustomerTableName(mvccBase));
+            phase2BUpdateStatistics(connection, multiJoinOrderTableName(mvccBase));
+            phase2BUpdateStatistics(connection, multiJoinLineTableName(mvccBase));
+            connection.commit();
+        }
+
+        ExplainCapture afterStats;
+        ExplainCapture currentAnalyze;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            afterStats = capturePhase2AExplain(connection, currentSql, false);
+            connection.rollback();
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            currentAnalyze = capturePhase2AExplain(connection, currentSql, true);
+            connection.rollback();
+        }
+
+        String forcedSql = phase2BForcedIndexedSql(mvccBase, customerPkIndex);
+        ExplainCapture forcedExplain;
+        ExplainCapture forcedAnalyze;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            forcedExplain = capturePhase2AExplain(connection, forcedSql, false);
+            connection.rollback();
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            forcedAnalyze = capturePhase2AExplain(connection, forcedSql, true);
+            connection.rollback();
+        }
+
+        long currentFingerprint;
+        long forcedFingerprint;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            currentFingerprint = executePhase2AQuery(connection, currentSql, expectedRows);
+            forcedFingerprint = executePhase2AQuery(connection, forcedSql, expectedRows);
+            connection.rollback();
+        }
+        if (currentFingerprint != forcedFingerprint) {
+            throw new IllegalStateException(
+                    "Phase-2B forced-index SQL semantic drift: current=" + currentFingerprint
+                            + ", forced=" + forcedFingerprint);
+        }
+
+        writePhase2ACapture(reportDirectory, "mvcc-before-stats", beforeStats);
+        writePhase2ACapture(reportDirectory, "mvcc-after-stats", afterStats);
+        writePhase2ACapture(reportDirectory, "mvcc-current-explain-analyze", currentAnalyze);
+        writePhase2ACapture(reportDirectory, "mvcc-forced-index-explain", forcedExplain);
+        writePhase2ACapture(reportDirectory, "mvcc-forced-index-explain-analyze", forcedAnalyze);
+
+        String beforeShape = normalizePhase2APlanShape(beforeStats.text(), mvccBase, "delos_mvcc");
+        String afterShape = normalizePhase2APlanShape(afterStats.text(), mvccBase, "delos_mvcc");
+        String forcedShape = normalizePhase2APlanShape(forcedExplain.text(), mvccBase, "delos_mvcc");
+        Files.writeString(
+                reportDirectory.resolve("mvcc-before-stats-plan-shape-normalized.txt"),
+                beforeShape,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("mvcc-after-stats-plan-shape-normalized.txt"),
+                afterShape,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("mvcc-forced-index-plan-shape-normalized.txt"),
+                forcedShape,
+                StandardCharsets.UTF_8);
+
+        boolean statsChangedPlan = !beforeShape.equals(afterShape);
+        boolean forcedUsesOrderIndex = forcedExplain.text().contains(multiJoinOrderTableName(mvccBase) + "_C_IDX");
+        boolean forcedUsesLineIndex = forcedExplain.text().contains(multiJoinLineTableName(mvccBase) + "_O_IDX");
+        long currentMillis = currentAnalyze.wallMillis();
+        long forcedMillis = forcedAnalyze.wallMillis();
+        double forcedSpeedup = forcedMillis == 0L
+                ? Double.POSITIVE_INFINITY
+                : (double) currentMillis / (double) forcedMillis;
+
+        String classification;
+        if (statsChangedPlan) {
+            classification = "EXPLICIT_STATS_CHANGE_PLAN_STATISTICS_FRESHNESS_PATH";
+        } else if (forcedUsesOrderIndex && forcedUsesLineIndex && forcedSpeedup >= 10.0d) {
+            classification = "STATS_DO_NOT_REPAIR_PLAN_FORCED_INDEX_FAST_COSTING_ROWCOUNT_PATH";
+        } else if (forcedUsesOrderIndex && forcedUsesLineIndex) {
+            classification = "INDEXES_USABLE_BUT_PHYSICAL_ACCESS_REMAINS_MATERIAL";
+        } else {
+            classification = "FORCED_INDEX_PATH_NOT_ESTABLISHED_REQUIRES_OPTIMIZER_TRACE";
+        }
+
+        String summary = "DelosDB Phase-2B F05 MVCC cardinality/access-path costing proof\n"
+                + "customerActualRows=" + customerRows + "\n"
+                + "orderActualRows=" + orderRows + "\n"
+                + "lineActualRows=" + lineRows + "\n"
+                + "customerPrimaryKeyIndex=" + customerPkIndex + "\n"
+                + "statsChangedPhysicalPlanShape=" + statsChangedPlan + "\n"
+                + "forcedUsesOrderCustomerIndex=" + forcedUsesOrderIndex + "\n"
+                + "forcedUsesLineOrderIndex=" + forcedUsesLineIndex + "\n"
+                + "currentExplainAnalyzeWallMillis=" + currentMillis + "\n"
+                + "forcedIndexExplainAnalyzeWallMillis=" + forcedMillis + "\n"
+                + "forcedIndexSpeedup=" + forcedSpeedup + "\n"
+                + "semanticFingerprint=" + currentFingerprint + "\n"
+                + "classification=" + classification + "\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2b-f05-cardinality-costing-summary.txt"),
+                summary,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("query-shapes.txt"),
+                "Current MVCC SQL:\n" + currentSql + "\n\nForced indexed MVCC SQL:\n" + forcedSql + "\n",
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static Path requiredPhase2BPath(String key) {
+        String value = System.getProperty(PHASE2B_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2B_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private static long phase2BCountRows(Connection connection, String table) throws SQLException {
+        try (Statement statement = connection.createStatement();
+                ResultSet resultSet = statement.executeQuery("select count(*) from " + table)) {
+            if (!resultSet.next()) {
+                throw new SQLException("COUNT returned no row for " + table);
+            }
+            long count = resultSet.getLong(1);
+            if (resultSet.next()) {
+                throw new SQLException("COUNT returned more than one row for " + table);
+            }
+            return count;
+        }
+    }
+
+    private static String phase2BPrimaryKeyIndex(
+            Connection connection, String table, String column) throws SQLException {
+        DatabaseMetaData metadata = connection.getMetaData();
+        Map<String, List<String>> columnsByIndex = new LinkedHashMap<>();
+        Map<String, Boolean> uniqueByIndex = new LinkedHashMap<>();
+        try (ResultSet indexes = metadata.getIndexInfo(null, "APP", table, false, false)) {
+            while (indexes.next()) {
+                String indexName = indexes.getString("INDEX_NAME");
+                String columnName = indexes.getString("COLUMN_NAME");
+                if (indexName == null || columnName == null) {
+                    continue;
+                }
+                columnsByIndex.computeIfAbsent(indexName, ignored -> new ArrayList<>()).add(columnName);
+                uniqueByIndex.put(indexName, !indexes.getBoolean("NON_UNIQUE"));
+            }
+        }
+        for (Map.Entry<String, List<String>> entry : columnsByIndex.entrySet()) {
+            if (Boolean.TRUE.equals(uniqueByIndex.get(entry.getKey()))
+                    && entry.getValue().size() == 1
+                    && column.equalsIgnoreCase(entry.getValue().get(0))) {
+                return entry.getKey();
+            }
+        }
+        throw new SQLException("Unable to discover single-column primary/unique index for " + table);
+    }
+
+    private static void phase2BUpdateStatistics(Connection connection, String table)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "call SYSCS_UTIL.SYSCS_UPDATE_STATISTICS('APP', ?, null)")) {
+            statement.setString(1, table);
+            statement.execute();
+        }
+    }
+
+    private static String phase2BForcedIndexedSql(String base, String customerPkIndex) {
+        String customer = multiJoinCustomerTableName(base);
+        String order = multiJoinOrderTableName(base);
+        String line = multiJoinLineTableName(base);
+        return "select c.id, o.id, l.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
+                + customer + " c --DERBY-PROPERTIES index='" + customerPkIndex + "'\n"
+                + "join " + order + " o --DERBY-PROPERTIES index=" + order
+                + "_C_IDX, joinStrategy=NESTEDLOOP\n"
+                + "on o.customer_id = c.id\n"
+                + "join " + line + " l --DERBY-PROPERTIES index=" + line
+                + "_O_IDX, joinStrategy=NESTEDLOOP\n"
+                + "on l.order_id = o.id\n"
+                + "where c.id between ? and ?";
     }
 
     private static void runPhase2AF05JoinDecomposition() throws Exception {

@@ -16023,3 +16023,31 @@ tasks.register('runDelosPhase2AF05JoinDecomposition', JavaExec) {
         jvmArgs "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile,dumponexit=true"
     }
 }
+
+// Phase 2B: prove whether F05 MVCC plan collapse is statistics freshness,
+// access-path costing, or a genuinely slow indexed physical path.
+tasks.register('runDelosPhase2BF05CardinalityCostingProof', JavaExec) {
+    group = 'verification'
+    description = 'Proves F05 MVCC cardinality/statistics and forced-index access-path behavior.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2b-f05-cardinality-costing-proof'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-cardinality-costing')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2b-f05-cardinality-costing')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05CardinalityCostingProof.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05CardinalityCostingProof.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+}
