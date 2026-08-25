@@ -182,10 +182,14 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                                 + "where category = 7 and quantity >= 20 order by id",
                         "2");
                 assertIndexedRows(setup,
-                        "select id, quantity from projection_t where id = 2",
+                        "select id, quantity from projection_t "
+                                + "--DERBY-PROPERTIES index=null\n"
+                                + "where id = 2",
                         "2|20");
                 assertIndexedRows(setup,
-                        "select payload from projection_t where id = 2",
+                        "select payload from projection_t "
+                                + "--DERBY-PROPERTIES index=null\n"
+                                + "where id = 2",
                         payloadTwo);
                 setup.commit();
             }
@@ -263,7 +267,8 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
 
                 String currentIdStatistics = assertNonCoveringIndexedRows(connection,
-                        "select id from covering_t where id = 2",
+                        "select id from covering_t --DERBY-PROPERTIES index=null\n"
+                                + "where id = 2",
                         "2");
                 assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorChecks", 1L);
                 assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorHits", 1L);
