@@ -16051,3 +16051,10 @@ tasks.register('runDelosPhase2BF05CardinalityCostingProof', JavaExec) {
         ])
     }
 }
+// Phase 2C: freeze the MVCC cardinality authority contract now that the
+// production path persists statistics feedback in RawStore container metadata.
+registerDelosFocusedTest(
+        'runDelosPhase2CMvccCardinalityAuthorityTests',
+        'Verifies MVCC statistics row-count persistence across fresh cost controllers and restart.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.class'])
+

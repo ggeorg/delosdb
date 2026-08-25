@@ -20,8 +20,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
 
+import org.apache.derby.iapi.services.context.ContextManager;
+import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.ScanController;
+import org.apache.derby.iapi.store.access.StoreCostController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -183,6 +186,59 @@ final class MvccRawStoreMetadataInspection {
             controller.insert(row);
         } finally {
             controller.close();
+        }
+    }
+
+    static long storeCostEstimatedRowCount(
+            Connection connection, String tableName) throws Exception {
+        if (!(connection instanceof EmbedConnection embedded)) {
+            throw new AssertionError("Embedded connection required for RawStore inspection");
+        }
+        LanguageConnectionContext lcc = embedded.getLanguageConnection();
+        ContextManager contextManager = lcc.getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        // A direct StoreCostController open can fault a conglomerate into the
+        // access-method cache. That cache loader resolves the transaction from
+        // the current Derby context, just as the normal compiler path does.
+        boolean installed = contextService.getCurrentContextManager() != contextManager;
+        if (installed) {
+            contextService.setCurrentContextManager(contextManager);
+        }
+        try {
+            TransactionManager manager = transactionManager(connection);
+            StoreCostController cost =
+                    manager.openStoreCost(baseConglomerateId(connection, tableName));
+            try {
+                return cost.getEstimatedRowCount();
+            } finally {
+                cost.close();
+            }
+        } finally {
+            if (installed) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+    static void setBaseScanEstimatedRowCount(
+            Connection connection, String tableName, long count) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        ScanController scan = manager.openScan(
+                baseConglomerateId(connection, tableName),
+                false,
+                0,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_READ_UNCOMMITTED,
+                null,
+                null,
+                ScanController.NA,
+                null,
+                null,
+                ScanController.NA);
+        try {
+            scan.setEstimatedRowCount(count);
+        } finally {
+            scan.close();
         }
     }
 
