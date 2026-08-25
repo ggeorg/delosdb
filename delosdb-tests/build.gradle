@@ -16242,3 +16242,33 @@ tasks.register('runDelosPhase2JF05CompatibilityNativePathDecomposition', JavaExe
     }
 }
 
+
+
+// Phase 2K: classify the untouched F03 projection/materialization deficit after
+// closing the F05 decomposition. Force the same category-index access shape on
+// Heap and MVCC, then separate covered-index, narrow base-row, and full-row work.
+tasks.register('runDelosPhase2KF03ProjectionMaterializationDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Decomposes F03 Heap/MVCC projection and base-row materialization cost under matched category-index access.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2k-f03-projection-materialization'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f03-projection-materialization')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2k-f03-projection-materialization')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f03ProjectionMaterialization.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f03ProjectionMaterialization.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+}

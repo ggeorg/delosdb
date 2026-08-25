@@ -53,6 +53,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2E_PREFIX = "delosdb.phase2.f05BaseFetchAttribution.";
     private static final String PHASE2H_PREFIX = "delosdb.phase2.f05PostHintResidualAttribution.";
     private static final String PHASE2J_PREFIX = "delosdb.phase2.f05CompatibilityNativePath.";
+    private static final String PHASE2K_PREFIX = "delosdb.phase2.f03ProjectionMaterialization.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -138,6 +139,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2JF05CompatibilityNativePathDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2k-f03-projection-materialization".equals(args[0])) {
+            runPhase2KF03ProjectionMaterializationDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -151,7 +156,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2d-f05-residual-indexed-access',"
                             + " exactly 'phase2e-f05-base-fetch-attribution',"
                             + " exactly 'phase2h-f05-post-hint-residual-attribution',"
-                            + " or exactly 'phase2j-f05-compatibility-native-path'");
+                            + " exactly 'phase2j-f05-compatibility-native-path',"
+                            + " or exactly 'phase2k-f03-projection-materialization'");
         }
     }
 
@@ -1409,6 +1415,358 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + ", joinStrategy=NESTEDLOOP\n"
                 + "on l.order_id = o.id\n"
                 + "where c.id between ? and ?";
+    }
+
+
+    private static void runPhase2KF03ProjectionMaterializationDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2KPath("reportDirectory");
+        Path databaseRoot = requiredPhase2KPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        int expectedRows = expectedFitnessRows(Workload.PROJECTION_COVERED, rowCount);
+        int warmups = 4;
+        int warmupExecutionsPerVisit = 16;
+        int measuredRounds = 9;
+        int measuredExecutionsPerSample = 64;
+        String database = databaseRoot.resolve("f03-projection-materialization").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+        DelosBenchmarkConfig config = new DelosBenchmarkConfig(
+                rowCount, payloadSize, SEED, commitBatchSize);
+
+        String heapTable;
+        String mvccTable;
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            DelosJdbcBenchmarkScenario heap = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2k_heap", "", false, config);
+            heap.prepare();
+            heapTable = heap.tableName();
+            DelosJdbcBenchmarkScenario mvcc = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2k_mvcc", " using delos_mvcc", false, config);
+            mvcc.prepare();
+            mvccTable = mvcc.tableName();
+            phase2BUpdateStatistics(setup, heapTable);
+            phase2BUpdateStatistics(setup, mvccTable);
+            setup.commit();
+        }
+
+        LinkedHashMap<String, Workload> workloadByVariant = new LinkedHashMap<>();
+        workloadByVariant.put("heap-covered", Workload.PROJECTION_COVERED);
+        workloadByVariant.put("mvcc-covered", Workload.PROJECTION_COVERED);
+        workloadByVariant.put("heap-two-column", Workload.PROJECTION_TWO_COLUMN);
+        workloadByVariant.put("mvcc-two-column", Workload.PROJECTION_TWO_COLUMN);
+        workloadByVariant.put("heap-full-row", Workload.PROJECTION_FULL_ROW);
+        workloadByVariant.put("mvcc-full-row", Workload.PROJECTION_FULL_ROW);
+
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        for (Map.Entry<String, Workload> entry : workloadByVariant.entrySet()) {
+            boolean mvccVariant = entry.getKey().startsWith("mvcc-");
+            String table = mvccVariant ? mvccTable : heapTable;
+            sqlByVariant.put(entry.getKey(), phase2KProjectionSql(entry.getValue(), table));
+        }
+
+        StringBuilder queryShapes = new StringBuilder();
+        for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+            queryShapes.append("=== ").append(entry.getKey()).append(" ===\n")
+                    .append(entry.getValue()).append("\n\n");
+        }
+        Files.writeString(reportDirectory.resolve("query-shapes.txt"),
+                queryShapes.toString(), StandardCharsets.UTF_8);
+
+        LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
+        LinkedHashMap<Workload, Long> semanticByWorkload = new LinkedHashMap<>();
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                Workload workload = workloadByVariant.get(entry.getKey());
+                ExplainCapture explain = capturePhase2KExplain(
+                        connection, entry.getValue(), workload, false);
+                ExplainCapture analyze = capturePhase2KExplain(
+                        connection, entry.getValue(), workload, true);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain", explain);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+                analyzeByVariant.put(entry.getKey(), analyze);
+
+                long fingerprint;
+                try (PreparedStatement statement = connection.prepareStatement(entry.getValue())) {
+                    fingerprint = executePhase2KProjectionRead(statement, workload, expectedRows);
+                }
+                Long prior = semanticByWorkload.putIfAbsent(workload, fingerprint);
+                if (prior != null && prior.longValue() != fingerprint) {
+                    throw new IllegalStateException(
+                            "Phase-2K Heap/MVCC semantic drift for " + workload
+                                    + ": expected=" + prior + ", actual=" + fingerprint);
+                }
+            }
+            connection.rollback();
+        }
+
+        boolean matchedCoveredAccessShape = phase2KAccessShape(
+                        analyzeByVariant.get("heap-covered").text())
+                .equals(phase2KAccessShape(analyzeByVariant.get("mvcc-covered").text()));
+        boolean matchedTwoColumnAccessShape = phase2KAccessShape(
+                        analyzeByVariant.get("heap-two-column").text())
+                .equals(phase2KAccessShape(analyzeByVariant.get("mvcc-two-column").text()));
+        boolean matchedFullRowAccessShape = phase2KAccessShape(
+                        analyzeByVariant.get("heap-full-row").text())
+                .equals(phase2KAccessShape(analyzeByVariant.get("mvcc-full-row").text()));
+        if (!matchedCoveredAccessShape || !matchedTwoColumnAccessShape || !matchedFullRowAccessShape) {
+            throw new IllegalStateException(
+                    "Phase-2K matched-access guard failed: covered=" + matchedCoveredAccessShape
+                            + ", twoColumn=" + matchedTwoColumnAccessShape
+                            + ", fullRow=" + matchedFullRowAccessShape);
+        }
+
+        LinkedHashMap<String, List<Double>> samples = new LinkedHashMap<>();
+        for (String variant : sqlByVariant.keySet()) {
+            samples.put(variant, new ArrayList<>());
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                    statements.put(entry.getKey(), connection.prepareStatement(entry.getValue()));
+                }
+                List<String> variants = new ArrayList<>(sqlByVariant.keySet());
+                for (int round = -warmups; round < measuredRounds; round++) {
+                    int rotation = Math.floorMod(round + warmups, variants.size());
+                    for (int offset = 0; offset < variants.size(); offset++) {
+                        String variant = variants.get((rotation + offset) % variants.size());
+                        int executions = round >= 0
+                                ? measuredExecutionsPerSample
+                                : warmupExecutionsPerVisit;
+                        Workload workload = workloadByVariant.get(variant);
+                        long expectedFingerprint = semanticByWorkload.get(workload);
+                        long started = System.nanoTime();
+                        for (int execution = 0; execution < executions; execution++) {
+                            long fingerprint = executePhase2KProjectionRead(
+                                    statements.get(variant), workload, expectedRows);
+                            if (fingerprint != expectedFingerprint) {
+                                throw new IllegalStateException(
+                                        "Phase-2K measured semantic drift for " + variant
+                                                + ": expected=" + expectedFingerprint
+                                                + ", actual=" + fingerprint);
+                            }
+                        }
+                        long elapsed = System.nanoTime() - started;
+                        if (round >= 0) {
+                            samples.get(variant).add(elapsed / (executions * 1_000_000.0d));
+                        }
+                    }
+                }
+                connection.rollback();
+            } finally {
+                SQLException closeFailure = null;
+                for (PreparedStatement statement : statements.values()) {
+                    try {
+                        statement.close();
+                    } catch (SQLException failure) {
+                        if (closeFailure == null) {
+                            closeFailure = failure;
+                        } else {
+                            closeFailure.addSuppressed(failure);
+                        }
+                    }
+                }
+                if (closeFailure != null) {
+                    throw closeFailure;
+                }
+            }
+        }
+
+        StringBuilder sampleTsv = new StringBuilder("variant\tround\telapsedMillis\n");
+        LinkedHashMap<String, Distribution> distributions = new LinkedHashMap<>();
+        LinkedHashMap<String, DelosMeasurementValidityContract.DispersionDecision> decisions =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, List<Double>> entry : samples.entrySet()) {
+            for (int i = 0; i < entry.getValue().size(); i++) {
+                sampleTsv.append(entry.getKey()).append('\t').append(i + 1).append('\t')
+                        .append(format(entry.getValue().get(i))).append('\n');
+            }
+            Distribution distribution = distribution(entry.getValue());
+            distributions.put(entry.getKey(), distribution);
+            decisions.put(entry.getKey(), DelosMeasurementValidityContract.classifyCustom(
+                    distribution.iqr() / distribution.median(),
+                    distribution.mad() / distribution.median()));
+        }
+        Files.writeString(reportDirectory.resolve("phase2k-repeated-execution-samples.tsv"),
+                sampleTsv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder dispersionTsv = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tgoverningDispersion\tstatus\n");
+        for (String variant : sqlByVariant.keySet()) {
+            Distribution distribution = distributions.get(variant);
+            DelosMeasurementValidityContract.DispersionDecision decision = decisions.get(variant);
+            dispersionTsv.append(variant).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(decision.iqrToMedian())).append('\t')
+                    .append(format(decision.madToMedian())).append('\t')
+                    .append(format(decision.governingRatio())).append('\t')
+                    .append(decision.status()).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2k-dispersion.tsv"),
+                dispersionTsv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder operatorTsv = new StringBuilder(
+                "variant\texplainAnalyzeWallMillis\taccessShape\tindexToBaseNextMillis\tindexScanNextMillis"
+                        + "\ttotalOpenMillis\ttotalNextMillis\ttotalOpens\n");
+        for (String variant : sqlByVariant.keySet()) {
+            ExplainCapture analyze = analyzeByVariant.get(variant);
+            operatorTsv.append(variant).append('\t').append(analyze.wallMillis()).append('\t')
+                    .append(phase2KAccessShape(analyze.text())).append('\t')
+                    .append(phase2EIndexToBaseNextMillis(analyze.text())).append('\t')
+                    .append(phase2EIndexScanNextMillis(analyze.text())).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "openMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "nextMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "opens")).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2k-operator-summary.tsv"),
+                operatorTsv.toString(), StandardCharsets.UTF_8);
+
+        double heapCovered = distributions.get("heap-covered").median();
+        double mvccCovered = distributions.get("mvcc-covered").median();
+        double heapTwo = distributions.get("heap-two-column").median();
+        double mvccTwo = distributions.get("mvcc-two-column").median();
+        double heapFull = distributions.get("heap-full-row").median();
+        double mvccFull = distributions.get("mvcc-full-row").median();
+        DelosMeasurementValidityContract.Status combinedStatus = DelosMeasurementValidityContract.combine(
+                decisions.get("heap-covered").status(),
+                decisions.get("mvcc-covered").status(),
+                decisions.get("heap-two-column").status(),
+                decisions.get("mvcc-two-column").status(),
+                decisions.get("heap-full-row").status(),
+                decisions.get("mvcc-full-row").status());
+        double worstGoverningDispersion = decisions.values().stream()
+                .mapToDouble(DelosMeasurementValidityContract.DispersionDecision::governingRatio)
+                .max()
+                .orElseThrow();
+
+        String summary = "DelosDB Phase-2K F03 projection/materialization decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "rows=" + rowCount + "\n"
+                + "payloadSize=" + payloadSize + "\n"
+                + "expectedResultRows=" + expectedRows + "\n"
+                + "warmupsPerVariant=" + warmups + "\n"
+                + "warmupExecutionsPerVisit=" + warmupExecutionsPerVisit + "\n"
+                + "measuredRoundsPerVariant=" + measuredRounds + "\n"
+                + "measuredExecutionsPerSample=" + measuredExecutionsPerSample + "\n"
+                + "matchedCoveredAccessShape=" + matchedCoveredAccessShape + "\n"
+                + "matchedTwoColumnAccessShape=" + matchedTwoColumnAccessShape + "\n"
+                + "matchedFullRowAccessShape=" + matchedFullRowAccessShape + "\n"
+                + "heapCoveredMedianMillis=" + format(heapCovered) + "\n"
+                + "mvccCoveredMedianMillis=" + format(mvccCovered) + "\n"
+                + "coveredMvccVsHeapRatio=" + format(mvccCovered / heapCovered) + "\n"
+                + "heapTwoColumnMedianMillis=" + format(heapTwo) + "\n"
+                + "mvccTwoColumnMedianMillis=" + format(mvccTwo) + "\n"
+                + "twoColumnMvccVsHeapRatio=" + format(mvccTwo / heapTwo) + "\n"
+                + "heapFullRowMedianMillis=" + format(heapFull) + "\n"
+                + "mvccFullRowMedianMillis=" + format(mvccFull) + "\n"
+                + "fullRowMvccVsHeapRatio=" + format(mvccFull / heapFull) + "\n"
+                + "heapTwoVsCoveredRatio=" + format(heapTwo / heapCovered) + "\n"
+                + "mvccTwoVsCoveredRatio=" + format(mvccTwo / mvccCovered) + "\n"
+                + "heapFullVsTwoRatio=" + format(heapFull / heapTwo) + "\n"
+                + "mvccFullVsTwoRatio=" + format(mvccFull / mvccTwo) + "\n"
+                + "worstGoverningDispersion=" + format(worstGoverningDispersion) + "\n"
+                + "measurementStatus=" + combinedStatus + "\n"
+                + "classification=EVIDENCE_READY_FOR_F03_PHASE2_CLASSIFICATION\n";
+        Files.writeString(reportDirectory.resolve(
+                        "phase2k-f03-projection-materialization-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.println(summary);
+    }
+
+    private static ExplainCapture capturePhase2KExplain(
+            Connection connection, String sql, Workload workload, boolean analyze) throws SQLException {
+        long started = System.nanoTime();
+        try (PreparedStatement statement = connection.prepareStatement(
+                (analyze ? "explain analyze " : "explain ") + sql)) {
+            bindFitnessRead(statement, workload);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("Phase-2K EXPLAIN returned no row");
+                }
+                String text = resultSet.getString(1);
+                String json = resultSet.getString(2);
+                if (resultSet.next()) {
+                    throw new SQLException("Phase-2K EXPLAIN returned more than one row");
+                }
+                return new ExplainCapture(
+                        text,
+                        json,
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+        }
+    }
+
+    private static String phase2KProjectionSql(Workload workload, String table) {
+        String index = table + "_CATEGORY_IDX";
+        return switch (workload) {
+            case PROJECTION_COVERED ->
+                    "select category from " + table + " --DERBY-PROPERTIES index=" + index
+                            + "\nwhere category = ?";
+            case PROJECTION_TWO_COLUMN ->
+                    "select id, quantity from " + table + " --DERBY-PROPERTIES index=" + index
+                            + "\nwhere category = ?";
+            case PROJECTION_FULL_ROW ->
+                    "select id, category, bucket, quantity, payload from " + table
+                            + " --DERBY-PROPERTIES index=" + index + "\nwhere category = ?";
+            default -> throw new IllegalArgumentException(
+                    "Not a Phase-2K projection workload: " + workload);
+        };
+    }
+
+    private static long executePhase2KProjectionRead(
+            PreparedStatement statement, Workload workload, int expectedRows) throws SQLException {
+        statement.setInt(1, FITNESS_CATEGORY);
+        int rows = 0;
+        long fingerprint = 0L;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                long tuple = 0x9E3779B97F4A7C15L;
+                switch (workload) {
+                    case PROJECTION_COVERED -> tuple = mix(tuple, resultSet.getInt(1));
+                    case PROJECTION_TWO_COLUMN -> {
+                        tuple = mix(tuple, resultSet.getInt(1));
+                        tuple = mix(tuple, resultSet.getInt(2));
+                    }
+                    case PROJECTION_FULL_ROW -> {
+                        tuple = mix(tuple, resultSet.getInt(1));
+                        tuple = mix(tuple, resultSet.getInt(2));
+                        tuple = mix(tuple, resultSet.getInt(3));
+                        tuple = mix(tuple, resultSet.getInt(4));
+                        tuple = mix(tuple, resultSet.getString(5).hashCode());
+                    }
+                    default -> throw new SQLException(
+                            "Unexpected Phase-2K projection workload: " + workload);
+                }
+                fingerprint += tuple;
+                rows++;
+            }
+        }
+        if (rows != expectedRows) {
+            throw new SQLException(
+                    "Phase-2K row-count drift: expected=" + expectedRows + ", actual=" + rows);
+        }
+        return mix(fingerprint, rows);
+    }
+
+    private static String phase2KAccessShape(String analyzeText) {
+        boolean indexToBase = analyzeText.contains("SCAN/INDEX_TO_BASE_ROW");
+        boolean indexScan = analyzeText.contains("SCAN/INDEX_SCAN");
+        return (indexToBase ? "INDEX_TO_BASE_ROW+" : "")
+                + (indexScan ? "INDEX_SCAN" : "NO_INDEX_SCAN");
+    }
+
+    private static Path requiredPhase2KPath(String key) {
+        String value = System.getProperty(PHASE2K_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2K_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
     }
 
     private static Path requiredPhase2JPath(String key) {
