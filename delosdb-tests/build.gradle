@@ -8347,12 +8347,12 @@ tasks.register('runDelosJdbcGate10laMvccCurrentRowTopologyProof') {
         requirePhysical('MVCC directory record decodes', 0L, 1L)
         requirePhysical('MVCC directory logical fallbacks', 0L, 0L)
         requirePhysical('MVCC version page acquisitions', 0L, 1L)
-        requirePhysical('MVCC version slot fetches', 0L, 1L)
+        requirePhysical('MVCC version slot fetches', 0L, 2L)
         requirePhysical('MVCC visibility checks', 0L, 1L)
         requirePhysical('MVCC version-chain steps', 0L, 1L)
         requirePhysical('MVCC version logical fallbacks', 0L, 0L)
         requirePhysical('unique physical records represented', 2L, 3L)
-        requirePhysical('physical record fetch/decode operations', 2L, 3L)
+        requirePhysical('physical record fetch/decode operations', 2L, 4L)
         requirePhysical('storage container opens required by read path', 2L, 3L)
 
         def rows = []
@@ -16212,3 +16212,33 @@ tasks.register('runDelosPhase2HF05PostHintResidualAttribution', JavaExec) {
         }
     }
 }
+
+// Phase 2J: causal diagnostic after rejecting Phase 2I. Compare the SQL
+// compatibility B-tree -> INDEX_TO_BASE_ROW path against selectively forcing
+// tables through the existing native MVCC ordered/current-row path.
+tasks.register('runDelosPhase2JF05CompatibilityNativePathDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Compares F05 compatibility base-row fetch with the existing native MVCC current-row path.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2j-f05-compatibility-native-path'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-compatibility-native-path')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2j-f05-compatibility-native-path')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05CompatibilityNativePath.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05CompatibilityNativePath.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+}
+

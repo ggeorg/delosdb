@@ -52,6 +52,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2D_PREFIX = "delosdb.phase2.f05ResidualIndexedAccess.";
     private static final String PHASE2E_PREFIX = "delosdb.phase2.f05BaseFetchAttribution.";
     private static final String PHASE2H_PREFIX = "delosdb.phase2.f05PostHintResidualAttribution.";
+    private static final String PHASE2J_PREFIX = "delosdb.phase2.f05CompatibilityNativePath.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -133,6 +134,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2HF05PostHintResidualAttribution();
             return;
         }
+        if (args.length == 1 && "phase2j-f05-compatibility-native-path".equals(args[0])) {
+            runPhase2JF05CompatibilityNativePathDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -145,7 +150,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2b-f05-cardinality-costing-proof',"
                             + " exactly 'phase2d-f05-residual-indexed-access',"
                             + " exactly 'phase2e-f05-base-fetch-attribution',"
-                            + " or exactly 'phase2h-f05-post-hint-residual-attribution'");
+                            + " exactly 'phase2h-f05-post-hint-residual-attribution',"
+                            + " or exactly 'phase2j-f05-compatibility-native-path'");
         }
     }
 
@@ -1097,6 +1103,320 @@ public final class DelosJdbcCrossEngineConcurrency {
         double millisPerExecution() {
             return elapsedMillis / iterations;
         }
+    }
+
+
+    private static void runPhase2JF05CompatibilityNativePathDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2JPath("reportDirectory");
+        Path databaseRoot = requiredPhase2JPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 1_000;
+        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
+        int warmups = 4;
+        int warmupExecutionsPerVisit = 16;
+        int measuredRounds = 9;
+        int measuredExecutionsPerSample = 64;
+        String base = "P2J_MVCC";
+        String database = databaseRoot.resolve("f05-compatibility-native-path").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareMultiJoinFixture(setup, base, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        String customerPkIndex;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            customerPkIndex = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(base), "ID");
+            phase2BUpdateStatistics(connection, multiJoinCustomerTableName(base));
+            phase2BUpdateStatistics(connection, multiJoinOrderTableName(base));
+            phase2BUpdateStatistics(connection, multiJoinLineTableName(base));
+            connection.commit();
+        }
+
+        String customerPk = "'" + customerPkIndex + "'";
+        String orderIndex = multiJoinOrderTableName(base) + "_C_IDX";
+        String lineIndex = multiJoinLineTableName(base) + "_O_IDX";
+
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        sqlByVariant.put("compat-all",
+                phase2JAccessSql(base, customerPk, orderIndex, lineIndex));
+        sqlByVariant.put("native-customer",
+                phase2JAccessSql(base, "null", orderIndex, lineIndex));
+        sqlByVariant.put("native-order",
+                phase2JAccessSql(base, customerPk, "null", lineIndex));
+        sqlByVariant.put("native-line",
+                phase2JAccessSql(base, customerPk, orderIndex, "null"));
+        sqlByVariant.put("native-all",
+                phase2JAccessSql(base, "null", "null", "null"));
+
+        StringBuilder queryShapes = new StringBuilder();
+        for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+            queryShapes.append("=== ").append(entry.getKey()).append(" ===\n")
+                    .append(entry.getValue()).append("\n\n");
+        }
+        Files.writeString(reportDirectory.resolve("query-shapes.txt"),
+                queryShapes.toString(), StandardCharsets.UTF_8);
+
+        LinkedHashMap<String, ExplainCapture> explainByVariant = new LinkedHashMap<>();
+        LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
+        long semanticFingerprint = Long.MIN_VALUE;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                ExplainCapture explain = capturePhase2AExplain(connection, entry.getValue(), false);
+                ExplainCapture analyze = capturePhase2AExplain(connection, entry.getValue(), true);
+                explainByVariant.put(entry.getKey(), explain);
+                analyzeByVariant.put(entry.getKey(), analyze);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain", explain);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+
+                long fingerprint = executePhase2AQuery(connection, entry.getValue(), expectedRows);
+                if (semanticFingerprint == Long.MIN_VALUE) {
+                    semanticFingerprint = fingerprint;
+                } else if (fingerprint != semanticFingerprint) {
+                    throw new IllegalStateException(
+                            "Phase-2J semantic drift for " + entry.getKey()
+                                    + ": expected=" + semanticFingerprint
+                                    + ", actual=" + fingerprint);
+                }
+            }
+            connection.rollback();
+        }
+
+        LinkedHashMap<String, List<Double>> samples = new LinkedHashMap<>();
+        for (String variant : sqlByVariant.keySet()) {
+            samples.put(variant, new ArrayList<>());
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                    statements.put(entry.getKey(), connection.prepareStatement(entry.getValue()));
+                }
+                List<String> variants = new ArrayList<>(sqlByVariant.keySet());
+                for (int round = -warmups; round < measuredRounds; round++) {
+                    int rotation = Math.floorMod(round + warmups, variants.size());
+                    for (int offset = 0; offset < variants.size(); offset++) {
+                        String variant = variants.get((rotation + offset) % variants.size());
+                        int executions = round >= 0
+                                ? measuredExecutionsPerSample
+                                : warmupExecutionsPerVisit;
+                        long started = System.nanoTime();
+                        for (int execution = 0; execution < executions; execution++) {
+                            long fingerprint = executeFitnessRead(
+                                    statements.get(variant),
+                                    Workload.JOIN_3WAY_SELECTIVE,
+                                    expectedRows);
+                            if (fingerprint != semanticFingerprint) {
+                                throw new IllegalStateException(
+                                        "Phase-2J measured semantic drift for " + variant
+                                                + ": expected=" + semanticFingerprint
+                                                + ", actual=" + fingerprint);
+                            }
+                        }
+                        long elapsed = System.nanoTime() - started;
+                        if (round >= 0) {
+                            samples.get(variant).add(
+                                    elapsed / (executions * 1_000_000.0d));
+                        }
+                    }
+                }
+                connection.rollback();
+            } finally {
+                SQLException closeFailure = null;
+                for (PreparedStatement statement : statements.values()) {
+                    try {
+                        statement.close();
+                    } catch (SQLException failure) {
+                        if (closeFailure == null) {
+                            closeFailure = failure;
+                        } else {
+                            closeFailure.addSuppressed(failure);
+                        }
+                    }
+                }
+                if (closeFailure != null) {
+                    throw closeFailure;
+                }
+            }
+        }
+
+        StringBuilder sampleTsv = new StringBuilder("variant\tround\telapsedMillis\n");
+        LinkedHashMap<String, Distribution> distributions = new LinkedHashMap<>();
+        LinkedHashMap<String, DelosMeasurementValidityContract.DispersionDecision> decisions =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, List<Double>> entry : samples.entrySet()) {
+            for (int i = 0; i < entry.getValue().size(); i++) {
+                sampleTsv.append(entry.getKey()).append('\t').append(i + 1).append('\t')
+                        .append(format(entry.getValue().get(i))).append('\n');
+            }
+            Distribution distribution = distribution(entry.getValue());
+            distributions.put(entry.getKey(), distribution);
+            decisions.put(entry.getKey(), DelosMeasurementValidityContract.classifyCustom(
+                    distribution.iqr() / distribution.median(),
+                    distribution.mad() / distribution.median()));
+        }
+        Files.writeString(reportDirectory.resolve("phase2j-repeated-execution-samples.tsv"),
+                sampleTsv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder dispersionTsv = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tgoverningDispersion\tstatus\n");
+        for (String variant : sqlByVariant.keySet()) {
+            Distribution distribution = distributions.get(variant);
+            DelosMeasurementValidityContract.DispersionDecision decision = decisions.get(variant);
+            dispersionTsv.append(variant).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(decision.iqrToMedian())).append('\t')
+                    .append(format(decision.madToMedian())).append('\t')
+                    .append(format(decision.governingRatio())).append('\t')
+                    .append(decision.status()).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2j-dispersion.tsv"),
+                dispersionTsv.toString(), StandardCharsets.UTF_8);
+
+        String[] metricNames = {
+            "MVCC_ORDERED_CANDIDATES",
+            "MVCC_DIRECTORY_PAGE_ACQUISITIONS",
+            "MVCC_DIRECTORY_LOGICAL_FALLBACKS",
+            "MVCC_VERSION_PAGE_ACQUISITIONS",
+            "MVCC_VERSION_SLOT_FETCHES",
+            "MVCC_VISIBILITY_CHECKS",
+            "MVCC_VERSION_CHAIN_STEPS",
+            "MVCC_VERSION_LOGICAL_FALLBACKS"
+        };
+        StringBuilder operatorTsv = new StringBuilder(
+                "variant\texplainAnalyzeWallMillis\ttotalOpenMillis\ttotalNextMillis\ttotalOpens");
+        for (String metric : metricNames) {
+            operatorTsv.append('\t').append(metric);
+        }
+        operatorTsv.append('\n');
+        for (String variant : sqlByVariant.keySet()) {
+            ExplainCapture analyze = analyzeByVariant.get(variant);
+            operatorTsv.append(variant).append('\t').append(analyze.wallMillis()).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "openMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "nextMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "opens"));
+            for (String metric : metricNames) {
+                operatorTsv.append('\t').append(sumPhase2AMetric(analyze.text(), metric));
+            }
+            operatorTsv.append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2j-operator-storage-summary.tsv"),
+                operatorTsv.toString(), StandardCharsets.UTF_8);
+
+        double compatMedian = distributions.get("compat-all").median();
+        String bestVariant = "compat-all";
+        double bestMedian = compatMedian;
+        for (String variant : sqlByVariant.keySet()) {
+            double median = distributions.get(variant).median();
+            if (median < bestMedian) {
+                bestMedian = median;
+                bestVariant = variant;
+            }
+        }
+        double bestVsCompatSpeedup = compatMedian / bestMedian;
+        double nativeCustomerSpeedup = compatMedian / distributions.get("native-customer").median();
+        double nativeOrderSpeedup = compatMedian / distributions.get("native-order").median();
+        double nativeLineSpeedup = compatMedian / distributions.get("native-line").median();
+        double nativeAllSpeedup = compatMedian / distributions.get("native-all").median();
+
+        DelosMeasurementValidityContract.Status combinedStatus = DelosMeasurementValidityContract.combine(
+                decisions.get("compat-all").status(),
+                decisions.get("native-customer").status(),
+                decisions.get("native-order").status(),
+                decisions.get("native-line").status(),
+                decisions.get("native-all").status());
+        double worstGoverningDispersion = decisions.values().stream()
+                .mapToDouble(DelosMeasurementValidityContract.DispersionDecision::governingRatio)
+                .max()
+                .orElseThrow();
+        double materialRatioThreshold = 1.0d + Math.max(0.05d, 2.0d * worstGoverningDispersion);
+
+        long bestVariantOrderedCandidates = "compat-all".equals(bestVariant)
+                ? 0L
+                : sumPhase2AMetric(
+                        analyzeByVariant.get(bestVariant).text(), "MVCC_ORDERED_CANDIDATES");
+        boolean bestVariantUsesNativeOrderedPath = bestVariantOrderedCandidates > 0L
+                || analyzeByVariant.get(bestVariant).text()
+                        .contains("delos_mvcc_rawstore_ordered_index");
+
+        String classification;
+        if (combinedStatus == DelosMeasurementValidityContract.Status.INVALID) {
+            classification = "MEASUREMENT_INVALID_RETRY_SHORT_DIAGNOSTIC";
+        } else if (bestVsCompatSpeedup >= materialRatioThreshold
+                && !"compat-all".equals(bestVariant)
+                && bestVariantUsesNativeOrderedPath) {
+            classification =
+                    "NATIVE_CURRENT_ROW_PATH_MATERIALLY_BEATS_COMPATIBILITY_BASE_FETCH";
+        } else {
+            classification =
+                    "COMPATIBILITY_BASE_FETCH_RESIDUAL_NOT_EXPLAINED_BY_NATIVE_CURRENT_ROW_PATH";
+        }
+
+        String summary = "DelosDB Phase-2J F05 compatibility/native path decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "rows=" + rowCount + "\n"
+                + "expectedResultRows=" + expectedRows + "\n"
+                + "warmupsPerVariant=" + warmups + "\n"
+                + "warmupExecutionsPerVisit=" + warmupExecutionsPerVisit + "\n"
+                + "measuredRoundsPerVariant=" + measuredRounds + "\n"
+                + "measuredExecutionsPerSample=" + measuredExecutionsPerSample + "\n"
+                + "semanticFingerprint=" + semanticFingerprint + "\n"
+                + "compatAllMedianMillis=" + format(compatMedian) + "\n"
+                + "nativeCustomerMedianMillis="
+                + format(distributions.get("native-customer").median()) + "\n"
+                + "nativeOrderMedianMillis="
+                + format(distributions.get("native-order").median()) + "\n"
+                + "nativeLineMedianMillis="
+                + format(distributions.get("native-line").median()) + "\n"
+                + "nativeAllMedianMillis="
+                + format(distributions.get("native-all").median()) + "\n"
+                + "nativeCustomerVsCompatSpeedup=" + format(nativeCustomerSpeedup) + "\n"
+                + "nativeOrderVsCompatSpeedup=" + format(nativeOrderSpeedup) + "\n"
+                + "nativeLineVsCompatSpeedup=" + format(nativeLineSpeedup) + "\n"
+                + "nativeAllVsCompatSpeedup=" + format(nativeAllSpeedup) + "\n"
+                + "bestVariant=" + bestVariant + "\n"
+                + "bestVsCompatSpeedup=" + format(bestVsCompatSpeedup) + "\n"
+                + "bestVariantOrderedCandidates=" + bestVariantOrderedCandidates + "\n"
+                + "bestVariantUsesNativeOrderedPath=" + bestVariantUsesNativeOrderedPath + "\n"
+                + "worstGoverningDispersion=" + format(worstGoverningDispersion) + "\n"
+                + "materialRatioThreshold=" + format(materialRatioThreshold) + "\n"
+                + "measurementStatus=" + combinedStatus + "\n"
+                + "classification=" + classification + "\n";
+        Files.writeString(reportDirectory.resolve(
+                        "phase2j-f05-compatibility-native-path-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.println(summary);
+    }
+
+    private static String phase2JAccessSql(
+            String base, String customerIndex, String orderIndex, String lineIndex) {
+        String customer = multiJoinCustomerTableName(base);
+        String order = multiJoinOrderTableName(base);
+        String line = multiJoinLineTableName(base);
+        return "select c.id, o.id, l.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
+                + customer + " c --DERBY-PROPERTIES index=" + customerIndex + "\n"
+                + "join " + order + " o --DERBY-PROPERTIES index=" + orderIndex
+                + ", joinStrategy=NESTEDLOOP\n"
+                + "on o.customer_id = c.id\n"
+                + "join " + line + " l --DERBY-PROPERTIES index=" + lineIndex
+                + ", joinStrategy=NESTEDLOOP\n"
+                + "on l.order_id = o.id\n"
+                + "where c.id between ? and ?";
+    }
+
+    private static Path requiredPhase2JPath(String key) {
+        String value = System.getProperty(PHASE2J_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2J_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
     }
 
     private static Path requiredPhase2DPath(String key) {

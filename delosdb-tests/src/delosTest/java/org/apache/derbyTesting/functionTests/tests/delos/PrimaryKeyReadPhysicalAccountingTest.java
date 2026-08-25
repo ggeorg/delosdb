@@ -60,20 +60,28 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
             createFixture(connection, HEAP_TABLE, "", rows);
             createFixture(connection, MVCC_TABLE, " using delos_mvcc", rows);
 
-            // Prime compiled statements and buffer/cache state. ScanInfo counters below
-            // are logical page/record observations and therefore remain meaningful on
-            // a warm cache without confusing them with disk reads.
-            executePrimaryKeyRead(connection, HEAP_TABLE, key);
-            executePrimaryKeyRead(connection, MVCC_TABLE, key);
+            // Prime only the Heap statement. An MVCC warmup would populate the
+            // database-scoped current-row anchor/read-image caches and bypass the
+            // directory/version hinted-read topology this accounting test exists to
+            // measure.
+            executePrimaryKeyRead(connection, HEAP_TABLE, key, false);
             connection.commit();
 
-            heapStatistics = measuredPrimaryKeyRead(connection, HEAP_TABLE, key);
+            heapStatistics = measuredPrimaryKeyRead(connection, HEAP_TABLE, key, false);
             assertTrue("heap read must use the primary-key index; statistics=" + heapStatistics,
                     heapStatistics.contains("Index Scan ResultSet"));
             assertTrue("heap read must fetch the base row; statistics=" + heapStatistics,
                     heapStatistics.contains("Index Row to Base Row ResultSet"));
+            connection.commit();
+        }
+        shutdownDatabase(database);
 
-            mvccStatistics = measuredPrimaryKeyRead(connection, MVCC_TABLE, key);
+        // A clean restart clears the runtime-only current-row anchor/read-image caches.
+        // The first MVCC read after reopen must therefore exercise exactly the physical
+        // path under test: ordered-index candidate -> directory hint -> version hint.
+        try (Connection connection = openDatabase(database, false)) {
+            connection.setAutoCommit(false);
+            mvccStatistics = measuredPrimaryKeyRead(connection, MVCC_TABLE, key, true);
             assertTrue("MVCC read must use the RawStore ordered index; statistics=" + mvccStatistics,
                     mvccStatistics.contains("delos_mvcc_rawstore_ordered_index"));
             assertFalse("benchmark primary-key read is intentionally non-covering; statistics="
@@ -111,7 +119,7 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         assertEquals("one MVCC directory page acquisition", 1L, directoryPages);
         assertEquals("MVCC directory hint must avoid logical fallback", 0L, directoryFallbacks);
         assertEquals("one MVCC version page acquisition", 1L, versionPages);
-        assertEquals("current version hint performs one projected slot fetch", 1L,
+        assertEquals("current version hint performs identity plus projected slot fetches", 2L,
                 versionSlotFetches);
         assertEquals("one MVCC visibility check", 1L, visibilityChecks);
         assertEquals("one current-head version-chain step", 1L, versionChainSteps);
@@ -157,8 +165,8 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "one successful primary-key result"));
         accounting.add(row("unique physical records represented", 2, 3,
                 "heap=index+base row; MVCC=index+directory+version"));
-        accounting.add(row("physical record fetch/decode operations", 2, 3,
-                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+1 version slot fetch"));
+        accounting.add(row("physical record fetch/decode operations", 2, 4,
+                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+2 version slot fetches"));
         accounting.add(row("storage container opens required by read path", 2, 3,
                 "source-proven: index+heap vs hidden index+directory+version"));
 
@@ -190,16 +198,20 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
     }
 
     private static String measuredPrimaryKeyRead(
-            Connection connection, String table, int key) throws Exception {
+            Connection connection, String table, int key, boolean forceMvccBaseScan)
+            throws Exception {
         executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
-        executePrimaryKeyRead(connection, table, key);
+        executePrimaryKeyRead(connection, table, key, forceMvccBaseScan);
         return runtimeStatistics(connection);
     }
 
     private static void executePrimaryKeyRead(
-            Connection connection, String table, int key) throws Exception {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "select id, quantity from " + table + " where id = ?")) {
+            Connection connection, String table, int key, boolean forceMvccBaseScan)
+            throws Exception {
+        String sql = "select id, quantity from " + table
+                + (forceMvccBaseScan ? " --DERBY-PROPERTIES index=null\n" : " ")
+                + "where id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setInt(1, key);
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertTrue("primary-key row must exist", resultSet.next());

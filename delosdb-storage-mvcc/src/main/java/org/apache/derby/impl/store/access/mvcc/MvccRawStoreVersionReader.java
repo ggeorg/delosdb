@@ -23,7 +23,9 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -35,6 +37,8 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
     private final MvccRawStoreIndexedReadMetrics metrics;
+    private final Object[] candidateIdentity;
+    private final FetchDescriptor candidateIdentityDescriptor;
     private MvccRawStoreVersionRows.FetchProjection primaryProjection;
     private MvccRawStoreVersionRows.Decoder primaryDecoder;
     private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
@@ -53,6 +57,21 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         this.transaction = transaction;
         this.table = table;
         this.metrics = metrics;
+        candidateIdentity = new Object[MvccRawStoreFormat.VERSION_ID + 1];
+        candidateIdentity[MvccRawStoreFormat.VERSION_KIND_FIELD] =
+                MvccRawStoreFormat.intValue(transaction, 0);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ROW_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        candidateIdentity[MvccRawStoreFormat.VERSION_ID] =
+                MvccRawStoreFormat.longValue(transaction, 0L);
+        FormatableBitSet identityFields = new FormatableBitSet(candidateIdentity.length);
+        identityFields.set(MvccRawStoreFormat.VERSION_KIND_FIELD);
+        identityFields.set(MvccRawStoreFormat.VERSION_ROW_ID);
+        identityFields.set(MvccRawStoreFormat.VERSION_ID);
+        candidateIdentityDescriptor = new FetchDescriptor(
+                candidateIdentity.length,
+                identityFields,
+                null);
         this.container = transaction.openContainer(
                 table.versionContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -278,20 +297,34 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
             }
-            // The projected decode already fetches VERSION_KIND, VERSION_ROW_ID, and
-            // VERSION_ID. Decode the hinted record once, then validate its identity.
-            // A stale hint still returns null and falls back to logical lookup exactly
-            // as before, but the common valid-hint path avoids a redundant RawStore
-            // slot fetch of the same physical version record.
+            page.fetchFromSlot(
+                    null,
+                    slot,
+                    candidateIdentity,
+                    candidateIdentityDescriptor,
+                    true);
+            if (metrics != null) {
+                metrics.versionSlotFetched();
+            }
+            if (MvccRawStoreFormat.intAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_KIND_FIELD)
+                    != MvccRawStoreFormat.VERSION_KIND
+                    || MvccRawStoreFormat.longAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_ROW_ID)
+                    != rowId
+                    || MvccRawStoreFormat.longAt(
+                            candidateIdentity,
+                            MvccRawStoreFormat.VERSION_ID)
+                    != versionId) {
+                return null;
+            }
             MvccRawStoreTable.VersionRecord decoded = decoder(projection).decodeAtSlot(page, slot);
             if (metrics != null) {
                 metrics.versionSlotFetched();
             }
-            return decoded != null
-                            && decoded.rowId() == rowId
-                            && decoded.versionId() == versionId
-                    ? decoded
-                    : null;
+            return decoded;
         } finally {
             if (page != null) {
                 page.unlatch();
