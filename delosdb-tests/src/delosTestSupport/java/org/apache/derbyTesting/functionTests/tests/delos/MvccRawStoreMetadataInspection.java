@@ -330,6 +330,29 @@ final class MvccRawStoreMetadataInspection {
         return orderedIndexMappings(raw, layout).size();
     }
 
+    static RowLocationIdentity insertAndFetchBaseRowLocation(
+            Connection connection,
+            String tableName,
+            int value) throws Exception {
+        TransactionManager manager = transactionManager(connection);
+        long baseConglomerate = baseConglomerateId(connection, tableName);
+        ConglomerateController base = manager.openConglomerate(
+                baseConglomerate,
+                false,
+                TransactionController.OPENMODE_FORUPDATE,
+                TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_SERIALIZABLE);
+        try {
+            StoreRowLocation location = base.newRowLocationTemplate();
+            base.insertAndFetchLocation(
+                    new StoreDataValue[] {new SQLInteger(value)},
+                    location);
+            return rowLocationIdentity((StoreDataValue) location);
+        } finally {
+            base.close();
+        }
+    }
+
     static List<RowLocationIdentity> baseScanRowLocations(
             Connection connection,
             String tableName) throws Exception {

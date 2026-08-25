@@ -34,10 +34,6 @@ final class MvccRawStoreConglomerateController
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final boolean forUpdate;
-    private FormatableBitSet readProjectionColumns;
-    private MvccRawStoreVersionRows.FetchProjection readProjection;
-    private MvccRawStoreVersionRows.Decoder readVersionDecoder;
-    private boolean readProjectionInitialized;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -105,10 +101,8 @@ final class MvccRawStoreConglomerateController
         } else if (checkWriteVersion) {
             context.beforeRowWrite(table, location.rowId());
         }
-        boolean reusableReadDecoder = !forUpdate;
-        MvccRawStoreVersionRows.FetchProjection projection = reusableReadDecoder
-                ? readProjection(validColumns)
-                : MvccRawStoreVersionRows.projection(table, validColumns);
+        MvccRawStoreVersionRows.FetchProjection projection =
+                MvccRawStoreVersionRows.projection(table, validColumns);
         MvccRawStoreTable.VisibleRow visible;
         if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
@@ -117,21 +111,11 @@ final class MvccRawStoreConglomerateController
             }
         } else {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-                if (checkWriteVersion) {
-                    visible = MvccRawStoreTable.readVisibleForWrite(
-                            rawTransaction, table, location, projection, context);
-                } else if (reusableReadDecoder) {
-                    visible = MvccRawStoreTable.readVisible(
-                            rawTransaction,
-                            table,
-                            location,
-                            projection,
-                            context,
-                            readVersionDecoder);
-                } else {
-                    visible = MvccRawStoreTable.readVisible(
-                            rawTransaction, table, location, projection, context);
-                }
+                visible = checkWriteVersion
+                        ? MvccRawStoreTable.readVisibleForWrite(
+                                rawTransaction, table, location, projection, context)
+                        : MvccRawStoreTable.readVisible(
+                                rawTransaction, table, location, projection, context);
             }
         }
         if (visible == null) {
@@ -319,28 +303,6 @@ final class MvccRawStoreConglomerateController
                 destination);
     }
 
-    private MvccRawStoreVersionRows.FetchProjection readProjection(
-            FormatableBitSet validColumns) {
-        if (readProjectionInitialized && sameProjectionColumns(validColumns)) {
-            return readProjection;
-        }
-        readProjectionColumns = validColumns == null
-                ? null
-                : (FormatableBitSet) validColumns.clone();
-        readProjection = MvccRawStoreVersionRows.projection(table, validColumns);
-        readVersionDecoder = new MvccRawStoreVersionRows.Decoder(
-                rawTransaction, table, readProjection);
-        readProjectionInitialized = true;
-        return readProjection;
-    }
-
-    private boolean sameProjectionColumns(FormatableBitSet validColumns) {
-        if (readProjectionColumns == null || validColumns == null) {
-            return readProjectionColumns == null && validColumns == null;
-        }
-        return readProjectionColumns.size() == validColumns.size()
-                && readProjectionColumns.equals(validColumns);
-    }
 
     private void ensureOpen() {
         if (closed) {

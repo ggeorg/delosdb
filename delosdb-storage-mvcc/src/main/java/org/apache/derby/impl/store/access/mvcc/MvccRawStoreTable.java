@@ -501,10 +501,10 @@ final class MvccRawStoreTable {
             context.markDeletedKeyProofConsumed(deletedKeyProof, pending);
         }
         if (destination != null) {
-            destination.set(
-                    allocation.rowId(),
-                    versionHandle.getPageNumber(),
-                    versionHandle.getSlotNumberHint());
+            // SQL secondary indexes persist this RowLocation and later resolve it
+            // through the stable-row directory. Its physical hint must therefore
+            // address the metadata/directory record, not the version record.
+            destination.copyFrom(directoryLocation);
         }
         return pending;
     }
@@ -537,24 +537,6 @@ final class MvccRawStoreTable {
                 projection,
                 context,
                 false);
-    }
-
-    static VisibleRow readVisible(
-            Transaction rawTransaction,
-            Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context,
-            MvccRawStoreVersionRows.Decoder decoder) throws StandardException {
-        return readVisibleAt(
-                rawTransaction,
-                table,
-                rowLocation,
-                context.snapshotSequence(),
-                projection,
-                context,
-                false,
-                decoder);
     }
 
     static VisibleRow readVisibleForWrite(
@@ -629,26 +611,6 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context,
             boolean checkWriteVersion) throws StandardException {
-        return readVisibleAt(
-                rawTransaction,
-                table,
-                rowLocation,
-                snapshotSequence,
-                projection,
-                context,
-                checkWriteVersion,
-                null);
-    }
-
-    private static VisibleRow readVisibleAt(
-            Transaction rawTransaction,
-            Descriptor table,
-            MvccRowLocation rowLocation,
-            long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context,
-            boolean checkWriteVersion,
-            MvccRawStoreVersionRows.Decoder decoder) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 rawTransaction, table, rowLocation);
         while (true) {
@@ -656,24 +618,14 @@ final class MvccRawStoreTable {
                 validateWriteVersion(rowLocation, directory.head().versionId());
             }
             try {
-                VersionRecord version = decoder == null
-                        ? MvccRawStoreVersionReader.findVisible(
-                                rawTransaction,
-                                table,
-                                rowLocation.rowId(),
-                                directory.head(),
-                                context.transactionId(),
-                                snapshotSequence,
-                                projection)
-                        : MvccRawStoreVersionReader.findVisible(
-                                rawTransaction,
-                                table,
-                                rowLocation.rowId(),
-                                directory.head(),
-                                context.transactionId(),
-                                snapshotSequence,
-                                projection,
-                                decoder);
+                VersionRecord version = MvccRawStoreVersionReader.findVisible(
+                        rawTransaction,
+                        table,
+                        rowLocation.rowId(),
+                        directory.head(),
+                        context.transactionId(),
+                        snapshotSequence,
+                        projection);
                 if (version == null || version.tombstone()) {
                     return null;
                 }

@@ -28,6 +28,38 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
+    public void testInsertAndFetchLocationReturnsStableDirectoryLocator() throws Exception {
+        String database = uniqueDatabaseName("mvcc-raw-store-insert-location-hint");
+        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
+             Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection, "create table insert_hint_t (id int) using delos_mvcc");
+            connection.commit();
+
+            MvccRawStoreMetadataInspection.RowLocationIdentity inserted =
+                    MvccRawStoreMetadataInspection.insertAndFetchBaseRowLocation(
+                            connection,
+                            "INSERT_HINT_T",
+                            1);
+            List<MvccRawStoreMetadataInspection.RowLocationIdentity> scanned =
+                    MvccRawStoreMetadataInspection.baseScanRowLocations(
+                            connection,
+                            "INSERT_HINT_T");
+
+            assertEquals(1, scanned.size());
+            assertTrue(
+                    "insertAndFetchLocation must return a physical locator",
+                    inserted.hasLocator());
+            assertEquals(
+                    "insertAndFetchLocation must return the same stable-directory locator "
+                            + "that a base scan exposes",
+                    scanned.get(0),
+                    inserted);
+            connection.commit();
+        }
+        shutdownDatabase(database);
+    }
+
     public void testBaseScanRowLocationsPreserveDirectoryHintsForMutation() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-scan-location-hints");
         try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
