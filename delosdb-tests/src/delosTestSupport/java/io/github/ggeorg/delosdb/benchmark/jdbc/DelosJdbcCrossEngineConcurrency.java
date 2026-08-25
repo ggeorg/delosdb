@@ -1431,9 +1431,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         int commitBatchSize = 100;
         int expectedRows = expectedFitnessRows(Workload.PROJECTION_COVERED, rowCount);
         int warmups = 4;
-        int warmupExecutionsPerVisit = 16;
+        int warmupExecutionsPerVisit = 64;
         int measuredRounds = 9;
-        int measuredExecutionsPerSample = 64;
+        int measuredExecutionsPerSample = 512;
         String database = databaseRoot.resolve("f03-projection-materialization").toString();
         String jdbcUrl = "jdbc:derby:" + database + ";create=true";
         DelosBenchmarkConfig config = new DelosBenchmarkConfig(
