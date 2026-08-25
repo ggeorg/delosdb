@@ -8347,12 +8347,12 @@ tasks.register('runDelosJdbcGate10laMvccCurrentRowTopologyProof') {
         requirePhysical('MVCC directory record decodes', 0L, 1L)
         requirePhysical('MVCC directory logical fallbacks', 0L, 0L)
         requirePhysical('MVCC version page acquisitions', 0L, 1L)
-        requirePhysical('MVCC version slot fetches', 0L, 2L)
+        requirePhysical('MVCC version slot fetches', 0L, 1L)
         requirePhysical('MVCC visibility checks', 0L, 1L)
         requirePhysical('MVCC version-chain steps', 0L, 1L)
         requirePhysical('MVCC version logical fallbacks', 0L, 0L)
         requirePhysical('unique physical records represented', 2L, 3L)
-        requirePhysical('physical record fetch/decode operations', 2L, 4L)
+        requirePhysical('physical record fetch/decode operations', 2L, 3L)
         requirePhysical('storage container opens required by read path', 2L, 3L)
 
         def rows = []

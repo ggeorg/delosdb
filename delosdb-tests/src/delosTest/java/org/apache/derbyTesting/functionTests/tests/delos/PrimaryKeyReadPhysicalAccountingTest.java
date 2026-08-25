@@ -111,7 +111,7 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         assertEquals("one MVCC directory page acquisition", 1L, directoryPages);
         assertEquals("MVCC directory hint must avoid logical fallback", 0L, directoryFallbacks);
         assertEquals("one MVCC version page acquisition", 1L, versionPages);
-        assertEquals("current version path performs identity + payload slot fetch", 2L,
+        assertEquals("current version hint performs one projected slot fetch", 1L,
                 versionSlotFetches);
         assertEquals("one MVCC visibility check", 1L, visibilityChecks);
         assertEquals("one current-head version-chain step", 1L, versionChainSteps);
@@ -157,8 +157,8 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "one successful primary-key result"));
         accounting.add(row("unique physical records represented", 2, 3,
                 "heap=index+base row; MVCC=index+directory+version"));
-        accounting.add(row("physical record fetch/decode operations", 2, 4,
-                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+2 version slot fetches"));
+        accounting.add(row("physical record fetch/decode operations", 2, 3,
+                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+1 version slot fetch"));
         accounting.add(row("storage container opens required by read path", 2, 3,
                 "source-proven: index+heap vs hidden index+directory+version"));
 
