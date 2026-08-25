@@ -16149,3 +16149,66 @@ registerDelosFocusedTest(
         'Verifies MVCC statistics row-count persistence across fresh cost controllers and restart.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.class'])
 
+
+
+// Phase 2H: re-profile the exact matched F05 Heap/MVCC plan after the Phase-2G
+// SQL RowLocation directory-hint correction. Use approximately equal-duration hot
+// loops so residual CPU/allocation attribution is directly comparable.
+tasks.register('runDelosPhase2HF05PostHintResidualAttribution', JavaExec) {
+    group = 'verification'
+    description = 'Captures matched-plan Heap/MVCC JFR attribution for the residual F05 gap after Phase 2G.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2h-f05-post-hint-residual-attribution'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-post-hint-residual-attribution')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2h-f05-post-hint-residual-attribution')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05PostHintResidualAttribution.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05PostHintResidualAttribution.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+    doLast {
+        File dir = reportDir.get().asFile
+        List<File> recordings = [
+                new File(dir, 'heap-forced-index-nl.jfr'),
+                new File(dir, 'mvcc-forced-index-nl.jfr')
+        ]
+        recordings.each { recording ->
+            if (!recording.isFile() || recording.length() == 0L) {
+                throw new GradleException("Phase 2H JFR recording missing: ${recording}")
+            }
+        }
+        File viewDir = new File(dir, 'jfr-views')
+        viewDir.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            recordings.each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '50', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "Phase 2H jfr view ${view} failed for ${recording.name}: ${error}")
+                }
+                String stem = recording.name.substring(0, recording.name.length() - 4)
+                new File(viewDir, "${stem}-${view}.txt").text = output
+            }
+        }
+    }
+}
