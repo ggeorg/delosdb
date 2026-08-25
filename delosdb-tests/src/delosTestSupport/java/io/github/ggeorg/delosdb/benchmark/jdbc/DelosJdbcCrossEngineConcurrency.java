@@ -380,9 +380,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         int rowCount = 10_000;
         int commitBatchSize = 1_000;
         int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
-        int warmups = 2;
+        int warmups = 4;
+        int warmupExecutionsPerVisit = 16;
         int measuredRounds = 9;
-        int measuredExecutionsPerSample = 8;
+        int measuredExecutionsPerSample = 64;
         String heapBase = "P2D_HEAP";
         String mvccBase = "P2D_MVCC";
         String database = databaseRoot.resolve("f05-residual-indexed-access").toString();
@@ -497,7 +498,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     int rotation = Math.floorMod(round + warmups, variants.size());
                     for (int offset = 0; offset < variants.size(); offset++) {
                         String variant = variants.get((rotation + offset) % variants.size());
-                        int executions = round >= 0 ? measuredExecutionsPerSample : 1;
+                        int executions = round >= 0
+                                ? measuredExecutionsPerSample
+                                : warmupExecutionsPerVisit;
                         long started = System.nanoTime();
                         for (int execution = 0; execution < executions; execution++) {
                             long fingerprint = executeFitnessRead(
@@ -650,6 +653,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "rows=" + rowCount + "\n"
                 + "expectedResultRows=" + expectedRows + "\n"
                 + "warmupsPerVariant=" + warmups + "\n"
+                + "warmupExecutionsPerVisit=" + warmupExecutionsPerVisit + "\n"
                 + "measuredRoundsPerVariant=" + measuredRounds + "\n"
                 + "measuredExecutionsPerSample=" + measuredExecutionsPerSample + "\n"
                 + "semanticFingerprint=" + semanticFingerprint + "\n"
