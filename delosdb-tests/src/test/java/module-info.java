@@ -51,6 +51,7 @@ open module org.apache.derby.tests
     requires java.naming;
     requires java.sql;
     requires java.xml;
+    requires jdk.jfr;
 
     requires org.apache.derby.commons;
     requires org.apache.derby.engine;

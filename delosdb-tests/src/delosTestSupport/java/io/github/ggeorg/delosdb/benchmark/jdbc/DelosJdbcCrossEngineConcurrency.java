@@ -9,6 +9,8 @@ package io.github.ggeorg.delosdb.benchmark.jdbc;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import jdk.jfr.Configuration;
+import jdk.jfr.Recording;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,6 +50,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2A_PREFIX = "delosdb.phase2.f05JoinDecomposition.";
     private static final String PHASE2B_PREFIX = "delosdb.phase2.f05CardinalityCostingProof.";
     private static final String PHASE2D_PREFIX = "delosdb.phase2.f05ResidualIndexedAccess.";
+    private static final String PHASE2E_PREFIX = "delosdb.phase2.f05BaseFetchAttribution.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -121,6 +124,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2DF05ResidualIndexedAccessDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2e-f05-base-fetch-attribution".equals(args[0])) {
+            runPhase2EF05BaseFetchAttribution();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -131,7 +138,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             throw new IllegalArgumentException(
                     "Expected no argument, exactly 'worker', exactly 'phase2a-f05-join-decomposition',"
                             + " exactly 'phase2b-f05-cardinality-costing-proof',"
-                            + " or exactly 'phase2d-f05-residual-indexed-access'");
+                            + " exactly 'phase2d-f05-residual-indexed-access',"
+                            + " or exactly 'phase2e-f05-base-fetch-attribution'");
         }
     }
 
@@ -661,6 +669,226 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + "\n\nMVCC natural post-statistics SQL:\n" + mvccNaturalSql + "\n",
                 StandardCharsets.UTF_8);
         System.out.print(summary);
+    }
+
+    private static void runPhase2EF05BaseFetchAttribution() throws Exception {
+        Path reportDirectory = requiredPhase2EPath("reportDirectory");
+        Path databaseRoot = requiredPhase2EPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 1_000;
+        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
+        int heapIterations = 3_000;
+        int mvccIterations = 50;
+        int warmups = 4;
+        String heapBase = "P2E_HEAP";
+        String mvccBase = "P2E_MVCC";
+        String database = databaseRoot.resolve("f05-base-fetch-attribution").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareMultiJoinFixture(setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        String heapPkIndex;
+        String mvccPkIndex;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapPkIndex = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(heapBase), "ID");
+            mvccPkIndex = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(mvccBase), "ID");
+            for (String base : List.of(heapBase, mvccBase)) {
+                phase2BUpdateStatistics(connection, multiJoinCustomerTableName(base));
+                phase2BUpdateStatistics(connection, multiJoinOrderTableName(base));
+                phase2BUpdateStatistics(connection, multiJoinLineTableName(base));
+            }
+            connection.commit();
+        }
+
+        String heapSql = phase2BForcedIndexedSql(heapBase, heapPkIndex);
+        String mvccSql = phase2BForcedIndexedSql(mvccBase, mvccPkIndex);
+
+        ExplainCapture heapExplain;
+        ExplainCapture mvccExplain;
+        ExplainCapture heapAnalyze;
+        ExplainCapture mvccAnalyze;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapExplain = capturePhase2AExplain(connection, heapSql, false);
+            mvccExplain = capturePhase2AExplain(connection, mvccSql, false);
+            connection.rollback();
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapAnalyze = capturePhase2AExplain(connection, heapSql, true);
+            connection.rollback();
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            mvccAnalyze = capturePhase2AExplain(connection, mvccSql, true);
+            connection.rollback();
+        }
+
+        String heapShape = normalizePhase2DPlanShape(
+                heapExplain.text(), heapBase, "heap", heapPkIndex);
+        String mvccShape = normalizePhase2DPlanShape(
+                mvccExplain.text(), mvccBase, "delos_mvcc", mvccPkIndex);
+        if (!heapShape.equals(mvccShape)) {
+            throw new IllegalStateException(
+                    "Phase-2E requires matched forced Heap/MVCC plan shapes");
+        }
+        Files.writeString(reportDirectory.resolve("heap-plan-shape-normalized.txt"),
+                heapShape, StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("mvcc-plan-shape-normalized.txt"),
+                mvccShape, StandardCharsets.UTF_8);
+        writePhase2ACapture(reportDirectory, "heap-explain-analyze", heapAnalyze);
+        writePhase2ACapture(reportDirectory, "mvcc-explain-analyze", mvccAnalyze);
+
+        long semanticFingerprint;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            semanticFingerprint = executePhase2AQuery(connection, heapSql, expectedRows);
+            long mvccFingerprint = executePhase2AQuery(connection, mvccSql, expectedRows);
+            connection.rollback();
+            if (semanticFingerprint != mvccFingerprint) {
+                throw new IllegalStateException(
+                        "Phase-2E SQL semantic drift: heap=" + semanticFingerprint
+                                + ", mvcc=" + mvccFingerprint);
+            }
+        }
+
+        Configuration profile = Configuration.getConfiguration("profile");
+        Phase2EProfile heapProfile = profilePhase2EVariant(
+                jdbcUrl, heapSql, expectedRows, semanticFingerprint, warmups,
+                heapIterations, profile, reportDirectory.resolve("heap-forced-index-nl.jfr"));
+        Phase2EProfile mvccProfile = profilePhase2EVariant(
+                jdbcUrl, mvccSql, expectedRows, semanticFingerprint, warmups,
+                mvccIterations, profile, reportDirectory.resolve("mvcc-forced-index-nl.jfr"));
+
+        long heapIndexToBaseNextMillis = phase2EIndexToBaseNextMillis(heapAnalyze.text());
+        long mvccIndexToBaseNextMillis = phase2EIndexToBaseNextMillis(mvccAnalyze.text());
+        long heapIndexScanNextMillis = phase2EIndexScanNextMillis(heapAnalyze.text());
+        long mvccIndexScanNextMillis = phase2EIndexScanNextMillis(mvccAnalyze.text());
+
+        String summary = "DelosDB Phase-2E F05 matched-plan base-fetch JFR attribution\n"
+                + "rows=" + rowCount + "\n"
+                + "expectedResultRows=" + expectedRows + "\n"
+                + "semanticFingerprint=" + semanticFingerprint + "\n"
+                + "matchedForcedPlanShape=true\n"
+                + "heapProfileIterations=" + heapIterations + "\n"
+                + "mvccProfileIterations=" + mvccIterations + "\n"
+                + "heapProfileElapsedMillis=" + format(heapProfile.elapsedMillis()) + "\n"
+                + "mvccProfileElapsedMillis=" + format(mvccProfile.elapsedMillis()) + "\n"
+                + "heapProfileMillisPerExecution=" + format(heapProfile.millisPerExecution()) + "\n"
+                + "mvccProfileMillisPerExecution=" + format(mvccProfile.millisPerExecution()) + "\n"
+                + "heapIndexToBaseNextMillis=" + heapIndexToBaseNextMillis + "\n"
+                + "mvccIndexToBaseNextMillis=" + mvccIndexToBaseNextMillis + "\n"
+                + "heapIndexScanNextMillis=" + heapIndexScanNextMillis + "\n"
+                + "mvccIndexScanNextMillis=" + mvccIndexScanNextMillis + "\n"
+                + "sourceHypothesis=MVCC_BASE_FETCH_REOPENS_DIRECTORY_AND_VERSION_CONTAINERS_PER_ROW\n"
+                + "interpretation=JFR_ATTRIBUTION_ONLY_NOT_ACCEPTANCE_PERFORMANCE\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2e-f05-base-fetch-attribution-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("query-shapes.txt"),
+                "Heap forced index/NL SQL:\n" + heapSql
+                        + "\n\nMVCC forced index/NL SQL:\n" + mvccSql + "\n",
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static Phase2EProfile profilePhase2EVariant(
+            String jdbcUrl,
+            String sql,
+            int expectedRows,
+            long expectedFingerprint,
+            int warmups,
+            int iterations,
+            Configuration profile,
+            Path recordingPath) throws Exception {
+        try (Connection connection = openPhase2AConnection(jdbcUrl);
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < warmups; i++) {
+                long fingerprint = executeFitnessRead(
+                        statement, Workload.JOIN_3WAY_SELECTIVE, expectedRows);
+                if (fingerprint != expectedFingerprint) {
+                    throw new IllegalStateException(
+                            "Phase-2E warmup semantic drift for " + recordingPath.getFileName());
+                }
+            }
+
+            long started;
+            long elapsed;
+            try (Recording recording = new Recording(profile)) {
+                recording.setName(recordingPath.getFileName().toString());
+                recording.setToDisk(true);
+                recording.start();
+                started = System.nanoTime();
+                for (int i = 0; i < iterations; i++) {
+                    long fingerprint = executeFitnessRead(
+                            statement, Workload.JOIN_3WAY_SELECTIVE, expectedRows);
+                    if (fingerprint != expectedFingerprint) {
+                        throw new IllegalStateException(
+                                "Phase-2E profiled semantic drift for "
+                                        + recordingPath.getFileName() + " iteration " + i);
+                    }
+                }
+                elapsed = System.nanoTime() - started;
+                recording.stop();
+                recording.dump(recordingPath);
+            }
+            connection.rollback();
+            return new Phase2EProfile(elapsed / 1_000_000.0d, iterations);
+        }
+    }
+
+    private static long phase2EIndexToBaseNextMillis(String analyzeText) {
+        return phase2ENodeFieldTotal(analyzeText, "SCAN/INDEX_TO_BASE_ROW", "nextMillis");
+    }
+
+    private static long phase2EIndexScanNextMillis(String analyzeText) {
+        return phase2ENodeFieldTotal(analyzeText, "SCAN/INDEX_SCAN", "nextMillis");
+    }
+
+    private static long phase2ENodeFieldTotal(String analyzeText, String planKind, String field) {
+        List<String> nodeIds = new ArrayList<>();
+        Matcher planMatcher = Pattern.compile(
+                "(?m)^\\s*(n\\d+)\\s+" + Pattern.quote(planKind) + "(?:\\s|$)")
+                .matcher(analyzeText);
+        while (planMatcher.find()) {
+            nodeIds.add(planMatcher.group(1));
+        }
+        long total = 0L;
+        for (String nodeId : nodeIds) {
+            Matcher executionMatcher = Pattern.compile(
+                    "(?m)^\\s*" + Pattern.quote(nodeId)
+                            + "\\s+observed=true\\b[^\\r\\n]*\\b"
+                            + Pattern.quote(field) + "=(\\d+)")
+                    .matcher(analyzeText);
+            if (!executionMatcher.find()) {
+                throw new IllegalStateException(
+                        "Phase-2E missing execution field " + field + " for " + nodeId);
+            }
+            total += Long.parseLong(executionMatcher.group(1));
+        }
+        return total;
+    }
+
+    private static Path requiredPhase2EPath(String key) {
+        String value = System.getProperty(PHASE2E_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2E_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private record Phase2EProfile(double elapsedMillis, int iterations) {
+        double millisPerExecution() {
+            return elapsedMillis / iterations;
+        }
     }
 
     private static Path requiredPhase2DPath(String key) {

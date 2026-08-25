@@ -16080,6 +16080,68 @@ tasks.register('runDelosPhase2DF05ResidualIndexedAccessDecomposition', JavaExec)
     }
 }
 
+// Phase 2E: attribute the matched-plan F05 provider gap to the exact
+// RowLocation -> base-row path. Record only the hot query loops after fixture
+// construction so setup work does not contaminate JFR attribution.
+tasks.register('runDelosPhase2EF05BaseFetchAttribution', JavaExec) {
+    group = 'verification'
+    description = 'Captures short matched-plan Heap/MVCC F05 JFR attribution for base-row fetch.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2e-f05-base-fetch-attribution'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-base-fetch-attribution')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2e-f05-base-fetch-attribution')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05BaseFetchAttribution.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05BaseFetchAttribution.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+    doLast {
+        File dir = reportDir.get().asFile
+        List<File> recordings = [
+                new File(dir, 'heap-forced-index-nl.jfr'),
+                new File(dir, 'mvcc-forced-index-nl.jfr')
+        ]
+        recordings.each { recording ->
+            if (!recording.isFile() || recording.length() == 0L) {
+                throw new GradleException("Phase 2E JFR recording missing: ${recording}")
+            }
+        }
+        File viewDir = new File(dir, 'jfr-views')
+        viewDir.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            recordings.each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '50', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "Phase 2E jfr view ${view} failed for ${recording.name}: ${error.trim()}")
+                }
+                new File(viewDir, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(output, 'UTF-8')
+            }
+        }
+    }
+}
+
 // Phase 2C: freeze the MVCC cardinality authority contract now that the
 // production path persists statistics feedback in RawStore container metadata.
 registerDelosFocusedTest(
