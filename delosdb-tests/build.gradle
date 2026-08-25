@@ -16051,6 +16051,35 @@ tasks.register('runDelosPhase2BF05CardinalityCostingProof', JavaExec) {
         ])
     }
 }
+// Phase 2D: short causal decomposition of the residual F05 gap after the
+// cardinality authority fix. Compare the same forced indexed/NL shape on
+// Heap and MVCC, plus MVCC NL-only and natural post-statistics plans.
+tasks.register('runDelosPhase2DF05ResidualIndexedAccessDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Separates F05 MVCC join-plan cost from matched indexed physical-access cost.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2d-f05-residual-indexed-access'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f05-residual-indexed-access')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2d-f05-residual-indexed-access')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05ResidualIndexedAccess.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05ResidualIndexedAccess.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+}
+
 // Phase 2C: freeze the MVCC cardinality authority contract now that the
 // production path persists statistics feedback in RawStore container metadata.
 registerDelosFocusedTest(
