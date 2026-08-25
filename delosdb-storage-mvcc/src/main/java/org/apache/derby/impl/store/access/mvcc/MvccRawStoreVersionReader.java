@@ -114,6 +114,28 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         }
     }
 
+    static MvccRawStoreTable.VersionRecord findVisible(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            long rowId,
+            MvccRawStoreTable.DirectoryHead head,
+            long transactionId,
+            long snapshotSequence,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreVersionRows.Decoder decoder) throws StandardException {
+        try (MvccRawStoreVersionReader reader =
+                     new MvccRawStoreVersionReader(transaction, table)) {
+            reader.primaryProjection = projection;
+            reader.primaryDecoder = decoder;
+            return reader.findVisible(
+                    rowId,
+                    head,
+                    transactionId,
+                    snapshotSequence,
+                    projection);
+        }
+    }
+
     static MvccRawStoreTable.VersionRecord find(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
