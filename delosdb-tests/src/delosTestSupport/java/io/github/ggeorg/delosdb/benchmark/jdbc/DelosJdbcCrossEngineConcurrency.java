@@ -6154,6 +6154,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static final class Client implements AutoCloseable {
         private final Connection connection;
+        private final String table;
         private final Workload workload;
         private final int clientIndex;
         private final int clientCount;
@@ -6203,6 +6204,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 int h2RangeFetchSize)
                 throws SQLException {
             this.connection = connection;
+            this.table = table;
             this.workload = spec.workload();
             this.clientIndex = clientIndex;
             this.clientCount = spec.clients();
@@ -6400,8 +6402,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 DeleteRow row = deleteRows[operation % deleteRows.length];
                                 deleteRow.setInt(1, row.id());
                                 if (deleteRow.executeUpdate() != 1) {
+                                    String diagnosis = deleteReinsertDeleteMissDiagnosis(row);
                                     throw new SQLException(
-                                            "Delete/reinsert delete did not affect one row: id=" + row.id());
+                                            "Delete/reinsert delete did not affect one row: id=" + row.id()
+                                                    + ", client=" + clientIndex
+                                                    + ", transaction=" + transaction
+                                                    + ", operation=" + operation
+                                                    + ", attempt=" + attempts
+                                                    + ", priorRetryableRollbacks=" + retryableRollbacks
+                                                    + ", diagnosis={" + diagnosis + "}");
                                 }
                                 insertRow.setInt(1, row.id());
                                 insertRow.setInt(2, row.category());
@@ -6440,6 +6449,54 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             return new ClientRun(fingerprint, retryableRollbacks);
+        }
+
+        private String deleteReinsertDeleteMissDiagnosis(DeleteRow expected) {
+            String natural = deleteReinsertProbe(expected, false);
+            String tableScan = deleteReinsertProbe(expected, true);
+            return "target=" + target.id()
+                    + ", natural=" + natural
+                    + ", forcedTableScan=" + tableScan;
+        }
+
+        private String deleteReinsertProbe(DeleteRow expected, boolean forceTableScan) {
+            String sql = "select id, category, bucket, quantity, payload from " + table
+                    + (forceTableScan ? " --DERBY-PROPERTIES index=null\n" : " ")
+                    + "where id = ?";
+            try (PreparedStatement probe = connection.prepareStatement(sql)) {
+                probe.setInt(1, expected.id());
+                try (ResultSet resultSet = probe.executeQuery()) {
+                    int count = 0;
+                    boolean exactMatch = false;
+                    StringBuilder identities = new StringBuilder();
+                    while (resultSet.next()) {
+                        count++;
+                        if (identities.length() != 0) {
+                            identities.append(';');
+                        }
+                        int id = resultSet.getInt(1);
+                        int category = resultSet.getInt(2);
+                        int bucket = resultSet.getInt(3);
+                        int quantity = resultSet.getInt(4);
+                        String payload = resultSet.getString(5);
+                        identities.append(id).append('/')
+                                .append(category).append('/')
+                                .append(bucket).append('/')
+                                .append(quantity);
+                        exactMatch |= id == expected.id()
+                                && category == expected.category()
+                                && bucket == expected.bucket()
+                                && quantity == expected.quantity()
+                                && Objects.equals(payload, expected.payload());
+                    }
+                    return "count=" + count
+                            + ", exactExpectedRow=" + exactMatch
+                            + ", rows=[" + identities + "]";
+                }
+            } catch (SQLException probeFailure) {
+                return "probeFailure=" + probeFailure.getSQLState()
+                        + ':' + probeFailure.getMessage();
+            }
         }
 
         private long executeMixedTransaction(int transaction) throws SQLException {
