@@ -16272,3 +16272,33 @@ tasks.register('runDelosPhase2KF03ProjectionMaterializationDecomposition', JavaE
         ])
     }
 }
+
+
+// Phase 2N: bounded F04/F06 relational decomposition after the valid ADAPT_REFERENCE-A
+// baseline. Separate join cost from its index-only inputs, and GROUP BY from raw
+// scan/materialization and ORDER BY cost. Diagnostic only; no production changes.
+tasks.register('runDelosPhase2NF04F06RelationalDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Decomposes F04 indexed join and F06 high-cardinality GROUP BY into access, relational, and ordering work.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2n-f04-f06-relational-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/phase2/f04-f06-relational-decomposition')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-phase2n-f04-f06-relational-decomposition')
+    outputs.dir(reportDir)
+    doFirst {
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f04F06RelationalDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f04F06RelationalDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath
+        ])
+    }
+}

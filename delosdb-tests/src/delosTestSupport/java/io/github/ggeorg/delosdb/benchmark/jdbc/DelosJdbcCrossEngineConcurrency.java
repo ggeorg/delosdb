@@ -54,6 +54,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2H_PREFIX = "delosdb.phase2.f05PostHintResidualAttribution.";
     private static final String PHASE2J_PREFIX = "delosdb.phase2.f05CompatibilityNativePath.";
     private static final String PHASE2K_PREFIX = "delosdb.phase2.f03ProjectionMaterialization.";
+    private static final String PHASE2N_PREFIX = "delosdb.phase2.f04F06RelationalDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -143,6 +144,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2KF03ProjectionMaterializationDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2n-f04-f06-relational-decomposition".equals(args[0])) {
+            runPhase2NF04F06RelationalDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -157,7 +162,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2e-f05-base-fetch-attribution',"
                             + " exactly 'phase2h-f05-post-hint-residual-attribution',"
                             + " exactly 'phase2j-f05-compatibility-native-path',"
-                            + " or exactly 'phase2k-f03-projection-materialization'");
+                            + " exactly 'phase2k-f03-projection-materialization',"
+                            + " or exactly 'phase2n-f04-f06-relational-decomposition'");
         }
     }
 
@@ -1417,6 +1423,404 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "where c.id between ? and ?";
     }
 
+
+
+    private static void runPhase2NF04F06RelationalDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2NPath("reportDirectory");
+        Path databaseRoot = requiredPhase2NPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        int warmups = 4;
+        int warmupExecutionsPerVisit = 32;
+        int measuredRounds = 9;
+        int measuredExecutionsPerSample = 128;
+        String database = databaseRoot.resolve("f04-f06-relational-decomposition").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+        DelosBenchmarkConfig config = new DelosBenchmarkConfig(
+                rowCount, payloadSize, SEED, commitBatchSize);
+
+        String heapBase;
+        String mvccBase;
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            DelosJdbcBenchmarkScenario heap = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2n_heap", "", false, config);
+            heap.prepare();
+            heapBase = heap.tableName();
+            prepareJoinDimensionFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareHighCardGroupFixture(setup, heapBase, "", rowCount, commitBatchSize);
+
+            DelosJdbcBenchmarkScenario mvcc = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2n_mvcc", " using delos_mvcc", false, config);
+            mvcc.prepare();
+            mvccBase = mvcc.tableName();
+            prepareJoinDimensionFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            prepareHighCardGroupFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+
+            for (String table : List.of(
+                    heapBase,
+                    joinDimensionTableName(heapBase),
+                    highCardGroupTableName(heapBase),
+                    mvccBase,
+                    joinDimensionTableName(mvccBase),
+                    highCardGroupTableName(mvccBase))) {
+                phase2BUpdateStatistics(setup, table);
+            }
+            setup.commit();
+        }
+
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        addPhase2NVariants(sqlByVariant, "heap", heapBase);
+        addPhase2NVariants(sqlByVariant, "mvcc", mvccBase);
+
+        LinkedHashMap<String, Integer> expectedRowsByVariant = new LinkedHashMap<>();
+        for (String provider : List.of("heap", "mvcc")) {
+            expectedRowsByVariant.put(provider + "-join", 1_000);
+            expectedRowsByVariant.put(provider + "-join-base-range", 1_000);
+            expectedRowsByVariant.put(provider + "-join-dimension-scan", 1_000);
+            expectedRowsByVariant.put(provider + "-group-input", 10_000);
+            expectedRowsByVariant.put(provider + "-group-unordered", 1_000);
+            expectedRowsByVariant.put(provider + "-group-ordered", 1_000);
+        }
+
+        StringBuilder queryShapes = new StringBuilder();
+        for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+            queryShapes.append("=== ").append(entry.getKey()).append(" ===\n")
+                    .append(entry.getValue()).append("\n\n");
+        }
+        Files.writeString(reportDirectory.resolve("query-shapes.txt"),
+                queryShapes.toString(), StandardCharsets.UTF_8);
+
+        LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
+        LinkedHashMap<String, Long> semanticByVariant = new LinkedHashMap<>();
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                ExplainCapture explain = capturePhase2NExplain(connection, entry.getValue(), false);
+                ExplainCapture analyze = capturePhase2NExplain(connection, entry.getValue(), true);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain", explain);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+                analyzeByVariant.put(entry.getKey(), analyze);
+
+                long fingerprint;
+                try (PreparedStatement statement = connection.prepareStatement(entry.getValue())) {
+                    fingerprint = executePhase2NRead(
+                            statement, entry.getKey(), expectedRowsByVariant.get(entry.getKey()));
+                }
+                semanticByVariant.put(entry.getKey(), fingerprint);
+            }
+            connection.rollback();
+        }
+
+        assertPhase2NProviderSemantics(semanticByVariant, "join");
+        assertPhase2NProviderSemantics(semanticByVariant, "join-base-range");
+        assertPhase2NProviderSemantics(semanticByVariant, "join-dimension-scan");
+        assertPhase2NProviderSemantics(semanticByVariant, "group-input");
+        assertPhase2NProviderSemantics(semanticByVariant, "group-unordered");
+        assertPhase2NProviderSemantics(semanticByVariant, "group-ordered");
+        if (!semanticByVariant.get("heap-group-unordered")
+                .equals(semanticByVariant.get("heap-group-ordered"))
+                || !semanticByVariant.get("mvcc-group-unordered")
+                        .equals(semanticByVariant.get("mvcc-group-ordered"))) {
+            throw new IllegalStateException(
+                    "Phase-2N ordered/unordered GROUP BY semantic drift");
+        }
+
+        LinkedHashMap<String, List<Double>> samples = new LinkedHashMap<>();
+        for (String variant : sqlByVariant.keySet()) {
+            samples.put(variant, new ArrayList<>());
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                    statements.put(entry.getKey(), connection.prepareStatement(entry.getValue()));
+                }
+                List<String> variants = new ArrayList<>(sqlByVariant.keySet());
+                for (int round = -warmups; round < measuredRounds; round++) {
+                    int rotation = Math.floorMod(round + warmups, variants.size());
+                    for (int offset = 0; offset < variants.size(); offset++) {
+                        String variant = variants.get((rotation + offset) % variants.size());
+                        int executions = round >= 0
+                                ? measuredExecutionsPerSample
+                                : warmupExecutionsPerVisit;
+                        long expectedFingerprint = semanticByVariant.get(variant);
+                        long started = System.nanoTime();
+                        for (int execution = 0; execution < executions; execution++) {
+                            long fingerprint = executePhase2NRead(
+                                    statements.get(variant),
+                                    variant,
+                                    expectedRowsByVariant.get(variant));
+                            if (fingerprint != expectedFingerprint) {
+                                throw new IllegalStateException(
+                                        "Phase-2N measured semantic drift for " + variant
+                                                + ": expected=" + expectedFingerprint
+                                                + ", actual=" + fingerprint);
+                            }
+                        }
+                        long elapsed = System.nanoTime() - started;
+                        if (round >= 0) {
+                            samples.get(variant).add(elapsed / (executions * 1_000_000.0d));
+                        }
+                    }
+                }
+                connection.rollback();
+            } finally {
+                SQLException closeFailure = null;
+                for (PreparedStatement statement : statements.values()) {
+                    try {
+                        statement.close();
+                    } catch (SQLException failure) {
+                        if (closeFailure == null) {
+                            closeFailure = failure;
+                        } else {
+                            closeFailure.addSuppressed(failure);
+                        }
+                    }
+                }
+                if (closeFailure != null) {
+                    throw closeFailure;
+                }
+            }
+        }
+
+        StringBuilder sampleTsv = new StringBuilder("variant\tround\telapsedMillis\n");
+        LinkedHashMap<String, Distribution> distributions = new LinkedHashMap<>();
+        LinkedHashMap<String, DelosMeasurementValidityContract.DispersionDecision> decisions =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, List<Double>> entry : samples.entrySet()) {
+            for (int i = 0; i < entry.getValue().size(); i++) {
+                sampleTsv.append(entry.getKey()).append('\t').append(i + 1).append('\t')
+                        .append(format(entry.getValue().get(i))).append('\n');
+            }
+            Distribution distribution = distribution(entry.getValue());
+            distributions.put(entry.getKey(), distribution);
+            decisions.put(entry.getKey(), DelosMeasurementValidityContract.classifyCustom(
+                    distribution.iqr() / distribution.median(),
+                    distribution.mad() / distribution.median()));
+        }
+        Files.writeString(reportDirectory.resolve("phase2n-repeated-execution-samples.tsv"),
+                sampleTsv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder dispersionTsv = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tgoverningDispersion\tstatus\n");
+        for (String variant : sqlByVariant.keySet()) {
+            Distribution distribution = distributions.get(variant);
+            DelosMeasurementValidityContract.DispersionDecision decision = decisions.get(variant);
+            dispersionTsv.append(variant).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(decision.iqrToMedian())).append('\t')
+                    .append(format(decision.madToMedian())).append('\t')
+                    .append(format(decision.governingRatio())).append('\t')
+                    .append(decision.status()).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2n-dispersion.tsv"),
+                dispersionTsv.toString(), StandardCharsets.UTF_8);
+
+        StringBuilder operatorTsv = new StringBuilder(
+                "variant\texplainAnalyzeWallMillis\tplanShape\tindexToBaseNextMillis\tindexScanNextMillis"
+                        + "\ttotalOpenMillis\ttotalNextMillis\ttotalOpens\n");
+        for (String variant : sqlByVariant.keySet()) {
+            ExplainCapture analyze = analyzeByVariant.get(variant);
+            operatorTsv.append(variant).append('\t').append(analyze.wallMillis()).append('\t')
+                    .append(phase2NPlanShape(analyze.text())).append('\t')
+                    .append(phase2EIndexToBaseNextMillis(analyze.text())).append('\t')
+                    .append(phase2EIndexScanNextMillis(analyze.text())).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "openMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "nextMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "opens")).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2n-operator-summary.tsv"),
+                operatorTsv.toString(), StandardCharsets.UTF_8);
+
+        DelosMeasurementValidityContract.Status combinedStatus =
+                DelosMeasurementValidityContract.combine(
+                        decisions.values().stream()
+                                .map(DelosMeasurementValidityContract.DispersionDecision::status)
+                                .toArray(DelosMeasurementValidityContract.Status[]::new));
+        double worstGoverningDispersion = decisions.values().stream()
+                .mapToDouble(DelosMeasurementValidityContract.DispersionDecision::governingRatio)
+                .max()
+                .orElseThrow();
+
+        double heapJoin = distributions.get("heap-join").median();
+        double mvccJoin = distributions.get("mvcc-join").median();
+        double heapBaseRange = distributions.get("heap-join-base-range").median();
+        double mvccBaseRange = distributions.get("mvcc-join-base-range").median();
+        double heapDimScan = distributions.get("heap-join-dimension-scan").median();
+        double mvccDimScan = distributions.get("mvcc-join-dimension-scan").median();
+        double heapGroupInput = distributions.get("heap-group-input").median();
+        double mvccGroupInput = distributions.get("mvcc-group-input").median();
+        double heapGroupUnordered = distributions.get("heap-group-unordered").median();
+        double mvccGroupUnordered = distributions.get("mvcc-group-unordered").median();
+        double heapGroupOrdered = distributions.get("heap-group-ordered").median();
+        double mvccGroupOrdered = distributions.get("mvcc-group-ordered").median();
+
+        String summary = "DelosDB Phase-2N F04/F06 relational decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "rows=" + rowCount + "\n"
+                + "payloadSize=" + payloadSize + "\n"
+                + "warmupsPerVariant=" + warmups + "\n"
+                + "warmupExecutionsPerVisit=" + warmupExecutionsPerVisit + "\n"
+                + "measuredRoundsPerVariant=" + measuredRounds + "\n"
+                + "measuredExecutionsPerSample=" + measuredExecutionsPerSample + "\n"
+                + "heapJoinMedianMillis=" + format(heapJoin) + "\n"
+                + "mvccJoinMedianMillis=" + format(mvccJoin) + "\n"
+                + "joinMvccVsHeapRatio=" + format(mvccJoin / heapJoin) + "\n"
+                + "heapJoinBaseRangeMedianMillis=" + format(heapBaseRange) + "\n"
+                + "mvccJoinBaseRangeMedianMillis=" + format(mvccBaseRange) + "\n"
+                + "joinBaseRangeMvccVsHeapRatio=" + format(mvccBaseRange / heapBaseRange) + "\n"
+                + "heapJoinDimensionScanMedianMillis=" + format(heapDimScan) + "\n"
+                + "mvccJoinDimensionScanMedianMillis=" + format(mvccDimScan) + "\n"
+                + "joinDimensionScanMvccVsHeapRatio=" + format(mvccDimScan / heapDimScan) + "\n"
+                + "heapJoinVsInputSumRatio=" + format(heapJoin / (heapBaseRange + heapDimScan)) + "\n"
+                + "mvccJoinVsInputSumRatio=" + format(mvccJoin / (mvccBaseRange + mvccDimScan)) + "\n"
+                + "heapGroupInputMedianMillis=" + format(heapGroupInput) + "\n"
+                + "mvccGroupInputMedianMillis=" + format(mvccGroupInput) + "\n"
+                + "groupInputMvccVsHeapRatio=" + format(mvccGroupInput / heapGroupInput) + "\n"
+                + "heapGroupUnorderedMedianMillis=" + format(heapGroupUnordered) + "\n"
+                + "mvccGroupUnorderedMedianMillis=" + format(mvccGroupUnordered) + "\n"
+                + "groupUnorderedMvccVsHeapRatio=" + format(mvccGroupUnordered / heapGroupUnordered) + "\n"
+                + "heapGroupOrderedMedianMillis=" + format(heapGroupOrdered) + "\n"
+                + "mvccGroupOrderedMedianMillis=" + format(mvccGroupOrdered) + "\n"
+                + "groupOrderedMvccVsHeapRatio=" + format(mvccGroupOrdered / heapGroupOrdered) + "\n"
+                + "heapGroupVsInputRatio=" + format(heapGroupUnordered / heapGroupInput) + "\n"
+                + "mvccGroupVsInputRatio=" + format(mvccGroupUnordered / mvccGroupInput) + "\n"
+                + "heapOrderByGroupPenalty=" + format(heapGroupOrdered / heapGroupUnordered) + "\n"
+                + "mvccOrderByGroupPenalty=" + format(mvccGroupOrdered / mvccGroupUnordered) + "\n"
+                + "worstGoverningDispersion=" + format(worstGoverningDispersion) + "\n"
+                + "measurementStatus=" + combinedStatus + "\n"
+                + "classification=EVIDENCE_READY_FOR_F04_F06_PHASE2_CLASSIFICATION\n";
+        Files.writeString(reportDirectory.resolve(
+                        "phase2n-f04-f06-relational-decomposition-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.println(summary);
+    }
+
+    private static void addPhase2NVariants(
+            Map<String, String> sqlByVariant, String provider, String base) {
+        String dimension = joinDimensionTableName(base);
+        String group = highCardGroupTableName(base);
+        sqlByVariant.put(provider + "-join",
+                "select a.id from " + base + " a join " + dimension + " b on a.id = b.id");
+        sqlByVariant.put(provider + "-join-base-range",
+                "select id from " + base + " where id between 1 and 1000");
+        sqlByVariant.put(provider + "-join-dimension-scan",
+                "select id from " + dimension);
+        sqlByVariant.put(provider + "-group-input",
+                "select group_key, quantity from " + group);
+        sqlByVariant.put(provider + "-group-unordered",
+                "select group_key, count(*), sum(quantity) from " + group + " group by group_key");
+        sqlByVariant.put(provider + "-group-ordered",
+                "select group_key, count(*), sum(quantity) from " + group
+                        + " group by group_key order by group_key");
+    }
+
+    private static ExplainCapture capturePhase2NExplain(
+            Connection connection, String sql, boolean analyze) throws SQLException {
+        long started = System.nanoTime();
+        try (PreparedStatement statement = connection.prepareStatement(
+                (analyze ? "explain analyze " : "explain ") + sql);
+                ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next()) {
+                throw new SQLException("Phase-2N EXPLAIN returned no row");
+            }
+            String text = resultSet.getString(1);
+            String json = resultSet.getString(2);
+            if (resultSet.next()) {
+                throw new SQLException("Phase-2N EXPLAIN returned more than one row");
+            }
+            return new ExplainCapture(
+                    text,
+                    json,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+        }
+    }
+
+    private static long executePhase2NRead(
+            PreparedStatement statement, String variant, int expectedRows) throws SQLException {
+        int rows = 0;
+        long fingerprint = 0L;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                long tuple = 0x9E3779B97F4A7C15L;
+                if (variant.endsWith("-group-input")) {
+                    tuple = mix(tuple, resultSet.getInt(1));
+                    tuple = mix(tuple, resultSet.getInt(2));
+                } else if (variant.endsWith("-group-unordered")
+                        || variant.endsWith("-group-ordered")) {
+                    tuple = mix(tuple, resultSet.getInt(1));
+                    tuple = mix(tuple, resultSet.getLong(2));
+                    tuple = mix(tuple, resultSet.getLong(3));
+                } else {
+                    tuple = mix(tuple, resultSet.getInt(1));
+                }
+                fingerprint += tuple;
+                rows++;
+            }
+        }
+        if (rows != expectedRows) {
+            throw new SQLException(
+                    "Phase-2N row-count drift for " + variant
+                            + ": expected=" + expectedRows + ", actual=" + rows);
+        }
+        return mix(fingerprint, rows);
+    }
+
+    private static void assertPhase2NProviderSemantics(
+            Map<String, Long> semanticByVariant, String suffix) {
+        long heap = semanticByVariant.get("heap-" + suffix);
+        long mvcc = semanticByVariant.get("mvcc-" + suffix);
+        if (heap != mvcc) {
+            throw new IllegalStateException(
+                    "Phase-2N Heap/MVCC semantic drift for " + suffix
+                            + ": heap=" + heap + ", mvcc=" + mvcc);
+        }
+    }
+
+    private static String phase2NPlanShape(String analyzeText) {
+        List<String> shape = new ArrayList<>();
+        if (analyzeText.contains("JOIN/HASH_JOIN") || analyzeText.contains("Hash Join ResultSet")) {
+            shape.add("HASH_JOIN");
+        }
+        if (analyzeText.contains("JOIN/NESTED_LOOP")
+                || analyzeText.contains("Nested Loop Join ResultSet")) {
+            shape.add("NESTED_LOOP");
+        }
+        if (analyzeText.contains("AGGREGATE")) {
+            shape.add("AGGREGATE");
+        }
+        if (analyzeText.contains("SORT") || analyzeText.contains("Sort ResultSet")) {
+            shape.add("SORT");
+        }
+        if (analyzeText.contains("SCAN/INDEX_TO_BASE_ROW")
+                || analyzeText.contains("Index Row to Base Row ResultSet")) {
+            shape.add("INDEX_TO_BASE_ROW");
+        }
+        if (analyzeText.contains("SCAN/INDEX_SCAN")
+                || analyzeText.contains("Index Scan ResultSet")) {
+            shape.add("INDEX_SCAN");
+        }
+        if (analyzeText.contains("SCAN/TABLE_SCAN")
+                || analyzeText.contains("Table Scan ResultSet")) {
+            shape.add("TABLE_SCAN");
+        }
+        return shape.isEmpty() ? "UNKNOWN" : String.join("+", shape);
+    }
+
+    private static Path requiredPhase2NPath(String key) {
+        String value = System.getProperty(PHASE2N_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2N_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
 
     private static void runPhase2KF03ProjectionMaterializationDecomposition() throws Exception {
         Path reportDirectory = requiredPhase2KPath("reportDirectory");
