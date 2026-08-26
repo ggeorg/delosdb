@@ -14385,15 +14385,15 @@ registerDelosFitnessPromoteExistingAEmbedded(
 
 // Phase 2R correctness diagnostic: reproduce only the red MVCC F10 shape and
 // enrich a zero-row DELETE with natural-vs-forced-table-scan visibility evidence.
-tasks.register('runDelosPhase2RF10MvccDeleteReinsertCorrectnessDiagnostic', JavaExec) {
+tasks.register('runDelosPhase2RF10MvccDeleteReinsertCorrectnessStress', JavaExec) {
     group = 'verification'
-    description = 'Reproduces the Phase-2R MVCC F10 delete/reinsert correctness failure with access-path diagnosis.'
+    description = 'Stress-reproduces the Phase-2R MVCC F10 delete/reinsert correctness failure with access-path diagnosis.'
     dependsOn tasks.named('compileTestJava'), ':jars'
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     classpath = rootProject.files(derbyTestsClassDir)
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(
-            'reports/delosdb/benchmarks/phase2/f10-delete-reinsert-correctness'))
+            'reports/delosdb/benchmarks/phase2/f10-delete-reinsert-correctness-stress'))
 
     doFirst {
         def saneValue = providers.gradleProperty('delosdb.sane')
@@ -14416,9 +14416,9 @@ tasks.register('runDelosPhase2RF10MvccDeleteReinsertCorrectnessDiagnostic', Java
                         rootProject.files(derbyRuntimeJars).asPath,
                 'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc',
                 'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
-                        .dir('tmp/delos-phase2r-f10-delete-reinsert-correctness').get().asFile.absolutePath,
+                        .dir('tmp/delos-phase2r-f10-delete-reinsert-correctness-stress').get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
-                        .dir('reports/delosdb/benchmarks/phase2/f10-delete-reinsert-correctness')
+                        .dir('reports/delosdb/benchmarks/phase2/f10-delete-reinsert-correctness-stress')
                         .get().asFile.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
                 'delosdb.benchmark.crossEngineConcurrency.clients': '8',
@@ -14433,7 +14433,7 @@ tasks.register('runDelosPhase2RF10MvccDeleteReinsertCorrectnessDiagnostic', Java
                 'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '500000',
                 'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '2.0',
                 'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '500000',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '32',
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'

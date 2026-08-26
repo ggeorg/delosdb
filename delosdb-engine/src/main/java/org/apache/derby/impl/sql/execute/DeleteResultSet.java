@@ -396,8 +396,7 @@ class DeleteResultSet extends DMLWriteResultSet
                     fkChecker.doPKCheck(activation, row, false, 2);
 				}
 
-				baseRowLocation = 
-					(RowLocation) (rlColumn).getObject();
+				baseRowLocation = currentBaseRowLocation(rlColumn);
 
                 if (SanityManager.DEBUG)
 				{
@@ -423,6 +422,33 @@ class DeleteResultSet extends DMLWriteResultSet
 		}
 
 		return rowsFound;
+	}
+
+
+	/**
+	 * Return a stable snapshot of the current base-row location.
+	 *
+	 * <p>Delete source rows conventionally expose the row location as their
+	 * final projected column. A reused result-set tree may retain that projected
+	 * wrapper across executions, however, while the cursor itself has already
+	 * advanced to a newly allocated physical row after a committed
+	 * delete/reinsert. Prefer the cursor-owned location and clone it before
+	 * handing it to index maintenance so later cursor reuse cannot mutate the
+	 * identity recorded for this delete.</p>
+	 */
+	private RowLocation currentBaseRowLocation(DataValueDescriptor projectedLocation)
+			throws StandardException
+	{
+		RowLocation location = null;
+		if (source instanceof CursorResultSet cursorSource)
+		{
+			location = cursorSource.getRowLocation();
+		}
+		if (location == null)
+		{
+			location = (RowLocation) projectedLocation.getObject();
+		}
+		return (RowLocation) location.cloneValue(false);
 	}
 
 
