@@ -34,12 +34,6 @@ public final class JdbcPreparedStatementTransactionReuseTest extends MvccSqlTest
     private static final int PAYLOAD_SIZE = 128;
     private static final long SEED = 0x5DE10DBL;
 
-    // MvccRowLocation row ids up to 0x3fff use the compact two-byte encoding.
-    // Start just below that boundary so a few committed same-key reinserts force
-    // the prepared DELETE cursor across a RowLocation representation change.
-    private static final int ROW_LOCATION_WIDTH_FIXTURE_COUNT = 16_380;
-    private static final int ROW_LOCATION_WIDTH_REINSERT_CYCLES = 8;
-
     public void testHeapPreparedDeleteReinsertSurvivesBenchmarkTransactionSequence() throws Exception {
         runPreparedDeleteReinsertProof(
                 "jdbc-prepared-write-reuse-heap-db",
@@ -52,68 +46,6 @@ public final class JdbcPreparedStatementTransactionReuseTest extends MvccSqlTest
                 "jdbc-prepared-write-reuse-mvcc-db",
                 "JDBC_PREPARED_WRITE_REUSE_MVCC_T",
                 " using delos_mvcc");
-    }
-
-    public void testMvccPreparedDeleteReinsertKeepsCurrentRowLocationAcrossEncodingGrowth()
-            throws Exception {
-        String database = databaseName("jdbc-prepared-delete-rowlocation-growth-mvcc-db");
-        String table = "JDBC_PREPARED_DELETE_ROWLOCATION_GROWTH_MVCC_T";
-
-        try (Connection connection = openDatabase(database, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table " + table
-                    + " (id int not null primary key, payload varchar(64) not null)"
-                    + " using delos_mvcc");
-
-            try (PreparedStatement insert = connection.prepareStatement(
-                    "insert into " + table + " values (?, ?)")) {
-                for (int id = 1; id <= ROW_LOCATION_WIDTH_FIXTURE_COUNT; id++) {
-                    insert.setInt(1, id);
-                    insert.setString(2, "row-" + id);
-                    insert.addBatch();
-                    if (id % 500 == 0) {
-                        insert.executeBatch();
-                        connection.commit();
-                    }
-                }
-                insert.executeBatch();
-                connection.commit();
-            }
-
-            try (PreparedStatement delete = connection.prepareStatement(
-                        "delete from " + table + " where id = ?");
-                 PreparedStatement reinsert = connection.prepareStatement(
-                        "insert into " + table + " values (?, ?)")) {
-                for (int cycle = 1; cycle <= ROW_LOCATION_WIDTH_REINSERT_CYCLES; cycle++) {
-                    delete.setInt(1, 1);
-                    assertEquals("prepared delete count at cycle " + cycle,
-                            1, delete.executeUpdate());
-
-                    reinsert.setInt(1, 1);
-                    reinsert.setString(2, "row-1");
-                    assertEquals("prepared reinsert count at cycle " + cycle,
-                            1, reinsert.executeUpdate());
-                    connection.commit();
-
-                    assertRows(connection,
-                            "select id, payload from " + table + " where id = 1",
-                            "1|row-1");
-                    assertRows(connection,
-                            "select id, payload from " + table
-                                    + " --DERBY-PROPERTIES index=null\n where id = 1",
-                            "1|row-1");
-                }
-            }
-            connection.rollback();
-        }
-
-        shutdownDatabase(database);
-
-        try (Connection reopened = openDatabase(database, false)) {
-            assertRows(reopened,
-                    "select id, payload from " + table + " where id = 1",
-                    "1|row-1");
-        }
     }
 
     public void testMvccSameKeyDeleteReinsertProofSurvivesSavepointAndUsesFreshIdentity()

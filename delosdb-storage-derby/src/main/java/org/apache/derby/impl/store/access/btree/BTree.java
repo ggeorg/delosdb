@@ -239,11 +239,6 @@ public abstract class BTree extends GenericConglomerate
     final ControlRow searchFromRootRoutingSnapshot(
             OpenBTree openBtree, SearchParameters params)
             throws StandardException {
-        if (Boolean.getBoolean(
-                "delosdb.btree.disableUnlatchedRootRoutingSnapshot")) {
-            return null;
-        }
-
         RootRoutingSnapshot snapshot = rootRoutingSnapshot;
         if (snapshot == null) {
             return null;
