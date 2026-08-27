@@ -72,10 +72,12 @@ public final class HeapMvccIsolationDifferentialTest extends MvccSqlTestSupport 
             reader.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             writer.setAutoCommit(false);
 
-            assertScalar(reader, "select payload from " + tableName + " where id = 1", "base");
+            String pointRead = "select payload from " + tableName
+                    + " --DERBY-PROPERTIES constraint=" + tableName + "_pk\n where id = 1";
+            assertScalar(reader, pointRead, "base");
             executeUpdate(writer, "update " + tableName + " set payload = 'committed' where id = 1");
             writer.commit();
-            assertScalar(reader, "select payload from " + tableName + " where id = 1", "committed");
+            assertScalar(reader, pointRead, "committed");
             reader.rollback();
         }
 
@@ -279,7 +281,8 @@ public final class HeapMvccIsolationDifferentialTest extends MvccSqlTestSupport 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection, "create table " + tableName
-                    + " (id int primary key, payload varchar(32), bucket int)"
+                    + " (id int not null, payload varchar(32), bucket int,"
+                    + " constraint " + tableName + "_pk primary key (id))"
                     + (mvcc ? " using delos_mvcc" : ""));
             executeUpdate(connection, "create index " + tableName + "_bucket_idx on "
                     + tableName + " (bucket)");

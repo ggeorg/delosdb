@@ -17,7 +17,13 @@ import java.sql.Statement;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Collision/identity proof for the permanent bounded current-row read cache. */
+/**
+ * Collision/identity proof for the permanent bounded current-row read cache.
+ *
+ * <p>The proof intentionally forces the native MVCC scan path. The compatibility
+ * primary-key B-tree path resolves through IndexRowToBaseRow and does not exercise
+ * or expose the native current-row cache counters this test exists to validate.</p>
+ */
 public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTestSupport {
     private static final String DATABASE = "mvcc-current-row-architecture-bounded-cache";
     private static final String TABLE = "BOUNDED_CURRENT_ROW_T";
@@ -142,7 +148,8 @@ public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTes
 
     private static void assertRow(Connection connection, int round, int id) throws Exception {
         try (PreparedStatement statement = connection.prepareStatement(
-                "select quantity, payload from " + TABLE + " where id = ?")) {
+                "select quantity, payload from " + TABLE
+                        + " --DERBY-PROPERTIES index=null\n where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertTrue("missing row " + id + " in round " + round, resultSet.next());
@@ -157,7 +164,8 @@ public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTes
         executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
         int quantity;
         try (PreparedStatement statement = connection.prepareStatement(
-                "select quantity from " + TABLE + " where id = ?")) {
+                "select quantity from " + TABLE
+                        + " --DERBY-PROPERTIES index=null\n where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertTrue(resultSet.next());

@@ -290,9 +290,12 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageChecks"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageHits"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageFallbacks"));
-        assertTrue("cold recovery read must use authoritative version storage; statistics="
-                        + cold.statistics(),
-                metric(cold.statistics(), "mvccVersionPageAcquisitions") >= 1L);
+        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryChecks"));
+        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryHits"));
+        assertEquals(0L, metric(cold.statistics(), "mvccDirectoryHeadSummaryFallbacks"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionPageAcquisitions"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionSlotFetches"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionChainSteps"));
 
         Measurement imageWarm = measuredRead(connection, table, id);
         assertRow(imageWarm.row(), expectedQuantity, expectedPayload);
@@ -364,7 +367,8 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
 
     private static Row row(Connection connection, String table, int id) throws Exception {
         try (PreparedStatement statement = connection.prepareStatement(
-                "select quantity, payload from " + table + " where id = ?")) {
+                "select quantity, payload from " + table
+                        + " --DERBY-PROPERTIES index=null\n where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {

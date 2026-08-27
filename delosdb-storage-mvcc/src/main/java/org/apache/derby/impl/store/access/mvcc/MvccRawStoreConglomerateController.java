@@ -19,6 +19,7 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLif
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -34,6 +35,8 @@ final class MvccRawStoreConglomerateController
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final boolean forUpdate;
+    private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
+    private final long statementSnapshotSequence;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -42,18 +45,34 @@ final class MvccRawStoreConglomerateController
             MvccRawStoreTable.Descriptor table,
             TransactionManager transactionManager,
             Transaction rawTransaction,
-            boolean forUpdate) {
+            boolean forUpdate,
+            LockingPolicy lockingPolicy) {
         this.runtime = runtime;
         this.table = table;
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
         this.forUpdate = forUpdate;
+        // IndexRowToBaseRowResultSet opens one base ConglomerateController for
+        // the SQL statement. Cursor-stability row locking identifies the
+        // READ COMMITTED base-fetch path, which must observe a fresh committed
+        // horizon for each statement just like MvccRawStoreScanController.
+        // Retain the horizon until close so vacuum cannot cross the statement.
+        if (!forUpdate && lockingPolicy != null && lockingPolicy.supportsImmutablePageRead()) {
+            statementSnapshotLease = runtime.openSnapshotLease();
+            statementSnapshotSequence = statementSnapshotLease.sequence();
+        } else {
+            statementSnapshotLease = null;
+            statementSnapshotSequence = Long.MIN_VALUE;
+        }
     }
 
     @Override
     public void close() {
         if (!closed) {
             closed = true;
+            if (statementSnapshotLease != null) {
+                statementSnapshotLease.close();
+            }
             transactionManager.closeMe(this);
         }
     }
@@ -114,8 +133,16 @@ final class MvccRawStoreConglomerateController
                 visible = checkWriteVersion
                         ? MvccRawStoreTable.readVisibleForWrite(
                                 rawTransaction, table, location, projection, context)
-                        : MvccRawStoreTable.readVisible(
-                                rawTransaction, table, location, projection, context);
+                        : statementSnapshotLease != null
+                                ? MvccRawStoreTable.readVisibleAt(
+                                        rawTransaction,
+                                        table,
+                                        location,
+                                        statementSnapshotSequence,
+                                        projection,
+                                        context)
+                                : MvccRawStoreTable.readVisible(
+                                        rawTransaction, table, location, projection, context);
             }
         }
         if (visible == null) {

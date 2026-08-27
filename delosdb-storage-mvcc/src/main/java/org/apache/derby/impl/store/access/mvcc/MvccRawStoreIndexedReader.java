@@ -228,26 +228,9 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
         context.observeCurrentRowAnchor(table, directory);
         if (!coveringEligible && directory.rowBearing()) {
-            MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
-            if (summary.available()) {
-                metrics.directoryHeadSummaryChecked();
-                metrics.visibilityChecked();
-                if (summary.visibleTo(context.transactionId(), snapshotSequence)) {
-                    metrics.directoryHeadSummaryHit();
-                    if (summary.tombstone()) {
-                        return new Result(null, false);
-                    }
-                    return new Result(
-                            new MvccRawStoreTable.VisibleRow(
-                                    candidate.rowId(),
-                                    directory.head().versionId(),
-                                    directory.currentValues(),
-                                    null,
-                                    MvccRawStoreRowDirectory.location(
-                                            candidate.rowId(), directory.handle())),
-                            false);
-                }
-                metrics.directoryHeadSummaryFallback();
+            Result current = readRowBearingCurrent(candidate, directory);
+            if (current != null) {
+                return current;
             }
         }
         if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
@@ -322,6 +305,34 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         visible.versionId(),
                         visible.values(),
                         visible.handle(),
+                        MvccRawStoreRowDirectory.location(
+                                candidate.rowId(), directory.handle())),
+                false);
+    }
+
+    private Result readRowBearingCurrent(
+            MvccRawStoreOrderedIndex.Candidate candidate,
+            MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
+        MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
+        if (!summary.available()) {
+            return null;
+        }
+        metrics.directoryHeadSummaryChecked();
+        metrics.visibilityChecked();
+        if (!summary.visibleTo(context.transactionId(), snapshotSequence)) {
+            metrics.directoryHeadSummaryFallback();
+            return null;
+        }
+        metrics.directoryHeadSummaryHit();
+        if (summary.tombstone()) {
+            return new Result(null, false);
+        }
+        return new Result(
+                new MvccRawStoreTable.VisibleRow(
+                        candidate.rowId(),
+                        directory.head().versionId(),
+                        directory.currentValues(),
+                        null,
                         MvccRawStoreRowDirectory.location(
                                 candidate.rowId(), directory.handle())),
                 false);
