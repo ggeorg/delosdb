@@ -23,6 +23,7 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodConglomerateP
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
@@ -467,12 +468,14 @@ final class MvccRawStoreTable {
         RecordHandle versionHandle = insertRow(rawTransaction, table.versionContainer(), versionRow);
         Object[] directoryRow = directoryRow(
                 rawTransaction,
+                table,
                 allocation.rowId(),
                 allocation.versionId(),
                 RecordHint.of(versionHandle),
                 creatorTransactionId,
                 MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
-                MvccRawStoreFormat.LIVE_FLAGS);
+                MvccRawStoreFormat.LIVE_FLAGS,
+                values);
         RecordHandle directoryHandle = insertRow(
                 rawTransaction, table.metadataContainer(), directoryRow);
         MvccRowLocation directoryLocation = MvccRawStoreRowDirectory.location(
@@ -564,9 +567,21 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                rawTransaction, table, rowLocation);
+        DirectoryRecord directory = MvccRawStoreRowDirectory.findCurrent(
+                rawTransaction, table, rowLocation, projection);
         validateWriteVersion(rowLocation, directory.head().versionId());
+        if (directory.rowBearing()) {
+            if (directory.head().summary().tombstone()) {
+                return null;
+            }
+            return new VisibleRow(
+                    rowLocation.rowId(),
+                    directory.head().versionId(),
+                    directory.currentValues(),
+                    null,
+                    MvccRawStoreRowDirectory.location(
+                            rowLocation.rowId(), directory.handle()));
+        }
         VersionRecord version = MvccRawStoreVersionReader.find(
                 rawTransaction,
                 table,
@@ -611,11 +626,26 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context,
             boolean checkWriteVersion) throws StandardException {
-        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                rawTransaction, table, rowLocation);
+        DirectoryRecord directory = MvccRawStoreRowDirectory.findCurrent(
+                rawTransaction, table, rowLocation, projection);
         while (true) {
             if (checkWriteVersion) {
                 validateWriteVersion(rowLocation, directory.head().versionId());
+            }
+            DirectoryHeadSummary summary = directory.head().summary();
+            if (directory.rowBearing()
+                    && summary.available()
+                    && summary.visibleTo(context.transactionId(), snapshotSequence)) {
+                if (summary.tombstone()) {
+                    return null;
+                }
+                return new VisibleRow(
+                        rowLocation.rowId(),
+                        directory.head().versionId(),
+                        directory.currentValues(),
+                        null,
+                        MvccRawStoreRowDirectory.location(
+                                rowLocation.rowId(), directory.handle()));
             }
             try {
                 VersionRecord version = MvccRawStoreVersionReader.findVisible(
@@ -640,8 +670,8 @@ final class MvccRawStoreTable {
                 // A concurrent rollback can change the directory after this read
                 // captured an uncommitted head and before it follows that head into
                 // the version container. Retry only if the head moved.
-                DirectoryRecord refreshed = MvccRawStoreRowDirectory.find(
-                        rawTransaction, table, rowLocation);
+                DirectoryRecord refreshed = MvccRawStoreRowDirectory.findCurrent(
+                        rawTransaction, table, rowLocation, projection);
                 if (refreshed.head().versionId() == directory.head().versionId()) {
                     throw missing;
                 }
@@ -792,8 +822,24 @@ final class MvccRawStoreTable {
                     if (page.isDeletedAtSlot(slot)) {
                         continue;
                     }
-                    DirectoryRecord directory = decodeDirectory(rawTransaction, page, slot);
+                    DirectoryRecord directory = decodeCurrentDirectory(
+                            rawTransaction, table, page, slot, projection);
                     if (directory == null) {
+                        continue;
+                    }
+                    DirectoryHeadSummary summary = directory.head().summary();
+                    if (directory.rowBearing()
+                            && summary.available()
+                            && summary.visibleTo(context.transactionId(), snapshotSequence)) {
+                        if (!summary.tombstone()) {
+                            rows.add(new VisibleRow(
+                                    directory.rowId(),
+                                    directory.head().versionId(),
+                                    directory.currentValues(),
+                                    null,
+                                    MvccRawStoreRowDirectory.location(
+                                            directory.rowId(), directory.handle())));
+                        }
                         continue;
                     }
                     VersionRecord version = MvccRawStoreVersionReader.findVisible(
@@ -1247,7 +1293,8 @@ final class MvccRawStoreTable {
                 RecordHint.of(versionHandle),
                 context.transactionId(),
                 MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
-                flags);
+                flags,
+                values);
         MvccRawStoreOrderedIndex.insertVersion(
                 context.transactionManager(),
                 table,
@@ -1681,16 +1728,66 @@ final class MvccRawStoreTable {
             Page page,
             int slot) throws StandardException {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
-        if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
-                && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
-            throw new IllegalStateException(
-                    "RawStore MVCC directory row has unsupported field count: " + fieldCount);
-        }
+        validateDirectoryFieldCount(fieldCount);
         boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
-        boolean hasSummary = fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        boolean hasSummary = fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        boolean rowBearing = fieldCount > MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
         Object[] row = directoryTemplate(transaction, fieldCount);
-        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
+        FetchDescriptor descriptor = rowBearing
+                ? directoryFetchDescriptor(fieldCount, null, 0)
+                : null;
+        RecordHandle handle = page.fetchFromSlot(null, slot, row, descriptor, false);
+        return decodeDirectoryRow(row, handle, hasHint, hasSummary, rowBearing, null);
+    }
+
+    static DirectoryRecord decodeCurrentDirectory(
+            Transaction transaction,
+            Descriptor table,
+            Page page,
+            int slot,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        validateDirectoryFieldCount(fieldCount);
+        int currentFieldCount = MvccRawStoreFormat.directoryCurrentFieldCount(
+                table.columnCount());
+        if (fieldCount > MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT
+                && fieldCount != currentFieldCount) {
+            throw new IllegalStateException(
+                    "RawStore MVCC row-bearing directory width mismatch: expected "
+                            + currentFieldCount + " fields but found " + fieldCount);
+        }
+        if (fieldCount != currentFieldCount) {
+            return decodeDirectory(transaction, page, slot);
+        }
+        Object[] row = directoryCurrentTemplate(transaction, table, projection);
+        RecordHandle handle = page.fetchFromSlot(
+                null,
+                slot,
+                row,
+                directoryFetchDescriptor(fieldCount, projection, table.columnCount()),
+                false);
+        StoreDataValue[] values = projection != null && !projection.includesPayload()
+                ? null
+                : new StoreDataValue[table.columnCount()];
+        if (values != null) {
+            for (int column = 0; column < values.length; column++) {
+                if (projection == null || projection.includes(column)) {
+                    values[column] = StoreValueCopySupport.cloneValue(
+                            (StoreDataValue) row[MvccRawStoreFormat.DIRECTORY_PAYLOAD_START + column],
+                            true);
+                }
+            }
+        }
+        return decodeDirectoryRow(row, handle, true, true, true, values);
+    }
+
+    private static DirectoryRecord decodeDirectoryRow(
+            Object[] row,
+            RecordHandle handle,
+            boolean hasHint,
+            boolean hasSummary,
+            boolean rowBearing,
+            StoreDataValue[] currentValues) throws StandardException {
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND) {
             return null;
@@ -1729,7 +1826,36 @@ final class MvccRawStoreTable {
                                 MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID),
                         hint,
                         summary),
-                handle);
+                handle,
+                rowBearing,
+                currentValues);
+    }
+
+    private static void validateDirectoryFieldCount(int fieldCount) {
+        if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                && fieldCount < MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+            throw new IllegalStateException(
+                    "RawStore MVCC directory row has unsupported field count: " + fieldCount);
+        }
+    }
+
+    private static FetchDescriptor directoryFetchDescriptor(
+            int fieldCount,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            int columnCount) {
+        FormatableBitSet fields = new FormatableBitSet(fieldCount);
+        int headerFields = Math.min(
+                fieldCount, MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT);
+        for (int field = 0; field < headerFields; field++) {
+            fields.set(field);
+        }
+        for (int column = 0; column < columnCount; column++) {
+            if (projection == null || projection.includes(column)) {
+                fields.set(MvccRawStoreFormat.DIRECTORY_PAYLOAD_START + column);
+            }
+        }
+        return new FetchDescriptor(fieldCount, fields, null);
     }
 
     private static Object[] allocatorTemplate(Transaction transaction) throws StandardException {
@@ -1753,6 +1879,61 @@ final class MvccRawStoreTable {
         Object[] row = directoryTemplate(
                 transaction,
                 MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT);
+        populateDirectoryHeader(
+                transaction,
+                row,
+                rowId,
+                headVersionId,
+                headHint,
+                creatorTransactionId,
+                beginSequence,
+                flags);
+        return row;
+    }
+
+    static Object[] directoryRow(
+            Transaction transaction,
+            Descriptor table,
+            long rowId,
+            long headVersionId,
+            RecordHint headHint,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags,
+            StoreDataValue[] values) throws StandardException {
+        if (values != null && values.length != table.columnCount()) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC current-row width mismatch: expected "
+                            + table.columnCount());
+        }
+        Object[] row = directoryCurrentTemplate(transaction, table, null);
+        populateDirectoryHeader(
+                transaction,
+                row,
+                rowId,
+                headVersionId,
+                headHint,
+                creatorTransactionId,
+                beginSequence,
+                flags);
+        for (int column = 0; column < table.columnCount(); column++) {
+            row[MvccRawStoreFormat.DIRECTORY_PAYLOAD_START + column] = values == null
+                    ? MvccRawStoreFormat.nullValue(
+                            transaction, table.formatId(column), table.collationId(column))
+                    : StoreValueCopySupport.cloneValue(values[column]);
+        }
+        return row;
+    }
+
+    private static void populateDirectoryHeader(
+            Transaction transaction,
+            Object[] row,
+            long rowId,
+            long headVersionId,
+            RecordHint headHint,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags) throws StandardException {
         row[MvccRawStoreFormat.DIRECTORY_KIND_FIELD] = MvccRawStoreFormat.intValue(
                 transaction,
                 MvccRawStoreFormat.DIRECTORY_KIND);
@@ -1772,7 +1953,6 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.longValue(transaction, beginSequence);
         row[MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS] =
                 MvccRawStoreFormat.intValue(transaction, flags);
-        return row;
     }
 
     private static Object[] directoryTemplate(
@@ -1790,13 +1970,30 @@ final class MvccRawStoreTable {
             row[MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD] =
                     MvccRawStoreFormat.intValue(transaction, 0);
         }
-        if (fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+        if (fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
             row[MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID] =
                     MvccRawStoreFormat.longValue(transaction, 0L);
             row[MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE] =
                     MvccRawStoreFormat.longValue(transaction, 0L);
             row[MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS] =
                     MvccRawStoreFormat.intValue(transaction, 0);
+        }
+        return row;
+    }
+
+    private static Object[] directoryCurrentTemplate(
+            Transaction transaction,
+            Descriptor table,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        Object[] row = directoryTemplate(
+                transaction,
+                MvccRawStoreFormat.directoryCurrentFieldCount(table.columnCount()));
+        for (int column = 0; column < table.columnCount(); column++) {
+            if (projection == null || projection.includes(column)) {
+                row[MvccRawStoreFormat.DIRECTORY_PAYLOAD_START + column] =
+                        MvccRawStoreFormat.nullValue(
+                                transaction, table.formatId(column), table.collationId(column));
+            }
         }
         return row;
     }
@@ -1859,7 +2056,15 @@ final class MvccRawStoreTable {
         }
     }
 
-    record DirectoryRecord(long rowId, DirectoryHead head, RecordHandle handle) {
+    record DirectoryRecord(
+            long rowId,
+            DirectoryHead head,
+            RecordHandle handle,
+            boolean rowBearing,
+            StoreDataValue[] currentValues) {
+        DirectoryRecord(long rowId, DirectoryHead head, RecordHandle handle) {
+            this(rowId, head, handle, false, null);
+        }
     }
 
     private record MutationTarget(
