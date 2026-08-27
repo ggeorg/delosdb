@@ -68,11 +68,11 @@ final class MvccRawStoreVersionRows {
             return new FetchDescriptor(fieldCount, fields, null);
         }
 
-        boolean includes(int column) {
+        private boolean includes(int column) {
             return column < payloadColumns.size() && payloadColumns.isSet(column);
         }
 
-        boolean includesPayload() {
+        private boolean includesPayload() {
             return payloadColumns.anySetBit(-1) >= 0;
         }
 

@@ -69,7 +69,6 @@ final class MvccRawStoreMetadataInspection {
     private static final int ORDERED_INDEX_FIELD_COUNT = 4;
 
     private static final int DIRECTORY_KIND_FIELD = 0;
-    private static final int DIRECTORY_FORMAT_VERSION_FIELD = 1;
     private static final int DIRECTORY_KIND = 3;
     private static final int DIRECTORY_ROW_ID_FIELD = 2;
     private static final int DIRECTORY_HEAD_VERSION_ID_FIELD = 3;
@@ -680,7 +679,7 @@ final class MvccRawStoreMetadataInspection {
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != DIRECTORY_BASE_FIELD_COUNT
                             && fieldCount != DIRECTORY_HINT_FIELD_COUNT
-                            && fieldCount < DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                            && fieldCount != DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw new AssertionError(
                                 "Unexpected RawStore MVCC directory field count: " + fieldCount);
                     }
@@ -765,7 +764,7 @@ final class MvccRawStoreMetadataInspection {
                     }
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != DIRECTORY_HINT_FIELD_COUNT
-                            && fieldCount < DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                            && fieldCount != DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw new AssertionError("Directory lookup hint is absent");
                     }
                     long headVersionId = longField(
@@ -873,15 +872,21 @@ final class MvccRawStoreMetadataInspection {
                         continue;
                     }
                     Object[] row = new Object[] {
-                            new SQLInteger(DIRECTORY_KIND),
-                            new SQLInteger(intField(
-                                    raw, page, slot, DIRECTORY_FORMAT_VERSION_FIELD)),
-                            new SQLLongint(longField(
-                                    raw, page, slot, DIRECTORY_ROW_ID_FIELD)),
-                            new SQLLongint(longField(
-                                    raw, page, slot, DIRECTORY_HEAD_VERSION_ID_FIELD))
+                            new SQLInteger(0),
+                            new SQLInteger(0),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLInteger(0),
+                            new SQLLongint(0L),
+                            new SQLLongint(0L),
+                            new SQLInteger(0)
                     };
-                    page.updateAtSlot(slot, row, null);
+                    page.fetchFromSlot(null, slot, row, null, false);
+                    page.updateAtSlot(
+                            slot,
+                            Arrays.copyOf(row, DIRECTORY_BASE_FIELD_COUNT),
+                            null);
                 }
                 long pageNumber = page.getPageNumber();
                 page.unlatch();

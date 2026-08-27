@@ -20,7 +20,6 @@ import java.util.regex.Pattern;
 /** Proves the accepted MVCC current-row architecture is permanent default behavior. */
 public final class MvccCurrentRowArchitecturePermanentTest extends MvccSqlTestSupport {
     private static final String DATABASE = "mvcc-current-row-architecture-permanent";
-    private static final String COLD_DATABASE = "mvcc-row-bearing-current-directory-permanent";
 
     public void testRetiredExperimentalFlagsCannotDisablePermanentCurrentRowPath()
             throws Exception {
@@ -38,14 +37,14 @@ public final class MvccCurrentRowArchitecturePermanentTest extends MvccSqlTestSu
             executeUpdate(connection, "insert into permanent_t values (1, 10)");
             connection.commit();
 
-            Measurement first = measuredRead(connection, "permanent_t", 1);
+            Measurement first = measuredRead(connection, 1);
             assertEquals(10, first.quantity());
             assertTrue(metric(first.statistics(), "mvccCurrentRowAnchorHits") >= 1L);
             assertEquals(0L, metric(first.statistics(), "mvccDirectoryPageAcquisitions"));
             assertTrue(metric(first.statistics(), "mvccCurrentVersionReadImageFallbacks") >= 1L);
             assertTrue(metric(first.statistics(), "mvccVersionPageAcquisitions") >= 1L);
 
-            Measurement second = measuredRead(connection, "permanent_t", 1);
+            Measurement second = measuredRead(connection, 1);
             assertEquals(10, second.quantity());
             assertTrue(metric(second.statistics(), "mvccCurrentRowAnchorHits") >= 1L);
             assertTrue(metric(second.statistics(), "mvccCurrentVersionReadImageHits") >= 1L);
@@ -56,39 +55,11 @@ public final class MvccCurrentRowArchitecturePermanentTest extends MvccSqlTestSu
         shutdownDatabase(database);
     }
 
-    public void testColdRestartUsesRowBearingCurrentDirectory() throws Exception {
-        String database = databaseName(COLD_DATABASE);
-        try (Connection connection = openDatabase(database, true)) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection,
-                    "create table cold_t (id int not null primary key, quantity int not null) using delos_mvcc");
-            executeUpdate(connection, "insert into cold_t values (1, 10)");
-            connection.commit();
-        }
-        shutdownDatabase(database);
-
-        try (Connection connection = openDatabase(database, false)) {
-            connection.setAutoCommit(false);
-            Measurement cold = measuredRead(connection, "cold_t", 1);
-            assertEquals(10, cold.quantity());
-            assertEquals(0L, metric(cold.statistics(), "mvccCurrentRowAnchorHits"));
-            assertEquals(1L, metric(cold.statistics(), "mvccDirectoryPageAcquisitions"));
-            assertEquals(0L, metric(cold.statistics(), "mvccDirectoryLogicalFallbacks"));
-            assertEquals(0L, metric(cold.statistics(), "mvccVersionPageAcquisitions"));
-            assertEquals(0L, metric(cold.statistics(), "mvccVersionSlotFetches"));
-            assertEquals(0L, metric(cold.statistics(), "mvccVersionChainSteps"));
-            assertEquals(1L, metric(cold.statistics(), "mvccVisibilityChecks"));
-            connection.commit();
-        }
-        shutdownDatabase(database);
-    }
-
-    private static Measurement measuredRead(Connection connection, String table, int id)
-            throws Exception {
+    private static Measurement measuredRead(Connection connection, int id) throws Exception {
         executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
         int quantity;
         try (PreparedStatement statement = connection.prepareStatement(
-                "select quantity from " + table + " where id = ?")) {
+                "select quantity from permanent_t where id = ?")) {
             statement.setInt(1, id);
             try (ResultSet resultSet = statement.executeQuery()) {
                 assertTrue(resultSet.next());

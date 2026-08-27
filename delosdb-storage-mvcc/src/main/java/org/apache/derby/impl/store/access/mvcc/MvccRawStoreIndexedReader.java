@@ -144,16 +144,10 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 if (index > start) {
                     metrics.directoryPageReuseHit();
                 }
-                MvccRawStoreOrderedIndex.Candidate candidate = candidates.get(index);
-                directories[index - start] = coveringEligible
-                        ? MvccRawStoreRowDirectory.findByHint(
-                                transaction, candidate.rowLocation(), page)
-                        : MvccRawStoreRowDirectory.findCurrentByHint(
-                                transaction,
-                                table,
-                                candidate.rowLocation(),
-                                projection,
-                                page);
+                directories[index - start] = MvccRawStoreRowDirectory.findByHint(
+                        transaction,
+                        candidates.get(index).rowLocation(),
+                        page);
             }
         } finally {
             if (page != null) {
@@ -173,19 +167,11 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
     private Result readWithDirectoryLookup(
             MvccRawStoreOrderedIndex.Candidate candidate,
             boolean coveringEligible) throws StandardException {
-        MvccRawStoreTable.DirectoryRecord directory = coveringEligible
-                ? MvccRawStoreRowDirectory.find(
-                        transaction,
-                        candidate.rowLocation(),
-                        directoryContainer(),
-                        metrics)
-                : MvccRawStoreRowDirectory.findCurrent(
-                        transaction,
-                        table,
-                        candidate.rowLocation(),
-                        projection,
-                        directoryContainer(),
-                        metrics);
+        MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
+                transaction,
+                candidate.rowLocation(),
+                directoryContainer(),
+                metrics);
         return readResolved(candidate, coveringEligible, directory);
     }
 
@@ -201,17 +187,10 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 // RawStore rollback changes the directory before it removes the
                 // rolled-back version. The directory was read without retaining
                 // its page latch, so re-resolve only when the current head moved.
-                MvccRawStoreTable.DirectoryRecord refreshed = coveringEligible
-                        ? MvccRawStoreRowDirectory.find(
+                MvccRawStoreTable.DirectoryRecord refreshed =
+                        MvccRawStoreRowDirectory.find(
                                 transaction,
                                 candidate.rowLocation(),
-                                directoryContainer(),
-                                metrics)
-                        : MvccRawStoreRowDirectory.findCurrent(
-                                transaction,
-                                table,
-                                candidate.rowLocation(),
-                                projection,
                                 directoryContainer(),
                                 metrics);
                 if (refreshed.head().versionId() == current.head().versionId()) {
@@ -227,12 +206,6 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             boolean coveringEligible,
             MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
         context.observeCurrentRowAnchor(table, directory);
-        if (!coveringEligible && directory.rowBearing()) {
-            Result current = readRowBearingCurrent(candidate, directory);
-            if (current != null) {
-                return current;
-            }
-        }
         if (coveringEligible && directory.head().versionId() == candidate.versionId()) {
             MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
             if (summary.available()) {
@@ -305,34 +278,6 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         visible.versionId(),
                         visible.values(),
                         visible.handle(),
-                        MvccRawStoreRowDirectory.location(
-                                candidate.rowId(), directory.handle())),
-                false);
-    }
-
-    private Result readRowBearingCurrent(
-            MvccRawStoreOrderedIndex.Candidate candidate,
-            MvccRawStoreTable.DirectoryRecord directory) throws StandardException {
-        MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
-        if (!summary.available()) {
-            return null;
-        }
-        metrics.directoryHeadSummaryChecked();
-        metrics.visibilityChecked();
-        if (!summary.visibleTo(context.transactionId(), snapshotSequence)) {
-            metrics.directoryHeadSummaryFallback();
-            return null;
-        }
-        metrics.directoryHeadSummaryHit();
-        if (summary.tombstone()) {
-            return new Result(null, false);
-        }
-        return new Result(
-                new MvccRawStoreTable.VisibleRow(
-                        candidate.rowId(),
-                        directory.head().versionId(),
-                        directory.currentValues(),
-                        null,
                         MvccRawStoreRowDirectory.location(
                                 candidate.rowId(), directory.handle())),
                 false);

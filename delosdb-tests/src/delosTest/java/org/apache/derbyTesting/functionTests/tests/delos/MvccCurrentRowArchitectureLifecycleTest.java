@@ -290,12 +290,9 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageChecks"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageHits"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageFallbacks"));
-        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryChecks"));
-        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryHits"));
-        assertEquals(0L, metric(cold.statistics(), "mvccDirectoryHeadSummaryFallbacks"));
-        assertEquals(0L, metric(cold.statistics(), "mvccVersionPageAcquisitions"));
-        assertEquals(0L, metric(cold.statistics(), "mvccVersionSlotFetches"));
-        assertEquals(0L, metric(cold.statistics(), "mvccVersionChainSteps"));
+        assertTrue("cold recovery read must use authoritative version storage; statistics="
+                        + cold.statistics(),
+                metric(cold.statistics(), "mvccVersionPageAcquisitions") >= 1L);
 
         Measurement imageWarm = measuredRead(connection, table, id);
         assertRow(imageWarm.row(), expectedQuantity, expectedPayload);
