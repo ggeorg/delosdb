@@ -14406,6 +14406,7 @@ tasks.register('runDelosPhase2RF10MvccDeleteReinsertCorrectnessStress', JavaExec
         systemProperties([
                 'delosdb.experimental.heapPageReadImage': 'true',
                 'delosdb.experimental.fastRecordReadLock': 'true',
+                'delosdb.btree.disableUnlatchedRootRoutingSnapshot': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
