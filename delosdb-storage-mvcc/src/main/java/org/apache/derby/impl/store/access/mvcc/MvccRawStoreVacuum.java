@@ -318,7 +318,7 @@ final class MvccRawStoreVacuum {
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                             && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                            && fieldCount < MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                            && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw corruption(
                                 "unsupported directory field count",
                                 Integer.toString(fieldCount));
@@ -351,7 +351,7 @@ final class MvccRawStoreVacuum {
                             hintPage,
                             hintRecord,
                             hasHint,
-                            fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT,
+                            fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT,
                             page.getRecordHandleAtSlot(slot)));
                 }
                 long pageNumber = page.getPageNumber();

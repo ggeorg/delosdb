@@ -73,9 +73,7 @@ public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTes
                     secondAnchorHits >= 1L);
             assertEquals(secondAnchorChecks, secondAnchorHits);
             assertEquals(0L, metric(second.statistics(), "mvccCurrentRowAnchorFallbacks"));
-            assertTrue("second read must rebuild the image from the row-bearing current directory; statistics="
-                            + second.statistics(),
-                    metric(second.statistics(), "mvccDirectoryPageAcquisitions") >= 1L);
+            assertEquals(0L, metric(second.statistics(), "mvccDirectoryPageAcquisitions"));
             long secondImageChecks =
                     metric(second.statistics(), "mvccCurrentVersionReadImageChecks");
             assertTrue("second read must check the empty target version image; statistics="
@@ -84,7 +82,9 @@ public final class MvccCurrentRowArchitectureBoundedCacheTest extends MvccSqlTes
             assertEquals(0L, metric(second.statistics(), "mvccCurrentVersionReadImageHits"));
             assertEquals(secondImageChecks,
                     metric(second.statistics(), "mvccCurrentVersionReadImageFallbacks"));
-            assertEquals(0L, metric(second.statistics(), "mvccVersionPageAcquisitions"));
+            assertTrue("second read must rebuild the image from authoritative version storage; "
+                            + "statistics=" + second.statistics(),
+                    metric(second.statistics(), "mvccVersionPageAcquisitions") >= 1L);
 
             long thirdAnchorChecks =
                     metric(third.statistics(), "mvccCurrentRowAnchorChecks");

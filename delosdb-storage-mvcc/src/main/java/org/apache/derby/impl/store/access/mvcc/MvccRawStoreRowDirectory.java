@@ -17,7 +17,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -41,44 +40,6 @@ final class MvccRawStoreRowDirectory {
                 container.close();
             }
         }
-    }
-
-    static MvccRawStoreTable.DirectoryRecord findCurrent(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        try {
-            return findCurrent(
-                    transaction, table, rowLocation, projection, container, null);
-        } finally {
-            if (container != null) {
-                container.close();
-            }
-        }
-    }
-
-    static MvccRawStoreTable.DirectoryRecord findCurrent(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
-        MvccRawStoreTable.DirectoryRecord hinted = findCurrentByHint(
-                transaction, table, rowLocation, projection, container, metrics);
-        if (hinted != null) {
-            return hinted;
-        }
-        if (metrics != null) {
-            metrics.directoryLogicalFallback();
-        }
-        return findCurrentByLogicalId(
-                transaction, table, rowLocation.rowId(), projection, container, metrics);
     }
 
     static MvccRawStoreTable.DirectoryRecord find(
@@ -178,8 +139,7 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.RecordHint newHeadHint,
             long creatorTransactionId,
             long beginSequence,
-            int flags,
-            StoreDataValue[] values) throws StandardException {
+            int flags) throws StandardException {
         if (updateByHint(
                 transaction,
                 table,
@@ -190,8 +150,7 @@ final class MvccRawStoreRowDirectory {
                 newHeadHint,
                 creatorTransactionId,
                 beginSequence,
-                flags,
-                values)) {
+                flags)) {
             return;
         }
         ContainerHandle container = transaction.openContainer(
@@ -219,14 +178,12 @@ final class MvccRawStoreRowDirectory {
                             slot,
                             MvccRawStoreTable.directoryRow(
                                     transaction,
-                                    table,
                                     rowId,
                                     newHeadVersionId,
                                     newHeadHint,
                                     creatorTransactionId,
                                     beginSequence,
-                                    flags,
-                                    values),
+                                    flags),
                             null);
                     return;
                 }
@@ -244,58 +201,6 @@ final class MvccRawStoreRowDirectory {
         }
         throw new IllegalStateException(
                 "RawStore MVCC directory entry disappeared for logical row " + rowId);
-    }
-
-    private static MvccRawStoreTable.DirectoryRecord findCurrentByHint(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
-        if (container == null || rowLocation == null || !rowLocation.hasLocatorHint()) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(rowLocation.locatorPageId());
-            if (page != null && metrics != null) {
-                metrics.directoryPageAcquired();
-            }
-            if (page == null) {
-                return null;
-            }
-            return findCurrentByHint(
-                    transaction, table, rowLocation, projection, page);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-        }
-    }
-
-    static MvccRawStoreTable.DirectoryRecord findCurrentByHint(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            Page page) throws StandardException {
-        if (page == null
-                || rowLocation == null
-                || !rowLocation.hasLocatorHint()
-                || page.getPageNumber() != rowLocation.locatorPageId()) {
-            return null;
-        }
-        int slot = rowLocation.locatorSlotId();
-        if (!isDirectorySlot(page, slot)) {
-            return null;
-        }
-        MvccRawStoreTable.DirectoryRecord directory =
-                MvccRawStoreTable.decodeCurrentDirectory(
-                        transaction, table, page, slot, projection);
-        return directory != null && directory.rowId() == rowLocation.rowId()
-                ? directory
-                : null;
     }
 
     private static MvccRawStoreTable.DirectoryRecord findByHint(
@@ -343,51 +248,6 @@ final class MvccRawStoreRowDirectory {
         return directory != null && directory.rowId() == rowLocation.rowId()
                 ? directory
                 : null;
-    }
-
-    private static MvccRawStoreTable.DirectoryRecord findCurrentByLogicalId(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
-        if (container == null) {
-            return new MvccRawStoreTable.DirectoryRecord(
-                    rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                if (metrics != null) {
-                    metrics.directoryPageAcquired();
-                }
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeCurrentDirectory(
-                                    transaction, table, page, slot, projection);
-                    if (directory != null && directory.rowId() == rowId) {
-                        return directory;
-                    }
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-        }
-        return new MvccRawStoreTable.DirectoryRecord(
-                rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
     }
 
     private static MvccRawStoreTable.DirectoryRecord findByLogicalId(
@@ -559,11 +419,6 @@ final class MvccRawStoreRowDirectory {
                     null);
             return;
         }
-        if (directory.rowBearing()) {
-            throw new IllegalStateException(
-                    "RawStore MVCC row-bearing head summary did not match pending version "
-                            + pending.versionId());
-        }
         page.updateAtSlot(
                 slot,
                 MvccRawStoreTable.directoryRow(
@@ -587,8 +442,7 @@ final class MvccRawStoreRowDirectory {
             MvccRawStoreTable.RecordHint newHeadHint,
             long creatorTransactionId,
             long beginSequence,
-            int flags,
-            StoreDataValue[] values) throws StandardException {
+            int flags) throws StandardException {
         if (directoryLocation == null || !directoryLocation.hasLocatorHint()) {
             return false;
         }
@@ -619,14 +473,12 @@ final class MvccRawStoreRowDirectory {
                     slot,
                     MvccRawStoreTable.directoryRow(
                             transaction,
-                            table,
                             rowId,
                             newHeadVersionId,
                             newHeadHint,
                             creatorTransactionId,
                             beginSequence,
-                            flags,
-                            values),
+                            flags),
                     null);
             return true;
         } finally {
@@ -646,7 +498,7 @@ final class MvccRawStoreRowDirectory {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         return fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                || fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
     }
 
     private static void validateExpectedHead(
