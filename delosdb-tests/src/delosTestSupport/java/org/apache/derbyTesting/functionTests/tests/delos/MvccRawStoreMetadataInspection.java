@@ -69,6 +69,7 @@ final class MvccRawStoreMetadataInspection {
     private static final int ORDERED_INDEX_FIELD_COUNT = 4;
 
     private static final int DIRECTORY_KIND_FIELD = 0;
+    private static final int DIRECTORY_FORMAT_VERSION_FIELD = 1;
     private static final int DIRECTORY_KIND = 3;
     private static final int DIRECTORY_ROW_ID_FIELD = 2;
     private static final int DIRECTORY_HEAD_VERSION_ID_FIELD = 3;
