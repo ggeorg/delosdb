@@ -62,7 +62,7 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
 
             // Prime only the Heap statement. An MVCC warmup would populate the
             // database-scoped current-row anchor/read-image caches and bypass the
-            // directory/version hinted-read topology this accounting test exists to
+            // cold row-bearing current-directory path this accounting test exists to
             // measure.
             executePrimaryKeyRead(connection, HEAP_TABLE, key, false);
             connection.commit();
@@ -77,8 +77,9 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         shutdownDatabase(database);
 
         // A clean restart clears the runtime-only current-row anchor/read-image caches.
-        // The first MVCC read after reopen must therefore exercise exactly the physical
-        // path under test: ordered-index candidate -> directory hint -> version hint.
+        // The first MVCC read after reopen must therefore exercise the Phase 3M physical
+        // path under test: ordered-index candidate -> row-bearing current directory.
+        // A current visible row must not require a version-container fetch.
         try (Connection connection = openDatabase(database, false)) {
             connection.setAutoCommit(false);
             mvccStatistics = measuredPrimaryKeyRead(connection, MVCC_TABLE, key, true);
@@ -118,11 +119,13 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
         assertEquals("one MVCC hidden B-tree candidate", 1, mvccBtree.candidates());
         assertEquals("one MVCC directory page acquisition", 1L, directoryPages);
         assertEquals("MVCC directory hint must avoid logical fallback", 0L, directoryFallbacks);
-        assertEquals("one MVCC version page acquisition", 1L, versionPages);
-        assertEquals("current version hint performs identity plus projected slot fetches", 2L,
-                versionSlotFetches);
-        assertEquals("one MVCC visibility check", 1L, visibilityChecks);
-        assertEquals("one current-head version-chain step", 1L, versionChainSteps);
+        assertEquals("current row-bearing directory avoids MVCC version page acquisition",
+                0L, versionPages);
+        assertEquals("current row-bearing directory avoids MVCC version slot fetches",
+                0L, versionSlotFetches);
+        assertEquals("one MVCC current-row visibility check", 1L, visibilityChecks);
+        assertEquals("current row-bearing directory avoids version-chain traversal",
+                0L, versionChainSteps);
         assertEquals("MVCC version hint must avoid logical fallback", 0L, versionFallbacks);
 
         List<Row> accounting = new ArrayList<>();
@@ -163,12 +166,12 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 "measured mvccVersionLogicalFallbacks"));
         accounting.add(row("logical candidates/result", 1, candidates,
                 "one successful primary-key result"));
-        accounting.add(row("unique physical records represented", 2, 3,
-                "heap=index+base row; MVCC=index+directory+version"));
-        accounting.add(row("physical record fetch/decode operations", 2, 4,
-                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+directory decode+2 version slot fetches"));
-        accounting.add(row("storage container opens required by read path", 2, 3,
-                "source-proven: index+heap vs hidden index+directory+version"));
+        accounting.add(row("unique physical records represented", 2, 2,
+                "heap=index+base row; MVCC=index+row-bearing current directory"));
+        accounting.add(row("physical record fetch/decode operations", 2, 2,
+                "heap=index fetchNext+base fetch; MVCC=hidden-index fetchNext+current-directory decode"));
+        accounting.add(row("storage container opens required by read path", 2, 2,
+                "source-proven: index+heap vs hidden index+current directory"));
 
         writeReports(rows, key, accounting, heapStatistics, mvccStatistics, mvccBtree);
     }

@@ -290,9 +290,12 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageChecks"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageHits"));
         assertEquals(0L, metric(cold.statistics(), "mvccCurrentVersionReadImageFallbacks"));
-        assertTrue("cold recovery read must use authoritative version storage; statistics="
-                        + cold.statistics(),
-                metric(cold.statistics(), "mvccVersionPageAcquisitions") >= 1L);
+        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryChecks"));
+        assertEquals(1L, metric(cold.statistics(), "mvccDirectoryHeadSummaryHits"));
+        assertEquals(0L, metric(cold.statistics(), "mvccDirectoryHeadSummaryFallbacks"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionPageAcquisitions"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionSlotFetches"));
+        assertEquals(0L, metric(cold.statistics(), "mvccVersionChainSteps"));
 
         Measurement imageWarm = measuredRead(connection, table, id);
         assertRow(imageWarm.row(), expectedQuantity, expectedPayload);
@@ -303,7 +306,9 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
                 anchorHits >= 1L);
         assertEquals(anchorChecks, anchorHits);
         assertEquals(0L, metric(imageWarm.statistics(), "mvccCurrentRowAnchorFallbacks"));
-        assertEquals(0L, metric(imageWarm.statistics(), "mvccDirectoryPageAcquisitions"));
+        assertTrue("second recovery read must rebuild the image from the row-bearing current directory; statistics="
+                        + imageWarm.statistics(),
+                metric(imageWarm.statistics(), "mvccDirectoryPageAcquisitions") >= 1L);
         long imageChecks = metric(
                 imageWarm.statistics(), "mvccCurrentVersionReadImageChecks");
         assertTrue("second recovery read must check the empty version image; statistics="
@@ -312,9 +317,7 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
         assertEquals(0L, metric(imageWarm.statistics(), "mvccCurrentVersionReadImageHits"));
         assertEquals(imageChecks,
                 metric(imageWarm.statistics(), "mvccCurrentVersionReadImageFallbacks"));
-        assertTrue("second recovery read must rebuild the image from RawStore; statistics="
-                        + imageWarm.statistics(),
-                metric(imageWarm.statistics(), "mvccVersionPageAcquisitions") >= 1L);
+        assertEquals(0L, metric(imageWarm.statistics(), "mvccVersionPageAcquisitions"));
 
         Measurement warm = measuredRead(connection, table, id);
         assertFullyWarmCurrent(warm, expectedQuantity, expectedPayload);
