@@ -19,6 +19,7 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLif
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -37,6 +38,11 @@ final class MvccRawStoreConglomerateController
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
     private final long statementSnapshotSequence;
+    // IndexRowToBaseRow owns this controller for the statement. Keep the
+    // read-only RawStore lookup resources at that same lifetime instead of
+    // reopening both physical containers for every qualifying base row.
+    private ContainerHandle readDirectoryContainer;
+    private MvccRawStoreVersionReader readVersionReader;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -70,6 +76,12 @@ final class MvccRawStoreConglomerateController
     public void close() {
         if (!closed) {
             closed = true;
+            if (readVersionReader != null) {
+                readVersionReader.close();
+            }
+            if (readDirectoryContainer != null) {
+                readDirectoryContainer.close();
+            }
             if (statementSnapshotLease != null) {
                 statementSnapshotLease.close();
             }
@@ -133,14 +145,18 @@ final class MvccRawStoreConglomerateController
                 visible = checkWriteVersion
                         ? MvccRawStoreTable.readVisibleForWrite(
                                 rawTransaction, table, location, projection, context)
-                        : statementSnapshotLease != null
+                        : !forUpdate
                                 ? MvccRawStoreTable.readVisibleAt(
                                         rawTransaction,
                                         table,
                                         location,
-                                        statementSnapshotSequence,
+                                        statementSnapshotLease != null
+                                                ? statementSnapshotSequence
+                                                : context.snapshotSequence(),
                                         projection,
-                                        context)
+                                        context,
+                                        readDirectoryContainer(),
+                                        readVersionReader())
                                 : MvccRawStoreTable.readVisible(
                                         rawTransaction, table, location, projection, context);
             }
@@ -330,6 +346,22 @@ final class MvccRawStoreConglomerateController
                 destination);
     }
 
+    private ContainerHandle readDirectoryContainer() throws StandardException {
+        if (readDirectoryContainer == null) {
+            readDirectoryContainer = rawTransaction.openContainer(
+                    table.metadataContainer(),
+                    MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
+                    ContainerHandle.MODE_READONLY);
+        }
+        return readDirectoryContainer;
+    }
+
+    private MvccRawStoreVersionReader readVersionReader() throws StandardException {
+        if (readVersionReader == null) {
+            readVersionReader = new MvccRawStoreVersionReader(rawTransaction, table);
+        }
+        return readVersionReader;
+    }
 
     private void ensureOpen() {
         if (closed) {

@@ -603,6 +603,49 @@ final class MvccRawStoreTable {
                 false);
     }
 
+    static VisibleRow readVisibleAt(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            long snapshotSequence,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreTransactionContext context,
+            ContainerHandle directoryContainer,
+            MvccRawStoreVersionReader versionReader) throws StandardException {
+        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
+                rawTransaction, rowLocation, directoryContainer);
+        while (true) {
+            try {
+                VersionRecord version = versionReader.findVisible(
+                        rowLocation.rowId(),
+                        directory.head(),
+                        context.transactionId(),
+                        snapshotSequence,
+                        projection);
+                if (version == null || version.tombstone()) {
+                    return null;
+                }
+                return new VisibleRow(
+                        rowLocation.rowId(),
+                        version.versionId(),
+                        version.values(),
+                        version.handle(),
+                        MvccRawStoreRowDirectory.location(
+                                rowLocation.rowId(), directory.handle()));
+            } catch (MvccRawStoreVersionReader.MissingVersionException missing) {
+                // A concurrent rollback can change the directory after this read
+                // captured an uncommitted head and before it follows that head into
+                // the version container. Retry only if the head moved.
+                DirectoryRecord refreshed = MvccRawStoreRowDirectory.find(
+                        rawTransaction, rowLocation, directoryContainer);
+                if (refreshed.head().versionId() == directory.head().versionId()) {
+                    throw missing;
+                }
+                directory = refreshed;
+            }
+        }
+    }
+
     private static VisibleRow readVisibleAt(
             Transaction rawTransaction,
             Descriptor table,
