@@ -102,10 +102,20 @@ public final class DelosJdbcRangeScanSurfaceValidation {
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("call syscs_util.syscs_set_runtimestatistics(1)");
         }
-        RangeSemantic ordered = executeRange(connection, table, start, endExclusive, false);
+        // This is a native-MVCC mechanism proof, not an optimizer-choice proof.
+        // The normal F02 benchmark is intentionally optimizer-selected and may
+        // choose the inherited SQL primary-key B-tree plus IndexRowToBaseRow.
+        // Force index=null here so both diagnostic arms reach the native MVCC
+        // scan controller and its RawStore ordered-index candidate path.
+        String orderedSql = "select id, quantity from " + table
+                + " --DERBY-PROPERTIES index=null\n"
+                + " where id >= ? and id < ? order by id";
+        RangeSemantic ordered = executeRangeSql(
+                connection, orderedSql, start, endExclusive, false);
         String orderedStatistics = runtimeStatistics(connection);
 
         String naturalSql = "select id, quantity from " + table
+                + " --DERBY-PROPERTIES index=null\n"
                 + " where id >= ? and id < ?";
         RangeSemantic natural = executeRangeSql(
                 connection, naturalSql, start, endExclusive, false);
