@@ -782,7 +782,8 @@ final class MvccRawStoreTable {
             return rows;
         }
         Page page = null;
-        try {
+        try (MvccRawStoreVersionReader versionReader =
+                     new MvccRawStoreVersionReader(rawTransaction, table)) {
             page = container.getFirstPage();
             while (page != null) {
                 int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
@@ -796,9 +797,7 @@ final class MvccRawStoreTable {
                     if (directory == null) {
                         continue;
                     }
-                    VersionRecord version = MvccRawStoreVersionReader.findVisible(
-                            rawTransaction,
-                            table,
+                    VersionRecord version = versionReader.findVisible(
                             directory.rowId(),
                             directory.head(),
                             context.transactionId(),
