@@ -42,6 +42,7 @@ final class MvccRawStoreConglomerateController
     // read-only RawStore lookup resources at that same lifetime instead of
     // reopening both physical containers for every qualifying base row.
     private ContainerHandle readDirectoryContainer;
+    private MvccRawStoreTable.DirectoryDecoder readDirectoryDecoder;
     private MvccRawStoreVersionReader readVersionReader;
     private FormatableBitSet readProjectionColumns;
     private MvccRawStoreVersionRows.FetchProjection readProjection;
@@ -159,6 +160,7 @@ final class MvccRawStoreConglomerateController
                                         projection,
                                         context,
                                         readDirectoryContainer(),
+                                        readDirectoryDecoder(),
                                         readVersionReader())
                                 : MvccRawStoreTable.readVisible(
                                         rawTransaction, table, location, projection, context);
@@ -357,6 +359,13 @@ final class MvccRawStoreConglomerateController
                     ContainerHandle.MODE_READONLY);
         }
         return readDirectoryContainer;
+    }
+
+    private MvccRawStoreTable.DirectoryDecoder readDirectoryDecoder() {
+        if (readDirectoryDecoder == null) {
+            readDirectoryDecoder = new MvccRawStoreTable.DirectoryDecoder(rawTransaction);
+        }
+        return readDirectoryDecoder;
     }
 
     private MvccRawStoreVersionRows.FetchProjection readProjection(

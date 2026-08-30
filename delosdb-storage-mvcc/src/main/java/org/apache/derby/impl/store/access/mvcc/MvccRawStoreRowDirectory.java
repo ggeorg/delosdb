@@ -46,7 +46,15 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRowLocation rowLocation,
             ContainerHandle container) throws StandardException {
-        return find(transaction, rowLocation, container, null);
+        return find(transaction, rowLocation, container, null, null);
+    }
+
+    static MvccRawStoreTable.DirectoryRecord find(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            ContainerHandle container,
+            MvccRawStoreTable.DirectoryDecoder decoder) throws StandardException {
+        return find(transaction, rowLocation, container, null, decoder);
     }
 
     static MvccRawStoreTable.DirectoryRecord find(
@@ -54,15 +62,25 @@ final class MvccRawStoreRowDirectory {
             MvccRowLocation rowLocation,
             ContainerHandle container,
             MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
+        return find(transaction, rowLocation, container, metrics, null);
+    }
+
+    private static MvccRawStoreTable.DirectoryRecord find(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            ContainerHandle container,
+            MvccRawStoreIndexedReadMetrics metrics,
+            MvccRawStoreTable.DirectoryDecoder decoder) throws StandardException {
         MvccRawStoreTable.DirectoryRecord hinted = findByHint(
-                transaction, rowLocation, container, metrics);
+                transaction, rowLocation, container, metrics, decoder);
         if (hinted != null) {
             return hinted;
         }
         if (metrics != null) {
             metrics.directoryLogicalFallback();
         }
-        return findByLogicalId(transaction, rowLocation.rowId(), container, metrics);
+        return findByLogicalId(
+                transaction, rowLocation.rowId(), container, metrics, decoder);
     }
 
     static Map<Long, MvccRowLocation> locations(
@@ -207,7 +225,8 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRowLocation rowLocation,
             ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
+            MvccRawStoreIndexedReadMetrics metrics,
+            MvccRawStoreTable.DirectoryDecoder decoder) throws StandardException {
         if (container == null || rowLocation == null || !rowLocation.hasLocatorHint()) {
             return null;
         }
@@ -220,7 +239,7 @@ final class MvccRawStoreRowDirectory {
             if (page == null) {
                 return null;
             }
-            return findByHint(transaction, rowLocation, page);
+            return findByHint(transaction, rowLocation, page, decoder);
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -233,6 +252,14 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRowLocation rowLocation,
             Page page) throws StandardException {
+        return findByHint(transaction, rowLocation, page, null);
+    }
+
+    private static MvccRawStoreTable.DirectoryRecord findByHint(
+            Transaction transaction,
+            MvccRowLocation rowLocation,
+            Page page,
+            MvccRawStoreTable.DirectoryDecoder decoder) throws StandardException {
         if (page == null
                 || rowLocation == null
                 || !rowLocation.hasLocatorHint()
@@ -243,8 +270,9 @@ final class MvccRawStoreRowDirectory {
         if (!isDirectorySlot(page, slot)) {
             return null;
         }
-        MvccRawStoreTable.DirectoryRecord directory =
-                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+        MvccRawStoreTable.DirectoryRecord directory = decoder == null
+                ? MvccRawStoreTable.decodeDirectory(transaction, page, slot)
+                : decoder.decode(page, slot);
         return directory != null && directory.rowId() == rowLocation.rowId()
                 ? directory
                 : null;
@@ -254,7 +282,8 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             long rowId,
             ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
+            MvccRawStoreIndexedReadMetrics metrics,
+            MvccRawStoreTable.DirectoryDecoder decoder) throws StandardException {
         if (container == null) {
             return new MvccRawStoreTable.DirectoryRecord(
                     rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
@@ -273,8 +302,9 @@ final class MvccRawStoreRowDirectory {
                     if (page.isDeletedAtSlot(slot)) {
                         continue;
                     }
-                    MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+                    MvccRawStoreTable.DirectoryRecord directory = decoder == null
+                            ? MvccRawStoreTable.decodeDirectory(transaction, page, slot)
+                            : decoder.decode(page, slot);
                     if (directory != null && directory.rowId() == rowId) {
                         return directory;
                     }
