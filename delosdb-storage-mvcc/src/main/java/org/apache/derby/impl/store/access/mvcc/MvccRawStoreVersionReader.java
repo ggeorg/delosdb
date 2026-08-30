@@ -29,6 +29,7 @@ import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
+import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical lookup and visibility traversal for one MVCC version container. */
@@ -43,6 +44,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private MvccRawStoreVersionRows.Decoder primaryDecoder;
     private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
     private MvccRawStoreVersionRows.Decoder secondaryDecoder;
+    private StoreDataValue[] directDestination;
 
     MvccRawStoreVersionReader(
             Transaction transaction,
@@ -247,6 +249,24 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         return null;
     }
 
+    MvccRawStoreTable.VersionRecord findVisibleInto(
+            long rowId,
+            MvccRawStoreTable.DirectoryHead head,
+            long transactionId,
+            long snapshotSequence,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            StoreDataValue[] destination) throws StandardException {
+        if (directDestination != null) {
+            throw new IllegalStateException("RawStore MVCC direct decoder is already active");
+        }
+        directDestination = destination;
+        try {
+            return findVisible(rowId, head, transactionId, snapshotSequence, projection);
+        } finally {
+            directDestination = null;
+        }
+    }
+
     MvccRawStoreTable.VersionRecord find(
             long rowId,
             long versionId,
@@ -296,6 +316,18 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
+            }
+            if (directDestination != null) {
+                MvccRawStoreTable.VersionRecord decoded = decoder(projection).decodeAtSlot(
+                        page, slot, directDestination);
+                if (metrics != null) {
+                    metrics.versionSlotFetched();
+                }
+                return decoded != null
+                                && decoded.rowId() == rowId
+                                && decoded.versionId() == versionId
+                        ? decoded
+                        : null;
             }
             page.fetchFromSlot(
                     null,
@@ -354,7 +386,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
                         continue;
                     }
                     MvccRawStoreTable.VersionRecord version =
-                            decoder(projection).decodeAtSlot(page, slot);
+                            decoder(projection).decodeAtSlot(page, slot, directDestination);
                     if (metrics != null) {
                         metrics.versionSlotFetched();
                     }
