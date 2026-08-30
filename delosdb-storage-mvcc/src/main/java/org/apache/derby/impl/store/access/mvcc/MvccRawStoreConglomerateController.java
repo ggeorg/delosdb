@@ -43,6 +43,8 @@ final class MvccRawStoreConglomerateController
     // reopening both physical containers for every qualifying base row.
     private ContainerHandle readDirectoryContainer;
     private MvccRawStoreVersionReader readVersionReader;
+    private FormatableBitSet readProjectionColumns;
+    private MvccRawStoreVersionRows.FetchProjection readProjection;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -132,8 +134,9 @@ final class MvccRawStoreConglomerateController
         } else if (checkWriteVersion) {
             context.beforeRowWrite(table, location.rowId());
         }
-        MvccRawStoreVersionRows.FetchProjection projection =
-                MvccRawStoreVersionRows.projection(table, validColumns);
+        MvccRawStoreVersionRows.FetchProjection projection = !forUpdate
+                ? readProjection(validColumns)
+                : MvccRawStoreVersionRows.projection(table, validColumns);
         MvccRawStoreTable.VisibleRow visible;
         if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
@@ -354,6 +357,19 @@ final class MvccRawStoreConglomerateController
                     ContainerHandle.MODE_READONLY);
         }
         return readDirectoryContainer;
+    }
+
+    private MvccRawStoreVersionRows.FetchProjection readProjection(
+            FormatableBitSet validColumns) {
+        if (validColumns == null) {
+            return null;
+        }
+        if (readProjection != null && validColumns.equals(readProjectionColumns)) {
+            return readProjection;
+        }
+        readProjectionColumns = (FormatableBitSet) validColumns.clone();
+        readProjection = MvccRawStoreVersionRows.projection(table, validColumns);
+        return readProjection;
     }
 
     private MvccRawStoreVersionReader readVersionReader() throws StandardException {
