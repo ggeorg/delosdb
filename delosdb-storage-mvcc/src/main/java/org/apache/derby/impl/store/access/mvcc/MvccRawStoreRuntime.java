@@ -259,9 +259,7 @@ final class MvccRawStoreRuntime {
     void observeCurrentRowAnchor(
             MvccRawStoreTable.Descriptor table,
             MvccRawStoreTable.DirectoryRecord directory) {
-        if (directory == null || directory.currentRow()) {
-            // M2 rows are already direct current images; publishing a transient
-            // anchor would point at metadata instead of a version-container row.
+        if (directory == null) {
             return;
         }
         MvccRawStoreTable.DirectoryHead head = directory.head();
@@ -288,9 +286,6 @@ final class MvccRawStoreRuntime {
             return;
         }
         for (MvccRawStoreTable.PendingVersion pending : committed) {
-            if (pending.currentRecord()) {
-                continue;
-            }
             putCurrentRowAnchor(new CurrentRowAnchor(
                     pending.table().metadataContainer(),
                     pending.rowId(),

@@ -2596,9 +2596,6 @@ public final class DelosJdbcCrossEngineConcurrency {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
         if (target == Target.DELOS_MVCC) {
-            if (Boolean.getBoolean(PREFIX + "mvccM2CurrentRows")) {
-                command.add("-Ddelosdb.experimental.mvccM2CurrentRows=true");
-            }
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -2812,10 +2809,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add("-Ddelosdb.experimental.heapPageReadImage=true");
                     javaCommand.add("-Ddelosdb.experimental.fastRecordReadLock=true");
                 }
-                if (target == Target.DELOS_MVCC_DRDA
-                        && Boolean.getBoolean(PREFIX + "mvccM2CurrentRows")) {
-                    javaCommand.add("-Ddelosdb.experimental.mvccM2CurrentRows=true");
-                }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.skipOpenQueries=20");
@@ -2988,8 +2981,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                         : "Question: compare DelosDB DRDA heap/MVCC, upstream Derby Network Server, and H2 TCP Server "
                                 + "with PostgreSQL and MariaDB through equivalent TCP/JDBC boundaries.\n")
                 .append("Targets: ").append(targetIds(options.targetValues())).append('\n')
-                .append("MVCC M2 current-row experiment: ")
-                .append(Boolean.getBoolean(PREFIX + "mvccM2CurrentRows")).append('\n')
                 .append("Project version: ").append(options.projectVersion()).append('\n')
                 .append("Client JDK: ").append(System.getProperty("java.runtime.version")).append('\n')
                 .append("OS: ").append(System.getProperty("os.name")).append(' ')
@@ -8390,8 +8381,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                         ? "DelosDB JDBC server-container concurrency comparison\n"
                         : "DelosDB JDBC embedded concurrency comparison\n")
                 .append("Targets: ").append(targetIds(options.targetValues())).append('\n')
-                .append("MVCC M2 current-row experiment: ")
-                .append(Boolean.getBoolean(PREFIX + "mvccM2CurrentRows")).append('\n')
                 .append("Rows: ").append(options.rows()).append('\n')
                 .append("Clients: ").append(options.clients()).append('\n')
                 .append("Generic operations-per-transaction widths: ").append(options.widths()).append('\n')

@@ -37,7 +37,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
     private final List<MvccRawStoreTable.PendingVersion> pending = new ArrayList<>();
-    private List<MvccRawStoreTable.PendingVersion> preparedPendingVersions = List.of();
     private final List<DeletedKeyProof> deletedKeyProofs = new ArrayList<>();
     private final List<SavepointMarker> savepoints = new ArrayList<>();
     private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
@@ -426,8 +425,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
         List<MvccRawStoreTable.PendingVersion> committableVersions =
-                physicallyCommittablePendingVersions();
-        preparedPendingVersions = committableVersions;
+                committablePendingVersions();
         List<OrderedIndexReplacement> committableIndexes =
                 committableOrderedIndexReplacements();
         boolean hasPendingVersions = !committableVersions.isEmpty();
@@ -479,7 +477,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     @Override
     public void afterCommit(CommitMode mode, DatabaseInstant instant) {
         List<MvccRawStoreTable.PendingVersion> committedVersions =
-                preparedPendingVersions;
+                committablePendingVersions();
         List<MvccRawStoreTable.Descriptor> committedCreates =
                 committableCreatedTables();
         List<MvccRawStoreTable.Descriptor> committedDrops =
@@ -520,7 +518,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void commitFailed(CommitMode mode, Throwable failure) {
-        preparedPendingVersions = List.of();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
         if (!runtime.concurrentCommitPublication()) {
@@ -694,13 +691,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return List.copyOf(committable);
     }
 
-    private List<MvccRawStoreTable.PendingVersion> physicallyCommittablePendingVersions()
-            throws StandardException {
+    private List<MvccRawStoreTable.PendingVersion> committablePendingVersions() {
         List<MvccRawStoreTable.PendingVersion> committable = new ArrayList<>(pending.size());
         for (MvccRawStoreTable.PendingVersion version : pending) {
-            if (!isDropped(version.table())
-                    && MvccRawStoreTable.pendingVersionExists(
-                            rawTransaction, version, transactionId)) {
+            if (!isDropped(version.table())) {
                 committable.add(version);
             }
         }
@@ -786,7 +780,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
     private void clearLocalState() {
-        preparedPendingVersions = List.of();
         runtime.retireTransaction(transactionId);
         if (snapshotLease != null) {
             snapshotLease.close();

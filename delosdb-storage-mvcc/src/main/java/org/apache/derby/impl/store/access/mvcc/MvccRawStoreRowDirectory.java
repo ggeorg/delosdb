@@ -17,8 +17,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
-import org.apache.derby.iapi.store.types.StoreDataValue;
-import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -31,20 +29,12 @@ final class MvccRawStoreRowDirectory {
             Transaction transaction,
             MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation) throws StandardException {
-        return find(transaction, table, rowLocation, (MvccRawStoreVersionRows.FetchProjection) null);
-    }
-
-    static MvccRawStoreTable.DirectoryRecord find(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_READONLY);
         try {
-            return find(transaction, table, rowLocation, container, null, projection);
+            return find(transaction, rowLocation, container);
         } finally {
             if (container != null) {
                 container.close();
@@ -54,38 +44,25 @@ final class MvccRawStoreRowDirectory {
 
     static MvccRawStoreTable.DirectoryRecord find(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation,
             ContainerHandle container) throws StandardException {
-        return find(transaction, table, rowLocation, container, null, null);
+        return find(transaction, rowLocation, container, null);
     }
 
     static MvccRawStoreTable.DirectoryRecord find(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation,
             ContainerHandle container,
             MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
-        return find(transaction, table, rowLocation, container, metrics, null);
-    }
-
-    static MvccRawStoreTable.DirectoryRecord find(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            MvccRowLocation rowLocation,
-            ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         MvccRawStoreTable.DirectoryRecord hinted = findByHint(
-                transaction, table, rowLocation, container, metrics, projection);
+                transaction, rowLocation, container, metrics);
         if (hinted != null) {
             return hinted;
         }
         if (metrics != null) {
             metrics.directoryLogicalFallback();
         }
-        return findByLogicalId(
-                transaction, table, rowLocation.rowId(), container, metrics, projection);
+        return findByLogicalId(transaction, rowLocation.rowId(), container, metrics);
     }
 
     static Map<Long, MvccRowLocation> locations(
@@ -111,9 +88,7 @@ final class MvccRawStoreRowDirectory {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(
-                                    transaction, table, page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(table));
+                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
                     if (directory != null) {
                         locations.put(
                                 directory.rowId(),
@@ -194,9 +169,7 @@ final class MvccRawStoreRowDirectory {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(
-                                    transaction, table, page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(table));
+                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
                     if (directory == null || directory.rowId() != rowId) {
                         continue;
                     }
@@ -232,11 +205,9 @@ final class MvccRawStoreRowDirectory {
 
     private static MvccRawStoreTable.DirectoryRecord findByHint(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation,
             ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
         if (container == null || rowLocation == null || !rowLocation.hasLocatorHint()) {
             return null;
         }
@@ -249,7 +220,7 @@ final class MvccRawStoreRowDirectory {
             if (page == null) {
                 return null;
             }
-            return findByHint(transaction, table, rowLocation, page, projection);
+            return findByHint(transaction, rowLocation, page);
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -257,12 +228,11 @@ final class MvccRawStoreRowDirectory {
         }
     }
 
+
     static MvccRawStoreTable.DirectoryRecord findByHint(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
             MvccRowLocation rowLocation,
-            Page page,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+            Page page) throws StandardException {
         if (page == null
                 || rowLocation == null
                 || !rowLocation.hasLocatorHint()
@@ -270,12 +240,11 @@ final class MvccRawStoreRowDirectory {
             return null;
         }
         int slot = rowLocation.locatorSlotId();
-        if (!isDirectorySlot(transaction, page, slot)) {
+        if (!isDirectorySlot(page, slot)) {
             return null;
         }
         MvccRawStoreTable.DirectoryRecord directory =
-                MvccRawStoreTable.decodeDirectory(
-                        transaction, table, page, slot, projection);
+                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
         return directory != null && directory.rowId() == rowLocation.rowId()
                 ? directory
                 : null;
@@ -283,11 +252,9 @@ final class MvccRawStoreRowDirectory {
 
     private static MvccRawStoreTable.DirectoryRecord findByLogicalId(
             Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
             long rowId,
             ContainerHandle container,
-            MvccRawStoreIndexedReadMetrics metrics,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+            MvccRawStoreIndexedReadMetrics metrics) throws StandardException {
         if (container == null) {
             return new MvccRawStoreTable.DirectoryRecord(
                     rowId, MvccRawStoreTable.DirectoryHead.NONE, null);
@@ -307,8 +274,7 @@ final class MvccRawStoreRowDirectory {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(
-                                    transaction, table, page, slot, projection);
+                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
                     if (directory != null && directory.rowId() == rowId) {
                         return directory;
                     }
@@ -326,110 +292,6 @@ final class MvccRawStoreRowDirectory {
             if (page != null) {
                 page.unlatch();
             }
-        }
-    }
-
-    static RecordHandle updateCurrent(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            MvccRawStoreTable.DirectoryHead expectedHead,
-            MvccRowLocation location,
-            Object[] currentRow) throws StandardException {
-        RecordHandle updated = updateCurrentByHint(
-                transaction, table, rowId, expectedHead, location, currentRow);
-        if (updated != null) {
-            return updated;
-        }
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            throw new IllegalStateException(
-                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(
-                                    transaction, table, page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(table));
-                    if (directory == null || directory.rowId() != rowId) {
-                        continue;
-                    }
-                    if (!directory.currentRow()) {
-                        throw new IllegalStateException(
-                                "RawStore MVCC M2 current-row update targeted a legacy directory: "
-                                        + rowId);
-                    }
-                    validateExpectedHead(rowId, expectedHead, directory.head());
-                    return page.updateAtSlot(slot, currentRow, null);
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-        throw new IllegalStateException(
-                "RawStore MVCC current row disappeared for logical row " + rowId);
-    }
-
-    private static RecordHandle updateCurrentByHint(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            long rowId,
-            MvccRawStoreTable.DirectoryHead expectedHead,
-            MvccRowLocation location,
-            Object[] currentRow) throws StandardException {
-        if (location == null || !location.hasLocatorHint()) {
-            return null;
-        }
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(location.locatorPageId());
-            if (page == null) {
-                return null;
-            }
-            int slot = location.locatorSlotId();
-            if (!isDirectorySlot(transaction, page, slot)) {
-                return null;
-            }
-            MvccRawStoreTable.DirectoryRecord directory =
-                    MvccRawStoreTable.decodeDirectory(
-                            transaction, table, page, slot,
-                            MvccRawStoreVersionRows.metadataProjection(table));
-            if (directory == null || directory.rowId() != rowId || !directory.currentRow()) {
-                return null;
-            }
-            validateExpectedHead(rowId, expectedHead, directory.head());
-            return page.updateAtSlot(slot, currentRow, null);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
         }
     }
 
@@ -456,9 +318,7 @@ final class MvccRawStoreRowDirectory {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory =
-                            MvccRawStoreTable.decodeDirectory(
-                                    transaction, pending.table(), page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(pending.table()));
+                            MvccRawStoreTable.decodeDirectory(transaction, page, slot);
                     if (directory != null && directory.rowId() == pending.rowId()) {
                         stampCommittedHeadAtSlot(
                                 transaction,
@@ -509,13 +369,11 @@ final class MvccRawStoreRowDirectory {
                 return false;
             }
             int slot = location.locatorSlotId();
-            if (!isDirectorySlot(transaction, page, slot)) {
+            if (!isDirectorySlot(page, slot)) {
                 return false;
             }
             MvccRawStoreTable.DirectoryRecord directory =
-                    MvccRawStoreTable.decodeDirectory(
-                                    transaction, pending.table(), page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(pending.table()));
+                    MvccRawStoreTable.decodeDirectory(transaction, page, slot);
             if (directory == null || directory.rowId() != pending.rowId()) {
                 return false;
             }
@@ -544,33 +402,12 @@ final class MvccRawStoreRowDirectory {
             long commitSequence) throws StandardException {
         MvccRawStoreTable.DirectoryHead head = directory.head();
         if (head.versionId() != pending.versionId()) {
-            // Multiple same-transaction rewrites can leave older pending
-            // identities in transaction-local bookkeeping. Only the physical
-            // current head is stamped.
+            // A transaction may append more than one version of the same row.
+            // Only the final pending version remains the directory head and
+            // therefore owns the persisted head summary.
             return;
         }
         MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
-        if (pending.currentRecord()) {
-            if (!directory.currentRow()) {
-                throw new IllegalStateException(
-                        "RawStore MVCC M2 pending current row resolved to a legacy directory: "
-                                + pending.rowId());
-            }
-            if (!summary.available()
-                    || summary.creatorTransactionId() != pending.creatorTransactionId()
-                    || summary.beginSequence() != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                    || summary.flags() != pending.flags()) {
-                throw new IllegalStateException(
-                        "RawStore MVCC M2 current row changed before commit: "
-                                + pending.rowId() + ':' + pending.versionId());
-            }
-            page.updateFieldAtSlot(
-                    slot,
-                    MvccRawStoreFormat.CURRENT_ROW_BEGIN_SEQUENCE,
-                    MvccRawStoreFormat.longValue(transaction, commitSequence),
-                    null);
-            return;
-        }
         if (summary.available()
                 && summary.creatorTransactionId() == pending.creatorTransactionId()
                 && summary.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
@@ -623,13 +460,11 @@ final class MvccRawStoreRowDirectory {
                 return false;
             }
             int slot = directoryLocation.locatorSlotId();
-            if (!isDirectorySlot(transaction, page, slot)) {
+            if (!isDirectorySlot(page, slot)) {
                 return false;
             }
             MvccRawStoreTable.DirectoryRecord directory =
-                    MvccRawStoreTable.decodeDirectory(
-                                    transaction, table, page, slot,
-                                    MvccRawStoreVersionRows.metadataProjection(table));
+                    MvccRawStoreTable.decodeDirectory(transaction, page, slot);
             if (directory == null || directory.rowId() != rowId) {
                 return false;
             }
@@ -654,20 +489,16 @@ final class MvccRawStoreRowDirectory {
         }
     }
 
-    private static boolean isDirectorySlot(
-            Transaction transaction,
-            Page page,
-            int slot) throws StandardException {
+    private static boolean isDirectorySlot(Page page, int slot) throws StandardException {
         if (slot < Page.FIRST_SLOT_NUMBER
                 || slot >= page.recordCount()
                 || page.isDeletedAtSlot(slot)) {
             return false;
         }
-        StoreDataValue kind = MvccRawStoreFormat.intValue(transaction, 0);
-        page.fetchFieldFromSlot(slot, MvccRawStoreFormat.DIRECTORY_KIND_FIELD, kind);
-        long value = StoreTypeUtil.getLong(kind);
-        return value == MvccRawStoreFormat.DIRECTORY_KIND
-                || value == MvccRawStoreFormat.CURRENT_ROW_KIND;
+        int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        return fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                || fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
     }
 
     private static void validateExpectedHead(

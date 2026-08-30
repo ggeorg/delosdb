@@ -84,48 +84,8 @@ final class MvccRawStoreVacuum {
         Set<Long> reachableVersions = new HashSet<>();
 
         for (DirectoryEntry directory : directories) {
-            if (directory.currentRow()) {
-                List<VersionEntry> history = chainFor(
-                        directory.rowId(),
-                        directory.historyVersionId(),
-                        versionsById,
-                        reachableVersions);
-                validateCurrentHistoryIntervals(directory, history);
-
-                boolean committedCurrentAtHorizon =
-                        directory.currentBeginSequence()
-                                        != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                                && directory.currentBeginSequence() <= oldestVisibleThrough;
-                if (committedCurrentAtHorizon && directory.currentTombstone()) {
-                    removedVersions.addAll(history);
-                    removedDirectories.add(directory);
-                    continue;
-                }
-
-                List<VersionEntry> retained = committedCurrentAtHorizon
-                        ? List.of()
-                        : retainedForHorizon(history, oldestVisibleThrough);
-                Set<Long> retainedIds = new HashSet<>();
-                for (VersionEntry version : retained) {
-                    retainedIds.add(version.versionId());
-                }
-                for (VersionEntry version : history) {
-                    if (!retainedIds.contains(version.versionId())) {
-                        removedVersions.add(version);
-                    }
-                }
-                appendLinkUpdates(retained, linkUpdates);
-
-                VersionEntry retainedHead = retained.isEmpty() ? null : retained.get(0);
-                if (!directory.historyHeadMatches(retainedHead)) {
-                    headUpdates.add(new HeadUpdate(directory, retainedHead));
-                }
-                continue;
-            }
-
             List<VersionEntry> chain = chainFor(
-                    directory.rowId(),
-                    directory.headVersionId(),
+                    directory,
                     versionsById,
                     reachableVersions);
             validateChainIntervals(chain);
@@ -145,7 +105,20 @@ final class MvccRawStoreVacuum {
                 continue;
             }
 
-            appendLinkUpdates(retained, linkUpdates);
+            for (int index = 0; index < retained.size(); index++) {
+                VersionEntry current = retained.get(index);
+                VersionEntry predecessor = index + 1 < retained.size()
+                        ? retained.get(index + 1)
+                        : null;
+                long predecessorId = predecessor == null
+                        ? MvccRawStoreFormat.NO_PREVIOUS_VERSION
+                        : predecessor.versionId();
+                if (current.previousVersionId() != predecessorId
+                        || !current.previousHintMatches(predecessor)) {
+                    linkUpdates.add(new LinkUpdate(current, predecessor));
+                }
+            }
+
             VersionEntry retainedHead = retained.get(0);
             if (directory.headVersionId() != retainedHead.versionId()
                     || !directory.headHintMatches(retainedHead)) {
@@ -167,24 +140,6 @@ final class MvccRawStoreVacuum {
                 List.copyOf(headUpdates),
                 List.copyOf(removedVersions),
                 List.copyOf(removedDirectories));
-    }
-
-    private static void appendLinkUpdates(
-            List<VersionEntry> retained,
-            List<LinkUpdate> linkUpdates) {
-        for (int index = 0; index < retained.size(); index++) {
-            VersionEntry current = retained.get(index);
-            VersionEntry predecessor = index + 1 < retained.size()
-                    ? retained.get(index + 1)
-                    : null;
-            long predecessorId = predecessor == null
-                    ? MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                    : predecessor.versionId();
-            if (current.previousVersionId() != predecessorId
-                    || !current.previousHintMatches(predecessor)) {
-                linkUpdates.add(new LinkUpdate(current, predecessor));
-            }
-        }
     }
 
     private static Map<Long, VersionEntry> indexVersions(List<VersionEntry> versions) {
@@ -221,20 +176,6 @@ final class MvccRawStoreVacuum {
             if (directory.rowId() <= 0L || directory.headVersionId() <= 0L) {
                 throw corruption("invalid directory identity", directory.toString());
             }
-            if (directory.currentRow()) {
-                if (directory.currentCreatorTransactionId() <= 0L
-                        || directory.currentBeginSequence()
-                                < MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                        || (directory.currentFlags() != MvccRawStoreFormat.LIVE_FLAGS
-                                && directory.currentFlags()
-                                        != MvccRawStoreFormat.TOMBSTONE_FLAGS)
-                        || directory.historyVersionId() < 0L
-                        || (directory.historyVersionId()
-                                        != MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                                && directory.historyVersionId() >= directory.headVersionId())) {
-                    throw corruption("invalid M2 current-row state", directory.toString());
-                }
-            }
             DirectoryEntry duplicate = directoriesByRow.put(directory.rowId(), directory);
             if (duplicate != null) {
                 throw corruption(
@@ -245,28 +186,27 @@ final class MvccRawStoreVacuum {
     }
 
     private static List<VersionEntry> chainFor(
-            long rowId,
-            long firstVersionId,
+            DirectoryEntry directory,
             Map<Long, VersionEntry> versionsById,
             Set<Long> reachableVersions) {
         List<VersionEntry> chain = new ArrayList<>();
         Set<Long> rowVisited = new HashSet<>();
-        long versionId = firstVersionId;
+        long versionId = directory.headVersionId();
         while (versionId != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
             if (!rowVisited.add(versionId)) {
                 throw corruption(
-                        "cycle in logical version chain for row " + rowId,
+                        "cycle in logical version chain for row " + directory.rowId(),
                         Long.toString(versionId));
             }
             VersionEntry version = versionsById.get(versionId);
             if (version == null) {
                 throw corruption(
-                        "missing predecessor version for row " + rowId,
+                        "missing predecessor version for row " + directory.rowId(),
                         Long.toString(versionId));
             }
-            if (version.rowId() != rowId) {
+            if (version.rowId() != directory.rowId()) {
                 throw corruption(
-                        "cross-row predecessor for row " + rowId,
+                        "cross-row predecessor for row " + directory.rowId(),
                         version.toString());
             }
             if (!reachableVersions.add(versionId)) {
@@ -278,44 +218,6 @@ final class MvccRawStoreVacuum {
             versionId = version.previousVersionId();
         }
         return List.copyOf(chain);
-    }
-
-    private static void validateCurrentHistoryIntervals(
-            DirectoryEntry directory,
-            List<VersionEntry> history) {
-        if (history.isEmpty()) {
-            return;
-        }
-        long expectedHeadEnd = directory.currentBeginSequence()
-                        == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                ? MvccRawStoreFormat.CURRENT_END_SEQUENCE
-                : directory.currentBeginSequence();
-        if (history.get(0).endSequence() != expectedHeadEnd) {
-            throw corruption(
-                    "M2 history head interval does not meet current row",
-                    directory + " / " + history.get(0));
-        }
-        for (int index = 0; index < history.size(); index++) {
-            VersionEntry version = history.get(index);
-            if (version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                    || version.tombstone()
-                    || version.endSequence() < version.beginSequence()) {
-                throw corruption("invalid M2 history interval", version.toString());
-            }
-            if (index == 0) {
-                continue;
-            }
-            VersionEntry newer = history.get(index - 1);
-            if (version.endSequence() != newer.beginSequence()) {
-                throw corruption(
-                        "non-contiguous M2 history intervals", newer + " / " + version);
-            }
-            if (version.beginSequence() > newer.beginSequence()) {
-                throw corruption(
-                        "M2 history commit sequence increases toward the tail",
-                        newer + " / " + version);
-            }
-        }
     }
 
     private static void validateChainIntervals(List<VersionEntry> chain) {
@@ -413,67 +315,23 @@ final class MvccRawStoreVacuum {
                     if (page.isDeletedAtSlot(slot)) {
                         continue;
                     }
-                    int kind = intField(
-                            transaction, page, slot, MvccRawStoreFormat.DIRECTORY_KIND_FIELD);
-                    if (kind == MvccRawStoreFormat.CURRENT_ROW_KIND) {
-                        int fieldCount = page.fetchNumFieldsAtSlot(slot);
-                        if (fieldCount != MvccRawStoreFormat.currentRowFieldCount(
-                                table.columnCount())) {
-                            throw corruption(
-                                    "unsupported M2 current-row field count",
-                                    Integer.toString(fieldCount));
-                        }
-                        if (intField(
-                                        transaction,
-                                        page,
-                                        slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_FORMAT_VERSION)
-                                != MvccRawStoreFormat.FORMAT_VERSION) {
-                            throw corruption(
-                                    "unsupported M2 current-row format version",
-                                    Long.toString(page.getPageNumber()) + ':' + slot);
-                        }
-                        result.add(new DirectoryEntry(
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_ROW_ID),
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_VERSION_ID),
-                                0L,
-                                0,
-                                false,
-                                true,
-                                true,
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_CREATOR_TRANSACTION_ID),
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_BEGIN_SEQUENCE),
-                                intField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_FLAGS),
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_HISTORY_VERSION_ID),
-                                longField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_HISTORY_HINT_PAGE),
-                                intField(transaction, page, slot,
-                                        MvccRawStoreFormat.CURRENT_ROW_HISTORY_HINT_RECORD),
-                                page.getRecordHandleAtSlot(slot)));
-                        continue;
-                    }
-                    if (kind != MvccRawStoreFormat.DIRECTORY_KIND) {
-                        continue;
-                    }
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                             && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                            && fieldCount
-                                    != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                            && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw corruption(
-                                "unsupported directory field count", Integer.toString(fieldCount));
+                                "unsupported directory field count",
+                                Integer.toString(fieldCount));
+                    }
+                    if (intField(transaction, page, slot,
+                            MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
+                            != MvccRawStoreFormat.DIRECTORY_KIND) {
+                        continue;
                     }
                     if (intField(transaction, page, slot,
                             MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
                             != MvccRawStoreFormat.FORMAT_VERSION) {
-                        throw corruption(
-                                "unsupported directory format version",
+                        throw corruption("unsupported directory format version",
                                 Long.toString(page.getPageNumber()) + ':' + slot);
                     }
                     boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
@@ -494,13 +352,6 @@ final class MvccRawStoreVacuum {
                             hintRecord,
                             hasHint,
                             fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT,
-                            false,
-                            0L,
-                            0L,
-                            MvccRawStoreFormat.LIVE_FLAGS,
-                            MvccRawStoreFormat.NO_PREVIOUS_VERSION,
-                            0L,
-                            0,
                             page.getRecordHandleAtSlot(slot)));
                 }
                 long pageNumber = page.getPageNumber();
@@ -683,51 +534,27 @@ final class MvccRawStoreVacuum {
                 try {
                     page = container.getPage(update.directory().handle().getPageNumber());
                     int slot = requireDirectorySlot(transaction, page, update.directory());
-                    if (update.directory().currentRow()) {
-                        VersionEntry head = update.head();
-                        page.updateFieldAtSlot(
-                                slot,
-                                MvccRawStoreFormat.CURRENT_ROW_HISTORY_VERSION_ID,
-                                MvccRawStoreFormat.longValue(
-                                        transaction,
-                                        head == null
-                                                ? MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                                                : head.versionId()),
-                                null);
-                        page.updateFieldAtSlot(
-                                slot,
-                                MvccRawStoreFormat.CURRENT_ROW_HISTORY_HINT_PAGE,
-                                MvccRawStoreFormat.longValue(
-                                        transaction,
-                                        head == null ? 0L : head.handle().getPageNumber()),
-                                null);
-                        page.updateFieldAtSlot(
-                                slot,
-                                MvccRawStoreFormat.CURRENT_ROW_HISTORY_HINT_RECORD,
-                                MvccRawStoreFormat.intValue(
-                                        transaction,
-                                        head == null ? 0 : head.handle().getId()),
-                                null);
-                        continue;
-                    }
-                    VersionEntry head = update.head();
                     page.updateFieldAtSlot(
                             slot,
                             MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID,
-                            MvccRawStoreFormat.longValue(transaction, head.versionId()),
+                            MvccRawStoreFormat.longValue(
+                                    transaction,
+                                    update.head().versionId()),
                             null);
                     if (update.directory().hasHint()) {
                         page.updateFieldAtSlot(
                                 slot,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE,
                                 MvccRawStoreFormat.longValue(
-                                        transaction, head.handle().getPageNumber()),
+                                        transaction,
+                                        update.head().handle().getPageNumber()),
                                 null);
                         page.updateFieldAtSlot(
                                 slot,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD,
                                 MvccRawStoreFormat.intValue(
-                                        transaction, head.handle().getId()),
+                                        transaction,
+                                        update.head().handle().getId()),
                                 null);
                     }
                     if (update.directory().hasSummary()) {
@@ -735,18 +562,22 @@ final class MvccRawStoreVacuum {
                                 slot,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID,
                                 MvccRawStoreFormat.longValue(
-                                        transaction, head.creatorTransactionId()),
+                                        transaction,
+                                        update.head().creatorTransactionId()),
                                 null);
                         page.updateFieldAtSlot(
                                 slot,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
                                 MvccRawStoreFormat.longValue(
-                                        transaction, head.beginSequence()),
+                                        transaction,
+                                        update.head().beginSequence()),
                                 null);
                         page.updateFieldAtSlot(
                                 slot,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS,
-                                MvccRawStoreFormat.intValue(transaction, head.flags()),
+                                MvccRawStoreFormat.intValue(
+                                        transaction,
+                                        update.head().flags()),
                                 null);
                     }
                 } finally {
@@ -796,9 +627,7 @@ final class MvccRawStoreVacuum {
                                 MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION,
                                 MvccRawStoreFormat.DIRECTORY_ROW_ID,
                                 MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID,
-                                directory.currentRow()
-                                        ? MvccRawStoreFormat.CURRENT_ROW_KIND
-                                        : MvccRawStoreFormat.DIRECTORY_KIND))
+                                MvccRawStoreFormat.DIRECTORY_KIND))
                         .toList());
     }
 
@@ -899,9 +728,7 @@ final class MvccRawStoreVacuum {
                 || page.isDeletedAtSlot(slot)
                 || intField(transaction, page, slot,
                         MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
-                        != (directory.currentRow()
-                                ? MvccRawStoreFormat.CURRENT_ROW_KIND
-                                : MvccRawStoreFormat.DIRECTORY_KIND)
+                        != MvccRawStoreFormat.DIRECTORY_KIND
                 || intField(transaction, page, slot,
                         MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
                         != MvccRawStoreFormat.FORMAT_VERSION
@@ -984,36 +811,11 @@ final class MvccRawStoreVacuum {
             int headHintRecord,
             boolean hasHint,
             boolean hasSummary,
-            boolean currentRow,
-            long currentCreatorTransactionId,
-            long currentBeginSequence,
-            int currentFlags,
-            long historyVersionId,
-            long historyHintPage,
-            int historyHintRecord,
             RecordHandle handle) {
         boolean headHintMatches(VersionEntry head) {
             return !hasHint
                     || (headHintPage == head.handle().getPageNumber()
                         && headHintRecord == head.handle().getId());
-        }
-
-        boolean historyHeadMatches(VersionEntry head) {
-            if (!currentRow) {
-                return false;
-            }
-            if (head == null) {
-                return historyVersionId == MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                        && historyHintPage == 0L
-                        && historyHintRecord == 0;
-            }
-            return historyVersionId == head.versionId()
-                    && historyHintPage == head.handle().getPageNumber()
-                    && historyHintRecord == head.handle().getId();
-        }
-
-        boolean currentTombstone() {
-            return (currentFlags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
         }
     }
 
