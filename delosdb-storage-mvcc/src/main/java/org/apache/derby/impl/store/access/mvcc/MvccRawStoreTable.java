@@ -612,30 +612,8 @@ final class MvccRawStoreTable {
             MvccRawStoreTransactionContext context,
             ContainerHandle directoryContainer,
             MvccRawStoreVersionReader versionReader) throws StandardException {
-        return readVisibleAt(
-                rawTransaction,
-                table,
-                rowLocation,
-                snapshotSequence,
-                projection,
-                context,
-                directoryContainer,
-                null,
-                versionReader);
-    }
-
-    static VisibleRow readVisibleAt(
-            Transaction rawTransaction,
-            Descriptor table,
-            MvccRowLocation rowLocation,
-            long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTransactionContext context,
-            ContainerHandle directoryContainer,
-            DirectoryDecoder directoryDecoder,
-            MvccRawStoreVersionReader versionReader) throws StandardException {
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                rawTransaction, rowLocation, directoryContainer, directoryDecoder);
+                rawTransaction, rowLocation, directoryContainer);
         while (true) {
             try {
                 VersionRecord version = versionReader.findVisible(
@@ -659,7 +637,7 @@ final class MvccRawStoreTable {
                 // captured an uncommitted head and before it follows that head into
                 // the version container. Retry only if the head moved.
                 DirectoryRecord refreshed = MvccRawStoreRowDirectory.find(
-                        rawTransaction, rowLocation, directoryContainer, directoryDecoder);
+                        rawTransaction, rowLocation, directoryContainer);
                 if (refreshed.head().versionId() == directory.head().versionId()) {
                     throw missing;
                 }
@@ -1745,17 +1723,6 @@ final class MvccRawStoreTable {
             Transaction transaction,
             Page page,
             int slot) throws StandardException {
-        int fieldCount = directoryFieldCount(page, slot);
-        return decodeDirectory(
-                page,
-                slot,
-                fieldCount,
-                directoryTemplate(transaction, fieldCount));
-    }
-
-    private static int directoryFieldCount(
-            Page page,
-            int slot) throws StandardException {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
@@ -1763,16 +1730,9 @@ final class MvccRawStoreTable {
             throw new IllegalStateException(
                     "RawStore MVCC directory row has unsupported field count: " + fieldCount);
         }
-        return fieldCount;
-    }
-
-    private static DirectoryRecord decodeDirectory(
-            Page page,
-            int slot,
-            int fieldCount,
-            Object[] row) throws StandardException {
         boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
         boolean hasSummary = fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        Object[] row = directoryTemplate(transaction, fieldCount);
         RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND) {
@@ -1813,43 +1773,6 @@ final class MvccRawStoreTable {
                         hint,
                         summary),
                 handle);
-    }
-
-    static final class DirectoryDecoder {
-        private final Transaction transaction;
-        private Object[] baseRow;
-        private Object[] hintRow;
-        private Object[] summaryRow;
-
-        DirectoryDecoder(Transaction transaction) {
-            this.transaction = transaction;
-        }
-
-        DirectoryRecord decode(
-                Page page,
-                int slot) throws StandardException {
-            int fieldCount = directoryFieldCount(page, slot);
-            return decodeDirectory(page, slot, fieldCount, row(fieldCount));
-        }
-
-        private Object[] row(int fieldCount) throws StandardException {
-            if (fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT) {
-                if (baseRow == null) {
-                    baseRow = directoryTemplate(transaction, fieldCount);
-                }
-                return baseRow;
-            }
-            if (fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT) {
-                if (hintRow == null) {
-                    hintRow = directoryTemplate(transaction, fieldCount);
-                }
-                return hintRow;
-            }
-            if (summaryRow == null) {
-                summaryRow = directoryTemplate(transaction, fieldCount);
-            }
-            return summaryRow;
-        }
     }
 
     private static Object[] allocatorTemplate(Transaction transaction) throws StandardException {
