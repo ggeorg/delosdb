@@ -2127,7 +2127,8 @@ rangeScanJfrProfiles.each { suffix, workload ->
     tasks.register(taskName, JavaExec) { task ->
         group = 'benchmark'
         description = "Profiles ${workload} for Delos heap/MVCC and upstream Derby with JFR."
-        dependsOn tasks.named('compileTestJava'), ':jars'
+        dependsOn tasks.named('compileTestJava'),
+                tasks.named('compileRawStoreInternalTestSupport'), ':jars'
 
         task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
         task.classpath = rootProject.files(derbyTestsClassDir)
@@ -2165,7 +2166,8 @@ rangeScanJfrProfiles.each { suffix, workload ->
                     'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
                             derbyTestsClassDir.get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
-                            rootProject.files(derbyRuntimeJars).asPath,
+                            rootProject.files(
+                                    rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
                     'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
                             upstreamDerbyBenchmarkRuntime.asPath,
                     'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
