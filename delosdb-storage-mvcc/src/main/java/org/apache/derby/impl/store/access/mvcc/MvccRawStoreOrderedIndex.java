@@ -197,16 +197,25 @@ final class MvccRawStoreOrderedIndex {
                         continue;
                     }
                     MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                            transaction, table, candidateEntry.rowLocation());
+                            transaction,
+                            table,
+                            candidateEntry.rowLocation(),
+                            null,
+                            null,
+                            projection);
                     MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
                     if (summary.available()
                             && summary.visibleTo(context.transactionId(), committedSequence)
                             && summary.tombstone()) {
                         continue;
                     }
-                    MvccRawStoreTable.VersionRecord visible = MvccRawStoreVersionReader.findVisible(
-                            transaction, table, candidateRowId, directory.head(), context.transactionId(),
-                            committedSequence, projection);
+                    MvccRawStoreTable.VersionRecord visible = MvccRawStoreTable.resolveVisible(
+                            transaction,
+                            table,
+                            directory,
+                            context.transactionId(),
+                            committedSequence,
+                            projection);
                     MvccRawStoreTable.VisibleRow candidate = visible == null || visible.tombstone()
                             ? null
                             : new MvccRawStoreTable.VisibleRow(

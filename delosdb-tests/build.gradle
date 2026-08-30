@@ -10680,6 +10680,20 @@ tasks.register('runDelosJdbcGate10ljMvccCurrentRowArchitecturePairedAcceptancePr
     }
 }
 
+// Phase 3M M2 is intentionally experimental until the F02/F08 acceptance gates
+// prove that the direct current-row format improves reads without regressing batch writes.
+registerDelosFocusedTest(
+        'runDelosMvccM2CurrentRowFormatTest',
+        'Runs the Phase 3M M2 current-row/history physical-shape and lifecycle proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccM2CurrentRowFormatTest.class'],
+        ['delosdb.experimental.mvccM2CurrentRows': 'true'])
+
+tasks.named('runDelosMvccM2CurrentRowFormatTest') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+}
+
+
 // Gate 10L-K lifecycle regression remains part of the permanent architecture
 // proof. The MVCC current-row read cache is now normal v1 behavior; only its
 // bounded slot count is configurable.
@@ -13681,6 +13695,9 @@ def registerDelosFitnessReuseNowEmbedded = {
                     'delosdb.experimental.heapPageReadImage': 'true',
                     'delosdb.experimental.fastRecordReadLock': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows': providers.gradleProperty(
+                            'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows')
+                            .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -13765,6 +13782,9 @@ def registerDelosFitnessReuseNowServer = {
             def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
             systemProperties([
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows': providers.gradleProperty(
+                            'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows')
+                            .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
@@ -14682,6 +14702,9 @@ def registerDelosFitnessAdaptReferenceAEmbedded = {
                     'delosdb.experimental.heapPageReadImage': 'true',
                     'delosdb.experimental.fastRecordReadLock': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows': providers.gradleProperty(
+                            'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows')
+                            .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -14764,6 +14787,9 @@ def registerDelosFitnessAdaptReferenceAServer = {
             def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
             systemProperties([
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows': providers.gradleProperty(
+                            'delosdb.benchmark.crossEngineConcurrency.mvccM2CurrentRows')
+                            .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),

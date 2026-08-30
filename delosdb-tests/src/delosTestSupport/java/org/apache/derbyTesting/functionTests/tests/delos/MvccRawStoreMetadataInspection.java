@@ -80,6 +80,9 @@ final class MvccRawStoreMetadataInspection {
     private static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     private static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     private static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
+    private static final int CURRENT_ROW_KIND = 9;
+    private static final int CURRENT_ROW_VERSION_ID_FIELD = 3;
+    private static final int CURRENT_ROW_FLAGS_FIELD = 6;
     private static final int VERSION_KIND_FIELD = 0;
     private static final int VERSION_KIND = 5;
     private static final int VERSION_ROW_ID_FIELD = 2;
@@ -587,6 +590,108 @@ final class MvccRawStoreMetadataInspection {
             container.close();
         }
         raw.dropContainer(new ContainerKey(0L, layout.orderedIndexContainerId()));
+    }
+
+    static M2PhysicalState m2PhysicalState(Connection connection, String tableName)
+            throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, metadataContainerId);
+
+        int currentRows = 0;
+        int liveCurrentRows = 0;
+        int tombstoneCurrentRows = 0;
+        int legacyDirectoryRows = 0;
+        java.util.Set<Long> currentVersionIds = new java.util.HashSet<>();
+
+        ContainerHandle metadata = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (metadata == null) {
+            throw new AssertionError("RawStore MVCC metadata container is absent");
+        }
+        Page page = null;
+        try {
+            page = metadata.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    int kind = intField(raw, page, slot, DIRECTORY_KIND_FIELD);
+                    if (kind == CURRENT_ROW_KIND) {
+                        currentRows++;
+                        long versionId = longField(
+                                raw, page, slot, CURRENT_ROW_VERSION_ID_FIELD);
+                        currentVersionIds.add(versionId);
+                        if ((intField(raw, page, slot, CURRENT_ROW_FLAGS_FIELD) & 1) != 0) {
+                            tombstoneCurrentRows++;
+                        } else {
+                            liveCurrentRows++;
+                        }
+                    } else if (kind == DIRECTORY_KIND) {
+                        legacyDirectoryRows++;
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = metadata.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            metadata.close();
+        }
+
+        int historyVersions = 0;
+        int duplicateCurrentVersions = 0;
+        ContainerHandle versions = raw.openContainer(
+                new ContainerKey(0L, layout.versionContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (versions == null) {
+            throw new AssertionError("RawStore MVCC version container is absent");
+        }
+        try {
+            page = versions.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || intField(raw, page, slot, VERSION_KIND_FIELD) != VERSION_KIND) {
+                        continue;
+                    }
+                    historyVersions++;
+                    long versionId = longField(raw, page, slot, VERSION_ID_FIELD);
+                    if (currentVersionIds.contains(versionId)) {
+                        duplicateCurrentVersions++;
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = versions.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            versions.close();
+        }
+
+        return new M2PhysicalState(
+                currentRows,
+                liveCurrentRows,
+                tombstoneCurrentRows,
+                legacyDirectoryRows,
+                historyVersions,
+                duplicateCurrentVersions);
     }
 
     static List<VersionIdentity> versions(Connection connection, String tableName) throws Exception {
@@ -1169,6 +1274,15 @@ final class MvccRawStoreMetadataInspection {
             long headHintPage,
             int headHintRecord,
             boolean hasHint) {
+    }
+
+    record M2PhysicalState(
+            int currentRows,
+            int liveCurrentRows,
+            int tombstoneCurrentRows,
+            int legacyDirectoryRows,
+            int historyVersions,
+            int duplicateCurrentVersions) {
     }
 
     record VersionIdentity(

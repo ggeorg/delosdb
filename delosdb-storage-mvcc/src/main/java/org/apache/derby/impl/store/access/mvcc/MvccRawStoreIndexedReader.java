@@ -146,8 +146,10 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 }
                 directories[index - start] = MvccRawStoreRowDirectory.findByHint(
                         transaction,
+                        table,
                         candidates.get(index).rowLocation(),
-                        page);
+                        page,
+                        coveringEligible ? metadataProjection() : projection);
             }
         } finally {
             if (page != null) {
@@ -169,9 +171,11 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             boolean coveringEligible) throws StandardException {
         MvccRawStoreTable.DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 transaction,
+                table,
                 candidate.rowLocation(),
                 directoryContainer(),
-                metrics);
+                metrics,
+                coveringEligible ? metadataProjection() : projection);
         return readResolved(candidate, coveringEligible, directory);
     }
 
@@ -190,9 +194,11 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                 MvccRawStoreTable.DirectoryRecord refreshed =
                         MvccRawStoreRowDirectory.find(
                                 transaction,
+                                table,
                                 candidate.rowLocation(),
                                 directoryContainer(),
-                                metrics);
+                                metrics,
+                                coveringEligible ? metadataProjection() : projection);
                 if (refreshed.head().versionId() == current.head().versionId()) {
                     throw missing;
                 }
@@ -263,9 +269,23 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
         }
 
         metrics.fallbackCandidate();
-        MvccRawStoreTable.VersionRecord visible = versionReader().findVisible(
+        MvccRawStoreTable.DirectoryRecord resolvedDirectory = directory;
+        if (directory.currentRow()
+                && directory.current().values() == null
+                && projection != null
+                && projection.includesPayload()) {
+            resolvedDirectory = MvccRawStoreRowDirectory.find(
+                    transaction,
+                    table,
+                    candidate.rowLocation(),
+                    directoryContainer(),
+                    metrics,
+                    projection);
+        }
+        MvccRawStoreTable.VersionRecord visible = MvccRawStoreTable.resolveVisible(
+                resolvedDirectory,
+                versionReader(),
                 candidate.rowId(),
-                directory.head(),
                 context.transactionId(),
                 snapshotSequence,
                 projection);
@@ -279,7 +299,7 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
                         visible.values(),
                         visible.handle(),
                         MvccRawStoreRowDirectory.location(
-                                candidate.rowId(), directory.handle())),
+                                candidate.rowId(), resolvedDirectory.handle())),
                 false);
     }
 

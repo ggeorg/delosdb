@@ -34,6 +34,8 @@ final class MvccRawStoreFormat {
     static final int ORDERED_INDEX_CONTAINER_KIND = 6;
     // Value 7 belonged to the retired flat ordered-index entry row. Do not reuse it.
     static final int ORDERED_INDEX_BTREE_DESCRIPTOR_KIND = 8;
+    // M2: the live row is stored directly in the metadata container; displaced versions live in history.
+    static final int CURRENT_ROW_KIND = 9;
 
     static final long UNCOMMITTED_SEQUENCE = 0L;
     static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
@@ -86,6 +88,18 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
 
+    static final int CURRENT_ROW_KIND_FIELD = 0;
+    static final int CURRENT_ROW_FORMAT_VERSION = 1;
+    static final int CURRENT_ROW_ROW_ID = 2;
+    static final int CURRENT_ROW_VERSION_ID = 3;
+    static final int CURRENT_ROW_CREATOR_TRANSACTION_ID = 4;
+    static final int CURRENT_ROW_BEGIN_SEQUENCE = 5;
+    static final int CURRENT_ROW_FLAGS = 6;
+    static final int CURRENT_ROW_HISTORY_VERSION_ID = 7;
+    static final int CURRENT_ROW_HISTORY_HINT_PAGE = 8;
+    static final int CURRENT_ROW_HISTORY_HINT_RECORD = 9;
+    static final int CURRENT_ROW_PAYLOAD_START = 10;
+
     static final int VERSION_KIND_FIELD = 0;
     static final int VERSION_FORMAT_VERSION = 1;
     static final int VERSION_ROW_ID = 2;
@@ -111,6 +125,10 @@ final class MvccRawStoreFormat {
     static final int ORDERED_INDEX_DIRECTORY_FIELD_COUNT = 4;
 
     private MvccRawStoreFormat() {
+    }
+
+    static int currentRowFieldCount(int columnCount) {
+        return CURRENT_ROW_PAYLOAD_START + columnCount;
     }
 
     static int versionBaseFieldCount(int columnCount) {
