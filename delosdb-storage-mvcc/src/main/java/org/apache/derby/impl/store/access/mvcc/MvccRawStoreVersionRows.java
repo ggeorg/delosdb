@@ -94,8 +94,6 @@ final class MvccRawStoreVersionRows {
         private final FetchProjection projection;
         private Object[] baseRow;
         private Object[] hintRow;
-        private Object[] directBaseRow;
-        private Object[] directHintRow;
 
         Decoder(
                 Transaction transaction,
@@ -108,13 +106,6 @@ final class MvccRawStoreVersionRows {
 
         MvccRawStoreTable.VersionRecord decodeAtSlot(Page page, int slot)
                 throws StandardException {
-            return decodeAtSlot(page, slot, null);
-        }
-
-        MvccRawStoreTable.VersionRecord decodeAtSlot(
-                Page page,
-                int slot,
-                StoreDataValue[] destination) throws StandardException {
             int fieldCount = page.fetchNumFieldsAtSlot(slot);
             int baseFieldCount = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
             int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
@@ -123,9 +114,7 @@ final class MvccRawStoreVersionRows {
                         "RawStore MVCC version row has unsupported field count: " + fieldCount);
             }
             boolean includeHint = fieldCount == hintFieldCount;
-            Object[] row = destination == null
-                    ? row(includeHint)
-                    : directRow(includeHint, destination);
+            Object[] row = row(includeHint);
             RecordHandle handle = page.fetchFromSlot(
                     null,
                     slot,
@@ -142,9 +131,7 @@ final class MvccRawStoreVersionRows {
                     != MvccRawStoreFormat.FORMAT_VERSION) {
                 throw new IllegalStateException("RawStore MVCC version row format is unsupported");
             }
-            return destination == null
-                    ? decode(row, table, handle, projection)
-                    : decodeMetadata(row, table, handle);
+            return decode(row, table, handle, projection);
         }
 
         private Object[] row(boolean includeHint) throws StandardException {
@@ -158,38 +145,6 @@ final class MvccRawStoreVersionRows {
                 baseRow = template(transaction, table, false, projection);
             }
             return baseRow;
-        }
-
-        private Object[] directRow(
-                boolean includeHint,
-                StoreDataValue[] destination) throws StandardException {
-            Object[] row;
-            if (includeHint) {
-                if (directHintRow == null) {
-                    directHintRow = directTemplate(transaction, table, true);
-                }
-                row = directHintRow;
-            } else {
-                if (directBaseRow == null) {
-                    directBaseRow = directTemplate(transaction, table, false);
-                }
-                row = directBaseRow;
-            }
-            for (int index = 0; index < table.columnCount(); index++) {
-                if (projection != null && !projection.includes(index)) {
-                    continue;
-                }
-                StoreDataValue value = destination[index];
-                if (value == null) {
-                    value = MvccRawStoreFormat.nullValue(
-                            transaction,
-                            table.formatId(index),
-                            table.collationId(index));
-                    destination[index] = value;
-                }
-                row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index] = value;
-            }
-            return row;
         }
     }
 
@@ -300,8 +255,7 @@ final class MvccRawStoreVersionRows {
                 }
             }
         }
-        boolean hasHint = row.length
-                == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
+        boolean hasHint = row.length == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
         MvccRawStoreTable.RecordHint previousHint = hasHint
                 ? new MvccRawStoreTable.RecordHint(
                         MvccRawStoreFormat.longAt(
@@ -322,58 +276,6 @@ final class MvccRawStoreVersionRows {
                 MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.VERSION_FLAGS),
                 values,
                 handle);
-    }
-
-    private static MvccRawStoreTable.VersionRecord decodeMetadata(
-            Object[] row,
-            MvccRawStoreTable.Descriptor table,
-            RecordHandle handle) throws StandardException {
-        boolean hasHint = row.length
-                == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
-        MvccRawStoreTable.RecordHint previousHint = hasHint
-                ? new MvccRawStoreTable.RecordHint(
-                        MvccRawStoreFormat.longAt(
-                                row,
-                                MvccRawStoreFormat.versionHintPageField(table.columnCount())),
-                        MvccRawStoreFormat.intAt(
-                                row,
-                                MvccRawStoreFormat.versionHintRecordField(table.columnCount())))
-                : MvccRawStoreTable.RecordHint.NONE;
-        return new MvccRawStoreTable.VersionRecord(
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_ROW_ID),
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_ID),
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_CREATOR_TRANSACTION_ID),
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_BEGIN_SEQUENCE),
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_END_SEQUENCE),
-                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.VERSION_PREVIOUS_VERSION_ID),
-                previousHint,
-                MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.VERSION_FLAGS),
-                null,
-                handle);
-    }
-
-    private static Object[] directTemplate(
-            Transaction transaction,
-            MvccRawStoreTable.Descriptor table,
-            boolean includeHint) throws StandardException {
-        Object[] row = new Object[includeHint
-                ? MvccRawStoreFormat.versionHintFieldCount(table.columnCount())
-                : MvccRawStoreFormat.versionBaseFieldCount(table.columnCount())];
-        row[MvccRawStoreFormat.VERSION_KIND_FIELD] = MvccRawStoreFormat.intValue(transaction, 0);
-        row[MvccRawStoreFormat.VERSION_FORMAT_VERSION] = MvccRawStoreFormat.intValue(transaction, 0);
-        for (int field = MvccRawStoreFormat.VERSION_ROW_ID;
-                field <= MvccRawStoreFormat.VERSION_PREVIOUS_VERSION_ID;
-                field++) {
-            row[field] = MvccRawStoreFormat.longValue(transaction, 0L);
-        }
-        row[MvccRawStoreFormat.VERSION_FLAGS] = MvccRawStoreFormat.intValue(transaction, 0);
-        if (includeHint) {
-            row[MvccRawStoreFormat.versionHintPageField(table.columnCount())] =
-                    MvccRawStoreFormat.longValue(transaction, 0L);
-            row[MvccRawStoreFormat.versionHintRecordField(table.columnCount())] =
-                    MvccRawStoreFormat.intValue(transaction, 0);
-        }
-        return row;
     }
 
     private static Object[] template(

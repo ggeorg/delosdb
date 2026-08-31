@@ -137,30 +137,6 @@ final class MvccRawStoreConglomerateController
         MvccRawStoreVersionRows.FetchProjection projection = !forUpdate
                 ? readProjection(validColumns)
                 : MvccRawStoreVersionRows.projection(table, validColumns);
-        if (!forUpdate && destRow != null && destRow.length >= table.columnCount()) {
-            MvccRawStoreTable.VersionRecord version;
-            try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-                version = MvccRawStoreTable.readVisibleAtInto(
-                        rawTransaction,
-                        table,
-                        location,
-                        statementSnapshotLease != null
-                                ? statementSnapshotSequence
-                                : context.snapshotSequence(),
-                        projection,
-                        context,
-                        readDirectoryContainer(),
-                        readVersionReader(),
-                        destRow);
-            }
-            if (version == null) {
-                return false;
-            }
-            if (location.getWriteVersion() == 0L) {
-                location.setWriteVersion(version.versionId());
-            }
-            return true;
-        }
         MvccRawStoreTable.VisibleRow visible;
         if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
