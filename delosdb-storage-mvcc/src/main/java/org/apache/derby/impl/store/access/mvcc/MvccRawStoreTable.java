@@ -612,8 +612,29 @@ final class MvccRawStoreTable {
             MvccRawStoreTransactionContext context,
             ContainerHandle directoryContainer,
             MvccRawStoreVersionReader versionReader) throws StandardException {
-        DirectoryRecord directory = MvccRawStoreRowDirectory.find(
-                rawTransaction, rowLocation, directoryContainer);
+        return readVisibleAtResolvedDirectory(
+                rawTransaction,
+                table,
+                rowLocation,
+                snapshotSequence,
+                projection,
+                context,
+                MvccRawStoreRowDirectory.find(rawTransaction, rowLocation, directoryContainer),
+                directoryContainer,
+                versionReader);
+    }
+
+    static VisibleRow readVisibleAtResolvedDirectory(
+            Transaction rawTransaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            long snapshotSequence,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreTransactionContext context,
+            DirectoryRecord resolvedDirectory,
+            ContainerHandle directoryContainer,
+            MvccRawStoreVersionReader versionReader) throws StandardException {
+        DirectoryRecord directory = resolvedDirectory;
         while (true) {
             try {
                 VersionRecord version = versionReader.findVisible(

@@ -36,6 +36,8 @@ import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.impl.sql.GenericPreparedStatement;
@@ -67,6 +69,9 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	private boolean                 closeBaseCCHere;
 	private boolean					forUpdate;
 	private DataValueDescriptor[]	rowArray;
+    private AccessMethodBaseFetchPagePrefetch baseFetchPagePrefetch;
+    private BulkTableScanResultSet baseFetchBulkSource;
+    private StoreRowLocation[] baseFetchPrefetchRowLocations;
 
 	// changed a whole bunch
 	RowLocation	baseRowLocation;
@@ -303,6 +308,8 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			closeBaseCCHere = true;
 		}
 
+        configureBaseFetchPagePrefetch();
+
 		isOpen = true;
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -324,6 +331,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 		beginTime = getCurrentTimeMillis();
 
 		source.reopenCore();
+        clearBaseFetchPagePrefetch();
 
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -378,6 +386,8 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 
 				baseRowLocation = (RowLocation)
 						sourceRow.getColumn(sourceRow.nColumns());
+
+                prefetchBufferedBaseRows();
 
 				// Fetch the columns coming from the heap
 				boolean row_exists = 
@@ -499,6 +509,9 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 			 * in the StatementContext.
 			 */
 			baseCC = null;
+            baseFetchPagePrefetch = null;
+            baseFetchBulkSource = null;
+            baseFetchPrefetchRowLocations = null;
 	        source.close();
 
 			super.close();
@@ -509,6 +522,43 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 
 		closeTime += getElapsedMillis(beginTime);
 	}
+
+    private void configureBaseFetchPagePrefetch() {
+        baseFetchPagePrefetch = null;
+        baseFetchBulkSource = null;
+        baseFetchPrefetchRowLocations = null;
+        if (forUpdate
+                || activation.getResultSetHoldability()
+                || !(source instanceof BulkTableScanResultSet bulkSource)
+                || bulkSource.rowsPerRead <= 1
+                || !(baseCC instanceof AccessMethodBaseFetchPagePrefetch pagePrefetch)
+                || !pagePrefetch.baseFetchPagePrefetchEnabled()) {
+            return;
+        }
+        baseFetchPagePrefetch = pagePrefetch;
+        baseFetchBulkSource = bulkSource;
+        baseFetchPrefetchRowLocations = new StoreRowLocation[bulkSource.rowsPerRead];
+    }
+
+    private void prefetchBufferedBaseRows() throws StandardException {
+        if (baseFetchPagePrefetch == null) {
+            return;
+        }
+        int count = baseFetchBulkSource.copyBaseFetchPrefetchRowLocations(
+                baseFetchPrefetchRowLocations);
+        if (count > 0) {
+            baseFetchPagePrefetch.prefetchBaseRows(baseFetchPrefetchRowLocations, count);
+        }
+    }
+
+    private void clearBaseFetchPagePrefetch() throws StandardException {
+        if (baseFetchBulkSource != null) {
+            baseFetchBulkSource.cancelBaseFetchPrefetch();
+        }
+        if (baseFetchPagePrefetch != null) {
+            baseFetchPagePrefetch.prefetchBaseRows(baseFetchPrefetchRowLocations, 0);
+        }
+    }
 
 	/**
 	 * Return the total amount of time spent in this ResultSet
@@ -557,6 +607,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	public void positionScanAtRowLocation(RowLocation rl) 
 		throws StandardException 
 	{
+        clearBaseFetchPagePrefetch();
 		baseRowLocation = rl;
 		source.positionScanAtRowLocation(rl);
 	}

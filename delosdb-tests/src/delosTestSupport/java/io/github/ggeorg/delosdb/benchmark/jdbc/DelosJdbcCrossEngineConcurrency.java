@@ -2614,6 +2614,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + leaseSlots);
                 }
             }
+            if (Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
+                command.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
+            }
         }
         String rangeBulkFetchDefault = System.getProperty(
                 PREFIX + "rangeBulkFetchDefault", "").trim();
@@ -2808,6 +2811,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_HEAP_DRDA) {
                     javaCommand.add("-Ddelosdb.experimental.heapPageReadImage=true");
                     javaCommand.add("-Ddelosdb.experimental.fastRecordReadLock=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA
+                        && Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3016,6 +3023,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("H2 JDBC/TCP: ").append(options.h2DriverVersion()).append('\n')
                 .append("H2 range fetch size override: ").append(options.h2RangeFetchSize())
                 .append(" (0=driver default)\n")
+                .append("MVCC base-fetch directory-page prefetch experiment: ")
+                .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")

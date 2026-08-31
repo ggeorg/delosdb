@@ -25,6 +25,7 @@ import org.apache.derby.iapi.sql.execute.CursorResultSet;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.types.RowLocation;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 
 import org.apache.derby.iapi.sql.execute.ExecRow;
@@ -66,6 +67,7 @@ class BulkTableScanResultSet extends TableScanResultSet
 {
 	private DataValueDescriptor[][] rowArray;
     private RowLocation[]   rowLocations;
+    private boolean baseFetchPrefetchPending;
 	private int curRowPosition;
 	private int numRowsInArray;
     private int         baseColumnCount;
@@ -253,6 +255,7 @@ class BulkTableScanResultSet extends TableScanResultSet
 		rowArray[0] = candidate.getRowArrayClone();
 		numRowsInArray = 0;
 		curRowPosition = -1;
+        baseFetchPrefetchPending = false;
 		
 		openTime += getElapsedMillis(beginTime);
 	}
@@ -286,6 +289,7 @@ class BulkTableScanResultSet extends TableScanResultSet
 		super.reopenCore();
 		numRowsInArray = 0;
 		curRowPosition = -1;
+        baseFetchPrefetchPending = false;
 	}
 		
 	/**
@@ -377,9 +381,50 @@ outer:		for (;;)
 		numRowsInArray =
 				((GroupFetchScanController) scanController).fetchNextGroup(
                                                rowArray, rowLocations);
+        baseFetchPrefetchPending = numRowsInArray > 0;
 
 		return numRowsInArray;
 	}
+
+    /**
+     * Copy the current and remaining row locations from the already-buffered
+     * group exactly once. This does not advance the scan or alter row order.
+     */
+    int copyBaseFetchPrefetchRowLocations(StoreRowLocation[] destination)
+            throws StandardException {
+        if (!baseFetchPrefetchPending
+                || destination == null
+                || destination.length == 0
+                || curRowPosition < 0
+                || curRowPosition >= numRowsInArray) {
+            return 0;
+        }
+        baseFetchPrefetchPending = false;
+        int copied = 0;
+        for (int position = curRowPosition;
+                position < numRowsInArray && copied < destination.length;
+                position++) {
+            StoreRowLocation location = null;
+            if (fetchRowLocations && rowLocations != null) {
+                location = rowLocations[position];
+            } else {
+                DataValueDescriptor[] bufferedRow = rowArray[position];
+                if (bufferedRow != null
+                        && bufferedRow.length > 0
+                        && bufferedRow[bufferedRow.length - 1] instanceof StoreRowLocation rowLocation) {
+                    location = rowLocation;
+                }
+            }
+            if (location != null) {
+                destination[copied++] = location;
+            }
+        }
+        return copied;
+    }
+
+    void cancelBaseFetchPrefetch() {
+        baseFetchPrefetchPending = false;
+    }
 
 	/**
 	 * If the result set has been opened,
@@ -398,6 +443,7 @@ outer:		for (;;)
 		super.close();
 		numRowsInArray = -1;
 		curRowPosition = -1;
+        baseFetchPrefetchPending = false;
 		rowArray = null;
         rowLocations = null;
 	}

@@ -2122,6 +2122,9 @@ def rangeScanJfrProfiles = [
 
 def rangeScanJfrTasks = []
 rangeScanJfrProfiles.each { suffix, workload ->
+    boolean phase3mA6 = providers.gradleProperty('delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+            .getOrElse('false').trim().toBoolean()
+    String reportSuffix = phase3mA6 ? "${suffix}-phase3m-a6" : suffix
     def taskName = "runDelosJdbcRangeScanJfr${suffix.capitalize()}"
     rangeScanJfrTasks.add(taskName)
     tasks.register(taskName, JavaExec) { task ->
@@ -2133,7 +2136,7 @@ rangeScanJfrProfiles.each { suffix, workload ->
         task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
         task.classpath = rootProject.files(derbyTestsClassDir)
         task.outputs.upToDateWhen { false }
-        task.outputs.dir(rootProject.layout.buildDirectory.dir("${rangeScanJfrRoot}/${suffix}"))
+        task.outputs.dir(rootProject.layout.buildDirectory.dir("${rangeScanJfrRoot}/${reportSuffix}"))
 
         task.doFirst {
             def saneValue = providers.gradleProperty('delosdb.sane')
@@ -2143,9 +2146,9 @@ rangeScanJfrProfiles.each { suffix, workload ->
                         'Range-scan JFR attribution requires a release build; rerun with -Pdelosdb.sane=false')
             }
             File reportDir = rootProject.layout.buildDirectory
-                    .dir("${rangeScanJfrRoot}/${suffix}").get().asFile
+                    .dir("${rangeScanJfrRoot}/${reportSuffix}").get().asFile
             File databaseRoot = rootProject.layout.buildDirectory
-                    .dir("tmp/delos-jdbc-range-scan-jfr-${suffix}").get().asFile
+                    .dir("tmp/delos-jdbc-range-scan-jfr-${reportSuffix}").get().asFile
             project.delete(reportDir)
             project.delete(databaseRoot)
             reportDir.mkdirs()
@@ -2160,6 +2163,10 @@ rangeScanJfrProfiles.each { suffix, workload ->
                 'delosdb.diagnostic.heapPageReadImage': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.heapPageReadImageDiagnostics': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+                                .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
                             rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -2201,7 +2208,7 @@ rangeScanJfrProfiles.each { suffix, workload ->
 
         task.doLast {
             File reportDir = rootProject.layout.buildDirectory
-                    .dir("${rangeScanJfrRoot}/${suffix}").get().asFile
+                    .dir("${rangeScanJfrRoot}/${reportSuffix}").get().asFile
             File profileDir = new File(reportDir, 'profiles')
             def recordings = profileDir.isDirectory()
                     ? profileDir.listFiles().findAll { it.name.endsWith('.jfr') }.sort { it.name }
@@ -13658,6 +13665,10 @@ def registerDelosFitnessReuseNowEmbedded = {
     String rangeMinQueries,
     String rangeMaxQueries ->
 
+    boolean phase3mA6 = providers.gradleProperty('delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+            .getOrElse('false').trim().toBoolean()
+    String effectiveReportGroup = phase3mA6 ? "${reportGroup}-phase3m-a6" : reportGroup
+
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = "Runs Phase-1 embedded REUSE_NOW fitness group ${reportGroup}."
@@ -13666,7 +13677,7 @@ def registerDelosFitnessReuseNowEmbedded = {
         classpath = rootProject.files(derbyTestsClassDir)
         outputs.upToDateWhen { false }
         outputs.dir(rootProject.layout.buildDirectory.dir(
-                "${delosFitnessReuseNowReportRoot}/embedded/${reportGroup}"))
+                "${delosFitnessReuseNowReportRoot}/embedded/${effectiveReportGroup}"))
 
         doFirst {
             def saneValue = providers.gradleProperty('delosdb.sane')
@@ -13682,6 +13693,10 @@ def registerDelosFitnessReuseNowEmbedded = {
                     'delosdb.experimental.fastRecordReadLock': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch':
+                            providers.gradleProperty(
+                                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+                                    .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
                     'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
@@ -13695,10 +13710,10 @@ def registerDelosFitnessReuseNowEmbedded = {
                     'delosdb.benchmark.crossEngineConcurrency.targets':
                             'delos_heap,delos_mvcc,upstream_derby,h2,sqlite',
                     'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
-                            .dir("${delosFitnessReuseNowDatabaseRoot}/embedded/${reportGroup}")
+                            .dir("${delosFitnessReuseNowDatabaseRoot}/embedded/${effectiveReportGroup}")
                             .get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
-                            .dir("${delosFitnessReuseNowReportRoot}/embedded/${reportGroup}")
+                            .dir("${delosFitnessReuseNowReportRoot}/embedded/${effectiveReportGroup}")
                             .get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
                     'delosdb.benchmark.crossEngineConcurrency.clients': '1,8',
@@ -13736,6 +13751,10 @@ def registerDelosFitnessReuseNowServer = {
     String rangeMinQueries,
     String rangeMaxQueries ->
 
+    boolean phase3mA6 = providers.gradleProperty('delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+            .getOrElse('false').trim().toBoolean()
+    String effectiveReportGroup = phase3mA6 ? "${reportGroup}-phase3m-a6" : reportGroup
+
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = "Runs Phase-1 server REUSE_NOW fitness group ${reportGroup}."
@@ -13753,7 +13772,7 @@ def registerDelosFitnessReuseNowServer = {
                 mariadbBenchmarkRuntime)
         outputs.upToDateWhen { false }
         outputs.dir(rootProject.layout.buildDirectory.dir(
-                "${delosFitnessReuseNowReportRoot}/server/${reportGroup}"))
+                "${delosFitnessReuseNowReportRoot}/server/${effectiveReportGroup}"))
 
         doFirst {
             def saneValue = providers.gradleProperty('delosdb.sane')
@@ -13766,6 +13785,10 @@ def registerDelosFitnessReuseNowServer = {
             systemProperties([
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch':
+                            providers.gradleProperty(
+                                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch')
+                                    .getOrElse('false'),
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
                     'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -13802,10 +13825,10 @@ def registerDelosFitnessReuseNowServer = {
                     'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
                     'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
                     'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
-                            .dir("${delosFitnessReuseNowDatabaseRoot}/server/${reportGroup}")
+                            .dir("${delosFitnessReuseNowDatabaseRoot}/server/${effectiveReportGroup}")
                             .get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.reportDirectory': rootProject.layout.buildDirectory
-                            .dir("${delosFitnessReuseNowReportRoot}/server/${reportGroup}")
+                            .dir("${delosFitnessReuseNowReportRoot}/server/${effectiveReportGroup}")
                             .get().asFile.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
                     'delosdb.benchmark.crossEngineConcurrency.clients': '1,8',

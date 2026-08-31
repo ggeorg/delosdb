@@ -15,12 +15,14 @@ import java.util.Properties;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
+import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
@@ -29,12 +31,16 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController
-        implements ConglomerateController, AccessMethodIndexBuildLifecycle,
-                AccessMethodReadCommittedUpdateRecheck, AccessMethodUniqueConstraintLifecycle {
+        implements ConglomerateController, AccessMethodBaseFetchPagePrefetch,
+                AccessMethodIndexBuildLifecycle, AccessMethodReadCommittedUpdateRecheck,
+                AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
     private final Transaction rawTransaction;
+    private static final String BASE_FETCH_PAGE_PREFETCH_PROPERTY =
+            "delosdb.experimental.mvccBaseFetchPagePrefetch";
+
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
     private final long statementSnapshotSequence;
@@ -45,6 +51,10 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreVersionReader readVersionReader;
     private FormatableBitSet readProjectionColumns;
     private MvccRawStoreVersionRows.FetchProjection readProjection;
+    private final boolean baseFetchPagePrefetchRequested;
+    private long[] prefetchedDirectoryRowIds;
+    private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
+    private int prefetchedDirectoryCount;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -60,6 +70,8 @@ final class MvccRawStoreConglomerateController
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
         this.forUpdate = forUpdate;
+        this.baseFetchPagePrefetchRequested =
+                !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
         // IndexRowToBaseRowResultSet opens one base ConglomerateController for
         // the SQL statement. Cursor-stability row locking identifies the
         // READ COMMITTED base-fetch path, which must observe a fresh committed
@@ -78,6 +90,7 @@ final class MvccRawStoreConglomerateController
     public void close() {
         if (!closed) {
             closed = true;
+            clearPrefetchedDirectories();
             if (readVersionReader != null) {
                 readVersionReader.close();
             }
@@ -88,6 +101,57 @@ final class MvccRawStoreConglomerateController
                 statementSnapshotLease.close();
             }
             transactionManager.closeMe(this);
+        }
+    }
+
+    @Override
+    public boolean baseFetchPagePrefetchEnabled() {
+        // Limit the first causal experiment to the established read-only
+        // statement-snapshot path. Other isolation/update paths remain A3.
+        return baseFetchPagePrefetchRequested && statementSnapshotLease != null;
+    }
+
+    @Override
+    public void prefetchBaseRows(StoreRowLocation[] rowLocations, int count)
+            throws StandardException {
+        ensureOpen();
+        clearPrefetchedDirectories();
+        if (!baseFetchPagePrefetchEnabled() || rowLocations == null || count < 2) {
+            return;
+        }
+        int limit = Math.min(count, rowLocations.length);
+        ensurePrefetchCapacity(limit);
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            int index = 0;
+            while (index < limit) {
+                StoreRowLocation candidate = rowLocations[index];
+                if (candidate == null) {
+                    index++;
+                    continue;
+                }
+                MvccRowLocation first = MvccRowLocation.from(candidate);
+                if (!first.hasLocatorHint()) {
+                    index++;
+                    continue;
+                }
+                long pageNumber = first.locatorPageId();
+                int groupEnd = index + 1;
+                while (groupEnd < limit) {
+                    StoreRowLocation groupedCandidate = rowLocations[groupEnd];
+                    if (groupedCandidate == null) {
+                        break;
+                    }
+                    MvccRowLocation grouped = MvccRowLocation.from(groupedCandidate);
+                    if (!grouped.hasLocatorHint() || grouped.locatorPageId() != pageNumber) {
+                        break;
+                    }
+                    groupEnd++;
+                }
+                if (groupEnd - index > 1) {
+                    prefetchDirectoryPage(rowLocations, index, groupEnd, pageNumber);
+                }
+                index = groupEnd;
+            }
         }
     }
 
@@ -137,6 +201,9 @@ final class MvccRawStoreConglomerateController
         MvccRawStoreVersionRows.FetchProjection projection = !forUpdate
                 ? readProjection(validColumns)
                 : MvccRawStoreVersionRows.projection(table, validColumns);
+        MvccRawStoreTable.DirectoryRecord prefetchedDirectory = !forUpdate
+                ? takePrefetchedDirectory(location.rowId())
+                : null;
         MvccRawStoreTable.VisibleRow visible;
         if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
@@ -149,17 +216,30 @@ final class MvccRawStoreConglomerateController
                         ? MvccRawStoreTable.readVisibleForWrite(
                                 rawTransaction, table, location, projection, context)
                         : !forUpdate
-                                ? MvccRawStoreTable.readVisibleAt(
-                                        rawTransaction,
-                                        table,
-                                        location,
-                                        statementSnapshotLease != null
-                                                ? statementSnapshotSequence
-                                                : context.snapshotSequence(),
-                                        projection,
-                                        context,
-                                        readDirectoryContainer(),
-                                        readVersionReader())
+                                ? prefetchedDirectory != null
+                                        ? MvccRawStoreTable.readVisibleAtResolvedDirectory(
+                                                rawTransaction,
+                                                table,
+                                                location,
+                                                statementSnapshotLease != null
+                                                        ? statementSnapshotSequence
+                                                        : context.snapshotSequence(),
+                                                projection,
+                                                context,
+                                                prefetchedDirectory,
+                                                readDirectoryContainer(),
+                                                readVersionReader())
+                                        : MvccRawStoreTable.readVisibleAt(
+                                                rawTransaction,
+                                                table,
+                                                location,
+                                                statementSnapshotLease != null
+                                                        ? statementSnapshotSequence
+                                                        : context.snapshotSequence(),
+                                                projection,
+                                                context,
+                                                readDirectoryContainer(),
+                                                readVersionReader())
                                 : MvccRawStoreTable.readVisible(
                                         rawTransaction, table, location, projection, context);
             }
@@ -336,6 +416,65 @@ final class MvccRawStoreConglomerateController
     @Override
     public Properties getInternalTablePropertySet(Properties prop) {
         return prop == null ? new Properties() : prop;
+    }
+
+    private void prefetchDirectoryPage(
+            StoreRowLocation[] rowLocations,
+            int start,
+            int end,
+            long pageNumber) throws StandardException {
+        Page page = null;
+        try {
+            page = readDirectoryContainer().getPage(pageNumber);
+            if (page == null) {
+                return;
+            }
+            for (int index = start; index < end; index++) {
+                MvccRowLocation rowLocation = MvccRowLocation.from(rowLocations[index]);
+                MvccRawStoreTable.DirectoryRecord directory =
+                        MvccRawStoreRowDirectory.findByHint(rawTransaction, rowLocation, page);
+                if (directory != null) {
+                    prefetchedDirectoryRowIds[prefetchedDirectoryCount] = rowLocation.rowId();
+                    prefetchedDirectories[prefetchedDirectoryCount] = directory;
+                    prefetchedDirectoryCount++;
+                }
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+    }
+
+    private MvccRawStoreTable.DirectoryRecord takePrefetchedDirectory(long rowId) {
+        for (int index = 0; index < prefetchedDirectoryCount; index++) {
+            if (prefetchedDirectoryRowIds[index] != rowId) {
+                continue;
+            }
+            MvccRawStoreTable.DirectoryRecord directory = prefetchedDirectories[index];
+            prefetchedDirectoryRowIds[index] = 0L;
+            prefetchedDirectories[index] = null;
+            return directory;
+        }
+        return null;
+    }
+
+    private void ensurePrefetchCapacity(int capacity) {
+        if (prefetchedDirectories != null && prefetchedDirectories.length >= capacity) {
+            return;
+        }
+        prefetchedDirectoryRowIds = new long[capacity];
+        prefetchedDirectories = new MvccRawStoreTable.DirectoryRecord[capacity];
+    }
+
+    private void clearPrefetchedDirectories() {
+        if (prefetchedDirectories != null) {
+            for (int index = 0; index < prefetchedDirectoryCount; index++) {
+                prefetchedDirectories[index] = null;
+                prefetchedDirectoryRowIds[index] = 0L;
+            }
+        }
+        prefetchedDirectoryCount = 0;
     }
 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {
