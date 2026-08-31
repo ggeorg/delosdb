@@ -33,7 +33,7 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
     private static final String INDEX = "A6_PREFETCH_ID_IDX";
 
     public void testRangeOrderAndReadCommittedStatementSnapshot() throws Exception {
-        String database = databaseName("range-snapshot");
+        String database = uniqueDatabaseName("range-snapshot");
         try (SystemPropertyScope ignored = setSystemProperty(PREFETCH_PROPERTY, "true");
              Connection reader = openDatabase(database, true);
              Connection writer = openDatabase(database, false)) {
@@ -130,7 +130,7 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
                 + "where id between ? and ? order by id";
     }
 
-    private static String databaseName(String suffix) {
+    private static String uniqueDatabaseName(String suffix) {
         return "mvcc_base_fetch_page_prefetch_" + suffix + '_'
                 + Long.toUnsignedString(System.nanoTime());
     }
