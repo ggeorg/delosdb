@@ -1314,7 +1314,7 @@ tasks.register('runDelosJdbcRangeAlgorithmDecomposition', JavaExec) {
                         'delosdb.benchmark.rangeAlgorithm.warmups').getOrElse('2'),
                 'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
                         'delosdb.benchmark.rangeAlgorithm.iterations').getOrElse('3'),
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -1443,7 +1443,7 @@ tasks.register('runDelosJdbcMvccRangeNaturalOrderExperiment', JavaExec) {
                         'delosdb.benchmark.mvccNaturalOrder.warmups').getOrElse('2'),
                 'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
                         'delosdb.benchmark.mvccNaturalOrder.iterations').getOrElse('3'),
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -1564,7 +1564,7 @@ def configureMvccRangeCacheSweep = { JavaExec task, int slots ->
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '2400',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
@@ -1778,7 +1778,7 @@ tasks.register('runDelosJdbcRangeRowBearingProxyExperiment', JavaExec) {
                         'delosdb.benchmark.rangeRowBearingProxy.warmups').getOrElse('2'),
                 'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
                         'delosdb.benchmark.rangeRowBearingProxy.iterations').getOrElse('3'),
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -1931,7 +1931,7 @@ tasks.register('runDelosJdbcRangeRowBearingH2Benchmark', JavaExec) { task ->
                         'delosdb.benchmark.rangeRowBearingH2.warmups').getOrElse('2'),
                 'delosdb.benchmark.crossEngineConcurrency.iterations': providers.gradleProperty(
                         'delosdb.benchmark.rangeRowBearingH2.iterations').getOrElse('3'),
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -2043,7 +2043,7 @@ tasks.register('runDelosJdbcRangeRowBearingH2Jfr', JavaExec) { task ->
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -2199,7 +2199,7 @@ rangeScanJfrProfiles.each { suffix, workload ->
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                     'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                     'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                     'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -3505,7 +3505,7 @@ tasks.register('runDelosJdbcGate10iFiveEngineReadCheckpoint', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
@@ -5386,7 +5386,7 @@ tasks.register('runDelosJdbcPostGate6hFiveEngineRebaseline', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
@@ -7278,7 +7278,7 @@ tasks.register('runDelosJdbcGate10kdFiveEngineReadCheckpoint', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '120',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
@@ -12900,7 +12900,7 @@ tasks.register('runDelosJdbcGate10ltFiveEngineReadStackDecomposition', JavaExec)
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
                 // One complete forward/reverse target-order balance block.
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
         ])
@@ -13123,7 +13123,7 @@ rangeBulkFetchSweepSizes.each { fetchSize ->
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                     'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
                     'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
                     'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -16333,6 +16333,8 @@ tasks.register('runDelosPhase2NF04F06RelationalDecomposition', JavaExec) {
 // before introducing a production batch-mutation abstraction.
 def delosPhase4AF08MutationAttributionRoot =
         'reports/delosdb/benchmarks/phase4a-f08-mutation-attribution'
+def delosPhase4AF08Runs = 4
+def delosPhase4AF08ProfileTargetCount = 3
 
 def configureDelosPhase4AF08MutationProfile = {
     JavaExec task,
@@ -16397,7 +16399,7 @@ def configureDelosPhase4AF08MutationProfile = {
                 'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '500000',
                 'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '2.0',
                 'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '500000',
-                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.runs': delosPhase4AF08Runs.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
                 'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1200',
                 'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
@@ -16415,9 +16417,10 @@ def configureDelosPhase4AF08MutationProfile = {
             throw new GradleException("JFR tool not found: ${jfrExecutable}")
         }
         def recordings = profilesDir.listFiles({ File file -> file.name.endsWith('.jfr') } as FileFilter)
-        if (recordings == null || recordings.length != 3) {
+        int expectedRecordings = delosPhase4AF08Runs * delosPhase4AF08ProfileTargetCount
+        if (recordings == null || recordings.length != expectedRecordings) {
             throw new GradleException(
-                    "Phase 4A F08 expected 3 JFR recordings in ${profilesDir}, found "
+                    "Phase 4A F08 expected ${expectedRecordings} JFR recordings in ${profilesDir}, found "
                             + (recordings == null ? 0 : recordings.length))
         }
         def views = [
@@ -16431,16 +16434,15 @@ def configureDelosPhase4AF08MutationProfile = {
             String stem = recording.name.substring(0, recording.name.length() - 4)
             views.each { String view ->
                 File output = new File(viewsDir, "${stem}-${view}.txt")
-                def stdout = new ByteArrayOutputStream()
-                def stderr = new ByteArrayOutputStream()
-                def result = providers.exec {
+                def execOutput = providers.exec {
                     commandLine jfrExecutable.absolutePath, 'view', '--width', '220',
                             '--cell-height', '12', view, recording.absolutePath
-                    standardOutput = stdout
-                    errorOutput = stderr
                     ignoreExitValue = true
-                }.result.get()
-                output.setText(stdout.toString('UTF-8') + stderr.toString('UTF-8'), 'UTF-8')
+                }
+                def result = execOutput.result.get()
+                def stdout = execOutput.standardOutput.asText.get()
+                def stderr = execOutput.standardError.asText.get()
+                output.setText(stdout + stderr, 'UTF-8')
                 if (result.exitValue != 0) {
                     throw new GradleException(
                             "jfr view ${view} failed for ${recording.name}; see ${output}")
