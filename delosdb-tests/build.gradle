@@ -16327,3 +16327,144 @@ tasks.register('runDelosPhase2NF04F06RelationalDecomposition', JavaExec) {
         ])
     }
 }
+
+// Phase 4A F08 mutation attribution.
+// Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
+// before introducing a production batch-mutation abstraction.
+def delosPhase4AF08MutationAttributionRoot =
+        'reports/delosdb/benchmarks/phase4a-f08-mutation-attribution'
+
+def configureDelosPhase4AF08MutationProfile = {
+    JavaExec task,
+    String reportGroup,
+    String workload,
+    String transactionsPerClient ->
+
+    task.group = 'benchmark'
+    task.description = "Profiles Phase 4A F08 ${workload} mutation execution for Heap, MVCC, and upstream Derby."
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosPhase4AF08MutationAttributionRoot}/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Phase 4A F08 mutation attribution requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosPhase4AF08MutationAttributionRoot}/${reportGroup}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("tmp/delos-phase4a-f08-${reportGroup}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath': sqliteBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap,delos_mvcc,upstream_derby',
+                'delosdb.benchmark.crossEngineConcurrency.profileTargets':
+                        'delos_heap,delos_mvcc,upstream_derby',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': workload,
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': transactionsPerClient,
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1200',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosPhase4AF08MutationAttributionRoot}/${reportGroup}").get().asFile
+        File profilesDir = new File(reportDir, 'profiles')
+        File viewsDir = new File(reportDir, 'jfr-views')
+        viewsDir.mkdirs()
+        File jfrExecutable = new File(System.getProperty('java.home'), 'bin/jfr')
+        if (!jfrExecutable.isFile()) {
+            throw new GradleException("JFR tool not found: ${jfrExecutable}")
+        }
+        def recordings = profilesDir.listFiles({ File file -> file.name.endsWith('.jfr') } as FileFilter)
+        if (recordings == null || recordings.length != 3) {
+            throw new GradleException(
+                    "Phase 4A F08 expected 3 JFR recordings in ${profilesDir}, found "
+                            + (recordings == null ? 0 : recordings.length))
+        }
+        def views = [
+                'hot-methods',
+                'allocation-by-site',
+                'contention-by-site',
+                'file-writes-by-path',
+                'events-by-count'
+        ]
+        recordings.sort { left, right -> left.name <=> right.name }.each { File recording ->
+            String stem = recording.name.substring(0, recording.name.length() - 4)
+            views.each { String view ->
+                File output = new File(viewsDir, "${stem}-${view}.txt")
+                def stdout = new ByteArrayOutputStream()
+                def stderr = new ByteArrayOutputStream()
+                def result = providers.exec {
+                    commandLine jfrExecutable.absolutePath, 'view', '--width', '220',
+                            '--cell-height', '12', view, recording.absolutePath
+                    standardOutput = stdout
+                    errorOutput = stderr
+                    ignoreExitValue = true
+                }.result.get()
+                output.setText(stdout.toString('UTF-8') + stderr.toString('UTF-8'), 'UTF-8')
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "jfr view ${view} failed for ${recording.name}; see ${output}")
+                }
+            }
+        }
+    }
+}
+
+tasks.register('runDelosPhase4AF08Insert1MutationProfile', JavaExec) { task ->
+    configureDelosPhase4AF08MutationProfile(
+            task, 'insert-1', 'INSERT_1', '100')
+}
+
+tasks.register('runDelosPhase4AF08Insert100MutationProfile', JavaExec) { task ->
+    configureDelosPhase4AF08MutationProfile(
+            task, 'insert-100', 'INSERT_100', '5')
+    mustRunAfter tasks.named('runDelosPhase4AF08Insert1MutationProfile')
+}
+
+tasks.register('runDelosPhase4AF08MutationAttribution') {
+    group = 'benchmark'
+    description = 'Captures Phase 4A F08 INSERT_1/INSERT_100 JFR attribution before mutation architecture changes.'
+    dependsOn tasks.named('runDelosPhase4AF08Insert1MutationProfile'),
+            tasks.named('runDelosPhase4AF08Insert100MutationProfile')
+    outputs.upToDateWhen { false }
+}
