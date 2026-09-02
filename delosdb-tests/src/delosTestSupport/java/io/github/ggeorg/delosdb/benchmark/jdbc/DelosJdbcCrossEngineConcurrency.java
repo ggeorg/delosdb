@@ -74,6 +74,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final List<Target> SERVER_REFERENCE_CANARY_TARGETS = List.of(
             Target.UPSTREAM_DERBY_DRDA, Target.H2_SERVER, Target.POSTGRESQL, Target.MARIADB);
     private static final List<Target> MVCC_ONLY_DIAGNOSTIC_TARGETS = List.of(Target.DELOS_MVCC);
+    private static final List<Target> MVCC_MUTATION_REUSE_SERVER_TARGETS =
+            List.of(Target.DELOS_MVCC_DRDA);
     private static final List<Target> HOST_RECOVERY_DIAGNOSTIC_TARGETS = List.of(Target.H2, Target.SQLITE);
     private static final List<Target> DRDA_PROTOCOL_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
@@ -2617,6 +2619,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
                 command.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
             }
+            if (Boolean.getBoolean(PREFIX + "mvccMutationWriteContainerReuse")) {
+                command.add("-Ddelosdb.experimental.mvccMutationWriteContainerReuse=true");
+            }
         }
         String rangeBulkFetchDefault = System.getProperty(
                 PREFIX + "rangeBulkFetchDefault", "").trim();
@@ -2815,6 +2820,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_MVCC_DRDA
                         && Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
                     javaCommand.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA
+                        && Boolean.getBoolean(PREFIX + "mvccMutationWriteContainerReuse")) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccMutationWriteContainerReuse=true");
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3025,6 +3034,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(" (0=driver default)\n")
                 .append("MVCC base-fetch directory-page prefetch experiment: ")
                 .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
+                .append("MVCC mutation write-container reuse experiment: ")
+                .append(Boolean.getBoolean(PREFIX + "mvccMutationWriteContainerReuse")).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -8108,6 +8119,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)
                 || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)
                 || options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)
+                || options.targetValues().equals(MVCC_MUTATION_REUSE_SERVER_TARGETS)
                 || options.targetValues().equals(CURRENT_BASELINE_EMBEDDED_TARGETS)
                 || options.targetValues().equals(CURRENT_BASELINE_SERVER_TARGETS)) {
             out = new StringBuilder(
@@ -9611,6 +9623,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean referenceCanaryTargets = configuredTargets.equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
                     || configuredTargets.equals(SERVER_REFERENCE_CANARY_TARGETS);
             boolean mvccOnlyDiagnostic = configuredTargets.equals(MVCC_ONLY_DIAGNOSTIC_TARGETS);
+            boolean mvccMutationReuseServerDiagnostic =
+                    configuredTargets.equals(MVCC_MUTATION_REUSE_SERVER_TARGETS);
             boolean hostRecoveryDiagnostic = hostStateRecoveryEnabled()
                     && configuredTargets.equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS);
             boolean drdaProtocolDiagnostic = drdaProtocolEvidenceEnabled()
@@ -9628,6 +9642,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !configuredTargets.equals(RANGE_SCAN_JFR_TARGETS)
                     && !configuredTargets.equals(RANGE_BULK_FETCH_TARGETS)
                     && !mvccOnlyDiagnostic
+                    && !mvccMutationReuseServerDiagnostic
                     && !hostRecoveryDiagnostic
                     && !drdaProtocolDiagnostic
                     && !drdaServerPhaseDiagnostic
@@ -9639,6 +9654,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", range/JFR diagnostic " + RANGE_SCAN_JFR_TARGETS
                         + ", range bulk-fetch diagnostic " + RANGE_BULK_FETCH_TARGETS
                         + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
+                        + ", MVCC mutation-reuse server diagnostic " + MVCC_MUTATION_REUSE_SERVER_TARGETS
                         + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
                         + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
                         + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
@@ -9720,9 +9736,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (maxClients > minRows) {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
-            if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
-                    && !mixedReaderWriterFitness && !hostStateDiagnosticsEnabled()
-                    && !clientValues().contains(1)) {
+            if (target == null && !mvccOnlyDiagnostic && !mvccMutationReuseServerDiagnostic
+                    && !longReaderWriterFitness && !mixedReaderWriterFitness
+                    && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0

@@ -16470,3 +16470,145 @@ tasks.register('runDelosPhase4AF08MutationAttribution') {
             tasks.named('runDelosPhase4AF08Insert100MutationProfile')
     outputs.upToDateWhen { false }
 }
+
+// Phase 4B B1 F08 mutation-write-container reuse.
+// Causal experiment: keep only the MVCC version/directory ContainerHandles at
+// transaction lifetime while every row still uses RawStore page selection and
+// releases its page latch immediately.
+def delosPhase4BB1ReportRoot =
+        'reports/delosdb/benchmarks/phase4b-b1-mutation-write-container-reuse'
+def delosPhase4BB1DatabaseRoot =
+        'tmp/delos-phase4b-b1-mutation-write-container-reuse'
+
+def configureDelosPhase4BB1ServerF08 = {
+    JavaExec task,
+    String reportGroup,
+    String workload,
+    String transactionsPerClient,
+    boolean reuseEnabled ->
+
+    task.group = 'benchmark'
+    task.description = "Runs Phase 4B B1 server ${workload} with MVCC mutation write-container reuse=${reuseEnabled}."
+    task.dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosPhase4BB1ReportRoot}/server/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Phase 4B B1 F08 requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosPhase4BB1ReportRoot}/server/${reportGroup}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosPhase4BB1DatabaseRoot}/server/${reportGroup}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_mvcc_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar': h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath': postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath': mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': workload,
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': transactionsPerClient,
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '240',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g',
+                'delosdb.benchmark.crossEngineConcurrency.mvccMutationWriteContainerReuse':
+                        Boolean.toString(reuseEnabled)
+        ])
+    }
+}
+
+tasks.register('runDelosPhase4BB1ServerF08Insert1Baseline', JavaExec) { task ->
+    configureDelosPhase4BB1ServerF08(task, 'insert-1-baseline', 'INSERT_1', '50', false)
+}
+
+tasks.register('runDelosPhase4BB1ServerF08Insert1Reuse', JavaExec) { task ->
+    configureDelosPhase4BB1ServerF08(task, 'insert-1-reuse', 'INSERT_1', '50', true)
+    mustRunAfter tasks.named('runDelosPhase4BB1ServerF08Insert1Baseline')
+}
+
+tasks.register('runDelosPhase4BB1ServerF08Insert100Baseline', JavaExec) { task ->
+    configureDelosPhase4BB1ServerF08(task, 'insert-100-baseline', 'INSERT_100', '3', false)
+    mustRunAfter tasks.named('runDelosPhase4BB1ServerF08Insert1Reuse')
+}
+
+tasks.register('runDelosPhase4BB1ServerF08Insert100Reuse', JavaExec) { task ->
+    configureDelosPhase4BB1ServerF08(task, 'insert-100-reuse', 'INSERT_100', '3', true)
+    mustRunAfter tasks.named('runDelosPhase4BB1ServerF08Insert100Baseline')
+}
+
+tasks.register('runDelosPhase4BB1MutationWriteContainerReuse') {
+    group = 'benchmark'
+    description = 'Runs Phase 4B B1 F08 server baseline/reuse comparisons for INSERT_1 and INSERT_100.'
+    dependsOn tasks.named('runDelosPhase4BB1ServerF08Insert1Baseline'),
+            tasks.named('runDelosPhase4BB1ServerF08Insert1Reuse'),
+            tasks.named('runDelosPhase4BB1ServerF08Insert100Baseline'),
+            tasks.named('runDelosPhase4BB1ServerF08Insert100Reuse')
+    outputs.upToDateWhen { false }
+}
