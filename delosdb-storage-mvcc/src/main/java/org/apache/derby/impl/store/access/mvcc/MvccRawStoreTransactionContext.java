@@ -21,7 +21,6 @@ import java.util.TreeSet;
 import org.apache.derby.iapi.store.access.DatabaseInstant;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodTransactionLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
-import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
@@ -33,8 +32,6 @@ import org.apache.derby.shared.common.reference.SQLState;
 /** Transaction-local MVCC semantics attached to one inherited access transaction. */
 final class MvccRawStoreTransactionContext implements AccessMethodTransactionLifecycle {
     private static final long UNCAPTURED_SNAPSHOT = Long.MIN_VALUE;
-    private static final String MUTATION_WRITE_CONTAINER_REUSE_PROPERTY =
-            "delosdb.experimental.mvccMutationWriteContainerReuse";
 
     private final MvccRawStoreRuntime runtime;
     private final TransactionManager transactionManager;
@@ -45,7 +42,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private final Set<MvccRawStoreLogicalLock> sharedLocks = new HashSet<>();
     private final Set<MvccRawStoreLogicalLock> exclusiveLocks = new HashSet<>();
     private final Map<Long, AllocatorReservation> allocatorReservations = new LinkedHashMap<>();
-    private Map<ContainerKey, ContainerHandle> mutationWriteContainers;
     private final Map<Long, OrderedIndexReplacement> orderedIndexReplacements = new LinkedHashMap<>();
     private final Set<MvccRawStoreTable.Descriptor> orderedIndexGenerationInvalidations =
             new HashSet<>();
@@ -62,8 +58,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
     private boolean vacuumMutation;
-    private final boolean mutationWriteContainerReuse =
-            Boolean.getBoolean(MUTATION_WRITE_CONTAINER_REUSE_PROPERTY);
 
     MvccRawStoreTransactionContext(
             MvccRawStoreRuntime runtime,
@@ -129,37 +123,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         ensureTransactionId();
     }
 
-    boolean mutationWriteContainerReuseEnabled() {
-        return mutationWriteContainerReuse;
-    }
-
-    ContainerHandle mutationWriteContainer(ContainerKey key) throws StandardException {
-        if (!mutationWriteContainerReuse) {
-            throw new IllegalStateException(
-                    "MVCC mutation write-container reuse is not enabled for this transaction");
-        }
-        Map<ContainerKey, ContainerHandle> containers = mutationWriteContainers;
-        if (containers != null) {
-            ContainerHandle existing = containers.get(key);
-            if (existing != null) {
-                return existing;
-            }
-        } else {
-            containers = new LinkedHashMap<>();
-            mutationWriteContainers = containers;
-        }
-        ContainerHandle opened = rawTransaction.openContainer(
-                key,
-                MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (opened == null) {
-            throw new IllegalStateException(
-                    "RawStore MVCC insert container is absent: " + key);
-        }
-        containers.put(key, opened);
-        return opened;
-    }
-
     void beforeTableWrite(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireShared(MvccRawStoreLogicalLock.table(table));
@@ -190,7 +153,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     }
 
     void beforeSchemaChange(MvccRawStoreTable.Descriptor table) throws StandardException {
-        closeMutationWriteContainers();
         beforeWrite();
         acquireExclusive(MvccRawStoreLogicalLock.table(table));
         orderedIndexGenerationInvalidations.add(table);
@@ -462,7 +424,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
-        closeMutationWriteContainers();
         List<MvccRawStoreTable.PendingVersion> committableVersions =
                 committablePendingVersions();
         List<OrderedIndexReplacement> committableIndexes =
@@ -557,7 +518,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void commitFailed(CommitMode mode, Throwable failure) {
-        closeMutationWriteContainers();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
         if (!runtime.concurrentCommitPublication()) {
@@ -567,7 +527,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeAbort() {
-        closeMutationWriteContainers();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
     }
@@ -580,20 +539,17 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void abortFailed(Throwable failure) {
-        closeMutationWriteContainers();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
     }
 
     @Override
     public void afterSetSavepoint(SavepointIdentity savepoint) {
-        closeMutationWriteContainers();
         savepoints.add(new SavepointMarker(savepoint, pending.size()));
     }
 
     @Override
     public void afterRollbackToSavepoint(SavepointIdentity savepoint) throws StandardException {
-        closeMutationWriteContainers();
         // The lifecycle participant may be registered after the target savepoint
         // was created. RawStore has already completed physical rollback, so the
         // surviving version rows are the authoritative pending set.
@@ -647,7 +603,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterReleaseSavepoint(SavepointIdentity savepoint) {
-        closeMutationWriteContainers();
         int markerIndex = findSavepoint(savepoint);
         if (markerIndex < 0) {
             savepoints.clear();
@@ -660,7 +615,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeNestedUserTransaction(boolean readOnly) throws StandardException {
-        closeMutationWriteContainers();
         if (!readOnly) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
@@ -670,7 +624,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeXaOperation(XaOperation operation) throws StandardException {
-        closeMutationWriteContainers();
         throw StandardException.newException(
                 SQLState.NOT_IMPLEMENTED,
                 "RawStore-backed delos_mvcc XA operation " + operation);
@@ -678,7 +631,6 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeDestroy() {
-        closeMutationWriteContainers();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
     }
@@ -827,20 +779,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
     }
 
-    private void closeMutationWriteContainers() {
-        Map<ContainerKey, ContainerHandle> containers = mutationWriteContainers;
-        if (containers == null) {
-            return;
-        }
-        mutationWriteContainers = null;
-        for (ContainerHandle container : containers.values()) {
-            container.close();
-        }
-        containers.clear();
-    }
-
     private void clearLocalState() {
-        closeMutationWriteContainers();
         runtime.retireTransaction(transactionId);
         if (snapshotLease != null) {
             snapshotLease.close();

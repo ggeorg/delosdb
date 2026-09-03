@@ -464,8 +464,7 @@ final class MvccRawStoreTable {
                 RecordHint.NONE,
                 MvccRawStoreFormat.LIVE_FLAGS,
                 values);
-        RecordHandle versionHandle = insertInitialRow(
-                rawTransaction, table.versionContainer(), versionRow, context);
+        RecordHandle versionHandle = insertRow(rawTransaction, table.versionContainer(), versionRow);
         Object[] directoryRow = directoryRow(
                 rawTransaction,
                 allocation.rowId(),
@@ -474,8 +473,8 @@ final class MvccRawStoreTable {
                 creatorTransactionId,
                 MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
                 MvccRawStoreFormat.LIVE_FLAGS);
-        RecordHandle directoryHandle = insertInitialRow(
-                rawTransaction, table.metadataContainer(), directoryRow, context);
+        RecordHandle directoryHandle = insertRow(
+                rawTransaction, table.metadataContainer(), directoryRow);
         MvccRowLocation directoryLocation = MvccRawStoreRowDirectory.location(
                 allocation.rowId(), directoryHandle);
         MvccRawStoreOrderedIndex.insertVersion(
@@ -1430,17 +1429,6 @@ final class MvccRawStoreTable {
         }
     }
 
-    private static RecordHandle insertInitialRow(
-            Transaction transaction,
-            ContainerKey key,
-            Object[] row,
-            MvccRawStoreTransactionContext context) throws StandardException {
-        if (!context.mutationWriteContainerReuseEnabled()) {
-            return insertRow(transaction, key, row);
-        }
-        return insertRow(context.mutationWriteContainer(key), row);
-    }
-
     private static RecordHandle insertRow(
             Transaction transaction,
             ContainerKey key,
@@ -1453,16 +1441,6 @@ final class MvccRawStoreTable {
             throw new IllegalStateException(
                     "RawStore MVCC insert container is absent: " + key);
         }
-        try {
-            return insertRow(container, row);
-        } finally {
-            container.close();
-        }
-    }
-
-    private static RecordHandle insertRow(
-            ContainerHandle container,
-            Object[] row) throws StandardException {
         Page page = null;
         try {
             // RawStore tracks the last inserted and relatively unfilled pages
@@ -1506,6 +1484,7 @@ final class MvccRawStoreTable {
             if (page != null) {
                 page.unlatch();
             }
+            container.close();
         }
     }
 
