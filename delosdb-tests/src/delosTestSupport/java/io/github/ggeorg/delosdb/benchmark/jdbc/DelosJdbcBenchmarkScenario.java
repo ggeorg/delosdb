@@ -61,16 +61,24 @@ public final class DelosJdbcBenchmarkScenario {
     public void prepare() throws SQLException {
         fixturePrepared = false;
         connection.setAutoCommit(false);
+        InsertTableShape tableShape = InsertTableShape.fromSystemProperty();
         try (Statement statement = connection.createStatement()) {
             if (dropExistingTable) {
                 dropIfPresent(statement, table);
             }
+            String idDefinition = tableShape == InsertTableShape.BARE
+                    ? "id int not null"
+                    : "id int not null primary key";
             statement.executeUpdate("create table " + table
-                    + " (id int not null primary key, category int not null, bucket int not null,"
+                    + " (" + idDefinition + ", category int not null, bucket int not null,"
                     + " quantity int not null, payload varchar(4096) not null)"
                     + createTableSuffix);
-            statement.executeUpdate("create index " + table + "_CATEGORY_IDX on " + table + " (category)");
-            statement.executeUpdate("create index " + table + "_RANGE_IDX on " + table + " (bucket, quantity)");
+            if (tableShape == InsertTableShape.FULL_INDEXED) {
+                statement.executeUpdate(
+                        "create index " + table + "_CATEGORY_IDX on " + table + " (category)");
+                statement.executeUpdate(
+                        "create index " + table + "_RANGE_IDX on " + table + " (bucket, quantity)");
+            }
         }
         // Publish fixture metadata before preparing DML. Some server engines keep DDL
         // transactional, so preparing the insert before commit can observe no table.
@@ -102,6 +110,29 @@ public final class DelosJdbcBenchmarkScenario {
             }
         }
         fixturePrepared = true;
+    }
+
+
+    private enum InsertTableShape {
+        BARE,
+        PRIMARY_KEY_ONLY,
+        FULL_INDEXED;
+
+        private static final String PROPERTY =
+                "delosdb.benchmark.crossEngineConcurrency.insertTableShape";
+
+        static InsertTableShape fromSystemProperty() {
+            String raw = System.getProperty(PROPERTY, FULL_INDEXED.name()).trim();
+            if (raw.isEmpty()) {
+                return FULL_INDEXED;
+            }
+            try {
+                return valueOf(raw.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException failure) {
+                throw new IllegalArgumentException(
+                        "Unknown INSERT benchmark table shape: " + raw, failure);
+            }
+        }
     }
 
     public Map<DelosBenchmarkOperation, DelosBenchmarkResult> executeSemanticMatrix() throws SQLException {

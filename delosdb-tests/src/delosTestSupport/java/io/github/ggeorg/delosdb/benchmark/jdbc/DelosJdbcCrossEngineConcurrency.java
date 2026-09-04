@@ -77,6 +77,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final List<Target> HOST_RECOVERY_DIAGNOSTIC_TARGETS = List.of(Target.H2, Target.SQLITE);
     private static final List<Target> DRDA_PROTOCOL_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
+    private static final List<Target> F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
     private static final List<Target> DRDA_SERVER_PHASE_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
     private static final List<Target> CURRENT_BASELINE_EMBEDDED_TARGETS = List.of(
@@ -2664,6 +2666,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         addProperty(command, "clients", options.clients());
         addProperty(command, "widths", options.widths());
         addProperty(command, "workloads", options.workloads());
+        addProperty(command, "insertTableShape", insertTableShape());
+        if (mutationSchemaAttributionEnabled()) {
+            addProperty(command, "mutationSchemaAttribution", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -8103,7 +8109,25 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static void writeRatioCsv(Options options, List<Row> rows) throws IOException {
         Map<ShapeKey, EnumMap<Target, Double>> medians = medianThroughput(options, rows);
         StringBuilder out;
-        if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
+        if (mutationSchemaAttributionEnabled()) {
+            out = new StringBuilder(
+                    "rowCount,workload,clients,operationsPerTransaction,delosHeapDrdaMedianTps,"
+                            + "delosMvccDrdaMedianTps,upstreamDerbyDrdaMedianTps,"
+                            + "delosMvccToHeap,delosMvccToDerby,delosHeapToDerby\n");
+            for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
+                ShapeKey key = entry.getKey();
+                EnumMap<Target, Double> values = entry.getValue();
+                double heap = require(values, Target.DELOS_HEAP_DRDA, key);
+                double mvcc = require(values, Target.DELOS_MVCC_DRDA, key);
+                double derby = require(values, Target.UPSTREAM_DERBY_DRDA, key);
+                out.append(key.csv()).append(',')
+                        .append(format(heap)).append(',').append(format(mvcc)).append(',')
+                        .append(format(derby)).append(',')
+                        .append(format(mvcc / heap)).append(',')
+                        .append(format(mvcc / derby)).append(',')
+                        .append(format(heap / derby)).append('\n');
+            }
+        } else if (options.targetValues().equals(EMBEDDED_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(SERVER_REFERENCE_CANARY_TARGETS)
                 || options.targetValues().equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS)
                 || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)
@@ -8410,6 +8434,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("Minimum measured seconds per run: ").append(options.minimumMeasuredSeconds()).append('\n')
                 .append("Maximum measured intervals per run: ").append(options.maximumMeasuredIterations()).append('\n')
                 .append("Workloads: ").append(options.workloadValues()).append('\n')
+                .append("INSERT table shape: ").append(insertTableShape()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8628,6 +8653,15 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static String csvSafe(String value) {
         return value == null ? "" : value.replace(',', ';').replace('\n', ' ').replace('\r', ' ');
+    }
+
+    private static boolean mutationSchemaAttributionEnabled() {
+        return Boolean.getBoolean(PREFIX + "mutationSchemaAttribution");
+    }
+
+    private static String insertTableShape() {
+        String value = System.getProperty(PREFIX + "insertTableShape", "FULL_INDEXED").trim();
+        return value.isEmpty() ? "FULL_INDEXED" : value.toUpperCase(Locale.ROOT);
     }
 
     private static String format(double value) {
@@ -9615,6 +9649,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(HOST_RECOVERY_DIAGNOSTIC_TARGETS);
             boolean drdaProtocolDiagnostic = drdaProtocolEvidenceEnabled()
                     && configuredTargets.equals(DRDA_PROTOCOL_EVIDENCE_TARGETS);
+            boolean mutationSchemaAttribution = mutationSchemaAttributionEnabled()
+                    && configuredTargets.equals(F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9630,6 +9666,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !mvccOnlyDiagnostic
                     && !hostRecoveryDiagnostic
                     && !drdaProtocolDiagnostic
+                    && !mutationSchemaAttribution
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -9641,6 +9678,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", MVCC diagnostic " + MVCC_ONLY_DIAGNOSTIC_TARGETS
                         + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
                         + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
+                        + ", F08 mutation-schema attribution " + F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS
                         + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
                         + ", or Phase-1 current baseline " + CURRENT_BASELINE_EMBEDDED_TARGETS
                         + "/" + CURRENT_BASELINE_SERVER_TARGETS
@@ -9654,6 +9692,36 @@ public final class DelosJdbcCrossEngineConcurrency {
             parsePositive(clients, "clients", 1);
             parsePositive(widths, "widths", 1);
             List<Workload> configuredWorkloads = workloadValues();
+            String configuredInsertTableShape = insertTableShape();
+            if (!List.of("BARE", "PRIMARY_KEY_ONLY", "FULL_INDEXED")
+                    .contains(configuredInsertTableShape)) {
+                throw new IllegalArgumentException(
+                        "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
+            }
+            if (mutationSchemaAttribution) {
+                if (configuredWorkloads.isEmpty()
+                        || configuredWorkloads.stream().anyMatch(workload -> !workload.isInsert())) {
+                    throw new IllegalArgumentException(
+                            "F08 mutation-schema attribution requires INSERT workloads only");
+                }
+                if (!clientValues().equals(List.of(8))) {
+                    throw new IllegalArgumentException(
+                            "F08 mutation-schema attribution requires exactly 8 clients");
+                }
+                if (warmups != 0
+                        || iterations != 1
+                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                        || maximumWarmupIterations != 1
+                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                        || maximumMeasuredIterations != 1) {
+                    throw new IllegalArgumentException(
+                            "F08 mutation-schema attribution requires one fresh measured INSERT interval "
+                                    + "per worker (warmups=0, iterations=1, adaptive durations disabled)");
+                }
+            } else if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+                throw new IllegalArgumentException(
+                        "Non-default INSERT table shapes require mutationSchemaAttribution=true");
+            }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
             if (configuredWorkloads.stream().anyMatch(Workload::isLongReaderWriter)
@@ -9721,8 +9789,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("clients cannot exceed rows");
             }
             if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
-                    && !mixedReaderWriterFitness && !hostStateDiagnosticsEnabled()
-                    && !clientValues().contains(1)) {
+                    && !mixedReaderWriterFitness && !mutationSchemaAttribution
+                    && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0
@@ -9780,6 +9848,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 "Delos network client classpath is required for DRDA diagnostics");
                     }
+                } else if (mutationSchemaAttribution) {
+                    if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()) {
+                        throw new IllegalArgumentException(
+                                "F08 mutation-schema attribution client classpaths are required");
+                    }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
                     throw new IllegalArgumentException("Server benchmark client classpaths are required");
@@ -9802,6 +9875,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                         if (delosServerImage.isBlank()) {
                             throw new IllegalArgumentException(
                                     "Delos server image is required for DRDA server phase evidence");
+                        }
+                    } else if (mutationSchemaAttribution) {
+                        if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
+                            throw new IllegalArgumentException(
+                                    "Upstream Derby server runtime directory does not exist: "
+                                            + upstreamDerbyServerRuntimeDirectory);
+                        }
+                        if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
+                            throw new IllegalArgumentException(
+                                    "F08 mutation-schema attribution server images are required");
                         }
                     } else {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {

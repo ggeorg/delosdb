@@ -16470,3 +16470,155 @@ tasks.register('runDelosPhase4AF08MutationAttribution') {
             tasks.named('runDelosPhase4AF08Insert100MutationProfile')
     outputs.upToDateWhen { false }
 }
+
+// Phase 4B-B2 F08 mutation schema-shape attribution.
+// Benchmark-only: isolate base MVCC mutation cost from primary-key/unique-index
+// and secondary SQL-index maintenance before the next production experiment.
+def delosPhase4BB2MutationSchemaRoot =
+        'reports/delosdb/benchmarks/phase4b-b2-mutation-schema-attribution'
+def delosPhase4BB2MutationSchemaDatabaseRoot =
+        'tmp/delos-phase4b-b2-mutation-schema-attribution'
+
+def configureDelosPhase4BB2MutationSchema = {
+    JavaExec task,
+    String reportGroup,
+    String tableShape ->
+
+    task.group = 'benchmark'
+    task.description = "Runs Phase 4B-B2 F08 ${tableShape} INSERT schema attribution at 8 server clients."
+    task.dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            upstreamDerbyNetworkClientRuntime)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosPhase4BB2MutationSchemaRoot}/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Phase 4B-B2 F08 mutation schema attribution requires a release build; '
+                            + 'rerun with -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosPhase4BB2MutationSchemaRoot}/${reportGroup}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosPhase4BB2MutationSchemaDatabaseRoot}/${reportGroup}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mutationSchemaAttribution': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': tableShape,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_1,INSERT_100',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '5',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '500',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                // INSERT verification restores each interval by deleting the measured key range.
+                // Replaying that same range on MVCC accumulates committed tombstone/history for
+                // those keys and turns later PK uniqueness probes into a churn benchmark. B2
+                // measures fresh INSERT attribution, so each fresh worker/database contributes
+                // exactly one measured interval; fixture creation already exercises INSERT.
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosPhase4BB2F08BareTable', JavaExec) { task ->
+    configureDelosPhase4BB2MutationSchema(task, 'bare', 'BARE')
+}
+
+tasks.register('runDelosPhase4BB2F08PrimaryKeyOnly', JavaExec) { task ->
+    configureDelosPhase4BB2MutationSchema(task, 'primary-key-only', 'PRIMARY_KEY_ONLY')
+    mustRunAfter tasks.named('runDelosPhase4BB2F08BareTable')
+}
+
+tasks.register('runDelosPhase4BB2F08FullIndexed', JavaExec) { task ->
+    configureDelosPhase4BB2MutationSchema(task, 'full-indexed', 'FULL_INDEXED')
+    mustRunAfter tasks.named('runDelosPhase4BB2F08PrimaryKeyOnly')
+}
+
+tasks.register('runDelosPhase4BB2MutationSchemaAttribution') {
+    group = 'benchmark'
+    description = 'Runs F08 bare/PK-only/full-indexed server attribution for Heap, MVCC, and upstream Derby.'
+    dependsOn tasks.named('runDelosPhase4BB2F08BareTable'),
+            tasks.named('runDelosPhase4BB2F08PrimaryKeyOnly'),
+            tasks.named('runDelosPhase4BB2F08FullIndexed')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosPhase4BB2MutationSchemaRoot))
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(delosPhase4BB2MutationSchemaRoot).get().asFile
+        def shapes = [
+                'BARE': 'bare',
+                'PRIMARY_KEY_ONLY': 'primary-key-only',
+                'FULL_INDEXED': 'full-indexed'
+        ]
+        def output = new File(root, 'mutation-schema-attribution.tsv')
+        output.parentFile.mkdirs()
+        output.setText(
+                'tableShape\trowCount\tworkload\tclients\toperationsPerTransaction\t'
+                        + 'delosHeapDrdaMedianTps\tdelosMvccDrdaMedianTps\tupstreamDerbyDrdaMedianTps\t'
+                        + 'delosMvccToHeap\tdelosMvccToDerby\tdelosHeapToDerby\n',
+                'UTF-8')
+        shapes.each { String shape, String group ->
+            def ratio = new File(new File(root, group), 'cross-engine-concurrency-ratios.csv')
+            if (!ratio.isFile()) {
+                throw new GradleException("Missing Phase 4B-B2 ratio report: ${ratio}")
+            }
+            ratio.readLines('UTF-8').drop(1).findAll { !it.isBlank() }.each { String row ->
+                output.append(shape + '\t' + row.replace(',', '\t') + '\n', 'UTF-8')
+            }
+        }
+    }
+}
