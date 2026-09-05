@@ -847,6 +847,21 @@ tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+registerDelosFocusedTest(
+        'runDelosMutationPhysicalAmplificationLedger',
+        'Measures one steady-state BARE/PK INSERT as deterministic structural, RawStore page-write, and WAL-span work for Heap and MVCC Gen1.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MutationPhysicalAmplificationLedgerTest.class'],
+        [
+                'delosdb.benchmark.mutationPhysicalAccounting.rows': providers.gradleProperty(
+                        'delosdb.benchmark.mutationPhysicalAccounting.rows').getOrElse('1000'),
+                'delosdb.benchmark.mutationPhysicalAccounting.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/mutation-physical-amplification').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosMutationPhysicalAmplificationLedger') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
 tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
     group = 'benchmark'
     description = 'Audits reusable benchmark assets for the frozen 13-family DelosDB architecture fitness matrix.'
