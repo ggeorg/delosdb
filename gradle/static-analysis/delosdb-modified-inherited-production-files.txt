@@ -21,8 +21,14 @@ delosdb-client/src/main/java/org/apache/derby/client/am/SQLExceptionFactory.java
 delosdb-client/src/main/java/org/apache/derby/client/am/SectionManager.java
 delosdb-client/src/main/java/org/apache/derby/client/net/CodePointNameTable.java
 delosdb-client/src/main/java/org/apache/derby/client/net/NetConnection.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetConnectionReply.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetConnectionRequest.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetResultSetReply.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetResultSetRequest.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetStatementReply.java
 delosdb-client/src/main/java/org/apache/derby/client/net/NetStatementRequest.java
 delosdb-client/src/main/java/org/apache/derby/client/net/OpenSocketAction.java
+delosdb-client/src/main/java/org/apache/derby/client/net/Reply.java
 delosdb-client/src/main/java/org/apache/derby/client/net/Request.java
 delosdb-client/src/main/java/org/apache/derby/client/net/Typdef.java
 delosdb-commons/src/main/java/module-info.java

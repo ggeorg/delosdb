@@ -33,6 +33,7 @@ import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.log.LogFactory;
+import org.apache.derby.iapi.store.raw.xact.RawTransaction;
 import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.impl.jdbc.EmbedConnection;
@@ -276,9 +277,10 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
     }
 
     private static long flushedWalInstant(Connection connection) throws Exception {
-        LogFactory logFactory = transactionManager(connection)
-                .getRawStoreXact()
-                .getLogFactory();
+        if (!(transactionManager(connection).getRawStoreXact() instanceof RawTransaction raw)) {
+            throw new AssertionError("RawStore transaction required for WAL accounting");
+        }
+        LogFactory logFactory = raw.getLogFactory();
         return logFactory.getFirstUnflushedInstantAsLong();
     }
 

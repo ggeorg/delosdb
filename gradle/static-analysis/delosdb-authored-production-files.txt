@@ -7,12 +7,14 @@ delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosRepositoryIntegrityA
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosRepositoryIntegrityMetrics.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosRepositoryIntegrityModel.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/EnglishMessagePropertiesGenerator.java
+delosdb-client/src/main/java/org/apache/derby/client/net/NetProtocolEvidence.java
 delosdb-client/src/main/java/org/apache/derby/loc/client/PackageMarker.java
 delosdb-client/src/main/java/org/apache/derby/loc/client/package-info.java
 delosdb-commons/src/main/java/org/apache/derby/shared/common/security/DelosObjectInputFilters.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/DelosStoreCostTuning.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrapper.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/StoreCostControllerWrappers.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBaseFetchPagePrefetch.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodIndexBuildLifecycle.java
@@ -186,6 +188,7 @@ delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/security/StoreS
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/util/InterruptStatusKernelSupport.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/xml/SecureXmlFactory.java
 delosdb-runtime-api/src/main/java/org/apache/derby/io/DatabaseMemoryStorage.java
+delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAServerPhaseEvidence.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaExtdtaStreamMaterializer.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaServerConfiguration.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaSessionScheduler.java
