@@ -60,6 +60,10 @@ public final class MvccGen2ArchitectureEntryGateTest extends MvccSqlTestSupport 
                         second.nextCommitSequence());
                 assertEquals("second commit does not rewrite recovery ceiling", first.recoveryPublicationCeiling(),
                         second.recoveryPublicationCeiling());
+
+                // The final metadata inspection starts a read transaction while auto-commit is disabled.
+                // End it explicitly so connection close does not fail with SQLState 25001.
+                connection.commit();
             }
             shutdownDatabase(database);
         }

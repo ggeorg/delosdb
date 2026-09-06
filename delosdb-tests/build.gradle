@@ -849,7 +849,7 @@ tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
 
 registerDelosFocusedTest(
         'runDelosMutationPhysicalAmplificationLedger',
-        'Measures one steady-state BARE/PK INSERT as deterministic structural, RawStore page-write, and WAL-span work for Heap and MVCC Gen1.',
+        'Measures deterministic BARE/PK INSERT physical work for Heap/MVCC Gen1 plus the Gen2-A1 bare physical acceptance gate.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MutationPhysicalAmplificationLedgerTest.class'],
         [
                 'delosdb.benchmark.mutationPhysicalAccounting.rows': providers.gradleProperty(
@@ -860,6 +860,9 @@ registerDelosFocusedTest(
 
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/mutation-physical-amplification'))
 }
 
 registerDelosFocusedTest(
@@ -868,6 +871,18 @@ registerDelosFocusedTest(
         ['org/apache/derbyTesting/functionTests/tests/delos/MvccGen2ArchitectureEntryGateTest.class'])
 
 tasks.named('runDelosMvccGen2ArchitectureEntryGate') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
+        'runDelosMvccGen2A1BareSlice',
+        'Runs the first MVCC Gen2 physical slice: bare INSERT/COMMIT/read/ROLLBACK/reopen with one current-row representation.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccGen2A1BareTableTest.class'],
+        [
+                'delosdb.experimental.mvccGen2A1.enabled': 'true'
+        ])
+
+tasks.named('runDelosMvccGen2A1BareSlice') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
