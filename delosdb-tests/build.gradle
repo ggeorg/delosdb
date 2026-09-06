@@ -862,6 +862,15 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+registerDelosFocusedTest(
+        'runDelosMvccGen2ArchitectureEntryGate',
+        'Proves the frozen Gen1 semantic reference and the Gen2-A database-wide identity/publication design facts.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/MvccGen2ArchitectureEntryGateTest.class'])
+
+tasks.named('runDelosMvccGen2ArchitectureEntryGate') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
 tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
     group = 'benchmark'
     description = 'Audits reusable benchmark assets for the frozen 13-family DelosDB architecture fitness matrix.'
