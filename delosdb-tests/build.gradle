@@ -908,6 +908,18 @@ tasks.named('runDelosMvccGen2A1BareSlice') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+registerDelosFocusedTest(
+        'runDelosMvccGen2BPrimaryKeySlice',
+        'Runs the first MVCC Gen2-B slice: one authoritative SQL PK B-tree over Gen2 current rows.',
+        ['**/MvccGen2BPrimaryKeyTableTest.class'],
+        [
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true'
+        ])
+
+tasks.named('runDelosMvccGen2BPrimaryKeySlice') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
 tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
     group = 'benchmark'
     description = 'Audits reusable benchmark assets for the frozen 13-family DelosDB architecture fitness matrix.'
@@ -16766,14 +16778,12 @@ def configureDelosGen2A1BareInsertThroughput = {
                 'delosdb.benchmark.crossEngineConcurrency.clients': '8',
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
-                // 250,000 inserted rows/client = 2,500 INSERT_100 transactions/client.
-                // At 50,000 rows/client the timed interval was only ~2s for Heap, ~3-5s
-                // for Gen2-A1, and ~5s for Gen1; the candidate pass remained bimodal
-                // (Heap IQR/median ~= 22.3%, Gen2-A1 ~= 28.1%). Lengthen useful work
-                // enough to target roughly a 10s fastest-lane interval while preserving
-                // clients, workload shape, run count, freshness, and validity thresholds.
-                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2500',
-                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '250000',
+                // 50,000 inserted rows/client = 500 INSERT_100 transactions/client.
+                // The initial 25,000-row/client sentinel produced invalid Heap dispersion
+                // (IQR/median ~= 19.7%), so double the measured work without changing
+                // clients, workload shape, run count, or the 15% validity threshold.
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '500',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '50000',
                 'delosdb.benchmark.crossEngineConcurrency.payload': '128',
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '0',

@@ -1,0 +1,9 @@
+DelosDB Gen2-B1 duplicate/rollback control overlay
+
+Purpose:
+- Add an identical explicit duplicate-key then Connection.rollback() control using the default Heap provider.
+- Leave the Gen2-B production code and the failing Gen2-B test sequence unchanged.
+- Determine whether X0Y67 is generic JDBC/Derby behavior or Gen2-B-specific before changing storage code.
+
+Changed files:
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2BPrimaryKeyTableTest.java

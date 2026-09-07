@@ -23,6 +23,7 @@ import org.apache.derby.shared.common.error.StandardException;
 final class MvccRawStoreFormat {
     static final String ENABLED_PROPERTY = "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     static final String GEN2_A1_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2A1.enabled";
+    static final String GEN2_B_PK_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2B.pk.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;

@@ -280,7 +280,10 @@ final class MvccRawStoreTable {
                 properties == null ? null : properties.getProperty(
                         AccessMethodConglomerateProperties.UNIQUE_CONSTRAINTS),
                 template.length);
-        boolean gen2A1 = Boolean.getBoolean(MvccRawStoreFormat.GEN2_A1_ENABLED_PROPERTY);
+        boolean gen2BPrimaryKey = Boolean.getBoolean(
+                MvccRawStoreFormat.GEN2_B_PK_ENABLED_PROPERTY);
+        boolean gen2A1 = Boolean.getBoolean(MvccRawStoreFormat.GEN2_A1_ENABLED_PROPERTY)
+                || gen2BPrimaryKey;
         if (gen2A1
                 && (temporaryFlag & TransactionController.IS_TEMPORARY)
                         == TransactionController.IS_TEMPORARY) {
@@ -288,7 +291,7 @@ final class MvccRawStoreTable {
                     SQLState.NOT_IMPLEMENTED,
                     "MVCC Gen2-A1 temporary tables are deferred beyond the first physical slice");
         }
-        if (gen2A1 && !uniqueConstraints.isEmpty()) {
+        if (gen2A1 && !gen2BPrimaryKey && !uniqueConstraints.isEmpty()) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
                     "MVCC Gen2-A1 supports bare tables only; unique constraints are deferred to Gen2-B");
@@ -558,11 +561,9 @@ final class MvccRawStoreTable {
             MvccRawStoreTransactionContext context,
             MvccRowLocation destination,
             long creatorTransactionId) throws StandardException {
-        if (!table.uniqueConstraints().isEmpty()) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-A1 unique/index mutation is not implemented");
-        }
+        // Gen2-B PK tables deliberately rely on the SQL backing constraint
+        // B-tree as the single physical uniqueness/index authority. Do not
+        // recreate Gen1 native candidate-index maintenance here.
         Allocation allocation = context.reserveInsertIdentifiers(table);
         Object[] currentRow = gen2A1CurrentRow(
                 rawTransaction,
