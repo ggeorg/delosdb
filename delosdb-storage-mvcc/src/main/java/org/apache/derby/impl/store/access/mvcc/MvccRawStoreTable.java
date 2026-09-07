@@ -2112,9 +2112,16 @@ final class MvccRawStoreTable {
             if (page == null) {
                 return null;
             }
-            int slot = page.getSlotNumber(handle);
-            return slot < Page.FIRST_SLOT_NUMBER ? null : decodeGen2A1Current(
-                    transaction, table, page, slot);
+            int slot;
+            try {
+                slot = page.getSlotNumber(handle);
+            } catch (StandardException failure) {
+                if (SQLState.RAWSTORE_RECORD_VANISHED.equals(failure.getMessageId())) {
+                    return null;
+                }
+                throw failure;
+            }
+            return decodeGen2A1Current(transaction, table, page, slot);
         } finally {
             if (page != null) {
                 page.unlatch();
