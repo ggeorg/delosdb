@@ -925,6 +925,18 @@ tasks.named('runDelosMvccGen2BPrimaryKeySlice') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+registerDelosFocusedTest(
+        'runDelosMvccGen2C1HistoryUpdateSlice',
+        'Runs the first MVCC Gen2-C history slice: in-place current UPDATE with one archived predecessor.',
+        ['**/MvccGen2C1HistoryUpdateTest.class'],
+        [
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true'
+        ])
+
+tasks.named('runDelosMvccGen2C1HistoryUpdateSlice') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
 tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {
     group = 'benchmark'
     description = 'Audits reusable benchmark assets for the frozen 13-family DelosDB architecture fitness matrix.'

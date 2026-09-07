@@ -24,10 +24,13 @@ final class MvccRawStoreFormat {
     static final String ENABLED_PROPERTY = "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     static final String GEN2_A1_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2A1.enabled";
     static final String GEN2_B_PK_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2B.pk.enabled";
+    static final String GEN2_C1_HISTORY_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2C1.history.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;
     static final int GEN2_A1_CONTROL_FORMAT_VERSION = 2;
+    static final int GEN2_C1_CONTROL_FORMAT_VERSION = 3;
 
     static final int CONTROL_KIND = 1;
     static final int ALLOCATOR_KIND = 2;
@@ -88,11 +91,19 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
-    // Gen2-A1 stores the current payload directly after the stable-row head summary.
+    // Gen2-A1/B stores the current payload directly after the stable-row head summary.
     static final int GEN2_A1_CURRENT_PAYLOAD_START = DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+    // Gen2-C1 adds the logical predecessor id; the existing head hint fields point at
+    // that predecessor in the history container while the current version stays inline.
+    static final int GEN2_C1_PREVIOUS_VERSION_ID = DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+    static final int GEN2_C1_CURRENT_PAYLOAD_START = GEN2_C1_PREVIOUS_VERSION_ID + 1;
 
     static int gen2A1CurrentFieldCount(int columnCount) {
         return GEN2_A1_CURRENT_PAYLOAD_START + columnCount;
+    }
+
+    static int gen2C1CurrentFieldCount(int columnCount) {
+        return GEN2_C1_CURRENT_PAYLOAD_START + columnCount;
     }
 
     static final int VERSION_KIND_FIELD = 0;

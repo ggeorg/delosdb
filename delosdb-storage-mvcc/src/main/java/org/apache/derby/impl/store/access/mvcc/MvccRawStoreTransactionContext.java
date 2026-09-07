@@ -224,7 +224,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     long reserveVersionIdentifier(MvccRawStoreTable.Descriptor table)
             throws StandardException {
         long versionId = runtime.reserveVersionIdentifier(rawTransaction, table);
-        observeAllocatorReservation(table, 0L, versionId + 1L);
+        if (!table.gen2A1()) {
+            observeAllocatorReservation(table, 0L, versionId + 1L);
+        }
         return versionId;
     }
 

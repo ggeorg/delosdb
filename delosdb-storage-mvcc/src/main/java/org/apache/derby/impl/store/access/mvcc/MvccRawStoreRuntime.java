@@ -465,7 +465,7 @@ final class MvccRawStoreRuntime {
     synchronized long reserveVersionIdentifier(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table) throws StandardException {
-        if (table.gen2A1()) {
+        if (table.gen2A1() && !table.gen2History()) {
             throw StandardException.newException(
                     org.apache.derby.shared.common.reference.SQLState.NOT_IMPLEMENTED,
                     "MVCC Gen2-A1 standalone version allocation is deferred with history");
