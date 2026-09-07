@@ -849,7 +849,7 @@ tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
 
 registerDelosFocusedTest(
         'runDelosMutationPhysicalAmplificationLedger',
-        'Measures deterministic BARE/PK INSERT physical work for Heap/MVCC Gen1 plus Gen2-A1 bare and Gen2-B PK physical acceptance gates.',
+        'Measures deterministic BARE/PK INSERT gates and the Heap/Gen1/Gen2-C1 BARE UPDATE physical baseline.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MutationPhysicalAmplificationLedgerTest.class'],
         [
                 'delosdb.benchmark.mutationPhysicalAccounting.rows': providers.gradleProperty(
@@ -865,7 +865,7 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
             'reports/delosdb/benchmarks/mutation-physical-amplification'))
 
     // Evidence is decision authority. Never allow a successful task to leave
-    // an older ledger in place or silently omit either Gen2 comparison.
+    // an older ledger in place or silently omit a required Gen2 comparison.
     doFirst {
         project.delete(rootProject.layout.buildDirectory.dir(
                 'reports/delosdb/benchmarks/mutation-physical-amplification').get().asFile)
@@ -888,6 +888,50 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
             throw new GradleException(
                     'Mutation physical amplification ledger is stale/incomplete: '
                             + 'missing MVCC_GEN2_B evidence row')
+        }
+        def updateDirectory = ledgerFile.parentFile
+        def updateLedger = new File(updateDirectory, 'gen2-c1-update-physical-ledger.csv')
+        def updateSummary = new File(updateDirectory, 'gen2-c1-update-physical-summary.md')
+        def updateStatus = new File(updateDirectory, 'gen2-c1-update-physical-status.properties')
+        if (!updateLedger.isFile() || !updateSummary.isFile() || !updateStatus.isFile()) {
+            throw new GradleException('Mutation physical amplification ledger is incomplete: '
+                    + 'missing Gen2-C1 UPDATE evidence files')
+        }
+        def status = new Properties()
+        updateStatus.withReader('UTF-8') { reader -> status.load(reader) }
+        if (status.getProperty('schemaVersion') != '1'
+                || status.getProperty('status') != 'COMPLETE'
+                || status.getProperty('expectedObservations') != '34'
+                || status.getProperty('observations') != '34'
+                || status.getProperty('verifiedObservations') != '34') {
+            throw new GradleException('Mutation physical amplification ledger is incomplete: '
+                    + "Gen2-C1 UPDATE completion contract failed: ${status}")
+        }
+        def expectedUpdateKeys = []
+        ['NARROW_1', 'NARROW_10', 'NARROW_100', 'WIDE_SPARSE_1', 'WIDE_FULL_1'].each { scenario ->
+            ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+                ['HEAP', 'MVCC', 'MVCC_GEN2_C1'].each { engine ->
+                    expectedUpdateKeys.add("\"${scenario}\",\"NO_READER\",\"${phase}\",\"${engine}\"".toString())
+                }
+            }
+        }
+        ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+            ['MVCC', 'MVCC_GEN2_C1'].each { engine ->
+                expectedUpdateKeys.add("\"NARROW_1\",\"HELD_READER\",\"${phase}\",\"${engine}\"".toString())
+            }
+        }
+        def updateLines = updateLedger.readLines('UTF-8')
+        if (updateLines.isEmpty()
+                || updateLines.first() != 'scenario,reader,phase,engine,metric,value,authority') {
+            throw new GradleException('Gen2-C1 UPDATE ledger has an invalid CSV schema')
+        }
+        def verificationMarker = ',"semanticAndTopologyVerified",1,'
+        def verifiedUpdateKeys = updateLines.findAll { it.contains(verificationMarker) }
+                .collect { it.substring(0, it.indexOf(verificationMarker)) }
+        if (verifiedUpdateKeys.size() != 34
+                || verifiedUpdateKeys.toSet() != expectedUpdateKeys.toSet()) {
+            throw new GradleException('Gen2-C1 UPDATE ledger is stale/incomplete: '
+                    + 'expected 34 distinct verified scenario/reader/phase/engine observations')
         }
     }
 }
