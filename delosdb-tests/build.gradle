@@ -849,7 +849,7 @@ tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
 
 registerDelosFocusedTest(
         'runDelosMutationPhysicalAmplificationLedger',
-        'Measures deterministic BARE/PK INSERT physical work for Heap/MVCC Gen1 plus the Gen2-A1 bare physical acceptance gate.',
+        'Measures deterministic BARE/PK INSERT physical work for Heap/MVCC Gen1 plus Gen2-A1 bare and Gen2-B PK physical acceptance gates.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MutationPhysicalAmplificationLedgerTest.class'],
         [
                 'delosdb.benchmark.mutationPhysicalAccounting.rows': providers.gradleProperty(
@@ -865,7 +865,7 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
             'reports/delosdb/benchmarks/mutation-physical-amplification'))
 
     // Evidence is decision authority. Never allow a successful task to leave
-    // an older ledger in place or silently omit the Gen2-A1 comparison.
+    // an older ledger in place or silently omit either Gen2 comparison.
     doFirst {
         project.delete(rootProject.layout.buildDirectory.dir(
                 'reports/delosdb/benchmarks/mutation-physical-amplification').get().asFile)
@@ -883,6 +883,11 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
             throw new GradleException(
                     'Mutation physical amplification ledger is stale/incomplete: '
                             + 'missing MVCC_GEN2_A1 evidence row')
+        }
+        if (!ledgerText.contains('"MVCC_GEN2_B"')) {
+            throw new GradleException(
+                    'Mutation physical amplification ledger is stale/incomplete: '
+                            + 'missing MVCC_GEN2_B evidence row')
         }
     }
 }

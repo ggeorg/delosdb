@@ -50,7 +50,8 @@ import org.apache.derby.impl.store.raw.log.LogCounter;
  * existing log authority.</p>
  *
  * <p>The report contract is fail-closed: the generated ledger must contain the
- * Gen2-A1 BARE observation before it can be used as architecture evidence.</p>
+ * Gen2-A1 BARE and Gen2-B PK observations before it can be used as architecture
+ * evidence.</p>
  */
 public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSupport {
     private static final String REPORT_DIRECTORY_PROPERTY =
@@ -69,12 +70,15 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             observations.add(measure(Provider.MVCC, shape, rows));
             if (shape == Shape.BARE) {
                 observations.add(measure(Provider.MVCC_GEN2_A1, shape, rows));
+            } else if (shape == Shape.PRIMARY_KEY) {
+                observations.add(measure(Provider.MVCC_GEN2_B, shape, rows));
             }
         }
 
         assertTopology(observations);
         assertGen2A1PhysicalGate(observations);
         writeReports(rows, observations);
+        assertGen2BPhysicalGate(observations);
     }
 
     private CaseObservation measure(Provider provider, Shape shape, int rows) throws Exception {
@@ -82,18 +86,24 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                 + provider.name().toLowerCase(Locale.ROOT) + '-'
                 + shape.name().toLowerCase(Locale.ROOT));
         String table = "T";
-        String previousGen2 = System.getProperty("delosdb.experimental.mvccGen2A1.enabled");
+        String previousGen2A1 = System.getProperty("delosdb.experimental.mvccGen2A1.enabled");
+        String previousGen2B = System.getProperty("delosdb.experimental.mvccGen2B.pk.enabled");
         if (provider == Provider.MVCC_GEN2_A1) {
             System.setProperty("delosdb.experimental.mvccGen2A1.enabled", "true");
+            System.clearProperty("delosdb.experimental.mvccGen2B.pk.enabled");
+        } else if (provider == Provider.MVCC_GEN2_B) {
+            System.clearProperty("delosdb.experimental.mvccGen2A1.enabled");
+            System.setProperty("delosdb.experimental.mvccGen2B.pk.enabled", "true");
         } else {
             System.clearProperty("delosdb.experimental.mvccGen2A1.enabled");
+            System.clearProperty("delosdb.experimental.mvccGen2B.pk.enabled");
         }
         try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection, createTableSql(provider, shape, table));
-            if (provider == Provider.MVCC_GEN2_A1) {
+            if (provider == Provider.MVCC_GEN2_A1 || provider == Provider.MVCC_GEN2_B) {
                 assertEquals(
-                        "Gen2-A1 table must persist control format marker 2 at CREATE time",
+                        "Gen2 current-row table must persist control format marker 2 at CREATE time",
                         2,
                         MvccRawStoreMetadataInspection.controlFormatVersion(connection, table));
             }
@@ -104,9 +114,9 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                     DelosDeleteReinsertPageTopologyTestSupport.inspect(
                             connection, table, provider != Provider.HEAP);
             StructureSnapshot beforeStructure = structure(connection, provider, table);
-            if (provider == Provider.MVCC_GEN2_A1) {
+            if (provider == Provider.MVCC_GEN2_A1 || provider == Provider.MVCC_GEN2_B) {
                 assertEquals(
-                        "Gen2-A1 table format marker must remain 2 before measured INSERT",
+                        "Gen2 current-row table format marker must remain 2 before measured INSERT",
                         2,
                         MvccRawStoreMetadataInspection.controlFormatVersion(connection, table));
             }
@@ -157,12 +167,17 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                     provider == Provider.MVCC ? 1L : 0L,
                     provider == Provider.MVCC && shape == Shape.PRIMARY_KEY ? 1L : 0L);
         } finally {
-            if (previousGen2 == null) {
-                System.clearProperty("delosdb.experimental.mvccGen2A1.enabled");
-            } else {
-                System.setProperty("delosdb.experimental.mvccGen2A1.enabled", previousGen2);
-            }
+            restoreProperty("delosdb.experimental.mvccGen2A1.enabled", previousGen2A1);
+            restoreProperty("delosdb.experimental.mvccGen2B.pk.enabled", previousGen2B);
             shutdownDatabase(database);
+        }
+    }
+
+    private static void restoreProperty(String property, String value) {
+        if (value == null) {
+            System.clearProperty(property);
+        } else {
+            System.setProperty(property, value);
         }
     }
 
@@ -389,7 +404,7 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                 assertEquals("MVCC Gen1 SQL index-entry delta", expectedSqlIndexes, delta.sqlIndexEntries());
                 assertEquals("MVCC Gen1 native unique-index entry delta", expectedSqlIndexes,
                         delta.mvccNativeIndexEntries());
-            } else {
+            } else if (observation.provider() == Provider.MVCC_GEN2_A1) {
                 assertEquals("Gen2-A1 is measured only on the bare shape", Shape.BARE, observation.shape());
                 assertEquals("Gen2-A1 base is not a Derby heap row", 0L, delta.heapBaseRows());
                 assertEquals("Gen2-A1 must add one authoritative current-row record",
@@ -398,6 +413,18 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                         0L, delta.mvccVersions());
                 assertEquals("Gen2-A1 bare table has no SQL index entry", 0L, delta.sqlIndexEntries());
                 assertEquals("Gen2-A1 bare table has no native index entry",
+                        0L, delta.mvccNativeIndexEntries());
+            } else {
+                assertEquals("Gen2-B is measured only on the PK shape",
+                        Shape.PRIMARY_KEY, observation.shape());
+                assertEquals("Gen2-B base is not a Derby heap row", 0L, delta.heapBaseRows());
+                assertEquals("Gen2-B must add one authoritative current-row record",
+                        1L, delta.mvccDirectories());
+                assertEquals("Gen2-B fresh INSERT must add no history/version record",
+                        0L, delta.mvccVersions());
+                assertEquals("Gen2-B must add exactly one SQL PK index entry",
+                        1L, delta.sqlIndexEntries());
+                assertEquals("Gen2-B must not recreate the Gen1 native candidate index",
                         0L, delta.mvccNativeIndexEntries());
             }
         }
@@ -414,6 +441,28 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                         + gen2.writes().writes(),
                 gen2.writes().writes() <= 2L);
         assertTrue("Gen2-A1 BARE WAL must stay within 2x Heap before adding PK/history: heap="
+                        + heap.walBytes() + ", gen2=" + gen2.walBytes(),
+                gen2.walBytes() <= Math.multiplyExact(heap.walBytes(), 2L));
+    }
+
+    private static void assertGen2BPhysicalGate(List<CaseObservation> observations) {
+        CaseObservation heap = observations.stream()
+                .filter(o -> o.provider() == Provider.HEAP && o.shape() == Shape.PRIMARY_KEY)
+                .findFirst().orElseThrow();
+        CaseObservation gen2 = observations.stream()
+                .filter(o -> o.provider() == Provider.MVCC_GEN2_B
+                        && o.shape() == Shape.PRIMARY_KEY)
+                .findFirst().orElseThrow();
+        assertEquals("Gen2-B PK must add the same two authoritative records as Heap",
+                heap.structure().totalRecords(), gen2.structure().totalRecords());
+        assertEquals("Gen2-B PK must not run the Gen1 native uniqueness candidate scan",
+                0L, gen2.explicitNativeUniqueCandidateScans());
+        assertEquals("Gen2-B PK must not refresh Gen1 native uniqueness metadata",
+                0L, gen2.mvccUniqueMetadataRefreshCalls());
+        assertTrue("Gen2-B steady-state PK INSERT must dirty at most three RawStore pages; got "
+                        + gen2.writes().writes(),
+                gen2.writes().writes() <= 3L);
+        assertTrue("Gen2-B PK WAL must stay within 2x Heap: heap="
                         + heap.walBytes() + ", gen2=" + gen2.walBytes(),
                 gen2.walBytes() <= Math.multiplyExact(heap.walBytes(), 2L));
     }
@@ -541,7 +590,8 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
     private enum Provider {
         HEAP("Delos Heap"),
         MVCC("MVCC Gen1"),
-        MVCC_GEN2_A1("MVCC Gen2-A1");
+        MVCC_GEN2_A1("MVCC Gen2-A1"),
+        MVCC_GEN2_B("MVCC Gen2-B");
 
         private final String display;
 
