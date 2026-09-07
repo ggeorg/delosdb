@@ -82,6 +82,10 @@ final class MvccRawStoreRuntime {
     private final AtomicLongArray snapshotLeaseSlots;
     private final AtomicLong snapshotLeaseClaimCursor = new AtomicLong();
     private final Map<Long, TableIdentityAllocator> tableIdentityAllocators = new HashMap<>();
+    private static final int GEN2_A1_TRANSACTION_ID_BLOCK_SIZE = 64;
+    private long nextGen2TransactionId;
+    private long gen2TransactionIdReservationLimit;
+    private final Set<ContainerKey> gen2A1Tables = ConcurrentHashMap.newKeySet();
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
@@ -185,6 +189,10 @@ final class MvccRawStoreRuntime {
     }
 
     void registerTable(MvccRawStoreTable.Descriptor table) {
+        if (table.gen2A1()) {
+            gen2A1Tables.add(table.metadataContainer());
+            return;
+        }
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
             maintenance.register(table);
@@ -192,6 +200,7 @@ final class MvccRawStoreRuntime {
     }
 
     void unregisterTable(MvccRawStoreTable.Descriptor table) {
+        gen2A1Tables.remove(table.metadataContainer());
         clearCurrentRowAnchors(table);
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
@@ -202,7 +211,10 @@ final class MvccRawStoreRuntime {
     void afterUserCommit(List<MvccRawStoreTable.PendingVersion> committed) {
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
-            maintenance.afterCommit(committed);
+            List<MvccRawStoreTable.PendingVersion> gen1 = committed.stream()
+                    .filter(version -> !version.table().gen2A1())
+                    .toList();
+            maintenance.afterCommit(gen1);
         }
     }
 
@@ -286,6 +298,9 @@ final class MvccRawStoreRuntime {
             return;
         }
         for (MvccRawStoreTable.PendingVersion pending : committed) {
+            if (pending.inlineCurrent()) {
+                continue;
+            }
             putCurrentRowAnchor(new CurrentRowAnchor(
                     pending.table().metadataContainer(),
                     pending.rowId(),
@@ -403,8 +418,19 @@ final class MvccRawStoreRuntime {
                 C_LockFactory.TIMED_WAIT);
     }
 
-    long reserveTransactionId(Transaction rawTransaction) throws StandardException {
-        long transactionId = metadata.reserveTransactionId(rawTransaction);
+    synchronized long reserveTransactionId(Transaction rawTransaction) throws StandardException {
+        long transactionId;
+        if (!gen2A1Tables.isEmpty()) {
+            if (nextGen2TransactionId == gen2TransactionIdReservationLimit) {
+                nextGen2TransactionId = metadata.reserveTransactionIds(
+                        rawTransaction, GEN2_A1_TRANSACTION_ID_BLOCK_SIZE);
+                gen2TransactionIdReservationLimit = Math.addExact(
+                        nextGen2TransactionId, GEN2_A1_TRANSACTION_ID_BLOCK_SIZE);
+            }
+            transactionId = nextGen2TransactionId++;
+        } else {
+            transactionId = metadata.reserveTransactionId(rawTransaction);
+        }
         if (!activeTransactionIds.add(transactionId)) {
             throw new IllegalStateException(
                     "RawStore MVCC transaction identity is already active: " + transactionId);
@@ -426,6 +452,11 @@ final class MvccRawStoreRuntime {
             Transaction transaction,
             MvccRawStoreTable.Descriptor table) throws StandardException {
         TableIdentityAllocator allocator = tableIdentityAllocator(transaction, table);
+        if (allocator.nextRowId == Long.MAX_VALUE
+                || allocator.nextVersionId == Long.MAX_VALUE) {
+            throw new IllegalStateException(
+                    "RawStore MVCC row/version identity is exhausted");
+        }
         return new MvccRawStoreTable.Allocation(
                 allocator.nextRowId++,
                 allocator.nextVersionId++);
@@ -434,6 +465,11 @@ final class MvccRawStoreRuntime {
     synchronized long reserveVersionIdentifier(
             Transaction transaction,
             MvccRawStoreTable.Descriptor table) throws StandardException {
+        if (table.gen2A1()) {
+            throw StandardException.newException(
+                    org.apache.derby.shared.common.reference.SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 standalone version allocation is deferred with history");
+        }
         return tableIdentityAllocator(transaction, table).nextVersionId++;
     }
 
@@ -445,8 +481,9 @@ final class MvccRawStoreRuntime {
         if (existing != null) {
             return existing;
         }
-        MvccRawStoreTable.AllocatorHighWater persisted =
-                MvccRawStoreTable.readAllocatorHighWater(transaction, table);
+        MvccRawStoreTable.AllocatorHighWater persisted = table.gen2A1()
+                ? MvccRawStoreTable.reconstructGen2A1AllocatorHighWater(transaction, table)
+                : MvccRawStoreTable.readAllocatorHighWater(transaction, table);
         TableIdentityAllocator created = new TableIdentityAllocator(
                 persisted.nextRowId(),
                 persisted.nextVersionId());

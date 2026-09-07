@@ -113,6 +113,13 @@ final class MvccRawStoreDatabaseMetadata {
         return reserve(parent, NEXT_TRANSACTION_ID_FIELD, "transaction ID");
     }
 
+    long reserveTransactionIds(Transaction parent, int count) throws StandardException {
+        if (count <= 0) {
+            throw new IllegalArgumentException("transaction ID reservation count must be positive");
+        }
+        return reserve(parent, NEXT_TRANSACTION_ID_FIELD, count, "transaction ID", false);
+    }
+
     long reserveCommitSequences(
             Transaction parent, int count, boolean advanceRecoveryPublicationCeiling)
             throws StandardException {

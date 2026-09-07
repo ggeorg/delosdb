@@ -53,6 +53,7 @@ final class MvccRawStoreMetadataInspection {
     private static final int NEXT_COMMIT_SEQUENCE_FIELD = 4;
     private static final int RECOVERY_PUBLICATION_CEILING_FIELD = 5;
 
+    private static final int CONTROL_FORMAT_VERSION_FIELD = 2;
     private static final int CONTROL_VERSION_CONTAINER_FIELD = 4;
     private static final int CONTROL_COLUMN_COUNT_FIELD = 5;
     private static final int CONTROL_FIXED_FIELDS = 7;
@@ -117,6 +118,30 @@ final class MvccRawStoreMetadataInspection {
                     longField(raw, page, Page.FIRST_SLOT_NUMBER, NEXT_TRANSACTION_ID_FIELD),
                     longField(raw, page, Page.FIRST_SLOT_NUMBER, NEXT_COMMIT_SEQUENCE_FIELD),
                     longField(raw, page, Page.FIRST_SLOT_NUMBER, RECOVERY_PUBLICATION_CEILING_FIELD));
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+
+    static int controlFormatVersion(Connection connection, String tableName) throws Exception {
+        long metadataContainerId = baseConglomerateId(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, metadataContainerId),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC table metadata container is absent");
+        }
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            return intField(
+                    raw, page, Page.FIRST_SLOT_NUMBER, CONTROL_FORMAT_VERSION_FIELD);
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -679,9 +704,9 @@ final class MvccRawStoreMetadataInspection {
                     int fieldCount = page.fetchNumFieldsAtSlot(slot);
                     if (fieldCount != DIRECTORY_BASE_FIELD_COUNT
                             && fieldCount != DIRECTORY_HINT_FIELD_COUNT
-                            && fieldCount != DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                            && fieldCount < DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
                         throw new AssertionError(
-                                "Unexpected RawStore MVCC directory field count: " + fieldCount);
+                                "Unexpected RawStore MVCC directory/current field count: " + fieldCount);
                     }
                     boolean hasHint = fieldCount >= DIRECTORY_HINT_FIELD_COUNT;
                     result.add(new DirectoryIdentity(

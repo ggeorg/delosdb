@@ -43,6 +43,7 @@ final class MvccRawStoreTable {
         private final int[] formatIds;
         private final int[] collationIds;
         private final boolean temporary;
+        private final int controlFormatVersion;
         private volatile long accessConglomerateId;
         private volatile List<UniqueConstraint> uniqueConstraints;
         private volatile ContainerKey orderedIndexContainer;
@@ -55,6 +56,7 @@ final class MvccRawStoreTable {
                 int[] formatIds,
                 int[] collationIds,
                 boolean temporary,
+                int controlFormatVersion,
                 List<UniqueConstraint> uniqueConstraints) {
             this.metadataContainer = java.util.Objects.requireNonNull(
                     metadataContainer, "metadataContainer");
@@ -64,6 +66,7 @@ final class MvccRawStoreTable {
             this.formatIds = formatIds.clone();
             this.collationIds = collationIds.clone();
             this.temporary = temporary;
+            this.controlFormatVersion = controlFormatVersion;
             this.accessConglomerateId = temporary
                     ? ContainerHandle.DEFAULT_ASSIGN_ID
                     : metadataContainer.getContainerId();
@@ -135,6 +138,14 @@ final class MvccRawStoreTable {
 
         boolean temporary() {
             return temporary;
+        }
+
+        int controlFormatVersion() {
+            return controlFormatVersion;
+        }
+
+        boolean gen2A1() {
+            return controlFormatVersion == MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION;
         }
 
         long accessConglomerateId() {
@@ -216,7 +227,8 @@ final class MvccRawStoreTable {
             RecordHint previousHint,
             int flags,
             RecordHandle handle,
-            MvccRowLocation directoryLocation) {
+            MvccRowLocation directoryLocation,
+            boolean inlineCurrent) {
         boolean tombstone() {
             return (flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0;
         }
@@ -268,6 +280,19 @@ final class MvccRawStoreTable {
                 properties == null ? null : properties.getProperty(
                         AccessMethodConglomerateProperties.UNIQUE_CONSTRAINTS),
                 template.length);
+        boolean gen2A1 = Boolean.getBoolean(MvccRawStoreFormat.GEN2_A1_ENABLED_PROPERTY);
+        if (gen2A1
+                && (temporaryFlag & TransactionController.IS_TEMPORARY)
+                        == TransactionController.IS_TEMPORARY) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 temporary tables are deferred beyond the first physical slice");
+        }
+        if (gen2A1 && !uniqueConstraints.isEmpty()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 supports bare tables only; unique constraints are deferred to Gen2-B");
+        }
 
         long metadataId = rawTransaction.addContainer(
                 segment,
@@ -287,28 +312,37 @@ final class MvccRawStoreTable {
         if (versionId < 0L) {
             throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
         }
-        long orderedIndexId = rawTransaction.addContainer(
-                segment,
-                0L,
-                ContainerHandle.MODE_DEFAULT,
-                properties,
-                temporaryFlag);
-        if (orderedIndexId < 0L) {
-            throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
+        ContainerKey orderedIndex = null;
+        if (!gen2A1) {
+            long orderedIndexId = rawTransaction.addContainer(
+                    segment,
+                    0L,
+                    ContainerHandle.MODE_DEFAULT,
+                    properties,
+                    temporaryFlag);
+            if (orderedIndexId < 0L) {
+                throw StandardException.newException(SQLState.HEAP_CANT_CREATE_CONTAINER);
+            }
+            orderedIndex = new ContainerKey(segment, orderedIndexId);
         }
 
         Descriptor descriptor = new Descriptor(
                 new ContainerKey(segment, metadataId),
                 new ContainerKey(segment, versionId),
-                new ContainerKey(segment, orderedIndexId),
+                orderedIndex,
                 formatIds,
                 collationIds,
                 (temporaryFlag & TransactionController.IS_TEMPORARY) == TransactionController.IS_TEMPORARY,
+                gen2A1
+                        ? MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
+                        : MvccRawStoreFormat.FORMAT_VERSION,
                 uniqueConstraints);
         initializeMetadataContainer(rawTransaction, descriptor);
         initializeVersionContainer(rawTransaction, descriptor);
-        MvccRawStoreOrderedIndexGeneration.initializeDirectory(
-                rawTransaction, descriptor, descriptor.orderedIndexContainer());
+        if (!gen2A1) {
+            MvccRawStoreOrderedIndexGeneration.initializeDirectory(
+                    rawTransaction, descriptor, descriptor.orderedIndexContainer());
+        }
         return descriptor;
     }
 
@@ -319,6 +353,9 @@ final class MvccRawStoreTable {
                     MvccRawStoreTransactionContext context,
                     MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo)
                     throws StandardException {
+        if (table.gen2A1()) {
+            return java.util.Optional.empty();
+        }
         ContainerKey orderedIndex = context.orderedIndexForRead(table);
         return MvccRawStoreOrderedIndex.candidatesForAt(
                 context.transactionManager(),
@@ -438,6 +475,10 @@ final class MvccRawStoreTable {
         }
         context.beforeTableWrite(table);
         long creatorTransactionId = context.transactionId();
+        if (table.gen2A1()) {
+            return insertGen2A1(
+                    rawTransaction, table, values, context, destination, creatorTransactionId);
+        }
         // A preceding same-transaction delete already scanned/locked every
         // unchanged unique key. Reuse that transaction-local proof instead of
         // rescanning the candidate B-trees; a new logical row id is still
@@ -495,7 +536,8 @@ final class MvccRawStoreTable {
                 RecordHint.NONE,
                 MvccRawStoreFormat.LIVE_FLAGS,
                 versionHandle,
-                directoryLocation);
+                directoryLocation,
+                false);
         context.addPending(pending);
         if (deletedKeyProof != null) {
             context.markDeletedKeyProofConsumed(deletedKeyProof, pending);
@@ -505,6 +547,50 @@ final class MvccRawStoreTable {
             // through the stable-row directory. Its physical hint must therefore
             // address the metadata/directory record, not the version record.
             destination.copyFrom(directoryLocation);
+        }
+        return pending;
+    }
+
+    private static PendingVersion insertGen2A1(
+            Transaction rawTransaction,
+            Descriptor table,
+            StoreDataValue[] values,
+            MvccRawStoreTransactionContext context,
+            MvccRowLocation destination,
+            long creatorTransactionId) throws StandardException {
+        if (!table.uniqueConstraints().isEmpty()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 unique/index mutation is not implemented");
+        }
+        Allocation allocation = context.reserveInsertIdentifiers(table);
+        Object[] currentRow = gen2A1CurrentRow(
+                rawTransaction,
+                table,
+                allocation.rowId(),
+                allocation.versionId(),
+                creatorTransactionId,
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                MvccRawStoreFormat.LIVE_FLAGS,
+                values);
+        RecordHandle currentHandle = insertRow(
+                rawTransaction, table.metadataContainer(), currentRow);
+        MvccRowLocation currentLocation = MvccRawStoreRowDirectory.location(
+                allocation.rowId(), currentHandle);
+        PendingVersion pending = new PendingVersion(
+                table,
+                allocation.rowId(),
+                allocation.versionId(),
+                creatorTransactionId,
+                MvccRawStoreFormat.NO_PREVIOUS_VERSION,
+                RecordHint.NONE,
+                MvccRawStoreFormat.LIVE_FLAGS,
+                currentHandle,
+                currentLocation,
+                true);
+        context.addPending(pending);
+        if (destination != null) {
+            destination.copyFrom(currentLocation);
         }
         return pending;
     }
@@ -564,6 +650,11 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        if (table.gen2A1()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 UPDATE/DELETE is deferred to the history slice");
+        }
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 rawTransaction, table, rowLocation);
         validateWriteVersion(rowLocation, directory.head().versionId());
@@ -612,6 +703,15 @@ final class MvccRawStoreTable {
             MvccRawStoreTransactionContext context,
             ContainerHandle directoryContainer,
             MvccRawStoreVersionReader versionReader) throws StandardException {
+        if (table.gen2A1()) {
+            return readGen2A1CurrentAt(
+                    rawTransaction,
+                    table,
+                    rowLocation,
+                    snapshotSequence,
+                    context.transactionId(),
+                    directoryContainer);
+        }
         return readVisibleAtResolvedDirectory(
                 rawTransaction,
                 table,
@@ -634,6 +734,15 @@ final class MvccRawStoreTable {
             DirectoryRecord resolvedDirectory,
             ContainerHandle directoryContainer,
             MvccRawStoreVersionReader versionReader) throws StandardException {
+        if (table.gen2A1()) {
+            return readGen2A1CurrentFromDirectory(
+                    rawTransaction,
+                    table,
+                    resolvedDirectory,
+                    snapshotSequence,
+                    context.transactionId(),
+                    directoryContainer);
+        }
         DirectoryRecord directory = resolvedDirectory;
         while (true) {
             try {
@@ -675,6 +784,19 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context,
             boolean checkWriteVersion) throws StandardException {
+        if (table.gen2A1()) {
+            VisibleRow visible = readGen2A1CurrentAt(
+                    rawTransaction,
+                    table,
+                    rowLocation,
+                    snapshotSequence,
+                    context.transactionId(),
+                    null);
+            if (checkWriteVersion && visible != null) {
+                validateWriteVersion(rowLocation, visible.versionId());
+            }
+            return visible;
+        }
         DirectoryRecord directory = MvccRawStoreRowDirectory.find(
                 rawTransaction, table, rowLocation);
         while (true) {
@@ -721,6 +843,7 @@ final class MvccRawStoreTable {
             StoreDataValue[] replacement,
             FormatableBitSet validColumns,
             MvccRawStoreTransactionContext context) throws StandardException {
+        rejectGen2A1HistoryMutation(table);
         return replace(
                 rawTransaction,
                 table,
@@ -749,6 +872,7 @@ final class MvccRawStoreTable {
             FormatableBitSet validColumns,
             MvccRawStoreTransactionContext context,
             boolean useLockedCurrentHead) throws StandardException {
+        rejectGen2A1HistoryMutation(table);
         // Reserve the database-wide transaction identity before acquiring table
         // container locks. INSERT follows the same database-metadata -> table
         // ordering, which prevents an UPDATE/DELETE lock-order inversion.
@@ -789,6 +913,7 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
+        rejectGen2A1HistoryMutation(table);
         return delete(
                 rawTransaction,
                 table,
@@ -801,6 +926,7 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             MvccRawStoreTransactionContext context) throws StandardException {
+        rejectGen2A1HistoryMutation(table);
         long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
         MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
@@ -860,6 +986,26 @@ final class MvccRawStoreTable {
                     if (directory == null) {
                         continue;
                     }
+                    if (table.gen2A1()) {
+                        Gen2A1CurrentRecord current = decodeGen2A1Current(
+                                rawTransaction, table, page, slot);
+                        if (current != null
+                                && currentVisibleTo(
+                                        current.creatorTransactionId(),
+                                        current.beginSequence(),
+                                        context.transactionId(),
+                                        snapshotSequence)
+                                && (current.flags() & MvccRawStoreFormat.TOMBSTONE_FLAGS) == 0) {
+                            rows.add(new VisibleRow(
+                                    current.rowId(),
+                                    current.versionId(),
+                                    current.values(),
+                                    current.handle(),
+                                    MvccRawStoreRowDirectory.location(
+                                            current.rowId(), current.handle())));
+                        }
+                        continue;
+                    }
                     VersionRecord version = MvccRawStoreVersionReader.findVisible(
                             rawTransaction,
                             table,
@@ -895,6 +1041,15 @@ final class MvccRawStoreTable {
             Transaction rawTransaction,
             PendingVersion pending,
             long creatorTransactionId) throws StandardException {
+        if (pending.inlineCurrent()) {
+            Gen2A1CurrentRecord current = readGen2A1CurrentByHandle(
+                    rawTransaction, pending.table(), pending.handle());
+            return current != null
+                    && current.rowId() == pending.rowId()
+                    && current.versionId() == pending.versionId()
+                    && current.creatorTransactionId() == creatorTransactionId
+                    && current.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE;
+        }
         VersionRecord version = MvccRawStoreVersionReader.find(
                 rawTransaction,
                 pending.table(),
@@ -919,11 +1074,13 @@ final class MvccRawStoreTable {
                         version.table().metadataContainer().getContainerId())
                 .thenComparingLong(PendingVersion::versionId));
         for (PendingVersion version : ordered) {
-            updateVersionBegin(
-                    rawTransaction,
-                    version.table(),
-                    version,
-                    commitSequence);
+            if (!version.inlineCurrent()) {
+                updateVersionBegin(
+                        rawTransaction,
+                        version.table(),
+                        version,
+                        commitSequence);
+            }
             MvccRawStoreRowDirectory.stampCommittedHead(
                     rawTransaction,
                     version,
@@ -1330,7 +1487,8 @@ final class MvccRawStoreTable {
                 RecordHint.of(previousVersion.handle()),
                 flags,
                 versionHandle,
-                directoryLocation);
+                directoryLocation,
+                false);
         context.addPending(pending);
         return pending;
     }
@@ -1363,6 +1521,63 @@ final class MvccRawStoreTable {
                     allocator,
                     MvccRawStoreFormat.ALLOCATOR_NEXT_VERSION_ID);
             validateAllocator(nextRowId, nextVersionId);
+            return new AllocatorHighWater(nextRowId, nextVersionId);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    static AllocatorHighWater reconstructGen2A1AllocatorHighWater(
+            Transaction transaction,
+            Descriptor table) throws StandardException {
+        if (!table.gen2A1()) {
+            throw new IllegalArgumentException(
+                    "allocator reconstruction is Gen2-A1 only");
+        }
+
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new IllegalStateException(
+                    "RawStore MVCC metadata container is absent: "
+                            + table.metadataContainer());
+        }
+
+        long nextRowId = 1L;
+        long nextVersionId = 1L;
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    Gen2A1CurrentRecord current = decodeGen2A1Current(
+                            transaction, table, page, slot);
+                    if (current == null) {
+                        continue;
+                    }
+                    if (current.rowId() == Long.MAX_VALUE
+                            || current.versionId() == Long.MAX_VALUE) {
+                        throw new IllegalStateException(
+                                "RawStore MVCC Gen2-A1 row/version identity is exhausted");
+                    }
+                    nextRowId = Math.max(nextRowId, current.rowId() + 1L);
+                    nextVersionId = Math.max(nextVersionId, current.versionId() + 1L);
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
             return new AllocatorHighWater(nextRowId, nextVersionId);
         } finally {
             if (page != null) {
@@ -1745,15 +1960,20 @@ final class MvccRawStoreTable {
             Page page,
             int slot) throws StandardException {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        boolean gen2A1Current = fieldCount > MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
         if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT) {
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT
+                && !gen2A1Current) {
             throw new IllegalStateException(
                     "RawStore MVCC directory row has unsupported field count: " + fieldCount);
         }
         boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
-        boolean hasSummary = fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
-        Object[] row = directoryTemplate(transaction, fieldCount);
+        boolean hasSummary = fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        int directoryFieldCount = gen2A1Current
+                ? MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT
+                : fieldCount;
+        Object[] row = directoryTemplate(transaction, directoryFieldCount);
         RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND) {
@@ -1794,6 +2014,242 @@ final class MvccRawStoreTable {
                         hint,
                         summary),
                 handle);
+    }
+
+    private static Object[] gen2A1CurrentRow(
+            Transaction transaction,
+            Descriptor table,
+            long rowId,
+            long versionId,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags,
+            StoreDataValue[] values) throws StandardException {
+        Object[] row = new Object[MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount())];
+        Object[] head = directoryRow(
+                transaction,
+                rowId,
+                versionId,
+                RecordHint.NONE,
+                creatorTransactionId,
+                beginSequence,
+                flags);
+        System.arraycopy(head, 0, row, 0, head.length);
+        StoreDataValue[] copy = StoreValueCopySupport.cloneRow(values);
+        System.arraycopy(
+                copy,
+                0,
+                row,
+                MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START,
+                copy.length);
+        return row;
+    }
+
+    private static Object[] gen2A1CurrentTemplate(
+            Transaction transaction, Descriptor table) throws StandardException {
+        Object[] row = new Object[MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount())];
+        Object[] head = directoryTemplate(
+                transaction, MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT);
+        System.arraycopy(head, 0, row, 0, head.length);
+        for (int index = 0; index < table.columnCount(); index++) {
+            row[MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START + index] =
+                    MvccRawStoreFormat.nullValue(
+                            transaction, table.formatId(index), table.collationId(index));
+        }
+        return row;
+    }
+
+    private static Gen2A1CurrentRecord decodeGen2A1Current(
+            Transaction transaction,
+            Descriptor table,
+            Page page,
+            int slot) throws StandardException {
+        int expected = MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
+        if (page.fetchNumFieldsAtSlot(slot) != expected) {
+            return null;
+        }
+        Object[] row = gen2A1CurrentTemplate(transaction, table);
+        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
+        if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
+                != MvccRawStoreFormat.DIRECTORY_KIND
+                || MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
+                != MvccRawStoreFormat.FORMAT_VERSION) {
+            return null;
+        }
+        StoreDataValue[] values = new StoreDataValue[table.columnCount()];
+        for (int index = 0; index < values.length; index++) {
+            values[index] = StoreValueCopySupport.cloneValue(
+                    (StoreDataValue) row[
+                            MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START + index],
+                    true);
+        }
+        return new Gen2A1CurrentRecord(
+                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.DIRECTORY_ROW_ID),
+                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID),
+                MvccRawStoreFormat.longAt(
+                        row, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID),
+                MvccRawStoreFormat.longAt(
+                        row, MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE),
+                MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS),
+                values,
+                handle);
+    }
+
+    private static Gen2A1CurrentRecord readGen2A1CurrentByHandle(
+            Transaction transaction, Descriptor table, RecordHandle handle)
+            throws StandardException {
+        if (handle == null) {
+            return null;
+        }
+        ContainerHandle container = transaction.openContainer(
+                table.metadataContainer(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_READONLY);
+        Page page = null;
+        try {
+            page = container == null ? null : container.getPage(handle.getPageNumber());
+            if (page == null) {
+                return null;
+            }
+            int slot = page.getSlotNumber(handle);
+            return slot < Page.FIRST_SLOT_NUMBER ? null : decodeGen2A1Current(
+                    transaction, table, page, slot);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            if (container != null) {
+                container.close();
+            }
+        }
+    }
+
+    private static VisibleRow readGen2A1CurrentAt(
+            Transaction transaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            long snapshotSequence,
+            long transactionId,
+            ContainerHandle suppliedContainer) throws StandardException {
+        ContainerHandle container = suppliedContainer;
+        boolean closeContainer = false;
+        if (container == null) {
+            container = transaction.openContainer(
+                    table.metadataContainer(),
+                    MvccRawStorePhysicalLocking.rowLevel(transaction),
+                    ContainerHandle.MODE_READONLY);
+            closeContainer = true;
+        }
+        Page page = null;
+        try {
+            if (container == null) {
+                return null;
+            }
+            if (rowLocation != null && rowLocation.hasLocatorHint()) {
+                page = container.getPage(rowLocation.locatorPageId());
+                if (page != null) {
+                    Gen2A1CurrentRecord hinted = decodeGen2A1Current(
+                            transaction, table, page, rowLocation.locatorSlotId());
+                    if (hinted != null && hinted.rowId() == rowLocation.rowId()) {
+                        return visibleGen2A1Current(
+                                hinted, snapshotSequence, transactionId);
+                    }
+                    page.unlatch();
+                    page = null;
+                }
+            }
+            page = container.getFirstPage();
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 2
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    Gen2A1CurrentRecord current = decodeGen2A1Current(
+                            transaction, table, page, slot);
+                    if (current != null && current.rowId() == rowLocation.rowId()) {
+                        return visibleGen2A1Current(
+                                current, snapshotSequence, transactionId);
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+            return null;
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            if (closeContainer && container != null) {
+                container.close();
+            }
+        }
+    }
+
+    private static VisibleRow readGen2A1CurrentFromDirectory(
+            Transaction transaction,
+            Descriptor table,
+            DirectoryRecord directory,
+            long snapshotSequence,
+            long transactionId,
+            ContainerHandle suppliedContainer) throws StandardException {
+        if (directory == null || directory.handle() == null) {
+            return null;
+        }
+        MvccRowLocation location = MvccRawStoreRowDirectory.location(
+                directory.rowId(), directory.handle());
+        return readGen2A1CurrentAt(
+                transaction, table, location, snapshotSequence, transactionId, suppliedContainer);
+    }
+
+    private static VisibleRow visibleGen2A1Current(
+            Gen2A1CurrentRecord current, long snapshotSequence, long transactionId) {
+        if (!currentVisibleTo(
+                current.creatorTransactionId(),
+                current.beginSequence(),
+                transactionId,
+                snapshotSequence)
+                || (current.flags() & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
+            return null;
+        }
+        return new VisibleRow(
+                current.rowId(),
+                current.versionId(),
+                current.values(),
+                current.handle(),
+                MvccRawStoreRowDirectory.location(current.rowId(), current.handle()));
+    }
+
+    private static boolean currentVisibleTo(
+            long creatorTransactionId,
+            long beginSequence,
+            long transactionId,
+            long snapshotSequence) {
+        if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            return creatorTransactionId != 0L && creatorTransactionId == transactionId;
+        }
+        return beginSequence > 0L && beginSequence <= snapshotSequence;
+    }
+
+    private static void rejectGen2A1HistoryMutation(Descriptor table) throws StandardException {
+        if (table.gen2A1()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 UPDATE/DELETE/history is deferred to the next slice");
+        }
+    }
+
+    private record Gen2A1CurrentRecord(
+            long rowId,
+            long versionId,
+            long creatorTransactionId,
+            long beginSequence,
+            int flags,
+            StoreDataValue[] values,
+            RecordHandle handle) {
     }
 
     private static Object[] allocatorTemplate(Transaction transaction) throws StandardException {

@@ -51,12 +51,15 @@ final class MvccRawStoreTableMetadata {
             }
             Object[] prefix = controlTemplate(rawTransaction, 0, false, -1);
             page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, prefix, null, false);
+            int controlFormatVersion = MvccRawStoreFormat.intAt(
+                    prefix, MvccRawStoreFormat.CONTROL_FORMAT_VERSION);
             if (MvccRawStoreFormat.longAt(prefix, MvccRawStoreFormat.CONTROL_MAGIC)
                     != MvccRawStoreFormat.MAGIC
                     || MvccRawStoreFormat.intAt(prefix, MvccRawStoreFormat.CONTROL_KIND_FIELD)
                     != MvccRawStoreFormat.CONTROL_KIND
-                    || MvccRawStoreFormat.intAt(prefix, MvccRawStoreFormat.CONTROL_FORMAT_VERSION)
-                    != MvccRawStoreFormat.FORMAT_VERSION) {
+                    || (controlFormatVersion != MvccRawStoreFormat.FORMAT_VERSION
+                        && controlFormatVersion
+                                != MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION)) {
                 return null;
             }
             int columnCount = MvccRawStoreFormat.intAt(prefix, MvccRawStoreFormat.CONTROL_COLUMN_COUNT);
@@ -102,6 +105,7 @@ final class MvccRawStoreTableMetadata {
                     formatIds,
                     collationIds,
                     MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.CONTROL_TEMPORARY) != 0,
+                    controlFormatVersion,
                     uniqueConstraints);
         } finally {
             if (page != null) {
@@ -115,6 +119,11 @@ final class MvccRawStoreTableMetadata {
             Descriptor table,
             int[] baseColumnPositions,
             boolean deferrable) throws StandardException {
+        if (table.gen2A1()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 unique/index support is deferred to Gen2-B");
+        }
         if (deferrable) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
@@ -389,7 +398,7 @@ final class MvccRawStoreTableMetadata {
                 MvccRawStoreFormat.CONTROL_KIND);
         row[MvccRawStoreFormat.CONTROL_FORMAT_VERSION] = MvccRawStoreFormat.intValue(
                 transaction,
-                MvccRawStoreFormat.FORMAT_VERSION);
+                descriptor.controlFormatVersion());
         row[MvccRawStoreFormat.CONTROL_METADATA_CONTAINER] = MvccRawStoreFormat.longValue(
                 transaction,
                 descriptor.metadataContainer().getContainerId());

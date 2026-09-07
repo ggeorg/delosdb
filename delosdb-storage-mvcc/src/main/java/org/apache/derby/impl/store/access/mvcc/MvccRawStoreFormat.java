@@ -22,9 +22,11 @@ import org.apache.derby.shared.common.error.StandardException;
 /** Physical row definitions for the isolated RawStore-backed MVCC format. */
 final class MvccRawStoreFormat {
     static final String ENABLED_PROPERTY = "delosdb.mvcc.rawStoreVerticalSlice.enabled";
+    static final String GEN2_A1_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2A1.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;
+    static final int GEN2_A1_CONTROL_FORMAT_VERSION = 2;
 
     static final int CONTROL_KIND = 1;
     static final int ALLOCATOR_KIND = 2;
@@ -85,6 +87,12 @@ final class MvccRawStoreFormat {
     static final int DIRECTORY_BASE_FIELD_COUNT = 4;
     static final int DIRECTORY_HINT_FIELD_COUNT = 6;
     static final int DIRECTORY_HEAD_SUMMARY_FIELD_COUNT = 9;
+    // Gen2-A1 stores the current payload directly after the stable-row head summary.
+    static final int GEN2_A1_CURRENT_PAYLOAD_START = DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+
+    static int gen2A1CurrentFieldCount(int columnCount) {
+        return GEN2_A1_CURRENT_PAYLOAD_START + columnCount;
+    }
 
     static final int VERSION_KIND_FIELD = 0;
     static final int VERSION_FORMAT_VERSION = 1;

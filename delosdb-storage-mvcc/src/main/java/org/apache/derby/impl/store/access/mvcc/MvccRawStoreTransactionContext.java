@@ -212,10 +212,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreTable.Descriptor table) throws StandardException {
         MvccRawStoreTable.Allocation allocation =
                 runtime.reserveInsertIdentifiers(rawTransaction, table);
-        observeAllocatorReservation(
-                table,
-                allocation.rowId() + 1L,
-                allocation.versionId() + 1L);
+        if (!table.gen2A1()) {
+            observeAllocatorReservation(
+                    table,
+                    allocation.rowId() + 1L,
+                    allocation.versionId() + 1L);
+        }
         return allocation;
     }
 
@@ -669,7 +671,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         ordered.sort(java.util.Comparator.comparingLong(
                 reservation -> reservation.table().metadataContainer().getContainerId()));
         for (AllocatorReservation reservation : ordered) {
-            if (isDropped(reservation.table())) {
+            if (isDropped(reservation.table()) || reservation.table().gen2A1()) {
                 continue;
             }
             MvccRawStoreTable.stageAllocatorHighWater(

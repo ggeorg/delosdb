@@ -419,6 +419,10 @@ final class MvccRawStoreRowDirectory {
                     null);
             return;
         }
+        if (pending.inlineCurrent()) {
+            throw new IllegalStateException(
+                    "MVCC Gen2-A1 current-row head summary changed before commit");
+        }
         page.updateAtSlot(
                 slot,
                 MvccRawStoreTable.directoryRow(
@@ -498,7 +502,7 @@ final class MvccRawStoreRowDirectory {
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         return fieldCount == MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
                 || fieldCount == MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
-                || fieldCount == MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+                || fieldCount >= MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
     }
 
     private static void validateExpectedHead(

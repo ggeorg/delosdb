@@ -155,8 +155,10 @@ public final class MvccConglomerate
         attach(xactManager);
         MvccRawStoreTable.Descriptor currentTable = requireTable();
         currentTable.observeAccessConglomerateId(conglomId);
-        MvccRawStoreOrderedIndexGeneration.initialize(
-                xactManager, currentTable, currentTable.orderedIndexContainer());
+        if (!currentTable.gen2A1()) {
+            MvccRawStoreOrderedIndexGeneration.initialize(
+                    xactManager, currentTable, currentTable.orderedIndexContainer());
+        }
     }
 
     @Override

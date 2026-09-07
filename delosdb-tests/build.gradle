@@ -863,6 +863,28 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(
             'reports/delosdb/benchmarks/mutation-physical-amplification'))
+
+    // Evidence is decision authority. Never allow a successful task to leave
+    // an older ledger in place or silently omit the Gen2-A1 comparison.
+    doFirst {
+        project.delete(rootProject.layout.buildDirectory.dir(
+                'reports/delosdb/benchmarks/mutation-physical-amplification').get().asFile)
+    }
+    doLast {
+        def ledgerFile = rootProject.layout.buildDirectory.file(
+                'reports/delosdb/benchmarks/mutation-physical-amplification/'
+                        + 'mutation-physical-amplification-ledger.csv').get().asFile
+        if (!ledgerFile.isFile()) {
+            throw new GradleException(
+                    "Mutation physical amplification ledger was not regenerated: ${ledgerFile}")
+        }
+        def ledgerText = ledgerFile.getText('UTF-8')
+        if (!ledgerText.contains('"MVCC_GEN2_A1"')) {
+            throw new GradleException(
+                    'Mutation physical amplification ledger is stale/incomplete: '
+                            + 'missing MVCC_GEN2_A1 evidence row')
+        }
+    }
 }
 
 registerDelosFocusedTest(
@@ -877,7 +899,7 @@ tasks.named('runDelosMvccGen2ArchitectureEntryGate') {
 registerDelosFocusedTest(
         'runDelosMvccGen2A1BareSlice',
         'Runs the first MVCC Gen2 physical slice: bare INSERT/COMMIT/read/ROLLBACK/reopen with one current-row representation.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/MvccGen2A1BareTableTest.class'],
+        ['**/MvccGen2A1BareTableTest.class'],
         [
                 'delosdb.experimental.mvccGen2A1.enabled': 'true'
         ])
@@ -16659,5 +16681,199 @@ tasks.register('runDelosPhase4BB2MutationSchemaAttribution') {
                 output.append(shape + '\t' + row.replace(',', '\t') + '\n', 'UTF-8')
             }
         }
+    }
+}
+
+
+// Phase G2A-A1: canonical server throughput sentinel for the bare current-row slice.
+// Each worker/database contributes exactly one fresh append-only INSERT_100 interval.
+// The second pass enables Gen2-A1 only in the MVCC server; Heap is repeated as a
+// same-machine canary so cross-pass host drift is visible.
+def delosGen2A1BareInsertThroughputReportRoot =
+        'reports/delosdb/benchmarks/gen2-a1-bare-insert-throughput'
+def delosGen2A1BareInsertThroughputDatabaseRoot =
+        'tmp/delos-gen2-a1-bare-insert-throughput'
+
+def configureDelosGen2A1BareInsertThroughput = {
+    JavaExec task,
+    String reportGroup,
+    boolean enableGen2A1 ->
+
+    task.group = 'benchmark'
+    task.description = enableGen2A1
+            ? 'Runs the 8-client SERVER fresh BARE INSERT_100 throughput sentinel with MVCC Gen2-A1 enabled.'
+            : 'Runs the 8-client SERVER fresh BARE INSERT_100 throughput sentinel for Heap and MVCC Gen1.'
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosGen2A1BareInsertThroughputReportRoot}/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-A1 throughput sentinel requires a release build; '
+                            + 'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosGen2A1BareInsertThroughputReportRoot}/${reportGroup}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosGen2A1BareInsertThroughputDatabaseRoot}/${reportGroup}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.gen2A1ThroughputSentinel': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server':
+                        Boolean.toString(enableGen2A1),
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'BARE',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
+                // 250,000 inserted rows/client = 2,500 INSERT_100 transactions/client.
+                // At 50,000 rows/client the timed interval was only ~2s for Heap, ~3-5s
+                // for Gen2-A1, and ~5s for Gen1; the candidate pass remained bimodal
+                // (Heap IQR/median ~= 22.3%, Gen2-A1 ~= 28.1%). Lengthen useful work
+                // enough to target roughly a 10s fastest-lane interval while preserving
+                // clients, workload shape, run count, freshness, and validity thresholds.
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2500',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosGen2A1BareInsertThroughputBaseline', JavaExec) { task ->
+    configureDelosGen2A1BareInsertThroughput(task, 'baseline-gen1', false)
+}
+
+tasks.register('runDelosGen2A1BareInsertThroughputCandidate', JavaExec) { task ->
+    configureDelosGen2A1BareInsertThroughput(task, 'candidate-gen2-a1', true)
+    mustRunAfter tasks.named('runDelosGen2A1BareInsertThroughputBaseline')
+}
+
+tasks.register('runDelosGen2A1BareInsertThroughputSentinel') {
+    group = 'benchmark'
+    description = 'Runs and validates the SERVER/8-client fresh BARE INSERT_100 Gen1 vs Gen2-A1 throughput sentinel.'
+    dependsOn tasks.named('runDelosGen2A1BareInsertThroughputBaseline'),
+            tasks.named('runDelosGen2A1BareInsertThroughputCandidate')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2A1BareInsertThroughputReportRoot))
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(delosGen2A1BareInsertThroughputReportRoot).get().asFile
+
+        def readDispersion = { String group ->
+            def file = new File(new File(root, group), 'cross-engine-concurrency-dispersion.csv')
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gen2-A1 throughput dispersion report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.isBlank() }
+            if (lines.size() < 3) {
+                throw new GradleException("Incomplete Gen2-A1 throughput dispersion report: ${file}")
+            }
+            def headers = lines.first().split(',', -1).toList()
+            def byTarget = [:]
+            lines.drop(1).each { String line ->
+                def values = line.split(',', -1).toList()
+                def row = [:]
+                headers.eachWithIndex { String header, int i -> row[header] = values[i] }
+                byTarget[row.target] = row
+            }
+            ['delos_heap_drda', 'delos_mvcc_drda'].each { String target ->
+                if (!byTarget.containsKey(target)) {
+                    throw new GradleException(
+                            "Missing ${target} in Gen2-A1 throughput dispersion report: ${file}")
+                }
+                double dispersion = byTarget[target].iqrToMedian as double
+                if (dispersion > 0.15d) {
+                    throw new GradleException(
+                            "Gen2-A1 throughput sentinel dispersion invalid for ${group}/${target}: "
+                                    + "IQR/median=${dispersion} (> 0.15)")
+                }
+            }
+            byTarget
+        }
+
+        def baseline = readDispersion('baseline-gen1')
+        def candidate = readDispersion('candidate-gen2-a1')
+
+        double heapBaseline = baseline['delos_heap_drda'].medianTps as double
+        double gen1 = baseline['delos_mvcc_drda'].medianTps as double
+        double heapCandidate = candidate['delos_heap_drda'].medianTps as double
+        double gen2 = candidate['delos_mvcc_drda'].medianTps as double
+        double heapDrift = Math.abs(heapCandidate - heapBaseline) / heapBaseline
+        if (heapDrift > 0.20d) {
+            throw new GradleException(
+                    "Gen2-A1 throughput sentinel host canary drift invalid: Heap changed "
+                            + String.format(java.util.Locale.ROOT, '%.2f%%', heapDrift * 100.0d)
+                            + " between passes (> 20%)")
+        }
+
+        def summary = new File(root, 'gen2-a1-bare-insert-throughput-sentinel.tsv')
+        summary.setText(
+                'metric\tvalue\n'
+                        + "heapBaselineMedianTps\t${heapBaseline}\n"
+                        + "gen1MedianTps\t${gen1}\n"
+                        + "heapCandidatePassMedianTps\t${heapCandidate}\n"
+                        + "gen2A1MedianTps\t${gen2}\n"
+                        + "gen2A1ToGen1\t${gen2 / gen1}\n"
+                        + "gen1ToHeap\t${gen1 / heapBaseline}\n"
+                        + "gen2A1ToHeapCandidatePass\t${gen2 / heapCandidate}\n"
+                        + "heapCrossPassDrift\t${heapDrift}\n"
+                        + "baselineHeapIqrToMedian\t${baseline['delos_heap_drda'].iqrToMedian}\n"
+                        + "gen1IqrToMedian\t${baseline['delos_mvcc_drda'].iqrToMedian}\n"
+                        + "candidateHeapIqrToMedian\t${candidate['delos_heap_drda'].iqrToMedian}\n"
+                        + "gen2A1IqrToMedian\t${candidate['delos_mvcc_drda'].iqrToMedian}\n",
+                'UTF-8')
     }
 }
