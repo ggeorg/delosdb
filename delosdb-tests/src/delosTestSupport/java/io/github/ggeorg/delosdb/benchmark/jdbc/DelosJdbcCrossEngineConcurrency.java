@@ -2673,6 +2673,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (gen2A1ThroughputSentinelEnabled()) {
             addProperty(command, "gen2A1ThroughputSentinel", true);
         }
+        if (gen2BThroughputSentinelEnabled()) {
+            addProperty(command, "gen2BThroughputSentinel", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -2827,6 +2830,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2A1ServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2A1.enabled=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA && mvccGen2BServerEnabled()) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -5164,9 +5170,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     expectedRows,
                                     authoritativeInsertState(verifier, table, insertFirstId, insertLastId))
                             : null;
-                    if (gen2A1ThroughputSentinelEnabled()) {
-                        // One fresh append-only interval per database. Gen2-A1 deliberately does
-                        // not implement DELETE yet, and cleanup would measure another topology.
+                    if (gen2A1ThroughputSentinelEnabled() || gen2BThroughputSentinelEnabled()) {
+                        // One fresh append-only interval per database. Gen2 current-row slices
+                        // deliberately do not implement DELETE yet, and cleanup would measure
+                        // another topology.
                         verifier.rollback();
                         return new Verification(mix(fingerprint, insertedFingerprint), oracle);
                     }
@@ -8451,6 +8458,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(gen2A1ThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-A1 server enabled: ")
                 .append(mvccGen2A1ServerEnabled()).append('\n')
+                .append("Gen2-B throughput sentinel: ")
+                .append(gen2BThroughputSentinelEnabled()).append('\n')
+                .append("MVCC Gen2-B server enabled: ")
+                .append(mvccGen2BServerEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8681,6 +8692,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2A1ServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2A1Server");
+    }
+
+    private static boolean gen2BThroughputSentinelEnabled() {
+        return Boolean.getBoolean(PREFIX + "gen2BThroughputSentinel");
+    }
+
+    private static boolean mvccGen2BServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2BServer");
     }
 
     private static String insertTableShape() {
@@ -9677,6 +9696,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS);
             boolean gen2A1ThroughputSentinel = gen2A1ThroughputSentinelEnabled()
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
+            boolean gen2BThroughputSentinel = gen2BThroughputSentinelEnabled()
+                    && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9694,6 +9715,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !drdaProtocolDiagnostic
                     && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel
+                    && !gen2BThroughputSentinel
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -9707,6 +9729,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
                         + ", F08 mutation-schema attribution " + F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS
                         + ", Gen2-A1 throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
+                        + ", Gen2-B throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
                         + ", or Phase-1 current baseline " + CURRENT_BASELINE_EMBEDDED_TARGETS
                         + "/" + CURRENT_BASELINE_SERVER_TARGETS
@@ -9726,10 +9749,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (mutationSchemaAttribution || gen2A1ThroughputSentinel) {
+            if (mutationSchemaAttribution || gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
                 String modeName = gen2A1ThroughputSentinel
                         ? "Gen2-A1 throughput sentinel"
-                        : "F08 mutation-schema attribution";
+                        : gen2BThroughputSentinel
+                                ? "Gen2-B throughput sentinel"
+                                : "F08 mutation-schema attribution";
                 if (configuredWorkloads.isEmpty()
                         || configuredWorkloads.stream().anyMatch(workload -> !workload.isInsert())) {
                     throw new IllegalArgumentException(modeName + " requires INSERT workloads only");
@@ -9751,10 +9776,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-A1 throughput sentinel requires BARE INSERT table shape");
                 }
+                if (gen2BThroughputSentinel && !"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "Gen2-B throughput sentinel requires PRIMARY_KEY_ONLY INSERT table shape");
+                }
             } else if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
-                        "Non-default INSERT table shapes require mutationSchemaAttribution=true "
-                                + "or gen2A1ThroughputSentinel=true");
+                        "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
+                                + "gen2A1ThroughputSentinel=true, or gen2BThroughputSentinel=true");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
@@ -9824,7 +9853,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
                     && !mixedReaderWriterFitness && !mutationSchemaAttribution
-                    && !gen2A1ThroughputSentinel
+                    && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
@@ -9888,10 +9917,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 "F08 mutation-schema attribution client classpaths are required");
                     }
-                } else if (gen2A1ThroughputSentinel) {
+                } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
                     if (delosClientClasspath.isBlank()) {
                         throw new IllegalArgumentException(
-                                "Gen2-A1 throughput sentinel requires the Delos network client classpath");
+                                (gen2A1ThroughputSentinel ? "Gen2-A1" : "Gen2-B")
+                                        + " throughput sentinel requires the Delos network client classpath");
                     }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
@@ -9926,10 +9956,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                             throw new IllegalArgumentException(
                                     "F08 mutation-schema attribution server images are required");
                         }
-                    } else if (gen2A1ThroughputSentinel) {
+                    } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
                         if (delosServerImage.isBlank()) {
                             throw new IllegalArgumentException(
-                                    "Gen2-A1 throughput sentinel requires the Delos server image");
+                                    (gen2A1ThroughputSentinel ? "Gen2-A1" : "Gen2-B")
+                                            + " throughput sentinel requires the Delos server image");
                         }
                     } else {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
