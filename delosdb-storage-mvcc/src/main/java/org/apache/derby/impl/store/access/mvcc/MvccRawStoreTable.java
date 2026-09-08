@@ -298,29 +298,8 @@ final class MvccRawStoreTable {
         boolean gen2A1 = Boolean.getBoolean(MvccRawStoreFormat.GEN2_A1_ENABLED_PROPERTY)
                 || gen2BPrimaryKey
                 || gen2C1History;
-        if (gen2A1
-                && (temporaryFlag & TransactionController.IS_TEMPORARY)
-                        == TransactionController.IS_TEMPORARY) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-A1 temporary tables are deferred beyond the first physical slice");
-        }
-        if (gen2C1History && !gen2BPrimaryKey && !uniqueConstraints.isEmpty()) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-C1 history slice supports bare tables only; "
-                            + "enable Gen2-B PK integration for indexed history updates");
-        }
-        if (gen2BPrimaryKey && gen2C1History && uniqueConstraints.isEmpty()) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2 PK/history integration requires SQL uniqueness metadata");
-        }
-        if (gen2A1 && !gen2BPrimaryKey && !gen2C1History && !uniqueConstraints.isEmpty()) {
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-A1 supports bare tables only; unique constraints are deferred to Gen2-B");
-        }
+        validateGen2CreateShape(
+                gen2A1, gen2BPrimaryKey, gen2C1History, uniqueConstraints, temporaryFlag);
 
         long metadataId = rawTransaction.addContainer(
                 segment,
@@ -361,13 +340,7 @@ final class MvccRawStoreTable {
                 formatIds,
                 collationIds,
                 (temporaryFlag & TransactionController.IS_TEMPORARY) == TransactionController.IS_TEMPORARY,
-                gen2C1History && gen2BPrimaryKey
-                        ? MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION
-                        : gen2C1History
-                                ? MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION
-                                : gen2A1
-                                        ? MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
-                                        : MvccRawStoreFormat.FORMAT_VERSION,
+                gen2ControlFormatVersion(gen2A1, gen2BPrimaryKey, gen2C1History),
                 uniqueConstraints);
         initializeMetadataContainer(rawTransaction, descriptor);
         initializeVersionContainer(rawTransaction, descriptor);
@@ -376,6 +349,50 @@ final class MvccRawStoreTable {
                     rawTransaction, descriptor, descriptor.orderedIndexContainer());
         }
         return descriptor;
+    }
+
+    private static void validateGen2CreateShape(
+            boolean gen2A1,
+            boolean gen2BPrimaryKey,
+            boolean gen2C1History,
+            List<UniqueConstraint> uniqueConstraints,
+            int temporaryFlag) throws StandardException {
+        if (gen2A1
+                && (temporaryFlag & TransactionController.IS_TEMPORARY)
+                        == TransactionController.IS_TEMPORARY) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 temporary tables are deferred beyond the first physical slice");
+        }
+        if (gen2C1History && !gen2BPrimaryKey && !uniqueConstraints.isEmpty()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-C1 history slice supports bare tables only; "
+                            + "enable Gen2-B PK integration for indexed history updates");
+        }
+        if (gen2BPrimaryKey && gen2C1History && uniqueConstraints.isEmpty()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2 PK/history integration requires SQL uniqueness metadata");
+        }
+        if (gen2A1 && !gen2BPrimaryKey && !gen2C1History && !uniqueConstraints.isEmpty()) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-A1 supports bare tables only; unique constraints are deferred to Gen2-B");
+        }
+    }
+
+    private static int gen2ControlFormatVersion(
+            boolean gen2A1, boolean gen2BPrimaryKey, boolean gen2C1History) {
+        if (gen2C1History && gen2BPrimaryKey) {
+            return MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION;
+        }
+        if (gen2C1History) {
+            return MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION;
+        }
+        return gen2A1
+                ? MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
+                : MvccRawStoreFormat.FORMAT_VERSION;
     }
 
     static java.util.Optional<List<MvccRawStoreOrderedIndex.Candidate>>
