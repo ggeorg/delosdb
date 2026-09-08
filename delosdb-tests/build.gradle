@@ -868,7 +868,7 @@ if (!(gen2C2ArchivedUndo in ['true', 'false'])) {
 
 registerDelosFocusedTest(
         'runDelosMutationPhysicalAmplificationLedger',
-        'Measures deterministic BARE/PK INSERT gates and the Heap/Gen1/Gen2-C1 BARE UPDATE physical baseline.',
+        'Measures deterministic INSERT gates plus BARE and indexed-PK UPDATE physical baselines.',
         ['org/apache/derbyTesting/functionTests/tests/delos/MutationPhysicalAmplificationLedgerTest.class'],
         [
                 'delosdb.benchmark.mutationPhysicalAccounting.rows': providers.gradleProperty(
@@ -982,6 +982,75 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
                     def prefix = "\"${scenario}\",\"NO_READER\",\"${phase}\",\"MVCC_GEN2_C1\",\"ArchivedUpdateOperation\",\"MVCC_METADATA_DIRECTORY\",".toString()
                     if (!walLines.any { line -> line.startsWith(prefix) }) {
                         throw new GradleException("Archived-undo candidate not exercised: ${scenario}/${phase}")
+                    }
+                }
+            }
+        }
+        def c3Ledger = new File(updateDirectory, 'gen2-c3-pk-update-physical-ledger.csv')
+        def c3Summary = new File(updateDirectory, 'gen2-c3-pk-update-physical-summary.md')
+        def c3Status = new File(updateDirectory, 'gen2-c3-pk-update-physical-status.properties')
+        def c3Wal = new File(updateDirectory, 'gen2-c3-pk-update-wal-operations.csv')
+        if (!c3Ledger.isFile() || !c3Summary.isFile() || !c3Status.isFile() || !c3Wal.isFile()) {
+            throw new GradleException('Mutation physical amplification ledger is incomplete: '
+                    + 'missing Gen2-C3 indexed PK UPDATE evidence files')
+        }
+        def c3Properties = new Properties()
+        c3Status.withReader('UTF-8') { reader -> c3Properties.load(reader) }
+        if (c3Properties.getProperty('schemaVersion') != '1'
+                || c3Properties.getProperty('status') != 'COMPLETE'
+                || c3Properties.getProperty('expectedObservations') != '18'
+                || c3Properties.getProperty('observations') != '18'
+                || c3Properties.getProperty('verifiedObservations') != '18'
+                || c3Properties.getProperty('walReconciliations') != '18') {
+            throw new GradleException('Mutation physical amplification ledger is incomplete: '
+                    + "Gen2-C3 PK UPDATE completion contract failed: ${c3Properties}")
+        }
+        def expectedC3Keys = []
+        ['NARROW_100', 'WIDE_SPARSE_1', 'WIDE_FULL_1'].each { scenario ->
+            ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+                ['HEAP', 'MVCC', 'MVCC_GEN2_C3'].each { engine ->
+                    expectedC3Keys.add("\"${scenario}\",\"${phase}\",\"${engine}\"".toString())
+                }
+            }
+        }
+        def c3Lines = c3Ledger.readLines('UTF-8')
+        if (c3Lines.isEmpty()
+                || c3Lines.first() != 'scenario,phase,engine,metric,value,authority') {
+            throw new GradleException('Gen2-C3 PK UPDATE ledger has an invalid CSV schema')
+        }
+        def c3VerificationMarker = ',"semanticAndTopologyVerified",1,'
+        def c3VerifiedKeys = c3Lines.findAll { it.contains(c3VerificationMarker) }
+                .collect { it.substring(0, it.indexOf(c3VerificationMarker)) }
+        def c3WalMarker = ',"wal.reconciled",1,'
+        def c3WalKeys = c3Lines.findAll { it.contains(c3WalMarker) }
+                .collect { it.substring(0, it.indexOf(c3WalMarker)) }
+        if (c3VerifiedKeys.size() != 18 || c3VerifiedKeys.toSet() != expectedC3Keys.toSet()
+                || c3WalKeys.size() != 18 || c3WalKeys.toSet() != expectedC3Keys.toSet()) {
+            throw new GradleException('Gen2-C3 PK UPDATE ledger is stale/incomplete: '
+                    + 'expected 18 distinct verified and WAL-reconciled observations')
+        }
+        ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+            ['NARROW_100', 'WIDE_SPARSE_1', 'WIDE_FULL_1'].each { scenario ->
+                def prefix = "\"${scenario}\",\"${phase}\",\"MVCC_GEN2_C3\",\"pageWrites.MVCC_SQL_BTREE\",0,".toString()
+                if (!c3Lines.any { line -> line.startsWith(prefix) }) {
+                    throw new GradleException(
+                            "Gen2-C3 unchanged-key UPDATE wrote the SQL PK B-tree: ${scenario}/${phase}")
+                }
+            }
+        }
+        def c3WalLines = c3Wal.readLines('UTF-8')
+        def c3WalHeader = 'scenario,phase,engine,operation,physicalRole,recordCount,' +
+                'recordBytes,optionalBytes,headerAndFramingBytes'
+        if (c3WalLines.isEmpty() || c3WalLines.first() != c3WalHeader) {
+            throw new GradleException('Gen2-C3 PK UPDATE WAL attribution has an invalid CSV schema')
+        }
+        if (gen2C2ArchivedUndo == 'true') {
+            ['WIDE_SPARSE_1', 'WIDE_FULL_1'].each { scenario ->
+                ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+                    def prefix = "\"${scenario}\",\"${phase}\",\"MVCC_GEN2_C3\",\"ArchivedUpdateOperation\",\"MVCC_METADATA_DIRECTORY\",".toString()
+                    if (!c3WalLines.any { line -> line.startsWith(prefix) }) {
+                        throw new GradleException(
+                                "C2 archived-undo not exercised by C3 PK UPDATE: ${scenario}/${phase}")
                     }
                 }
             }

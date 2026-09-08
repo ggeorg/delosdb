@@ -109,6 +109,320 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         writeUpdateReports(observations, true);
     }
 
+
+    /**
+     * Indexed PRIMARY KEY UPDATE physical baseline for the combined Gen2-C3
+     * PK/history format. The key is unchanged, so the SQL PK B-tree must remain
+     * the single index authority and receive no physical writes from C3.
+     */
+    public void testGen2C3PrimaryKeyUpdatePhysicalAmplificationLedger() throws Exception {
+        int rows = Integer.getInteger(ROWS_PROPERTY, 1_000);
+        assertTrue("PK UPDATE physical accounting needs at least 100 fixture rows", rows >= 100);
+        List<UpdateObservation> observations = new ArrayList<>();
+        writeC3UpdateReports(observations, false);
+        for (UpdateCase updateCase : List.of(
+                UpdateCase.NARROW_100, UpdateCase.WIDE_SPARSE_1, UpdateCase.WIDE_FULL_1)) {
+            for (Provider provider : List.of(
+                    Provider.HEAP, Provider.MVCC, Provider.MVCC_GEN2_C3)) {
+                measureC3Updates(provider, updateCase, rows, observations);
+            }
+        }
+        assertEquals("complete C3 PK UPDATE evidence matrix", 18, observations.size());
+        assertTrue("every C3 PK UPDATE must pass semantic/structural checks",
+                observations.stream().allMatch(UpdateObservation::verified));
+        writeC3UpdateReports(observations, true);
+    }
+
+    private void measureC3Updates(
+            Provider provider,
+            UpdateCase updateCase,
+            int requestedRows,
+            List<UpdateObservation> observations) throws Exception {
+        int rows = updateCase.wide ? 100 : requestedRows;
+        String database = databaseName("update-pk-physical-ledger-"
+                + provider.name().toLowerCase(Locale.ROOT) + '-'
+                + updateCase.name().toLowerCase(Locale.ROOT));
+        boolean opened = false;
+        try (SystemPropertyScope a1 = clearSystemProperty(
+                        "delosdb.experimental.mvccGen2A1.enabled");
+             SystemPropertyScope b1 = setSystemProperty(
+                        "delosdb.experimental.mvccGen2B.pk.enabled",
+                        Boolean.toString(provider == Provider.MVCC_GEN2_C3));
+             SystemPropertyScope c1 = setSystemProperty(
+                        "delosdb.experimental.mvccGen2C1.history.enabled",
+                        Boolean.toString(provider == Provider.MVCC_GEN2_C3));
+             SystemPropertyScope maintenance = setSystemProperty(
+                        "delosdb.mvcc.rawStoreMaintenance.enabled", "false")) {
+            try (Connection writer = openDatabase(database, true)) {
+                opened = true;
+                writer.setAutoCommit(false);
+                try {
+                    createC3UpdateFixture(writer, provider, updateCase, rows);
+                    assertEquals("SQL PK fixture cardinality", rows, sqlRowCount(writer, "T"));
+                    if (provider != Provider.HEAP) {
+                        assertEquals("persisted PK UPDATE table format",
+                                provider == Provider.MVCC_GEN2_C3 ? 4 : 1,
+                                MvccRawStoreMetadataInspection.controlFormatVersion(writer, "T"));
+                    }
+                    writer.commit();
+                    DelosDeleteReinsertPageTopologyTestSupport.Layout layout =
+                            DelosDeleteReinsertPageTopologyTestSupport.inspect(
+                                    writer, "T", provider != Provider.HEAP);
+                    writer.commit();
+                    try (PreparedStatement update = writer.prepareStatement(
+                            "update T set payload = ?"
+                                    + (updateCase.fullChange ? ", padding = ?" : "")
+                                    + " where id > ?")) {
+                        for (int phase = 1; phase <= 2; phase++) {
+                            measureC3UpdateWindow(writer, update, database, provider,
+                                    updateCase, rows, phase, layout, observations);
+                        }
+                    }
+                } finally {
+                    writer.rollback();
+                }
+            }
+        } finally {
+            if (opened) {
+                shutdownDatabase(database);
+            }
+        }
+    }
+
+    private static void createC3UpdateFixture(
+            Connection connection, Provider provider, UpdateCase updateCase, int rows)
+            throws Exception {
+        executeUpdate(connection, "create table T (id int not null primary key, payload varchar("
+                + (updateCase.wide ? "2048" : "128") + ") not null"
+                + (updateCase.wide ? ", padding varchar(2048) not null" : "")
+                + ')' + (provider == Provider.HEAP ? "" : " using delos_mvcc"));
+        try (PreparedStatement insert = connection.prepareStatement(
+                "insert into T values (?, ?" + (updateCase.wide ? ", ?" : "") + ')')) {
+            for (int id = 1; id <= rows; id++) {
+                insert.setInt(1, id);
+                insert.setString(2, updatePayload(updateCase, 0));
+                if (updateCase.wide) {
+                    insert.setString(3, updatePadding(updateCase, 0));
+                }
+                assertEquals("PK fixture INSERT count", 1, insert.executeUpdate());
+                if (id % 100 == 0) {
+                    connection.commit();
+                }
+            }
+        }
+        connection.commit();
+    }
+
+    private static void measureC3UpdateWindow(
+            Connection writer,
+            PreparedStatement update,
+            String database,
+            Provider provider,
+            UpdateCase updateCase,
+            int rows,
+            int phase,
+            DelosDeleteReinsertPageTopologyTestSupport.Layout layout,
+            List<UpdateObservation> observations) throws Exception {
+        StructureSnapshot beforeStructure = structure(writer, provider, "T");
+        List<MvccRawStoreMetadataInspection.RowLocationIdentity> beforeLocations =
+                provider == Provider.MVCC_GEN2_C3
+                        ? MvccRawStoreMetadataInspection.baseScanRowLocations(writer, "T")
+                        : List.of();
+        writer.commit();
+        update.setString(1, updatePayload(updateCase, phase));
+        int parameter = 2;
+        if (updateCase.fullChange) {
+            update.setString(parameter++, updatePadding(updateCase, phase));
+        }
+        update.setInt(parameter, rows - updateCase.updatedRows);
+
+        DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
+        DelosRawStoreIoSnapshot beforeIo = rawStoreSnapshot(provider, database);
+        UpdateWork beforeWork = updateWork(provider, database);
+        long walBefore = flushedWalInstant(writer);
+        String identity = beforeIo.databaseIdentity();
+        RawStoreIoFaultInjectionTestSupport.installRecording(identity,
+                "update-pk-ledger-" + provider + '-' + updateCase + '-' + phase);
+        int affected;
+        long updateNanos;
+        long commitNanos;
+        long walAfter;
+        DelosRawStoreIoSnapshot afterIo;
+        UpdateWork afterWork;
+        RawStoreIoFaultInjectionTestSupport.Evidence evidence;
+        try {
+            long start = System.nanoTime();
+            affected = update.executeUpdate();
+            long updated = System.nanoTime();
+            writer.commit();
+            long committed = System.nanoTime();
+            updateNanos = updated - start;
+            commitNanos = committed - updated;
+            walAfter = flushedWalInstant(writer);
+            DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
+            afterIo = rawStoreSnapshot(provider, database);
+            afterWork = updateWork(provider, database);
+            evidence = RawStoreIoFaultInjectionTestSupport.evidence(identity);
+        } finally {
+            RawStoreIoFaultInjectionTestSupport.clear(identity);
+        }
+        PageWriteSummary writes = pageWrites(
+                layout, provider != Provider.HEAP, beforeIo, afterIo, evidence);
+        StructureSnapshot afterStructure = structure(writer, provider, "T");
+        UpdateObservation observation = new UpdateObservation(
+                provider, updateCase, false, phase, rows, affected,
+                beforeStructure, afterStructure, writes, walBytes(walBefore, walAfter),
+                updateNanos, commitNanos, afterWork.deltaFrom(beforeWork), List.of(), false);
+        int index = observations.size();
+        observations.add(observation);
+        writeC3UpdateReports(observations, false);
+        observation = observation.withWalOperations(walOperations(
+                writer, layout, provider, walBefore, walAfter));
+        observations.set(index, observation);
+        writeC3UpdateReports(observations, false);
+        assertEquals("C3 WAL operation bytes must reconcile",
+                observation.walBytes(), observation.accountedWalBytes());
+        assertC3UpdateTopology(observation);
+        assertTrue("measured PK UPDATE must write RawStore pages", writes.writes() > 0L);
+        assertTrue("measured PK UPDATE must append durable WAL", observation.walBytes() > 0L);
+        assertUpdateContents(writer, updateCase, rows, phase);
+        if (provider == Provider.MVCC_GEN2_C3) {
+            assertEquals("C3 fixture must expose every current-row locator",
+                    rows, beforeLocations.size());
+            assertEquals("C3 UPDATE must retain current-row locations", beforeLocations,
+                    MvccRawStoreMetadataInspection.baseScanRowLocations(writer, "T"));
+            WriteDelta sqlIndexWrites = writes.byRole().getOrDefault(
+                    DelosDeleteReinsertPageTopologyTestSupport.Role.MVCC_SQL_BTREE,
+                    new WriteDelta(0L, 0L));
+            assertEquals("unchanged-key C3 UPDATE must not write the SQL PK B-tree",
+                    0L, sqlIndexWrites.writes());
+        }
+        writer.commit();
+        observations.set(index, observation.withVerified());
+        writeC3UpdateReports(observations, false);
+    }
+
+    private static void assertC3UpdateTopology(UpdateObservation observation) {
+        assertEquals("one PK mutation per selected SQL row",
+                observation.updateCase().updatedRows, observation.affectedRows());
+        StructureSnapshot before = observation.before();
+        StructureSnapshot after = observation.after();
+        StructureDelta delta = before.deltaTo(after);
+        long rows = observation.fixtureRows();
+        long changed = observation.updateCase().updatedRows;
+        long earlierUpdates = (observation.phase() - 1L) * changed;
+        assertEquals("one SQL PK entry per row before UPDATE", rows, before.sqlIndexEntries());
+        assertEquals("one SQL PK entry per row after UPDATE", rows, after.sqlIndexEntries());
+        assertEquals("unchanged-key UPDATE must not change SQL PK entry count",
+                0L, delta.sqlIndexEntries());
+        assertEquals("UPDATE must not add Heap/current/directory rows", 0L,
+                delta.heapBaseRows() + delta.mvccDirectories());
+        if (observation.provider() == Provider.HEAP) {
+            assertEquals(rows, before.heapBaseRows());
+            assertEquals(rows, after.heapBaseRows());
+            assertEquals(0L, after.mvccVersions());
+            assertEquals(0L, after.mvccNativeIndexEntries());
+        } else {
+            assertEquals(0L, after.heapBaseRows());
+            assertEquals(rows, before.mvccDirectories());
+            assertEquals(rows, after.mvccDirectories());
+            long initialVersions = observation.provider() == Provider.MVCC ? rows : 0L;
+            assertEquals(initialVersions + earlierUpdates, before.mvccVersions());
+            assertEquals(initialVersions + earlierUpdates + changed, after.mvccVersions());
+            if (observation.provider() == Provider.MVCC_GEN2_C3) {
+                assertEquals("C3 must not recreate native candidate index", 0L,
+                        before.mvccNativeIndexEntries());
+                assertEquals("C3 must not recreate native candidate index", 0L,
+                        after.mvccNativeIndexEntries());
+                assertEquals("C3 adds only one history row per updated row", changed,
+                        delta.totalRecords());
+            }
+        }
+    }
+
+    private static void writeC3UpdateReports(
+            List<UpdateObservation> observations, boolean complete) throws Exception {
+        Path directory = Path.of(System.getProperty(REPORT_DIRECTORY_PROPERTY,
+                "build/reports/delosdb/benchmarks/mutation-physical-amplification"));
+        Files.createDirectories(directory);
+        List<String> csv = new ArrayList<>();
+        csv.add("scenario,phase,engine,metric,value,authority");
+        List<String> walCsv = new ArrayList<>();
+        walCsv.add("scenario,phase,engine,operation,physicalRole,recordCount,recordBytes,optionalBytes,headerAndFramingBytes");
+        List<String> markdown = new ArrayList<>();
+        markdown.add("# Gen2-C3 indexed PK UPDATE physical ledger");
+        markdown.add("");
+        markdown.add("Evidence status: " + (complete ? "COMPLETE" : "INCOMPLETE")
+                + "; observations: " + observations.size() + "/18.");
+        markdown.add("The primary key is unchanged. C3 must retain one SQL PK B-tree, zero native MVCC candidate index entries, and zero MVCC_SQL_BTREE page writes while adding one history row per updated row.");
+        markdown.add("");
+        markdown.add("| Case | Phase | Engine | Updated | SQL index entries | Native entries | History before→after | Reads | Writes | SQL PK writes | WAL bytes | Verified |");
+        markdown.add("|---|---|---|---:|---:|---:|---|---:|---:|---:|---:|---|");
+        for (UpdateObservation o : observations) {
+            addC3Update(csv, o, "fixtureRows", o.fixtureRows(), "test fixture");
+            addC3Update(csv, o, "updatedRows", o.affectedRows(), "JDBC UPDATE count");
+            addC3Update(csv, o, "before.sqlIndexEntries", o.before().sqlIndexEntries(), "access-index inspection");
+            addC3Update(csv, o, "after.sqlIndexEntries", o.after().sqlIndexEntries(), "access-index inspection");
+            addC3Update(csv, o, "after.mvccNativeIndexEntries", o.after().mvccNativeIndexEntries(), "native ordered-index inspection");
+            addC3Update(csv, o, "before.mvccVersionRecords", o.before().mvccVersions(), "RawStore history/version inspection");
+            addC3Update(csv, o, "after.mvccVersionRecords", o.after().mvccVersions(), "RawStore history/version inspection");
+            addC3Update(csv, o, "rawStorePageReads", o.writes().reads(), "database RawStore I/O counters");
+            addC3Update(csv, o, "rawStorePageWrites", o.writes().writes(), "bounded RawStore recorder");
+            addC3Update(csv, o, "rawStorePageWriteBytes", o.writes().bytes(), "bounded RawStore recorder");
+            addC3Update(csv, o, "flushedWalSpanBytes", o.walBytes(), "RawStore flushed-log position delta");
+            addC3Update(csv, o, "wal.reconciled", o.walReconciled() ? 1L : 0L, "decoded WAL/span equality");
+            addC3Update(csv, o, "semanticAndTopologyVerified", o.verified() ? 1L : 0L, "post-measurement assertions");
+            for (var role : o.writes().byRole().entrySet()) {
+                addC3Update(csv, o, "pageWrites." + role.getKey().name(), role.getValue().writes(), "RawStore page-write role");
+                addC3Update(csv, o, "pageWriteBytes." + role.getKey().name(), role.getValue().bytes(), "RawStore page-write role");
+            }
+            if (o.provider() == Provider.MVCC_GEN2_C3
+                    && !o.writes().byRole().containsKey(
+                            DelosDeleteReinsertPageTopologyTestSupport.Role.MVCC_SQL_BTREE)) {
+                addC3Update(csv, o, "pageWrites.MVCC_SQL_BTREE", 0L,
+                        "RawStore page-write role; explicit zero");
+                addC3Update(csv, o, "pageWriteBytes.MVCC_SQL_BTREE", 0L,
+                        "RawStore page-write role; explicit zero");
+            }
+            for (WalOperation operation : o.walOperations()) {
+                walCsv.add(escape(o.updateCase().name()) + ',' + escape(o.phaseName()) + ','
+                        + escape(o.provider().name()) + ',' + escape(operation.key().operation()) + ','
+                        + escape(operation.key().role()) + ',' + operation.count() + ','
+                        + operation.bytes() + ',' + operation.optionalBytes() + ','
+                        + (operation.bytes() - operation.optionalBytes()));
+            }
+            long sqlPkWrites = o.writes().byRole().getOrDefault(
+                    o.provider() == Provider.HEAP
+                            ? DelosDeleteReinsertPageTopologyTestSupport.Role.HEAP_BTREE
+                            : DelosDeleteReinsertPageTopologyTestSupport.Role.MVCC_SQL_BTREE,
+                    new WriteDelta(0L, 0L)).writes();
+            markdown.add("| " + o.updateCase() + " | " + o.phaseName() + " | "
+                    + o.provider().display + " | " + o.affectedRows() + " | "
+                    + o.after().sqlIndexEntries() + " | " + o.after().mvccNativeIndexEntries()
+                    + " | " + o.before().mvccVersions() + "→" + o.after().mvccVersions()
+                    + " | " + o.writes().reads() + " | " + o.writes().writes() + " | "
+                    + sqlPkWrites + " | " + o.walBytes() + " | " + o.verified() + " |");
+        }
+        Files.write(directory.resolve("gen2-c3-pk-update-physical-ledger.csv"), csv, StandardCharsets.UTF_8);
+        Files.write(directory.resolve("gen2-c3-pk-update-wal-operations.csv"), walCsv, StandardCharsets.UTF_8);
+        Files.write(directory.resolve("gen2-c3-pk-update-physical-summary.md"), markdown, StandardCharsets.UTF_8);
+        Files.write(directory.resolve("gen2-c3-pk-update-physical-status.properties"), List.of(
+                "schemaVersion=1",
+                "status=" + (complete ? "COMPLETE" : "INCOMPLETE"),
+                "expectedObservations=18",
+                "observations=" + observations.size(),
+                "verifiedObservations=" + observations.stream().filter(UpdateObservation::verified).count(),
+                "walReconciliations=" + observations.stream().filter(UpdateObservation::walReconciled).count(),
+                "physicalCostDecision=PENDING_REVIEW"), StandardCharsets.UTF_8);
+    }
+
+    private static void addC3Update(
+            List<String> csv, UpdateObservation observation, String metric, long value, String authority) {
+        csv.add(escape(observation.updateCase().name()) + ',' + escape(observation.phaseName()) + ','
+                + escape(observation.provider().name()) + ',' + escape(metric) + ',' + value + ','
+                + escape(authority));
+    }
+
     private void measureUpdates(
             Provider provider,
             UpdateCase updateCase,
@@ -1064,7 +1378,8 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         MVCC("MVCC Gen1"),
         MVCC_GEN2_A1("MVCC Gen2-A1"),
         MVCC_GEN2_B("MVCC Gen2-B"),
-        MVCC_GEN2_C1("MVCC Gen2-C1");
+        MVCC_GEN2_C1("MVCC Gen2-C1"),
+        MVCC_GEN2_C3("MVCC Gen2-C3");
 
         private final String display;
 
