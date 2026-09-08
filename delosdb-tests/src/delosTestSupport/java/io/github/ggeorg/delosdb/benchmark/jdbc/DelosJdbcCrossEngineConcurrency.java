@@ -2676,6 +2676,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (gen2BThroughputSentinelEnabled()) {
             addProperty(command, "gen2BThroughputSentinel", true);
         }
+        if (gen2C3UpdateThroughputSentinelEnabled()) {
+            addProperty(command, "gen2C3UpdateThroughputSentinel", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -2833,6 +2836,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2BServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA && mvccGen2C3UpdateServerEnabled()) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -4796,6 +4804,16 @@ public final class DelosJdbcCrossEngineConcurrency {
             this.table = tables.get(0);
             this.rowCount = rowCount;
             this.transactionsPerClient = options.transactionsPerClient(spec, rowCount);
+            if (spec.workload().isFreshIndexedUpdate()) {
+                long requiredRows = Math.multiplyExact(
+                        Math.multiplyExact((long) spec.clients(), this.transactionsPerClient),
+                        spec.operationsPerTransaction());
+                if (requiredRows > rowCount) {
+                    throw new IllegalArgumentException(
+                            "Fresh indexed UPDATE requires at least " + requiredRows
+                                    + " fixture rows, configured=" + rowCount + ", spec=" + spec);
+                }
+            }
             this.mutationIds = mutationIds(spec, rowCount);
             this.mutationBaseline = new int[mutationIds.length];
             for (int index = 0; index < mutationIds.length; index++) {
@@ -4884,7 +4902,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         updateId = spec.workload() == Workload.MIXED_80R20W
                                 ? mutationIds[client]
                                 : mutationIds[client % mutationIds.length];
-                    } else if (spec.workload().isIndexedUpdate()) {
+                    } else if (spec.workload().isIndexedUpdate()
+                            && !spec.workload().isFreshIndexedUpdate()) {
                         boolean disjoint = spec.workload() == Workload.DISJOINT_INDEXED_UPDATE
                                 || spec.workload() == Workload.LONG_READER_DISJOINT_WRITER;
                         int targetIndex = disjoint ? client : 0;
@@ -5210,6 +5229,63 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                     verifier.rollback();
                     return new Verification(mix(fingerprint, current.fingerprint().hashCode()), oracle);
+                }
+                if (spec.workload().isFreshIndexedUpdate()) {
+                    long affectedRows = Math.multiplyExact(
+                            Math.multiplyExact((long) spec.clients(), transactionsPerClient),
+                            spec.operationsPerTransaction());
+                    if (affectedRows > rowCount) {
+                        throw new IllegalStateException(
+                                "Fresh indexed UPDATE exceeds fixture rows: affected=" + affectedRows
+                                        + ", rows=" + rowCount + ", spec=" + spec);
+                    }
+                    int[] quantities = fixtureQuantities(rowCount);
+                    long freshFingerprint = fingerprint;
+                    try (PreparedStatement verify = verifier.prepareStatement(
+                            "select id, quantity from " + table + " where id >= 1 and id <= ? order by id")) {
+                        verify.setLong(1, affectedRows);
+                        try (ResultSet resultSet = verify.executeQuery()) {
+                            int expectedId = 1;
+                            while (resultSet.next()) {
+                                int id = resultSet.getInt(1);
+                                int actual = resultSet.getInt(2);
+                                if (id != expectedId) {
+                                    throw new IllegalStateException(
+                                            "Fresh indexed UPDATE id drift: expected=" + expectedId
+                                                    + ", actual=" + id);
+                                }
+                                int expected = Math.addExact(quantities[id], 1);
+                                if (actual != expected) {
+                                    throw new IllegalStateException(
+                                            "Fresh indexed UPDATE value drift: id=" + id
+                                                    + ", expected=" + expected + ", actual=" + actual);
+                                }
+                                freshFingerprint = mix(mix(freshFingerprint, id), actual);
+                                expectedId++;
+                            }
+                            if ((long) expectedId - 1L != affectedRows) {
+                                throw new IllegalStateException(
+                                        "Fresh indexed UPDATE row-count drift: expected=" + affectedRows
+                                                + ", actual=" + (expectedId - 1));
+                            }
+                        }
+                    }
+                    DelosSqlSemanticOracle.Result oracle = null;
+                    if (captureSqlOracle) {
+                        try (PreparedStatement statement = verifier.prepareStatement(
+                                "select id, quantity from " + table
+                                        + " where id >= 1 and id <= ? order by id")) {
+                            statement.setLong(1, affectedRows);
+                            try (ResultSet resultSet = statement.executeQuery()) {
+                                oracle = DelosSqlSemanticOracle.mutation(
+                                        affectedRows,
+                                        DelosSqlSemanticOracle.query(
+                                                resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED));
+                            }
+                        }
+                    }
+                    verifier.rollback();
+                    return new Verification(freshFingerprint, oracle);
                 }
                 int increment = Math.multiplyExact(transactionsPerClient, spec.operationsPerTransaction());
                 for (int index = 0; index < mutationIds.length; index++) {
@@ -6447,6 +6523,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                                             "Delete/reinsert insert did not affect one row: id=" + row.id());
                                 }
                                 transactionFingerprint = mix(transactionFingerprint, row.id());
+                            } else if (workload.isFreshIndexedUpdate()) {
+                                int updatesPerClient = Math.multiplyExact(
+                                        transactionsPerClient, operationsPerTransaction);
+                                int id = 1 + Math.addExact(
+                                        Math.multiplyExact(clientIndex, updatesPerClient), operationIndex);
+                                update.setInt(1, id);
+                                if (update.executeUpdate() != 1) {
+                                    throw new SQLException(
+                                            "Fresh indexed update did not affect one row: id=" + id);
+                                }
+                                transactionFingerprint = mix(transactionFingerprint, id);
                             } else if (workload.isIndexedUpdate()) {
                                 update.setInt(1, updateId);
                                 if (update.executeUpdate() != 1) {
@@ -8462,6 +8549,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(gen2BThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-B server enabled: ")
                 .append(mvccGen2BServerEnabled()).append('\n')
+                .append("Gen2-C3 UPDATE throughput sentinel: ")
+                .append(gen2C3UpdateThroughputSentinelEnabled()).append('\n')
+                .append("MVCC Gen2-C3 UPDATE server enabled: ")
+                .append(mvccGen2C3UpdateServerEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8702,6 +8793,14 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "mvccGen2BServer");
     }
 
+    private static boolean gen2C3UpdateThroughputSentinelEnabled() {
+        return Boolean.getBoolean(PREFIX + "gen2C3UpdateThroughputSentinel");
+    }
+
+    private static boolean mvccGen2C3UpdateServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2C3UpdateServer");
+    }
+
     private static String insertTableShape() {
         String value = System.getProperty(PREFIX + "insertTableShape", "FULL_INDEXED").trim();
         return value.isEmpty() ? "FULL_INDEXED" : value.toUpperCase(Locale.ROOT);
@@ -8765,6 +8864,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         BANK_TRANSACTION(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         ORDER_ENTRY_MIX(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
         DELETE_REINSERT(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
+        FRESH_INDEXED_UPDATE_100(false, false, false, 100, Connection.TRANSACTION_READ_COMMITTED),
         DISJOINT_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         CONTENDED_INDEXED_UPDATE(false, false, false, -1, Connection.TRANSACTION_READ_COMMITTED),
         MIXED_80R20W(false, false, false, 1, Connection.TRANSACTION_READ_COMMITTED),
@@ -8830,7 +8930,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         boolean usesFixtureQuantities() {
-            return isPrimaryKeyRead() || isRangeScan() || isMixedReaderWriter();
+            return isPrimaryKeyRead() || isRangeScan() || isMixedReaderWriter() || isFreshIndexedUpdate();
         }
 
         int rangeRows(int rowCount) {
@@ -8891,8 +8991,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             return this == LONG_READER_DISJOINT_WRITER || this == LONG_READER_HOT_WRITER;
         }
 
+        boolean isFreshIndexedUpdate() {
+            return this == FRESH_INDEXED_UPDATE_100;
+        }
+
         boolean isIndexedUpdate() {
-            return this == DISJOINT_INDEXED_UPDATE
+            return isFreshIndexedUpdate()
+                    || this == DISJOINT_INDEXED_UPDATE
                     || this == CONTENDED_INDEXED_UPDATE
                     || isLongReaderWriter();
         }
@@ -9698,6 +9803,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean gen2BThroughputSentinel = gen2BThroughputSentinelEnabled()
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
+            boolean gen2C3UpdateThroughputSentinel = gen2C3UpdateThroughputSentinelEnabled()
+                    && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9716,6 +9823,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel
                     && !gen2BThroughputSentinel
+                    && !gen2C3UpdateThroughputSentinel
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -9730,6 +9838,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", F08 mutation-schema attribution " + F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS
                         + ", Gen2-A1 throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", Gen2-B throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
+                        + ", Gen2-C3 UPDATE throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
                         + ", or Phase-1 current baseline " + CURRENT_BASELINE_EMBEDDED_TARGETS
                         + "/" + CURRENT_BASELINE_SERVER_TARGETS
@@ -9749,7 +9858,30 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (mutationSchemaAttribution || gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
+            if (gen2C3UpdateThroughputSentinel) {
+                String modeName = "Gen2-C3 UPDATE throughput sentinel";
+                if (!configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100))) {
+                    throw new IllegalArgumentException(
+                            modeName + " requires only FRESH_INDEXED_UPDATE_100");
+                }
+                if (!clientValues().equals(List.of(8))) {
+                    throw new IllegalArgumentException(modeName + " requires exactly 8 clients");
+                }
+                if (warmups != 0
+                        || iterations != 1
+                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                        || maximumWarmupIterations != 1
+                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                        || maximumMeasuredIterations != 1) {
+                    throw new IllegalArgumentException(
+                            modeName + " requires one fresh measured UPDATE interval per worker "
+                                    + "(warmups=0, iterations=1, adaptive durations disabled)");
+                }
+                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            modeName + " requires PRIMARY_KEY_ONLY table shape");
+                }
+            } else if (mutationSchemaAttribution || gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
                 String modeName = gen2A1ThroughputSentinel
                         ? "Gen2-A1 throughput sentinel"
                         : gen2BThroughputSentinel
@@ -9783,7 +9915,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             } else if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
-                                + "gen2A1ThroughputSentinel=true, or gen2BThroughputSentinel=true");
+                                + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
+                                + "or gen2C3UpdateThroughputSentinel=true");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
@@ -9854,6 +9987,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
                     && !mixedReaderWriterFitness && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
+                    && !gen2C3UpdateThroughputSentinel
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
@@ -9917,11 +10051,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 "F08 mutation-schema attribution client classpaths are required");
                     }
-                } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
+                } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel || gen2C3UpdateThroughputSentinel) {
                     if (delosClientClasspath.isBlank()) {
+                        String sentinelName = gen2A1ThroughputSentinel
+                                ? "Gen2-A1"
+                                : gen2BThroughputSentinel ? "Gen2-B" : "Gen2-C3 UPDATE";
                         throw new IllegalArgumentException(
-                                (gen2A1ThroughputSentinel ? "Gen2-A1" : "Gen2-B")
-                                        + " throughput sentinel requires the Delos network client classpath");
+                                sentinelName + " throughput sentinel requires the Delos network client classpath");
                     }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
@@ -9956,11 +10092,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                             throw new IllegalArgumentException(
                                     "F08 mutation-schema attribution server images are required");
                         }
-                    } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel) {
+                    } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel || gen2C3UpdateThroughputSentinel) {
                         if (delosServerImage.isBlank()) {
+                            String sentinelName = gen2A1ThroughputSentinel
+                                    ? "Gen2-A1"
+                                    : gen2BThroughputSentinel ? "Gen2-B" : "Gen2-C3 UPDATE";
                             throw new IllegalArgumentException(
-                                    (gen2A1ThroughputSentinel ? "Gen2-A1" : "Gen2-B")
-                                            + " throughput sentinel requires the Delos server image");
+                                    sentinelName + " throughput sentinel requires the Delos server image");
                         }
                     } else {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {

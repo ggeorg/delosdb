@@ -17384,3 +17384,192 @@ tasks.register('runDelosGen2BPrimaryKeyInsertThroughputSentinel') {
                 'UTF-8')
     }
 }
+
+// Phase G2C-C3: canonical server throughput sentinel for unchanged-key indexed UPDATEs.
+// Every measured UPDATE touches a distinct primary-key row exactly once. The second
+// pass enables the combined Gen2 PK/history format plus archived-source undo only
+// in the MVCC server; Heap is repeated as the same-machine canary.
+def delosGen2C3PrimaryKeyUpdateThroughputReportRoot =
+        'reports/delosdb/benchmarks/gen2-c3-pk-update-throughput'
+def delosGen2C3PrimaryKeyUpdateThroughputDatabaseRoot =
+        'tmp/delos-gen2-c3-pk-update-throughput'
+
+def configureDelosGen2C3PrimaryKeyUpdateThroughput = {
+    JavaExec task,
+    String reportGroup,
+    boolean enableGen2C3 ->
+
+    task.group = 'benchmark'
+    task.description = enableGen2C3
+            ? 'Runs the 8-client SERVER fresh indexed UPDATE_100 throughput sentinel with MVCC Gen2-C3+C2 enabled.'
+            : 'Runs the 8-client SERVER fresh indexed UPDATE_100 throughput sentinel for Heap and MVCC Gen1.'
+    task.dependsOn tasks.named('compileTestJava'), ':jars'
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosGen2C3PrimaryKeyUpdateThroughputReportRoot}/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 UPDATE throughput sentinel requires a release build; '
+                            + 'rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosGen2C3PrimaryKeyUpdateThroughputReportRoot}/${reportGroup}")
+                .get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosGen2C3PrimaryKeyUpdateThroughputDatabaseRoot}/${reportGroup}")
+                .get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.gen2C3UpdateThroughputSentinel': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3UpdateServer':
+                        Boolean.toString(enableGen2C3),
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                // 100,000 distinct rows/client = 1,000 UPDATE_100 transactions/client.
+                // Across 8 clients the measured interval updates 800,000 PK rows exactly once.
+                'delosdb.benchmark.crossEngineConcurrency.rows': '800000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'FRESH_INDEXED_UPDATE_100',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '1200',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosGen2C3PrimaryKeyUpdateThroughputBaseline', JavaExec) { task ->
+    configureDelosGen2C3PrimaryKeyUpdateThroughput(task, 'baseline-gen1', false)
+}
+
+tasks.register('runDelosGen2C3PrimaryKeyUpdateThroughputCandidate', JavaExec) { task ->
+    configureDelosGen2C3PrimaryKeyUpdateThroughput(task, 'candidate-gen2-c3', true)
+    mustRunAfter tasks.named('runDelosGen2C3PrimaryKeyUpdateThroughputBaseline')
+}
+
+tasks.register('runDelosGen2C3PrimaryKeyUpdateThroughputSentinel') {
+    group = 'benchmark'
+    description = 'Runs and validates the SERVER/8-client fresh indexed UPDATE_100 Gen1 vs Gen2-C3+C2 throughput sentinel.'
+    dependsOn tasks.named('runDelosGen2C3PrimaryKeyUpdateThroughputBaseline'),
+            tasks.named('runDelosGen2C3PrimaryKeyUpdateThroughputCandidate')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3PrimaryKeyUpdateThroughputReportRoot))
+
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(delosGen2C3PrimaryKeyUpdateThroughputReportRoot).get().asFile
+
+        def readDispersion = { String group ->
+            def file = new File(new File(root, group), 'cross-engine-concurrency-dispersion.csv')
+            if (!file.isFile()) {
+                throw new GradleException("Missing Gen2-C3 UPDATE throughput dispersion report: ${file}")
+            }
+            def lines = file.readLines('UTF-8').findAll { !it.isBlank() }
+            if (lines.size() < 3) {
+                throw new GradleException("Incomplete Gen2-C3 UPDATE throughput dispersion report: ${file}")
+            }
+            def headers = lines.first().split(',', -1).toList()
+            def byTarget = [:]
+            lines.drop(1).each { String line ->
+                def values = line.split(',', -1).toList()
+                def row = [:]
+                headers.eachWithIndex { String header, int i -> row[header] = values[i] }
+                byTarget[row.target] = row
+            }
+            ['delos_heap_drda', 'delos_mvcc_drda'].each { String target ->
+                if (!byTarget.containsKey(target)) {
+                    throw new GradleException(
+                            "Missing ${target} in Gen2-C3 UPDATE throughput dispersion report: ${file}")
+                }
+                double dispersion = byTarget[target].iqrToMedian as double
+                if (dispersion > 0.15d) {
+                    throw new GradleException(
+                            "Gen2-C3 UPDATE throughput sentinel dispersion invalid for ${group}/${target}: "
+                                    + "IQR/median=${dispersion} (> 0.15)")
+                }
+            }
+            byTarget
+        }
+
+        def baseline = readDispersion('baseline-gen1')
+        def candidate = readDispersion('candidate-gen2-c3')
+
+        double heapBaseline = baseline['delos_heap_drda'].medianTps as double
+        double gen1 = baseline['delos_mvcc_drda'].medianTps as double
+        double heapCandidate = candidate['delos_heap_drda'].medianTps as double
+        double gen2 = candidate['delos_mvcc_drda'].medianTps as double
+        double heapDrift = Math.abs(heapCandidate - heapBaseline) / heapBaseline
+        if (heapDrift > 0.20d) {
+            throw new GradleException(
+                    "Gen2-C3 UPDATE throughput sentinel host canary drift invalid: Heap changed "
+                            + String.format(java.util.Locale.ROOT, '%.2f%%', heapDrift * 100.0d)
+                            + " between passes (> 20%)")
+        }
+
+        def summary = new File(root, 'gen2-c3-pk-update-throughput-sentinel.tsv')
+        summary.setText(
+                'metric\tvalue\n'
+                        + "heapBaselineMedianTps\t${heapBaseline}\n"
+                        + "gen1MedianTps\t${gen1}\n"
+                        + "heapCandidatePassMedianTps\t${heapCandidate}\n"
+                        + "gen2C3MedianTps\t${gen2}\n"
+                        + "gen2C3ToGen1\t${gen2 / gen1}\n"
+                        + "gen1ToHeap\t${gen1 / heapBaseline}\n"
+                        + "gen2C3ToHeapCandidatePass\t${gen2 / heapCandidate}\n"
+                        + "heapCrossPassDrift\t${heapDrift}\n"
+                        + "baselineHeapIqrToMedian\t${baseline['delos_heap_drda'].iqrToMedian}\n"
+                        + "gen1IqrToMedian\t${baseline['delos_mvcc_drda'].iqrToMedian}\n"
+                        + "candidateHeapIqrToMedian\t${candidate['delos_heap_drda'].iqrToMedian}\n"
+                        + "gen2C3IqrToMedian\t${candidate['delos_mvcc_drda'].iqrToMedian}\n",
+                'UTF-8')
+    }
+}
