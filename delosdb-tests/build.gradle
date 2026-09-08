@@ -946,8 +946,8 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
         def walKeys = updateLines.findAll { it.contains(walMarker) }
                 .collect { it.substring(0, it.indexOf(walMarker)) }
         def walLines = updateWal.readLines('UTF-8')
-        def walHeader = 'scenario,reader,phase,engine,operation,physicalRole,recordCount,'
-                + 'recordBytes,optionalBytes,headerAndFramingBytes'
+        def walHeader = 'scenario,reader,phase,engine,operation,physicalRole,recordCount,' +
+                'recordBytes,optionalBytes,headerAndFramingBytes'
         if (walKeys.size() != 34 || walKeys.toSet() != expectedUpdateKeys.toSet()
                 || walLines.isEmpty() || walLines.first() != walHeader) {
             throw new GradleException('Gen2-C1 UPDATE WAL attribution is stale/incomplete')
