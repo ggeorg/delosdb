@@ -38,6 +38,7 @@ import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.impl.store.raw.data.RawStoreIoFaultInjectionTestSupport;
+import org.apache.derby.impl.store.raw.data.RawStoreWalAccountingTestSupport;
 import org.apache.derby.impl.store.raw.log.LogCounter;
 
 /**
@@ -302,13 +303,21 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         UpdateObservation observation = new UpdateObservation(
                 provider, updateCase, reader != null, phase, rows, affected,
                 beforeStructure, afterStructure, writes, walBytes(walBefore, walAfter),
-                updateNanos, commitNanos, afterWork.deltaFrom(beforeWork), false);
+                updateNanos, commitNanos, afterWork.deltaFrom(beforeWork), List.of(), false);
         int index = observations.size();
         observations.add(observation);
         // Retain measured costs before semantic/topology assertions. An error
         // leaves an explicitly incomplete report, never a successful old one.
         writeUpdateReports(observations, false);
 
+        // Read only after the measured I/O window has closed. This scans the
+        // existing flushed WAL; it never changes the logging/flush protocol.
+        observation = observation.withWalOperations(walOperations(
+                writer, layout, provider, walBefore, walAfter));
+        observations.set(index, observation);
+        writeUpdateReports(observations, false);
+        assertEquals("WAL operation bytes must account for the complete measured span",
+                observation.walBytes(), observation.accountedWalBytes());
         assertUpdateTopology(observation);
         assertTrue("measured UPDATE must write RawStore pages", writes.writes() > 0L);
         assertTrue("measured UPDATE must append durable WAL", observation.walBytes() > 0L);
@@ -328,6 +337,35 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         }
         observations.set(index, observation.withVerified());
         writeUpdateReports(observations, false);
+    }
+
+    private static List<WalOperation> walOperations(
+            Connection connection,
+            DelosDeleteReinsertPageTopologyTestSupport.Layout layout,
+            Provider provider,
+            long before,
+            long after) throws Exception {
+        if (!(transactionManager(connection).getRawStoreXact() instanceof RawTransaction raw)) {
+            throw new AssertionError("RawStore transaction required for WAL attribution");
+        }
+        Map<WalOperationKey, long[]> totals = new LinkedHashMap<>();
+        for (var record : RawStoreWalAccountingTestSupport.read(raw.getLogFactory(), before, after)) {
+            String role = record.containerId() < 0L ? "NON_CONTAINER"
+                    : record.segmentId() == 0L
+                            ? layout.role(record.containerId(), provider != Provider.HEAP).name()
+                            : "OTHER_SEGMENT_" + record.segmentId();
+            WalOperationKey key = new WalOperationKey(record.operation(), role);
+            long[] values = totals.computeIfAbsent(key, ignored -> new long[3]);
+            values[0]++;
+            values[1] += record.recordBytes();
+            values[2] += record.optionalBytes();
+        }
+        List<WalOperation> result = new ArrayList<>();
+        for (var entry : totals.entrySet()) {
+            long[] values = entry.getValue();
+            result.add(new WalOperation(entry.getKey(), values[0], values[1], values[2]));
+        }
+        return List.copyOf(result);
     }
 
     private static UpdateWork updateWork(Provider provider, String database) {
@@ -403,6 +441,9 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         markdown.add("WAL spans cover UPDATE plus commit, before forced data-page flushing. Page I/O covers UPDATE, commit, and forced flushing, but excludes fixtures, structure inspection, and verification reads. Compilation is outside the measurement window. Per-operation timings are single-sample diagnostics only; there is no throughput, dispersion, or latency acceptance claim.");
         markdown.add("Gen1 version counts include its current VERSION images plus older images. C1 version-container counts contain historical predecessors only. DIRECTORY is the legacy inspection/role name for C1 CURRENT records.");
         markdown.add("Software counters come from existing MVCC diagnostics; unavailable Heap counters are omitted. Pending-list inspections and payload-clone counts are not instrumented by this overlay.");
+        markdown.add("WAL attribution decodes the existing flushed log after measurement. Record bytes include framing and reconcile exactly to the measured span, including checksum/transaction records. Optional bytes are a subset containing operation data; UPDATE optional data combines before and after images, not separately measured redo/undo byte counts. No payload values are exported.");
+        List<String> walCsv = new ArrayList<>();
+        walCsv.add("scenario,reader,phase,engine,operation,physicalRole,recordCount,recordBytes,optionalBytes,headerAndFramingBytes");
         markdown.add("");
         markdown.add("| Case | Reader | Phase | Engine | Fixture | Updated | Current/directory before→after | Version/history before→after | Added records | Reads | Writes | Write bytes | WAL bytes | Verified |");
         markdown.add("|---|---|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---|");
@@ -433,6 +474,15 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             addUpdate(csv, o, "rawStorePageWrites", o.writes().writes(), "bounded recorder matched to counters");
             addUpdate(csv, o, "rawStorePageWriteBytes", o.writes().bytes(), "bounded recorder matched to counters");
             addUpdate(csv, o, "flushedWalSpanBytes", o.walBytes(), "RawStore flushed-log position delta");
+            addUpdate(csv, o, "wal.accountedBytes", o.accountedWalBytes(), "decoded WAL records including framing/checksums");
+            addUpdate(csv, o, "wal.reconciled", o.walReconciled() ? 1L : 0L, "exact decoded-byte/span equality");
+            for (WalOperation operation : o.walOperations()) {
+                walCsv.add(escape(o.updateCase().name()) + ',' + escape(o.readerName())
+                        + ',' + escape(o.phaseName()) + ',' + escape(o.provider().name())
+                        + ',' + escape(operation.key().operation()) + ',' + escape(operation.key().role())
+                        + ',' + operation.count() + ',' + operation.bytes()
+                        + ',' + operation.optionalBytes() + ',' + (operation.bytes() - operation.optionalBytes()));
+            }
             addUpdate(csv, o, "diagnostic.updateElapsedNanos", o.updateNanos(), "single timed executeUpdate; not throughput evidence");
             addUpdate(csv, o, "diagnostic.commitElapsedNanos", o.commitNanos(), "single timed commit; not throughput evidence");
             addUpdate(csv, o, "semanticAndTopologyVerified", o.verified() ? 1L : 0L, "post-measurement assertions");
@@ -458,11 +508,34 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
                     + " | " + o.writes().writes() + " | " + o.writes().bytes()
                     + " | " + o.walBytes() + " | " + o.verified() + " |");
         }
+        markdown.add("");
+        markdown.add("## WAL bytes by operation and physical role");
+        markdown.add("");
+        markdown.add("The companion gen2-c1-update-wal-operations.csv has all observations. The entries below show C1 only; optional bytes are included in record bytes, not additive.");
+        markdown.add("");
+        markdown.add("| Case | Reader | Phase | Operation | Role | Records | Record bytes | Optional bytes | Header/framing bytes |");
+        markdown.add("|---|---|---|---|---|---:|---:|---:|---:|");
+        for (UpdateObservation o : observations) {
+            if (o.provider() != Provider.MVCC_GEN2_C1) {
+                continue;
+            }
+            for (WalOperation operation : o.walOperations()) {
+                markdown.add("| " + o.updateCase() + " | " + o.readerName() + " | " + o.phaseName()
+                        + " | " + operation.key().operation() + " | " + operation.key().role()
+                        + " | " + operation.count() + " | " + operation.bytes()
+                        + " | " + operation.optionalBytes()
+                        + " | " + (operation.bytes() - operation.optionalBytes()) + " |");
+            }
+        }
+        Files.write(directory.resolve("gen2-c1-update-wal-operations.csv"), walCsv, StandardCharsets.UTF_8);
         Files.write(directory.resolve("gen2-c1-update-physical-ledger.csv"), csv, StandardCharsets.UTF_8);
         Files.write(directory.resolve("gen2-c1-update-physical-summary.md"), markdown, StandardCharsets.UTF_8);
-        // Write the completion marker last, after both evidence files exist.
+        // Write the completion marker last, after all evidence files exist.
         Files.write(directory.resolve("gen2-c1-update-physical-status.properties"), List.of(
-                "schemaVersion=1",
+                "schemaVersion=2",
+                "walAccounting=" + (complete && observations.size() == 34
+                        && observations.stream().allMatch(UpdateObservation::walReconciled)
+                                ? "COMPLETE" : "INCOMPLETE"),
                 "status=" + (complete ? "COMPLETE" : "INCOMPLETE"),
                 "expectedObservations=34",
                 "observations=" + observations.size(),
@@ -1062,7 +1135,26 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             long updateNanos,
             long commitNanos,
             UpdateWork work,
+            List<WalOperation> walOperations,
             boolean verified) {
+        UpdateObservation {
+            walOperations = List.copyOf(walOperations);
+        }
+
+        long accountedWalBytes() {
+            return walOperations.stream().mapToLong(WalOperation::bytes).sum();
+        }
+
+        boolean walReconciled() {
+            return !walOperations.isEmpty() && accountedWalBytes() == walBytes;
+        }
+
+        UpdateObservation withWalOperations(List<WalOperation> operations) {
+            return new UpdateObservation(provider, updateCase, heldReader, phase, fixtureRows,
+                    affectedRows, before, after, writes, walBytes, updateNanos, commitNanos,
+                    work, operations, verified);
+        }
+
         String readerName() {
             return heldReader ? "HELD_READER" : "NO_READER";
         }
@@ -1073,8 +1165,15 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
 
         UpdateObservation withVerified() {
             return new UpdateObservation(provider, updateCase, heldReader, phase, fixtureRows,
-                    affectedRows, before, after, writes, walBytes, updateNanos, commitNanos, work, true);
+                    affectedRows, before, after, writes, walBytes, updateNanos, commitNanos,
+                    work, walOperations, true);
         }
+    }
+
+    private record WalOperationKey(String operation, String role) {
+    }
+
+    private record WalOperation(WalOperationKey key, long count, long bytes, long optionalBytes) {
     }
 
     private record CatalogLayout(long baseConglomerate, List<Long> indexConglomerates) {

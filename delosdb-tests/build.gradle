@@ -69,6 +69,8 @@ def toursDbSourceRoot = rootProject.project(':delosdb-demos').file('src/main/dem
 def derbyTestsClassDir = layout.buildDirectory.dir('classes/modules/org.apache.derby.tests')
 def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
+def rawStoreWalAccountingTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java')
 def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def heapPageReadImageDiagnosticTestSupportSource = file(
@@ -361,6 +363,7 @@ sourceSets {
             // separately as a test-only patch instead of creating a split package
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
@@ -393,6 +396,9 @@ artifacts {
 // already depends on it.
 tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     from(rawStoreIoFaultInjectionTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(rawStoreWalAccountingTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(pageLatchDiagnosticTestSupportSource) {
@@ -893,13 +899,16 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
         def updateLedger = new File(updateDirectory, 'gen2-c1-update-physical-ledger.csv')
         def updateSummary = new File(updateDirectory, 'gen2-c1-update-physical-summary.md')
         def updateStatus = new File(updateDirectory, 'gen2-c1-update-physical-status.properties')
-        if (!updateLedger.isFile() || !updateSummary.isFile() || !updateStatus.isFile()) {
+        def updateWal = new File(updateDirectory, 'gen2-c1-update-wal-operations.csv')
+        if (!updateLedger.isFile() || !updateSummary.isFile() || !updateStatus.isFile()
+                || !updateWal.isFile()) {
             throw new GradleException('Mutation physical amplification ledger is incomplete: '
                     + 'missing Gen2-C1 UPDATE evidence files')
         }
         def status = new Properties()
         updateStatus.withReader('UTF-8') { reader -> status.load(reader) }
-        if (status.getProperty('schemaVersion') != '1'
+        if (status.getProperty('schemaVersion') != '2'
+                || status.getProperty('walAccounting') != 'COMPLETE'
                 || status.getProperty('status') != 'COMPLETE'
                 || status.getProperty('expectedObservations') != '34'
                 || status.getProperty('observations') != '34'
@@ -932,6 +941,26 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
                 || verifiedUpdateKeys.toSet() != expectedUpdateKeys.toSet()) {
             throw new GradleException('Gen2-C1 UPDATE ledger is stale/incomplete: '
                     + 'expected 34 distinct verified scenario/reader/phase/engine observations')
+        }
+        def walMarker = ',"wal.reconciled",1,'
+        def walKeys = updateLines.findAll { it.contains(walMarker) }
+                .collect { it.substring(0, it.indexOf(walMarker)) }
+        def walLines = updateWal.readLines('UTF-8')
+        def walHeader = 'scenario,reader,phase,engine,operation,physicalRole,recordCount,'
+                + 'recordBytes,optionalBytes,headerAndFramingBytes'
+        if (walKeys.size() != 34 || walKeys.toSet() != expectedUpdateKeys.toSet()
+                || walLines.isEmpty() || walLines.first() != walHeader) {
+            throw new GradleException('Gen2-C1 UPDATE WAL attribution is stale/incomplete')
+        }
+        def operationKeys = walLines.drop(1).collect { line ->
+            def parts = line.split(',', -1)
+            if (parts.length != 10) {
+                throw new GradleException('Gen2-C1 UPDATE WAL operation row has invalid columns')
+            }
+            parts.take(4).join(',')
+        }.toSet()
+        if (operationKeys != expectedUpdateKeys.toSet()) {
+            throw new GradleException('Gen2-C1 UPDATE WAL attribution omitted an observation')
         }
     }
 }

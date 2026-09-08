@@ -1001,7 +1001,8 @@ final class MvccRawStoreTable {
                 transaction,
                 table,
                 current,
-                newCurrentRow);
+                newCurrentRow,
+                gen2C1UpdateColumns(table.columnCount(), validColumns));
 
         MvccRowLocation currentLocation = MvccRawStoreRowDirectory.location(
                 rowId, current.handle());
@@ -1066,11 +1067,45 @@ final class MvccRawStoreTable {
         return row;
     }
 
+    private static FormatableBitSet gen2C1UpdateColumns(
+            int columnCount,
+            FormatableBitSet validColumns) {
+        FormatableBitSet fields = new FormatableBitSet(
+                MvccRawStoreFormat.gen2C1CurrentFieldCount(columnCount));
+        // Retain the immutable record kind, format and logical row identity.
+        // Only version/visibility metadata and the predecessor link change.
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE);
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD);
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
+        fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
+        fields.set(MvccRawStoreFormat.GEN2_C1_PREVIOUS_VERSION_ID);
+
+        // SQL payload positions start after the C1 header in the RawStore row.
+        // A null mask means full replacement; an empty mask means header only.
+        // Build a new mask rather than changing the caller's SQL-column mask.
+        int payloadStart = MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START;
+        if (validColumns == null) {
+            for (int column = 0; column < columnCount; column++) {
+                fields.set(payloadStart + column);
+            }
+        } else {
+            for (int column = validColumns.anySetBit();
+                 column >= 0 && column < columnCount;
+                 column = validColumns.anySetBit(column)) {
+                fields.set(payloadStart + column);
+            }
+        }
+        return fields;
+    }
+
     private static void updateGen2Current(
             Transaction transaction,
             Descriptor table,
             Gen2A1CurrentRecord expected,
-            Object[] replacement) throws StandardException {
+            Object[] replacement,
+            FormatableBitSet updatedFields) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -1098,7 +1133,7 @@ final class MvccRawStoreTable {
                         SQLState.DEADLOCK,
                         "RawStore MVCC write conflict for logical row " + expected.rowId());
             }
-            page.updateAtSlot(slot, replacement, null);
+            page.updateAtSlot(slot, replacement, updatedFields);
         } finally {
             if (page != null) {
                 page.unlatch();
