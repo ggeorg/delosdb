@@ -71,6 +71,8 @@ def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def rawStoreWalAccountingTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java')
+def archivedUndoTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java')
 def pageLatchDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java')
 def heapPageReadImageDiagnosticTestSupportSource = file(
@@ -364,6 +366,7 @@ sourceSets {
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
@@ -399,6 +402,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(rawStoreWalAccountingTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(archivedUndoTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(pageLatchDiagnosticTestSupportSource) {
@@ -853,6 +859,13 @@ tasks.named('runDelosPrimaryKeyReadPhysicalAccounting') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+// Only the C1 candidate path emits new archived-undo WAL operations. Existing
+// Heap, Gen1 and A1/B1 paths retain their operation formats and default settings.
+def gen2C2ArchivedUndo = providers.gradleProperty('delosdb.gen2C2ArchivedUndo').getOrElse('false')
+if (!(gen2C2ArchivedUndo in ['true', 'false'])) {
+    throw new GradleException('delosdb.gen2C2ArchivedUndo must be true or false')
+}
+
 registerDelosFocusedTest(
         'runDelosMutationPhysicalAmplificationLedger',
         'Measures deterministic BARE/PK INSERT gates and the Heap/Gen1/Gen2-C1 BARE UPDATE physical baseline.',
@@ -865,6 +878,7 @@ registerDelosFocusedTest(
         ])
 
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
+    systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(
@@ -962,6 +976,23 @@ tasks.named('runDelosMutationPhysicalAmplificationLedger') {
         if (operationKeys != expectedUpdateKeys.toSet()) {
             throw new GradleException('Gen2-C1 UPDATE WAL attribution omitted an observation')
         }
+        if (gen2C2ArchivedUndo == 'true') {
+            ['WIDE_SPARSE_1', 'WIDE_FULL_1'].each { scenario ->
+                ['FIRST_UPDATE', 'SECOND_UPDATE'].each { phase ->
+                    def prefix = "\"${scenario}\",\"NO_READER\",\"${phase}\",\"MVCC_GEN2_C1\",\"ArchivedUpdateOperation\",\"MVCC_METADATA_DIRECTORY\",".toString()
+                    if (!walLines.any { line -> line.startsWith(prefix) }) {
+                        throw new GradleException("Archived-undo candidate not exercised: ${scenario}/${phase}")
+                    }
+                }
+            }
+        }
+        def modeEvidence = new Properties()
+        modeEvidence.setProperty('enabled', gen2C2ArchivedUndo)
+        modeEvidence.setProperty('walReconciliations', '34')
+        modeEvidence.setProperty('status', 'COMPLETE')
+        new File(updateDirectory, 'gen2-c2-archived-undo-mode.properties').withOutputStream {
+            modeEvidence.store(it, 'RawStore archived-undo experiment mode')
+        }
     }
 }
 
@@ -1007,7 +1038,124 @@ registerDelosFocusedTest(
         ])
 
 tasks.named('runDelosMvccGen2C1HistoryUpdateSlice') {
+    systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+registerDelosFocusedTest(
+        'runDelosMvccGen2C3PrimaryKeyHistoryUpdateSlice',
+        'Runs Gen2 PK/history integration for unchanged-key indexed UPDATEs.',
+        ['**/MvccGen2C3PrimaryKeyHistoryUpdateTest.class'],
+        [
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true'
+        ])
+
+tasks.named('runDelosMvccGen2C3PrimaryKeyHistoryUpdateSlice') {
+    systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
+def gen2C1UpdateRecoveryReportDir = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/recovery/gen2-c1-current-history')
+
+registerDelosFocusedTest(
+        'runDelosMvccGen2C1UpdateCrashRecovery',
+        'Checks Gen1 and Gen2-C1 UPDATE recovery before and after the RawStore commit boundary.',
+        ['**/MvccGen2C1UpdateCrashRecoveryTest.class'],
+        [
+                'delosdb.gen2C1UpdateRecovery.reportDirectory': gen2C1UpdateRecoveryReportDir.get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosMvccGen2C1UpdateCrashRecovery') {
+    systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.dir gen2C1UpdateRecoveryReportDir
+    outputs.upToDateWhen { false }
+    doFirst {
+        delete gen2C1UpdateRecoveryReportDir.get().asFile
+        gen2C1UpdateRecoveryReportDir.get().asFile.mkdirs()
+    }
+    doLast {
+        def reportDirectory = gen2C1UpdateRecoveryReportDir.get().asFile
+        def scenarios = ['NARROW_BATCH', 'WIDE_SPARSE_CHAIN', 'WIDE_FULL_CHAIN',
+                         'GROW_NULL_CHAIN', 'SAVEPOINT_RETRY_CHAIN']
+        def boundaries = ['BEFORE_RAW_COMMIT', 'AFTER_RAW_COMMIT']
+        def engines = ['GEN1', 'GEN2_C1']
+        scenarios.each { scenario ->
+            boundaries.each { boundary ->
+                engines.each { engine ->
+                    def key = "${scenario}-${boundary}-${engine}"
+                    def report = new File(reportDirectory, "${key}.properties")
+                    if (!report.isFile()) {
+                        throw new GradleException("Missing UPDATE recovery evidence: ${key}")
+                    }
+                    Properties evidence = new Properties()
+                    report.withInputStream { evidence.load(it) }
+                    def committed = boundary == 'AFTER_RAW_COMMIT'
+                    def expected = [status: 'PASS', scenario: scenario, boundary: boundary,
+                                    engine: engine, exitCode: committed ? '92' : '91',
+                                    outcome: committed ? 'COMMIT' : 'ROLLBACK',
+                                    historicalPayloads: 'PASS', postRecoveryUpdate: 'PASS', cleanReopen: 'PASS',
+                                    creationFlagDuringRecovery: 'false', dirtyPageFlushBeforeCommit: 'true']
+                    expected.each { field, value ->
+                        if (evidence.getProperty(field) != value) {
+                            throw new GradleException("Invalid UPDATE recovery evidence ${key}: ${field}")
+                        }
+                    }
+                    if (evidence.getProperty('archivedUndoEnabled') != gen2C2ArchivedUndo) {
+                        throw new GradleException("UPDATE recovery used wrong archived-undo mode: ${key}")
+                    }
+                }
+            }
+        }
+        logger.lifecycle('Gen2-C1 UPDATE recovery: 20/20 commit-boundary cases verified.')
+    }
+}
+
+def gen2C2ArchivedUndoReportDir = rootProject.layout.buildDirectory.dir(
+        'reports/delosdb/recovery/gen2-c2-archived-undo')
+
+registerDelosFocusedTest(
+        'runDelosMvccGen2C2ArchivedUndo',
+        'Checks archived-before-image WAL, rollback, independent page redo and self-contained compensation replay.',
+        ['**/RawStoreArchivedUndoTest.class'],
+        ['delosdb.gen2C2ArchivedUndo.reportDirectory': gen2C2ArchivedUndoReportDir.get().asFile.absolutePath])
+
+tasks.named('runDelosMvccGen2C2ArchivedUndo') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.dir gen2C2ArchivedUndoReportDir
+    outputs.upToDateWhen { false }
+    doFirst {
+        delete gen2C2ArchivedUndoReportDir.get().asFile
+        gen2C2ArchivedUndoReportDir.get().asFile.mkdirs()
+    }
+    doLast {
+        def requiredCases = ['COMMIT', 'COMMIT_STANDARD', 'ABORT', 'SAVEPOINT_RETRY', 'CRASH_AFTER_UPDATE',
+                'CRASH_DURING_UNDO', 'CLR_NO_ARCHIVE', 'CLR_REPLAY_CRASH', 'STALE_CURRENT',
+                'STALE_HISTORY', 'STALE_BOTH', 'PAGE_4K', 'PAGE_8K', 'OVERFLOW_FALLBACK', 'SPARSE_NULL']
+        requiredCases.each { name ->
+            def report = new File(gen2C2ArchivedUndoReportDir.get().asFile, "${name}.properties")
+            if (!report.isFile()) {
+                throw new GradleException("Missing archived-undo case: ${name}")
+            }
+            def evidence = new Properties()
+            report.withInputStream { evidence.load(it) }
+            if (evidence.getProperty('verified') != 'true' || evidence.getProperty('case') != name) {
+                throw new GradleException("Invalid archived-undo case: ${name}")
+            }
+        }
+        def codecFile = new File(gen2C2ArchivedUndoReportDir.get().asFile, 'CODEC.properties')
+        if (!codecFile.isFile()) {
+            throw new GradleException('Missing archived before-image codec evidence')
+        }
+        def codec = new Properties()
+        codecFile.withInputStream { codec.load(it) }
+        if (codec.getProperty('verified') != 'true' || codec.getProperty('checks') != '676') {
+            throw new GradleException('Archived before-image codec evidence incomplete')
+        }
+        logger.lifecycle('Gen2-C2 archived undo: 15/15 RawStore cases and 676 codec checks verified.')
+    }
 }
 
 tasks.register('runDelosArchitectureFitnessInventory', JavaExec) {

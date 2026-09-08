@@ -31,6 +31,7 @@ final class MvccRawStoreFormat {
     static final int FORMAT_VERSION = 1;
     static final int GEN2_A1_CONTROL_FORMAT_VERSION = 2;
     static final int GEN2_C1_CONTROL_FORMAT_VERSION = 3;
+    static final int GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION = 4;
 
     static final int CONTROL_KIND = 1;
     static final int ALLOCATOR_KIND = 2;

@@ -149,7 +149,14 @@ final class MvccRawStoreTable {
         }
 
         boolean gen2History() {
-            return controlFormatVersion == MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION;
+            return controlFormatVersion == MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION
+                    || controlFormatVersion
+                            == MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION;
+        }
+
+        boolean gen2PkHistory() {
+            return controlFormatVersion
+                    == MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION;
         }
 
         long accessConglomerateId() {
@@ -298,15 +305,16 @@ final class MvccRawStoreTable {
                     SQLState.NOT_IMPLEMENTED,
                     "MVCC Gen2-A1 temporary tables are deferred beyond the first physical slice");
         }
-        if (gen2C1History && gen2BPrimaryKey) {
+        if (gen2C1History && !gen2BPrimaryKey && !uniqueConstraints.isEmpty()) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-C1 PK/history integration is deferred beyond the first history slice");
+                    "MVCC Gen2-C1 history slice supports bare tables only; "
+                            + "enable Gen2-B PK integration for indexed history updates");
         }
-        if (gen2C1History && !uniqueConstraints.isEmpty()) {
+        if (gen2BPrimaryKey && gen2C1History && uniqueConstraints.isEmpty()) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-C1 history slice supports bare tables only");
+                    "MVCC Gen2 PK/history integration requires SQL uniqueness metadata");
         }
         if (gen2A1 && !gen2BPrimaryKey && !gen2C1History && !uniqueConstraints.isEmpty()) {
             throw StandardException.newException(
@@ -353,11 +361,13 @@ final class MvccRawStoreTable {
                 formatIds,
                 collationIds,
                 (temporaryFlag & TransactionController.IS_TEMPORARY) == TransactionController.IS_TEMPORARY,
-                gen2C1History
-                        ? MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION
-                        : gen2A1
-                                ? MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
-                                : MvccRawStoreFormat.FORMAT_VERSION,
+                gen2C1History && gen2BPrimaryKey
+                        ? MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION
+                        : gen2C1History
+                                ? MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION
+                                : gen2A1
+                                        ? MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
+                                        : MvccRawStoreFormat.FORMAT_VERSION,
                 uniqueConstraints);
         initializeMetadataContainer(rawTransaction, descriptor);
         initializeVersionContainer(rawTransaction, descriptor);
@@ -955,6 +965,7 @@ final class MvccRawStoreTable {
             StoreDataValue[] replacement,
             FormatableBitSet validColumns,
             MvccRawStoreTransactionContext context) throws StandardException {
+        rejectGen2PkKeyMutation(table, validColumns);
         long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
         if (context.hasPendingVersion(table, rowId)) {
@@ -1002,7 +1013,8 @@ final class MvccRawStoreTable {
                 table,
                 current,
                 newCurrentRow,
-                gen2C1UpdateColumns(table.columnCount(), validColumns));
+                gen2C1UpdateColumns(table.columnCount(), validColumns),
+                historyHandle);
 
         MvccRowLocation currentLocation = MvccRawStoreRowDirectory.location(
                 rowId, current.handle());
@@ -1020,6 +1032,29 @@ final class MvccRawStoreTable {
         context.addPending(pending);
         rowLocation.setWriteVersion(0L);
         return true;
+    }
+
+    private static void rejectGen2PkKeyMutation(
+            Descriptor table, FormatableBitSet validColumns) throws StandardException {
+        if (!table.gen2PkHistory()) {
+            return;
+        }
+        if (validColumns == null) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2 PK/history full-row replacement is deferred; "
+                            + "indexed key changes require historical-key reachability");
+        }
+        for (UniqueConstraint constraint : table.uniqueConstraints()) {
+            for (int column : constraint.columns()) {
+                if (column < validColumns.getLength() && validColumns.isSet(column)) {
+                    throw StandardException.newException(
+                            SQLState.NOT_IMPLEMENTED,
+                            "MVCC Gen2 PK/history key-changing UPDATE is deferred; "
+                                    + "historical-key reachability is not yet implemented");
+                }
+            }
+        }
     }
 
     private static Object[] gen2HistoryRow(
@@ -1105,7 +1140,8 @@ final class MvccRawStoreTable {
             Descriptor table,
             Gen2A1CurrentRecord expected,
             Object[] replacement,
-            FormatableBitSet updatedFields) throws StandardException {
+            FormatableBitSet updatedFields,
+            RecordHandle archiveHandle) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(transaction),
@@ -1115,8 +1151,14 @@ final class MvccRawStoreTable {
                     "RawStore MVCC Gen2 current container is absent: "
                             + table.metadataContainer());
         }
+        ContainerHandle archiveContainer = null;
         Page page = null;
         try {
+            if (Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled")) {
+                archiveContainer = transaction.openContainer(table.versionContainer(),
+                        MvccRawStorePhysicalLocking.rowLevel(transaction),
+                        ContainerHandle.MODE_FORUPDATE);
+            }
             page = container.getPage(expected.handle().getPageNumber());
             if (page == null) {
                 throw new IllegalStateException(
@@ -1133,10 +1175,29 @@ final class MvccRawStoreTable {
                         SQLState.DEADLOCK,
                         "RawStore MVCC write conflict for logical row " + expected.rowId());
             }
+            if (archiveContainer != null
+                    && page instanceof org.apache.derby.iapi.store.raw.ArchivedUndoPage archived) {
+                // Do not wait for a second latch while CURRENT is latched.
+                // A miss uses ordinary logged UPDATE, never a retry loop.
+                Page source = archiveContainer.getUserPageNoWait(archiveHandle.getPageNumber());
+                if (source != null) {
+                    try {
+                        if (archived.tryUpdateWithArchive(slot, replacement, updatedFields,
+                                source, source.getSlotNumber(archiveHandle))) {
+                            return;
+                        }
+                    } finally {
+                        source.unlatch();
+                    }
+                }
+            }
             page.updateAtSlot(slot, replacement, updatedFields);
         } finally {
             if (page != null) {
                 page.unlatch();
+            }
+            if (archiveContainer != null) {
+                archiveContainer.close();
             }
             container.close();
         }

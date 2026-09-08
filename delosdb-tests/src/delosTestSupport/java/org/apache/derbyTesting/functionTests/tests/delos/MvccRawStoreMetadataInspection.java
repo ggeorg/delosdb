@@ -487,6 +487,31 @@ final class MvccRawStoreMetadataInspection {
     static List<OrderedIndexIdentity> orderedIndexEntries(
             Connection connection,
             String tableName) throws Exception {
+        if (!(connection instanceof EmbedConnection embedded)) {
+            throw new AssertionError("Embedded connection required for RawStore inspection");
+        }
+        ContextManager contextManager = embedded.getLanguageConnection().getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        // Like storeCostEstimatedRowCount, a direct scan must bind the owning
+        // context: a cold B-tree cache load resolves its transaction through
+        // RAMAccessManager.getCurrentTransactionContext(), not this method's
+        // TransactionManager reference. Keep the binding through scan close.
+        boolean installed = contextService.getCurrentContextManager() != contextManager;
+        if (installed) {
+            contextService.setCurrentContextManager(contextManager);
+        }
+        try {
+            return orderedIndexEntriesInContext(connection, tableName);
+        } finally {
+            if (installed) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+    private static List<OrderedIndexIdentity> orderedIndexEntriesInContext(
+            Connection connection,
+            String tableName) throws Exception {
         TransactionManager manager = transactionManager(connection);
         long metadataContainerId = baseConglomerateId(connection, tableName);
         Transaction raw = manager.getRawStoreXact();
@@ -676,6 +701,49 @@ final class MvccRawStoreMetadataInspection {
         }
         result.sort(Comparator.comparingLong(VersionIdentity::versionId));
         return result;
+    }
+
+    /** Read scalar version payloads without changing visibility or storage state. */
+    static List<VersionPayloadIdentity> versionPayloads(Connection connection, String tableName)
+            throws Exception {
+        List<VersionIdentity> versions = versions(connection, tableName);
+        Transaction raw = transactionManager(connection).getRawStoreXact();
+        TableLayout layout = tableLayout(raw, baseConglomerateId(connection, tableName));
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0L, layout.versionContainerId()),
+                lockingPolicy(raw),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw new AssertionError("RawStore MVCC version container is absent");
+        }
+        List<VersionPayloadIdentity> result = new ArrayList<>(versions.size());
+        try {
+            for (VersionIdentity version : versions) {
+                Page page = container.getPage(version.physicalPage());
+                if (page == null) {
+                    throw new AssertionError("RawStore MVCC version page is absent");
+                }
+                try {
+                    int slot = page.getSlotNumber(page.getRecordHandle(version.physicalRecord()));
+                    List<String> payload = new ArrayList<>(layout.columnCount());
+                    for (int column = 0; column < layout.columnCount(); column++) {
+                        StoreDataValue value = raw.getDataValueFactory().getNull(
+                                layout.formatIds()[column], layout.collationIds()[column]);
+                        page.fetchFieldFromSlot(slot, VERSION_PAYLOAD_START + column, value);
+                        Object scalar = StoreTypeUtil.getObject(value);
+                        payload.add(scalar == null ? null : scalar.toString());
+                    }
+                    // List.copyOf rejects SQL NULL values; preserve them here.
+                    result.add(new VersionPayloadIdentity(version.rowId(), version.versionId(),
+                            java.util.Collections.unmodifiableList(payload)));
+                } finally {
+                    page.unlatch();
+                }
+            }
+        } finally {
+            container.close();
+        }
+        return List.copyOf(result);
     }
 
     static List<DirectoryIdentity> directories(Connection connection, String tableName) throws Exception {
@@ -1212,6 +1280,9 @@ final class MvccRawStoreMetadataInspection {
         boolean tombstone() {
             return (flags & 1) != 0;
         }
+    }
+
+    record VersionPayloadIdentity(long rowId, long versionId, List<String> payload) {
     }
 
     record RowLocationIdentity(boolean hasLocator, long pageId, int slotId) {

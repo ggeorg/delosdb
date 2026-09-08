@@ -188,6 +188,7 @@ import org.apache.derby.iapi.util.ByteArray;
  **/
 
 public class StoredPage extends CachedPage
+        implements org.apache.derby.iapi.store.raw.ArchivedUndoPage
 { 
     /**************************************************************************
      * static final Fields of the class
@@ -3603,6 +3604,21 @@ public class StoredPage extends CachedPage
 
         freeSpace     += shrinkBytes;
         firstFreeByte -= shrinkBytes;
+    }
+
+    @Override
+    public boolean tryUpdateWithArchive(int slot, Object[] row, FormatableBitSet columns,
+            Page archive, int archiveSlot) throws StandardException {
+        boolean updated = ArchivedUpdateSupport.tryUpdate(
+                this, slot, row, columns, archive, archiveSlot);
+        if (updated && checkRowReservedSpace(slot)) {
+            // Match doUpdateAtSlot: shrinking an inline row must retain the
+            // existing post-commit reserved-space reclamation policy.
+            RawTransaction transaction = owner.getTransaction();
+            transaction.addPostCommitWork(new ReclaimSpace(ReclaimSpace.ROW_RESERVE,
+                    getRecordHandleAtSlot(slot), transaction.getDataFactory(), true));
+        }
+        return updated;
     }
 
     public int getRecordLength(int slot) throws IOException

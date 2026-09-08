@@ -61,7 +61,9 @@ final class MvccRawStoreTableMetadata {
                         && controlFormatVersion
                                 != MvccRawStoreFormat.GEN2_A1_CONTROL_FORMAT_VERSION
                         && controlFormatVersion
-                                != MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION)) {
+                                != MvccRawStoreFormat.GEN2_C1_CONTROL_FORMAT_VERSION
+                        && controlFormatVersion
+                                != MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION)) {
                 return null;
             }
             int columnCount = MvccRawStoreFormat.intAt(prefix, MvccRawStoreFormat.CONTROL_COLUMN_COUNT);

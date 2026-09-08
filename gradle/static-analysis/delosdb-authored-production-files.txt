@@ -21,6 +21,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglom
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodTransactionLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodUniqueConstraintLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/ArchivedUndoPage.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseCommitTimingSnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java
@@ -214,6 +215,10 @@ delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyHeapStorageDiagnostics.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/provider/DerbyStoreRowLocationFactory.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicy.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedBeforeImage.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedImageCompensation.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedUpdateOperation.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedUpdateSupport.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_RawPageSanityAssertions.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java
