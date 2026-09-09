@@ -2842,7 +2842,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2BServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                 }
-                if (target == Target.DELOS_MVCC_DRDA && mvccGen2C3UpdateServerEnabled()) {
+                if (target == Target.DELOS_MVCC_DRDA
+                        && (mvccGen2C3UpdateServerEnabled() || mvccGen2C3ReadServerEnabled())) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
@@ -8559,6 +8560,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(gen2C3UpdateThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-C3 UPDATE server enabled: ")
                 .append(mvccGen2C3UpdateServerEnabled()).append('\n')
+                .append("MVCC Gen2-C3 read server enabled: ")
+                .append(mvccGen2C3ReadServerEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8809,6 +8812,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2C3UpdateServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2C3UpdateServer");
+    }
+
+    private static boolean mvccGen2C3ReadServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2C3ReadServer");
     }
 
     private static String insertTableShape() {

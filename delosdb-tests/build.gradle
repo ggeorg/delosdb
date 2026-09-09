@@ -17761,3 +17761,184 @@ tasks.register('runDelosGen2C3PostgresqlUpdateComparison') {
                 'UTF-8')
     }
 }
+
+// Gen2-C3 F01: validate current-row primary-key point reads across the server product matrix.
+def delosGen2C3PointReadReportRoot = 'reports/delosdb/benchmarks/gen2-c3-fitness/f01-point-read'
+def delosGen2C3PointReadDatabaseRoot = 'tmp/delos-gen2-c3-fitness/f01-point-read'
+
+tasks.register('runDelosGen2C3PrimaryKeyReadFitness', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs the SERVER Gen2-C3 random primary-key read fitness comparison across Delos, Derby, H2, PostgreSQL, and MariaDB.'
+    dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3PointReadReportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 point-read fitness requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                        h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                        postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                        mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        rootProject.layout.buildDirectory.dir(delosGen2C3PointReadDatabaseRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        rootProject.layout.buildDirectory.dir(delosGen2C3PointReadReportRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'PRIMARY_KEY_READ_RANDOM',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2000',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '300',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosGen2C3PrimaryKeyReadSentinel') {
+    group = 'benchmark'
+    description = 'Runs and validates the SERVER Gen2-C3 random primary-key read fitness comparison.'
+    dependsOn tasks.named('runDelosGen2C3PrimaryKeyReadFitness')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3PointReadReportRoot))
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(delosGen2C3PointReadReportRoot).get().asFile
+        def dispersionFile = new File(root, 'cross-engine-concurrency-dispersion.csv')
+        if (!dispersionFile.isFile()) {
+            throw new GradleException("Missing Gen2-C3 point-read dispersion report: ${dispersionFile}")
+        }
+        def lines = dispersionFile.readLines('UTF-8').findAll { !it.isBlank() }
+        def headers = lines.first().split(',', -1).toList()
+        def requiredTargets = [
+                'delos_heap_drda', 'delos_mvcc_drda', 'upstream_derby_drda',
+                'h2_server', 'postgresql', 'mariadb'
+        ]
+        def byTarget = [:]
+        lines.drop(1).each { String line ->
+            def values = line.split(',', -1).toList()
+            def row = [:]
+            headers.eachWithIndex { String header, int i -> row[header] = values[i] }
+            if (row.workload == 'PRIMARY_KEY_READ_RANDOM'
+                    && row.clients == '8'
+                    && row.operationsPerTransaction == '10'
+                    && row.rowCount == '100000') {
+                byTarget[row.target] = row
+            }
+        }
+        requiredTargets.each { String target ->
+            if (!byTarget.containsKey(target)) {
+                throw new GradleException(
+                        "Missing canonical SERVER/8-client point-read evidence for ${target}: ${dispersionFile}")
+            }
+            if ((byTarget[target].runs as int) != 8) {
+                throw new GradleException(
+                        "Gen2-C3 point-read evidence does not contain 8 runs for ${target}")
+            }
+            double dispersion = byTarget[target].iqrToMedian as double
+            if (dispersion > 0.15d) {
+                throw new GradleException(
+                        "Gen2-C3 point-read dispersion invalid for ${target}: "
+                                + "IQR/median=${dispersion} (> 0.15)")
+            }
+        }
+
+        def summaryFile = new File(root, 'cross-engine-concurrency-summary.txt')
+        if (!summaryFile.isFile()
+                || !summaryFile.getText('UTF-8').contains('MVCC Gen2-C3 read server enabled: true')) {
+            throw new GradleException(
+                    "Gen2-C3 point-read run does not prove the Gen2-C3 MVCC server was enabled: ${summaryFile}")
+        }
+
+        double heap = byTarget['delos_heap_drda'].medianTps as double
+        double gen2 = byTarget['delos_mvcc_drda'].medianTps as double
+        double derby = byTarget['upstream_derby_drda'].medianTps as double
+        double postgres = byTarget['postgresql'].medianTps as double
+        double h2 = byTarget['h2_server'].medianTps as double
+        double mariadb = byTarget['mariadb'].medianTps as double
+        def result = new File(root, 'gen2-c3-point-read-sentinel.tsv')
+        result.setText(
+                'metric\tvalue\n'
+                        + "heapMedianTps\t${heap}\n"
+                        + "gen2C3MedianTps\t${gen2}\n"
+                        + "upstreamDerbyMedianTps\t${derby}\n"
+                        + "postgresqlMedianTps\t${postgres}\n"
+                        + "h2MedianTps\t${h2}\n"
+                        + "mariadbMedianTps\t${mariadb}\n"
+                        + "gen2C3ToHeap\t${gen2 / heap}\n"
+                        + "gen2C3ToUpstreamDerby\t${gen2 / derby}\n"
+                        + "gen2C3ToPostgresql\t${gen2 / postgres}\n"
+                        + "gen2C3ToH2\t${gen2 / h2}\n"
+                        + "gen2C3ToMariaDb\t${gen2 / mariadb}\n",
+                'UTF-8')
+    }
+}
