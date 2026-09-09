@@ -8244,7 +8244,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || options.targetValues().equals(DRDA_PROTOCOL_EVIDENCE_TARGETS)
                 || options.targetValues().equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS)
                 || options.targetValues().equals(CURRENT_BASELINE_EMBEDDED_TARGETS)
-                || options.targetValues().equals(CURRENT_BASELINE_SERVER_TARGETS)) {
+                || options.targetValues().equals(CURRENT_BASELINE_SERVER_TARGETS)
+                || options.targetValues().equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS)) {
             out = new StringBuilder(
                     "rowCount,workload,clients,operationsPerTransaction,target,medianOperationsPerSecond\n");
             for (Map.Entry<ShapeKey, EnumMap<Target, Double>> entry : medians.entrySet()) {
