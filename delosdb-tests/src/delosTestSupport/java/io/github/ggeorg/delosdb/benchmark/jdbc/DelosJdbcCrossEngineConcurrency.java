@@ -85,6 +85,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.DELOS_HEAP, Target.DELOS_MVCC);
     private static final List<Target> CURRENT_BASELINE_SERVER_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
+    private static final List<Target> GEN2_C3_POSTGRESQL_UPDATE_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.POSTGRESQL);
     private static final String CURRENT_BASELINE_ENV = "DELOSDB_CURRENT_BASELINE";
     private static final String CURRENT_BASELINE_REPORT_ROOT_ENV = "DELOSDB_CURRENT_BASELINE_REPORT_ROOT";
     private static final String CURRENT_BASELINE_DATABASE_ROOT_ENV = "DELOSDB_CURRENT_BASELINE_DATABASE_ROOT";
@@ -2678,6 +2680,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (gen2C3UpdateThroughputSentinelEnabled()) {
             addProperty(command, "gen2C3UpdateThroughputSentinel", true);
+        }
+        if (gen2C3PostgresqlUpdateComparisonEnabled()) {
+            addProperty(command, "gen2C3PostgresqlUpdateComparison", true);
         }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
@@ -8797,6 +8802,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "gen2C3UpdateThroughputSentinel");
     }
 
+    private static boolean gen2C3PostgresqlUpdateComparisonEnabled() {
+        return Boolean.getBoolean(PREFIX + "gen2C3PostgresqlUpdateComparison");
+    }
+
     private static boolean mvccGen2C3UpdateServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2C3UpdateServer");
     }
@@ -9805,6 +9814,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean gen2C3UpdateThroughputSentinel = gen2C3UpdateThroughputSentinelEnabled()
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
+            boolean gen2C3PostgresqlUpdateComparison = gen2C3PostgresqlUpdateComparisonEnabled()
+                    && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9824,6 +9835,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel
                     && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel
+                    && !gen2C3PostgresqlUpdateComparison
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -9839,6 +9851,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", Gen2-A1 throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", Gen2-B throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", Gen2-C3 UPDATE throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
+                        + ", Gen2-C3 PostgreSQL UPDATE comparison " + GEN2_C3_POSTGRESQL_UPDATE_TARGETS
                         + ", DRDA server-phase diagnostic " + DRDA_SERVER_PHASE_EVIDENCE_TARGETS
                         + ", or Phase-1 current baseline " + CURRENT_BASELINE_EMBEDDED_TARGETS
                         + "/" + CURRENT_BASELINE_SERVER_TARGETS
@@ -9858,8 +9871,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (gen2C3UpdateThroughputSentinel) {
-                String modeName = "Gen2-C3 UPDATE throughput sentinel";
+            if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
+                String modeName = gen2C3UpdateThroughputSentinel
+                        ? "Gen2-C3 UPDATE throughput sentinel"
+                        : "Gen2-C3 PostgreSQL UPDATE comparison";
                 if (!configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100))) {
                     throw new IllegalArgumentException(
                             modeName + " requires only FRESH_INDEXED_UPDATE_100");
@@ -10059,6 +10074,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 sentinelName + " throughput sentinel requires the Delos network client classpath");
                     }
+                } else if (gen2C3PostgresqlUpdateComparison) {
+                    if (delosClientClasspath.isBlank() || postgresqlClasspath.isBlank()) {
+                        throw new IllegalArgumentException(
+                                "Gen2-C3 PostgreSQL UPDATE comparison requires Delos and PostgreSQL client classpaths");
+                    }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
                     throw new IllegalArgumentException("Server benchmark client classpaths are required");
@@ -10099,6 +10119,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     : gen2BThroughputSentinel ? "Gen2-B" : "Gen2-C3 UPDATE";
                             throw new IllegalArgumentException(
                                     sentinelName + " throughput sentinel requires the Delos server image");
+                        }
+                    } else if (gen2C3PostgresqlUpdateComparison) {
+                        if (delosServerImage.isBlank() || postgresqlImage.isBlank()) {
+                            throw new IllegalArgumentException(
+                                    "Gen2-C3 PostgreSQL UPDATE comparison requires Delos and PostgreSQL server images");
                         }
                     } else {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
