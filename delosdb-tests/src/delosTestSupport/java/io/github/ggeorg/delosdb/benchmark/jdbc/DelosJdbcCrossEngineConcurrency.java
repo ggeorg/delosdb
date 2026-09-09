@@ -10002,7 +10002,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (target == null && !mvccOnlyDiagnostic && !longReaderWriterFitness
                     && !mixedReaderWriterFitness && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
-                    && !gen2C3UpdateThroughputSentinel
+                    && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
