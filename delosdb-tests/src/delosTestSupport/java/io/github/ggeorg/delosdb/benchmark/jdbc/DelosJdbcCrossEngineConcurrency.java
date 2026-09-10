@@ -2684,6 +2684,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (gen2C3PostgresqlUpdateComparisonEnabled()) {
             addProperty(command, "gen2C3PostgresqlUpdateComparison", true);
         }
+        if (mvccGen2C3ReadServerEnabled()) {
+            addProperty(command, "mvccGen2C3ReadServer", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -5719,6 +5722,30 @@ public final class DelosJdbcCrossEngineConcurrency {
                     }
                 }
                 return DelosSqlSemanticOracle.composite("FITNESS_POINT_READ", clients);
+            }
+            if (spec.workload() == Workload.PRIMARY_KEY_READ_RANDOM) {
+                Map<String, DelosSqlSemanticOracle.Result> clients = new LinkedHashMap<>();
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "select id, quantity from " + table + " where id = ?")) {
+                    for (int client = 0; client < spec.clients(); client++) {
+                        int[] ids = readOperationIds(
+                                spec, rowCount, client, spec.operationsPerTransaction());
+                        List<DelosSqlSemanticOracle.Result> operations = new ArrayList<>(ids.length);
+                        for (int id : ids) {
+                            statement.setInt(1, id);
+                            try (ResultSet resultSet = statement.executeQuery()) {
+                                operations.add(DelosSqlSemanticOracle.query(
+                                        resultSet, DelosSqlSemanticOracle.RowOrder.ORDERED));
+                            }
+                        }
+                        clients.put(
+                                String.format(Locale.ROOT, "client-%03d", client),
+                                DelosSqlSemanticOracle.sequence(
+                                        "FITNESS_POINT_READ_RANDOM_CLIENT", operations));
+                    }
+                }
+                return DelosSqlSemanticOracle.composite(
+                        "FITNESS_POINT_READ_RANDOM", clients);
             }
             if (spec.workload().isRangeScan()
                     && !spec.workload().isCoveringRangeScan()
@@ -9824,6 +9851,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean gen2C3PostgresqlUpdateComparison = gen2C3PostgresqlUpdateComparisonEnabled()
                     && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
+            boolean gen2C3PointReadFitness = mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9879,7 +9908,24 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
+            if (gen2C3PointReadFitness) {
+                if (!configuredWorkloads.equals(List.of(Workload.PRIMARY_KEY_READ_RANDOM))) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 point-read fitness requires only PRIMARY_KEY_READ_RANDOM");
+                }
+                if (!clientValues().equals(List.of(1, 8))) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 point-read fitness requires exactly clients 1,8");
+                }
+                if (!widthValues().equals(List.of(10))) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 point-read fitness requires exactly width 10");
+                }
+                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 point-read fitness requires PRIMARY_KEY_ONLY table shape");
+                }
+            } else if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
                 String modeName = gen2C3UpdateThroughputSentinel
                         ? "Gen2-C3 UPDATE throughput sentinel"
                         : "Gen2-C3 PostgreSQL UPDATE comparison";
@@ -9939,7 +9985,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
                                 + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
-                                + "or gen2C3UpdateThroughputSentinel=true");
+                                + "gen2C3UpdateThroughputSentinel=true, or Gen2-C3 point-read fitness");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
