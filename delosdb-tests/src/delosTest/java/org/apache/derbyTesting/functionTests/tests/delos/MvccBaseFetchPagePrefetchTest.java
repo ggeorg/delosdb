@@ -29,14 +29,8 @@ import java.sql.Statement;
 public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
     private static final String PREFETCH_PROPERTY =
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
-    private static final String GEN2_B_PK_PROPERTY =
-            "delosdb.experimental.mvccGen2B.pk.enabled";
-    private static final String GEN2_C1_HISTORY_PROPERTY =
-            "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String TABLE = "A6_PREFETCH_T";
     private static final String INDEX = "A6_PREFETCH_ID_IDX";
-    private static final String GEN2_TABLE = "G2_A6_PREFETCH_T";
-    private static final String GEN2_PK_CONSTRAINT = "G2_A6_PREFETCH_PK";
 
     public void testRangeOrderAndReadCommittedStatementSnapshot() throws Exception {
         String database = uniqueDatabaseName("range-snapshot");
@@ -87,76 +81,6 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
 
             assertRows(reader,
                     "select payload from " + TABLE + " where id = 48",
-                    "writer-committed");
-            reader.commit();
-        }
-        shutdownDatabase(database);
-    }
-
-    public void testGen2CurrentRowPrefetchPreservesStatementSnapshot() throws Exception {
-        String database = uniqueDatabaseName("gen2-range-snapshot");
-        try (SystemPropertyScope prefetch = setSystemProperty(PREFETCH_PROPERTY, "true");
-             SystemPropertyScope gen2Pk = setSystemProperty(GEN2_B_PK_PROPERTY, "true");
-             SystemPropertyScope gen2History = setSystemProperty(GEN2_C1_HISTORY_PROPERTY, "true");
-             Connection reader = openDatabase(database, true);
-             Connection writer = openDatabase(database, false)) {
-            reader.setAutoCommit(false);
-            writer.setAutoCommit(false);
-            executeUpdate(reader,
-                    "create table " + GEN2_TABLE
-                            + " (id int not null, payload varchar(64) not null,"
-                            + " constraint " + GEN2_PK_CONSTRAINT + " primary key (id))"
-                            + " using delos_mvcc");
-            try (PreparedStatement insert = reader.prepareStatement(
-                    "insert into " + GEN2_TABLE + " values (?, ?)")) {
-                for (int id = 1; id <= 256; id++) {
-                    insert.setInt(1, id);
-                    insert.setString(2, "payload-" + id);
-                    insert.addBatch();
-                }
-                assertEquals(256, successfulBatchRows(insert.executeBatch()));
-            }
-            executeUpdate(reader,
-                    "call syscs_util.syscs_set_database_property("
-                            + "'derby.language.bulkFetchDefault', '16')");
-            executeUpdate(reader, "call syscs_util.syscs_set_runtimestatistics(1)");
-            reader.commit();
-
-            try (PreparedStatement range = reader.prepareStatement(
-                    "select id, payload from " + GEN2_TABLE
-                            + " --DERBY-PROPERTIES constraint=" + GEN2_PK_CONSTRAINT + "\n"
-                            + "where id between ? and ? order by id")) {
-                range.setInt(1, 1);
-                range.setInt(2, 192);
-                try (ResultSet rows = range.executeQuery()) {
-                    assertTrue(rows.next());
-                    assertEquals(1, rows.getInt(1));
-                    assertEquals("payload-1", rows.getString(2));
-
-                    try (PreparedStatement update = writer.prepareStatement(
-                            "update " + GEN2_TABLE + " set payload = ? where id = ?")) {
-                        update.setString(1, "writer-committed");
-                        update.setInt(2, 8);
-                        assertEquals(1, update.executeUpdate());
-                    }
-                    writer.commit();
-
-                    int expectedId = 2;
-                    while (rows.next()) {
-                        assertEquals(expectedId, rows.getInt(1));
-                        assertEquals("payload-" + expectedId, rows.getString(2));
-                        expectedId++;
-                    }
-                    assertEquals(193, expectedId);
-                }
-            }
-            String statistics = runtimeStatistics(reader);
-            assertTrue("Gen2 prefetch test must use IndexRowToBaseRow; statistics=" + statistics,
-                    statistics.contains("Index Row to Base Row ResultSet"));
-            reader.commit();
-
-            assertRows(reader,
-                    "select payload from " + GEN2_TABLE + " where id = 8",
                     "writer-committed");
             reader.commit();
         }

@@ -55,9 +55,6 @@ final class MvccRawStoreConglomerateController
     private long[] prefetchedDirectoryRowIds;
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
-    private long[] prefetchedGen2RowIds;
-    private MvccRawStoreTable.VisibleRow[] prefetchedGen2Rows;
-    private int prefetchedGen2Count;
     private boolean readCommittedUpdateRecheck;
     private boolean closed;
 
@@ -124,9 +121,6 @@ final class MvccRawStoreConglomerateController
         }
         int limit = Math.min(count, rowLocations.length);
         ensurePrefetchCapacity(limit);
-        MvccRawStoreTransactionContext context = table.gen2A1()
-                ? runtime.context(transactionManager, rawTransaction)
-                : null;
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
             int index = 0;
             while (index < limit) {
@@ -154,16 +148,7 @@ final class MvccRawStoreConglomerateController
                     groupEnd++;
                 }
                 if (groupEnd - index > 1) {
-                    if (table.gen2A1()) {
-                        prefetchGen2CurrentPage(
-                                rowLocations,
-                                index,
-                                groupEnd,
-                                pageNumber,
-                                context.transactionId());
-                    } else {
-                        prefetchDirectoryPage(rowLocations, index, groupEnd, pageNumber);
-                    }
+                    prefetchDirectoryPage(rowLocations, index, groupEnd, pageNumber);
                 }
                 index = groupEnd;
             }
@@ -216,16 +201,11 @@ final class MvccRawStoreConglomerateController
         MvccRawStoreVersionRows.FetchProjection projection = !forUpdate
                 ? readProjection(validColumns)
                 : MvccRawStoreVersionRows.projection(table, validColumns);
-        MvccRawStoreTable.VisibleRow prefetchedGen2 = !forUpdate && table.gen2A1()
-                ? takePrefetchedGen2Row(location.rowId())
-                : null;
-        MvccRawStoreTable.DirectoryRecord prefetchedDirectory = !forUpdate && !table.gen2A1()
+        MvccRawStoreTable.DirectoryRecord prefetchedDirectory = !forUpdate
                 ? takePrefetchedDirectory(location.rowId())
                 : null;
         MvccRawStoreTable.VisibleRow visible;
-        if (prefetchedGen2 != null) {
-            visible = prefetchedGen2;
-        } else if (readCommittedRecheck) {
+        if (readCommittedRecheck) {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
                 visible = MvccRawStoreTable.readLockedCurrentForWrite(
                         rawTransaction, table, location, projection);
@@ -438,41 +418,6 @@ final class MvccRawStoreConglomerateController
         return prop == null ? new Properties() : prop;
     }
 
-    private void prefetchGen2CurrentPage(
-            StoreRowLocation[] rowLocations,
-            int start,
-            int end,
-            long pageNumber,
-            long transactionId) throws StandardException {
-        Page page = null;
-        try {
-            page = readDirectoryContainer().getPage(pageNumber);
-            if (page == null) {
-                return;
-            }
-            for (int index = start; index < end; index++) {
-                MvccRowLocation rowLocation = MvccRowLocation.from(rowLocations[index]);
-                MvccRawStoreTable.VisibleRow visible =
-                        MvccRawStoreTable.readVisibleGen2CurrentAtLatchedPage(
-                                rawTransaction,
-                                table,
-                                rowLocation,
-                                statementSnapshotSequence,
-                                transactionId,
-                                page);
-                if (visible != null) {
-                    prefetchedGen2RowIds[prefetchedGen2Count] = rowLocation.rowId();
-                    prefetchedGen2Rows[prefetchedGen2Count] = visible;
-                    prefetchedGen2Count++;
-                }
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-        }
-    }
-
     private void prefetchDirectoryPage(
             StoreRowLocation[] rowLocations,
             int start,
@@ -501,19 +446,6 @@ final class MvccRawStoreConglomerateController
         }
     }
 
-    private MvccRawStoreTable.VisibleRow takePrefetchedGen2Row(long rowId) {
-        for (int index = 0; index < prefetchedGen2Count; index++) {
-            if (prefetchedGen2RowIds[index] != rowId) {
-                continue;
-            }
-            MvccRawStoreTable.VisibleRow visible = prefetchedGen2Rows[index];
-            prefetchedGen2RowIds[index] = 0L;
-            prefetchedGen2Rows[index] = null;
-            return visible;
-        }
-        return null;
-    }
-
     private MvccRawStoreTable.DirectoryRecord takePrefetchedDirectory(long rowId) {
         for (int index = 0; index < prefetchedDirectoryCount; index++) {
             if (prefetchedDirectoryRowIds[index] != rowId) {
@@ -533,8 +465,6 @@ final class MvccRawStoreConglomerateController
         }
         prefetchedDirectoryRowIds = new long[capacity];
         prefetchedDirectories = new MvccRawStoreTable.DirectoryRecord[capacity];
-        prefetchedGen2RowIds = new long[capacity];
-        prefetchedGen2Rows = new MvccRawStoreTable.VisibleRow[capacity];
     }
 
     private void clearPrefetchedDirectories() {
@@ -544,14 +474,7 @@ final class MvccRawStoreConglomerateController
                 prefetchedDirectoryRowIds[index] = 0L;
             }
         }
-        if (prefetchedGen2Rows != null) {
-            for (int index = 0; index < prefetchedGen2Count; index++) {
-                prefetchedGen2Rows[index] = null;
-                prefetchedGen2RowIds[index] = 0L;
-            }
-        }
         prefetchedDirectoryCount = 0;
-        prefetchedGen2Count = 0;
     }
 
     private void insertInternal(StoreDataValue[] row, MvccRowLocation destination) throws StandardException {

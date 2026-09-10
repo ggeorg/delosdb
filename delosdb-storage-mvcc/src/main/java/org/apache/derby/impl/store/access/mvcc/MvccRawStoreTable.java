@@ -2553,46 +2553,6 @@ final class MvccRawStoreTable {
         }
     }
 
-    static VisibleRow readVisibleGen2CurrentAtLatchedPage(
-            Transaction transaction,
-            Descriptor table,
-            MvccRowLocation rowLocation,
-            long snapshotSequence,
-            long transactionId,
-            Page page) throws StandardException {
-        if (!table.gen2A1()
-                || page == null
-                || rowLocation == null
-                || !rowLocation.hasLocatorHint()
-                || page.getPageNumber() != rowLocation.locatorPageId()) {
-            return null;
-        }
-        int slot = rowLocation.locatorSlotId();
-        if (slot < Page.FIRST_SLOT_NUMBER
-                || slot >= page.recordCount()
-                || page.isDeletedAtSlot(slot)) {
-            return null;
-        }
-        Gen2A1CurrentRecord current = decodeGen2A1Current(
-                transaction, table, page, slot);
-        if (current == null
-                || current.rowId() != rowLocation.rowId()
-                || !currentVisibleTo(
-                        current.creatorTransactionId(),
-                        current.beginSequence(),
-                        transactionId,
-                        snapshotSequence)
-                || (current.flags() & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
-            return null;
-        }
-        return new VisibleRow(
-                current.rowId(),
-                current.versionId(),
-                current.values(),
-                current.handle(),
-                MvccRawStoreRowDirectory.location(current.rowId(), current.handle()));
-    }
-
     private static VisibleRow readGen2A1CurrentAt(
             Transaction transaction,
             Descriptor table,
