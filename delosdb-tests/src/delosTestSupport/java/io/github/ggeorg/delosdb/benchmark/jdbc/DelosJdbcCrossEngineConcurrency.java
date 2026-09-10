@@ -9851,7 +9851,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean gen2C3PostgresqlUpdateComparison = gen2C3PostgresqlUpdateComparisonEnabled()
                     && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
-            boolean gen2C3PointReadFitness = mvccGen2C3ReadServerEnabled()
+            boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
@@ -9908,22 +9908,30 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (gen2C3PointReadFitness) {
-                if (!configuredWorkloads.equals(List.of(Workload.PRIMARY_KEY_READ_RANDOM))) {
+            if (gen2C3ReadFitness) {
+                boolean pointReadFitness = configuredWorkloads.equals(
+                        List.of(Workload.PRIMARY_KEY_READ_RANDOM));
+                boolean rangeScanFitness = configuredWorkloads.equals(List.of(
+                        Workload.RANGE_SCAN_INDEX_ONLY_1000,
+                        Workload.RANGE_SCAN_100,
+                        Workload.RANGE_SCAN_1000,
+                        Workload.RANGE_SCAN_FULL));
+                if (!pointReadFitness && !rangeScanFitness) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 point-read fitness requires only PRIMARY_KEY_READ_RANDOM");
+                            "Gen2-C3 read fitness requires the F01 point-read workload or the F02 range-scan workload set");
                 }
-                if (!clientValues().equals(List.of(1, 8))) {
+                List<Integer> expectedClients = pointReadFitness ? List.of(1, 8) : List.of(8);
+                if (!clientValues().equals(expectedClients)) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 point-read fitness requires exactly clients 1,8");
+                            "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
                 if (!widthValues().equals(List.of(10))) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 point-read fitness requires exactly width 10");
+                            "Gen2-C3 read fitness requires exactly width 10");
                 }
                 if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 point-read fitness requires PRIMARY_KEY_ONLY table shape");
+                            "Gen2-C3 read fitness requires PRIMARY_KEY_ONLY table shape");
                 }
             } else if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
                 String modeName = gen2C3UpdateThroughputSentinel
@@ -9985,7 +9993,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
                                 + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
-                                + "gen2C3UpdateThroughputSentinel=true, or Gen2-C3 point-read fitness");
+                                + "gen2C3UpdateThroughputSentinel=true, or Gen2-C3 read fitness");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
@@ -10057,6 +10065,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !mixedReaderWriterFitness && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
+                    && !gen2C3ReadFitness
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }

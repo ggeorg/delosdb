@@ -17942,3 +17942,212 @@ tasks.register('runDelosGen2C3PrimaryKeyReadSentinel') {
                 'UTF-8')
     }
 }
+
+// Gen2-C3 F02: validate ordered primary-key range scans across the server product matrix.
+def delosGen2C3RangeReadReportRoot = 'reports/delosdb/benchmarks/gen2-c3-fitness/f02-range-scan'
+def delosGen2C3RangeReadDatabaseRoot = 'tmp/delos-gen2-c3-fitness/f02-range-scan'
+
+tasks.register('runDelosGen2C3PrimaryKeyRangeScanFitness', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs the SERVER Gen2-C3 primary-key range-scan fitness comparison across Delos, Derby, H2, PostgreSQL, and MariaDB.'
+    dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3RangeReadReportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 range-scan fitness requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                        h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                        postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                        mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        rootProject.layout.buildDirectory.dir(delosGen2C3RangeReadDatabaseRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        rootProject.layout.buildDirectory.dir(delosGen2C3RangeReadReportRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '100000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'RANGE_SCAN_INDEX_ONLY_1000,RANGE_SCAN_100,RANGE_SCAN_1000,RANGE_SCAN_FULL',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '5',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.h2RangeFetchSize': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosGen2C3PrimaryKeyRangeScanSentinel') {
+    group = 'benchmark'
+    description = 'Runs and validates the SERVER Gen2-C3 primary-key range-scan fitness comparison.'
+    dependsOn tasks.named('runDelosGen2C3PrimaryKeyRangeScanFitness')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3RangeReadReportRoot))
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(delosGen2C3RangeReadReportRoot).get().asFile
+        def throughputFile = new File(root, 'range-scan-throughput.csv')
+        if (!throughputFile.isFile()) {
+            throw new GradleException("Missing Gen2-C3 range-scan throughput report: ${throughputFile}")
+        }
+        def lines = throughputFile.readLines('UTF-8').findAll { !it.isBlank() }
+        if (lines.size() < 2) {
+            throw new GradleException("Gen2-C3 range-scan throughput report is empty: ${throughputFile}")
+        }
+        def headers = lines.first().split(',', -1).toList()
+        def requiredTargets = [
+                'delos_heap_drda', 'delos_mvcc_drda', 'upstream_derby_drda',
+                'h2_server', 'postgresql', 'mariadb'
+        ]
+        def requiredWorkloads = [
+                'RANGE_SCAN_INDEX_ONLY_1000',
+                'RANGE_SCAN_100',
+                'RANGE_SCAN_1000',
+                'RANGE_SCAN_FULL'
+        ]
+        def byWorkload = [:].withDefault { [:] }
+        lines.drop(1).each { String line ->
+            def values = line.split(',', -1).toList()
+            def row = [:]
+            headers.eachWithIndex { String header, int i -> row[header] = values[i] }
+            if (requiredWorkloads.contains(row.workload)
+                    && row.clients == '8'
+                    && row.operationsPerTransaction == '10'
+                    && row.rowCount == '100000') {
+                byWorkload[row.workload][row.target] = row
+            }
+        }
+
+        requiredWorkloads.each { String workload ->
+            requiredTargets.each { String target ->
+                def row = byWorkload[workload][target]
+                if (row == null) {
+                    throw new GradleException(
+                            "Missing canonical SERVER/8-client ${workload} evidence for ${target}: ${throughputFile}")
+                }
+                if ((row.runs as int) != 8) {
+                    throw new GradleException(
+                            "Gen2-C3 ${workload} evidence does not contain 8 runs for ${target}")
+                }
+                double dispersion = row.iqrToMedian as double
+                if (dispersion > 0.15d) {
+                    throw new GradleException(
+                            "Gen2-C3 ${workload} dispersion invalid for ${target}: "
+                                    + "IQR/median=${dispersion} (> 0.15)")
+                }
+                if ((row.medianRowsPerSecond as double) <= 0.0d) {
+                    throw new GradleException(
+                            "Gen2-C3 ${workload} has non-positive row throughput for ${target}")
+                }
+            }
+        }
+
+        def summaryFile = new File(root, 'cross-engine-concurrency-summary.txt')
+        if (!summaryFile.isFile()
+                || !summaryFile.getText('UTF-8').contains('MVCC Gen2-C3 read server enabled: true')) {
+            throw new GradleException(
+                    "Gen2-C3 range-scan run does not prove the Gen2-C3 MVCC server was enabled: ${summaryFile}")
+        }
+
+        def result = new File(root, 'gen2-c3-range-scan-sentinel.tsv')
+        def out = new StringBuilder('workload\tmetric\tvalue\n')
+        requiredWorkloads.each { String workload ->
+            def rows = byWorkload[workload]
+            double heap = rows['delos_heap_drda'].medianRowsPerSecond as double
+            double gen2 = rows['delos_mvcc_drda'].medianRowsPerSecond as double
+            double derby = rows['upstream_derby_drda'].medianRowsPerSecond as double
+            double postgres = rows['postgresql'].medianRowsPerSecond as double
+            double h2 = rows['h2_server'].medianRowsPerSecond as double
+            double mariadb = rows['mariadb'].medianRowsPerSecond as double
+            [
+                    heapMedianRowsPerSecond: heap,
+                    gen2C3MedianRowsPerSecond: gen2,
+                    upstreamDerbyMedianRowsPerSecond: derby,
+                    postgresqlMedianRowsPerSecond: postgres,
+                    h2MedianRowsPerSecond: h2,
+                    mariadbMedianRowsPerSecond: mariadb,
+                    gen2C3ToHeap: gen2 / heap,
+                    gen2C3ToUpstreamDerby: gen2 / derby,
+                    gen2C3ToPostgresql: gen2 / postgres,
+                    gen2C3ToH2: gen2 / h2,
+                    gen2C3ToMariaDb: gen2 / mariadb
+            ].each { String metric, double value ->
+                out.append(workload).append('\t').append(metric).append('\t').append(value).append('\n')
+            }
+        }
+        result.setText(out.toString(), 'UTF-8')
+    }
+}
