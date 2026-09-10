@@ -35,6 +35,8 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
             "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String TABLE = "A6_PREFETCH_T";
     private static final String INDEX = "A6_PREFETCH_ID_IDX";
+    private static final String GEN2_TABLE = "G2_A6_PREFETCH_T";
+    private static final String GEN2_PK_CONSTRAINT = "G2_A6_PREFETCH_PK";
 
     public void testRangeOrderAndReadCommittedStatementSnapshot() throws Exception {
         String database = uniqueDatabaseName("range-snapshot");
@@ -101,12 +103,12 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
             reader.setAutoCommit(false);
             writer.setAutoCommit(false);
             executeUpdate(reader,
-                    "create table G2_A6_PREFETCH_T "
-                            + "(id int not null primary key, payload varchar(64) not null) using delos_mvcc");
-            executeUpdate(reader,
-                    "create index G2_A6_PREFETCH_ID_IDX on G2_A6_PREFETCH_T (id)");
+                    "create table " + GEN2_TABLE
+                            + " (id int not null, payload varchar(64) not null,"
+                            + " constraint " + GEN2_PK_CONSTRAINT + " primary key (id))"
+                            + " using delos_mvcc");
             try (PreparedStatement insert = reader.prepareStatement(
-                    "insert into G2_A6_PREFETCH_T values (?, ?)")) {
+                    "insert into " + GEN2_TABLE + " values (?, ?)")) {
                 for (int id = 1; id <= 256; id++) {
                     insert.setInt(1, id);
                     insert.setString(2, "payload-" + id);
@@ -121,8 +123,8 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
             reader.commit();
 
             try (PreparedStatement range = reader.prepareStatement(
-                    "select id, payload from G2_A6_PREFETCH_T "
-                            + "--DERBY-PROPERTIES index=G2_A6_PREFETCH_ID_IDX\n"
+                    "select id, payload from " + GEN2_TABLE
+                            + " --DERBY-PROPERTIES constraint=" + GEN2_PK_CONSTRAINT + "\n"
                             + "where id between ? and ? order by id")) {
                 range.setInt(1, 1);
                 range.setInt(2, 192);
@@ -132,7 +134,7 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
                     assertEquals("payload-1", rows.getString(2));
 
                     try (PreparedStatement update = writer.prepareStatement(
-                            "update G2_A6_PREFETCH_T set payload = ? where id = ?")) {
+                            "update " + GEN2_TABLE + " set payload = ? where id = ?")) {
                         update.setString(1, "writer-committed");
                         update.setInt(2, 8);
                         assertEquals(1, update.executeUpdate());
@@ -154,7 +156,7 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
             reader.commit();
 
             assertRows(reader,
-                    "select payload from G2_A6_PREFETCH_T where id = 8",
+                    "select payload from " + GEN2_TABLE + " where id = 8",
                     "writer-committed");
             reader.commit();
         }
