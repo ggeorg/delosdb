@@ -35,6 +35,8 @@ final class MvccRawStoreVersionRows {
         private final FormatableBitSet payloadColumns;
         private final FetchDescriptor baseDescriptor;
         private final FetchDescriptor hintDescriptor;
+        private final FetchDescriptor gen2A1CurrentDescriptor;
+        private final FetchDescriptor gen2C1CurrentDescriptor;
 
         private FetchProjection(
                 MvccRawStoreTable.Descriptor table,
@@ -42,38 +44,60 @@ final class MvccRawStoreVersionRows {
             this.payloadColumns = (FormatableBitSet) payloadColumns.clone();
             baseDescriptor = descriptor(
                     table,
-                    MvccRawStoreFormat.versionBaseFieldCount(table.columnCount()));
+                    MvccRawStoreFormat.versionBaseFieldCount(table.columnCount()),
+                    MvccRawStoreFormat.VERSION_PAYLOAD_START);
             hintDescriptor = descriptor(
                     table,
-                    MvccRawStoreFormat.versionHintFieldCount(table.columnCount()));
+                    MvccRawStoreFormat.versionHintFieldCount(table.columnCount()),
+                    MvccRawStoreFormat.VERSION_PAYLOAD_START);
+            if (table.gen2A1() && table.projectedCurrentRead()) {
+                gen2A1CurrentDescriptor = descriptor(
+                        table,
+                        MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount()),
+                        MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START);
+                gen2C1CurrentDescriptor = descriptor(
+                        table,
+                        MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount()),
+                        MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START);
+            } else {
+                gen2A1CurrentDescriptor = null;
+                gen2C1CurrentDescriptor = null;
+            }
         }
 
         private FetchDescriptor descriptor(
                 MvccRawStoreTable.Descriptor table,
-                int fieldCount) {
+                int fieldCount,
+                int payloadStart) {
             FormatableBitSet fields = new FormatableBitSet(fieldCount);
-            for (int field = 0; field < MvccRawStoreFormat.VERSION_PAYLOAD_START; field++) {
+            for (int field = 0; field < payloadStart; field++) {
                 fields.set(field);
             }
             for (int column = 0; column < table.columnCount(); column++) {
                 if (includes(column)) {
-                    fields.set(MvccRawStoreFormat.VERSION_PAYLOAD_START + column);
+                    fields.set(payloadStart + column);
                 }
             }
-            for (int field = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
-                    field < fieldCount;
-                    field++) {
-                fields.set(field);
+            if (payloadStart == MvccRawStoreFormat.VERSION_PAYLOAD_START) {
+                for (int field = MvccRawStoreFormat.versionBaseFieldCount(table.columnCount());
+                        field < fieldCount;
+                        field++) {
+                    fields.set(field);
+                }
             }
             return new FetchDescriptor(fieldCount, fields, null);
         }
 
-        private boolean includes(int column) {
+        boolean includes(int column) {
             return column < payloadColumns.size() && payloadColumns.isSet(column);
         }
 
-        private boolean includesPayload() {
+        boolean includesPayload() {
             return payloadColumns.anySetBit(-1) >= 0;
+        }
+
+        FetchDescriptor currentDescriptor(MvccRawStoreTable.Descriptor table) {
+            return table.gen2History() ? gen2C1CurrentDescriptor : gen2A1CurrentDescriptor;
         }
 
         private FetchDescriptor descriptor(int fieldCount, int columnCount) {

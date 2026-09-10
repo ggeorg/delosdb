@@ -22,6 +22,8 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             "delosdb.experimental.mvccGen2B.pk.enabled";
     private static final String GEN2_C1_HISTORY_PROPERTY =
             "delosdb.experimental.mvccGen2C1.history.enabled";
+    private static final String GEN2_PROJECTED_CURRENT_READ_PROPERTY =
+            "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
 
     public void testUnchangedPrimaryKeyUpdateHistoryRollbackAndReopen() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
@@ -106,6 +108,94 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
             restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);
             shutdownDatabase(database);
+        }
+    }
+
+    public void testProjectedCurrentReadPreservesCurrentAndHistoricalValues() throws Exception {
+        String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
+        String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
+        String previousProjectedRead = System.getProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY);
+        String database = databaseName("mvcc-gen2-c3-projected-current-read");
+        String oldPayload = "x".repeat(2048);
+        String newPayload = "y".repeat(2048);
+        try {
+            System.setProperty(GEN2_B_PK_PROPERTY, "true");
+            System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
+            System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "true");
+            try (Connection setup = openDatabase(database, true);
+                 PreparedStatement insert = setup.prepareStatement(
+                         "insert into G2_C3_PROJ values (?, ?, ?)")) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table G2_C3_PROJ (id int not null primary key, "
+                                + "quantity int not null, payload varchar(4096) not null) "
+                                + "using delos_mvcc");
+                insert.setInt(1, 1);
+                insert.setInt(2, 7);
+                insert.setString(3, oldPayload);
+                assertEquals(1, insert.executeUpdate());
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection observer = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                observer.setAutoCommit(false);
+                writer.setAutoCommit(false);
+
+                assertQuantity(historical, "G2_C3_PROJ", 1, 7);
+                try (PreparedStatement update = writer.prepareStatement(
+                        "update G2_C3_PROJ set quantity = ?, payload = ? where id = ?")) {
+                    update.setInt(1, 8);
+                    update.setString(2, newPayload);
+                    update.setInt(3, 1);
+                    assertEquals(1, update.executeUpdate());
+                }
+                writer.commit();
+
+                assertQuantity(observer, "G2_C3_PROJ", 1, 8);
+                assertPayloadValue(observer, "G2_C3_PROJ", 1, newPayload);
+                observer.commit();
+
+                assertQuantity(historical, "G2_C3_PROJ", 1, 7);
+                assertPayloadValue(historical, "G2_C3_PROJ", 1, oldPayload);
+                historical.commit();
+                assertQuantity(historical, "G2_C3_PROJ", 1, 8);
+                historical.commit();
+            }
+        } finally {
+            restoreProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, previousProjectedRead);
+            restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
+            restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);
+            shutdownDatabase(database);
+        }
+    }
+
+    private static void assertQuantity(
+            Connection connection, String table, int id, int expected) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select quantity from " + table + " where id = ?")) {
+            statement.setInt(1, id);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(expected, result.getInt(1));
+                assertFalse(result.next());
+            }
+        }
+    }
+
+    private static void assertPayloadValue(
+            Connection connection, String table, int id, String expected) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select payload from " + table + " where id = ?")) {
+            statement.setInt(1, id);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(expected, result.getString(1));
+                assertFalse(result.next());
+            }
         }
     }
 

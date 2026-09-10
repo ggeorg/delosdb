@@ -26,6 +26,8 @@ final class MvccRawStoreFormat {
     static final String GEN2_B_PK_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2B.pk.enabled";
     static final String GEN2_C1_HISTORY_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2C1.history.enabled";
+    static final String GEN2_PROJECTED_CURRENT_READ_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;

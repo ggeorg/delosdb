@@ -23,6 +23,7 @@ import org.apache.derby.iapi.store.access.conglomerate.AccessMethodConglomerateP
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
@@ -44,6 +45,7 @@ final class MvccRawStoreTable {
         private final int[] collationIds;
         private final boolean temporary;
         private final int controlFormatVersion;
+        private final boolean projectedCurrentRead;
         private volatile long accessConglomerateId;
         private volatile List<UniqueConstraint> uniqueConstraints;
         private volatile ContainerKey orderedIndexContainer;
@@ -67,6 +69,8 @@ final class MvccRawStoreTable {
             this.collationIds = collationIds.clone();
             this.temporary = temporary;
             this.controlFormatVersion = controlFormatVersion;
+            this.projectedCurrentRead = Boolean.getBoolean(
+                    MvccRawStoreFormat.GEN2_PROJECTED_CURRENT_READ_ENABLED_PROPERTY);
             this.accessConglomerateId = temporary
                     ? ContainerHandle.DEFAULT_ASSIGN_ID
                     : metadataContainer.getContainerId();
@@ -157,6 +161,10 @@ final class MvccRawStoreTable {
         boolean gen2PkHistory() {
             return controlFormatVersion
                     == MvccRawStoreFormat.GEN2_C3_PK_HISTORY_CONTROL_FORMAT_VERSION;
+        }
+
+        boolean projectedCurrentRead() {
+            return projectedCurrentRead;
         }
 
         long accessConglomerateId() {
@@ -770,6 +778,7 @@ final class MvccRawStoreTable {
                     rawTransaction,
                     table,
                     rowLocation,
+                    projection,
                     snapshotSequence,
                     context.transactionId(),
                     directoryContainer);
@@ -801,6 +810,7 @@ final class MvccRawStoreTable {
                     rawTransaction,
                     table,
                     resolvedDirectory,
+                    projection,
                     snapshotSequence,
                     context.transactionId(),
                     directoryContainer);
@@ -851,6 +861,7 @@ final class MvccRawStoreTable {
                     rawTransaction,
                     table,
                     rowLocation,
+                    projection,
                     snapshotSequence,
                     context.transactionId(),
                     null);
@@ -1300,11 +1311,12 @@ final class MvccRawStoreTable {
                     }
                     if (table.gen2A1()) {
                         Gen2A1CurrentRecord current = decodeGen2A1Current(
-                                rawTransaction, table, page, slot);
+                                rawTransaction, table, page, slot, projection);
                         VisibleRow visible = visibleGen2CurrentOrHistory(
                                 rawTransaction,
                                 table,
                                 current,
+                                projection,
                                 snapshotSequence,
                                 context.transactionId());
                         if (visible != null) {
@@ -2382,6 +2394,13 @@ final class MvccRawStoreTable {
 
     private static Object[] gen2A1CurrentTemplate(
             Transaction transaction, Descriptor table) throws StandardException {
+        return gen2A1CurrentTemplate(transaction, table, null);
+    }
+
+    private static Object[] gen2A1CurrentTemplate(
+            Transaction transaction,
+            Descriptor table,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         int fieldCount = table.gen2History()
                 ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
                 : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
@@ -2397,9 +2416,11 @@ final class MvccRawStoreTable {
                     MvccRawStoreFormat.longValue(transaction, 0L);
         }
         for (int index = 0; index < table.columnCount(); index++) {
-            row[payloadStart + index] =
-                    MvccRawStoreFormat.nullValue(
-                            transaction, table.formatId(index), table.collationId(index));
+            if (projection == null || projection.includes(index)) {
+                row[payloadStart + index] =
+                        MvccRawStoreFormat.nullValue(
+                                transaction, table.formatId(index), table.collationId(index));
+            }
         }
         return row;
     }
@@ -2409,14 +2430,28 @@ final class MvccRawStoreTable {
             Descriptor table,
             Page page,
             int slot) throws StandardException {
+        return decodeGen2A1Current(transaction, table, page, slot, null);
+    }
+
+    private static Gen2A1CurrentRecord decodeGen2A1Current(
+            Transaction transaction,
+            Descriptor table,
+            Page page,
+            int slot,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         int expected = table.gen2History()
                 ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
                 : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
         if (page.fetchNumFieldsAtSlot(slot) != expected) {
             return null;
         }
-        Object[] row = gen2A1CurrentTemplate(transaction, table);
-        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
+        MvccRawStoreVersionRows.FetchProjection currentProjection =
+                table.projectedCurrentRead() ? projection : null;
+        Object[] row = gen2A1CurrentTemplate(transaction, table, currentProjection);
+        FetchDescriptor descriptor = currentProjection == null
+                ? null
+                : currentProjection.currentDescriptor(table);
+        RecordHandle handle = page.fetchFromSlot(null, slot, row, descriptor, false);
         if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                 != MvccRawStoreFormat.DIRECTORY_KIND
                 || MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
@@ -2426,10 +2461,17 @@ final class MvccRawStoreTable {
         int payloadStart = table.gen2History()
                 ? MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START
                 : MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START;
-        StoreDataValue[] values = new StoreDataValue[table.columnCount()];
-        for (int index = 0; index < values.length; index++) {
-            values[index] = StoreValueCopySupport.cloneValue(
-                    (StoreDataValue) row[payloadStart + index], true);
+        StoreDataValue[] values = currentProjection != null && !currentProjection.includesPayload()
+                ? null
+                : new StoreDataValue[table.columnCount()];
+        if (values != null) {
+            for (int index = 0; index < values.length; index++) {
+                if ((currentProjection == null || currentProjection.includes(index))
+                        && row[payloadStart + index] != null) {
+                    values[index] = StoreValueCopySupport.cloneValue(
+                            (StoreDataValue) row[payloadStart + index], true);
+                }
+            }
         }
         long previousVersionId = table.gen2History()
                 ? MvccRawStoreFormat.longAt(
@@ -2497,6 +2539,15 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             ContainerHandle suppliedContainer) throws StandardException {
+        return findGen2CurrentAt(transaction, table, rowLocation, suppliedContainer, null);
+    }
+
+    private static Gen2A1CurrentRecord findGen2CurrentAt(
+            Transaction transaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            ContainerHandle suppliedContainer,
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         ContainerHandle container = suppliedContainer;
         boolean closeContainer = false;
         if (container == null) {
@@ -2515,7 +2566,7 @@ final class MvccRawStoreTable {
                 page = container.getPage(rowLocation.locatorPageId());
                 if (page != null) {
                     Gen2A1CurrentRecord hinted = decodeGen2A1Current(
-                            transaction, table, page, rowLocation.locatorSlotId());
+                            transaction, table, page, rowLocation.locatorSlotId(), projection);
                     if (hinted != null && hinted.rowId() == rowLocation.rowId()) {
                         return hinted;
                     }
@@ -2533,7 +2584,7 @@ final class MvccRawStoreTable {
                         continue;
                     }
                     Gen2A1CurrentRecord current = decodeGen2A1Current(
-                            transaction, table, page, slot);
+                            transaction, table, page, slot, projection);
                     if (current != null && current.rowId() == rowLocation.rowId()) {
                         return current;
                     }
@@ -2557,19 +2608,21 @@ final class MvccRawStoreTable {
             Transaction transaction,
             Descriptor table,
             MvccRowLocation rowLocation,
+            MvccRawStoreVersionRows.FetchProjection projection,
             long snapshotSequence,
             long transactionId,
             ContainerHandle suppliedContainer) throws StandardException {
         Gen2A1CurrentRecord current = findGen2CurrentAt(
-                transaction, table, rowLocation, suppliedContainer);
+                transaction, table, rowLocation, suppliedContainer, projection);
         return visibleGen2CurrentOrHistory(
-                transaction, table, current, snapshotSequence, transactionId);
+                transaction, table, current, projection, snapshotSequence, transactionId);
     }
 
     private static VisibleRow readGen2A1CurrentFromDirectory(
             Transaction transaction,
             Descriptor table,
             DirectoryRecord directory,
+            MvccRawStoreVersionRows.FetchProjection projection,
             long snapshotSequence,
             long transactionId,
             ContainerHandle suppliedContainer) throws StandardException {
@@ -2579,13 +2632,20 @@ final class MvccRawStoreTable {
         MvccRowLocation location = MvccRawStoreRowDirectory.location(
                 directory.rowId(), directory.handle());
         return readGen2A1CurrentAt(
-                transaction, table, location, snapshotSequence, transactionId, suppliedContainer);
+                transaction,
+                table,
+                location,
+                projection,
+                snapshotSequence,
+                transactionId,
+                suppliedContainer);
     }
 
     private static VisibleRow visibleGen2CurrentOrHistory(
             Transaction transaction,
             Descriptor table,
             Gen2A1CurrentRecord current,
+            MvccRawStoreVersionRows.FetchProjection projection,
             long snapshotSequence,
             long transactionId) throws StandardException {
         if (current == null) {
@@ -2617,7 +2677,7 @@ final class MvccRawStoreTable {
                 new DirectoryHead(current.previousVersionId(), current.previousHint()),
                 transactionId,
                 snapshotSequence,
-                null);
+                projection);
         if (history == null || history.tombstone()) {
             return null;
         }

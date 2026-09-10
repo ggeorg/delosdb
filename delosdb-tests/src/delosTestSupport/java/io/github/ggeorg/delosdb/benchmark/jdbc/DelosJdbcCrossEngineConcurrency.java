@@ -2600,6 +2600,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
         if (target == Target.DELOS_MVCC) {
+            if (mvccGen2C3ReadServerEnabled()) {
+                command.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
+                command.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
+                command.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
+            }
+            if (mvccGen2ProjectedCurrentReadEnabled()) {
+                command.add("-Ddelosdb.experimental.mvccGen2ProjectedCurrentRead.enabled=true");
+            }
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -2686,6 +2694,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (mvccGen2C3ReadServerEnabled()) {
             addProperty(command, "mvccGen2C3ReadServer", true);
+        }
+        if (mvccGen2ProjectedCurrentReadEnabled()) {
+            addProperty(command, "mvccGen2ProjectedCurrentRead", true);
         }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
@@ -2850,6 +2861,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA && mvccGen2ProjectedCurrentReadEnabled()) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2ProjectedCurrentRead.enabled=true");
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3060,6 +3074,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(" (0=driver default)\n")
                 .append("MVCC base-fetch directory-page prefetch experiment: ")
                 .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
+                .append("MVCC Gen2 projected current read experiment: ")
+                .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -8589,6 +8605,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2C3UpdateServerEnabled()).append('\n')
                 .append("MVCC Gen2-C3 read server enabled: ")
                 .append(mvccGen2C3ReadServerEnabled()).append('\n')
+                .append("MVCC Gen2 projected current read enabled: ")
+                .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8843,6 +8861,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2C3ReadServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2C3ReadServer");
+    }
+
+    private static boolean mvccGen2ProjectedCurrentReadEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2ProjectedCurrentRead");
     }
 
     private static String insertTableShape() {
@@ -9853,6 +9875,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
             boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+            boolean gen2C3ReadJfr = mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(RANGE_SCAN_JFR_TARGETS);
+            boolean gen2C3ProjectedCurrentRead = mvccGen2C3ReadServerEnabled()
+                    && mvccGen2ProjectedCurrentReadEnabled()
+                    && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -9873,6 +9900,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel
                     && !gen2C3PostgresqlUpdateComparison
+                    && !gen2C3ProjectedCurrentRead
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -9908,7 +9936,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (gen2C3ReadFitness) {
+            if (gen2C3ReadFitness || gen2C3ProjectedCurrentRead) {
                 boolean pointReadFitness = configuredWorkloads.equals(
                         List.of(Workload.PRIMARY_KEY_READ_RANDOM));
                 boolean rangeScanFitness = configuredWorkloads.equals(List.of(
@@ -9916,9 +9944,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         Workload.RANGE_SCAN_100,
                         Workload.RANGE_SCAN_1000,
                         Workload.RANGE_SCAN_FULL));
-                if (!pointReadFitness && !rangeScanFitness) {
+                if ((!pointReadFitness && !rangeScanFitness)
+                        || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 read fitness requires the F01 point-read workload or the F02 range-scan workload set");
+                            gen2C3ProjectedCurrentRead
+                                    ? "Gen2-C3 projected-current read experiment requires the F02 range-scan workload set"
+                                    : "Gen2-C3 read fitness requires the F01 point-read workload or the F02 range-scan workload set");
                 }
                 List<Integer> expectedClients = pointReadFitness ? List.of(1, 8) : List.of(8);
                 if (!clientValues().equals(expectedClients)) {
@@ -9932,6 +9963,25 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires PRIMARY_KEY_ONLY table shape");
+                }
+            } else if (gen2C3ReadJfr) {
+                boolean supportedJfrWorkload = configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_100))
+                        || configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_1000));
+                if (!supportedJfrWorkload) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 range-scan JFR requires RANGE_SCAN_100 or RANGE_SCAN_1000");
+                }
+                if (!clientValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 range-scan JFR requires exactly 1 client");
+                }
+                if (!widthValues().equals(List.of(10))) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 range-scan JFR requires exactly width 10");
+                }
+                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "Gen2-C3 range-scan JFR requires PRIMARY_KEY_ONLY table shape");
                 }
             } else if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
                 String modeName = gen2C3UpdateThroughputSentinel
@@ -10065,7 +10115,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !mixedReaderWriterFitness && !mutationSchemaAttribution
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
-                    && !gen2C3ReadFitness
+                    && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
@@ -10142,6 +10192,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 "Gen2-C3 PostgreSQL UPDATE comparison requires Delos and PostgreSQL client classpaths");
                     }
+                } else if (gen2C3ProjectedCurrentRead) {
+                    if (delosClientClasspath.isBlank()) {
+                        throw new IllegalArgumentException(
+                                "Gen2-C3 projected-current read experiment requires the Delos network client classpath");
+                    }
                 } else if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()
                         || h2Classpath.isBlank() || postgresqlClasspath.isBlank() || mariadbClasspath.isBlank()) {
                     throw new IllegalArgumentException("Server benchmark client classpaths are required");
@@ -10187,6 +10242,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         if (delosServerImage.isBlank() || postgresqlImage.isBlank()) {
                             throw new IllegalArgumentException(
                                     "Gen2-C3 PostgreSQL UPDATE comparison requires Delos and PostgreSQL server images");
+                        }
+                    } else if (gen2C3ProjectedCurrentRead) {
+                        if (delosServerImage.isBlank()) {
+                            throw new IllegalArgumentException(
+                                    "Gen2-C3 projected-current read experiment requires the Delos server image");
                         }
                     } else {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
