@@ -1125,6 +1125,15 @@ tasks.named('runDelosMvccGen2C3PrimaryKeyHistoryUpdateSlice') {
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
 }
 
+registerDelosFocusedTest(
+        'runDelosMvccGen2C3BaseFetchPagePrefetch',
+        'Checks bounded page-local base-row prefetch for Gen1 and Gen2 current rows.',
+        ['**/MvccBaseFetchPagePrefetchTest.class'])
+
+tasks.named('runDelosMvccGen2C3BaseFetchPagePrefetch') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+}
+
 def gen2C1UpdateRecoveryReportDir = rootProject.layout.buildDirectory.dir(
         'reports/delosdb/recovery/gen2-c1-current-history')
 
@@ -17977,6 +17986,7 @@ tasks.register('runDelosGen2C3PrimaryKeyRangeScanFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -18120,6 +18130,11 @@ tasks.register('runDelosGen2C3PrimaryKeyRangeScanSentinel') {
                 || !summaryFile.getText('UTF-8').contains('MVCC Gen2-C3 read server enabled: true')) {
             throw new GradleException(
                     "Gen2-C3 range-scan run does not prove the Gen2-C3 MVCC server was enabled: ${summaryFile}")
+        }
+        if (!summaryFile.getText('UTF-8').contains(
+                'MVCC base-fetch directory-page prefetch experiment: true')) {
+            throw new GradleException(
+                    "Gen2-C3 range-scan run does not prove base-fetch page prefetch was enabled: ${summaryFile}")
         }
 
         def result = new File(root, 'gen2-c3-range-scan-sentinel.tsv')
