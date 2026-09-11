@@ -9944,25 +9944,32 @@ public final class DelosJdbcCrossEngineConcurrency {
                         Workload.RANGE_SCAN_100,
                         Workload.RANGE_SCAN_1000,
                         Workload.RANGE_SCAN_FULL));
-                if ((!pointReadFitness && !rangeScanFitness)
+                boolean projectionFitness = configuredWorkloads.equals(List.of(
+                        Workload.PROJECTION_COVERED,
+                        Workload.PROJECTION_TWO_COLUMN,
+                        Workload.PROJECTION_FULL_ROW));
+                if ((!pointReadFitness && !rangeScanFitness && !projectionFitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
                     throw new IllegalArgumentException(
                             gen2C3ProjectedCurrentRead
                                     ? "Gen2-C3 projected-current read experiment requires the F02 range-scan workload set"
-                                    : "Gen2-C3 read fitness requires the F01 point-read workload or the F02 range-scan workload set");
+                                    : "Gen2-C3 read fitness requires the F01 point-read workload, "
+                                            + "the F02 range-scan workload set, or the F03 projection workload set");
                 }
-                List<Integer> expectedClients = pointReadFitness ? List.of(1, 8) : List.of(8);
+                List<Integer> expectedClients = (rangeScanFitness || projectionFitness) ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
-                if (!widthValues().equals(List.of(10))) {
+                List<Integer> expectedWidths = projectionFitness ? List.of(1) : List.of(10);
+                if (!widthValues().equals(expectedWidths)) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 read fitness requires exactly width 10");
+                            "Gen2-C3 read fitness requires widths " + expectedWidths);
                 }
-                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                String expectedTableShape = projectionFitness ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";
+                if (!expectedTableShape.equals(configuredInsertTableShape)) {
                     throw new IllegalArgumentException(
-                            "Gen2-C3 read fitness requires PRIMARY_KEY_ONLY table shape");
+                            "Gen2-C3 read fitness requires " + expectedTableShape + " table shape");
                 }
             } else if (gen2C3ReadJfr) {
                 boolean supportedJfrWorkload = configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_100))

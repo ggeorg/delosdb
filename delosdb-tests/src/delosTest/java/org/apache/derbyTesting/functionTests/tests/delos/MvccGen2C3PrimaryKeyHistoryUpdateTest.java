@@ -122,18 +122,19 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             System.setProperty(GEN2_B_PK_PROPERTY, "true");
             System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
             System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "true");
-            try (Connection setup = openDatabase(database, true);
-                 PreparedStatement insert = setup.prepareStatement(
-                         "insert into G2_C3_PROJ values (?, ?, ?)")) {
+            try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
                         "create table G2_C3_PROJ (id int not null primary key, "
                                 + "quantity int not null, payload varchar(4096) not null) "
                                 + "using delos_mvcc");
-                insert.setInt(1, 1);
-                insert.setInt(2, 7);
-                insert.setString(3, oldPayload);
-                assertEquals(1, insert.executeUpdate());
+                try (PreparedStatement insert = setup.prepareStatement(
+                        "insert into G2_C3_PROJ values (?, ?, ?)")) {
+                    insert.setInt(1, 1);
+                    insert.setInt(2, 7);
+                    insert.setString(3, oldPayload);
+                    assertEquals(1, insert.executeUpdate());
+                }
                 setup.commit();
             }
 
