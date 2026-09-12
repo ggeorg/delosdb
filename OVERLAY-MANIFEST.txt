@@ -1,11 +1,46 @@
-DelosDB stable-suite Gen2 registration overlay
+DelosDB Gen2-C3 F13 realistic-transaction fitness overlay
+=========================================================
 
-Changed repository files:
-- gradle/testing/delos-test-suite-registry.tsv
-- gradle/testing/delosdb-test-suites.gradle
+Purpose
+-------
+Add the breadth-first Gen2-C3 SERVER fitness baseline for the repository's existing
+F13 realistic transaction workloads while preserving the indexed-DELETE historical
+reachability guard. The dedicated F13 mode executes one fresh sustained interval per
+matrix cell, verifies the complete committed state with the existing SQL semantic
+oracle, and intentionally does not restore that disposable fresh fixture afterward.
 
-Purpose:
-- Register the seven accepted DelosDB Gen2/cardinality/archived-undo correctness and recovery sources in the permanent stable-suite registry.
-- Keep MutationPhysicalAmplificationLedgerTest classified as release-only performance evidence and include its existing focused task/class in the permanent performance aggregate/allow-list.
+Changed repository files
+------------------------
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-No production Java, test Java, benchmark SQL, or task implementation is changed.
+Baseline geometry
+-----------------
+- BANK_TRANSACTION
+- ORDER_ENTRY_MIX
+- SERVER six-engine product matrix
+- 8 clients
+- 10,000 rows
+- width 1
+- 128-byte payload
+- FULL_INDEXED
+- 1,000 transactions/client
+- one fresh measured interval per workload/target/run
+- 8 runs
+- IQR/median <= 15%
+- SQL semantic oracle enabled
+- semantic restoration disabled only for this disposable fresh-fixture mode
+- projected-current experiment disabled
+- rejected base-fetch prefetch experiment disabled
+
+Correctness boundary
+--------------------
+The timed BANK_TRANSACTION and ORDER_ENTRY_MIX implementations are unchanged.
+No indexed DELETE bypass is introduced. Existing cleanup DELETE statements remain
+unchanged for ordinary benchmark modes and are skipped only after successful final
+state verification in the explicit fresh F13 mode, where that matrix-cell fixture is
+never reused.
+
+Production changes
+------------------
+None.

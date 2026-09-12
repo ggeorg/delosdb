@@ -2695,6 +2695,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccGen2C3ReadServerEnabled()) {
             addProperty(command, "mvccGen2C3ReadServer", true);
         }
+        if (freshRealisticTransactionFitnessEnabled()) {
+            addProperty(command, "freshRealisticTransactionFitness", true);
+        }
         if (mvccGen2ProjectedCurrentReadEnabled()) {
             addProperty(command, "mvccGen2ProjectedCurrentRead", true);
         }
@@ -5476,6 +5479,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 oracle = DelosSqlSemanticOracle.composite("FITNESS_BANK_TRANSACTION", components);
             }
 
+            if (freshRealisticTransactionFitnessEnabled()) {
+                verifier.rollback();
+                return new Verification(mix(fingerprint, expectedTotal), oracle);
+            }
+
             try (PreparedStatement restore = verifier.prepareStatement(
                             "update " + table + " set quantity = ? where id = ?");
                     Statement cleanup = verifier.createStatement()) {
@@ -5651,6 +5659,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "select order_id, line_no, stock_id, quantity, amount from "
                                 + orderLineTableName(table) + " order by order_id, line_no"));
                 oracle = DelosSqlSemanticOracle.composite("FITNESS_ORDER_ENTRY_MIX", components);
+            }
+
+            if (freshRealisticTransactionFitnessEnabled()) {
+                verifier.rollback();
+                return new Verification(mix(fingerprint, expectedOrders.size()), oracle);
             }
 
             try (PreparedStatement restore = verifier.prepareStatement(
@@ -8607,6 +8620,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2C3ReadServerEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read enabled: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
+                .append("Fresh realistic transaction fitness: ")
+                .append(freshRealisticTransactionFitnessEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
         List<Workload> requestedWorkloads = options.workloadValues();
         if (requestedWorkloads.contains(Workload.PRIMARY_KEY_READ_HOT)) {
@@ -8652,7 +8667,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append("operationsPerSecond is measuredOperations / shared wall-clock interval.\n")
                 .append("inverseThroughputNanosPerTransaction is elapsedNanos / aggregate completed transactions; "
                         + "it is NOT observed client transaction latency.\n")
-                .append("Semantic verification/restoration outside timed interval: true\n")
+                .append(freshRealisticTransactionFitnessEnabled()
+                        ? "Semantic verification outside timed interval: true\n"
+                                + "Semantic restoration outside timed interval: false (fresh disposable matrix cell)\n"
+                        : "Semantic verification/restoration outside timed interval: true\n")
                 .append(options.containerMode()
                         ? "Fresh database container per target/run; fresh table per matrix cell: true\n"
                         : "Fresh database per target/run/matrix cell: true\n")
@@ -8861,6 +8879,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2C3ReadServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2C3ReadServer");
+    }
+
+    private static boolean freshRealisticTransactionFitnessEnabled() {
+        return Boolean.getBoolean(PREFIX + "freshRealisticTransactionFitness");
     }
 
     private static boolean mvccGen2ProjectedCurrentReadEnabled() {
@@ -9875,6 +9897,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
             boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+            boolean freshRealisticTransactionFitness = freshRealisticTransactionFitnessEnabled()
+                    && mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
             boolean gen2C3ReadJfr = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(RANGE_SCAN_JFR_TARGETS);
             boolean gen2C3ProjectedCurrentRead = mvccGen2C3ReadServerEnabled()
@@ -9959,9 +9984,25 @@ public final class DelosJdbcCrossEngineConcurrency {
                         Workload.GROUP_HIGH_CARD));
                 boolean sortFitness = configuredWorkloads.equals(List.of(
                         Workload.SORT_FULL));
+                boolean mixedReaderWriterGen2Fitness = configuredWorkloads.equals(List.of(
+                        Workload.MIXED_80R20W,
+                        Workload.MIXED_50R50W_HOT));
+                boolean longReaderWriterGen2Fitness = configuredWorkloads.equals(List.of(
+                        Workload.LONG_READER_DISJOINT_WRITER,
+                        Workload.LONG_READER_HOT_WRITER));
+                boolean realisticTransactionGen2Fitness = freshRealisticTransactionFitness
+                        && configuredWorkloads.equals(List.of(
+                                Workload.BANK_TRANSACTION,
+                                Workload.ORDER_ENTRY_MIX));
+                if (freshRealisticTransactionFitness && !realisticTransactionGen2Fitness) {
+                    throw new IllegalArgumentException(
+                            "Fresh F13 realistic-transaction fitness requires exactly "
+                                    + "BANK_TRANSACTION,ORDER_ENTRY_MIX");
+                }
                 if ((!pointReadFitness && !rangeScanFitness && !projectionFitness
                                 && !simpleJoinFitness && !multiWayJoinFitness && !groupByFitness
-                                && !sortFitness)
+                                && !sortFitness && !mixedReaderWriterGen2Fitness && !longReaderWriterGen2Fitness
+                                && !realisticTransactionGen2Fitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
                     throw new IllegalArgumentException(
                             gen2C3ProjectedCurrentRead
@@ -9969,28 +10010,50 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     : "Gen2-C3 read fitness requires the F01 point-read workload, "
                                             + "the F02 range-scan workload set, the F03 projection workload set, "
                                             + "the F04 simple-join workload set, the F05 multi-way join workload set, "
-                                            + "the F06 GROUP BY workload set, or the F07 sort workload");
+                                            + "the F06 GROUP BY workload set, the F07 sort workload, "
+                                            + "the F11 mixed reader/writer workload set, "
+                                            + "the F12 long-reader/writer workload set, "
+                                            + "or the fresh F13 realistic-transaction workload set");
                 }
-                List<Integer> expectedClients = (rangeScanFitness || projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
-                        ? List.of(8) : List.of(1, 8);
+                List<Integer> expectedClients = longReaderWriterGen2Fitness
+                        ? List.of(4)
+                        : (rangeScanFitness || projectionFitness
+                                        || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                        || mixedReaderWriterGen2Fitness || realisticTransactionGen2Fitness)
+                                ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
                 List<Integer> expectedWidths = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
+                                || realisticTransactionGen2Fitness)
                         ? List.of(1) : List.of(10);
                 if (!widthValues().equals(expectedWidths)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires widths " + expectedWidths);
                 }
                 String expectedTableShape = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
+                                || realisticTransactionGen2Fitness)
                         ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";
                 if (!expectedTableShape.equals(configuredInsertTableShape)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires " + expectedTableShape + " table shape");
+                }
+                if (realisticTransactionGen2Fitness
+                        && (warmups != 0
+                                || iterations != 1
+                                || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                                || maximumWarmupIterations != 1
+                                || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                                || maximumMeasuredIterations != 1
+                                || !sqlSemanticOracleEnabled())) {
+                    throw new IllegalArgumentException(
+                            "Fresh F13 realistic-transaction fitness requires one fresh measured interval, "
+                                    + "no warmup, adaptive durations disabled, and SQL semantic oracle enabled");
                 }
             } else if (gen2C3ReadJfr) {
                 boolean supportedJfrWorkload = configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_100))
