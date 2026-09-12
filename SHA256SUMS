@@ -1,2 +1,2 @@
-368cba09d37560378ae02d43b5b49b1ffac5ce6f12d841e8f8c091fd4d1ce548  gradle/testing/derby-test-adaptations.tsv
-562b213447e72d5ef4641b83f68d83dca332f944864c49cd7060a312fb7c5153  OVERLAY-MANIFEST.txt
+90e141d2a94bc3234bd54ae4d73f8483f8b6f3db2b8507d0bdfd895296911ef3  gradle/testing/delos-test-suite-registry.tsv
+a466f67173cf46ff3326a5b95551f9ebcfdd2a775e76188d3001121092a0712c  gradle/testing/delosdb-test-suites.gradle

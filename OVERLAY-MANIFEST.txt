@@ -1,13 +1,11 @@
-DelosDB overlay: Test module JFR provenance metadata
+DelosDB stable-suite Gen2 registration overlay
 
-Changed files:
-- gradle/testing/derby-test-adaptations.tsv
+Changed repository files:
+- gradle/testing/delos-test-suite-registry.tsv
+- gradle/testing/delosdb-test-suites.gradle
 
 Purpose:
-- Synchronize the permanent inherited-test adaptation manifest with the accepted
-  test module descriptor that requires jdk.jfr for DelosDB benchmark diagnostics.
-- Preserve the Apache Derby 10.17.1.0 upstream SHA-256 baseline.
-- Preserve the provenance gate as fail-closed; no assertion or threshold is weakened.
+- Register the seven accepted DelosDB Gen2/cardinality/archived-undo correctness and recovery sources in the permanent stable-suite registry.
+- Keep MutationPhysicalAmplificationLedgerTest classified as release-only performance evidence and include its existing focused task/class in the permanent performance aggregate/allow-list.
 
-Current delosdb-tests/src/test/java/module-info.java SHA-256:
-17bfe90df7e4e7e15e136c2b8e73359a85435893703ea7e05fa3abaf95a2fa23
+No production Java, test Java, benchmark SQL, or task implementation is changed.

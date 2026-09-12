@@ -313,6 +313,7 @@ def performanceFocusedTasks = [
         'runDelosMvccCurrentRowArchitecturePermanentDefaultTest',
         'runDelosMvccCurrentVersionReadImageTest',
         'runDelosPrimaryKeyReadPhysicalAccounting',
+        'runDelosMutationPhysicalAmplificationLedger',
         'runDelosSharedRawStoreMappedRegionExperimentTest',
         'runDelosSharedRawStorePageIoRepresentationDecisionTest',
         'runDelosV1BaselineOperationalCapture'
@@ -381,6 +382,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
                 'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowArchitectureLifecycleTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentRowArchitecturePermanentTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.MvccCurrentVersionReadImageTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.MutationPhysicalAmplificationLedgerTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.PrimaryKeyReadPhysicalAccountingTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStoreMappedRegionExperimentTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.SharedRawStorePageIoRepresentationDecisionTest',
