@@ -111,6 +111,52 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
         }
     }
 
+    public void testPrimaryKeyDeleteRemainsDeferredUntilHistoricalIndexReachability()
+            throws Exception {
+        String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
+        String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
+        String database = databaseName("mvcc-gen2-c3-pk-delete-deferred");
+        try {
+            System.setProperty(GEN2_B_PK_PROPERTY, "true");
+            System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table G2_C3_DELETE_GUARD "
+                                + "(id int not null primary key, payload varchar(128) not null) "
+                                + "using delos_mvcc");
+                executeUpdate(connection,
+                        "insert into G2_C3_DELETE_GUARD values (1, 'original')");
+                connection.commit();
+
+                try {
+                    executeUpdate(connection,
+                            "delete from G2_C3_DELETE_GUARD where id = 1");
+                    fail("Expected indexed Gen2 DELETE to remain deferred");
+                } catch (SQLException expected) {
+                    assertEquals("0A000", expected.getSQLState());
+                    assertTrue(expected.getMessage() != null
+                            && expected.getMessage().contains("historical SQL-index reachability"));
+                }
+                connection.rollback();
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "select payload from G2_C3_DELETE_GUARD where id = ?")) {
+                    statement.setInt(1, 1);
+                    try (ResultSet result = statement.executeQuery()) {
+                        assertTrue(result.next());
+                        assertEquals("original", result.getString(1));
+                        assertFalse(result.next());
+                    }
+                }
+                connection.commit();
+            }
+        } finally {
+            restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
+            restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);
+            shutdownDatabase(database);
+        }
+    }
+
     public void testProjectedCurrentReadPreservesCurrentAndHistoricalValues() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
         String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);

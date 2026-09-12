@@ -1236,7 +1236,6 @@ final class MvccRawStoreTable {
             Descriptor table,
             long rowId,
             MvccRawStoreTransactionContext context) throws StandardException {
-        rejectGen2A1HistoryMutation(table);
         return delete(
                 rawTransaction,
                 table,
@@ -1249,7 +1248,17 @@ final class MvccRawStoreTable {
             Descriptor table,
             MvccRowLocation rowLocation,
             MvccRawStoreTransactionContext context) throws StandardException {
-        rejectGen2A1HistoryMutation(table);
+        if (table.gen2A1()) {
+            if (!table.gen2History()) {
+                rejectGen2A1HistoryMutation(table);
+            }
+            if (table.gen2PkHistory()) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        "MVCC Gen2-C3 indexed DELETE requires historical SQL-index reachability");
+            }
+            return deleteGen2C1(rawTransaction, table, rowLocation, context);
+        }
         long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
         MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
@@ -1275,6 +1284,75 @@ final class MvccRawStoreTable {
                 table,
                 target.visible().values(),
                 tombstone);
+        rowLocation.setWriteVersion(0L);
+        return true;
+    }
+
+    private static boolean deleteGen2C1(
+            Transaction transaction,
+            Descriptor table,
+            MvccRowLocation rowLocation,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        long rowId = rowLocation.rowId();
+        context.beforeRowWrite(table, rowId);
+        if (context.hasPendingVersion(table, rowId)) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-C1 supports one mutation per logical row per transaction");
+        }
+
+        Gen2A1CurrentRecord current = findGen2CurrentAt(
+                transaction, table, rowLocation, null);
+        if (current == null
+                || (current.flags() & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
+            return false;
+        }
+        validateWriteVersion(rowLocation, current.versionId());
+        if (current.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "MVCC Gen2-C1 cannot archive an uncommitted current image");
+        }
+
+        long newVersionId = context.reserveVersionIdentifier(table);
+        Object[] historyRow = gen2HistoryRow(transaction, table, current);
+        RecordHandle historyHandle = insertRow(
+                transaction, table.versionContainer(), historyRow);
+        RecordHint historyHint = RecordHint.of(historyHandle);
+        Object[] tombstoneRow = gen2CurrentRow(
+                transaction,
+                table,
+                rowId,
+                newVersionId,
+                context.transactionId(),
+                MvccRawStoreFormat.UNCOMMITTED_SEQUENCE,
+                MvccRawStoreFormat.TOMBSTONE_FLAGS,
+                current.versionId(),
+                historyHint,
+                current.values());
+        updateGen2Current(
+                transaction,
+                table,
+                current,
+                tombstoneRow,
+                gen2C1UpdateColumns(table.columnCount(), new FormatableBitSet(0)),
+                historyHandle);
+
+        MvccRowLocation currentLocation = MvccRawStoreRowDirectory.location(
+                rowId, current.handle());
+        PendingVersion tombstone = new PendingVersion(
+                table,
+                rowId,
+                newVersionId,
+                context.transactionId(),
+                current.versionId(),
+                historyHint,
+                MvccRawStoreFormat.TOMBSTONE_FLAGS,
+                current.handle(),
+                currentLocation,
+                true);
+        context.addPending(tombstone);
+        context.rememberDeletedKeyProof(table, current.values(), tombstone);
         rowLocation.setWriteVersion(0L);
         return true;
     }
@@ -2704,9 +2782,7 @@ final class MvccRawStoreTable {
         if (table.gen2A1()) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    table.gen2History()
-                            ? "MVCC Gen2-C1 DELETE and additional history mutations are deferred"
-                            : "MVCC Gen2-A1 UPDATE/DELETE/history is deferred to the next slice");
+                    "MVCC Gen2-A1 UPDATE/DELETE/history is deferred to the next slice");
         }
     }
 

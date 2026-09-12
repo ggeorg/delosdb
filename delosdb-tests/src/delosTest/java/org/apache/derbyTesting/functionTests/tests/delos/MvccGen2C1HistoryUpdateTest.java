@@ -103,36 +103,80 @@ public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
         }
     }
 
-    public void testC1KeepsDeleteAndMultipleSameRowMutationDeferred() throws Exception {
+    public void testC1DeleteVisibilityRollbackAndMultipleUpdateGuard() throws Exception {
         String previous = System.getProperty(GEN2_C1_PROPERTY);
-        String database = databaseName("mvcc-gen2-c1-scope");
+        String database = databaseName("mvcc-gen2-c1-delete-scope");
         try {
             System.setProperty(GEN2_C1_PROPERTY, "true");
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
                         "create table G2_C1_SCOPE (id int not null, payload varchar(64) not null) "
                                 + "using delos_mvcc");
-                executeUpdate(connection, "insert into G2_C1_SCOPE values (1, 'v1')");
-                connection.commit();
+                executeUpdate(setup, "insert into G2_C1_SCOPE values (1, 'v1')");
+                setup.commit();
+            }
 
+            try (Connection historical = openDatabase(database, false);
+                 Connection observer = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                observer.setAutoCommit(false);
+                writer.setAutoCommit(false);
+
+                assertRows(historical, "select id, payload from G2_C1_SCOPE", "1|v1");
+                assertEquals(1, executeUpdate(writer,
+                        "delete from G2_C1_SCOPE where id = 1"));
+                assertRows(writer, "select id, payload from G2_C1_SCOPE");
+                assertRows(observer, "select id, payload from G2_C1_SCOPE", "1|v1");
+                observer.commit();
+                writer.rollback();
+                assertRows(writer, "select id, payload from G2_C1_SCOPE", "1|v1");
+                assertPhysicalShape(writer, "G2_C1_SCOPE", 1, 0);
+                writer.commit();
+
+                assertEquals(1, executeUpdate(writer,
+                        "delete from G2_C1_SCOPE where id = 1"));
+                writer.commit();
+                assertRows(observer, "select id, payload from G2_C1_SCOPE");
+                observer.commit();
+                assertRows(historical, "select id, payload from G2_C1_SCOPE", "1|v1");
+                historical.commit();
+                assertRows(historical, "select id, payload from G2_C1_SCOPE");
+                historical.commit();
+                assertPhysicalShape(writer, "G2_C1_SCOPE", 1, 1);
+                writer.commit();
+            }
+
+            shutdownDatabase(database);
+            System.clearProperty(GEN2_C1_PROPERTY);
+            try (Connection reopened = openDatabase(database, false)) {
+                reopened.setAutoCommit(false);
+                assertRows(reopened, "select id, payload from G2_C1_SCOPE");
+                assertPhysicalShape(reopened, "G2_C1_SCOPE", 1, 1);
+                reopened.commit();
+            }
+
+            String guardDatabase = databaseName("mvcc-gen2-c1-multiple-update-guard");
+            System.setProperty(GEN2_C1_PROPERTY, "true");
+            try (Connection connection = openDatabase(guardDatabase, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table G2_C1_GUARD (id int not null, payload varchar(64) not null) "
+                                + "using delos_mvcc");
+                executeUpdate(connection, "insert into G2_C1_GUARD values (1, 'v1')");
+                connection.commit();
+                assertEquals(1, executeUpdate(connection,
+                        "update G2_C1_GUARD set payload = 'first' where id = 1"));
                 assertUnsupported(connection,
-                        "delete from G2_C1_SCOPE where id = 1",
+                        "update G2_C1_GUARD set payload = 'second' where id = 1",
                         "Gen2-C1");
                 connection.rollback();
-
-                assertEquals(1, executeUpdate(
-                        connection,
-                        "update G2_C1_SCOPE set payload = 'first' where id = 1"));
-                assertUnsupported(connection,
-                        "update G2_C1_SCOPE set payload = 'second' where id = 1",
-                        "Gen2-C1");
-                connection.rollback();
-                assertRows(connection,
-                        "select id, payload from G2_C1_SCOPE",
-                        "1|v1");
-                assertPhysicalShape(connection, "G2_C1_SCOPE", 1, 0);
+                assertRows(connection, "select id, payload from G2_C1_GUARD", "1|v1");
                 connection.commit();
+            } finally {
+                shutdownDatabase(guardDatabase);
             }
         } finally {
             restoreProperty(GEN2_C1_PROPERTY, previous);

@@ -1,15 +1,23 @@
-DelosDB Gen2-C3 F05 multi-way join fitness overlay
+DelosDB Gen2-C3 indexed DELETE safety correction
 
 Changed repository files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
 
 Scope:
-- admit the existing F05 multi-way join workload pair to Gen2-C3 read-fitness validation;
-- add SERVER/8-client/8-run six-engine F05 benchmark and sentinel tasks;
-- keep projected-current reads and rejected base-fetch page prefetch disabled;
-- preserve existing F05 SQL, fixtures, bind parameters, expected-row logic, and SQL semantic oracle.
+- keep Gen2-C1 current/history DELETE for non-indexed C1 tables;
+- re-block Gen2-C3 indexed DELETE until historical SQL-index reachability is designed;
+- replace the invalid delete/reinsert success test with an explicit capability guard;
+- preserve the accepted Gen2-C3 UPDATE, projected-read, and single-PK-authority behavior.
 
-Canonical workloads:
-- JOIN_3WAY_SELECTIVE
-- JOIN_4WAY_FANOUT
+Reason:
+- SQL index maintenance removes the backing index entry before the base DELETE;
+- a historical snapshot can therefore lose key reachability even though the base CURRENT/HISTORY chain is correct;
+- delete/reinsert with a new base RowLocation also redirects the reinserted PK entry away from the predecessor chain.
+
+Not in scope:
+- SQL-index MVCC/versioning;
+- stable-row resurrection;
+- deferred index reclamation/vacuum;
+- DELETE_REINSERT benchmarking;
+- key-changing UPDATE.

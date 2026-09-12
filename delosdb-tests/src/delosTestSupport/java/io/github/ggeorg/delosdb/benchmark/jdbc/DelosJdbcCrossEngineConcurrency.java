@@ -9954,32 +9954,39 @@ public final class DelosJdbcCrossEngineConcurrency {
                 boolean multiWayJoinFitness = configuredWorkloads.equals(List.of(
                         Workload.JOIN_3WAY_SELECTIVE,
                         Workload.JOIN_4WAY_FANOUT));
+                boolean groupByFitness = configuredWorkloads.equals(List.of(
+                        Workload.GROUP_LOW_CARD,
+                        Workload.GROUP_HIGH_CARD));
+                boolean sortFitness = configuredWorkloads.equals(List.of(
+                        Workload.SORT_FULL));
                 if ((!pointReadFitness && !rangeScanFitness && !projectionFitness
-                                && !simpleJoinFitness && !multiWayJoinFitness)
+                                && !simpleJoinFitness && !multiWayJoinFitness && !groupByFitness
+                                && !sortFitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
                     throw new IllegalArgumentException(
                             gen2C3ProjectedCurrentRead
                                     ? "Gen2-C3 projected-current read experiment requires the F02 range-scan workload set"
                                     : "Gen2-C3 read fitness requires the F01 point-read workload, "
                                             + "the F02 range-scan workload set, the F03 projection workload set, "
-                                            + "the F04 simple-join workload set, or the F05 multi-way join workload set");
+                                            + "the F04 simple-join workload set, the F05 multi-way join workload set, "
+                                            + "the F06 GROUP BY workload set, or the F07 sort workload");
                 }
                 List<Integer> expectedClients = (rangeScanFitness || projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness)
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
                         ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
                 List<Integer> expectedWidths = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness)
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
                         ? List.of(1) : List.of(10);
                 if (!widthValues().equals(expectedWidths)) {
                     throw new IllegalArgumentException(
                             "Gen2-C3 read fitness requires widths " + expectedWidths);
                 }
                 String expectedTableShape = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness)
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness)
                         ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";
                 if (!expectedTableShape.equals(configuredInsertTableShape)) {
                     throw new IllegalArgumentException(
