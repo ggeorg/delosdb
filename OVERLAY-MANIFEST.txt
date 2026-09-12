@@ -1,9 +1,15 @@
-DelosDB Gen2-B1 duplicate/rollback control overlay
+DelosDB Gen2-C3 F05 multi-way join fitness overlay
 
-Purpose:
-- Add an identical explicit duplicate-key then Connection.rollback() control using the default Heap provider.
-- Leave the Gen2-B production code and the failing Gen2-B test sequence unchanged.
-- Determine whether X0Y67 is generic JDBC/Derby behavior or Gen2-B-specific before changing storage code.
+Changed repository files:
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Changed files:
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2BPrimaryKeyTableTest.java
+Scope:
+- admit the existing F05 multi-way join workload pair to Gen2-C3 read-fitness validation;
+- add SERVER/8-client/8-run six-engine F05 benchmark and sentinel tasks;
+- keep projected-current reads and rejected base-fetch page prefetch disabled;
+- preserve existing F05 SQL, fixtures, bind parameters, expected-row logic, and SQL semantic oracle.
+
+Canonical workloads:
+- JOIN_3WAY_SELECTIVE
+- JOIN_4WAY_FANOUT
