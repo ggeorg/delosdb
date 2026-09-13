@@ -16724,6 +16724,69 @@ tasks.register('runDelosPhase2NF04F06RelationalDecomposition', JavaExec) {
     }
 }
 
+// Re-run the existing F04/F06 decomposition against the accepted Gen2-C3
+// current/history path. Diagnostic only; rejected F02 read experiments remain off.
+tasks.register('runDelosGen2C3F04F06RelationalDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Decomposes current Gen2-C3 F04 join and F06 GROUP BY deficits into access and relational work.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2n-f04-f06-relational-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f04-f06-relational-decomposition')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f04-f06-relational-decomposition')
+    outputs.dir(reportDir)
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F04/F06 decomposition requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f04F06RelationalDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f04F06RelationalDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.phase2.f04F06RelationalDecomposition.requireGen2C3': 'true',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false'
+        ])
+    }
+    doLast {
+        File summary = new File(reportDir.get().asFile,
+                'phase2n-f04-f06-relational-decomposition-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("Gen2-C3 F04/F06 decomposition summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                'gen2C3Enabled=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'measurementStatus='
+        ].each { marker ->
+            if (!text.contains(marker)) {
+                throw new GradleException(
+                        "Gen2-C3 F04/F06 decomposition missing evidence marker: ${marker}")
+            }
+        }
+        if (text.contains('measurementStatus=INVALID')) {
+            throw new GradleException(
+                    'Gen2-C3 F04/F06 decomposition dispersion is INVALID; inspect the preserved report')
+        }
+    }
+}
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.

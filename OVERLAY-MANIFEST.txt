@@ -1,46 +1,13 @@
-DelosDB Gen2-C3 F13 realistic-transaction fitness overlay
-=========================================================
+DelosDB Gen2-C3 F04/F06 relational decomposition overlay
 
-Purpose
--------
-Add the breadth-first Gen2-C3 SERVER fitness baseline for the repository's existing
-F13 realistic transaction workloads while preserving the indexed-DELETE historical
-reachability guard. The dedicated F13 mode executes one fresh sustained interval per
-matrix cell, verifies the complete committed state with the existing SQL semantic
-oracle, and intentionally does not restore that disposable fresh fixture afterward.
-
-Changed repository files
-------------------------
+Changed repository files:
 - delosdb-tests/build.gradle
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Baseline geometry
------------------
-- BANK_TRANSACTION
-- ORDER_ENTRY_MIX
-- SERVER six-engine product matrix
-- 8 clients
-- 10,000 rows
-- width 1
-- 128-byte payload
-- FULL_INDEXED
-- 1,000 transactions/client
-- one fresh measured interval per workload/target/run
-- 8 runs
-- IQR/median <= 15%
-- SQL semantic oracle enabled
-- semantic restoration disabled only for this disposable fresh-fixture mode
-- projected-current experiment disabled
-- rejected base-fetch prefetch experiment disabled
+Purpose:
+- Reuse the existing Phase-2N F04/F06 decomposition against the accepted Gen2-C3 B1/C1/C2 path.
+- Keep projected-current decoding and page-local base-fetch prefetch disabled.
+- Fail closed if Gen2-C3 flags are absent or rejected F02 experiments are enabled.
+- Preserve the historical Phase-2N task unchanged while adding a current Gen2-C3 diagnostic task.
 
-Correctness boundary
---------------------
-The timed BANK_TRANSACTION and ORDER_ENTRY_MIX implementations are unchanged.
-No indexed DELETE bypass is introduced. Existing cleanup DELETE statements remain
-unchanged for ordinary benchmark modes and are skipped only after successful final
-state verification in the explicit fresh F13 mode, where that matrix-cell fixture is
-never reused.
-
-Production changes
-------------------
-None.
+No production files are changed.
