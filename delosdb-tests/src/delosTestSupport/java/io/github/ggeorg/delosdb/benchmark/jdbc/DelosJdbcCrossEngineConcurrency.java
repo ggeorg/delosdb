@@ -1439,6 +1439,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
         boolean baseFetchPrefetch = Boolean.getBoolean(
                 "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        boolean joinPlanFalsification = Boolean.getBoolean(
+                PHASE2N_PREFIX + "joinPlanFalsification");
         if (Boolean.getBoolean(PHASE2N_PREFIX + "requireGen2C3")
                 && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
             throw new IllegalStateException(
@@ -1496,6 +1498,13 @@ public final class DelosJdbcCrossEngineConcurrency {
         LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
         addPhase2NVariants(sqlByVariant, "heap", heapBase);
         addPhase2NVariants(sqlByVariant, "mvcc", mvccBase);
+        if (joinPlanFalsification) {
+            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+                addPhase2NForcedJoinVariants(sqlByVariant, "heap", heapBase, connection);
+                addPhase2NForcedJoinVariants(sqlByVariant, "mvcc", mvccBase, connection);
+                connection.rollback();
+            }
+        }
 
         LinkedHashMap<String, Integer> expectedRowsByVariant = new LinkedHashMap<>();
         for (String provider : List.of("heap", "mvcc")) {
@@ -1505,6 +1514,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             expectedRowsByVariant.put(provider + "-group-input", 10_000);
             expectedRowsByVariant.put(provider + "-group-unordered", 1_000);
             expectedRowsByVariant.put(provider + "-group-ordered", 1_000);
+            if (joinPlanFalsification) {
+                expectedRowsByVariant.put(provider + "-join-forced-base-first-hash", 1_000);
+                expectedRowsByVariant.put(provider + "-join-forced-dim-first-hash", 1_000);
+            }
         }
 
         StringBuilder queryShapes = new StringBuilder();
@@ -1541,6 +1554,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         assertPhase2NProviderSemantics(semanticByVariant, "group-input");
         assertPhase2NProviderSemantics(semanticByVariant, "group-unordered");
         assertPhase2NProviderSemantics(semanticByVariant, "group-ordered");
+        if (joinPlanFalsification) {
+            assertPhase2NJoinPlanSemantics(semanticByVariant);
+        }
         if (!semanticByVariant.get("heap-group-unordered")
                 .equals(semanticByVariant.get("heap-group-ordered"))
                 || !semanticByVariant.get("mvcc-group-unordered")
@@ -1684,6 +1700,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "gen2C3Enabled=" + gen2C3Enabled + "\n"
                 + "projectedCurrentRead=" + projectedCurrentRead + "\n"
                 + "baseFetchPagePrefetch=" + baseFetchPrefetch + "\n"
+                + "joinPlanFalsification=" + joinPlanFalsification + "\n"
                 + "rows=" + rowCount + "\n"
                 + "payloadSize=" + payloadSize + "\n"
                 + "warmupsPerVariant=" + warmups + "\n"
@@ -1714,6 +1731,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "mvccGroupVsInputRatio=" + format(mvccGroupUnordered / mvccGroupInput) + "\n"
                 + "heapOrderByGroupPenalty=" + format(heapGroupOrdered / heapGroupUnordered) + "\n"
                 + "mvccOrderByGroupPenalty=" + format(mvccGroupOrdered / mvccGroupUnordered) + "\n"
+                + phase2NJoinPlanSummary(joinPlanFalsification, distributions)
                 + "worstGoverningDispersion=" + format(worstGoverningDispersion) + "\n"
                 + "measurementStatus=" + combinedStatus + "\n"
                 + "classification=EVIDENCE_READY_FOR_F04_F06_PHASE2_CLASSIFICATION\n";
@@ -1740,6 +1758,78 @@ public final class DelosJdbcCrossEngineConcurrency {
         sqlByVariant.put(provider + "-group-ordered",
                 "select group_key, count(*), sum(quantity) from " + group
                         + " group by group_key order by group_key");
+    }
+
+    private static void addPhase2NForcedJoinVariants(
+            Map<String, String> sqlByVariant,
+            String provider,
+            String base,
+            Connection connection) throws SQLException {
+        String dimension = joinDimensionTableName(base);
+        String basePkIndex = phase2BPrimaryKeyIndex(connection, base, "ID");
+        String dimensionPkIndex = phase2BPrimaryKeyIndex(connection, dimension, "ID");
+        sqlByVariant.put(provider + "-join-forced-base-first-hash",
+                phase2NForcedJoinSql(
+                        base, "a", basePkIndex, dimension, "b", dimensionPkIndex));
+        sqlByVariant.put(provider + "-join-forced-dim-first-hash",
+                phase2NForcedJoinSql(
+                        dimension, "b", dimensionPkIndex, base, "a", basePkIndex));
+    }
+
+    private static String phase2NForcedJoinSql(
+            String firstTable,
+            String firstAlias,
+            String firstIndex,
+            String secondTable,
+            String secondAlias,
+            String secondIndex) {
+        return "select a.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
+                + firstTable + " " + firstAlias
+                + " --DERBY-PROPERTIES index='" + firstIndex + "'\n"
+                + "join " + secondTable + " " + secondAlias
+                + " --DERBY-PROPERTIES index='" + secondIndex
+                + "', joinStrategy=HASH\n"
+                + "on a.id = b.id";
+    }
+
+    private static void assertPhase2NJoinPlanSemantics(
+            Map<String, Long> semanticByVariant) {
+        for (String provider : List.of("heap", "mvcc")) {
+            long natural = semanticByVariant.get(provider + "-join");
+            for (String suffix : List.of(
+                    "join-forced-base-first-hash",
+                    "join-forced-dim-first-hash")) {
+                long forced = semanticByVariant.get(provider + "-" + suffix);
+                if (forced != natural) {
+                    throw new IllegalStateException(
+                            "Phase-2N forced join semantic drift for " + provider
+                                    + "/" + suffix + ": natural=" + natural
+                                    + ", forced=" + forced);
+                }
+            }
+        }
+    }
+
+    private static String phase2NJoinPlanSummary(
+            boolean joinPlanFalsification, Map<String, Distribution> distributions) {
+        if (!joinPlanFalsification) {
+            return "";
+        }
+        double heapNatural = distributions.get("heap-join").median();
+        double mvccNatural = distributions.get("mvcc-join").median();
+        double heapBaseFirst = distributions.get("heap-join-forced-base-first-hash").median();
+        double mvccBaseFirst = distributions.get("mvcc-join-forced-base-first-hash").median();
+        double heapDimFirst = distributions.get("heap-join-forced-dim-first-hash").median();
+        double mvccDimFirst = distributions.get("mvcc-join-forced-dim-first-hash").median();
+        return "heapJoinForcedBaseFirstHashMedianMillis=" + format(heapBaseFirst) + "\n"
+                + "mvccJoinForcedBaseFirstHashMedianMillis=" + format(mvccBaseFirst) + "\n"
+                + "forcedBaseFirstMvccVsHeapRatio=" + format(mvccBaseFirst / heapBaseFirst) + "\n"
+                + "mvccForcedBaseFirstVsNaturalRatio=" + format(mvccBaseFirst / mvccNatural) + "\n"
+                + "heapJoinForcedDimFirstHashMedianMillis=" + format(heapDimFirst) + "\n"
+                + "mvccJoinForcedDimFirstHashMedianMillis=" + format(mvccDimFirst) + "\n"
+                + "forcedDimFirstMvccVsHeapRatio=" + format(mvccDimFirst / heapDimFirst) + "\n"
+                + "mvccForcedDimFirstVsNaturalRatio=" + format(mvccDimFirst / mvccNatural) + "\n"
+                + "heapForcedBaseFirstVsNaturalRatio=" + format(heapBaseFirst / heapNatural) + "\n";
     }
 
     private static ExplainCapture capturePhase2NExplain(

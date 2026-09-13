@@ -1,13 +1,14 @@
-DelosDB Gen2-C3 F04/F06 relational decomposition overlay
+DelosDB Gen2-C3 F04 join-plan falsification overlay
+
+Purpose:
+- Extend the accepted Phase-2N F04/F06 diagnostic with forced covering-PK HASH join variants.
+- Compare natural F04 plans against fixed base-first and fixed dimension-first join orders.
+- Falsify optimizer/access-path selection versus join execution before any production change.
 
 Changed repository files:
 - delosdb-tests/build.gradle
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Purpose:
-- Reuse the existing Phase-2N F04/F06 decomposition against the accepted Gen2-C3 B1/C1/C2 path.
-- Keep projected-current decoding and page-local base-fetch prefetch disabled.
-- Fail closed if Gen2-C3 flags are absent or rejected F02 experiments are enabled.
-- Preserve the historical Phase-2N task unchanged while adding a current Gen2-C3 diagnostic task.
-
-No production files are changed.
+Production code changed: no
+Benchmark SQL semantics changed: no; forced variants are diagnostic-only and fingerprinted against the natural join.
+Rejected F02 experiments: explicitly disabled by the registered task.

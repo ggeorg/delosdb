@@ -16787,6 +16787,89 @@ tasks.register('runDelosGen2C3F04F06RelationalDecomposition', JavaExec) {
     }
 }
 
+
+// F04 causal falsification: hold semantics constant while forcing the covering-PK
+// hash-join access paths in both join orders. Diagnostic only; no production hints.
+tasks.register('runDelosGen2C3F04JoinPlanFalsification', JavaExec) {
+    group = 'verification'
+    description = 'Falsifies whether Gen2-C3 F04 regression is optimizer/access-path selection versus join execution.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2n-f04-f06-relational-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f04-join-plan-falsification')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f04-join-plan-falsification')
+    outputs.dir(reportDir)
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F04 join-plan falsification requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f04F06RelationalDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f04F06RelationalDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.phase2.f04F06RelationalDecomposition.requireGen2C3': 'true',
+                'delosdb.phase2.f04F06RelationalDecomposition.joinPlanFalsification': 'true',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false'
+        ])
+    }
+    doLast {
+        File summary = new File(reportDir.get().asFile,
+                'phase2n-f04-f06-relational-decomposition-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("F04 join-plan falsification summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                'gen2C3Enabled=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'joinPlanFalsification=true',
+                'mvccJoinForcedBaseFirstHashMedianMillis=',
+                'mvccJoinForcedDimFirstHashMedianMillis=',
+                'measurementStatus='
+        ].each { markerText ->
+            if (!text.contains(markerText)) {
+                throw new GradleException(
+                        "F04 join-plan falsification missing evidence marker: ${markerText}")
+            }
+        }
+        if (text.contains('measurementStatus=INVALID')) {
+            throw new GradleException(
+                    'F04 join-plan falsification dispersion is INVALID; inspect the preserved report')
+        }
+        File forcedPlan = new File(reportDir.get().asFile,
+                'mvcc-join-forced-base-first-hash-explain-analyze.txt')
+        if (!forcedPlan.isFile()) {
+            throw new GradleException("Forced Gen2 base-first plan missing: ${forcedPlan}")
+        }
+        String forcedText = forcedPlan.getText('UTF-8')
+        int indexScans = forcedText.readLines().count { it.contains('SCAN/INDEX_SCAN') }
+        if (indexScans < 2 || !forcedText.contains('JOIN/JOIN join=HASH')) {
+            throw new GradleException(
+                    'Forced Gen2 base-first plan did not materialize as two index scans plus HASH join')
+        }
+        if (forcedText.contains('SCAN/TABLE_SCAN relation="APP"."DELOS_BENCH_PHASE2N_MVCC"')) {
+            throw new GradleException(
+                    'Forced Gen2 base-first plan unexpectedly retained a base-table scan')
+        }
+    }
+}
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.
