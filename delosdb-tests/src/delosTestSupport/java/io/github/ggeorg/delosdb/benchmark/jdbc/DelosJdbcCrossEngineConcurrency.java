@@ -1439,6 +1439,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
         boolean baseFetchPrefetch = Boolean.getBoolean(
                 "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
         boolean joinPlanFalsification = Boolean.getBoolean(
                 PHASE2N_PREFIX + "joinPlanFalsification");
         if (Boolean.getBoolean(PHASE2N_PREFIX + "requireGen2C3")
@@ -1700,6 +1702,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "gen2C3Enabled=" + gen2C3Enabled + "\n"
                 + "projectedCurrentRead=" + projectedCurrentRead + "\n"
                 + "baseFetchPagePrefetch=" + baseFetchPrefetch + "\n"
+                + "physicalScanCost=" + physicalScanCost + "\n"
                 + "joinPlanFalsification=" + joinPlanFalsification + "\n"
                 + "rows=" + rowCount + "\n"
                 + "payloadSize=" + payloadSize + "\n"
@@ -2714,6 +2717,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (mvccGen2ProjectedCurrentReadEnabled()) {
                 command.add("-Ddelosdb.experimental.mvccGen2ProjectedCurrentRead.enabled=true");
             }
+            command.add("-Ddelosdb.experimental.mvccPhysicalScanCost.enabled="
+                    + mvccPhysicalScanCostEnabled());
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -2974,6 +2979,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2ProjectedCurrentReadEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2ProjectedCurrentRead.enabled=true");
                 }
+                if (target == Target.DELOS_MVCC_DRDA) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccPhysicalScanCost.enabled="
+                            + mvccPhysicalScanCostEnabled());
+                }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.skipOpenQueries=20");
@@ -3185,6 +3194,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
                 .append("MVCC Gen2 projected current read experiment: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
+                .append("MVCC physical scan cost experiment: ")
+                .append(mvccPhysicalScanCostEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -8726,6 +8737,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2C3ReadServerEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read enabled: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
+                .append("MVCC physical scan cost enabled: ")
+                .append(mvccPhysicalScanCostEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
                 .append(freshRealisticTransactionFitnessEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
@@ -8993,6 +9006,11 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2ProjectedCurrentReadEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2ProjectedCurrentRead");
+    }
+
+    private static boolean mvccPhysicalScanCostEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                PREFIX + "mvccPhysicalScanCost", "true"));
     }
 
     private static String insertTableShape() {

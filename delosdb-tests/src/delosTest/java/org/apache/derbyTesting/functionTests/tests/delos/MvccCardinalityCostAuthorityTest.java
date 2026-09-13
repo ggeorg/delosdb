@@ -23,10 +23,14 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 
+import org.apache.derby.iapi.store.access.StoreCostController;
+
 /** Focused persistence contract for MVCC optimizer row-count authority. */
 public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
     private static final int ROW_COUNT = 120;
     private static final String AUTO_STATS_PROPERTY = "derby.storage.indexStats.auto";
+    private static final String PHYSICAL_SCAN_COST_PROPERTY =
+            "delosdb.experimental.mvccPhysicalScanCost.enabled";
 
     public void testMvccStatisticsEstimateSurvivesFreshCostControllerAndRestart()
             throws Exception {
@@ -86,6 +90,60 @@ public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
                         Integer.toString(ROW_COUNT));
                 reopened.commit();
             }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testMvccPhysicalScanCostAccountsForCurrentContainerGeometry()
+            throws Exception {
+        String database = databaseName("mvcc-physical-scan-cost");
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table mvcc_scan_cost_t ("
+                            + "id int primary key, group_id int, payload varchar(32)) "
+                            + "using delos_mvcc");
+            insertRows(connection, "MVCC_SCAN_COST_T");
+            connection.commit();
+
+            double defaultCost;
+            try (SystemPropertyScope ignored = clearSystemProperty(
+                    PHYSICAL_SCAN_COST_PROPERTY)) {
+                defaultCost = MvccRawStoreMetadataInspection.storeCostScanCost(
+                        connection,
+                        "MVCC_SCAN_COST_T",
+                        StoreCostController.STORECOST_SCAN_SET);
+            }
+
+            double legacyCost;
+            try (SystemPropertyScope ignored = setSystemProperty(
+                    PHYSICAL_SCAN_COST_PROPERTY, "false")) {
+                legacyCost = MvccRawStoreMetadataInspection.storeCostScanCost(
+                        connection,
+                        "MVCC_SCAN_COST_T",
+                        StoreCostController.STORECOST_SCAN_SET);
+            }
+
+            double physicalCost;
+            try (SystemPropertyScope ignored = setSystemProperty(
+                    PHYSICAL_SCAN_COST_PROPERTY, "true")) {
+                physicalCost = MvccRawStoreMetadataInspection.storeCostScanCost(
+                        connection,
+                        "MVCC_SCAN_COST_T",
+                        StoreCostController.STORECOST_SCAN_SET);
+            }
+
+            assertTrue(
+                    "Physical MVCC scan costing must account for page and row geometry: "
+                            + "legacy=" + legacyCost + ", physical=" + physicalCost,
+                    physicalCost > legacyCost);
+            assertEquals(
+                    "Physical MVCC scan costing must be the default when no override is present",
+                    physicalCost,
+                    defaultCost,
+                    0.0d);
+            connection.rollback();
         } finally {
             shutdownIfBooted(database);
         }

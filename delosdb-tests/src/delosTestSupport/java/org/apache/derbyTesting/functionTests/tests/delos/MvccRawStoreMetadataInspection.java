@@ -245,6 +245,76 @@ final class MvccRawStoreMetadataInspection {
         }
     }
 
+
+    static double storeCostScanCost(
+            Connection connection, String tableName, int scanType) throws Exception {
+        if (!(connection instanceof EmbedConnection embedded)) {
+            throw new AssertionError("Embedded connection required for RawStore inspection");
+        }
+        LanguageConnectionContext lcc = embedded.getLanguageConnection();
+        ContextManager contextManager = lcc.getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        boolean installed = contextService.getCurrentContextManager() != contextManager;
+        if (installed) {
+            contextService.setCurrentContextManager(contextManager);
+        }
+        try {
+            TransactionManager manager = transactionManager(connection);
+            StoreCostController cost =
+                    manager.openStoreCost(baseConglomerateId(connection, tableName));
+            try {
+                MutableStoreCostResult result = new MutableStoreCostResult();
+                cost.getScanCost(
+                        scanType,
+                        -1L,
+                        1,
+                        false,
+                        null,
+                        null,
+                        null,
+                        ScanController.NA,
+                        null,
+                        ScanController.NA,
+                        false,
+                        0,
+                        result);
+                return result.getEstimatedCost();
+            } finally {
+                cost.close();
+            }
+        } finally {
+            if (installed) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+    private static final class MutableStoreCostResult
+            implements org.apache.derby.iapi.store.access.StoreCostResult {
+        private long estimatedRowCount;
+        private double estimatedCost;
+
+        @Override
+        public long getEstimatedRowCount() {
+            return estimatedRowCount;
+        }
+
+        @Override
+        public void setEstimatedRowCount(long count) {
+            estimatedRowCount = count;
+        }
+
+        @Override
+        public double getEstimatedCost() {
+            return estimatedCost;
+        }
+
+        @Override
+        public void setEstimatedCost(double cost) {
+            estimatedCost = cost;
+        }
+    }
+
     static void setBaseScanEstimatedRowCount(
             Connection connection, String tableName, long count) throws Exception {
         TransactionManager manager = transactionManager(connection);
