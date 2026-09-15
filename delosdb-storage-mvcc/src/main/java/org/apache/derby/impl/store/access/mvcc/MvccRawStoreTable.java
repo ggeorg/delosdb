@@ -1364,6 +1364,9 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
         List<VisibleRow> rows = new ArrayList<>();
+        boolean singlePassGen2CurrentScan = singlePassGen2CurrentScan(table);
+        Object[] reusableCurrentScanTemplate = reusableGen2CurrentScanTemplate(
+                rawTransaction, table, projection, singlePassGen2CurrentScan);
         ContainerHandle container = rawTransaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
@@ -1381,6 +1384,26 @@ final class MvccRawStoreTable {
                         : Page.FIRST_SLOT_NUMBER;
                 for (int slot = startSlot; slot < page.recordCount(); slot++) {
                     if (page.isDeletedAtSlot(slot)) {
+                        continue;
+                    }
+                    if (singlePassGen2CurrentScan) {
+                        Gen2A1CurrentRecord current = decodeGen2A1Current(
+                                rawTransaction,
+                                table,
+                                page,
+                                slot,
+                                projection,
+                                reusableCurrentScanTemplate);
+                        VisibleRow visible = visibleGen2CurrentOrHistory(
+                                rawTransaction,
+                                table,
+                                current,
+                                projection,
+                                snapshotSequence,
+                                context.transactionId());
+                        if (visible != null) {
+                            rows.add(visible);
+                        }
                         continue;
                     }
                     DirectoryRecord directory = decodeDirectory(rawTransaction, page, slot);
@@ -1431,6 +1454,27 @@ final class MvccRawStoreTable {
             container.close();
         }
         return rows;
+    }
+
+    private static boolean singlePassGen2CurrentScan(Descriptor table) {
+        return table.gen2A1()
+                && Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_SINGLE_PASS_CURRENT_SCAN_ENABLED_PROPERTY);
+    }
+
+    private static Object[] reusableGen2CurrentScanTemplate(
+            Transaction transaction,
+            Descriptor table,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            boolean singlePassGen2CurrentScan) throws StandardException {
+        if (!singlePassGen2CurrentScan
+                || !Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_REUSABLE_CURRENT_SCAN_TEMPLATE_ENABLED_PROPERTY)) {
+            return null;
+        }
+        MvccRawStoreVersionRows.FetchProjection currentProjection =
+                table.projectedCurrentRead() ? projection : null;
+        return gen2A1CurrentTemplate(transaction, table, currentProjection);
     }
 
     static boolean pendingVersionExists(
@@ -2517,6 +2561,16 @@ final class MvccRawStoreTable {
             Page page,
             int slot,
             MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        return decodeGen2A1Current(transaction, table, page, slot, projection, null);
+    }
+
+    private static Gen2A1CurrentRecord decodeGen2A1Current(
+            Transaction transaction,
+            Descriptor table,
+            Page page,
+            int slot,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            Object[] reusableRow) throws StandardException {
         int expected = table.gen2History()
                 ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
                 : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
@@ -2525,7 +2579,14 @@ final class MvccRawStoreTable {
         }
         MvccRawStoreVersionRows.FetchProjection currentProjection =
                 table.projectedCurrentRead() ? projection : null;
-        Object[] row = gen2A1CurrentTemplate(transaction, table, currentProjection);
+        if (reusableRow != null && reusableRow.length != expected) {
+            throw new IllegalStateException(
+                    "Reusable Gen2 CURRENT scan template has unexpected field count: "
+                            + reusableRow.length + " expected=" + expected);
+        }
+        Object[] row = reusableRow != null
+                ? reusableRow
+                : gen2A1CurrentTemplate(transaction, table, currentProjection);
         FetchDescriptor descriptor = currentProjection == null
                 ? null
                 : currentProjection.currentDescriptor(table);

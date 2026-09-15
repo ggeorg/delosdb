@@ -1,30 +1,41 @@
-DelosDB Gen2-C3 F06 group-input JFR HotSpot logging fix
+DelosDB Gen2-C3 F06 reusable CURRENT scan-template experiment
 
 Purpose
 -------
-Fix the Phase-2O diagnostic harness so HotSpot LogCompilation arguments are
-configured on the JavaExec task before execution rather than being added from
-doFirst. This preserves the existing Heap/MVCC raw two-column TABLE_SCAN probe
-and makes the expected per-provider compilation logs reliable.
+Measure whether per-row Gen2 CURRENT fetch-template/DataValueDescriptor construction is a
+major part of the remaining F06 table-scan/materialization deficit after the accepted
+single-pass CURRENT decode experiment.
 
-Changed repository files
-------------------------
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Production behavior
+-------------------
+Default behavior is unchanged. The new experiment is OFF unless:
+  -Ddelosdb.experimental.mvccGen2SinglePassCurrentScan.enabled=true
+  -Ddelosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled=true
 
-Behavior
---------
-- Configures -XX:+LogCompilation and the provider-specific -XX:LogFile during
-  normal JavaExec configuration.
-- Keeps JFR stackdepth configuration unchanged.
-- Adds a fail-fast runtime check proving the expected HotSpot logging arguments
-  reached the provider JVM before fixture construction/profile work begins.
-- Keeps the existing post-run requirement that the HotSpot log exists and is
-  non-empty.
+Experiment
+----------
+For scanVisibleAt() only, build one Gen2 CURRENT RawStore fetch template per scan and
+reuse it across CURRENT slots. Payload values are still cloned into each VisibleRow,
+so row ownership/retention semantics remain unchanged. Non-scan point reads and mutation
+paths continue to allocate their own decode template.
 
-Not changed
------------
-- No production storage/MVCC/RawStore code.
-- No SQL, plan, fixture, warmup, profile duration, or semantic-oracle changes.
-- No GROUP BY, join, sort, projection, or scan implementation changes.
-- No benchmark thresholds are changed.
+Explicitly unchanged
+--------------------
+- RawStore format / persistence
+- MVCC visibility rules
+- history fallback
+- payload clone semantics
+- optimizer costing
+- GROUP BY and sort
+- projected-current read experiment
+- page-local prefetch
+- WAL / undo / recovery
+- default production behavior
+
+Pre-delivery checks
+-------------------
+- DelosJdbcCrossEngineConcurrency.java compiled with javac against delosTestSupport sourcepath.
+- MvccRawStoreFormat.java and MvccRawStoreTable.java compiled with javac against a flattened
+  repository main-source tree plus generated release SanityState.
+- scanVisibleAt() remains below the repository 100-line method limit (98 lines).
+- ZIP integrity, duplicate-entry and SHA-256 checks performed.

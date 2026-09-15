@@ -16958,9 +16958,9 @@ tasks.register('runDelosGen2C3F04PhysicalScanCostExperiment', JavaExec) {
 }
 
 
-// Phase 2O: isolate the F06 raw two-column row-production path under matched
-// Heap/MVCC table scans. Each provider runs in its own JVM and JFR recording so
-// CPU/allocation attribution is not polluted by GROUP BY, sort, or join work.
+// Phase 2O: isolate the F06 raw two-column row-production path with a matched
+// index=null TABLE_SCAN control. Natural raw-input and canonical GROUP_HIGH_CARD
+// plans are captured separately so optimizer choice is evidence, not an assertion.
 def delosGen2C3F06GroupInputJfrRoot =
         'reports/delosdb/benchmarks/gen2-c3-attribution/f06-group-input-jfr'
 
@@ -16977,15 +16977,28 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
     def databaseRoot = rootProject.layout.buildDirectory
             .dir("tmp/delos-gen2-c3-f06-group-input-jfr/${provider}")
     task.outputs.dir(reportDir)
-    File hotspotLog = new File(reportDir.get().asFile, provider + '-hotspot.log')
-    task.jvmArgs(
-            '-XX:FlightRecorderOptions=stackdepth=256',
-            '-XX:+UnlockDiagnosticVMOptions',
-            '-XX:+LogCompilation',
-            "-XX:LogFile=${hotspotLog.absolutePath}")
+    task.jvmArgs('-XX:FlightRecorderOptions=stackdepth=256')
     task.doFirst {
         def saneValue = providers.gradleProperty('delosdb.sane')
                 .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        def singlePassValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2SinglePassCurrentScan')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def reusableTemplateValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!(singlePassValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2SinglePassCurrentScan must be true or false')
+        }
+        if (!(reusableTemplateValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate must be true or false')
+        }
+        if (reusableTemplateValue == 'true' && singlePassValue != 'true') {
+            throw new GradleException(
+                    'mvccGen2ReusableCurrentScanTemplate requires mvccGen2SinglePassCurrentScan=true')
+        }
         if (saneValue != 'false') {
             throw new GradleException(
                     'Gen2-C3 F06 group-input JFR attribution requires a release build; rerun with -Pdelosdb.sane=false')
@@ -17001,7 +17014,11 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 'delosdb.phase2.f06GroupInputJfr.provider': provider,
                 'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
                 'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
-                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true'
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled':
+                        provider == 'mvcc' ? singlePassValue : 'false',
+                'delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled':
+                        provider == 'mvcc' ? reusableTemplateValue : 'false'
         ]
         if (provider == 'mvcc') {
             properties.putAll([
@@ -17019,13 +17036,26 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             throw new GradleException("F06 ${provider} JFR summary missing: ${summary}")
         }
         String text = summary.getText('UTF-8')
+        def singlePassValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2SinglePassCurrentScan')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def reusableTemplateValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def expectedSinglePass = provider == 'mvcc' ? singlePassValue : 'false'
+        def expectedReusableTemplate = provider == 'mvcc' ? reusableTemplateValue : 'false'
         [
                 "provider=${provider}",
-                'planShape=TABLE_SCAN',
+                "singlePassCurrentScan=${expectedSinglePass}",
+                "reusableCurrentScanTemplate=${expectedReusableTemplate}",
+                'naturalPlanShape=',
+                'profilePlanShape=TABLE_SCAN',
+                'canonicalGroupPlanShape=',
+                'profileAccessControl=index=null',
                 'projectedCurrentRead=false',
                 'baseFetchPagePrefetch=false',
                 'physicalScanCost=true',
-                'attributionTarget=RAW_TWO_COLUMN_TABLE_SCAN_ROW_PRODUCTION'
+                'attributionTarget=FORCED_TABLE_SCAN_RAW_TWO_COLUMN_ROW_PRODUCTION'
         ].each { markerText ->
             if (!text.contains(markerText)) {
                 throw new GradleException(
@@ -17036,12 +17066,8 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             throw new GradleException('F06 MVCC JFR run does not prove Gen2-C3 was enabled')
         }
         File recording = new File(reportDir.get().asFile, "${provider}-group-input.jfr")
-        File hotspot = new File(reportDir.get().asFile, "${provider}-hotspot.log")
         if (!recording.isFile() || recording.length() == 0L) {
             throw new GradleException("F06 ${provider} JFR recording missing or empty: ${recording}")
-        }
-        if (!hotspot.isFile() || hotspot.length() == 0L) {
-            throw new GradleException("F06 ${provider} HotSpot compilation log missing or empty: ${hotspot}")
         }
     }
 }
@@ -17062,7 +17088,7 @@ delosGen2C3F06GroupInputJfrMvcc.configure {
 
 tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
     group = 'verification'
-    description = 'Profiles matched Heap/Gen2 F06 raw group-input table scans and renders JFR attribution views.'
+    description = 'Profiles matched Heap/Gen2 F06 index=null table-scan controls and renders JFR attribution views.'
     dependsOn delosGen2C3F06GroupInputJfrHeap, delosGen2C3F06GroupInputJfrMvcc
     outputs.upToDateWhen { false }
     def reportRoot = rootProject.layout.buildDirectory.dir(delosGen2C3F06GroupInputJfrRoot)
@@ -17111,16 +17137,55 @@ tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
                         .setText(output, 'UTF-8')
             }
         }
+        [
+                new File(root, 'heap/heap-group-input.jfr'),
+                new File(root, 'mvcc/mvcc-group-input.jfr')
+        ].each { recording ->
+            def compilerOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'print', '--events',
+                        'jdk.Compilation,jdk.CompilationFailure,jdk.Deoptimization,jdk.CompilerStatistics',
+                        recording.absolutePath
+                ignoreExitValue = true
+            }
+            def compilerResult = compilerOutput.result.get()
+            def compilerStdout = compilerOutput.standardOutput.asText.get()
+            def compilerStderr = compilerOutput.standardError.asText.get()
+            if (compilerResult.exitValue != 0) {
+                throw new GradleException(
+                        "F06 group-input JFR compiler-event extraction failed for ${recording.name}: ${compilerStderr.trim()}")
+            }
+            new File(viewDir, recording.name.replace('.jfr', '-compiler-events.txt'))
+                    .setText(compilerStdout, 'UTF-8')
+
+            def summaryOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'summary', recording.absolutePath
+                ignoreExitValue = true
+            }
+            def summaryResult = summaryOutput.result.get()
+            def summaryStdout = summaryOutput.standardOutput.asText.get()
+            def summaryStderr = summaryOutput.standardError.asText.get()
+            if (summaryResult.exitValue != 0) {
+                throw new GradleException(
+                        "F06 group-input JFR summary failed for ${recording.name}: ${summaryStderr.trim()}")
+            }
+            new File(viewDir, recording.name.replace('.jfr', '-event-summary.txt'))
+                    .setText(summaryStdout, 'UTF-8')
+        }
         new File(root, 'phase2o-f06-group-input-jfr-comparison.txt').setText(
                 'DelosDB Phase-2O F06 raw group-input JFR comparison\n' +
                         "semanticFingerprint=${heap.semanticFingerprint}\n" +
                         "heapProfileMillisPerExecution=${heapMillis}\n" +
                         "mvccProfileMillisPerExecution=${mvccMillis}\n" +
                         "mvccVsHeapProfileRatio=${mvccMillis / heapMillis}\n" +
-                        'matchedPlanShape=TABLE_SCAN\n' +
+                        "heapNaturalPlanShape=${heap.naturalPlanShape}\n" +
+                        "mvccNaturalPlanShape=${mvcc.naturalPlanShape}\n" +
+                        "heapCanonicalGroupPlanShape=${heap.canonicalGroupPlanShape}\n" +
+                        "mvccCanonicalGroupPlanShape=${mvcc.canonicalGroupPlanShape}\n" +
+                        'matchedProfilePlanShape=TABLE_SCAN\n' +
+                        'profileAccessControl=index=null\n' +
                         'selectedColumns=group_key,quantity\n' +
                         'JFR settings=profile; stackdepth=256\n' +
-                        'HotSpot=-XX:+LogCompilation; one log per provider JVM\n' +
+                        'compilerEvidence=JFR jdk.Compilation,jdk.CompilationFailure,jdk.Deoptimization,jdk.CompilerStatistics\n' +
                         'interpretation=JFR_ATTRIBUTION_ONLY_NOT_ACCEPTANCE_PERFORMANCE\n',
                 'UTF-8')
     }

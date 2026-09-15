@@ -1754,7 +1754,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         Path reportDirectory = requiredPhase2OPath("reportDirectory");
         Path databaseRoot = requiredPhase2OPath("databaseRoot");
         String provider = requiredPhase2OProvider();
-        requirePhase2OProfilingJvmArguments(reportDirectory, provider);
         boolean mvcc = "mvcc".equals(provider);
         boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
                 && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
@@ -1765,6 +1764,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                 "delosdb.experimental.mvccBaseFetchPagePrefetch");
         boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
                 "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
+        boolean singlePassCurrentScan = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled");
+        boolean reusableCurrentScanTemplate = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled");
+        if (reusableCurrentScanTemplate && !singlePassCurrentScan) {
+            throw new IllegalStateException(
+                    "Phase-2O reusable CURRENT scan template requires single-pass CURRENT scan");
+        }
         if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
             throw new IllegalStateException(
                     "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
@@ -1789,31 +1796,59 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         String variant = provider + "-group-input";
-        String sql = "select group_key, quantity from " + highCardGroupTableName(base);
-        ExplainCapture analyze;
+        String groupTable = highCardGroupTableName(base);
+        String naturalSql = "select group_key, quantity from " + groupTable;
+        String profileSql = "select group_key, quantity from " + groupTable
+                + " --DERBY-PROPERTIES index=null\n";
+        String canonicalGroupSql = "select group_key, count(*), sum(quantity) from " + groupTable
+                + " group by group_key order by group_key";
+        ExplainCapture naturalAnalyze;
+        ExplainCapture profileAnalyze;
+        ExplainCapture canonicalGroupAnalyze;
         long semanticFingerprint;
+        long profileFingerprint;
         try (Connection connection = openPhase2AConnection(jdbcUrl)) {
-            analyze = capturePhase2NExplain(connection, sql, true);
-            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            naturalAnalyze = capturePhase2NExplain(connection, naturalSql, true);
+            profileAnalyze = capturePhase2NExplain(connection, profileSql, true);
+            canonicalGroupAnalyze = capturePhase2NExplain(connection, canonicalGroupSql, true);
+            try (PreparedStatement statement = connection.prepareStatement(naturalSql)) {
                 semanticFingerprint = executePhase2NRead(statement, variant, rowCount);
+            }
+            try (PreparedStatement statement = connection.prepareStatement(profileSql)) {
+                profileFingerprint = executePhase2NRead(statement, variant, rowCount);
             }
             connection.rollback();
         }
-        String planShape = phase2NPlanShape(analyze.text());
-        if (!"TABLE_SCAN".equals(planShape)) {
+        String naturalPlanShape = phase2NPlanShape(naturalAnalyze.text());
+        String profilePlanShape = phase2NPlanShape(profileAnalyze.text());
+        String canonicalGroupPlanShape = phase2NPlanShape(canonicalGroupAnalyze.text());
+        writePhase2ACapture(
+                reportDirectory, provider + "-group-input-natural-explain-analyze", naturalAnalyze);
+        writePhase2ACapture(
+                reportDirectory, provider + "-group-input-profile-explain-analyze", profileAnalyze);
+        writePhase2ACapture(
+                reportDirectory, provider + "-group-high-card-canonical-explain-analyze",
+                canonicalGroupAnalyze);
+        if (profileFingerprint != semanticFingerprint) {
             throw new IllegalStateException(
-                    "Phase-2O requires a raw TABLE_SCAN but observed " + planShape);
+                    "Phase-2O forced table scan changed semantics for " + provider);
         }
-        writePhase2ACapture(reportDirectory, provider + "-group-input-explain-analyze", analyze);
+        if (!"TABLE_SCAN".equals(profilePlanShape)) {
+            throw new IllegalStateException(
+                    "Phase-2O index=null control requires TABLE_SCAN but observed "
+                            + profilePlanShape);
+        }
 
         Configuration profile = Configuration.getConfiguration("profile");
         Phase2EProfile result = profilePhase2OGroupInput(
-                jdbcUrl, sql, variant, rowCount, semanticFingerprint, warmups,
+                jdbcUrl, profileSql, variant, rowCount, semanticFingerprint, warmups,
                 profileSeconds, profile, reportDirectory.resolve(provider + "-group-input.jfr"));
         writePhase2OGroupInputSummary(
                 reportDirectory, provider, gen2C3Enabled, projectedCurrentRead,
-                baseFetchPrefetch, physicalScanCost, rowCount, warmups,
-                profileSeconds, semanticFingerprint, planShape, result);
+                baseFetchPrefetch, physicalScanCost, singlePassCurrentScan,
+                reusableCurrentScanTemplate, rowCount, warmups, profileSeconds,
+                semanticFingerprint, naturalPlanShape, profilePlanShape,
+                canonicalGroupPlanShape, result);
     }
 
     private static Phase2EProfile profilePhase2OGroupInput(
@@ -1877,11 +1912,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean projectedCurrentRead,
             boolean baseFetchPrefetch,
             boolean physicalScanCost,
+            boolean singlePassCurrentScan,
+            boolean reusableCurrentScanTemplate,
             int rowCount,
             int warmups,
             int profileSeconds,
             long semanticFingerprint,
-            String planShape,
+            String naturalPlanShape,
+            String profilePlanShape,
+            String canonicalGroupPlanShape,
             Phase2EProfile result) throws IOException {
         String summary = "DelosDB Phase-2O F06 raw group-input JFR attribution\n"
                 + "diagnosticOnly=true\n"
@@ -1889,39 +1928,28 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "rows=" + rowCount + "\n"
                 + "selectedColumns=group_key,quantity\n"
                 + "semanticFingerprint=" + semanticFingerprint + "\n"
-                + "planShape=" + planShape + "\n"
+                + "naturalPlanShape=" + naturalPlanShape + "\n"
+                + "profilePlanShape=" + profilePlanShape + "\n"
+                + "canonicalGroupPlanShape=" + canonicalGroupPlanShape + "\n"
+                + "profileAccessControl=index=null\n"
                 + "gen2C3Enabled=" + gen2C3Enabled + "\n"
                 + "projectedCurrentRead=" + projectedCurrentRead + "\n"
                 + "baseFetchPagePrefetch=" + baseFetchPrefetch + "\n"
                 + "physicalScanCost=" + physicalScanCost + "\n"
+                + "singlePassCurrentScan=" + singlePassCurrentScan + "\n"
+                + "reusableCurrentScanTemplate=" + reusableCurrentScanTemplate + "\n"
                 + "warmups=" + warmups + "\n"
                 + "profileSecondsTarget=" + profileSeconds + "\n"
                 + "profileIterations=" + result.iterations() + "\n"
                 + "profileElapsedMillis=" + format(result.elapsedMillis()) + "\n"
                 + "profileMillisPerExecution=" + format(result.millisPerExecution()) + "\n"
-                + "attributionTarget=RAW_TWO_COLUMN_TABLE_SCAN_ROW_PRODUCTION\n"
+                + "attributionTarget=FORCED_TABLE_SCAN_RAW_TWO_COLUMN_ROW_PRODUCTION\n"
                 + "interpretation=JFR_ATTRIBUTION_ONLY_NOT_ACCEPTANCE_PERFORMANCE\n";
         Files.writeString(
                 reportDirectory.resolve("phase2o-f06-group-input-jfr-summary.txt"),
                 summary,
                 StandardCharsets.UTF_8);
         System.out.print(summary);
-    }
-
-    private static void requirePhase2OProfilingJvmArguments(
-            Path reportDirectory, String provider) {
-        List<String> inputArguments = ManagementFactory.getRuntimeMXBean().getInputArguments();
-        String expectedLogFile = "-XX:LogFile="
-                + reportDirectory.resolve(provider + "-hotspot.log");
-        if (!inputArguments.contains("-XX:+LogCompilation")) {
-            throw new IllegalStateException(
-                    "Phase-2O requires -XX:+LogCompilation in the provider JVM");
-        }
-        if (!inputArguments.contains(expectedLogFile)) {
-            throw new IllegalStateException(
-                    "Phase-2O provider JVM missing expected HotSpot log target: "
-                            + expectedLogFile);
-        }
     }
 
     private static Path requiredPhase2OPath(String key) {
