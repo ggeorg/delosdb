@@ -55,6 +55,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2J_PREFIX = "delosdb.phase2.f05CompatibilityNativePath.";
     private static final String PHASE2K_PREFIX = "delosdb.phase2.f03ProjectionMaterialization.";
     private static final String PHASE2N_PREFIX = "delosdb.phase2.f04F06RelationalDecomposition.";
+    private static final String PHASE2O_PREFIX = "delosdb.phase2.f06GroupInputJfr.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -152,6 +153,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2NF04F06RelationalDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2o-f06-group-input-jfr".equals(args[0])) {
+            runPhase2OF06GroupInputJfrAttribution();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -167,7 +172,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2h-f05-post-hint-residual-attribution',"
                             + " exactly 'phase2j-f05-compatibility-native-path',"
                             + " exactly 'phase2k-f03-projection-materialization',"
-                            + " or exactly 'phase2n-f04-f06-relational-decomposition'");
+                            + " exactly 'phase2n-f04-f06-relational-decomposition',"
+                            + " or exactly 'phase2o-f06-group-input-jfr'");
         }
     }
 
@@ -1744,6 +1750,180 @@ public final class DelosJdbcCrossEngineConcurrency {
         System.out.println(summary);
     }
 
+    private static void runPhase2OF06GroupInputJfrAttribution() throws Exception {
+        Path reportDirectory = requiredPhase2OPath("reportDirectory");
+        Path databaseRoot = requiredPhase2OPath("databaseRoot");
+        String provider = requiredPhase2OProvider();
+        boolean mvcc = "mvcc".equals(provider);
+        boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled");
+        boolean projectedCurrentRead = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean baseFetchPrefetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
+        if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
+            throw new IllegalStateException(
+                    "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
+        }
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 100;
+        int warmups = 128;
+        int profileSeconds = 12;
+        String base = mvcc ? "P2O_MVCC" : "P2O_HEAP";
+        String suffix = mvcc ? " using delos_mvcc" : "";
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f06-group-input-" + provider) + ";create=true";
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareHighCardGroupFixture(setup, base, suffix, rowCount, commitBatchSize);
+            phase2BUpdateStatistics(setup, highCardGroupTableName(base));
+            setup.commit();
+        }
+
+        String variant = provider + "-group-input";
+        String sql = "select group_key, quantity from " + highCardGroupTableName(base);
+        ExplainCapture analyze;
+        long semanticFingerprint;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            analyze = capturePhase2NExplain(connection, sql, true);
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                semanticFingerprint = executePhase2NRead(statement, variant, rowCount);
+            }
+            connection.rollback();
+        }
+        String planShape = phase2NPlanShape(analyze.text());
+        if (!"TABLE_SCAN".equals(planShape)) {
+            throw new IllegalStateException(
+                    "Phase-2O requires a raw TABLE_SCAN but observed " + planShape);
+        }
+        writePhase2ACapture(reportDirectory, provider + "-group-input-explain-analyze", analyze);
+
+        Configuration profile = Configuration.getConfiguration("profile");
+        Phase2EProfile result = profilePhase2OGroupInput(
+                jdbcUrl, sql, variant, rowCount, semanticFingerprint, warmups,
+                profileSeconds, profile, reportDirectory.resolve(provider + "-group-input.jfr"));
+        writePhase2OGroupInputSummary(
+                reportDirectory, provider, gen2C3Enabled, projectedCurrentRead,
+                baseFetchPrefetch, physicalScanCost, rowCount, warmups,
+                profileSeconds, semanticFingerprint, planShape, result);
+    }
+
+    private static Phase2EProfile profilePhase2OGroupInput(
+            String jdbcUrl,
+            String sql,
+            String variant,
+            int expectedRows,
+            long expectedFingerprint,
+            int warmups,
+            int profileSeconds,
+            Configuration profile,
+            Path recordingPath) throws Exception {
+        try (Connection connection = openPhase2AConnection(jdbcUrl);
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < warmups; i++) {
+                assertPhase2OFingerprint(
+                        statement, variant, expectedRows, expectedFingerprint, "warmup", i);
+            }
+            int iterations = 0;
+            long elapsed;
+            long started;
+            long targetNanos = TimeUnit.SECONDS.toNanos(profileSeconds);
+            try (Recording recording = new Recording(profile)) {
+                recording.setName(recordingPath.getFileName().toString());
+                recording.setToDisk(true);
+                recording.start();
+                started = System.nanoTime();
+                do {
+                    assertPhase2OFingerprint(
+                            statement, variant, expectedRows, expectedFingerprint,
+                            "profile", iterations);
+                    iterations++;
+                    elapsed = System.nanoTime() - started;
+                } while (elapsed < targetNanos);
+                recording.stop();
+                recording.dump(recordingPath);
+            }
+            connection.rollback();
+            return new Phase2EProfile(elapsed / 1_000_000.0d, iterations);
+        }
+    }
+
+    private static void assertPhase2OFingerprint(
+            PreparedStatement statement,
+            String variant,
+            int expectedRows,
+            long expectedFingerprint,
+            String stage,
+            int iteration) throws SQLException {
+        long fingerprint = executePhase2NRead(statement, variant, expectedRows);
+        if (fingerprint != expectedFingerprint) {
+            throw new IllegalStateException(
+                    "Phase-2O semantic drift during " + stage + " iteration " + iteration);
+        }
+    }
+
+    private static void writePhase2OGroupInputSummary(
+            Path reportDirectory,
+            String provider,
+            boolean gen2C3Enabled,
+            boolean projectedCurrentRead,
+            boolean baseFetchPrefetch,
+            boolean physicalScanCost,
+            int rowCount,
+            int warmups,
+            int profileSeconds,
+            long semanticFingerprint,
+            String planShape,
+            Phase2EProfile result) throws IOException {
+        String summary = "DelosDB Phase-2O F06 raw group-input JFR attribution\n"
+                + "diagnosticOnly=true\n"
+                + "provider=" + provider + "\n"
+                + "rows=" + rowCount + "\n"
+                + "selectedColumns=group_key,quantity\n"
+                + "semanticFingerprint=" + semanticFingerprint + "\n"
+                + "planShape=" + planShape + "\n"
+                + "gen2C3Enabled=" + gen2C3Enabled + "\n"
+                + "projectedCurrentRead=" + projectedCurrentRead + "\n"
+                + "baseFetchPagePrefetch=" + baseFetchPrefetch + "\n"
+                + "physicalScanCost=" + physicalScanCost + "\n"
+                + "warmups=" + warmups + "\n"
+                + "profileSecondsTarget=" + profileSeconds + "\n"
+                + "profileIterations=" + result.iterations() + "\n"
+                + "profileElapsedMillis=" + format(result.elapsedMillis()) + "\n"
+                + "profileMillisPerExecution=" + format(result.millisPerExecution()) + "\n"
+                + "attributionTarget=RAW_TWO_COLUMN_TABLE_SCAN_ROW_PRODUCTION\n"
+                + "interpretation=JFR_ATTRIBUTION_ONLY_NOT_ACCEPTANCE_PERFORMANCE\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2o-f06-group-input-jfr-summary.txt"),
+                summary,
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static Path requiredPhase2OPath(String key) {
+        String value = System.getProperty(PHASE2O_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2O_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private static String requiredPhase2OProvider() {
+        String provider = System.getProperty(PHASE2O_PREFIX + "provider", "").trim();
+        if (!provider.equals("heap") && !provider.equals("mvcc")) {
+            throw new IllegalArgumentException(
+                    "-D" + PHASE2O_PREFIX + "provider must be heap or mvcc");
+        }
+        return provider;
+    }
+
     private static void addPhase2NVariants(
             Map<String, String> sqlByVariant, String provider, String base) {
         String dimension = joinDimensionTableName(base);
@@ -2812,6 +2992,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccGen2ProjectedCurrentReadEnabled()) {
             addProperty(command, "mvccGen2ProjectedCurrentRead", true);
         }
+        if (mvccRefreshMultiJoinStatisticsEnabled()) {
+            addProperty(command, "mvccRefreshMultiJoinStatistics", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -3196,6 +3379,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost experiment: ")
                 .append(mvccPhysicalScanCostEnabled()).append('\n')
+                .append("MVCC multi-join statistics refresh enabled: ")
+                .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -4687,6 +4872,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 prepareMultiJoinFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+                if (mvccRefreshMultiJoinStatisticsEnabled()
+                        && options.target() == Target.DELOS_MVCC_DRDA) {
+                    phase2BUpdateStatistics(verifier, multiJoinCustomerTableName(scenario.tableName()));
+                    phase2BUpdateStatistics(verifier, multiJoinOrderTableName(scenario.tableName()));
+                    phase2BUpdateStatistics(verifier, multiJoinLineTableName(scenario.tableName()));
+                    verifier.commit();
+                    System.out.printf(Locale.ROOT,
+                            "FIXTURE mvcc-multi-join-statistics-refreshed target=%s workload=%s%n",
+                            options.target().id(), spec.workload().name());
+                    System.out.flush();
+                }
             } else if (spec.workload() == Workload.GROUP_HIGH_CARD) {
                 prepareHighCardGroupFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
@@ -8739,6 +8935,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost enabled: ")
                 .append(mvccPhysicalScanCostEnabled()).append('\n')
+                .append("MVCC multi-join statistics refresh enabled: ")
+                .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
                 .append(freshRealisticTransactionFitnessEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
@@ -9011,6 +9209,10 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccPhysicalScanCostEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccPhysicalScanCost", "true"));
+    }
+
+    private static boolean mvccRefreshMultiJoinStatisticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccRefreshMultiJoinStatistics");
     }
 
     private static String insertTableShape() {

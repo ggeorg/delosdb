@@ -1,34 +1,39 @@
-DelosDB Gen2-C3 physical scan-cost promotion overlay
+DelosDB Gen2-C3 F06 raw group-input JFR attribution overlay
 
-Base expectation:
-- Apply after the Gen2-C3 physical scan-cost implementation and F04/F05 validation overlays.
-- Validation evidence established that physical page/row-aware MVCC table-scan costing materially improves F04/F05 plan selection without changing runtime scan mechanics.
+Purpose
+-------
+Add a diagnostic-only Phase-2O probe for the already-established F06 raw
+row-production deficit. It profiles the exact two-column group-input scan
+(select group_key, quantity) separately for Heap and Gen2 MVCC.
 
-Changed repository files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/build.gradle
+Changed repository files
+------------------------
+delosdb-tests/build.gradle
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Purpose:
-- Make physical CURRENT-container scan costing the normal Gen2 optimizer behavior when no override is supplied.
-- Preserve the existing runtime property as an explicit false diagnostic override for legacy row-only costing.
-- Make benchmark/reporting defaults reflect the promoted production behavior.
-- Forward both true and false benchmark modes explicitly to embedded and DRDA MVCC child/server JVMs so controlled A/B falsification remains trustworthy.
-- Extend the focused cost-authority test to prove that the unset property uses the same physical model as an explicit true setting.
+New verification task
+---------------------
+:delosdb-tests:runDelosGen2C3F06GroupInputJfrAttribution
 
-Production behavior:
-- Default: delosdb.experimental.mvccPhysicalScanCost.enabled is effectively true when absent.
-- Diagnostic legacy override: -Ddelosdb.experimental.mvccPhysicalScanCost.enabled=false.
-- The F04/F05 benchmark property delosdb.benchmark.mvccPhysicalScanCost now defaults true but still accepts explicit false.
+Evidence produced
+-----------------
+- separate Heap and Gen2 JVMs
+- one JFR profile recording per provider
+- one HotSpot LogCompilation log per provider
+- EXPLAIN ANALYZE evidence proving TABLE_SCAN-only plan shape
+- semantic fingerprint equality across Heap and Gen2
+- hot-methods, allocation-by-site, and contention-by-site JFR views
+- matched profile-time comparison summary
 
-This overlay does NOT change:
-- MVCC row format or history format;
-- RawStore WAL/recovery/undo authority;
-- runtime scan mechanics;
-- HASH join execution;
-- SQL index maintenance;
-- visibility semantics;
-- projected-current reads;
-- rejected page-local prefetch behavior;
-- indexed DELETE reachability behavior.
+Production behavior
+-------------------
+UNCHANGED. No storage, MVCC, RawStore, optimizer, SQL execution, GROUP BY,
+sort, join, or persistence production code is modified.
+
+Gen2 profile contract
+---------------------
+- B1/C1/C2 enabled
+- projected-current experiment disabled
+- rejected page-local prefetch disabled
+- physical scan costing enabled
+- raw group-input query only; no aggregate or sort work

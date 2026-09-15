@@ -16957,6 +16957,174 @@ tasks.register('runDelosGen2C3F04PhysicalScanCostExperiment', JavaExec) {
     }
 }
 
+
+// Phase 2O: isolate the F06 raw two-column row-production path under matched
+// Heap/MVCC table scans. Each provider runs in its own JVM and JFR recording so
+// CPU/allocation attribution is not polluted by GROUP BY, sort, or join work.
+def delosGen2C3F06GroupInputJfrRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f06-group-input-jfr'
+
+def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
+    task.group = 'verification'
+    task.description = "Profiles F06 raw group-input row production for ${provider} with JFR."
+    task.dependsOn tasks.named('compileTestJava')
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    task.classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    task.args 'phase2o-f06-group-input-jfr'
+    task.outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir("${delosGen2C3F06GroupInputJfrRoot}/${provider}")
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir("tmp/delos-gen2-c3-f06-group-input-jfr/${provider}")
+    task.outputs.dir(reportDir)
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F06 group-input JFR attribution requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        def properties = [
+                'delosdb.phase2.f06GroupInputJfr.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f06GroupInputJfr.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.phase2.f06GroupInputJfr.provider': provider,
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true'
+        ]
+        if (provider == 'mvcc') {
+            properties.putAll([
+                    'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true'
+            ])
+        }
+        task.systemProperties(properties)
+        task.jvmArgs(
+                '-XX:FlightRecorderOptions=stackdepth=256',
+                '-XX:+UnlockDiagnosticVMOptions',
+                '-XX:+LogCompilation',
+                "-XX:LogFile=${new File(reportDir.get().asFile, provider + '-hotspot.log').absolutePath}")
+    }
+    task.doLast {
+        File summary = new File(
+                reportDir.get().asFile, 'phase2o-f06-group-input-jfr-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("F06 ${provider} JFR summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                "provider=${provider}",
+                'planShape=TABLE_SCAN',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'physicalScanCost=true',
+                'attributionTarget=RAW_TWO_COLUMN_TABLE_SCAN_ROW_PRODUCTION'
+        ].each { markerText ->
+            if (!text.contains(markerText)) {
+                throw new GradleException(
+                        "F06 ${provider} JFR evidence missing marker: ${markerText}")
+            }
+        }
+        if (provider == 'mvcc' && !text.contains('gen2C3Enabled=true')) {
+            throw new GradleException('F06 MVCC JFR run does not prove Gen2-C3 was enabled')
+        }
+        File recording = new File(reportDir.get().asFile, "${provider}-group-input.jfr")
+        File hotspot = new File(reportDir.get().asFile, "${provider}-hotspot.log")
+        if (!recording.isFile() || recording.length() == 0L) {
+            throw new GradleException("F06 ${provider} JFR recording missing or empty: ${recording}")
+        }
+        if (!hotspot.isFile() || hotspot.length() == 0L) {
+            throw new GradleException("F06 ${provider} HotSpot compilation log missing or empty: ${hotspot}")
+        }
+    }
+}
+
+def delosGen2C3F06GroupInputJfrHeap = tasks.register(
+        'runDelosGen2C3F06GroupInputJfrHeap', JavaExec) { task ->
+    configureDelosGen2C3F06GroupInputJfr(task, 'heap')
+}
+
+def delosGen2C3F06GroupInputJfrMvcc = tasks.register(
+        'runDelosGen2C3F06GroupInputJfrMvcc', JavaExec) { task ->
+    configureDelosGen2C3F06GroupInputJfr(task, 'mvcc')
+}
+
+delosGen2C3F06GroupInputJfrMvcc.configure {
+    mustRunAfter(delosGen2C3F06GroupInputJfrHeap)
+}
+
+tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
+    group = 'verification'
+    description = 'Profiles matched Heap/Gen2 F06 raw group-input table scans and renders JFR attribution views.'
+    dependsOn delosGen2C3F06GroupInputJfrHeap, delosGen2C3F06GroupInputJfrMvcc
+    outputs.upToDateWhen { false }
+    def reportRoot = rootProject.layout.buildDirectory.dir(delosGen2C3F06GroupInputJfrRoot)
+    outputs.dir(reportRoot)
+    doLast {
+        File root = reportRoot.get().asFile
+        File heapSummary = new File(root, 'heap/phase2o-f06-group-input-jfr-summary.txt')
+        File mvccSummary = new File(root, 'mvcc/phase2o-f06-group-input-jfr-summary.txt')
+        def parseSummary = { File file ->
+            file.readLines('UTF-8')
+                    .findAll { it.contains('=') }
+                    .collectEntries { line ->
+                        int split = line.indexOf('=')
+                        [(line.substring(0, split)): line.substring(split + 1)]
+                    }
+        }
+        def heap = parseSummary(heapSummary)
+        def mvcc = parseSummary(mvccSummary)
+        if (heap.semanticFingerprint != mvcc.semanticFingerprint) {
+            throw new GradleException(
+                    "F06 group-input Heap/MVCC semantic drift: heap=${heap.semanticFingerprint}, mvcc=${mvcc.semanticFingerprint}")
+        }
+        double heapMillis = Double.parseDouble(heap.profileMillisPerExecution)
+        double mvccMillis = Double.parseDouble(mvcc.profileMillisPerExecution)
+        File viewDir = new File(root, 'jfr-views')
+        viewDir.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            [
+                    new File(root, 'heap/heap-group-input.jfr'),
+                    new File(root, 'mvcc/mvcc-group-input.jfr')
+            ].each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '40', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def output = execOutput.standardOutput.asText.get()
+                def error = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "F06 group-input JFR view ${view} failed for ${recording.name}: ${error.trim()}")
+                }
+                new File(viewDir, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(output, 'UTF-8')
+            }
+        }
+        new File(root, 'phase2o-f06-group-input-jfr-comparison.txt').setText(
+                'DelosDB Phase-2O F06 raw group-input JFR comparison\n' +
+                        "semanticFingerprint=${heap.semanticFingerprint}\n" +
+                        "heapProfileMillisPerExecution=${heapMillis}\n" +
+                        "mvccProfileMillisPerExecution=${mvccMillis}\n" +
+                        "mvccVsHeapProfileRatio=${mvccMillis / heapMillis}\n" +
+                        'matchedPlanShape=TABLE_SCAN\n' +
+                        'selectedColumns=group_key,quantity\n' +
+                        'JFR settings=profile; stackdepth=256\n' +
+                        'HotSpot=-XX:+LogCompilation; one log per provider JVM\n' +
+                        'interpretation=JFR_ATTRIBUTION_ONLY_NOT_ACCEPTANCE_PERFORMANCE\n',
+                'UTF-8')
+    }
+}
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.
@@ -18914,6 +19082,7 @@ tasks.register('runDelosGen2C3MultiWayJoinFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': physicalScanCostValue,
+                'delosdb.benchmark.crossEngineConcurrency.mvccRefreshMultiJoinStatistics': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
@@ -19071,6 +19240,10 @@ tasks.register('runDelosGen2C3MultiWayJoinSentinel') {
                     "Gen2-C3 F05 physical scan-cost mode mismatch: expected=${expectedPhysicalScanCost}, "
                             + "summary=${summaryFile}")
         }
+        if (!summary.contains('MVCC multi-join statistics refresh enabled: true')) {
+            throw new GradleException(
+                    "Gen2-C3 F05 run does not prove deterministic MVCC multi-join statistics: ${summaryFile}")
+        }
         def manifestFile = new File(root, 'server-container-manifest.txt')
         if (!manifestFile.isFile()) {
             throw new GradleException("Missing Gen2-C3 F05 server manifest: ${manifestFile}")
@@ -19084,6 +19257,24 @@ tasks.register('runDelosGen2C3MultiWayJoinSentinel') {
             throw new GradleException(
                     "Gen2-C3 F05 server manifest physical scan-cost mode mismatch: "
                             + "expected=${expectedPhysicalScanCost}, manifest=${manifestFile}")
+        }
+        if (!manifest.contains('MVCC multi-join statistics refresh enabled: true')) {
+            throw new GradleException(
+                    "Gen2-C3 F05 server manifest does not prove deterministic MVCC multi-join statistics: ${manifestFile}")
+        }
+        (1..8).each { int run ->
+            def logFile = new File(root, String.format('logs/%02d-delos_mvcc_drda.log', run))
+            if (!logFile.isFile()) {
+                throw new GradleException("Missing Gen2-C3 F05 Gen2 worker log: ${logFile}")
+            }
+            def markers = logFile.readLines('UTF-8').count { String line ->
+                line.contains('FIXTURE mvcc-multi-join-statistics-refreshed')
+            }
+            if (markers != 2) {
+                throw new GradleException(
+                        "Gen2-C3 F05 worker run ${run} expected 2 statistics refresh markers, "
+                                + "found ${markers}: ${logFile}")
+            }
         }
 
         def result = new File(root, 'gen2-c3-multi-way-join-sentinel.tsv')
@@ -19113,6 +19304,261 @@ tasks.register('runDelosGen2C3MultiWayJoinSentinel') {
             }
         }
         result.setText(out.toString(), 'UTF-8')
+    }
+}
+
+// Gen2-C3 F05 order diagnostic: test whether the four-way join split is caused by
+// first-vs-second workload warm state. Keep the canonical F05 task unchanged.
+def delosGen2C3MultiWayJoinWarmupDiagnosticReportRoot =
+        'reports/delosdb/benchmarks/gen2-c3-fitness/f05-multi-way-join-warmup-diagnostic'
+def delosGen2C3MultiWayJoinWarmupDiagnosticDatabaseRoot =
+        'tmp/delos-gen2-c3-fitness/f05-multi-way-join-warmup-diagnostic'
+
+tasks.register('runDelosGen2C3MultiWayJoinWarmupDiagnostic', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs a four-run F05 order diagnostic with a 10-second per-workload warmup.'
+    dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            delosGen2C3MultiWayJoinWarmupDiagnosticReportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F05 warmup diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                        h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                        postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                        mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3MultiWayJoinWarmupDiagnosticDatabaseRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3MultiWayJoinWarmupDiagnosticReportRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'JOIN_3WAY_SELECTIVE,JOIN_4WAY_FANOUT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '3',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '10.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+// Gen2-C3 F05 statistics diagnostic: prove whether asynchronous Derby index-statistics
+// creation/invalidation causes the reproducible first-vs-second four-way join split.
+def delosGen2C3MultiWayJoinExplicitStatsDiagnosticReportRoot =
+        'reports/delosdb/benchmarks/gen2-c3-fitness/f05-multi-way-join-explicit-stats-diagnostic'
+def delosGen2C3MultiWayJoinExplicitStatsDiagnosticDatabaseRoot =
+        'tmp/delos-gen2-c3-fitness/f05-multi-way-join-explicit-stats-diagnostic'
+
+tasks.register('runDelosGen2C3MultiWayJoinExplicitStatsDiagnostic', JavaExec) {
+    group = 'benchmark'
+    description = 'Runs a four-run F05 order diagnostic with explicit Gen2 multi-join index statistics.'
+    dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            delosGen2C3MultiWayJoinExplicitStatsDiagnosticReportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F05 explicit-stats diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccRefreshMultiJoinStatistics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath': h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                        h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                        postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                        mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion': upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion': h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion': postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion': mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3MultiWayJoinExplicitStatsDiagnosticDatabaseRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3MultiWayJoinExplicitStatsDiagnosticReportRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'JOIN_3WAY_SELECTIVE,JOIN_4WAY_FANOUT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '3',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    doLast {
+        def root = rootProject.layout.buildDirectory.dir(
+                delosGen2C3MultiWayJoinExplicitStatsDiagnosticReportRoot).get().asFile
+        def summaryFile = new File(root, 'cross-engine-concurrency-summary.txt')
+        def manifestFile = new File(root, 'server-container-manifest.txt')
+        if (!summaryFile.isFile() || !summaryFile.getText('UTF-8').contains(
+                'MVCC multi-join statistics refresh enabled: true')) {
+            throw new GradleException(
+                    "F05 explicit-stats diagnostic summary did not record the diagnostic: ${summaryFile}")
+        }
+        if (!manifestFile.isFile() || !manifestFile.getText('UTF-8').contains(
+                'MVCC multi-join statistics refresh enabled: true')) {
+            throw new GradleException(
+                    "F05 explicit-stats diagnostic manifest did not record the diagnostic: ${manifestFile}")
+        }
+        (1..4).each { int run ->
+            def logFile = new File(root, String.format('logs/%02d-delos_mvcc_drda.log', run))
+            if (!logFile.isFile()) {
+                throw new GradleException("Missing F05 explicit-stats Gen2 worker log: ${logFile}")
+            }
+            def markers = logFile.readLines('UTF-8').count { String line ->
+                line.contains('FIXTURE mvcc-multi-join-statistics-refreshed')
+            }
+            if (markers != 2) {
+                throw new GradleException(
+                        "F05 explicit-stats worker run ${run} expected 2 statistics markers, found ${markers}: ${logFile}")
+            }
+        }
     }
 }
 
