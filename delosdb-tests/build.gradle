@@ -16977,6 +16977,12 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
     def databaseRoot = rootProject.layout.buildDirectory
             .dir("tmp/delos-gen2-c3-f06-group-input-jfr/${provider}")
     task.outputs.dir(reportDir)
+    File hotspotLog = new File(reportDir.get().asFile, provider + '-hotspot.log')
+    task.jvmArgs(
+            '-XX:FlightRecorderOptions=stackdepth=256',
+            '-XX:+UnlockDiagnosticVMOptions',
+            '-XX:+LogCompilation',
+            "-XX:LogFile=${hotspotLog.absolutePath}")
     task.doFirst {
         def saneValue = providers.gradleProperty('delosdb.sane')
                 .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
@@ -17005,11 +17011,6 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             ])
         }
         task.systemProperties(properties)
-        task.jvmArgs(
-                '-XX:FlightRecorderOptions=stackdepth=256',
-                '-XX:+UnlockDiagnosticVMOptions',
-                '-XX:+LogCompilation',
-                "-XX:LogFile=${new File(reportDir.get().asFile, provider + '-hotspot.log').absolutePath}")
     }
     task.doLast {
         File summary = new File(

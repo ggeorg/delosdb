@@ -1,39 +1,30 @@
-DelosDB Gen2-C3 F06 raw group-input JFR attribution overlay
+DelosDB Gen2-C3 F06 group-input JFR HotSpot logging fix
 
 Purpose
 -------
-Add a diagnostic-only Phase-2O probe for the already-established F06 raw
-row-production deficit. It profiles the exact two-column group-input scan
-(select group_key, quantity) separately for Heap and Gen2 MVCC.
+Fix the Phase-2O diagnostic harness so HotSpot LogCompilation arguments are
+configured on the JavaExec task before execution rather than being added from
+doFirst. This preserves the existing Heap/MVCC raw two-column TABLE_SCAN probe
+and makes the expected per-provider compilation logs reliable.
 
 Changed repository files
 ------------------------
-delosdb-tests/build.gradle
-delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-New verification task
----------------------
-:delosdb-tests:runDelosGen2C3F06GroupInputJfrAttribution
+Behavior
+--------
+- Configures -XX:+LogCompilation and the provider-specific -XX:LogFile during
+  normal JavaExec configuration.
+- Keeps JFR stackdepth configuration unchanged.
+- Adds a fail-fast runtime check proving the expected HotSpot logging arguments
+  reached the provider JVM before fixture construction/profile work begins.
+- Keeps the existing post-run requirement that the HotSpot log exists and is
+  non-empty.
 
-Evidence produced
------------------
-- separate Heap and Gen2 JVMs
-- one JFR profile recording per provider
-- one HotSpot LogCompilation log per provider
-- EXPLAIN ANALYZE evidence proving TABLE_SCAN-only plan shape
-- semantic fingerprint equality across Heap and Gen2
-- hot-methods, allocation-by-site, and contention-by-site JFR views
-- matched profile-time comparison summary
-
-Production behavior
--------------------
-UNCHANGED. No storage, MVCC, RawStore, optimizer, SQL execution, GROUP BY,
-sort, join, or persistence production code is modified.
-
-Gen2 profile contract
----------------------
-- B1/C1/C2 enabled
-- projected-current experiment disabled
-- rejected page-local prefetch disabled
-- physical scan costing enabled
-- raw group-input query only; no aggregate or sort work
+Not changed
+-----------
+- No production storage/MVCC/RawStore code.
+- No SQL, plan, fixture, warmup, profile duration, or semantic-oracle changes.
+- No GROUP BY, join, sort, projection, or scan implementation changes.
+- No benchmark thresholds are changed.

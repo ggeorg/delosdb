@@ -1754,6 +1754,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Path reportDirectory = requiredPhase2OPath("reportDirectory");
         Path databaseRoot = requiredPhase2OPath("databaseRoot");
         String provider = requiredPhase2OProvider();
+        requirePhase2OProfilingJvmArguments(reportDirectory, provider);
         boolean mvcc = "mvcc".equals(provider);
         boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
                 && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
@@ -1905,6 +1906,22 @@ public final class DelosJdbcCrossEngineConcurrency {
                 summary,
                 StandardCharsets.UTF_8);
         System.out.print(summary);
+    }
+
+    private static void requirePhase2OProfilingJvmArguments(
+            Path reportDirectory, String provider) {
+        List<String> inputArguments = ManagementFactory.getRuntimeMXBean().getInputArguments();
+        String expectedLogFile = "-XX:LogFile="
+                + reportDirectory.resolve(provider + "-hotspot.log");
+        if (!inputArguments.contains("-XX:+LogCompilation")) {
+            throw new IllegalStateException(
+                    "Phase-2O requires -XX:+LogCompilation in the provider JVM");
+        }
+        if (!inputArguments.contains(expectedLogFile)) {
+            throw new IllegalStateException(
+                    "Phase-2O provider JVM missing expected HotSpot log target: "
+                            + expectedLogFile);
+        }
     }
 
     private static Path requiredPhase2OPath(String key) {
