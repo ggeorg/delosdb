@@ -1,15 +1,22 @@
-DelosDB Gen2-C3 F06 fast CURRENT visibility fetch experiment
+DelosDB Gen2-C3 F06 lazy CURRENT creator-fetch experiment
+
+Purpose:
+- Extend the matched Phase-2O F06 TABLE_SCAN attribution.
+- Omit creatorTransactionId from the common committed CURRENT-row FetchDescriptor.
+- Fetch creatorTransactionId lazily only when beginSequence is UNCOMMITTED_SEQUENCE.
+- Preserve all existing visibility semantics and history fallback.
+
+Experimental property:
+  delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled
+
+Benchmark Gradle property:
+  delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch
 
 Changed repository files:
 - delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
 - delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-- delosdb-tests/build.gradle
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle
 
-Purpose:
-- add experimental delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled
-- for the streaming Gen2 CURRENT scan, fetch only common-path visibility metadata plus projected payload
-- lazily fetch predecessor/hint metadata only when CURRENT is not visible and history fallback is required
-- preserve the existing matched F06 JFR diagnostic and fail-closed property evidence
-
-Normal/default behavior remains unchanged because the new experiment defaults false.
+No storage-format, WAL, recovery, optimizer, GROUP BY, sort, or default-behavior change.
+The experiment defaults OFF.

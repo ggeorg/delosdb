@@ -263,6 +263,8 @@ final class MvccRawStoreTable {
         private final FetchDescriptor fetchDescriptor;
         private final FetchDescriptor historyMetadataDescriptor;
         private final boolean fastCurrentVisibilityFetch;
+        private final boolean skipCurrentTagFetch;
+        private final boolean lazyCurrentCreatorFetch;
         private final int payloadStart;
         private long resumePageNumber;
         private int resumeSlot;
@@ -290,9 +292,14 @@ final class MvccRawStoreTable {
                     table.projectedCurrentRead() ? projection : null;
             fastCurrentVisibilityFetch = Boolean.getBoolean(
                     MvccRawStoreFormat.GEN2_FAST_CURRENT_VISIBILITY_FETCH_ENABLED_PROPERTY);
+            skipCurrentTagFetch = Boolean.getBoolean(
+                    MvccRawStoreFormat.GEN2_SKIP_CURRENT_TAG_FETCH_ENABLED_PROPERTY);
+            lazyCurrentCreatorFetch = Boolean.getBoolean(
+                    MvccRawStoreFormat.GEN2_LAZY_CURRENT_CREATOR_FETCH_ENABLED_PROPERTY);
             currentRow = gen2A1CurrentTemplate(transaction, table, currentProjection);
             fetchDescriptor = fastCurrentVisibilityFetch
-                    ? fastCurrentVisibilityDescriptor(table, projection)
+                    ? fastCurrentVisibilityDescriptor(
+                            table, projection, skipCurrentTagFetch, lazyCurrentCreatorFetch)
                     : currentProjection == null
                             ? null
                             : currentProjection.currentDescriptor(table);
@@ -395,10 +402,9 @@ final class MvccRawStoreTable {
                     currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
             long versionId = MvccRawStoreFormat.longAt(
                     currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
-            long creator = MvccRawStoreFormat.longAt(
-                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
             long begin = MvccRawStoreFormat.longAt(
                     currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
+            long creator = currentCreator(page, slot, begin);
             int flags = MvccRawStoreFormat.intAt(
                     currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
             if (currentVisibleTo(creator, begin, transactionId, snapshotSequence)) {
@@ -416,14 +422,21 @@ final class MvccRawStoreTable {
         }
 
         private static FetchDescriptor fastCurrentVisibilityDescriptor(
-                Descriptor table, MvccRawStoreVersionRows.FetchProjection projection) {
+                Descriptor table,
+                MvccRawStoreVersionRows.FetchProjection projection,
+                boolean skipCurrentTagFetch,
+                boolean lazyCurrentCreatorFetch) {
             int fieldCount = currentFieldCount(table);
             FormatableBitSet fields = new FormatableBitSet(fieldCount);
-            fields.set(MvccRawStoreFormat.DIRECTORY_KIND_FIELD);
-            fields.set(MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION);
+            if (!skipCurrentTagFetch) {
+                fields.set(MvccRawStoreFormat.DIRECTORY_KIND_FIELD);
+                fields.set(MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION);
+            }
             fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
             fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
-            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+            if (!lazyCurrentCreatorFetch) {
+                fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+            }
             fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
             fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
             int payloadStart = currentPayloadStart(table);
@@ -433,6 +446,23 @@ final class MvccRawStoreTable {
                 }
             }
             return new FetchDescriptor(fieldCount, fields, null);
+        }
+
+        private long currentCreator(Page page, int slot, long begin) throws StandardException {
+            if (!lazyCurrentCreatorFetch) {
+                return MvccRawStoreFormat.longAt(
+                        currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+            }
+            if (begin != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+                return 0L;
+            }
+            page.fetchFieldFromSlot(
+                    slot,
+                    MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID,
+                    (StoreDataValue) currentRow[
+                            MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID]);
+            return MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
         }
 
         private static FetchDescriptor historyMetadataDescriptor(Descriptor table) {
@@ -492,6 +522,9 @@ final class MvccRawStoreTable {
         }
 
         private boolean validCurrentRow() throws StandardException {
+            if (skipCurrentTagFetch) {
+                return true;
+            }
             return MvccRawStoreFormat.intAt(
                             currentRow, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
                             == MvccRawStoreFormat.DIRECTORY_KIND

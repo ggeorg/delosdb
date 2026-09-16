@@ -1829,6 +1829,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 features.baseFetchPrefetch(), features.physicalScanCost(),
                 features.singlePassCurrentScan(), features.reusableCurrentScanTemplate(),
                 features.streamingBulkScan(), features.fastCurrentVisibilityFetch(),
+                features.skipCurrentTagFetch(), features.lazyCurrentCreatorFetch(),
                 features.nonHoldableProfile(),
                 rowCount, warmups, profileSeconds, semanticFingerprint, naturalPlanShape,
                 profilePlanShape, canonicalGroupPlanShape, result);
@@ -1852,6 +1853,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 "delosdb.experimental.mvccGen2StreamingBulkScan.enabled");
         boolean fastCurrentVisibilityFetch = Boolean.getBoolean(
                 "delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled");
+        boolean skipCurrentTagFetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled");
+        boolean lazyCurrentCreatorFetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled");
         boolean nonHoldableProfile = Boolean.getBoolean(PHASE2O_PREFIX + "nonHoldableControl");
         if (streamingBulkScan && !nonHoldableProfile) {
             throw new IllegalStateException(
@@ -1869,6 +1874,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             throw new IllegalStateException(
                     "Phase-2O fast CURRENT visibility fetch requires streaming bulk scan");
         }
+        if (skipCurrentTagFetch && !fastCurrentVisibilityFetch) {
+            throw new IllegalStateException(
+                    "Phase-2O skipped CURRENT tag fetch requires fast CURRENT visibility fetch");
+        }
+        if (lazyCurrentCreatorFetch && !skipCurrentTagFetch) {
+            throw new IllegalStateException(
+                    "Phase-2O lazy CURRENT creator fetch requires skipped CURRENT tag fetch");
+        }
         if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
             throw new IllegalStateException(
                     "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
@@ -1876,7 +1889,8 @@ public final class DelosJdbcCrossEngineConcurrency {
         return new Phase2OFeatures(
                 gen2C3Enabled, projectedCurrentRead, baseFetchPrefetch, physicalScanCost,
                 singlePassCurrentScan, reusableCurrentScanTemplate, streamingBulkScan,
-                fastCurrentVisibilityFetch, nonHoldableProfile);
+                fastCurrentVisibilityFetch, skipCurrentTagFetch, lazyCurrentCreatorFetch,
+                nonHoldableProfile);
     }
 
     private record Phase2OFeatures(
@@ -1888,6 +1902,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean reusableCurrentScanTemplate,
             boolean streamingBulkScan,
             boolean fastCurrentVisibilityFetch,
+            boolean skipCurrentTagFetch,
+            boolean lazyCurrentCreatorFetch,
             boolean nonHoldableProfile) {
     }
 
@@ -1965,6 +1981,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean reusableCurrentScanTemplate,
             boolean streamingBulkScan,
             boolean fastCurrentVisibilityFetch,
+            boolean skipCurrentTagFetch,
+            boolean lazyCurrentCreatorFetch,
             boolean nonHoldableProfile,
             int rowCount,
             int warmups,
@@ -1992,6 +2010,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "reusableCurrentScanTemplate=" + reusableCurrentScanTemplate + "\n"
                 + "streamingBulkScan=" + streamingBulkScan + "\n"
                 + "fastCurrentVisibilityFetch=" + fastCurrentVisibilityFetch + "\n"
+                + "skipCurrentTagFetch=" + skipCurrentTagFetch + "\n"
+                + "lazyCurrentCreatorFetch=" + lazyCurrentCreatorFetch + "\n"
                 + "profileHoldability="
                 + (nonHoldableProfile ? "CLOSE_CURSORS_AT_COMMIT" : "DEFAULT") + "\n"
                 + "warmups=" + warmups + "\n"

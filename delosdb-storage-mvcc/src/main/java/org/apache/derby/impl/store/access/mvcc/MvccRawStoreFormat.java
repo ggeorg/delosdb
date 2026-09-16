@@ -36,6 +36,10 @@ final class MvccRawStoreFormat {
             "delosdb.experimental.mvccGen2StreamingBulkScan.enabled";
     static final String GEN2_FAST_CURRENT_VISIBILITY_FETCH_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled";
+    static final String GEN2_SKIP_CURRENT_TAG_FETCH_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled";
+    static final String GEN2_LAZY_CURRENT_CREATOR_FETCH_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;

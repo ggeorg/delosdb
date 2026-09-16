@@ -16993,6 +16993,12 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def fastVisibilityValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def skipCurrentTagValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2SkipCurrentTagFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def lazyCreatorValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         if (!(singlePassValue in ['true', 'false'])) {
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2SinglePassCurrentScan must be true or false')
@@ -17009,6 +17015,14 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch must be true or false')
         }
+        if (!(skipCurrentTagValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2SkipCurrentTagFetch must be true or false')
+        }
+        if (!(lazyCreatorValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch must be true or false')
+        }
         if (reusableTemplateValue == 'true' && singlePassValue != 'true') {
             throw new GradleException(
                     'mvccGen2ReusableCurrentScanTemplate requires mvccGen2SinglePassCurrentScan=true')
@@ -17021,6 +17035,14 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         if (fastVisibilityValue == 'true' && streamingBulkValue != 'true') {
             throw new GradleException(
                     'mvccGen2FastCurrentVisibilityFetch requires mvccGen2StreamingBulkScan=true')
+        }
+        if (skipCurrentTagValue == 'true' && fastVisibilityValue != 'true') {
+            throw new GradleException(
+                    'mvccGen2SkipCurrentTagFetch requires mvccGen2FastCurrentVisibilityFetch=true')
+        }
+        if (lazyCreatorValue == 'true' && skipCurrentTagValue != 'true') {
+            throw new GradleException(
+                    'mvccGen2LazyCurrentCreatorFetch requires mvccGen2SkipCurrentTagFetch=true')
         }
         if (saneValue != 'false') {
             throw new GradleException(
@@ -17046,7 +17068,11 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 'delosdb.experimental.mvccGen2StreamingBulkScan.enabled':
                         provider == 'mvcc' ? streamingBulkValue : 'false',
                 'delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled':
-                        provider == 'mvcc' ? fastVisibilityValue : 'false'
+                        provider == 'mvcc' ? fastVisibilityValue : 'false',
+                'delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled':
+                        provider == 'mvcc' ? skipCurrentTagValue : 'false',
+                'delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled':
+                        provider == 'mvcc' ? lazyCreatorValue : 'false'
         ]
         if (provider == 'mvcc') {
             properties.putAll([
@@ -17076,10 +17102,18 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def fastVisibilityValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def skipCurrentTagValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2SkipCurrentTagFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def lazyCreatorValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         def expectedSinglePass = provider == 'mvcc' ? singlePassValue : 'false'
         def expectedReusableTemplate = provider == 'mvcc' ? reusableTemplateValue : 'false'
         def expectedStreamingBulk = provider == 'mvcc' ? streamingBulkValue : 'false'
         def expectedFastVisibility = provider == 'mvcc' ? fastVisibilityValue : 'false'
+        def expectedSkipCurrentTag = provider == 'mvcc' ? skipCurrentTagValue : 'false'
+        def expectedLazyCreator = provider == 'mvcc' ? lazyCreatorValue : 'false'
         def expectedHoldability = streamingBulkValue == 'true'
                 ? 'CLOSE_CURSORS_AT_COMMIT' : 'DEFAULT'
         [
@@ -17088,6 +17122,8 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 "reusableCurrentScanTemplate=${expectedReusableTemplate}",
                 "streamingBulkScan=${expectedStreamingBulk}",
                 "fastCurrentVisibilityFetch=${expectedFastVisibility}",
+                "skipCurrentTagFetch=${expectedSkipCurrentTag}",
+                "lazyCurrentCreatorFetch=${expectedLazyCreator}",
                 "profileHoldability=${expectedHoldability}",
                 'naturalPlanShape=',
                 'profilePlanShape=TABLE_SCAN',
