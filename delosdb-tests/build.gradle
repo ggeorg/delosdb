@@ -16987,6 +16987,12 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def reusableTemplateValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def streamingBulkValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2StreamingBulkScan')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def fastVisibilityValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         if (!(singlePassValue in ['true', 'false'])) {
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2SinglePassCurrentScan must be true or false')
@@ -16995,9 +17001,26 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate must be true or false')
         }
+        if (!(streamingBulkValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2StreamingBulkScan must be true or false')
+        }
+        if (!(fastVisibilityValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch must be true or false')
+        }
         if (reusableTemplateValue == 'true' && singlePassValue != 'true') {
             throw new GradleException(
                     'mvccGen2ReusableCurrentScanTemplate requires mvccGen2SinglePassCurrentScan=true')
+        }
+        if (streamingBulkValue == 'true'
+                && (singlePassValue != 'true' || reusableTemplateValue != 'true')) {
+            throw new GradleException(
+                    'mvccGen2StreamingBulkScan requires single-pass and reusable CURRENT scan template')
+        }
+        if (fastVisibilityValue == 'true' && streamingBulkValue != 'true') {
+            throw new GradleException(
+                    'mvccGen2FastCurrentVisibilityFetch requires mvccGen2StreamingBulkScan=true')
         }
         if (saneValue != 'false') {
             throw new GradleException(
@@ -17012,13 +17035,18 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 'delosdb.phase2.f06GroupInputJfr.databaseRoot':
                         databaseRoot.get().asFile.absolutePath,
                 'delosdb.phase2.f06GroupInputJfr.provider': provider,
+                'delosdb.phase2.f06GroupInputJfr.nonHoldableControl': streamingBulkValue,
                 'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
                 'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
                 'delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled':
                         provider == 'mvcc' ? singlePassValue : 'false',
                 'delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled':
-                        provider == 'mvcc' ? reusableTemplateValue : 'false'
+                        provider == 'mvcc' ? reusableTemplateValue : 'false',
+                'delosdb.experimental.mvccGen2StreamingBulkScan.enabled':
+                        provider == 'mvcc' ? streamingBulkValue : 'false',
+                'delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled':
+                        provider == 'mvcc' ? fastVisibilityValue : 'false'
         ]
         if (provider == 'mvcc') {
             properties.putAll([
@@ -17042,12 +17070,25 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def reusableTemplateValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2ReusableCurrentScanTemplate')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def streamingBulkValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2StreamingBulkScan')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def fastVisibilityValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2FastCurrentVisibilityFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         def expectedSinglePass = provider == 'mvcc' ? singlePassValue : 'false'
         def expectedReusableTemplate = provider == 'mvcc' ? reusableTemplateValue : 'false'
+        def expectedStreamingBulk = provider == 'mvcc' ? streamingBulkValue : 'false'
+        def expectedFastVisibility = provider == 'mvcc' ? fastVisibilityValue : 'false'
+        def expectedHoldability = streamingBulkValue == 'true'
+                ? 'CLOSE_CURSORS_AT_COMMIT' : 'DEFAULT'
         [
                 "provider=${provider}",
                 "singlePassCurrentScan=${expectedSinglePass}",
                 "reusableCurrentScanTemplate=${expectedReusableTemplate}",
+                "streamingBulkScan=${expectedStreamingBulk}",
+                "fastCurrentVisibilityFetch=${expectedFastVisibility}",
+                "profileHoldability=${expectedHoldability}",
                 'naturalPlanShape=',
                 'profilePlanShape=TABLE_SCAN',
                 'canonicalGroupPlanShape=',
@@ -17110,6 +17151,10 @@ tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
         if (heap.semanticFingerprint != mvcc.semanticFingerprint) {
             throw new GradleException(
                     "F06 group-input Heap/MVCC semantic drift: heap=${heap.semanticFingerprint}, mvcc=${mvcc.semanticFingerprint}")
+        }
+        if (heap.profileHoldability != mvcc.profileHoldability) {
+            throw new GradleException(
+                    "F06 group-input Heap/MVCC holdability drift: heap=${heap.profileHoldability}, mvcc=${mvcc.profileHoldability}")
         }
         double heapMillis = Double.parseDouble(heap.profileMillisPerExecution)
         double mvccMillis = Double.parseDouble(mvcc.profileMillisPerExecution)
@@ -17183,6 +17228,7 @@ tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
                         "mvccCanonicalGroupPlanShape=${mvcc.canonicalGroupPlanShape}\n" +
                         'matchedProfilePlanShape=TABLE_SCAN\n' +
                         'profileAccessControl=index=null\n' +
+                        "profileHoldability=${heap.profileHoldability}\n" +
                         'selectedColumns=group_key,quantity\n' +
                         'JFR settings=profile; stackdepth=256\n' +
                         'compilerEvidence=JFR jdk.Compilation,jdk.CompilationFailure,jdk.Deoptimization,jdk.CompilerStatistics\n' +

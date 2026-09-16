@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.Properties;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
+import org.apache.derby.iapi.store.access.Qualifier;
+import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodConglomerateProperties;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -29,6 +31,7 @@ import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
+import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
@@ -235,6 +238,334 @@ final class MvccRawStoreTable {
             StoreDataValue[] values,
             RecordHandle versionHandle,
             MvccRowLocation directoryLocation) {
+    }
+
+    record StreamingBatchResult(
+            int count,
+            long visited,
+            long qualified,
+            boolean exhausted,
+            long lastRowId,
+            long lastVersionId,
+            RecordHandle lastVersionHandle,
+            RecordHandle lastDirectoryHandle) {
+    }
+
+    static final class StreamingBatchScan implements AutoCloseable {
+        private final Transaction transaction;
+        private final Descriptor table;
+        private final long snapshotSequence;
+        private final long transactionId;
+        private final MvccRawStoreVersionRows.FetchProjection projection;
+        private final ContainerHandle container;
+        private final Object[] currentRow;
+        private final StoreDataValue[] currentValues;
+        private final FetchDescriptor fetchDescriptor;
+        private final FetchDescriptor historyMetadataDescriptor;
+        private final boolean fastCurrentVisibilityFetch;
+        private final int payloadStart;
+        private long resumePageNumber;
+        private int resumeSlot;
+        private boolean started;
+        private boolean exhausted;
+        private boolean closed;
+        private long visibleRowId;
+        private long visibleVersionId;
+        private RecordHandle visibleVersionHandle;
+        private RecordHandle visibleDirectoryHandle;
+        private StoreDataValue[] visibleValues;
+
+        StreamingBatchScan(
+                Transaction transaction,
+                Descriptor table,
+                long snapshotSequence,
+                MvccRawStoreVersionRows.FetchProjection projection,
+                MvccRawStoreTransactionContext context) throws StandardException {
+            this.transaction = transaction;
+            this.table = table;
+            this.snapshotSequence = snapshotSequence;
+            this.transactionId = context.transactionId();
+            this.projection = projection;
+            MvccRawStoreVersionRows.FetchProjection currentProjection =
+                    table.projectedCurrentRead() ? projection : null;
+            fastCurrentVisibilityFetch = Boolean.getBoolean(
+                    MvccRawStoreFormat.GEN2_FAST_CURRENT_VISIBILITY_FETCH_ENABLED_PROPERTY);
+            currentRow = gen2A1CurrentTemplate(transaction, table, currentProjection);
+            fetchDescriptor = fastCurrentVisibilityFetch
+                    ? fastCurrentVisibilityDescriptor(table, projection)
+                    : currentProjection == null
+                            ? null
+                            : currentProjection.currentDescriptor(table);
+            historyMetadataDescriptor = fastCurrentVisibilityFetch && table.gen2History()
+                    ? historyMetadataDescriptor(table)
+                    : null;
+            payloadStart = table.gen2History()
+                    ? MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START
+                    : MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START;
+            currentValues = new StoreDataValue[table.columnCount()];
+            refreshCurrentValues();
+            container = transaction.openContainer(
+                    table.metadataContainer(),
+                    MvccRawStorePhysicalLocking.rowLevel(transaction),
+                    ContainerHandle.MODE_READONLY
+                            | (table.temporary() ? ContainerHandle.MODE_TEMP_IS_KEPT : 0));
+            exhausted = container == null;
+        }
+
+        StreamingBatchResult fetchGroup(
+                StoreDataValue[][] rowArray,
+                StoreRowLocation[] rowlocArray,
+                FormatableBitSet scanColumnList,
+                Qualifier[][] qualifiers) throws StandardException {
+            if (exhausted || rowArray.length == 0) {
+                return emptyResult();
+            }
+            int count = 0;
+            long visited = 0L;
+            long qualified = 0L;
+            Page page = resumePage();
+            try {
+                while (page != null) {
+                    while (resumeSlot < page.recordCount()) {
+                        int slot = resumeSlot++;
+                        if (page.isDeletedAtSlot(slot) || !decodeVisible(page, slot)) {
+                            continue;
+                        }
+                        visited++;
+                        if (qualifiers != null && qualifiers.length != 0
+                                && !RowUtil.qualifyRow(visibleValues, qualifiers)) {
+                            continue;
+                        }
+                        qualified++;
+                        StoreValueCopySupport.copyRow(
+                                visibleValues, rowArray[count], scanColumnList);
+                        copyLocation(rowlocArray, count);
+                        count++;
+                        if (count == rowArray.length) {
+                            resumePageNumber = page.getPageNumber();
+                            return result(count, visited, qualified, false);
+                        }
+                    }
+                    long pageNumber = page.getPageNumber();
+                    page.unlatch();
+                    page = null;
+                    page = container.getNextPage(pageNumber);
+                    if (page != null) {
+                        resumePageNumber = page.getPageNumber();
+                        resumeSlot = startSlot(page);
+                    }
+                }
+                exhausted = true;
+                resumePageNumber = 0L;
+                return result(count, visited, qualified, true);
+            } finally {
+                if (page != null) {
+                    page.unlatch();
+                }
+            }
+        }
+
+        private Page resumePage() throws StandardException {
+            if (!started) {
+                started = true;
+                Page page = container.getFirstPage();
+                if (page != null) {
+                    resumePageNumber = page.getPageNumber();
+                    resumeSlot = startSlot(page);
+                }
+                return page;
+            }
+            return resumePageNumber == 0L ? null : container.getPage(resumePageNumber);
+        }
+
+        private boolean decodeVisible(Page page, int slot) throws StandardException {
+            int expected = table.gen2History()
+                    ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
+                    : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
+            if (page.fetchNumFieldsAtSlot(slot) != expected) {
+                return false;
+            }
+            RecordHandle currentHandle = page.fetchFromSlot(
+                    null, slot, currentRow, fetchDescriptor, false);
+            if (!validCurrentRow()) {
+                return false;
+            }
+            refreshCurrentValues();
+            long rowId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
+            long versionId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            long creator = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+            long begin = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
+            int flags = MvccRawStoreFormat.intAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
+            if (currentVisibleTo(creator, begin, transactionId, snapshotSequence)) {
+                if ((flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
+                    return false;
+                }
+                setVisible(rowId, versionId, currentHandle, currentHandle, currentValues);
+                return true;
+            }
+            if (historyMetadataDescriptor != null) {
+                page.fetchFromSlot(
+                        currentHandle, slot, currentRow, historyMetadataDescriptor, false);
+            }
+            return decodeHistory(rowId, currentHandle);
+        }
+
+        private static FetchDescriptor fastCurrentVisibilityDescriptor(
+                Descriptor table, MvccRawStoreVersionRows.FetchProjection projection) {
+            int fieldCount = currentFieldCount(table);
+            FormatableBitSet fields = new FormatableBitSet(fieldCount);
+            fields.set(MvccRawStoreFormat.DIRECTORY_KIND_FIELD);
+            fields.set(MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION);
+            fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
+            int payloadStart = currentPayloadStart(table);
+            for (int column = 0; column < table.columnCount(); column++) {
+                if (projection == null || projection.includes(column)) {
+                    fields.set(payloadStart + column);
+                }
+            }
+            return new FetchDescriptor(fieldCount, fields, null);
+        }
+
+        private static FetchDescriptor historyMetadataDescriptor(Descriptor table) {
+            int fieldCount = currentFieldCount(table);
+            FormatableBitSet fields = new FormatableBitSet(fieldCount);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD);
+            fields.set(MvccRawStoreFormat.GEN2_C1_PREVIOUS_VERSION_ID);
+            return new FetchDescriptor(fieldCount, fields, null);
+        }
+
+        private static int currentFieldCount(Descriptor table) {
+            return table.gen2History()
+                    ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
+                    : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
+        }
+
+        private static int currentPayloadStart(Descriptor table) {
+            return table.gen2History()
+                    ? MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START
+                    : MvccRawStoreFormat.GEN2_A1_CURRENT_PAYLOAD_START;
+        }
+
+        private boolean decodeHistory(long rowId, RecordHandle currentHandle)
+                throws StandardException {
+            if (!table.gen2History()) {
+                return false;
+            }
+            long previousVersionId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.GEN2_C1_PREVIOUS_VERSION_ID);
+            if (previousVersionId == MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
+                return false;
+            }
+            RecordHint previousHint = new RecordHint(
+                    MvccRawStoreFormat.longAt(
+                            currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE),
+                    MvccRawStoreFormat.intAt(
+                            currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD));
+            VersionRecord history = MvccRawStoreVersionReader.findVisible(
+                    transaction,
+                    table,
+                    rowId,
+                    new DirectoryHead(previousVersionId, previousHint),
+                    transactionId,
+                    snapshotSequence,
+                    projection);
+            if (history == null || history.tombstone()) {
+                return false;
+            }
+            setVisible(
+                    rowId,
+                    history.versionId(),
+                    history.handle(),
+                    currentHandle,
+                    history.values());
+            return true;
+        }
+
+        private boolean validCurrentRow() throws StandardException {
+            return MvccRawStoreFormat.intAt(
+                            currentRow, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
+                            == MvccRawStoreFormat.DIRECTORY_KIND
+                    && MvccRawStoreFormat.intAt(
+                            currentRow, MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
+                            == MvccRawStoreFormat.FORMAT_VERSION;
+        }
+
+        private void refreshCurrentValues() {
+            for (int index = 0; index < currentValues.length; index++) {
+                currentValues[index] = (StoreDataValue) currentRow[payloadStart + index];
+            }
+        }
+
+        private void setVisible(
+                long rowId,
+                long versionId,
+                RecordHandle versionHandle,
+                RecordHandle directoryHandle,
+                StoreDataValue[] values) {
+            visibleRowId = rowId;
+            visibleVersionId = versionId;
+            visibleVersionHandle = versionHandle;
+            visibleDirectoryHandle = directoryHandle;
+            visibleValues = values;
+        }
+
+        private void copyLocation(StoreRowLocation[] rowlocArray, int index) {
+            if (rowlocArray == null) {
+                return;
+            }
+            if (rowlocArray[index] == null) {
+                rowlocArray[index] = new MvccRowLocation();
+            }
+            MvccRowLocation location = MvccRowLocation.from(rowlocArray[index]);
+            location.set(
+                    visibleRowId,
+                    visibleDirectoryHandle.getPageNumber(),
+                    visibleDirectoryHandle.getSlotNumberHint());
+            location.setWriteVersion(visibleVersionId);
+        }
+
+        private StreamingBatchResult result(
+                int count, long visited, long qualified, boolean done) {
+            return new StreamingBatchResult(
+                    count,
+                    visited,
+                    qualified,
+                    done,
+                    count == 0 ? 0L : visibleRowId,
+                    count == 0 ? 0L : visibleVersionId,
+                    count == 0 ? null : visibleVersionHandle,
+                    count == 0 ? null : visibleDirectoryHandle);
+        }
+
+        private StreamingBatchResult emptyResult() {
+            return new StreamingBatchResult(0, 0L, 0L, exhausted, 0L, 0L, null, null);
+        }
+
+        private static int startSlot(Page page) {
+            return page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                    ? Page.FIRST_SLOT_NUMBER + 2
+                    : Page.FIRST_SLOT_NUMBER;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                if (container != null) {
+                    container.close();
+                }
+            }
+        }
     }
 
     record PendingVersion(
@@ -1460,6 +1791,16 @@ final class MvccRawStoreTable {
         return table.gen2A1()
                 && Boolean.getBoolean(
                         MvccRawStoreFormat.GEN2_SINGLE_PASS_CURRENT_SCAN_ENABLED_PROPERTY);
+    }
+
+    static StoreDataValue[] scanRowTemplate(
+            Transaction transaction, Descriptor table) throws StandardException {
+        StoreDataValue[] row = new StoreDataValue[table.columnCount()];
+        for (int index = 0; index < row.length; index++) {
+            row[index] = MvccRawStoreFormat.nullValue(
+                    transaction, table.formatId(index), table.collationId(index));
+        }
+        return row;
     }
 
     private static Object[] reusableGen2CurrentScanTemplate(

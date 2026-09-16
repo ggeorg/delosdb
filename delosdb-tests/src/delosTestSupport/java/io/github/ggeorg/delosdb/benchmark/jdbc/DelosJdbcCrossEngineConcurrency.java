@@ -1755,27 +1755,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Path databaseRoot = requiredPhase2OPath("databaseRoot");
         String provider = requiredPhase2OProvider();
         boolean mvcc = "mvcc".equals(provider);
-        boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
-                && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
-                && Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled");
-        boolean projectedCurrentRead = Boolean.getBoolean(
-                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
-        boolean baseFetchPrefetch = Boolean.getBoolean(
-                "delosdb.experimental.mvccBaseFetchPagePrefetch");
-        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
-                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
-        boolean singlePassCurrentScan = Boolean.getBoolean(
-                "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled");
-        boolean reusableCurrentScanTemplate = Boolean.getBoolean(
-                "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled");
-        if (reusableCurrentScanTemplate && !singlePassCurrentScan) {
-            throw new IllegalStateException(
-                    "Phase-2O reusable CURRENT scan template requires single-pass CURRENT scan");
-        }
-        if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
-            throw new IllegalStateException(
-                    "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
-        }
+        Phase2OFeatures features = phase2OFeatures(mvcc);
         deleteRecursively(reportDirectory);
         deleteRecursively(databaseRoot);
         Files.createDirectories(reportDirectory);
@@ -1842,13 +1822,73 @@ public final class DelosJdbcCrossEngineConcurrency {
         Configuration profile = Configuration.getConfiguration("profile");
         Phase2EProfile result = profilePhase2OGroupInput(
                 jdbcUrl, profileSql, variant, rowCount, semanticFingerprint, warmups,
-                profileSeconds, profile, reportDirectory.resolve(provider + "-group-input.jfr"));
+                profileSeconds, profile, features.nonHoldableProfile(),
+                reportDirectory.resolve(provider + "-group-input.jfr"));
         writePhase2OGroupInputSummary(
-                reportDirectory, provider, gen2C3Enabled, projectedCurrentRead,
-                baseFetchPrefetch, physicalScanCost, singlePassCurrentScan,
-                reusableCurrentScanTemplate, rowCount, warmups, profileSeconds,
-                semanticFingerprint, naturalPlanShape, profilePlanShape,
-                canonicalGroupPlanShape, result);
+                reportDirectory, provider, features.gen2C3Enabled(), features.projectedCurrentRead(),
+                features.baseFetchPrefetch(), features.physicalScanCost(),
+                features.singlePassCurrentScan(), features.reusableCurrentScanTemplate(),
+                features.streamingBulkScan(), features.fastCurrentVisibilityFetch(),
+                features.nonHoldableProfile(),
+                rowCount, warmups, profileSeconds, semanticFingerprint, naturalPlanShape,
+                profilePlanShape, canonicalGroupPlanShape, result);
+    }
+
+    private static Phase2OFeatures phase2OFeatures(boolean mvcc) {
+        boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled");
+        boolean projectedCurrentRead = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean baseFetchPrefetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
+        boolean singlePassCurrentScan = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled");
+        boolean reusableCurrentScanTemplate = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled");
+        boolean streamingBulkScan = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2StreamingBulkScan.enabled");
+        boolean fastCurrentVisibilityFetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled");
+        boolean nonHoldableProfile = Boolean.getBoolean(PHASE2O_PREFIX + "nonHoldableControl");
+        if (streamingBulkScan && !nonHoldableProfile) {
+            throw new IllegalStateException(
+                    "Phase-2O streaming bulk scan requires the non-holdable profile control");
+        }
+        if (reusableCurrentScanTemplate && !singlePassCurrentScan) {
+            throw new IllegalStateException(
+                    "Phase-2O reusable CURRENT scan template requires single-pass CURRENT scan");
+        }
+        if (streamingBulkScan && (!singlePassCurrentScan || !reusableCurrentScanTemplate)) {
+            throw new IllegalStateException(
+                    "Phase-2O streaming bulk scan requires single-pass and reusable CURRENT scan template");
+        }
+        if (fastCurrentVisibilityFetch && !streamingBulkScan) {
+            throw new IllegalStateException(
+                    "Phase-2O fast CURRENT visibility fetch requires streaming bulk scan");
+        }
+        if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
+            throw new IllegalStateException(
+                    "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
+        }
+        return new Phase2OFeatures(
+                gen2C3Enabled, projectedCurrentRead, baseFetchPrefetch, physicalScanCost,
+                singlePassCurrentScan, reusableCurrentScanTemplate, streamingBulkScan,
+                fastCurrentVisibilityFetch, nonHoldableProfile);
+    }
+
+    private record Phase2OFeatures(
+            boolean gen2C3Enabled,
+            boolean projectedCurrentRead,
+            boolean baseFetchPrefetch,
+            boolean physicalScanCost,
+            boolean singlePassCurrentScan,
+            boolean reusableCurrentScanTemplate,
+            boolean streamingBulkScan,
+            boolean fastCurrentVisibilityFetch,
+            boolean nonHoldableProfile) {
     }
 
     private static Phase2EProfile profilePhase2OGroupInput(
@@ -1860,34 +1900,43 @@ public final class DelosJdbcCrossEngineConcurrency {
             int warmups,
             int profileSeconds,
             Configuration profile,
+            boolean nonHoldableProfile,
             Path recordingPath) throws Exception {
-        try (Connection connection = openPhase2AConnection(jdbcUrl);
-                PreparedStatement statement = connection.prepareStatement(sql)) {
-            for (int i = 0; i < warmups; i++) {
-                assertPhase2OFingerprint(
-                        statement, variant, expectedRows, expectedFingerprint, "warmup", i);
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            if (nonHoldableProfile) {
+                connection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
+                if (connection.getHoldability() != ResultSet.CLOSE_CURSORS_AT_COMMIT) {
+                    throw new IllegalStateException(
+                            "Phase-2O non-holdable profile control was not applied");
+                }
             }
-            int iterations = 0;
-            long elapsed;
-            long started;
-            long targetNanos = TimeUnit.SECONDS.toNanos(profileSeconds);
-            try (Recording recording = new Recording(profile)) {
-                recording.setName(recordingPath.getFileName().toString());
-                recording.setToDisk(true);
-                recording.start();
-                started = System.nanoTime();
-                do {
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                for (int i = 0; i < warmups; i++) {
                     assertPhase2OFingerprint(
-                            statement, variant, expectedRows, expectedFingerprint,
-                            "profile", iterations);
-                    iterations++;
-                    elapsed = System.nanoTime() - started;
-                } while (elapsed < targetNanos);
-                recording.stop();
-                recording.dump(recordingPath);
+                            statement, variant, expectedRows, expectedFingerprint, "warmup", i);
+                }
+                int iterations = 0;
+                long elapsed;
+                long started;
+                long targetNanos = TimeUnit.SECONDS.toNanos(profileSeconds);
+                try (Recording recording = new Recording(profile)) {
+                    recording.setName(recordingPath.getFileName().toString());
+                    recording.setToDisk(true);
+                    recording.start();
+                    started = System.nanoTime();
+                    do {
+                        assertPhase2OFingerprint(
+                                statement, variant, expectedRows, expectedFingerprint,
+                                "profile", iterations);
+                        iterations++;
+                        elapsed = System.nanoTime() - started;
+                    } while (elapsed < targetNanos);
+                    recording.stop();
+                    recording.dump(recordingPath);
+                }
+                connection.rollback();
+                return new Phase2EProfile(elapsed / 1_000_000.0d, iterations);
             }
-            connection.rollback();
-            return new Phase2EProfile(elapsed / 1_000_000.0d, iterations);
         }
     }
 
@@ -1914,6 +1963,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean physicalScanCost,
             boolean singlePassCurrentScan,
             boolean reusableCurrentScanTemplate,
+            boolean streamingBulkScan,
+            boolean fastCurrentVisibilityFetch,
+            boolean nonHoldableProfile,
             int rowCount,
             int warmups,
             int profileSeconds,
@@ -1938,6 +1990,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "physicalScanCost=" + physicalScanCost + "\n"
                 + "singlePassCurrentScan=" + singlePassCurrentScan + "\n"
                 + "reusableCurrentScanTemplate=" + reusableCurrentScanTemplate + "\n"
+                + "streamingBulkScan=" + streamingBulkScan + "\n"
+                + "fastCurrentVisibilityFetch=" + fastCurrentVisibilityFetch + "\n"
+                + "profileHoldability="
+                + (nonHoldableProfile ? "CLOSE_CURSORS_AT_COMMIT" : "DEFAULT") + "\n"
                 + "warmups=" + warmups + "\n"
                 + "profileSecondsTarget=" + profileSeconds + "\n"
                 + "profileIterations=" + result.iterations() + "\n"

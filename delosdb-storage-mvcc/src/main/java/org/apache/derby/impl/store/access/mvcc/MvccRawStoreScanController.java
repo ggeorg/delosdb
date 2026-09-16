@@ -26,7 +26,7 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
 import org.apache.derby.shared.common.error.StandardException;
 
-/** Materialized scan over RawStore directory and version rows. */
+/** RawStore MVCC scan with the materialized path retained as the default. */
 final class MvccRawStoreScanController implements ScanManager {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
@@ -42,6 +42,10 @@ final class MvccRawStoreScanController implements ScanManager {
     private final boolean readCommittedUpdateRecheck;
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;
+    private MvccRawStoreTable.StreamingBatchScan streamingScan;
+    private MvccRawStoreRuntime.TableReadBoundary streamingReadBoundary;
+    private StoreDataValue[] streamingSingleRow;
+    private StoreDataValue[][] streamingSingleGroup;
     private int nextIndex;
     private MvccRawStoreTable.VisibleRow current;
     private boolean currentDeleted;
@@ -115,6 +119,7 @@ final class MvccRawStoreScanController implements ScanManager {
     public void close() {
         if (!closed) {
             closed = true;
+            closeStreamingScan();
             rows = List.of();
             current = null;
             if (heldSnapshotLease != null) {
@@ -271,14 +276,12 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public int fetchNextGroup(StoreDataValue[][] rowArray, StoreRowLocation[] rowlocArray)
             throws StandardException {
+        if (streamingScan != null) {
+            return fetchNextStreamingGroup(rowArray, rowlocArray);
+        }
         int count = 0;
         while (count < rowArray.length && next()) {
-            if (rowArray[count] == null) {
-                if (rowArray.length == 0 || rowArray[0] == null) {
-                    throw new IllegalStateException("RawStore MVCC group fetch requires a row template");
-                }
-                rowArray[count] = RowUtil.newRowFromTemplatePreservingArrayType(rowArray[0]);
-            }
+            ensureGroupRow(rowArray, count);
             StoreValueCopySupport.copyRow(current.values(), rowArray[count], scanColumnList);
             if (rowlocArray != null) {
                 if (rowlocArray[count] == null) {
@@ -322,6 +325,9 @@ final class MvccRawStoreScanController implements ScanManager {
     @Override
     public boolean next() throws StandardException {
         ensureOpen();
+        if (streamingScan != null) {
+            return nextStreaming();
+        }
         while (nextIndex < rows.size()) {
             MvccRawStoreTable.VisibleRow candidate = rows.get(nextIndex++);
             rowsVisited++;
@@ -418,40 +424,19 @@ final class MvccRawStoreScanController implements ScanManager {
     }
 
     private void reload() throws StandardException {
-        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        closeStreamingScan();
+        MvccRawStoreTransactionContext context = runtime.context(
+                transactionManager, rawTransaction);
+        boolean streamingRequested = streamingBulkScanEligible();
+        boolean materialized = false;
         try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
             java.util.Optional<List<MvccRawStoreOrderedIndex.Candidate>> candidates =
                     MvccRawStoreTable.orderedIndexCandidatesForAt(
-                            table,
-                            qualifiers,
-                            context,
-                            compiledInfo);
+                            table, qualifiers, context, compiledInfo);
             if (candidates.isPresent()) {
-                List<MvccRawStoreOrderedIndex.Candidate> candidateRows = candidates.get();
-                List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
-                boolean allCovered = !candidateRows.isEmpty();
-                try (MvccRawStoreIndexedReader reader = new MvccRawStoreIndexedReader(
-                        rawTransaction,
-                        table,
-                        snapshotSequence,
-                        versionProjection,
-                        context)) {
-                    boolean coveringEligible = !candidateRows.isEmpty()
-                            && coveringEligible(candidateRows.get(0).columnId());
-                    for (MvccRawStoreIndexedReader.Result result : reader.read(
-                            candidateRows,
-                            coveringEligible)) {
-                        allCovered &= result.covered();
-                        if (result.row() != null) {
-                            indexedRows.add(result.row());
-                        }
-                    }
-                    indexedReadMetrics = reader.metrics();
-                }
-                rows = List.copyOf(indexedRows);
-                orderedIndexScan = true;
-                coveringIndexScan = allCovered;
-            } else {
+                loadIndexedRows(candidates.get(), context);
+                materialized = true;
+            } else if (!streamingRequested) {
                 rows = MvccRawStoreTable.scanVisibleAt(
                         rawTransaction,
                         table,
@@ -461,14 +446,137 @@ final class MvccRawStoreScanController implements ScanManager {
                 orderedIndexScan = false;
                 coveringIndexScan = false;
                 indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
+                materialized = true;
             }
+        }
+        if (!materialized) {
+            openStreamingScan(context);
         }
         nextIndex = 0;
         current = null;
         currentDeleted = false;
         rowsVisited = 0L;
         rowsQualified = 0L;
-        estimatedRowCount = rows.size();
+        if (materialized) {
+            estimatedRowCount = rows.size();
+        }
+    }
+
+    private void loadIndexedRows(
+            List<MvccRawStoreOrderedIndex.Candidate> candidateRows,
+            MvccRawStoreTransactionContext context) throws StandardException {
+        List<MvccRawStoreTable.VisibleRow> indexedRows = new java.util.ArrayList<>();
+        boolean allCovered = !candidateRows.isEmpty();
+        try (MvccRawStoreIndexedReader reader = new MvccRawStoreIndexedReader(
+                rawTransaction, table, snapshotSequence, versionProjection, context)) {
+            boolean coveringEligible = !candidateRows.isEmpty()
+                    && coveringEligible(candidateRows.get(0).columnId());
+            for (MvccRawStoreIndexedReader.Result result : reader.read(
+                    candidateRows, coveringEligible)) {
+                allCovered &= result.covered();
+                if (result.row() != null) {
+                    indexedRows.add(result.row());
+                }
+            }
+            indexedReadMetrics = reader.metrics();
+        }
+        rows = List.copyOf(indexedRows);
+        orderedIndexScan = true;
+        coveringIndexScan = allCovered;
+    }
+
+    private void openStreamingScan(MvccRawStoreTransactionContext context)
+            throws StandardException {
+        streamingReadBoundary = runtime.enterTableRead(table);
+        try {
+            streamingScan = new MvccRawStoreTable.StreamingBatchScan(
+                    rawTransaction, table, snapshotSequence, versionProjection, context);
+            rows = List.of();
+            orderedIndexScan = false;
+            coveringIndexScan = false;
+            indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
+        } catch (StandardException | RuntimeException | Error failure) {
+            closeStreamingScan();
+            throw failure;
+        }
+    }
+
+    private boolean streamingBulkScanEligible() {
+        return table.gen2A1()
+                && !forUpdate
+                && !hold
+                && Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_STREAMING_BULK_SCAN_ENABLED_PROPERTY)
+                && Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_SINGLE_PASS_CURRENT_SCAN_ENABLED_PROPERTY)
+                && Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_REUSABLE_CURRENT_SCAN_TEMPLATE_ENABLED_PROPERTY);
+    }
+
+    private int fetchNextStreamingGroup(
+            StoreDataValue[][] rowArray,
+            StoreRowLocation[] rowlocArray) throws StandardException {
+        ensureOpen();
+        if (rowArray.length == 0) {
+            return 0;
+        }
+        for (int index = 0; index < rowArray.length; index++) {
+            ensureGroupRow(rowArray, index);
+        }
+        MvccRawStoreTable.StreamingBatchResult result = streamingScan.fetchGroup(
+                rowArray, rowlocArray, scanColumnList, qualifiers);
+        rowsVisited += result.visited();
+        rowsQualified += result.qualified();
+        int count = result.count();
+        if (count > 0) {
+            current = new MvccRawStoreTable.VisibleRow(
+                    result.lastRowId(),
+                    result.lastVersionId(),
+                    rowArray[count - 1],
+                    result.lastVersionHandle(),
+                    MvccRawStoreRowDirectory.location(
+                            result.lastRowId(), result.lastDirectoryHandle()));
+            currentDeleted = false;
+        } else if (result.exhausted()) {
+            current = null;
+            currentDeleted = false;
+        }
+        if (result.exhausted()) {
+            estimatedRowCount = rowsVisited;
+        }
+        return count;
+    }
+
+    private boolean nextStreaming() throws StandardException {
+        if (streamingSingleRow == null) {
+            streamingSingleRow = MvccRawStoreTable.scanRowTemplate(rawTransaction, table);
+            streamingSingleGroup = new StoreDataValue[][] {streamingSingleRow};
+        }
+        return fetchNextStreamingGroup(streamingSingleGroup, null) == 1;
+    }
+
+    private static void ensureGroupRow(StoreDataValue[][] rowArray, int index)
+            throws StandardException {
+        if (rowArray[index] != null) {
+            return;
+        }
+        if (rowArray.length == 0 || rowArray[0] == null) {
+            throw new IllegalStateException("RawStore MVCC group fetch requires a row template");
+        }
+        rowArray[index] = RowUtil.newRowFromTemplatePreservingArrayType(rowArray[0]);
+    }
+
+    private void closeStreamingScan() {
+        if (streamingScan != null) {
+            streamingScan.close();
+            streamingScan = null;
+        }
+        if (streamingReadBoundary != null) {
+            streamingReadBoundary.close();
+            streamingReadBoundary = null;
+        }
+        streamingSingleRow = null;
+        streamingSingleGroup = null;
     }
 
     private boolean coveringEligible(int indexedColumn) {
