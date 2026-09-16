@@ -265,6 +265,8 @@ final class MvccRawStoreTable {
         private final boolean fastCurrentVisibilityFetch;
         private final boolean skipCurrentTagFetch;
         private final boolean lazyCurrentCreatorFetch;
+        private final boolean lazyCurrentIdentityFetch;
+        private final FetchDescriptor currentIdentityDescriptor;
         private final int payloadStart;
         private long resumePageNumber;
         private int resumeSlot;
@@ -276,6 +278,9 @@ final class MvccRawStoreTable {
         private RecordHandle visibleVersionHandle;
         private RecordHandle visibleDirectoryHandle;
         private StoreDataValue[] visibleValues;
+        private Page visibleCurrentPage;
+        private int visibleCurrentSlot = -1;
+        private boolean visibleIdentityLoaded = true;
 
         StreamingBatchScan(
                 Transaction transaction,
@@ -296,15 +301,21 @@ final class MvccRawStoreTable {
                     MvccRawStoreFormat.GEN2_SKIP_CURRENT_TAG_FETCH_ENABLED_PROPERTY);
             lazyCurrentCreatorFetch = Boolean.getBoolean(
                     MvccRawStoreFormat.GEN2_LAZY_CURRENT_CREATOR_FETCH_ENABLED_PROPERTY);
+            lazyCurrentIdentityFetch = Boolean.getBoolean(
+                    MvccRawStoreFormat.GEN2_LAZY_CURRENT_IDENTITY_FETCH_ENABLED_PROPERTY);
             currentRow = gen2A1CurrentTemplate(transaction, table, currentProjection);
             fetchDescriptor = fastCurrentVisibilityFetch
                     ? fastCurrentVisibilityDescriptor(
-                            table, projection, skipCurrentTagFetch, lazyCurrentCreatorFetch)
+                            table, projection, skipCurrentTagFetch, lazyCurrentCreatorFetch,
+                            lazyCurrentIdentityFetch)
                     : currentProjection == null
                             ? null
                             : currentProjection.currentDescriptor(table);
             historyMetadataDescriptor = fastCurrentVisibilityFetch && table.gen2History()
-                    ? historyMetadataDescriptor(table)
+                    ? historyMetadataDescriptor(table, lazyCurrentIdentityFetch)
+                    : null;
+            currentIdentityDescriptor = lazyCurrentIdentityFetch
+                    ? currentIdentityDescriptor(table)
                     : null;
             payloadStart = table.gen2History()
                     ? MvccRawStoreFormat.GEN2_C1_CURRENT_PAYLOAD_START
@@ -353,6 +364,7 @@ final class MvccRawStoreTable {
                             return result(count, visited, qualified, false);
                         }
                     }
+                    ensureVisibleIdentityBeforeUnlatch(page);
                     long pageNumber = page.getPageNumber();
                     page.unlatch();
                     page = null;
@@ -398,10 +410,6 @@ final class MvccRawStoreTable {
                 return false;
             }
             refreshCurrentValues();
-            long rowId = MvccRawStoreFormat.longAt(
-                    currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
-            long versionId = MvccRawStoreFormat.longAt(
-                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
             long begin = MvccRawStoreFormat.longAt(
                     currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
             long creator = currentCreator(page, slot, begin);
@@ -411,13 +419,15 @@ final class MvccRawStoreTable {
                 if ((flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
                     return false;
                 }
-                setVisible(rowId, versionId, currentHandle, currentHandle, currentValues);
+                setVisibleCurrent(page, slot, currentHandle);
                 return true;
             }
             if (historyMetadataDescriptor != null) {
                 page.fetchFromSlot(
                         currentHandle, slot, currentRow, historyMetadataDescriptor, false);
             }
+            long rowId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
             return decodeHistory(rowId, currentHandle);
         }
 
@@ -425,15 +435,18 @@ final class MvccRawStoreTable {
                 Descriptor table,
                 MvccRawStoreVersionRows.FetchProjection projection,
                 boolean skipCurrentTagFetch,
-                boolean lazyCurrentCreatorFetch) {
+                boolean lazyCurrentCreatorFetch,
+                boolean lazyCurrentIdentityFetch) {
             int fieldCount = currentFieldCount(table);
             FormatableBitSet fields = new FormatableBitSet(fieldCount);
             if (!skipCurrentTagFetch) {
                 fields.set(MvccRawStoreFormat.DIRECTORY_KIND_FIELD);
                 fields.set(MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION);
             }
-            fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
-            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            if (!lazyCurrentIdentityFetch) {
+                fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
+                fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            }
             if (!lazyCurrentCreatorFetch) {
                 fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
             }
@@ -465,12 +478,24 @@ final class MvccRawStoreTable {
                     currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
         }
 
-        private static FetchDescriptor historyMetadataDescriptor(Descriptor table) {
+        private static FetchDescriptor historyMetadataDescriptor(
+                Descriptor table, boolean includeRowId) {
             int fieldCount = currentFieldCount(table);
             FormatableBitSet fields = new FormatableBitSet(fieldCount);
+            if (includeRowId) {
+                fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
+            }
             fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE);
             fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD);
             fields.set(MvccRawStoreFormat.GEN2_C1_PREVIOUS_VERSION_ID);
+            return new FetchDescriptor(fieldCount, fields, null);
+        }
+
+        private static FetchDescriptor currentIdentityDescriptor(Descriptor table) {
+            int fieldCount = currentFieldCount(table);
+            FormatableBitSet fields = new FormatableBitSet(fieldCount);
+            fields.set(MvccRawStoreFormat.DIRECTORY_ROW_ID);
+            fields.set(MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
             return new FetchDescriptor(fieldCount, fields, null);
         }
 
@@ -539,6 +564,51 @@ final class MvccRawStoreTable {
             }
         }
 
+        private void setVisibleCurrent(Page page, int slot, RecordHandle currentHandle)
+                throws StandardException {
+            visibleVersionHandle = currentHandle;
+            visibleDirectoryHandle = currentHandle;
+            visibleValues = currentValues;
+            if (!lazyCurrentIdentityFetch) {
+                visibleRowId = MvccRawStoreFormat.longAt(
+                        currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
+                visibleVersionId = MvccRawStoreFormat.longAt(
+                        currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+                visibleIdentityLoaded = true;
+                visibleCurrentPage = null;
+                visibleCurrentSlot = -1;
+                return;
+            }
+            visibleIdentityLoaded = false;
+            visibleCurrentPage = page;
+            visibleCurrentSlot = slot;
+        }
+
+        private void ensureVisibleIdentity() throws StandardException {
+            if (visibleIdentityLoaded) {
+                return;
+            }
+            if (visibleCurrentPage == null || visibleCurrentSlot < 0) {
+                throw new IllegalStateException("Gen2 streaming CURRENT identity source unavailable");
+            }
+            visibleCurrentPage.fetchFromSlot(
+                    visibleVersionHandle, visibleCurrentSlot, currentRow,
+                    currentIdentityDescriptor, false);
+            visibleRowId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_ROW_ID);
+            visibleVersionId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            visibleIdentityLoaded = true;
+            visibleCurrentPage = null;
+            visibleCurrentSlot = -1;
+        }
+
+        private void ensureVisibleIdentityBeforeUnlatch(Page page) throws StandardException {
+            if (!visibleIdentityLoaded && visibleCurrentPage == page) {
+                ensureVisibleIdentity();
+            }
+        }
+
         private void setVisible(
                 long rowId,
                 long versionId,
@@ -550,12 +620,17 @@ final class MvccRawStoreTable {
             visibleVersionHandle = versionHandle;
             visibleDirectoryHandle = directoryHandle;
             visibleValues = values;
+            visibleIdentityLoaded = true;
+            visibleCurrentPage = null;
+            visibleCurrentSlot = -1;
         }
 
-        private void copyLocation(StoreRowLocation[] rowlocArray, int index) {
+        private void copyLocation(StoreRowLocation[] rowlocArray, int index)
+                throws StandardException {
             if (rowlocArray == null) {
                 return;
             }
+            ensureVisibleIdentity();
             if (rowlocArray[index] == null) {
                 rowlocArray[index] = new MvccRowLocation();
             }
@@ -568,7 +643,11 @@ final class MvccRawStoreTable {
         }
 
         private StreamingBatchResult result(
-                int count, long visited, long qualified, boolean done) {
+                int count, long visited, long qualified, boolean done)
+                throws StandardException {
+            if (count != 0) {
+                ensureVisibleIdentity();
+            }
             return new StreamingBatchResult(
                     count,
                     visited,

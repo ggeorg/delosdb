@@ -1,16 +1,6 @@
-DelosDB Gen2-C3 F06 lazy CURRENT creator-fetch experiment
+DelosDB Gen2-C3 F06 lazy CURRENT identity fetch experiment
 
-Purpose:
-- Extend the matched Phase-2O F06 TABLE_SCAN attribution.
-- Omit creatorTransactionId from the common committed CURRENT-row FetchDescriptor.
-- Fetch creatorTransactionId lazily only when beginSequence is UNCOMMITTED_SEQUENCE.
-- Preserve all existing visibility semantics and history fallback.
-
-Experimental property:
-  delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled
-
-Benchmark Gradle property:
-  delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch
+Diagnostic-only experiment on top of the accepted Phase-2O F06 stack.
 
 Changed repository files:
 - delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
@@ -18,5 +8,21 @@ Changed repository files:
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 - delosdb-tests/build.gradle
 
-No storage-format, WAL, recovery, optimizer, GROUP BY, sort, or default-behavior change.
-The experiment defaults OFF.
+New experimental property:
+- delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled
+
+Benchmark forwarding property:
+- delosdb.benchmark.mvccGen2LazyCurrentIdentityFetch
+
+Purpose:
+- omit CURRENT rowId/versionId from the common visible-row FetchDescriptor;
+- fetch identity only when history fallback requires rowId, row locations are requested,
+  or the streaming scan must preserve its last-row position;
+- leave storage format, visibility semantics, WAL/recovery, optimizer, and default behavior unchanged.
+
+Prechecks performed before packaging:
+- changed MVCC production Java compiled against a flattened current repository source tree;
+- DelosJdbcCrossEngineConcurrency compiled against current production/test-support sources;
+- modified Java methods remain below the repository 100-line limit;
+- Gradle variables are scoped locally in the existing Phase-2O task block;
+- ZIP integrity, duplicate-entry, and SHA-256 checks performed after packaging.

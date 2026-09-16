@@ -1830,7 +1830,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 features.singlePassCurrentScan(), features.reusableCurrentScanTemplate(),
                 features.streamingBulkScan(), features.fastCurrentVisibilityFetch(),
                 features.skipCurrentTagFetch(), features.lazyCurrentCreatorFetch(),
-                features.nonHoldableProfile(),
+                features.lazyCurrentIdentityFetch(), features.nonHoldableProfile(),
                 rowCount, warmups, profileSeconds, semanticFingerprint, naturalPlanShape,
                 profilePlanShape, canonicalGroupPlanShape, result);
     }
@@ -1857,6 +1857,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 "delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled");
         boolean lazyCurrentCreatorFetch = Boolean.getBoolean(
                 "delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled");
+        boolean lazyCurrentIdentityFetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled");
         boolean nonHoldableProfile = Boolean.getBoolean(PHASE2O_PREFIX + "nonHoldableControl");
         if (streamingBulkScan && !nonHoldableProfile) {
             throw new IllegalStateException(
@@ -1882,6 +1884,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             throw new IllegalStateException(
                     "Phase-2O lazy CURRENT creator fetch requires skipped CURRENT tag fetch");
         }
+        if (lazyCurrentIdentityFetch && !lazyCurrentCreatorFetch) {
+            throw new IllegalStateException(
+                    "Phase-2O lazy CURRENT identity fetch requires lazy CURRENT creator fetch");
+        }
         if (mvcc && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
             throw new IllegalStateException(
                     "Phase-2O Gen2 profile requires B1/C1/C2 enabled with rejected read experiments off");
@@ -1890,7 +1896,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 gen2C3Enabled, projectedCurrentRead, baseFetchPrefetch, physicalScanCost,
                 singlePassCurrentScan, reusableCurrentScanTemplate, streamingBulkScan,
                 fastCurrentVisibilityFetch, skipCurrentTagFetch, lazyCurrentCreatorFetch,
-                nonHoldableProfile);
+                lazyCurrentIdentityFetch, nonHoldableProfile);
     }
 
     private record Phase2OFeatures(
@@ -1904,6 +1910,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean fastCurrentVisibilityFetch,
             boolean skipCurrentTagFetch,
             boolean lazyCurrentCreatorFetch,
+            boolean lazyCurrentIdentityFetch,
             boolean nonHoldableProfile) {
     }
 
@@ -1983,6 +1990,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean fastCurrentVisibilityFetch,
             boolean skipCurrentTagFetch,
             boolean lazyCurrentCreatorFetch,
+            boolean lazyCurrentIdentityFetch,
             boolean nonHoldableProfile,
             int rowCount,
             int warmups,
@@ -2012,6 +2020,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "fastCurrentVisibilityFetch=" + fastCurrentVisibilityFetch + "\n"
                 + "skipCurrentTagFetch=" + skipCurrentTagFetch + "\n"
                 + "lazyCurrentCreatorFetch=" + lazyCurrentCreatorFetch + "\n"
+                + "lazyCurrentIdentityFetch=" + lazyCurrentIdentityFetch + "\n"
                 + "profileHoldability="
                 + (nonHoldableProfile ? "CLOSE_CURSORS_AT_COMMIT" : "DEFAULT") + "\n"
                 + "warmups=" + warmups + "\n"

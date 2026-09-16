@@ -16999,6 +16999,9 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def lazyCreatorValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def lazyIdentityValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2LazyCurrentIdentityFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         if (!(singlePassValue in ['true', 'false'])) {
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2SinglePassCurrentScan must be true or false')
@@ -17023,6 +17026,10 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
             throw new GradleException(
                     'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch must be true or false')
         }
+        if (!(lazyIdentityValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.benchmark.mvccGen2LazyCurrentIdentityFetch must be true or false')
+        }
         if (reusableTemplateValue == 'true' && singlePassValue != 'true') {
             throw new GradleException(
                     'mvccGen2ReusableCurrentScanTemplate requires mvccGen2SinglePassCurrentScan=true')
@@ -17043,6 +17050,10 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         if (lazyCreatorValue == 'true' && skipCurrentTagValue != 'true') {
             throw new GradleException(
                     'mvccGen2LazyCurrentCreatorFetch requires mvccGen2SkipCurrentTagFetch=true')
+        }
+        if (lazyIdentityValue == 'true' && lazyCreatorValue != 'true') {
+            throw new GradleException(
+                    'mvccGen2LazyCurrentIdentityFetch requires mvccGen2LazyCurrentCreatorFetch=true')
         }
         if (saneValue != 'false') {
             throw new GradleException(
@@ -17072,7 +17083,9 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 'delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled':
                         provider == 'mvcc' ? skipCurrentTagValue : 'false',
                 'delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled':
-                        provider == 'mvcc' ? lazyCreatorValue : 'false'
+                        provider == 'mvcc' ? lazyCreatorValue : 'false',
+                'delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled':
+                        provider == 'mvcc' ? lazyIdentityValue : 'false'
         ]
         if (provider == 'mvcc') {
             properties.putAll([
@@ -17108,12 +17121,16 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
         def lazyCreatorValue = providers.gradleProperty(
                 'delosdb.benchmark.mvccGen2LazyCurrentCreatorFetch')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def lazyIdentityValue = providers.gradleProperty(
+                'delosdb.benchmark.mvccGen2LazyCurrentIdentityFetch')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         def expectedSinglePass = provider == 'mvcc' ? singlePassValue : 'false'
         def expectedReusableTemplate = provider == 'mvcc' ? reusableTemplateValue : 'false'
         def expectedStreamingBulk = provider == 'mvcc' ? streamingBulkValue : 'false'
         def expectedFastVisibility = provider == 'mvcc' ? fastVisibilityValue : 'false'
         def expectedSkipCurrentTag = provider == 'mvcc' ? skipCurrentTagValue : 'false'
         def expectedLazyCreator = provider == 'mvcc' ? lazyCreatorValue : 'false'
+        def expectedLazyIdentity = provider == 'mvcc' ? lazyIdentityValue : 'false'
         def expectedHoldability = streamingBulkValue == 'true'
                 ? 'CLOSE_CURSORS_AT_COMMIT' : 'DEFAULT'
         [
@@ -17124,6 +17141,7 @@ def configureDelosGen2C3F06GroupInputJfr = { JavaExec task, String provider ->
                 "fastCurrentVisibilityFetch=${expectedFastVisibility}",
                 "skipCurrentTagFetch=${expectedSkipCurrentTag}",
                 "lazyCurrentCreatorFetch=${expectedLazyCreator}",
+                "lazyCurrentIdentityFetch=${expectedLazyIdentity}",
                 "profileHoldability=${expectedHoldability}",
                 'naturalPlanShape=',
                 'profilePlanShape=TABLE_SCAN',
