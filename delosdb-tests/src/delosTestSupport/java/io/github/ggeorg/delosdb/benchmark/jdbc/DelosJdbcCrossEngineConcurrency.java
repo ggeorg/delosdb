@@ -3453,6 +3453,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             command.add("-Ddelosdb.experimental.mvccPhysicalScanCost.enabled="
                     + mvccPhysicalScanCostEnabled());
+            command.add("-Ddelosdb.experimental.mvccPhysicalRowLocationCost.enabled="
+                    + mvccPhysicalRowLocationCostEnabled());
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -3719,6 +3721,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_MVCC_DRDA) {
                     javaCommand.add("-Ddelosdb.experimental.mvccPhysicalScanCost.enabled="
                             + mvccPhysicalScanCostEnabled());
+                    javaCommand.add("-Ddelosdb.experimental.mvccPhysicalRowLocationCost.enabled="
+                            + mvccPhysicalRowLocationCostEnabled());
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3933,6 +3937,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost experiment: ")
                 .append(mvccPhysicalScanCostEnabled()).append('\n')
+                .append("MVCC physical RowLocation cost experiment: ")
+                .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
@@ -9489,6 +9495,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost enabled: ")
                 .append(mvccPhysicalScanCostEnabled()).append('\n')
+                .append("MVCC physical RowLocation cost enabled: ")
+                .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
@@ -9763,6 +9771,11 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccPhysicalScanCostEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccPhysicalScanCost", "true"));
+    }
+
+    private static boolean mvccPhysicalRowLocationCostEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                PREFIX + "mvccPhysicalRowLocationCost", "false"));
     }
 
     private static boolean mvccRefreshMultiJoinStatisticsEnabled() {
