@@ -17291,6 +17291,99 @@ tasks.register('runDelosGen2C3F06GroupInputJfrAttribution') {
     }
 }
 
+// Phase 2P: falsify the remaining F06 canonical plan choice after the
+// CURRENT-scan attribution campaign. Keep canonical JDBC holdability, disable
+// automatic index-statistics churn, refresh statistics explicitly, and compare
+// natural GROUP_HIGH_CARD against a matched index=null table-scan control.
+def delosGen2C3F06CanonicalPlanRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f06-canonical-plan-falsification'
+
+tasks.register('runDelosGen2C3F06CanonicalPlanFalsification', JavaExec) {
+    group = 'verification'
+    description = 'Falsifies F06 canonical GROUP_HIGH_CARD plan choice against a deterministic table-scan control.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2p-f06-canonical-plan-falsification'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory.dir(delosGen2C3F06CanonicalPlanRoot)
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f06-canonical-plan-falsification')
+    outputs.dir(reportDir)
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F06 canonical plan falsification requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f06CanonicalPlanFalsification.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f06CanonicalPlanFalsification.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled': 'true',
+                'delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled': 'true',
+                'delosdb.experimental.mvccGen2StreamingBulkScan.enabled': 'true',
+                'delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled': 'true',
+                'delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled': 'true',
+                'delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled': 'true',
+                'delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled': 'true'
+        ])
+    }
+
+    doLast {
+        File summary = new File(reportDir.get().asFile, 'phase2p-f06-canonical-plan-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("F06 canonical plan falsification summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                'diagnosticOnly=true',
+                'autoIndexStatistics=false',
+                'explicitStatisticsRefresh=true',
+                'statisticsCatalogStable=true',
+                'canonicalHoldability=HOLD_CURSORS_OVER_COMMIT',
+                'gen2C3Enabled=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'physicalScanCost=true',
+                'singlePassCurrentScan=true',
+                'reusableCurrentScanTemplate=true',
+                'streamingBulkScan=true',
+                'fastCurrentVisibilityFetch=true',
+                'skipCurrentTagFetch=true',
+                'lazyCurrentCreatorFetch=true',
+                'lazyCurrentIdentityFetch=true',
+                'mvccForcedBeforePlanShape=AGGREGATE+SORT+TABLE_SCAN',
+                'forcedTableScanStreamingReachable=false',
+                'forcedTableScanFastVisibilityReachable=false',
+                'forcedTableScanLazyIdentityReachable=false',
+                'semanticFingerprintsMatch=true',
+                'measurementStatus='
+        ].each { markerText ->
+            if (!text.contains(markerText)) {
+                throw new GradleException(
+                        "F06 canonical plan falsification missing evidence marker: ${markerText}")
+            }
+        }
+        if (text.contains('measurementStatus=INVALID')) {
+            throw new GradleException(
+                    'F06 canonical plan falsification dispersion is INVALID; inspect the preserved report')
+        }
+    }
+}
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.

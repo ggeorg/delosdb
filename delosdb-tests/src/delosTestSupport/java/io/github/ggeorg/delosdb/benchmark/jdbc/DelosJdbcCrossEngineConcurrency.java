@@ -56,6 +56,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2K_PREFIX = "delosdb.phase2.f03ProjectionMaterialization.";
     private static final String PHASE2N_PREFIX = "delosdb.phase2.f04F06RelationalDecomposition.";
     private static final String PHASE2O_PREFIX = "delosdb.phase2.f06GroupInputJfr.";
+    private static final String PHASE2P_PREFIX = "delosdb.phase2.f06CanonicalPlanFalsification.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -157,6 +158,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2OF06GroupInputJfrAttribution();
             return;
         }
+        if (args.length == 1 && "phase2p-f06-canonical-plan-falsification".equals(args[0])) {
+            runPhase2PF06CanonicalPlanFalsification();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -173,7 +178,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2j-f05-compatibility-native-path',"
                             + " exactly 'phase2k-f03-projection-materialization',"
                             + " exactly 'phase2n-f04-f06-relational-decomposition',"
-                            + " or exactly 'phase2o-f06-group-input-jfr'");
+                            + " exactly 'phase2o-f06-group-input-jfr',"
+                            + " or exactly 'phase2p-f06-canonical-plan-falsification'");
         }
     }
 
@@ -2035,6 +2041,418 @@ public final class DelosJdbcCrossEngineConcurrency {
                 summary,
                 StandardCharsets.UTF_8);
         System.out.print(summary);
+    }
+
+    private static void runPhase2PF06CanonicalPlanFalsification() throws Exception {
+        Path reportDirectory = requiredPhase2PPath("reportDirectory");
+        Path databaseRoot = requiredPhase2PPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 100;
+        int expectedRows = Math.min(1000, rowCount);
+        String heapBase = "P2P_HEAP";
+        String mvccBase = "P2P_MVCC";
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f06-canonical-plan-falsification") + ";create=true";
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            phase2PSetAutoIndexStatistics(setup, false);
+            prepareHighCardGroupFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareHighCardGroupFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            for (String table : List.of(
+                    highCardGroupTableName(heapBase),
+                    highCardGroupTableName(mvccBase))) {
+                phase2BUpdateStatistics(setup, table);
+            }
+            setup.commit();
+            String statisticsBefore = phase2PStatisticsSnapshot(setup, List.of(
+                    highCardGroupTableName(heapBase),
+                    highCardGroupTableName(mvccBase)));
+            setup.commit();
+            Files.writeString(
+                    reportDirectory.resolve("phase2p-sysstatistics-before.tsv"),
+                    statisticsBefore,
+                    StandardCharsets.UTF_8);
+        }
+
+        Phase2PResult result;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            result = phase2PMeasureCanonicalPlans(
+                    connection, reportDirectory, heapBase, mvccBase, expectedRows);
+            connection.rollback();
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2p-f06-canonical-plan-summary.txt"),
+                phase2PSummary(result), StandardCharsets.UTF_8);
+        System.out.print(phase2PSummary(result));
+    }
+
+    private static Phase2PResult phase2PMeasureCanonicalPlans(
+            Connection connection,
+            Path reportDirectory,
+            String heapBase,
+            String mvccBase,
+            int expectedRows) throws Exception {
+        String heapNaturalSql = phase2PCanonicalGroupSql(heapBase, false);
+        String heapForcedSql = phase2PCanonicalGroupSql(heapBase, true);
+        String mvccNaturalSql = phase2PCanonicalGroupSql(mvccBase, false);
+        String mvccForcedSql = phase2PCanonicalGroupSql(mvccBase, true);
+        String mvccAfterFeedbackSql = phase2PCanonicalGroupSql(mvccBase, false)
+                + "\n-- phase2p-after-row-count-feedback";
+
+        ExplainCapture heapNaturalBefore = capturePhase2NExplain(connection, heapNaturalSql, false);
+        ExplainCapture heapForcedBefore = capturePhase2NExplain(connection, heapForcedSql, false);
+        ExplainCapture mvccNaturalBefore = capturePhase2NExplain(connection, mvccNaturalSql, false);
+        ExplainCapture mvccForcedBefore = capturePhase2NExplain(connection, mvccForcedSql, false);
+        writePhase2ACapture(reportDirectory, "heap-natural-before", heapNaturalBefore);
+        writePhase2ACapture(reportDirectory, "heap-forced-before", heapForcedBefore);
+        writePhase2ACapture(reportDirectory, "mvcc-natural-before", mvccNaturalBefore);
+        writePhase2ACapture(reportDirectory, "mvcc-forced-before", mvccForcedBefore);
+
+        LinkedHashMap<String, Phase2PMeasurement> measurements = new LinkedHashMap<>();
+        measurements.put("heap-natural", phase2PMeasure(
+                connection, heapNaturalSql, "heap-natural", expectedRows));
+        measurements.put("heap-forced", phase2PMeasure(
+                connection, heapForcedSql, "heap-forced", expectedRows));
+        measurements.put("mvcc-natural-fresh", phase2PMeasure(
+                connection, mvccNaturalSql, "mvcc-natural-fresh", expectedRows));
+        measurements.put("mvcc-forced-control", phase2PMeasure(
+                connection, mvccForcedSql, "mvcc-forced-control", expectedRows));
+
+        String statsAfter = phase2PStatisticsSnapshot(connection, List.of(
+                highCardGroupTableName(heapBase),
+                highCardGroupTableName(mvccBase)));
+        Files.writeString(reportDirectory.resolve("phase2p-sysstatistics-after.tsv"),
+                statsAfter, StandardCharsets.UTF_8);
+        ExplainCapture mvccNaturalAfter = capturePhase2NExplain(
+                connection, mvccAfterFeedbackSql, false);
+        ExplainCapture mvccForcedAfter = capturePhase2NExplain(
+                connection, mvccForcedSql + "\n-- after-row-count-feedback", false);
+        writePhase2ACapture(reportDirectory, "mvcc-natural-after-feedback", mvccNaturalAfter);
+        writePhase2ACapture(reportDirectory, "mvcc-forced-after-feedback", mvccForcedAfter);
+        measurements.put("mvcc-natural-after-feedback", phase2PMeasure(
+                connection, mvccAfterFeedbackSql, "mvcc-natural-after-feedback", expectedRows));
+
+        phase2PAssertSemantics(measurements);
+        phase2PWriteMeasurements(reportDirectory, measurements);
+        String statsBefore = Files.readString(
+                reportDirectory.resolve("phase2p-sysstatistics-before.tsv"), StandardCharsets.UTF_8);
+        return new Phase2PResult(
+                connection.getHoldability(), statsBefore.equals(statsAfter), measurements,
+                phase2PPlanMetric(heapNaturalBefore), phase2PPlanMetric(heapForcedBefore),
+                phase2PPlanMetric(mvccNaturalBefore), phase2PPlanMetric(mvccForcedBefore),
+                phase2PPlanMetric(mvccNaturalAfter), phase2PPlanMetric(mvccForcedAfter));
+    }
+
+    private static Phase2PMeasurement phase2PMeasure(
+            Connection connection, String sql, String variant, int expectedRows) throws Exception {
+        int warmups = 8;
+        int measuredRounds = 9;
+        int executionsPerSample = 5;
+        List<Double> samples = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            long fingerprint = executePhase2NRead(statement, variant, expectedRows);
+            for (int warmup = 0; warmup < warmups; warmup++) {
+                long actual = executePhase2NRead(statement, variant, expectedRows);
+                if (actual != fingerprint) {
+                    throw new IllegalStateException("Phase-2P warmup semantic drift for " + variant);
+                }
+            }
+            for (int round = 0; round < measuredRounds; round++) {
+                long started = System.nanoTime();
+                for (int execution = 0; execution < executionsPerSample; execution++) {
+                    long actual = executePhase2NRead(statement, variant, expectedRows);
+                    if (actual != fingerprint) {
+                        throw new IllegalStateException(
+                                "Phase-2P measured semantic drift for " + variant);
+                    }
+                }
+                samples.add((System.nanoTime() - started)
+                        / (executionsPerSample * 1_000_000.0d));
+            }
+            Distribution distribution = distribution(samples);
+            DelosMeasurementValidityContract.DispersionDecision decision =
+                    DelosMeasurementValidityContract.classifyCustom(
+                            distribution.iqr() / distribution.median(),
+                            distribution.mad() / distribution.median());
+            return new Phase2PMeasurement(fingerprint, samples, distribution, decision);
+        }
+    }
+
+    private static void phase2PWriteMeasurements(
+            Path reportDirectory, Map<String, Phase2PMeasurement> measurements) throws IOException {
+        StringBuilder samples = new StringBuilder("variant\tround\telapsedMillis\n");
+        StringBuilder dispersion = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tgoverningDispersion\tstatus\n");
+        for (Map.Entry<String, Phase2PMeasurement> entry : measurements.entrySet()) {
+            Phase2PMeasurement measurement = entry.getValue();
+            for (int index = 0; index < measurement.samples().size(); index++) {
+                samples.append(entry.getKey()).append('\t').append(index + 1).append('\t')
+                        .append(format(measurement.samples().get(index))).append('\n');
+            }
+            distributionRow(dispersion, entry.getKey(), measurement);
+        }
+        Files.writeString(reportDirectory.resolve("phase2p-repeated-execution-samples.tsv"),
+                samples.toString(), StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("phase2p-dispersion.tsv"),
+                dispersion.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static void distributionRow(
+            StringBuilder output, String variant, Phase2PMeasurement measurement) {
+        Distribution distribution = measurement.distribution();
+        DelosMeasurementValidityContract.DispersionDecision decision = measurement.decision();
+        output.append(variant).append('\t')
+                .append(format(distribution.median())).append('\t')
+                .append(format(decision.iqrToMedian())).append('\t')
+                .append(format(decision.madToMedian())).append('\t')
+                .append(format(decision.governingRatio())).append('\t')
+                .append(decision.status()).append('\n');
+    }
+
+    private static void phase2PAssertSemantics(Map<String, Phase2PMeasurement> measurements) {
+        long fingerprint = measurements.values().iterator().next().fingerprint();
+        for (Map.Entry<String, Phase2PMeasurement> entry : measurements.entrySet()) {
+            if (entry.getValue().fingerprint() != fingerprint) {
+                throw new IllegalStateException(
+                        "Phase-2P semantic drift for " + entry.getKey() + ": expected="
+                                + fingerprint + ", actual=" + entry.getValue().fingerprint());
+            }
+        }
+    }
+
+    private static String phase2PSummary(Phase2PResult result) {
+        Phase2PMeasurement mvccNatural = result.measurements().get("mvcc-natural-fresh");
+        Phase2PMeasurement mvccForced = result.measurements().get("mvcc-forced-control");
+        Phase2PMeasurement mvccAfter = result.measurements().get("mvcc-natural-after-feedback");
+        Phase2PFeatures features = phase2PFeatures();
+        boolean closeOnCommit = result.holdability() == ResultSet.CLOSE_CURSORS_AT_COMMIT;
+        return "DelosDB Phase-2P F06 canonical GROUP_HIGH_CARD plan falsification\n"
+                + "diagnosticOnly=true\n"
+                + "autoIndexStatistics=false\n"
+                + "explicitStatisticsRefresh=true\n"
+                + "statisticsCatalogStable=" + result.statisticsCatalogStable() + "\n"
+                + "canonicalHoldability=" + holdabilityName(result.holdability()) + "\n"
+                + phase2PFeatureSummary(
+                        features, result.mvccNaturalBefore().shape(),
+                        result.mvccNaturalAfter().shape(), closeOnCommit)
+                + phase2PPlanSummary("heapNaturalBefore", result.heapNaturalBefore())
+                + phase2PPlanSummary("heapForcedBefore", result.heapForcedBefore())
+                + phase2PPlanSummary("mvccNaturalBefore", result.mvccNaturalBefore())
+                + phase2PPlanSummary("mvccForcedBefore", result.mvccForcedBefore())
+                + phase2PPlanSummary("mvccNaturalAfterFeedback", result.mvccNaturalAfter())
+                + phase2PPlanSummary("mvccForcedAfterFeedback", result.mvccForcedAfter())
+                + "mvccNaturalFreshMedianMillis=" + format(mvccNatural.distribution().median()) + "\n"
+                + "mvccForcedControlMedianMillis=" + format(mvccForced.distribution().median()) + "\n"
+                + "mvccNaturalAfterFeedbackMedianMillis=" + format(mvccAfter.distribution().median()) + "\n"
+                + "forcedVsNaturalFreshRatio="
+                + format(mvccForced.distribution().median() / mvccNatural.distribution().median()) + "\n"
+                + "naturalAfterVsForcedRatio="
+                + format(mvccAfter.distribution().median() / mvccForced.distribution().median()) + "\n"
+                + "semanticFingerprintsMatch=true\n"
+                + "measurementStatus=" + phase2PCombinedStatus(result.measurements()) + "\n";
+    }
+
+    private static String phase2PFeatureSummary(
+            Phase2PFeatures features, String naturalPlanShape,
+            String afterFeedbackPlanShape, boolean closeOnCommit) {
+        boolean naturalTableScan = naturalPlanShape.contains("TABLE_SCAN");
+        boolean afterTableScan = afterFeedbackPlanShape.contains("TABLE_SCAN");
+        boolean singlePassReachable = naturalTableScan && features.singlePassCurrentScan();
+        boolean reusableReachable = singlePassReachable && features.reusableCurrentScanTemplate();
+        boolean streamingReachable = reusableReachable && closeOnCommit && features.streamingBulkScan();
+        boolean forcedStreaming = closeOnCommit && features.streamingBulkScan();
+        return "gen2C3Enabled=" + features.gen2C3Enabled() + "\n"
+                + "projectedCurrentRead=" + features.projectedCurrentRead() + "\n"
+                + "baseFetchPagePrefetch=" + features.baseFetchPagePrefetch() + "\n"
+                + "physicalScanCost=" + features.physicalScanCost() + "\n"
+                + "singlePassCurrentScan=" + features.singlePassCurrentScan() + "\n"
+                + "reusableCurrentScanTemplate=" + features.reusableCurrentScanTemplate() + "\n"
+                + "streamingBulkScan=" + features.streamingBulkScan() + "\n"
+                + "fastCurrentVisibilityFetch=" + features.fastCurrentVisibilityFetch() + "\n"
+                + "skipCurrentTagFetch=" + features.skipCurrentTagFetch() + "\n"
+                + "lazyCurrentCreatorFetch=" + features.lazyCurrentCreatorFetch() + "\n"
+                + "lazyCurrentIdentityFetch=" + features.lazyCurrentIdentityFetch() + "\n"
+                + "naturalSinglePassReachable=" + singlePassReachable + "\n"
+                + "naturalReusableTemplateReachable=" + reusableReachable + "\n"
+                + "naturalStreamingReachable=" + streamingReachable + "\n"
+                + "naturalFastVisibilityReachable="
+                + (streamingReachable && features.fastCurrentVisibilityFetch()) + "\n"
+                + "afterFeedbackSinglePassReachable="
+                + (afterTableScan && features.singlePassCurrentScan()) + "\n"
+                + "afterFeedbackStreamingReachable="
+                + (afterTableScan && forcedStreaming) + "\n"
+                + "forcedTableScanSinglePassReachable=" + features.singlePassCurrentScan() + "\n"
+                + "forcedTableScanReusableTemplateReachable="
+                + (features.singlePassCurrentScan() && features.reusableCurrentScanTemplate()) + "\n"
+                + "forcedTableScanStreamingReachable=" + forcedStreaming + "\n"
+                + "forcedTableScanFastVisibilityReachable="
+                + (forcedStreaming && features.fastCurrentVisibilityFetch()) + "\n"
+                + "forcedTableScanLazyIdentityReachable="
+                + (forcedStreaming && features.lazyCurrentIdentityFetch()) + "\n";
+    }
+
+    private static String phase2PPlanSummary(String prefix, Phase2PPlanMetric metric) {
+        return prefix + "PlanShape=" + metric.shape() + "\n"
+                + prefix + "EstimatedRows=" + format(metric.rows()) + "\n"
+                + prefix + "EstimatedCost=" + format(metric.cost()) + "\n";
+    }
+
+    private static Phase2PPlanMetric phase2PPlanMetric(ExplainCapture capture) {
+        Pattern pattern = Pattern.compile(
+                "(?m)^\\s*n\\d+ SCAN/(TABLE_SCAN|INDEX_TO_BASE_ROW).*? rows=([0-9.Ee+-]+) cost=([0-9.Ee+-]+)");
+        Matcher matcher = pattern.matcher(capture.text());
+        if (!matcher.find()) {
+            throw new IllegalStateException("Phase-2P scan metric missing from plan:\n" + capture.text());
+        }
+        return new Phase2PPlanMetric(
+                phase2NPlanShape(capture.text()),
+                Double.parseDouble(matcher.group(2)),
+                Double.parseDouble(matcher.group(3)));
+    }
+
+    private static String phase2PCanonicalGroupSql(String base, boolean forceTableScan) {
+        String table = highCardGroupTableName(base);
+        String from = forceTableScan
+                ? table + " --DERBY-PROPERTIES index=null\n"
+                : table + "\n";
+        return "select group_key, count(*), sum(quantity) from " + from
+                + "group by group_key order by group_key";
+    }
+
+    private static void phase2PSetAutoIndexStatistics(Connection connection, boolean enabled)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "call syscs_util.syscs_set_database_property('derby.storage.indexStats.auto', ?)")) {
+            statement.setString(1, Boolean.toString(enabled));
+            statement.execute();
+        }
+        connection.commit();
+    }
+
+    private static String phase2PStatisticsSnapshot(
+            Connection connection, List<String> tables) throws SQLException {
+        String sql = "select cast(t.tablename as varchar(128)), "
+                + "cast(c.conglomeratename as varchar(128)), s.colcount, "
+                + "cast(s.statistics as varchar(128)) "
+                + "from sys.sysstatistics s, sys.sysconglomerates c, sys.systables t "
+                + "where s.referenceid = c.conglomerateid and s.tableid = t.tableid "
+                + "and t.tablename = ? order by 2, 3";
+        StringBuilder output = new StringBuilder("table\tindex\tcolCount\tstatistics\n");
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (String table : tables) {
+                statement.setString(1, table.toUpperCase(Locale.ROOT));
+                try (ResultSet rs = statement.executeQuery()) {
+                    while (rs.next()) {
+                        output.append(rs.getString(1)).append('\t')
+                                .append(rs.getString(2)).append('\t')
+                                .append(rs.getInt(3)).append('\t')
+                                .append(rs.getString(4)).append('\n');
+                    }
+                }
+            }
+        }
+        return output.toString();
+    }
+
+    private static DelosMeasurementValidityContract.Status phase2PCombinedStatus(
+            Map<String, Phase2PMeasurement> measurements) {
+        return DelosMeasurementValidityContract.combine(
+                measurements.values().stream()
+                        .map(value -> value.decision().status())
+                        .toArray(DelosMeasurementValidityContract.Status[]::new));
+    }
+
+    private static String holdabilityName(int holdability) {
+        return holdability == ResultSet.CLOSE_CURSORS_AT_COMMIT
+                ? "CLOSE_CURSORS_AT_COMMIT"
+                : holdability == ResultSet.HOLD_CURSORS_OVER_COMMIT
+                        ? "HOLD_CURSORS_OVER_COMMIT"
+                        : Integer.toString(holdability);
+    }
+
+    private static Phase2PFeatures phase2PFeatures() {
+        boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled");
+        return new Phase2PFeatures(
+                gen2C3Enabled,
+                Boolean.getBoolean("delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled"),
+                Boolean.getBoolean("delosdb.experimental.mvccBaseFetchPagePrefetch"),
+                Boolean.parseBoolean(System.getProperty(
+                        "delosdb.experimental.mvccPhysicalScanCost.enabled", "true")),
+                Boolean.getBoolean(MvccFeatureNames.SINGLE_PASS),
+                Boolean.getBoolean(MvccFeatureNames.REUSABLE_TEMPLATE),
+                Boolean.getBoolean(MvccFeatureNames.STREAMING),
+                Boolean.getBoolean(MvccFeatureNames.FAST_VISIBILITY),
+                Boolean.getBoolean(MvccFeatureNames.SKIP_TAGS),
+                Boolean.getBoolean(MvccFeatureNames.LAZY_CREATOR),
+                Boolean.getBoolean(MvccFeatureNames.LAZY_IDENTITY));
+    }
+
+    private static Path requiredPhase2PPath(String key) {
+        String value = System.getProperty(PHASE2P_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2P_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private static final class MvccFeatureNames {
+        static final String SINGLE_PASS = "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
+        static final String REUSABLE_TEMPLATE =
+                "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled";
+        static final String STREAMING = "delosdb.experimental.mvccGen2StreamingBulkScan.enabled";
+        static final String FAST_VISIBILITY =
+                "delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled";
+        static final String SKIP_TAGS = "delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled";
+        static final String LAZY_CREATOR =
+                "delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled";
+        static final String LAZY_IDENTITY =
+                "delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled";
+
+        private MvccFeatureNames() {
+        }
+    }
+
+    private record Phase2PMeasurement(
+            long fingerprint,
+            List<Double> samples,
+            Distribution distribution,
+            DelosMeasurementValidityContract.DispersionDecision decision) {
+    }
+
+    private record Phase2PPlanMetric(String shape, double rows, double cost) {
+    }
+
+    private record Phase2PFeatures(
+            boolean gen2C3Enabled,
+            boolean projectedCurrentRead,
+            boolean baseFetchPagePrefetch,
+            boolean physicalScanCost,
+            boolean singlePassCurrentScan,
+            boolean reusableCurrentScanTemplate,
+            boolean streamingBulkScan,
+            boolean fastCurrentVisibilityFetch,
+            boolean skipCurrentTagFetch,
+            boolean lazyCurrentCreatorFetch,
+            boolean lazyCurrentIdentityFetch) {
+    }
+
+    private record Phase2PResult(
+            int holdability,
+            boolean statisticsCatalogStable,
+            Map<String, Phase2PMeasurement> measurements,
+            Phase2PPlanMetric heapNaturalBefore,
+            Phase2PPlanMetric heapForcedBefore,
+            Phase2PPlanMetric mvccNaturalBefore,
+            Phase2PPlanMetric mvccForcedBefore,
+            Phase2PPlanMetric mvccNaturalAfter,
+            Phase2PPlanMetric mvccForcedAfter) {
     }
 
     private static Path requiredPhase2OPath(String key) {

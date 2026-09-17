@@ -1,28 +1,11 @@
-DelosDB Gen2-C3 F06 lazy CURRENT identity fetch experiment
+Overlay: DelosDB Gen2-C3 F06 canonical plan falsification transaction-boundary fix
 
-Diagnostic-only experiment on top of the accepted Phase-2O F06 stack.
-
-Changed repository files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+Changed repository file:
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/build.gradle
 
-New experimental property:
-- delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled
+Change:
+- Capture the pre-measurement SYS.SYSSTATISTICS snapshot into a local value.
+- Commit the read transaction started by that snapshot before file I/O and connection close.
+- Preserve the existing explicit commit after fixture/statistics setup.
 
-Benchmark forwarding property:
-- delosdb.benchmark.mvccGen2LazyCurrentIdentityFetch
-
-Purpose:
-- omit CURRENT rowId/versionId from the common visible-row FetchDescriptor;
-- fetch identity only when history fallback requires rowId, row locations are requested,
-  or the streaming scan must preserve its last-row position;
-- leave storage format, visibility semantics, WAL/recovery, optimizer, and default behavior unchanged.
-
-Prechecks performed before packaging:
-- changed MVCC production Java compiled against a flattened current repository source tree;
-- DelosJdbcCrossEngineConcurrency compiled against current production/test-support sources;
-- modified Java methods remain below the repository 100-line limit;
-- Gradle variables are scoped locally in the existing Phase-2O task block;
-- ZIP integrity, duplicate-entry, and SHA-256 checks performed after packaging.
+No production code, benchmark thresholds, plans, optimizer costs, MVCC semantics, or workload SQL are changed.

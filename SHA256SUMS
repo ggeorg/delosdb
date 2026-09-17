@@ -1,4 +1,2 @@
-68578012cdcdc73c12270f62de70d124559654c7578911b081865d145ed51357  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-5840b465270ef479567e9c8a63c7fbb714173c2b32cf43147fcfc232e64330ba  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-0e4847a85d82b59158215aa961c492f36a5f5a1dd2268c454ad454909ba77b51  delosdb-tests/build.gradle
-5deef378bb21cb2b21502693cee28dc9a3f91a44a3a3087f4e2d2d0b92bd9994  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+d7b885c8ad41df187bd8d833790847e3ceb01c0757b1cdd3d759e60b850258db  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+c18b5fb61d991d23e266f90a70ae65492c746d98f9b715e55b0ce1b6ac265a35  OVERLAY-MANIFEST.txt
