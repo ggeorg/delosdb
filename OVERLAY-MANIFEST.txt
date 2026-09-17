@@ -1,11 +1,18 @@
-Overlay: DelosDB Gen2-C3 F06 canonical plan falsification transaction-boundary fix
+Overlay: DelosDB Gen2-C3 physical RowLocation fetch costing experiment
 
-Changed repository file:
+Changed repository files:
+- OVERLAY-MANIFEST.txt
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.java
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/src/delosTestSupport/java/org/apache/derbyTesting/functionTests/tests/delos/MvccRawStoreMetadataInspection.java
 
 Change:
-- Capture the pre-measurement SYS.SYSSTATISTICS snapshot into a local value.
-- Commit the read transaction started by that snapshot before file I/O and connection close.
-- Preserve the existing explicit commit after fixture/statistics setup.
+- Add an experimental Gen2 RowLocation/base-row fetch cost derived from existing CURRENT page geometry.
+- Mirror the inherited Heap cost contract: CURRENT row-byte work plus uncached page cost for random access, cached page cost for STORECOST_CLUSTERED access.
+- Keep the experimental cost disabled by default and enable it only in the existing Phase-2P F06 canonical-plan falsification task.
+- Record the feature state in Phase-2P evidence and require the post-feedback natural F06 plan to select TABLE_SCAN.
+- Extend the existing MVCC cardinality/cost authority test with a focused RowLocation-cost contract.
 
-No production code, benchmark thresholds, plans, optimizer costs, MVCC semantics, or workload SQL are changed.
+No runtime RowLocation fetch mechanics, Heap behavior, SQL semantics, MVCC visibility semantics, durable formats, RawStore recovery/WAL behavior, benchmark thresholds, or workload SQL are changed.

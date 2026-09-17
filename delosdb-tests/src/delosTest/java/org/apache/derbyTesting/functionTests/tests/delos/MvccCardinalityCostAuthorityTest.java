@@ -31,6 +31,8 @@ public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
     private static final String AUTO_STATS_PROPERTY = "derby.storage.indexStats.auto";
     private static final String PHYSICAL_SCAN_COST_PROPERTY =
             "delosdb.experimental.mvccPhysicalScanCost.enabled";
+    private static final String PHYSICAL_ROW_LOCATION_COST_PROPERTY =
+            "delosdb.experimental.mvccPhysicalRowLocationCost.enabled";
 
     public void testMvccStatisticsEstimateSurvivesFreshCostControllerAndRestart()
             throws Exception {
@@ -143,6 +145,70 @@ public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
                     physicalCost,
                     defaultCost,
                     0.0d);
+            connection.rollback();
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testMvccPhysicalRowLocationCostAccountsForCurrentRecordGeometry()
+            throws Exception {
+        String database = databaseName("mvcc-physical-row-location-cost");
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table mvcc_row_location_cost_t ("
+                            + "id int primary key, group_id int, payload varchar(32)) "
+                            + "using delos_mvcc");
+            insertRows(connection, "MVCC_ROW_LOCATION_COST_T");
+            connection.commit();
+
+            double defaultCost;
+            try (SystemPropertyScope ignored = clearSystemProperty(
+                    PHYSICAL_ROW_LOCATION_COST_PROPERTY)) {
+                defaultCost = MvccRawStoreMetadataInspection.storeCostRowLocationFetchCost(
+                        connection, "MVCC_ROW_LOCATION_COST_T", 0);
+            }
+
+            double legacyCost;
+            try (SystemPropertyScope ignored = setSystemProperty(
+                    PHYSICAL_ROW_LOCATION_COST_PROPERTY, "false")) {
+                legacyCost = MvccRawStoreMetadataInspection.storeCostRowLocationFetchCost(
+                        connection, "MVCC_ROW_LOCATION_COST_T", 0);
+            }
+
+            double randomPhysicalCost;
+            double clusteredPhysicalCost;
+            try (SystemPropertyScope ignored = setSystemProperty(
+                    PHYSICAL_ROW_LOCATION_COST_PROPERTY, "true")) {
+                randomPhysicalCost =
+                        MvccRawStoreMetadataInspection.storeCostRowLocationFetchCost(
+                                connection, "MVCC_ROW_LOCATION_COST_T", 0);
+                clusteredPhysicalCost =
+                        MvccRawStoreMetadataInspection.storeCostRowLocationFetchCost(
+                                connection,
+                                "MVCC_ROW_LOCATION_COST_T",
+                                StoreCostController.STORECOST_CLUSTERED);
+            }
+
+            assertEquals(StoreCostController.BASE_CACHED_ROW_FETCH_COST, legacyCost, 0.0d);
+            assertEquals(
+                    "Experimental RowLocation costing must remain disabled by default",
+                    legacyCost, defaultCost, 0.0d);
+            assertTrue(
+                    "Physical MVCC RowLocation costing must include CURRENT record geometry: "
+                            + "legacy=" + legacyCost + ", physical=" + randomPhysicalCost,
+                    randomPhysicalCost > legacyCost);
+            assertTrue(
+                    "Random MVCC RowLocation fetches must cost more than clustered fetches: "
+                            + "random=" + randomPhysicalCost
+                            + ", clustered=" + clusteredPhysicalCost,
+                    randomPhysicalCost > clusteredPhysicalCost);
+            assertTrue(
+                    "Clustered MVCC RowLocation fetches must still include row-byte cost: "
+                            + "legacy=" + legacyCost
+                            + ", clustered=" + clusteredPhysicalCost,
+                    clusteredPhysicalCost > legacyCost);
             connection.rollback();
         } finally {
             shutdownIfBooted(database);

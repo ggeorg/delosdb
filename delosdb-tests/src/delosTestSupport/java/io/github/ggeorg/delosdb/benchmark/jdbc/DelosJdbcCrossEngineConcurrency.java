@@ -2270,6 +2270,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "projectedCurrentRead=" + features.projectedCurrentRead() + "\n"
                 + "baseFetchPagePrefetch=" + features.baseFetchPagePrefetch() + "\n"
                 + "physicalScanCost=" + features.physicalScanCost() + "\n"
+                + "physicalRowLocationCost=" + features.physicalRowLocationCost() + "\n"
                 + "singlePassCurrentScan=" + features.singlePassCurrentScan() + "\n"
                 + "reusableCurrentScanTemplate=" + features.reusableCurrentScanTemplate() + "\n"
                 + "streamingBulkScan=" + features.streamingBulkScan() + "\n"
@@ -2385,6 +2386,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 Boolean.getBoolean("delosdb.experimental.mvccBaseFetchPagePrefetch"),
                 Boolean.parseBoolean(System.getProperty(
                         "delosdb.experimental.mvccPhysicalScanCost.enabled", "true")),
+                Boolean.parseBoolean(System.getProperty(
+                        MvccFeatureNames.PHYSICAL_ROW_LOCATION_COST, "false")),
                 Boolean.getBoolean(MvccFeatureNames.SINGLE_PASS),
                 Boolean.getBoolean(MvccFeatureNames.REUSABLE_TEMPLATE),
                 Boolean.getBoolean(MvccFeatureNames.STREAMING),
@@ -2403,6 +2406,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static final class MvccFeatureNames {
+        static final String PHYSICAL_ROW_LOCATION_COST =
+                "delosdb.experimental.mvccPhysicalRowLocationCost.enabled";
         static final String SINGLE_PASS = "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
         static final String REUSABLE_TEMPLATE =
                 "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled";
@@ -2434,6 +2439,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean projectedCurrentRead,
             boolean baseFetchPagePrefetch,
             boolean physicalScanCost,
+            boolean physicalRowLocationCost,
             boolean singlePassCurrentScan,
             boolean reusableCurrentScanTemplate,
             boolean streamingBulkScan,

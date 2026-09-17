@@ -246,6 +246,35 @@ final class MvccRawStoreMetadataInspection {
     }
 
 
+    static double storeCostRowLocationFetchCost(
+            Connection connection, String tableName, int accessType) throws Exception {
+        if (!(connection instanceof EmbedConnection embedded)) {
+            throw new AssertionError("Embedded connection required for RawStore inspection");
+        }
+        LanguageConnectionContext lcc = embedded.getLanguageConnection();
+        ContextManager contextManager = lcc.getContextManager();
+        ContextService contextService = ContextService.getFactory();
+        boolean installed = contextService.getCurrentContextManager() != contextManager;
+        if (installed) {
+            contextService.setCurrentContextManager(contextManager);
+        }
+        try {
+            TransactionManager manager = transactionManager(connection);
+            StoreCostController cost =
+                    manager.openStoreCost(baseConglomerateId(connection, tableName));
+            try {
+                return cost.getFetchFromRowLocationCost(null, accessType);
+            } finally {
+                cost.close();
+            }
+        } finally {
+            if (installed) {
+                contextService.resetCurrentContextManager(contextManager);
+            }
+        }
+    }
+
+
     static double storeCostScanCost(
             Connection connection, String tableName, int scanType) throws Exception {
         if (!(connection instanceof EmbedConnection embedded)) {

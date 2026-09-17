@@ -38,13 +38,17 @@ import org.apache.derby.shared.common.reference.Property;
 final class MvccStoreCostController implements StoreCostController {
     private static final String PHYSICAL_SCAN_COST_ENABLED_PROPERTY =
             "delosdb.experimental.mvccPhysicalScanCost.enabled";
+    private static final String PHYSICAL_ROW_LOCATION_COST_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccPhysicalRowLocationCost.enabled";
 
     private final MvccConglomerate conglomerate;
     private final Transaction rawTransaction;
     private final MvccRawStoreTable.Descriptor table;
     private long estimatedRowCount;
     private final boolean physicalScanCostEnabled;
+    private final boolean physicalRowLocationCostEnabled;
     private long estimatedCurrentPageCount = 1L;
+    private long estimatedCurrentPageSize = Long.parseLong(Property.PAGE_SIZE_DEFAULT_LONG);
     private double estimatedCurrentRowSize = 1.0d;
     private boolean closed;
 
@@ -59,8 +63,10 @@ final class MvccStoreCostController implements StoreCostController {
         this.estimatedRowCount = persistedRowCount > 0L ? persistedRowCount : 1L;
         this.physicalScanCostEnabled = Boolean.parseBoolean(System.getProperty(
                 PHYSICAL_SCAN_COST_ENABLED_PROPERTY, "true"));
-        if (physicalScanCostEnabled) {
-            initializePhysicalScanStats();
+        this.physicalRowLocationCostEnabled = Boolean.parseBoolean(System.getProperty(
+                PHYSICAL_ROW_LOCATION_COST_ENABLED_PROPERTY, "false"));
+        if (physicalScanCostEnabled || physicalRowLocationCostEnabled) {
+            initializePhysicalStats();
         }
     }
 
@@ -72,7 +78,10 @@ final class MvccStoreCostController implements StoreCostController {
     @Override
     public double getFetchFromRowLocationCost(FormatableBitSet validColumns, int accessType) {
         ensureOpen();
-        return BASE_CACHED_ROW_FETCH_COST;
+        if (!physicalRowLocationCostEnabled) {
+            return BASE_CACHED_ROW_FETCH_COST;
+        }
+        return physicalRowLocationFetchCost(accessType);
     }
 
     @Override
@@ -128,7 +137,20 @@ final class MvccStoreCostController implements StoreCostController {
         return cost + legacyScanCost(scanType, groupSize, rows);
     }
 
-    private void initializePhysicalScanStats() throws StandardException {
+    private double physicalRowLocationFetchCost(int accessType) {
+        // Keep the inherited StoreCostController contract: random RowLocation
+        // probes pay uncached page access, clustered probes pay cached access,
+        // and both pay for the estimated CURRENT bytes materialized.
+        double cost = estimatedCurrentRowSize * BASE_ROW_PER_BYTECOST;
+        long pagesPerRow =
+                (long) (estimatedCurrentRowSize / estimatedCurrentPageSize) + 1L;
+        double pageFetchCost = (accessType & STORECOST_CLUSTERED) == 0
+                ? DelosStoreCostTuning.uncachedRowFetchCost()
+                : BASE_CACHED_ROW_FETCH_COST;
+        return cost + (pagesPerRow * pageFetchCost);
+    }
+
+    private void initializePhysicalStats() throws StandardException {
         ContainerHandle container = rawTransaction.openContainer(
                 table.metadataContainer(),
                 MvccRawStorePhysicalLocking.rowLevel(rawTransaction),
@@ -143,14 +165,15 @@ final class MvccStoreCostController implements StoreCostController {
             properties.put(Property.PAGE_SIZE_PARAMETER, "");
             container.getContainerProperties(properties);
             String pageSizeText = properties.getProperty(Property.PAGE_SIZE_PARAMETER);
-            long pageSize = Long.parseLong(
+            estimatedCurrentPageSize = Long.parseLong(
                     pageSizeText == null || pageSizeText.isBlank()
                             ? Property.PAGE_SIZE_DEFAULT_LONG
                             : pageSizeText);
+            double estimatedCurrentBytes =
+                    (double) estimatedCurrentPageCount * (double) estimatedCurrentPageSize;
             estimatedCurrentRowSize = Math.max(
                     1.0d,
-                    ((double) estimatedCurrentPageCount * (double) pageSize)
-                            / (double) Math.max(1L, estimatedRowCount));
+                    estimatedCurrentBytes / (double) Math.max(1L, estimatedRowCount));
         } finally {
             container.close();
         }
@@ -174,8 +197,8 @@ final class MvccStoreCostController implements StoreCostController {
         long persistedRowCount = Math.max(0L, count);
         MvccRawStoreTable.setEstimatedRowCount(rawTransaction, table, persistedRowCount);
         estimatedRowCount = persistedRowCount > 0L ? persistedRowCount : 1L;
-        if (physicalScanCostEnabled) {
-            initializePhysicalScanStats();
+        if (physicalScanCostEnabled || physicalRowLocationCostEnabled) {
+            initializePhysicalStats();
         }
     }
 
