@@ -17387,6 +17387,129 @@ tasks.register('runDelosGen2C3F06CanonicalPlanFalsification', JavaExec) {
     }
 }
 
+
+// Phase 2P production-path A/B: isolate RowLocation costing from the
+// experimental CURRENT scan optimizations. Both lanes retain canonical
+// holdability and the production CURRENT scan path; only RowLocation costing
+// differs. This diagnostic intentionally makes no plan-shape assertion.
+def delosGen2C3F06ProductionPathCostAbRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f06-rowlocation-production-path-ab'
+
+def registerDelosGen2C3F06ProductionPathCostDiagnostic = {
+    String taskName, String lane, boolean physicalRowLocationCost ->
+
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = "Measures F06 canonical plans on the production CURRENT scan path with RowLocation cost ${physicalRowLocationCost ? 'ON' : 'OFF'}."
+        dependsOn tasks.named('compileTestJava')
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+        args 'phase2p-f06-canonical-plan-falsification'
+        outputs.upToDateWhen { false }
+
+        def reportDir = rootProject.layout.buildDirectory.dir(
+                "${delosGen2C3F06ProductionPathCostAbRoot}/${lane}")
+        def databaseRoot = rootProject.layout.buildDirectory.dir(
+                "tmp/delos-gen2-c3-f06-rowlocation-production-path-ab/${lane}")
+        outputs.dir(reportDir)
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gen2-C3 F06 production-path RowLocation-cost A/B requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            delete(reportDir)
+            delete(databaseRoot)
+            reportDir.get().asFile.mkdirs()
+            systemProperties([
+                    'delosdb.phase2.f06CanonicalPlanFalsification.reportDirectory':
+                            reportDir.get().asFile.absolutePath,
+                    'delosdb.phase2.f06CanonicalPlanFalsification.databaseRoot':
+                            databaseRoot.get().asFile.absolutePath,
+                    'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                    'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                    'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                    'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                    'delosdb.experimental.mvccPhysicalRowLocationCost.enabled':
+                            Boolean.toString(physicalRowLocationCost),
+                    'delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled': 'false',
+                    'delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled': 'false',
+                    'delosdb.experimental.mvccGen2StreamingBulkScan.enabled': 'false',
+                    'delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled': 'false'
+            ])
+        }
+
+        doLast {
+            File summary = new File(
+                    reportDir.get().asFile, 'phase2p-f06-canonical-plan-summary.txt')
+            if (!summary.isFile()) {
+                throw new GradleException(
+                        "F06 production-path RowLocation-cost summary missing: ${summary}")
+            }
+            String text = summary.getText('UTF-8')
+            [
+                    'diagnosticOnly=true',
+                    'autoIndexStatistics=false',
+                    'explicitStatisticsRefresh=true',
+                    'statisticsCatalogStable=true',
+                    'canonicalHoldability=HOLD_CURSORS_OVER_COMMIT',
+                    'gen2C3Enabled=true',
+                    'projectedCurrentRead=false',
+                    'baseFetchPagePrefetch=false',
+                    'physicalScanCost=true',
+                    "physicalRowLocationCost=${physicalRowLocationCost}",
+                    'singlePassCurrentScan=false',
+                    'reusableCurrentScanTemplate=false',
+                    'streamingBulkScan=false',
+                    'fastCurrentVisibilityFetch=false',
+                    'skipCurrentTagFetch=false',
+                    'lazyCurrentCreatorFetch=false',
+                    'lazyCurrentIdentityFetch=false',
+                    'naturalSinglePassReachable=false',
+                    'naturalReusableTemplateReachable=false',
+                    'naturalStreamingReachable=false',
+                    'naturalFastVisibilityReachable=false',
+                    'afterFeedbackSinglePassReachable=false',
+                    'afterFeedbackStreamingReachable=false',
+                    'forcedTableScanSinglePassReachable=false',
+                    'forcedTableScanReusableTemplateReachable=false',
+                    'forcedTableScanStreamingReachable=false',
+                    'forcedTableScanFastVisibilityReachable=false',
+                    'forcedTableScanLazyIdentityReachable=false',
+                    'semanticFingerprintsMatch=true',
+                    'measurementStatus='
+            ].each { markerText ->
+                if (!text.contains(markerText)) {
+                    throw new GradleException(
+                            "F06 production-path RowLocation-cost lane ${lane} missing evidence marker: ${markerText}")
+                }
+            }
+        }
+    }
+}
+
+registerDelosGen2C3F06ProductionPathCostDiagnostic(
+        'runDelosGen2C3F06ProductionPathCostOffDiagnostic', 'cost-off', false)
+registerDelosGen2C3F06ProductionPathCostDiagnostic(
+        'runDelosGen2C3F06ProductionPathCostOnDiagnostic', 'cost-on', true)
+
+tasks.register('runDelosGen2C3F06ProductionPathCostABDiagnostic') {
+    group = 'verification'
+    description = 'Runs matched F06 production-path RowLocation-cost OFF/ON diagnostics.'
+    dependsOn tasks.named('runDelosGen2C3F06ProductionPathCostOffDiagnostic'),
+            tasks.named('runDelosGen2C3F06ProductionPathCostOnDiagnostic')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3F06ProductionPathCostAbRoot))
+}
+
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.

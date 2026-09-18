@@ -1,44 +1,33 @@
-DelosDB Gen2-C3 RowLocation Cost Regression Matrix Overlay
+DelosDB Gen2-C3 F06 production-path RowLocation-cost A/B overlay
 
 Purpose
 -------
-Exercise the already-falsified Gen2 physical RowLocation/base-row fetch cost candidate
-through the existing canonical F01/F02/F03/F04/F05/F06 server fitness tasks before
-promoting the cost model to a normal default.
+Run the existing Phase-2P canonical GROUP_HIGH_CARD plan falsification twice
+on the normal production CURRENT scan path:
+- cost-off: physical RowLocation cost disabled
+- cost-on:  physical RowLocation cost enabled
 
-Production behavior
--------------------
-No production cost formula is changed by this overlay.
-The production feature flag remains default OFF.
-This overlay changes benchmark harness plumbing only.
-
-Benchmark propagation
----------------------
-The cross-engine benchmark coordinator now forwards:
-  delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost
-as:
-  delosdb.experimental.mvccPhysicalRowLocationCost.enabled
-into Delos MVCC embedded workers and Delos MVCC DRDA servers.
-
-The candidate is enabled in the existing canonical Gen2-C3 fitness tasks for:
-  F01 primary-key reads
-  F02 primary-key range/index-only scans
-  F03 projection
-  F04 simple joins
-  F05 multi-way joins
-  F06 GROUP BY
-
-Evidence
---------
-The cross-engine server manifest and textual summary record the physical RowLocation
-cost state explicitly.
+All experimental CURRENT scan optimizations are explicitly disabled in both lanes.
+The only intended difference between lanes is RowLocation/base-row fetch costing.
 
 Changed files
 -------------
 delosdb-tests/build.gradle
-delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+  sha256=ad642be1793bbaceab7f498098f11d4568bdcf4c546916deaf6141978dd49113
 
-SHA-256
--------
-f31cbbeec8ec9dacb85f4b5208802e1024602016eca4954f5d453f4c835a34e1  delosdb-tests/build.gradle
-6a3c04e581b372db595e5c3b575fb00ac2bfab438cdc605f84ec47d95ff2c76c  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Production behavior
+-------------------
+No production source changes.
+No default feature changes.
+No SQL changes.
+No benchmark threshold changes.
+
+Added tasks
+-----------
+runDelosGen2C3F06ProductionPathCostOffDiagnostic
+runDelosGen2C3F06ProductionPathCostOnDiagnostic
+runDelosGen2C3F06ProductionPathCostABDiagnostic
+
+Evidence root
+-------------
+build/reports/delosdb/benchmarks/gen2-c3-attribution/f06-rowlocation-production-path-ab
