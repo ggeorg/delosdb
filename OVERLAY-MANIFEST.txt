@@ -1,24 +1,27 @@
-DelosDB overlay: F06 SERVER RowLocation-cost evidence-marker assertion fix
+DelosDB overlay: remove unclassified streaming-scan broad catch
 
 Purpose:
-- Fix the A/B harness post-run evidence assertion to match the actual emitters.
-- Reuse the already-completed cost-OFF benchmark evidence.
-- Allow running only the cost-ON lane next.
-
-Actual evidence labels:
-- cross-engine-concurrency-summary.txt:
-  MVCC physical RowLocation cost enabled: <true|false>
-- server-container-manifest.txt:
-  MVCC physical RowLocation cost experiment: <true|false>
+- Restore repository-integrity productionGenericCatches from 411 to baseline 410.
+- Preserve openStreamingScan() failure cleanup without catch(Exception/RuntimeException/Error).
+- Do not alter the repository-integrity baseline or broad-catch classification inventory.
 
 Changed files:
-- delosdb-tests/build.gradle
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java
 
-Production behavior:
-- No production Java or storage code changed.
-- No cost formula changed.
-- No optimizer behavior changed.
-- No workload set changed.
-- No benchmark threshold changed.
-- No SQL changed.
-- No scan experiment enabled.
+Source change:
+- Stage the TableReadBoundary and StreamingBatchScan in locals.
+- Use finally to close the read boundary if StreamingBatchScan construction fails.
+- Publish the successfully constructed resources to controller fields only after construction succeeds.
+- Preserve propagation of StandardException, RuntimeException, and Error.
+
+Validation performed against reconstructed current tree:
+- productionGenericCatches=410
+- classified broad catches=410
+- unclassified=0
+- stale=0
+- parseErrors=0
+- compilerAuthorityViolations=0
+- all repository-integrity monotonic metrics are <= their existing baselines
+
+Changed-file SHA-256:
+0ec4c26b1983b55b56cd03a79316b7a728e1e9a44856641ef10d74d5bc6e8876  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java

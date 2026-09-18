@@ -193,8 +193,8 @@ public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
 
             assertEquals(StoreCostController.BASE_CACHED_ROW_FETCH_COST, legacyCost, 0.0d);
             assertEquals(
-                    "Experimental RowLocation costing must remain disabled by default",
-                    legacyCost, defaultCost, 0.0d);
+                    "Physical MVCC RowLocation costing must be the default when no override is present",
+                    randomPhysicalCost, defaultCost, 0.0d);
             assertTrue(
                     "Physical MVCC RowLocation costing must include CURRENT record geometry: "
                             + "legacy=" + legacyCost + ", physical=" + randomPhysicalCost,

@@ -64,7 +64,7 @@ final class MvccStoreCostController implements StoreCostController {
         this.physicalScanCostEnabled = Boolean.parseBoolean(System.getProperty(
                 PHYSICAL_SCAN_COST_ENABLED_PROPERTY, "true"));
         this.physicalRowLocationCostEnabled = Boolean.parseBoolean(System.getProperty(
-                PHYSICAL_ROW_LOCATION_COST_ENABLED_PROPERTY, "false"));
+                PHYSICAL_ROW_LOCATION_COST_ENABLED_PROPERTY, "true"));
         if (physicalScanCostEnabled || physicalRowLocationCostEnabled) {
             initializePhysicalStats();
         }

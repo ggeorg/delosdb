@@ -487,18 +487,23 @@ final class MvccRawStoreScanController implements ScanManager {
 
     private void openStreamingScan(MvccRawStoreTransactionContext context)
             throws StandardException {
-        streamingReadBoundary = runtime.enterTableRead(table);
+        List<MvccRawStoreTable.VisibleRow> emptyRows = List.of();
+        MvccRawStoreRuntime.TableReadBoundary readBoundary = runtime.enterTableRead(table);
+        MvccRawStoreTable.StreamingBatchScan scan = null;
         try {
-            streamingScan = new MvccRawStoreTable.StreamingBatchScan(
+            scan = new MvccRawStoreTable.StreamingBatchScan(
                     rawTransaction, table, snapshotSequence, versionProjection, context);
-            rows = List.of();
-            orderedIndexScan = false;
-            coveringIndexScan = false;
-            indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
-        } catch (StandardException | RuntimeException | Error failure) {
-            closeStreamingScan();
-            throw failure;
+        } finally {
+            if (scan == null) {
+                readBoundary.close();
+            }
         }
+        streamingReadBoundary = readBoundary;
+        streamingScan = scan;
+        rows = emptyRows;
+        orderedIndexScan = false;
+        coveringIndexScan = false;
+        indexedReadMetrics = MvccRawStoreIndexedReadMetrics.EMPTY;
     }
 
     private boolean streamingBulkScanEligible() {
