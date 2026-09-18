@@ -1,33 +1,24 @@
-DelosDB Gen2-C3 F06 production-path RowLocation-cost A/B overlay
+DelosDB overlay: F06 SERVER RowLocation-cost evidence-marker assertion fix
 
-Purpose
--------
-Run the existing Phase-2P canonical GROUP_HIGH_CARD plan falsification twice
-on the normal production CURRENT scan path:
-- cost-off: physical RowLocation cost disabled
-- cost-on:  physical RowLocation cost enabled
+Purpose:
+- Fix the A/B harness post-run evidence assertion to match the actual emitters.
+- Reuse the already-completed cost-OFF benchmark evidence.
+- Allow running only the cost-ON lane next.
 
-All experimental CURRENT scan optimizations are explicitly disabled in both lanes.
-The only intended difference between lanes is RowLocation/base-row fetch costing.
+Actual evidence labels:
+- cross-engine-concurrency-summary.txt:
+  MVCC physical RowLocation cost enabled: <true|false>
+- server-container-manifest.txt:
+  MVCC physical RowLocation cost experiment: <true|false>
 
-Changed files
--------------
-delosdb-tests/build.gradle
-  sha256=ad642be1793bbaceab7f498098f11d4568bdcf4c546916deaf6141978dd49113
+Changed files:
+- delosdb-tests/build.gradle
 
-Production behavior
--------------------
-No production source changes.
-No default feature changes.
-No SQL changes.
-No benchmark threshold changes.
-
-Added tasks
------------
-runDelosGen2C3F06ProductionPathCostOffDiagnostic
-runDelosGen2C3F06ProductionPathCostOnDiagnostic
-runDelosGen2C3F06ProductionPathCostABDiagnostic
-
-Evidence root
--------------
-build/reports/delosdb/benchmarks/gen2-c3-attribution/f06-rowlocation-production-path-ab
+Production behavior:
+- No production Java or storage code changed.
+- No cost formula changed.
+- No optimizer behavior changed.
+- No workload set changed.
+- No benchmark threshold changed.
+- No SQL changed.
+- No scan experiment enabled.

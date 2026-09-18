@@ -17510,6 +17510,175 @@ tasks.register('runDelosGen2C3F06ProductionPathCostABDiagnostic') {
 }
 
 
+// Phase 2Q: canonical SERVER/8-client F06 GROUP_HIGH_CARD RowLocation-cost A/B.
+// Keep the production CURRENT scan path and the canonical six-engine product
+// matrix. The two lanes differ only in Gen2 physical RowLocation costing.
+def delosGen2C3F06ServerRowLocationCostAbRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f06-server-rowlocation-cost-ab'
+def delosGen2C3F06ServerRowLocationCostAbDatabaseRoot =
+        'tmp/delos-gen2-c3-f06-server-rowlocation-cost-ab'
+
+def registerDelosGen2C3F06ServerRowLocationCostDiagnostic = {
+    String taskName, String lane, boolean physicalRowLocationCost ->
+
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = "Runs canonical SERVER/8-client F06 GROUP BY workload set with Gen2 RowLocation cost ${physicalRowLocationCost ? 'ON' : 'OFF'}."
+        dependsOn tasks.named('compileTestJava'), ':jars',
+                tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        def delosNetworkClientClasspath = rootProject.files(
+                rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+                rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+        classpath = rootProject.files(
+                derbyTestsClassDir,
+                delosNetworkClientClasspath,
+                h2BenchmarkRuntime,
+                postgresqlBenchmarkRuntime,
+                mariadbBenchmarkRuntime)
+        outputs.upToDateWhen { false }
+
+        def reportRoot = "${delosGen2C3F06ServerRowLocationCostAbRoot}/${lane}"
+        def databaseRoot = "${delosGen2C3F06ServerRowLocationCostAbDatabaseRoot}/${lane}"
+        outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gen2-C3 F06 SERVER RowLocation-cost A/B requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost':
+                            Boolean.toString(physicalRowLocationCost),
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                            rootProject.version.toString(),
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                    'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                            delosNetworkClientClasspath.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                            upstreamDerbyNetworkClientRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.h2Classpath':
+                            h2BenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                            h2BenchmarkRuntime.singleFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                            postgresqlBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                            mariadbBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                            rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                            upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                    .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                    .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.postgresqlImage')
+                                    .getOrElse('postgres:18.4'),
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                            providers.gradleProperty('delosdb.benchmark.serverContainer.mariadbImage')
+                                    .getOrElse('mariadb:12.3.2'),
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion':
+                            upstreamDerbyBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion':
+                            h2BenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion':
+                            postgresqlBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion':
+                            mariadbBenchmarkVersion,
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                            rootProject.layout.buildDirectory.dir(databaseRoot).get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                            rootProject.layout.buildDirectory.dir(reportRoot).get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'GROUP_LOW_CARD,GROUP_HIGH_CARD',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                    'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+
+        doLast {
+            File root = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+            File summary = new File(root, 'cross-engine-concurrency-summary.txt')
+            File manifest = new File(root, 'server-container-manifest.txt')
+            String summaryMarker =
+                    "MVCC physical RowLocation cost enabled: ${physicalRowLocationCost}"
+            String manifestMarker =
+                    "MVCC physical RowLocation cost experiment: ${physicalRowLocationCost}"
+            if (!summary.isFile() || !summary.getText('UTF-8').contains(summaryMarker)) {
+                throw new GradleException(
+                        "F06 SERVER RowLocation-cost lane ${lane} summary did not record ${summaryMarker}: ${summary}")
+            }
+            if (!manifest.isFile() || !manifest.getText('UTF-8').contains(manifestMarker)) {
+                throw new GradleException(
+                        "F06 SERVER RowLocation-cost lane ${lane} manifest did not record ${manifestMarker}: ${manifest}")
+            }
+            File dispersion = new File(root, 'cross-engine-concurrency-dispersion.csv')
+            File results = new File(root, 'cross-engine-concurrency-results.csv')
+            File oracle = new File(root, 'sql-semantic-oracle.txt')
+            [dispersion, results, oracle].each { File evidence ->
+                if (!evidence.isFile()) {
+                    throw new GradleException(
+                            "F06 SERVER RowLocation-cost lane ${lane} missing evidence: ${evidence}")
+                }
+            }
+        }
+    }
+}
+
+def delosGen2C3F06ServerCostOffTask =
+        registerDelosGen2C3F06ServerRowLocationCostDiagnostic(
+                'runDelosGen2C3F06ServerRowLocationCostOffDiagnostic', 'cost-off', false)
+def delosGen2C3F06ServerCostOnTask =
+        registerDelosGen2C3F06ServerRowLocationCostDiagnostic(
+                'runDelosGen2C3F06ServerRowLocationCostOnDiagnostic', 'cost-on', true)
+
+delosGen2C3F06ServerCostOnTask.configure {
+    mustRunAfter delosGen2C3F06ServerCostOffTask
+}
+
+tasks.register('runDelosGen2C3F06ServerRowLocationCostABDiagnostic') {
+    group = 'verification'
+    description = 'Runs canonical SERVER/8-client F06 GROUP BY workload set with Gen2 RowLocation cost OFF then ON.'
+    dependsOn delosGen2C3F06ServerCostOffTask, delosGen2C3F06ServerCostOnTask
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3F06ServerRowLocationCostAbRoot))
+}
+
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.
