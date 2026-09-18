@@ -1,27 +1,32 @@
-DelosDB overlay: remove unclassified streaming-scan broad catch
+DelosDB overlay: F06 SERVER materialized CURRENT scan A/B
 
 Purpose:
-- Restore repository-integrity productionGenericCatches from 411 to baseline 410.
-- Preserve openStreamingScan() failure cleanup without catch(Exception/RuntimeException/Error).
-- Do not alter the repository-integrity baseline or broad-catch classification inventory.
+- Validate the consolidated materialized CURRENT decoder at canonical SERVER / 8-client F06 concurrency.
+- Compare the existing materialized CURRENT path with the consolidated single-pass path.
+- Keep physical scan costing and physical RowLocation costing ON in both lanes.
+- Keep projected-current read and base-fetch prefetch OFF.
+- Preserve the exact canonical F06 workload pair and six-engine product matrix.
 
 Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Source change:
-- Stage the TableReadBoundary and StreamingBatchScan in locals.
-- Use finally to close the read boundary if StreamingBatchScan construction fails.
-- Publish the successfully constructed resources to controller fields only after construction succeeds.
-- Preserve propagation of StandardException, RuntimeException, and Error.
+Harness plumbing:
+- Forward delosdb.benchmark.crossEngineConcurrency.mvccGen2SinglePassCurrentScan
+  to delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled in the Delos MVCC DRDA server.
+- Record the switch in both server-container-manifest.txt and cross-engine-concurrency-summary.txt.
 
-Validation performed against reconstructed current tree:
-- productionGenericCatches=410
-- classified broad catches=410
-- unclassified=0
-- stale=0
-- parseErrors=0
-- compilerAuthorityViolations=0
-- all repository-integrity monotonic metrics are <= their existing baselines
+A/B:
+- scan-off: mvccGen2SinglePassCurrentScan=false
+- scan-on:  mvccGen2SinglePassCurrentScan=true
+
+Production behavior:
+- No production storage/optimizer source changed by this overlay.
+- No SQL changed.
+- No benchmark threshold changed.
+- No streaming flag is enabled.
+- No reusable-template flag is required; reuse is intrinsic to the consolidated materialized path.
 
 Changed-file SHA-256:
-0ec4c26b1983b55b56cd03a79316b7a728e1e9a44856641ef10d74d5bc6e8876  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java
+6cf4c44fa50fd51a45d2f83a4c78c3bab6965b9788e325338e78dc722fa9d98d  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+4aeec333280079df016cd741f4437e3a0a9f0f11bcd466d07416e4fea2587a52  delosdb-tests/build.gradle

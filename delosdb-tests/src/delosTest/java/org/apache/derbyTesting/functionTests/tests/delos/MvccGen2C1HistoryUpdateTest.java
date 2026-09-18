@@ -23,6 +23,8 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
     private static final String GEN2_C1_PROPERTY =
             "delosdb.experimental.mvccGen2C1.history.enabled";
+    private static final String GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY =
+            "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
 
     public void testBareUpdateHistoryVisibilityRollbackAndReopen() throws Exception {
         String previous = System.getProperty(GEN2_C1_PROPERTY);
@@ -180,6 +182,78 @@ public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
             }
         } finally {
             restoreProperty(GEN2_C1_PROPERTY, previous);
+            shutdownDatabase(database);
+        }
+    }
+
+    public void testConsolidatedMaterializedCurrentScanPreservesVisibility() throws Exception {
+        String previousHistory = System.getProperty(GEN2_C1_PROPERTY);
+        String previousSinglePass = System.getProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY);
+        String database = databaseName("mvcc-gen2-c1-consolidated-current-scan");
+        try {
+            System.setProperty(GEN2_C1_PROPERTY, "true");
+            System.setProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, "true");
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table G2_C1_FAST (id int not null, payload varchar(64) not null) "
+                                + "using delos_mvcc");
+                executeUpdate(setup, "insert into G2_C1_FAST values (1, 'one')");
+                executeUpdate(setup, "insert into G2_C1_FAST values (2, 'two')");
+                executeUpdate(setup, "insert into G2_C1_FAST values (3, 'three')");
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection observer = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                observer.setAutoCommit(false);
+                writer.setAutoCommit(false);
+
+                assertRows(historical,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two", "3|three");
+                assertEquals(1, executeUpdate(
+                        writer, "update G2_C1_FAST set payload = 'two-new' where id = 2"));
+
+                assertRows(writer,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two-new", "3|three");
+                assertRows(observer,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two", "3|three");
+                observer.commit();
+
+                writer.commit();
+                assertRows(observer,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two-new", "3|three");
+                observer.commit();
+                assertRows(historical,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two", "3|three");
+                historical.commit();
+                assertRows(historical,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two-new", "3|three");
+                historical.commit();
+
+                assertEquals(1, executeUpdate(
+                        writer, "update G2_C1_FAST set payload = 'rollback' where id = 1"));
+                assertRows(writer,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|rollback", "2|two-new", "3|three");
+                writer.rollback();
+                assertRows(writer,
+                        "select id, payload from G2_C1_FAST order by id",
+                        "1|one", "2|two-new", "3|three");
+                writer.commit();
+            }
+        } finally {
+            restoreProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, previousSinglePass);
+            restoreProperty(GEN2_C1_PROPERTY, previousHistory);
             shutdownDatabase(database);
         }
     }
