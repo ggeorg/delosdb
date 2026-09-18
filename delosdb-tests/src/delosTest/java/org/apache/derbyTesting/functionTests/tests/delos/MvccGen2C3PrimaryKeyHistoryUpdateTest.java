@@ -24,8 +24,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String GEN2_PROJECTED_CURRENT_READ_PROPERTY =
             "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
-    private static final String GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY =
-            "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
 
     public void testUnchangedPrimaryKeyUpdateHistoryRollbackAndReopen() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
@@ -163,7 +161,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
         String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
         String previousProjectedRead = System.getProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY);
-        String previousSinglePass = System.getProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY);
         String database = databaseName("mvcc-gen2-c3-projected-current-read");
         String oldPayload = "x".repeat(2048);
         String newPayload = "y".repeat(2048);
@@ -171,7 +168,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             System.setProperty(GEN2_B_PK_PROPERTY, "true");
             System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
             System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "true");
-            System.setProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, "true");
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -217,7 +213,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
                 historical.commit();
             }
         } finally {
-            restoreProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, previousSinglePass);
             restoreProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, previousProjectedRead);
             restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
             restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);

@@ -1977,7 +1977,7 @@ final class MvccRawStoreTable {
             MvccRawStoreVersionRows.FetchProjection projection,
             MvccRawStoreTransactionContext context) throws StandardException {
         List<VisibleRow> rows = new ArrayList<>();
-        MaterializedCurrentScanDecoder currentScanDecoder = singlePassGen2CurrentScan(table)
+        MaterializedCurrentScanDecoder currentScanDecoder = table.gen2A1()
                 ? new MaterializedCurrentScanDecoder(
                         rawTransaction, table, snapshotSequence, projection, context)
                 : null;
@@ -2011,21 +2011,6 @@ final class MvccRawStoreTable {
                     if (directory == null) {
                         continue;
                     }
-                    if (table.gen2A1()) {
-                        Gen2A1CurrentRecord current = decodeGen2A1Current(
-                                rawTransaction, table, page, slot, projection);
-                        VisibleRow visible = visibleGen2CurrentOrHistory(
-                                rawTransaction,
-                                table,
-                                current,
-                                projection,
-                                snapshotSequence,
-                                context.transactionId());
-                        if (visible != null) {
-                            rows.add(visible);
-                        }
-                        continue;
-                    }
                     VersionRecord version = MvccRawStoreVersionReader.findVisible(
                             rawTransaction,
                             table,
@@ -2055,12 +2040,6 @@ final class MvccRawStoreTable {
             container.close();
         }
         return rows;
-    }
-
-    private static boolean singlePassGen2CurrentScan(Descriptor table) {
-        return table.gen2A1()
-                && Boolean.getBoolean(
-                        MvccRawStoreFormat.GEN2_SINGLE_PASS_CURRENT_SCAN_ENABLED_PROPERTY);
     }
 
     static StoreDataValue[] scanRowTemplate(

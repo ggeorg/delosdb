@@ -1,32 +1,57 @@
-DelosDB overlay: F06 SERVER materialized CURRENT scan A/B
+DelosDB overlay: promote consolidated Gen2 materialized CURRENT scans
 
-Purpose:
-- Validate the consolidated materialized CURRENT decoder at canonical SERVER / 8-client F06 concurrency.
-- Compare the existing materialized CURRENT path with the consolidated single-pass path.
-- Keep physical scan costing and physical RowLocation costing ON in both lanes.
-- Keep projected-current read and base-fetch prefetch OFF.
-- Preserve the exact canonical F06 workload pair and six-engine product matrix.
+Decision:
+- Promote the consolidated materialized CURRENT decoder to normal Gen2 behavior.
+- Remove the old Gen2 materialized double-decode branch.
+- Keep streaming bulk scan experimental and unchanged.
+
+Production change:
+- Gen2-A1/CURRENT materialized scans always instantiate MaterializedCurrentScanDecoder.
+- The legacy materialized path:
+    decodeDirectory()
+    -> decodeGen2A1Current()
+    -> visibleGen2CurrentOrHistory()
+  is removed from scanVisibleAt().
+- The singlePassGen2CurrentScan() selector helper is removed.
+- The promoted decoder retains:
+    one CURRENT fetch/decode
+    reusable CURRENT RawStore template
+    CURRENT kind/format validation
+    lazy creator transaction fetch for uncommitted CURRENT
+    lazy predecessor/hint fetch only for HISTORY fallback
+    payload cloning for materialized VisibleRow ownership
+
+Correctness:
+- Gen2-C1 visibility/history/rollback coverage now exercises the promoted default directly.
+- Gen2-C3 projected-current/history coverage now exercises the promoted default directly.
+
+Unchanged:
+- StreamingBatchScan remains experimental.
+- Streaming eligibility and streaming-specific flags are unchanged.
+- Projected-current-read remains experimental/default OFF.
+- RowLocation costing remains normal/default ON.
+- SQL semantics, MVCC visibility rules, durable formats, RawStore WAL/undo/recovery,
+  and benchmark thresholds are unchanged.
+
+Evidence supporting promotion:
+- Raw two-column TABLE_SCAN: 4.271132 ms -> 1.701018 ms (2.51x faster, -60.17%).
+- Same TABLE_SCAN and canonical GROUP_HIGH_CARD plan shapes.
+- Semantic fingerprints matched.
+- JFR removed the old directory/template hot allocation sites and reduced GC pressure.
+- Canonical SERVER/8c stable first-six runs:
+    GROUP_LOW_CARD  882.1 -> 1065.0 q/s (+20.7%)
+    GROUP_HIGH_CARD 974.4 -> 1073.1 q/s (+10.1%)
+- SERVER scan-ON semantic oracle matched all engines/runs.
+- Later SERVER runs suffered broad environmental drift across comparison engines, so
+  promotion is based on the consistent Gen2 direction plus the clean raw/JFR attribution,
+  not on inflated cross-engine ratios from those late runs.
 
 Changed files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-
-Harness plumbing:
-- Forward delosdb.benchmark.crossEngineConcurrency.mvccGen2SinglePassCurrentScan
-  to delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled in the Delos MVCC DRDA server.
-- Record the switch in both server-container-manifest.txt and cross-engine-concurrency-summary.txt.
-
-A/B:
-- scan-off: mvccGen2SinglePassCurrentScan=false
-- scan-on:  mvccGen2SinglePassCurrentScan=true
-
-Production behavior:
-- No production storage/optimizer source changed by this overlay.
-- No SQL changed.
-- No benchmark threshold changed.
-- No streaming flag is enabled.
-- No reusable-template flag is required; reuse is intrinsic to the consolidated materialized path.
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C1HistoryUpdateTest.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
 
 Changed-file SHA-256:
-6cf4c44fa50fd51a45d2f83a4c78c3bab6965b9788e325338e78dc722fa9d98d  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-4aeec333280079df016cd741f4437e3a0a9f0f11bcd466d07416e4fea2587a52  delosdb-tests/build.gradle
+466fd3c85f3bd63f253ee534ef993ff8f48bfedff4ae61c79b17f9ebb3c015b5  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+2bb5fb3b094ed9194b30912c608a6ace8bf40bd1fcda1026d36ee3997e82d15a  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C1HistoryUpdateTest.java
+98c29288e3e3d17b4a663d0e80066a134589c3bf56620c3c769b5128048f8ba8  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java

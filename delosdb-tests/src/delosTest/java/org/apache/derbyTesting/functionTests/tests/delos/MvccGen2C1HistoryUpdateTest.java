@@ -23,8 +23,6 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
     private static final String GEN2_C1_PROPERTY =
             "delosdb.experimental.mvccGen2C1.history.enabled";
-    private static final String GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY =
-            "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
 
     public void testBareUpdateHistoryVisibilityRollbackAndReopen() throws Exception {
         String previous = System.getProperty(GEN2_C1_PROPERTY);
@@ -188,11 +186,9 @@ public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
 
     public void testConsolidatedMaterializedCurrentScanPreservesVisibility() throws Exception {
         String previousHistory = System.getProperty(GEN2_C1_PROPERTY);
-        String previousSinglePass = System.getProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY);
         String database = databaseName("mvcc-gen2-c1-consolidated-current-scan");
         try {
             System.setProperty(GEN2_C1_PROPERTY, "true");
-            System.setProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, "true");
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -252,7 +248,6 @@ public final class MvccGen2C1HistoryUpdateTest extends MvccSqlTestSupport {
                 writer.commit();
             }
         } finally {
-            restoreProperty(GEN2_SINGLE_PASS_CURRENT_SCAN_PROPERTY, previousSinglePass);
             restoreProperty(GEN2_C1_PROPERTY, previousHistory);
             shutdownDatabase(database);
         }
