@@ -16695,6 +16695,85 @@ tasks.register('runDelosPhase2KF03ProjectionMaterializationDecomposition', JavaE
 }
 
 
+// Gen2-C3 F03 causal test for the non-covering base-row path.
+// Reuse the matched Phase-2K category-index decomposition under explicit
+// Gen2-C3 flags. The two lanes differ only in consolidated CURRENT base fetch.
+def delosGen2C3F03BaseFetchAbRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f03-consolidated-base-fetch-ab'
+def delosGen2C3F03BaseFetchAbDatabaseRoot =
+        'tmp/delos-gen2-c3-f03-consolidated-base-fetch-ab'
+
+def registerDelosGen2C3F03BaseFetchDiagnostic = {
+    String taskName, String lane, boolean consolidatedBaseFetch ->
+
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = "Runs matched Gen2-C3 F03 projection decomposition with consolidated base fetch ${consolidatedBaseFetch ? 'ON' : 'OFF'}."
+        dependsOn tasks.named('compileTestJava')
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+        args 'phase2k-f03-projection-materialization'
+        outputs.upToDateWhen { false }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosGen2C3F03BaseFetchAbRoot}/${lane}")
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosGen2C3F03BaseFetchAbDatabaseRoot}/${lane}")
+        outputs.dir(reportDir)
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gen2-C3 F03 consolidated base-fetch A/B requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            delete(reportDir)
+            delete(databaseRoot)
+            reportDir.get().asFile.mkdirs()
+            systemProperties([
+                    'delosdb.phase2.f03ProjectionMaterialization.reportDirectory':
+                            reportDir.get().asFile.absolutePath,
+                    'delosdb.phase2.f03ProjectionMaterialization.databaseRoot':
+                            databaseRoot.get().asFile.absolutePath,
+                    'delosdb.phase2.f03ProjectionMaterialization.requireGen2C3': 'true',
+                    'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                    'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                    'delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled':
+                            Boolean.toString(consolidatedBaseFetch),
+                    'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED'
+            ])
+        }
+    }
+}
+
+def delosGen2C3F03BaseFetchOffTask =
+        registerDelosGen2C3F03BaseFetchDiagnostic(
+                'runDelosGen2C3F03ConsolidatedBaseFetchOffDiagnostic',
+                'base-fetch-off',
+                false)
+def delosGen2C3F03BaseFetchOnTask =
+        registerDelosGen2C3F03BaseFetchDiagnostic(
+                'runDelosGen2C3F03ConsolidatedBaseFetchOnDiagnostic',
+                'base-fetch-on',
+                true)
+
+delosGen2C3F03BaseFetchOnTask.configure {
+    mustRunAfter delosGen2C3F03BaseFetchOffTask
+}
+
+tasks.register('runDelosGen2C3F03ConsolidatedBaseFetchABDiagnostic') {
+    group = 'verification'
+    description = 'Runs matched Gen2-C3 F03 projection decomposition with consolidated base fetch OFF then ON.'
+    dependsOn delosGen2C3F03BaseFetchOffTask, delosGen2C3F03BaseFetchOnTask
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3F03BaseFetchAbRoot))
+}
+
+
 // Phase 2N: bounded F04/F06 relational decomposition after the valid ADAPT_REFERENCE-A
 // baseline. Separate join cost from its index-only inputs, and GROUP BY from raw
 // scan/materialization and ORDER BY cost. Diagnostic only; no production changes.

@@ -2672,6 +2672,21 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static void runPhase2KF03ProjectionMaterializationDecomposition() throws Exception {
         Path reportDirectory = requiredPhase2KPath("reportDirectory");
         Path databaseRoot = requiredPhase2KPath("databaseRoot");
+        boolean gen2C3Enabled = Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C1.history.enabled")
+                && Boolean.getBoolean("delosdb.experimental.mvccGen2C2.archivedUndo.enabled");
+        boolean projectedCurrentRead = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean baseFetchPrefetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        boolean consolidatedBaseFetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled");
+        if (Boolean.getBoolean(PHASE2K_PREFIX + "requireGen2C3")
+                && (!gen2C3Enabled || projectedCurrentRead || baseFetchPrefetch)) {
+            throw new IllegalStateException(
+                    "Phase-2K Gen2-C3 diagnostic requires B1/C1/C2 enabled "
+                            + "with projected-current and page-local prefetch disabled");
+        }
         deleteRecursively(reportDirectory);
         deleteRecursively(databaseRoot);
         Files.createDirectories(reportDirectory);
@@ -2898,6 +2913,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         String summary = "DelosDB Phase-2K F03 projection/materialization decomposition\n"
                 + "diagnosticOnly=true\n"
+                + "gen2C3Enabled=" + gen2C3Enabled + "\n"
+                + "projectedCurrentRead=" + projectedCurrentRead + "\n"
+                + "baseFetchPagePrefetch=" + baseFetchPrefetch + "\n"
+                + "consolidatedBaseFetch=" + consolidatedBaseFetch + "\n"
                 + "rows=" + rowCount + "\n"
                 + "payloadSize=" + payloadSize + "\n"
                 + "expectedResultRows=" + expectedRows + "\n"

@@ -28,6 +28,8 @@ final class MvccRawStoreFormat {
             "delosdb.experimental.mvccGen2C1.history.enabled";
     static final String GEN2_PROJECTED_CURRENT_READ_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
+    static final String GEN2_CONSOLIDATED_BASE_FETCH_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled";
     static final String GEN2_SINGLE_PASS_CURRENT_SCAN_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled";
     static final String GEN2_REUSABLE_CURRENT_SCAN_TEMPLATE_ENABLED_PROPERTY =

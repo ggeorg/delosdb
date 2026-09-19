@@ -51,7 +51,10 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreVersionReader readVersionReader;
     private FormatableBitSet readProjectionColumns;
     private MvccRawStoreVersionRows.FetchProjection readProjection;
+    private MvccRawStoreVersionRows.FetchProjection readCurrentBaseFetchProjection;
+    private MvccRawStoreTable.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
     private final boolean baseFetchPagePrefetchRequested;
+    private final boolean consolidatedBaseFetchRequested;
     private long[] prefetchedDirectoryRowIds;
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
@@ -72,6 +75,11 @@ final class MvccRawStoreConglomerateController
         this.forUpdate = forUpdate;
         this.baseFetchPagePrefetchRequested =
                 !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
+        this.consolidatedBaseFetchRequested =
+                !forUpdate
+                        && table.gen2A1()
+                        && Boolean.getBoolean(
+                                MvccRawStoreFormat.GEN2_CONSOLIDATED_BASE_FETCH_ENABLED_PROPERTY);
         // IndexRowToBaseRowResultSet opens one base ConglomerateController for
         // the SQL statement. Cursor-stability row locking identifies the
         // READ COMMITTED base-fetch path, which must observe a fresh committed
@@ -212,36 +220,44 @@ final class MvccRawStoreConglomerateController
             }
         } else {
             try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
-                visible = checkWriteVersion
-                        ? MvccRawStoreTable.readVisibleForWrite(
-                                rawTransaction, table, location, projection, context)
-                        : !forUpdate
-                                ? prefetchedDirectory != null
-                                        ? MvccRawStoreTable.readVisibleAtResolvedDirectory(
-                                                rawTransaction,
-                                                table,
-                                                location,
-                                                statementSnapshotLease != null
-                                                        ? statementSnapshotSequence
-                                                        : context.snapshotSequence(),
-                                                projection,
-                                                context,
-                                                prefetchedDirectory,
-                                                readDirectoryContainer(),
-                                                readVersionReader())
-                                        : MvccRawStoreTable.readVisibleAt(
-                                                rawTransaction,
-                                                table,
-                                                location,
-                                                statementSnapshotLease != null
-                                                        ? statementSnapshotSequence
-                                                        : context.snapshotSequence(),
-                                                projection,
-                                                context,
-                                                readDirectoryContainer(),
-                                                readVersionReader())
-                                : MvccRawStoreTable.readVisible(
-                                        rawTransaction, table, location, projection, context);
+                long snapshotSequence = statementSnapshotLease != null
+                        ? statementSnapshotSequence
+                        : context.snapshotSequence();
+                if (consolidatedBaseFetchRequested && prefetchedDirectory == null) {
+                    visible = currentBaseFetchDecoder(projection).readVisibleAt(
+                            location,
+                            snapshotSequence,
+                            context.transactionId(),
+                            readDirectoryContainer(),
+                            readVersionReader());
+                } else {
+                    visible = checkWriteVersion
+                            ? MvccRawStoreTable.readVisibleForWrite(
+                                    rawTransaction, table, location, projection, context)
+                            : !forUpdate
+                                    ? prefetchedDirectory != null
+                                            ? MvccRawStoreTable.readVisibleAtResolvedDirectory(
+                                                    rawTransaction,
+                                                    table,
+                                                    location,
+                                                    snapshotSequence,
+                                                    projection,
+                                                    context,
+                                                    prefetchedDirectory,
+                                                    readDirectoryContainer(),
+                                                    readVersionReader())
+                                            : MvccRawStoreTable.readVisibleAt(
+                                                    rawTransaction,
+                                                    table,
+                                                    location,
+                                                    snapshotSequence,
+                                                    projection,
+                                                    context,
+                                                    readDirectoryContainer(),
+                                                    readVersionReader())
+                                    : MvccRawStoreTable.readVisible(
+                                            rawTransaction, table, location, projection, context);
+                }
             }
         }
         if (visible == null) {
@@ -509,6 +525,17 @@ final class MvccRawStoreConglomerateController
         readProjectionColumns = (FormatableBitSet) validColumns.clone();
         readProjection = MvccRawStoreVersionRows.projection(table, validColumns);
         return readProjection;
+    }
+
+    private MvccRawStoreTable.CurrentBaseFetchDecoder currentBaseFetchDecoder(
+            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
+        if (readCurrentBaseFetchDecoder == null || readCurrentBaseFetchProjection != projection) {
+            readCurrentBaseFetchProjection = projection;
+            readCurrentBaseFetchDecoder =
+                    new MvccRawStoreTable.CurrentBaseFetchDecoder(
+                            rawTransaction, table, projection);
+        }
+        return readCurrentBaseFetchDecoder;
     }
 
     private MvccRawStoreVersionReader readVersionReader() throws StandardException {

@@ -24,6 +24,8 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String GEN2_PROJECTED_CURRENT_READ_PROPERTY =
             "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
+    private static final String GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY =
+            "delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled";
 
     public void testUnchangedPrimaryKeyUpdateHistoryRollbackAndReopen() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
@@ -155,6 +157,96 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);
             shutdownDatabase(database);
         }
+    }
+
+    public void testConsolidatedBaseFetchPreservesCurrentHistoryAndRollback() throws Exception {
+        String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
+        String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
+        String previousProjectedRead = System.getProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY);
+        String previousBaseFetch = System.getProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY);
+        String database = databaseName("mvcc-gen2-c3-consolidated-base-fetch");
+        String oldPayload = "x".repeat(2048);
+        String newPayload = "y".repeat(2048);
+        try {
+            System.setProperty(GEN2_B_PK_PROPERTY, "true");
+            System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
+            System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "false");
+            System.setProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY, "true");
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table G2_C3_BASEFETCH (id int not null primary key, "
+                                + "category int not null, quantity int not null, "
+                                + "payload varchar(4096) not null) using delos_mvcc");
+                executeUpdate(setup,
+                        "create index G2_C3_BASE_CATEGORY on G2_C3_BASEFETCH (category)");
+                try (PreparedStatement insert = setup.prepareStatement(
+                        "insert into G2_C3_BASEFETCH values (?, ?, ?, ?)")) {
+                    insert.setInt(1, 1);
+                    insert.setInt(2, 7);
+                    insert.setInt(3, 10);
+                    insert.setString(4, oldPayload);
+                    insert.addBatch();
+                    insert.setInt(1, 2);
+                    insert.setInt(2, 7);
+                    insert.setInt(3, 20);
+                    insert.setString(4, oldPayload);
+                    insert.addBatch();
+                    assertEquals(2, insert.executeBatch().length);
+                }
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection observer = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                observer.setAutoCommit(false);
+                writer.setAutoCommit(false);
+
+                assertBaseFetchRows(historical, "1|10", "2|20");
+                try (PreparedStatement update = writer.prepareStatement(
+                        "update G2_C3_BASEFETCH set quantity = ?, payload = ? where id = ?")) {
+                    update.setInt(1, 25);
+                    update.setString(2, newPayload);
+                    update.setInt(3, 2);
+                    assertEquals(1, update.executeUpdate());
+                }
+                assertBaseFetchRows(writer, "1|10", "2|25");
+                assertBaseFetchRows(observer, "1|10", "2|20");
+                observer.commit();
+                writer.commit();
+
+                assertBaseFetchRows(historical, "1|10", "2|20");
+                historical.commit();
+                assertBaseFetchRows(historical, "1|10", "2|25");
+                historical.commit();
+
+                executeUpdate(writer,
+                        "update G2_C3_BASEFETCH set quantity = 30 where id = 2");
+                assertBaseFetchRows(writer, "1|10", "2|30");
+                writer.rollback();
+                assertBaseFetchRows(writer, "1|10", "2|25");
+                writer.commit();
+            }
+        } finally {
+            restoreProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY, previousBaseFetch);
+            restoreProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, previousProjectedRead);
+            restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
+            restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);
+            shutdownDatabase(database);
+        }
+    }
+
+    private static void assertBaseFetchRows(Connection connection, String... expectedRows)
+            throws SQLException {
+        assertRows(
+                connection,
+                "select id, quantity from G2_C3_BASEFETCH "
+                        + "--DERBY-PROPERTIES index=G2_C3_BASE_CATEGORY\n"
+                        + "where category = 7 order by id",
+                expectedRows);
     }
 
     public void testProjectedCurrentReadPreservesCurrentAndHistoricalValues() throws Exception {
