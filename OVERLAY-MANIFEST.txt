@@ -1,82 +1,64 @@
-DelosDB overlay: promote statement-lifetime Gen2 base-row read boundaries
+DelosDB overlay: F07 sort decomposition diagnostic
 
-Decision:
-- Promote statement/controller-lifetime TableReadBoundary ownership for eligible read-only
-  Gen2 base ConglomerateControllers.
-- Remove the experimental selector and experiment-only benchmark wiring.
-- Remove the rejected direct-to-destination base-fetch experiment and its dead production path.
+Purpose:
+- Explain why canonical F07 SORT_FULL remains far slower on Gen2 after the storage
+  modernization tranches.
+- Distinguish optimizer/access-path error from raw input cost and genuine sort/materialization cost.
+- Make no production storage or optimizer change.
 
-Production behavior:
-- A read-only base ConglomerateController with a statement snapshot lease lazily acquires one
-  TableReadBoundary on its first base-row fetch and reuses it for the controller lifetime.
-- Controller close order remains:
-    clear prefetch state
-    close version reader
-    close directory container
-    release statement TableReadBoundary
-    release statement snapshot lease
-    unregister controller
-- forUpdate/read-committed recheck/write-version controllers continue to acquire/release
-  TableReadBoundary per operation.
-- Read-only controllers without a statement snapshot lease also retain per-operation boundaries.
-- Vacuum/maintenance continues to require the same exclusive table-maintenance write boundary;
-  the promoted read path only extends the already-required exclusion to statement lifetime.
+Canonical evidence motivating this diagnostic:
+- SERVER/8c SORT_FULL:
+    Delos Heap          ~1107.8 tx/s
+    Gen2 MVCC           ~295.8 tx/s
+    upstream Derby      ~1134.2 tx/s
+    PostgreSQL          ~1108.5 tx/s
+- Gen2 IQR/median ~2.0%, max/min ~1.067x.
+- Heap, upstream Derby and PostgreSQL are effectively tied, so the remaining deficit is Gen2-specific.
 
-Rejected experiment cleanup:
-- Remove delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled.
-- Remove its BaseFetchResult/readVisibleInto/direct-copy production machinery.
-- Remove direct-destination OFF/ON Gradle diagnostics and benchmark forwarding/evidence markers.
-- Preserve the promoted consolidated CurrentBaseFetchDecoder/VisibleRow path.
+Diagnostic:
+- Embedded Heap and Gen2 in one database.
+- 10,000 rows, payload 128, FULL_INDEXED fixture, explicit statistics refresh.
+- Six matched variants:
+    heap-input
+    mvcc-input
+    heap-natural-sort
+    mvcc-natural-sort
+    heap-forced-table-sort
+    mvcc-forced-table-sort
+- Input variant forces TABLE_SCAN and omits ORDER BY.
+- Natural sort uses:
+    select id, quantity from T order by quantity desc, id
+- Forced sort uses the same ORDER BY plus DERBY-PROPERTIES index=null.
+- Captures EXPLAIN ANALYZE for every variant.
+- Runs 8 warmups, 9 measured rounds, 3 executions/sample.
+- Writes repeated samples, dispersion, plan/operator summary, full EXPLAIN captures,
+  semantic fingerprints, and a classification.
 
-Statement-boundary experiment cleanup:
-- Remove delosdb.experimental.mvccGen2StatementReadBoundary.enabled.
-- Remove OFF/ON statement-boundary Gradle diagnostics.
-- Remove canonical F02 opt-in property and benchmark forwarding/evidence markers.
-- Normal eligible read-only base controllers now use statement-lifetime boundaries directly.
+Interpretation:
+- Natural MVCC plan differs from forced TABLE_SCAN and forced is materially faster
+    => optimizer/access-path costing problem.
+- Raw input is already much slower and forced sort ratio tracks input ratio
+    => Gen2 sort input remains primary.
+- Forced sort ratio grows far beyond input ratio
+    => Gen2-specific sort/materialization layer is primary.
+- Otherwise
+    => move to JFR attribution.
 
-Preserved diagnostics:
-- F02 scale-surface and embedded-concurrency/JFR diagnostic modes remain available because they
-  are general attribution tools, not retired experiment selectors.
-- Their notes no longer mention the removed direct-destination experiment.
+New Gradle task:
+- :delosdb-tests:runDelosGen2C3F07SortDecomposition
 
-Correctness:
-- Existing Gen2-C3 non-covering base-fetch CURRENT/HISTORY/rollback test now validates the
-  promoted default directly, with no statement-boundary/direct-destination feature properties.
-- Existing maintenance/snapshot tests remain unchanged and continue to validate retained-reader
-  vacuum protection and release behavior.
+What this does NOT change:
+- No production source.
+- No optimizer cost formula.
+- No storage format, MVCC visibility, RowLocation, WAL, undo, recovery or vacuum behavior.
+- No canonical benchmark thresholds.
+- No SQL semantics.
+- No F07 sentinel definition.
 
-Evidence supporting promotion:
-- JFR at embedded 8 clients attributed ~36.4% of Gen2 execution samples to
-  ReentrantReadWriteLock machinery, with full stacks through:
-    IndexRowToBaseRowResultSet -> MvccRawStoreConglomerateController.fetch()
-    -> MvccRawStoreRuntime.enterTableRead() -> fair ReadLock.lock()
-  and the matching per-row unlock path.
-- Embedded 8c A/B:
-    Gen2 337.19 -> 547.83 tx/s (+62.47%)
-    Gen2/Heap 65.96% -> 103.28%
-    Gen2/upstream Derby 67.40% -> 102.44%
-    semantic fingerprints matched; dispersion valid.
-- Canonical SERVER/8c F02:
-    RANGE_SCAN_1000 Gen2/Heap 59.15% -> 88.31%
-    RANGE_SCAN_1000 Gen2/PostgreSQL 32.73% -> 51.15%
-    short/index-only lanes remained PostgreSQL-class.
-- RANGE_SCAN_FULL also improved directionally, but its exact post-change score is not frozen
-  because its run range exceeded the 20% drift rule.
-
-Pre-delivery verification:
-- Affected storage production/dependency sources type-compile successfully under available JDK 21.
-- No direct-destination or statement-boundary experiment property/task/marker references remain
-  in storage/test/benchmark/build sources.
-- Promoted fetch() remains below the repository 100-line production-method gate.
-- No new broad catch is introduced.
-- Gradle 9.5.1 is not cached in this environment and outbound distribution download is unavailable;
-  authoritative Java 25 Gradle correctness/static verification remains the user's repository run.
+Pre-delivery checks:
+- Benchmark-support Java type-compiles successfully under available JDK 21 against the
+  current delosTestSupport source tree.
+- Custom main argument runs before Options.validate(), so no coordinator-target/client
+  contract is involved.
+- Gradle task registration is unique.
 - ZIP integrity and duplicate-entry checks performed during packaging.
-
-Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/build.gradle

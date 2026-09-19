@@ -57,6 +57,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2N_PREFIX = "delosdb.phase2.f04F06RelationalDecomposition.";
     private static final String PHASE2O_PREFIX = "delosdb.phase2.f06GroupInputJfr.";
     private static final String PHASE2P_PREFIX = "delosdb.phase2.f06CanonicalPlanFalsification.";
+    private static final String PHASE2Q_PREFIX = "delosdb.phase2.f07SortDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -162,6 +163,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2PF06CanonicalPlanFalsification();
             return;
         }
+        if (args.length == 1 && "phase2q-f07-sort-decomposition".equals(args[0])) {
+            runPhase2QF07SortDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -179,8 +184,286 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2k-f03-projection-materialization',"
                             + " exactly 'phase2n-f04-f06-relational-decomposition',"
                             + " exactly 'phase2o-f06-group-input-jfr',"
-                            + " or exactly 'phase2p-f06-canonical-plan-falsification'");
+                            + " exactly 'phase2p-f06-canonical-plan-falsification',"
+                            + " or exactly 'phase2q-f07-sort-decomposition'");
         }
+    }
+
+
+    private static void runPhase2QF07SortDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2QPath("reportDirectory");
+        Path databaseRoot = requiredPhase2QPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        DelosBenchmarkConfig config =
+                new DelosBenchmarkConfig(rowCount, payloadSize, SEED, commitBatchSize);
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f07-sort-decomposition").toAbsolutePath()
+                + ";create=true";
+
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2q_heap", "", true, config).prepare();
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2q_mvcc", " using delos_mvcc", true, config).prepare();
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2Q_HEAP");
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2Q_MVCC");
+            setup.commit();
+        }
+
+        String heapTable = "DELOS_BENCH_P2Q_HEAP";
+        String mvccTable = "DELOS_BENCH_P2Q_MVCC";
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        sqlByVariant.put("heap-input", phase2QSortSql(heapTable, false, true));
+        sqlByVariant.put("mvcc-input", phase2QSortSql(mvccTable, false, true));
+        sqlByVariant.put("heap-natural-sort", phase2QSortSql(heapTable, true, false));
+        sqlByVariant.put("mvcc-natural-sort", phase2QSortSql(mvccTable, true, false));
+        sqlByVariant.put("heap-forced-table-sort", phase2QSortSql(heapTable, true, true));
+        sqlByVariant.put("mvcc-forced-table-sort", phase2QSortSql(mvccTable, true, true));
+
+        LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
+        LinkedHashMap<String, Phase2PMeasurement> measurements = new LinkedHashMap<>();
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                ExplainCapture analyze =
+                        capturePhase2NExplain(connection, entry.getValue(), true);
+                analyzeByVariant.put(entry.getKey(), analyze);
+                writePhase2ACapture(
+                        reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+            }
+            for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+                boolean ordered = entry.getKey().contains("sort");
+                measurements.put(
+                        entry.getKey(),
+                        phase2QMeasure(
+                                connection, entry.getValue(), entry.getKey(), rowCount, ordered));
+            }
+            connection.rollback();
+        }
+
+        phase2QAssertSemantics(measurements);
+        phase2QWriteMeasurements(reportDirectory, measurements);
+
+        StringBuilder plans = new StringBuilder(
+                "variant\tplanShape\texplainAnalyzeWallMillis\ttotalOpenMillis"
+                        + "\ttotalNextMillis\ttotalOpens\n");
+        for (Map.Entry<String, ExplainCapture> entry : analyzeByVariant.entrySet()) {
+            ExplainCapture analyze = entry.getValue();
+            plans.append(entry.getKey()).append('\t')
+                    .append(phase2NPlanShape(analyze.text())).append('\t')
+                    .append(analyze.wallMillis()).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "openMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "nextMillis")).append('\t')
+                    .append(sumPhase2AField(analyze.text(), "opens")).append('\n');
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2q-plan-summary.tsv"),
+                plans.toString(), StandardCharsets.UTF_8);
+
+        Phase2PMeasurement heapInput = measurements.get("heap-input");
+        Phase2PMeasurement mvccInput = measurements.get("mvcc-input");
+        Phase2PMeasurement heapNatural = measurements.get("heap-natural-sort");
+        Phase2PMeasurement mvccNatural = measurements.get("mvcc-natural-sort");
+        Phase2PMeasurement heapForced = measurements.get("heap-forced-table-sort");
+        Phase2PMeasurement mvccForced = measurements.get("mvcc-forced-table-sort");
+        String heapNaturalShape = phase2NPlanShape(
+                analyzeByVariant.get("heap-natural-sort").text());
+        String mvccNaturalShape = phase2NPlanShape(
+                analyzeByVariant.get("mvcc-natural-sort").text());
+        String heapForcedShape = phase2NPlanShape(
+                analyzeByVariant.get("heap-forced-table-sort").text());
+        String mvccForcedShape = phase2NPlanShape(
+                analyzeByVariant.get("mvcc-forced-table-sort").text());
+
+        String classification;
+        if (!mvccNaturalShape.equals(mvccForcedShape)
+                && mvccForced.distribution().median()
+                < mvccNatural.distribution().median() * 0.90d) {
+            classification = "MVCC_NATURAL_ACCESS_PATH_COSTING_PRIMARY";
+        } else {
+            double inputRatio =
+                    mvccInput.distribution().median() / heapInput.distribution().median();
+            double forcedSortRatio =
+                    mvccForced.distribution().median() / heapForced.distribution().median();
+            if (inputRatio >= 1.50d && forcedSortRatio <= inputRatio * 1.20d) {
+                classification = "MVCC_SORT_INPUT_PRIMARY";
+            } else if (forcedSortRatio >= inputRatio * 1.35d) {
+                classification = "MVCC_SORT_MATERIALIZATION_PRIMARY";
+            } else {
+                classification = "MIXED_REQUIRES_JFR_ATTRIBUTION";
+            }
+        }
+
+        String summary = "DelosDB Phase-2Q F07 sort decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "rows=" + rowCount + "\n"
+                + "payloadSize=" + payloadSize + "\n"
+                + "heapInputPlanShape="
+                + phase2NPlanShape(analyzeByVariant.get("heap-input").text()) + "\n"
+                + "mvccInputPlanShape="
+                + phase2NPlanShape(analyzeByVariant.get("mvcc-input").text()) + "\n"
+                + "heapNaturalSortPlanShape=" + heapNaturalShape + "\n"
+                + "mvccNaturalSortPlanShape=" + mvccNaturalShape + "\n"
+                + "heapForcedSortPlanShape=" + heapForcedShape + "\n"
+                + "mvccForcedSortPlanShape=" + mvccForcedShape + "\n"
+                + "heapInputMedianMillis=" + format(heapInput.distribution().median()) + "\n"
+                + "mvccInputMedianMillis=" + format(mvccInput.distribution().median()) + "\n"
+                + "inputMvccVsHeapRatio="
+                + format(mvccInput.distribution().median() / heapInput.distribution().median()) + "\n"
+                + "heapNaturalSortMedianMillis=" + format(heapNatural.distribution().median()) + "\n"
+                + "mvccNaturalSortMedianMillis=" + format(mvccNatural.distribution().median()) + "\n"
+                + "naturalSortMvccVsHeapRatio="
+                + format(mvccNatural.distribution().median() / heapNatural.distribution().median()) + "\n"
+                + "heapForcedSortMedianMillis=" + format(heapForced.distribution().median()) + "\n"
+                + "mvccForcedSortMedianMillis=" + format(mvccForced.distribution().median()) + "\n"
+                + "forcedSortMvccVsHeapRatio="
+                + format(mvccForced.distribution().median() / heapForced.distribution().median()) + "\n"
+                + "heapSortPenalty="
+                + format(heapForced.distribution().median() / heapInput.distribution().median()) + "\n"
+                + "mvccSortPenalty="
+                + format(mvccForced.distribution().median() / mvccInput.distribution().median()) + "\n"
+                + "mvccForcedVsNaturalRatio="
+                + format(mvccForced.distribution().median()
+                        / mvccNatural.distribution().median()) + "\n"
+                + "semanticFingerprintsMatch=true\n"
+                + "measurementStatus=" + phase2QStatus(measurements) + "\n"
+                + "classification=" + classification + "\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2q-f07-sort-decomposition-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static String phase2QSortSql(
+            String table, boolean ordered, boolean forceTableScan) {
+        StringBuilder sql = new StringBuilder("select id, quantity from ").append(table);
+        if (forceTableScan) {
+            sql.append(" --DERBY-PROPERTIES index=null\n");
+        }
+        if (ordered) {
+            sql.append(" order by quantity desc, id");
+        }
+        return sql.toString();
+    }
+
+    private static Phase2PMeasurement phase2QMeasure(
+            Connection connection,
+            String sql,
+            String variant,
+            int expectedRows,
+            boolean ordered) throws Exception {
+        int warmups = 8;
+        int measuredRounds = 9;
+        int executionsPerSample = 3;
+        List<Double> samples = new ArrayList<>();
+        long fingerprint;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            fingerprint = phase2QExecute(statement, expectedRows, ordered);
+            for (int warmup = 0; warmup < warmups; warmup++) {
+                long actual = phase2QExecute(statement, expectedRows, ordered);
+                if (actual != fingerprint) {
+                    throw new IllegalStateException(
+                            "Phase-2Q warmup semantic drift for " + variant);
+                }
+            }
+            for (int round = 0; round < measuredRounds; round++) {
+                long started = System.nanoTime();
+                for (int execution = 0; execution < executionsPerSample; execution++) {
+                    long actual = phase2QExecute(statement, expectedRows, ordered);
+                    if (actual != fingerprint) {
+                        throw new IllegalStateException(
+                                "Phase-2Q measured semantic drift for " + variant);
+                    }
+                }
+                samples.add((System.nanoTime() - started)
+                        / (executionsPerSample * 1_000_000.0d));
+            }
+        }
+        Distribution distribution = distribution(samples);
+        DelosMeasurementValidityContract.DispersionDecision decision =
+                DelosMeasurementValidityContract.classifyCustom(
+                        distribution.iqr() / distribution.median(),
+                        distribution.mad() / distribution.median());
+        return new Phase2PMeasurement(fingerprint, samples, distribution, decision);
+    }
+
+    private static long phase2QExecute(
+            PreparedStatement statement, int expectedRows, boolean ordered) throws SQLException {
+        int rows = 0;
+        long fingerprint = ordered ? 1L : 0L;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                long tuple = mix(
+                        mix(0x9E3779B97F4A7C15L, resultSet.getInt(1)),
+                        resultSet.getInt(2));
+                fingerprint = ordered ? mix(fingerprint, tuple) : fingerprint + tuple;
+                rows++;
+            }
+        }
+        if (rows != expectedRows) {
+            throw new SQLException(
+                    "Phase-2Q row-count drift: expected=" + expectedRows + ", actual=" + rows);
+        }
+        return mix(fingerprint, rows);
+    }
+
+    private static void phase2QAssertSemantics(
+            Map<String, Phase2PMeasurement> measurements) {
+        if (measurements.get("heap-input").fingerprint()
+                != measurements.get("mvcc-input").fingerprint()) {
+            throw new IllegalStateException("Phase-2Q Heap/MVCC input semantic drift");
+        }
+        long sorted = measurements.get("heap-natural-sort").fingerprint();
+        for (String variant : List.of(
+                "mvcc-natural-sort", "heap-forced-table-sort", "mvcc-forced-table-sort")) {
+            if (measurements.get(variant).fingerprint() != sorted) {
+                throw new IllegalStateException(
+                        "Phase-2Q sorted semantic drift for " + variant);
+            }
+        }
+    }
+
+    private static void phase2QWriteMeasurements(
+            Path reportDirectory,
+            Map<String, Phase2PMeasurement> measurements) throws IOException {
+        StringBuilder samples = new StringBuilder("variant\tround\telapsedMillis\n");
+        StringBuilder dispersion = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tgoverningDispersion\tstatus\n");
+        for (Map.Entry<String, Phase2PMeasurement> entry : measurements.entrySet()) {
+            for (int i = 0; i < entry.getValue().samples().size(); i++) {
+                samples.append(entry.getKey()).append('\t').append(i + 1).append('\t')
+                        .append(format(entry.getValue().samples().get(i))).append('\n');
+            }
+            distributionRow(dispersion, entry.getKey(), entry.getValue());
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2q-repeated-execution-samples.tsv"),
+                samples.toString(), StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("phase2q-dispersion.tsv"),
+                dispersion.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static DelosMeasurementValidityContract.Status phase2QStatus(
+            Map<String, Phase2PMeasurement> measurements) {
+        return DelosMeasurementValidityContract.combine(
+                measurements.values().stream()
+                        .map(measurement -> measurement.decision().status())
+                        .toArray(DelosMeasurementValidityContract.Status[]::new));
+    }
+
+    private static Path requiredPhase2QPath(String key) {
+        String value = System.getProperty(PHASE2Q_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2Q_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
     }
 
     private static void runPhase2BF05CardinalityCostingProof() throws Exception {
