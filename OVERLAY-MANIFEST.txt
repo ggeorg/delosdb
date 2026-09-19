@@ -1,72 +1,87 @@
-DelosDB overlay: promote consolidated Gen2 non-covering base fetch
+DelosDB overlay: Gen2-C3 direct-to-destination base-fetch experiment
 
-Decision:
-- Promote the consolidated read-only Gen2 INDEX_TO_BASE_ROW/base-row fetch decoder.
-- Remove the experiment selector/property and experiment-only benchmark plumbing.
-- Keep update/write base fetch semantics unchanged.
-- Keep the rejected page-local base-fetch prefetch experiment separate and default OFF.
+Purpose:
+- Test the remaining approximately constant per-row Gen2 tax on non-covering
+  INDEX_TO_BASE_ROW range execution.
+- Remove only the intermediate visible CURRENT payload materialization:
+    CURRENT template -> cloned VisibleRow.values() -> copyRow(destination)
+  becomes:
+    CURRENT template -> destination DVDs
+  when CURRENT itself is visible.
+- Keep HISTORY fallback on the existing VisibleRow/copy path.
 
-Production behavior:
-- Read-only Gen2-A1/C1/C3 base fetches with no prefetched directory always use
-  CurrentBaseFetchDecoder.
-- The decoder retains:
-    physical RowLocation page/slot lookup first
-    statement-lifetime CURRENT template reuse
-    projection-aware CURRENT payload fetch
-    CURRENT kind/format validation
-    row/version identity
-    lazy creator transaction fetch only for UNCOMMITTED_SEQUENCE
-    lazy predecessor/hint fetch only when HISTORY fallback is required
-    statement-lifetime CURRENT container and version-reader reuse
-    VisibleRow ownership/cloning semantics
-- Update/read-committed recheck and write-version paths remain unchanged.
-- Explicit base-fetch page-prefetch diagnostics remain separate and bypass the promoted decoder
-  when a prefetched directory is supplied.
+Experimental property:
+- delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled
+- default OFF
 
-Cleanup:
-- Remove delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled.
-- Remove experiment-only Phase-2K OFF/ON Gradle tasks.
-- Remove canonical F03 opt-in Gradle property.
-- Remove benchmark worker/server forwarding and evidence markers for the retired experiment.
-- Correctness coverage now validates the promoted default without setting a feature property.
+Production experiment:
+- Applies only to read-only Gen2-A1/C1/C3 base fetches with no prefetched directory.
+- Reuses the already-promoted CurrentBaseFetchDecoder and statement-lifetime resources.
+- CURRENT kind/format validation, row/version identity, lazy creator fetch,
+  lazy HISTORY metadata, physical RowLocation hint lookup and fallback lookup remain unchanged.
+- For visible non-tombstone CURRENT rows, copy only requested payload fields directly
+  from the reusable RawStore CURRENT template into caller-owned destination DVDs.
+- If a destination holder is absent, clone with forced materialization before publishing it.
+- Return only found/version metadata to the conglomerate controller.
+- HISTORY fallback continues through the existing VisibleRow ownership path.
 
-Evidence:
-- Matched Phase-2K A/B, both lanes VALID:
-    covered control       0.048489 -> 0.049859 ms (neutral)
-    two-column base fetch 0.317247 -> 0.237334 ms (-25.2%, 1.34x faster)
-    full-row base fetch   0.321699 -> 0.298399 ms (-7.2%, 1.08x faster)
-- Canonical SERVER/8c candidate run #1 completed the full F03 sentinel GREEN.
-- Preserved SERVER/8c candidate run #2 reproduced the same causal shape:
-    covered               7374.04 -> 7356.84 q/s (-0.2%)
-    two-column            3372.02 -> 4106.98 q/s (+21.8%)
-    full-row               494.66 -> 521.09 q/s (+5.3%)
-    two-column PG ratio     54.55% -> 66.64%
-- Run #2 is not promoted as a new canonical score because broad orthogonalized run-slot
-  environmental collapses violate the >20% run-range rule.
-- Semantic fingerprints matched across all engines/runs/workloads in the preserved report.
-- Repository integrity was GREEN after shared CURRENT-read helper deduplication.
+Correctness coverage:
+- Existing Gen2-C3 forced secondary-index/base-row test now enables this experiment.
+- Covers committed CURRENT, writer-own uncommitted CURRENT, foreign-reader HISTORY fallback,
+  repeatable-read history after writer commit, fresh CURRENT after snapshot end, and rollback.
+- Projected-current experiment remains explicitly OFF.
 
-Unchanged:
-- RowLocation costing.
-- Materialized TABLE_SCAN CURRENT decoder.
-- Projected-current experiment/default.
-- Streaming experiments.
-- SQL/index maintenance.
-- Indexed DELETE blocker.
-- RawStore WAL, undo, recovery and durable formats.
-- Benchmark thresholds and semantic-oracle rules.
+Matched performance diagnostic:
+- Reuses the accepted Gen2-C3 one-client RANGE_SCAN_1000 diagnostic contract.
+- Targets: delos_heap, delos_mvcc, upstream_derby.
+- Table shape: PRIMARY_KEY_ONLY.
+- Four runs per lane.
+- Physical scan cost ON.
+- Physical RowLocation cost ON.
+- Page-prefetch and projected-current experiments OFF.
+- OFF and ON lanes differ only in direct-destination base fetch.
+- SQL semantic oracle ON.
+
+New Gradle tasks:
+- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchOffDiagnostic
+- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchOnDiagnostic
+- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchABDiagnostic
+
+What this does NOT change:
+- Default production behavior remains unchanged.
+- No optimizer costing change.
+- No SQL/index maintenance change.
+- No update/read-committed recheck or write-version path change.
+- No RowLocation format change.
+- No TABLE_SCAN architecture change.
+- No page-prefetch, batching or ORDER BY experiment.
+- No RawStore WAL/undo/recovery or durable-format change.
+- Indexed DELETE remains blocked.
+- No benchmark threshold change.
+
+Pre-delivery verification:
+- Changed production storage sources type-compiled successfully under available JDK 21
+  using a flattened current-source dependency tree.
+- Changed benchmark-support Java type-compiled successfully.
+- Changed correctness test type-compiled with a minimal local JUnit 3 compatibility stub;
+  authoritative verification remains the user's JDK 25 Gradle build.
+- Repository-integrity inventory against the modified current tree:
+    duplicateProductionMethodGroups=43 (baseline 43)
+    duplicateProductionMethods=103 (baseline 103)
+    estimatedDuplicateProductionLines=953 (baseline 953)
+    productionMethods100Plus=442 (baseline 442)
+    productionMethodsComplexity20Plus=168 (baseline 168)
+    productionGenericCatches=410 (baseline 410)
+    parseErrors=0
+    compilerAuthorityViolations=0
+    compilerAuthorityCompromiseCandidates=0
+- No production monotonic integrity metric exceeds its existing baseline.
+- ZIP integrity and duplicate-entry checks performed after packaging.
 
 Changed files:
 - delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
 - delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
 - delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 - delosdb-tests/build.gradle
-
-Pre-delivery checks:
-- No retired consolidated-base-fetch property/task/marker references remain in the changed
-  production/test/benchmark files.
-- ZIP integrity and duplicate-entry checks are performed during packaging.
-- Full Gradle/JDK25 verification is not executable in this environment because Gradle 9.5.1
-  is not cached and outbound distribution download is unavailable; the user's JDK25 Gradle
-  run remains authoritative.

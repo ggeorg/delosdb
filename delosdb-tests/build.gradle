@@ -17830,6 +17830,125 @@ tasks.register('runDelosGen2C3F06ServerMaterializedCurrentScanABDiagnostic') {
 }
 
 
+
+// Phase 2S: isolate the remaining Gen2 non-covering base-row materialization tax.
+// This matched embedded diagnostic uses the existing Gen2-C3 RANGE_SCAN_1000
+// contract at one client. Both lanes keep normal physical costing and differ
+// only in direct-to-destination CURRENT base fetch.
+def delosGen2C3F02DirectDestinationBaseFetchRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f02-direct-destination-base-fetch-ab'
+def delosGen2C3F02DirectDestinationBaseFetchDatabaseRoot =
+        'tmp/delos-gen2-c3-f02-direct-destination-base-fetch-ab'
+
+def registerDelosGen2C3F02DirectDestinationBaseFetchDiagnostic = {
+    String taskName, String lane, boolean directDestination ->
+
+    tasks.register(taskName, JavaExec) { task ->
+        group = 'verification'
+        description = "Runs matched Gen2-C3 RANGE_SCAN_1000 with direct-destination base fetch ${directDestination ? 'ON' : 'OFF'}."
+        dependsOn tasks.named('compileTestJava'),
+                tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir)
+        outputs.upToDateWhen { false }
+
+        def reportRoot = "${delosGen2C3F02DirectDestinationBaseFetchRoot}/${lane}"
+        def databaseRoot = "${delosGen2C3F02DirectDestinationBaseFetchDatabaseRoot}/${lane}"
+        outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'Gen2-C3 F02 direct-destination base-fetch A/B requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+            File databaseDir = rootProject.layout.buildDirectory.dir(databaseRoot).get().asFile
+            project.delete(reportDir)
+            project.delete(databaseDir)
+            reportDir.mkdirs()
+            databaseDir.mkdirs()
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            task.systemProperties([
+                    'delosdb.experimental.heapPageReadImage': 'true',
+                    'delosdb.experimental.fastRecordReadLock': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2DirectDestinationBaseFetch':
+                            Boolean.toString(directDestination),
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(
+                                    rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                            upstreamDerbyBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.h2Classpath':
+                            h2BenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.sqliteClasspath':
+                            sqliteBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap,delos_mvcc,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                            databaseDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                            reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                    'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '1000000',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '180',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+    }
+}
+
+def delosGen2C3F02DirectDestinationOffTask =
+        registerDelosGen2C3F02DirectDestinationBaseFetchDiagnostic(
+                'runDelosGen2C3F02DirectDestinationBaseFetchOffDiagnostic',
+                'off', false)
+def delosGen2C3F02DirectDestinationOnTask =
+        registerDelosGen2C3F02DirectDestinationBaseFetchDiagnostic(
+                'runDelosGen2C3F02DirectDestinationBaseFetchOnDiagnostic',
+                'on', true)
+
+delosGen2C3F02DirectDestinationOnTask.configure {
+    mustRunAfter delosGen2C3F02DirectDestinationOffTask
+}
+
+tasks.register('runDelosGen2C3F02DirectDestinationBaseFetchABDiagnostic') {
+    group = 'verification'
+    description = 'Runs matched one-client Gen2-C3 RANGE_SCAN_1000 with direct-destination base fetch OFF then ON.'
+    dependsOn delosGen2C3F02DirectDestinationOffTask,
+            delosGen2C3F02DirectDestinationOnTask
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            delosGen2C3F02DirectDestinationBaseFetchRoot))
+}
+
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.

@@ -240,6 +240,10 @@ final class MvccRawStoreTable {
             MvccRowLocation directoryLocation) {
     }
 
+    record BaseFetchResult(boolean found, long versionId) {
+        private static final BaseFetchResult NOT_FOUND = new BaseFetchResult(false, 0L);
+    }
+
     record StreamingBatchResult(
             int count,
             long visited,
@@ -332,6 +336,29 @@ final class MvccRawStoreTable {
             }
         }
         return values;
+    }
+
+    private static void copyCurrentValuesInto(
+            Descriptor table,
+            Object[] currentRow,
+            int payloadStart,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            StoreDataValue[] destination,
+            FormatableBitSet validColumns) throws StandardException {
+        if (destination == null || (projection != null && !projection.includesPayload())) {
+            return;
+        }
+        int limit = Math.min(table.columnCount(), destination.length);
+        for (int index = 0; index < limit; index++) {
+            if ((validColumns != null && !validColumns.isSet(index))
+                    || (projection != null && !projection.includes(index))) {
+                continue;
+            }
+            StoreDataValue source = (StoreDataValue) currentRow[payloadStart + index];
+            if (!StoreValueCopySupport.copyValue(destination[index], source)) {
+                destination[index] = StoreValueCopySupport.cloneValue(source, true);
+            }
+        }
     }
 
     private static VisibleRow currentVisibleRow(
@@ -477,8 +504,46 @@ final class MvccRawStoreTable {
                 long transactionId,
                 ContainerHandle container,
                 MvccRawStoreVersionReader versionReader) throws StandardException {
+            LookupResult result = locate(
+                    rowLocation,
+                    snapshotSequence,
+                    transactionId,
+                    container,
+                    versionReader,
+                    null,
+                    null);
+            return result.matched() ? result.visible() : null;
+        }
+
+        BaseFetchResult readVisibleInto(
+                MvccRowLocation rowLocation,
+                long snapshotSequence,
+                long transactionId,
+                ContainerHandle container,
+                MvccRawStoreVersionReader versionReader,
+                StoreDataValue[] destination,
+                FormatableBitSet validColumns) throws StandardException {
+            LookupResult result = locate(
+                    rowLocation,
+                    snapshotSequence,
+                    transactionId,
+                    container,
+                    versionReader,
+                    destination,
+                    validColumns);
+            return result.matched() ? result.directResult() : BaseFetchResult.NOT_FOUND;
+        }
+
+        private LookupResult locate(
+                MvccRowLocation rowLocation,
+                long snapshotSequence,
+                long transactionId,
+                ContainerHandle container,
+                MvccRawStoreVersionReader versionReader,
+                StoreDataValue[] destination,
+                FormatableBitSet validColumns) throws StandardException {
             if (container == null || rowLocation == null) {
-                return null;
+                return LookupResult.NOT_MATCHED;
             }
             Page page = null;
             try {
@@ -491,9 +556,11 @@ final class MvccRawStoreTable {
                                 rowLocation.rowId(),
                                 snapshotSequence,
                                 transactionId,
-                                versionReader);
+                                versionReader,
+                                destination,
+                                validColumns);
                         if (hinted.matched()) {
-                            return hinted.visible();
+                            return hinted;
                         }
                         page.unlatch();
                         page = null;
@@ -514,16 +581,18 @@ final class MvccRawStoreTable {
                                 rowLocation.rowId(),
                                 snapshotSequence,
                                 transactionId,
-                                versionReader);
+                                versionReader,
+                                destination,
+                                validColumns);
                         if (candidate.matched()) {
-                            return candidate.visible();
+                            return candidate;
                         }
                     }
                     long pageNumber = page.getPageNumber();
                     page.unlatch();
                     page = container.getNextPage(pageNumber);
                 }
-                return null;
+                return LookupResult.NOT_MATCHED;
             } finally {
                 if (page != null) {
                     page.unlatch();
@@ -537,7 +606,9 @@ final class MvccRawStoreTable {
                 long expectedRowId,
                 long snapshotSequence,
                 long transactionId,
-                MvccRawStoreVersionReader versionReader) throws StandardException {
+                MvccRawStoreVersionReader versionReader,
+                StoreDataValue[] destination,
+                FormatableBitSet validColumns) throws StandardException {
             if (page.fetchNumFieldsAtSlot(slot) != currentFieldCount(table)) {
                 return LookupResult.NOT_MATCHED;
             }
@@ -559,26 +630,81 @@ final class MvccRawStoreTable {
                     beginSequence,
                     transactionId,
                     snapshotSequence)) {
-                return new LookupResult(
-                        true,
-                        currentVisibleRow(
-                                table,
-                                currentRow,
-                                payloadStart,
-                                projection,
-                                rowId,
-                                currentHandle));
+                return currentResult(
+                        rowId,
+                        currentHandle,
+                        destination,
+                        validColumns);
             }
-            return new LookupResult(
-                    true,
-                    historyVisible(
-                            page,
-                            slot,
-                            rowId,
-                            currentHandle,
-                            snapshotSequence,
-                            transactionId,
-                            versionReader));
+            return historyResult(
+                    page,
+                    slot,
+                    rowId,
+                    currentHandle,
+                    snapshotSequence,
+                    transactionId,
+                    versionReader,
+                    destination,
+                    validColumns);
+        }
+
+        private LookupResult currentResult(
+                long rowId,
+                RecordHandle currentHandle,
+                StoreDataValue[] destination,
+                FormatableBitSet validColumns) throws StandardException {
+            if (destination == null) {
+                return LookupResult.visible(currentVisibleRow(
+                        table,
+                        currentRow,
+                        payloadStart,
+                        projection,
+                        rowId,
+                        currentHandle));
+            }
+            int flags = MvccRawStoreFormat.intAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_FLAGS);
+            if ((flags & MvccRawStoreFormat.TOMBSTONE_FLAGS) != 0) {
+                return LookupResult.direct(BaseFetchResult.NOT_FOUND);
+            }
+            long versionId = MvccRawStoreFormat.longAt(
+                    currentRow, MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID);
+            copyCurrentValuesInto(
+                    table,
+                    currentRow,
+                    payloadStart,
+                    projection,
+                    destination,
+                    validColumns);
+            return LookupResult.direct(new BaseFetchResult(true, versionId));
+        }
+
+        private LookupResult historyResult(
+                Page page,
+                int slot,
+                long rowId,
+                RecordHandle currentHandle,
+                long snapshotSequence,
+                long transactionId,
+                MvccRawStoreVersionReader versionReader,
+                StoreDataValue[] destination,
+                FormatableBitSet validColumns) throws StandardException {
+            VisibleRow history = historyVisible(
+                    page,
+                    slot,
+                    rowId,
+                    currentHandle,
+                    snapshotSequence,
+                    transactionId,
+                    versionReader);
+            if (destination == null) {
+                return LookupResult.visible(history);
+            }
+            if (history == null) {
+                return LookupResult.direct(BaseFetchResult.NOT_FOUND);
+            }
+            StoreValueCopySupport.copyRow(history.values(), destination, validColumns);
+            return LookupResult.direct(new BaseFetchResult(true, history.versionId()));
         }
 
         private VisibleRow historyVisible(
@@ -620,8 +746,20 @@ final class MvccRawStoreTable {
                     MvccRawStoreRowDirectory.location(rowId, currentHandle));
         }
 
-        private record LookupResult(boolean matched, VisibleRow visible) {
-            private static final LookupResult NOT_MATCHED = new LookupResult(false, null);
+        private record LookupResult(
+                boolean matched,
+                VisibleRow visible,
+                BaseFetchResult directResult) {
+            private static final LookupResult NOT_MATCHED =
+                    new LookupResult(false, null, BaseFetchResult.NOT_FOUND);
+
+            private static LookupResult visible(VisibleRow row) {
+                return new LookupResult(true, row, BaseFetchResult.NOT_FOUND);
+            }
+
+            private static LookupResult direct(BaseFetchResult result) {
+                return new LookupResult(true, null, result);
+            }
         }
     }
 
