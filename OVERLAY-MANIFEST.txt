@@ -1,44 +1,82 @@
-DelosDB overlay: canonical F02 statement-read-boundary candidate wiring
+DelosDB overlay: promote statement-lifetime Gen2 base-row read boundaries
 
-Purpose:
-- Exercise the JFR-proven statement-lifetime TableReadBoundary candidate in the existing
-  canonical SERVER/8-client F02 range-scan fitness/sentinel.
-- Reuse the already-registered canonical task and validation contract.
-- Do not add a new benchmark mode or weaken any existing validator.
-
-Changed files:
-- delosdb-tests/build.gradle
-
-Harness behavior:
-- runDelosGen2C3PrimaryKeyRangeScanFitness now reads:
-    -Pdelosdb.benchmark.mvccGen2StatementReadBoundary=true|false
-- It forwards that value through the existing benchmark property:
-    delosdb.benchmark.crossEngineConcurrency.mvccGen2StatementReadBoundary
-- Default remains false unless explicitly enabled.
-
-Canonical F02 shape remains unchanged:
-- SERVER / 8 clients
-- 100,000 rows
-- 8 runs
-- six-engine product matrix
-- RANGE_SCAN_INDEX_ONLY_1000
-- RANGE_SCAN_100
-- RANGE_SCAN_1000
-- RANGE_SCAN_FULL
-- semantic oracle ON
-- physical RowLocation costing ON
+Decision:
+- Promote statement/controller-lifetime TableReadBoundary ownership for eligible read-only
+  Gen2 base ConglomerateControllers.
+- Remove the experimental selector and experiment-only benchmark wiring.
+- Remove the rejected direct-to-destination base-fetch experiment and its dead production path.
 
 Production behavior:
-- No production source changes in this overlay.
-- The statement-read-boundary experiment remains feature-gated/default OFF.
-- No SQL, workload, threshold, optimizer, storage-format, WAL, undo or recovery changes.
+- A read-only base ConglomerateController with a statement snapshot lease lazily acquires one
+  TableReadBoundary on its first base-row fetch and reuses it for the controller lifetime.
+- Controller close order remains:
+    clear prefetch state
+    close version reader
+    close directory container
+    release statement TableReadBoundary
+    release statement snapshot lease
+    unregister controller
+- forUpdate/read-committed recheck/write-version controllers continue to acquire/release
+  TableReadBoundary per operation.
+- Read-only controllers without a statement snapshot lease also retain per-operation boundaries.
+- Vacuum/maintenance continues to require the same exclusive table-maintenance write boundary;
+  the promoted read path only extends the already-required exclusion to statement lifetime.
 
-Evidence motivating this gate:
-- Embedded 8c RANGE_SCAN_1000 A/B:
-    Gen2 OFF 337.19 tx/s
-    Gen2 ON  547.83 tx/s
-    gain     +62.47%
+Rejected experiment cleanup:
+- Remove delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled.
+- Remove its BaseFetchResult/readVisibleInto/direct-copy production machinery.
+- Remove direct-destination OFF/ON Gradle diagnostics and benchmark forwarding/evidence markers.
+- Preserve the promoted consolidated CurrentBaseFetchDecoder/VisibleRow path.
+
+Statement-boundary experiment cleanup:
+- Remove delosdb.experimental.mvccGen2StatementReadBoundary.enabled.
+- Remove OFF/ON statement-boundary Gradle diagnostics.
+- Remove canonical F02 opt-in property and benchmark forwarding/evidence markers.
+- Normal eligible read-only base controllers now use statement-lifetime boundaries directly.
+
+Preserved diagnostics:
+- F02 scale-surface and embedded-concurrency/JFR diagnostic modes remain available because they
+  are general attribution tools, not retired experiment selectors.
+- Their notes no longer mention the removed direct-destination experiment.
+
+Correctness:
+- Existing Gen2-C3 non-covering base-fetch CURRENT/HISTORY/rollback test now validates the
+  promoted default directly, with no statement-boundary/direct-destination feature properties.
+- Existing maintenance/snapshot tests remain unchanged and continue to validate retained-reader
+  vacuum protection and release behavior.
+
+Evidence supporting promotion:
+- JFR at embedded 8 clients attributed ~36.4% of Gen2 execution samples to
+  ReentrantReadWriteLock machinery, with full stacks through:
+    IndexRowToBaseRowResultSet -> MvccRawStoreConglomerateController.fetch()
+    -> MvccRawStoreRuntime.enterTableRead() -> fair ReadLock.lock()
+  and the matching per-row unlock path.
+- Embedded 8c A/B:
+    Gen2 337.19 -> 547.83 tx/s (+62.47%)
     Gen2/Heap 65.96% -> 103.28%
     Gen2/upstream Derby 67.40% -> 102.44%
-- All A/B engines remained below 15% IQR/median.
-- Semantic fingerprints matched.
+    semantic fingerprints matched; dispersion valid.
+- Canonical SERVER/8c F02:
+    RANGE_SCAN_1000 Gen2/Heap 59.15% -> 88.31%
+    RANGE_SCAN_1000 Gen2/PostgreSQL 32.73% -> 51.15%
+    short/index-only lanes remained PostgreSQL-class.
+- RANGE_SCAN_FULL also improved directionally, but its exact post-change score is not frozen
+  because its run range exceeded the 20% drift rule.
+
+Pre-delivery verification:
+- Affected storage production/dependency sources type-compile successfully under available JDK 21.
+- No direct-destination or statement-boundary experiment property/task/marker references remain
+  in storage/test/benchmark/build sources.
+- Promoted fetch() remains below the repository 100-line production-method gate.
+- No new broad catch is introduced.
+- Gradle 9.5.1 is not cached in this environment and outbound distribution download is unavailable;
+  authoritative Java 25 Gradle correctness/static verification remains the user's repository run.
+- ZIP integrity and duplicate-entry checks performed during packaging.
+
+Changed files:
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle

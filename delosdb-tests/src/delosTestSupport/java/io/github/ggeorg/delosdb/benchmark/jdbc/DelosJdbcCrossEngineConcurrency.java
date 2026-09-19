@@ -3473,10 +3473,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + mvccPhysicalRowLocationCostEnabled());
             command.add("-Ddelosdb.experimental.mvccGen2SinglePassCurrentScan.enabled="
                     + mvccGen2SinglePassCurrentScanEnabled());
-            command.add("-Ddelosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled="
-                    + mvccGen2DirectDestinationBaseFetchEnabled());
-            command.add("-Ddelosdb.experimental.mvccGen2StatementReadBoundary.enabled="
-                    + mvccGen2StatementReadBoundaryEnabled());
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -3753,12 +3749,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + mvccPhysicalRowLocationCostEnabled());
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2SinglePassCurrentScan.enabled="
                             + mvccGen2SinglePassCurrentScanEnabled());
-                    javaCommand.add(
-                            "-Ddelosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled="
-                                    + mvccGen2DirectDestinationBaseFetchEnabled());
-                    javaCommand.add(
-                            "-Ddelosdb.experimental.mvccGen2StatementReadBoundary.enabled="
-                                    + mvccGen2StatementReadBoundaryEnabled());
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3977,10 +3967,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC single-pass CURRENT scan experiment: ")
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
-                .append("MVCC direct-destination base fetch experiment: ")
-                .append(mvccGen2DirectDestinationBaseFetchEnabled()).append('\n')
-                .append("MVCC statement-lifetime read boundary experiment: ")
-                .append(mvccGen2StatementReadBoundaryEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
@@ -9545,10 +9531,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC single-pass CURRENT scan enabled: ")
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
-                .append("MVCC direct-destination base fetch enabled: ")
-                .append(mvccGen2DirectDestinationBaseFetchEnabled()).append('\n')
-                .append("MVCC statement-lifetime read boundary enabled: ")
-                .append(mvccGen2StatementReadBoundaryEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
@@ -9833,16 +9815,6 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccGen2SinglePassCurrentScanEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccGen2SinglePassCurrentScan", "false"));
-    }
-
-    private static boolean mvccGen2DirectDestinationBaseFetchEnabled() {
-        return Boolean.parseBoolean(System.getProperty(
-                PREFIX + "mvccGen2DirectDestinationBaseFetch", "false"));
-    }
-
-    private static boolean mvccGen2StatementReadBoundaryEnabled() {
-        return Boolean.parseBoolean(System.getProperty(
-                PREFIX + "mvccGen2StatementReadBoundary", "false"));
     }
 
     private static boolean f02ScaleSurfaceDiagnosticEnabled() {

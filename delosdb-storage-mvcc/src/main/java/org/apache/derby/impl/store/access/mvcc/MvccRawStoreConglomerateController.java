@@ -53,9 +53,7 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreVersionRows.FetchProjection readProjection;
     private MvccRawStoreVersionRows.FetchProjection readCurrentBaseFetchProjection;
     private MvccRawStoreTable.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
-    private final boolean directDestinationBaseFetch;
     private final boolean baseFetchPagePrefetchRequested;
-    private final boolean statementReadBoundaryEnabled;
     private MvccRawStoreRuntime.TableReadBoundary statementReadBoundary;
     private long[] prefetchedDirectoryRowIds;
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
@@ -75,8 +73,6 @@ final class MvccRawStoreConglomerateController
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
         this.forUpdate = forUpdate;
-        this.directDestinationBaseFetch = !forUpdate && Boolean.getBoolean(
-                MvccRawStoreFormat.GEN2_DIRECT_DESTINATION_BASE_FETCH_ENABLED_PROPERTY);
         this.baseFetchPagePrefetchRequested =
                 !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
         // IndexRowToBaseRowResultSet opens one base ConglomerateController for
@@ -91,10 +87,6 @@ final class MvccRawStoreConglomerateController
             statementSnapshotLease = null;
             statementSnapshotSequence = Long.MIN_VALUE;
         }
-        statementReadBoundaryEnabled = !forUpdate
-                && statementSnapshotLease != null
-                && Boolean.getBoolean(
-                        MvccRawStoreFormat.GEN2_STATEMENT_READ_BOUNDARY_ENABLED_PROPERTY);
     }
 
     @Override
@@ -219,17 +211,6 @@ final class MvccRawStoreConglomerateController
         MvccRawStoreTable.DirectoryRecord prefetchedDirectory = !forUpdate
                 ? takePrefetchedDirectory(location.rowId())
                 : null;
-        Boolean directResult = fetchDirectDestination(
-                location,
-                projection,
-                prefetchedDirectory,
-                context,
-                destRow,
-                validColumns);
-        if (directResult != null) {
-            return directResult;
-        }
-
         MvccRawStoreTable.VisibleRow visible;
         MvccRawStoreRuntime.TableReadBoundary operationBoundary = enterReadBoundary();
         try {
@@ -287,45 +268,6 @@ final class MvccRawStoreConglomerateController
         }
         StoreValueCopySupport.copyRow(visible.values(), destRow, validColumns);
         return true;
-    }
-
-    private Boolean fetchDirectDestination(
-            MvccRowLocation location,
-            MvccRawStoreVersionRows.FetchProjection projection,
-            MvccRawStoreTable.DirectoryRecord prefetchedDirectory,
-            MvccRawStoreTransactionContext context,
-            StoreDataValue[] destRow,
-            FormatableBitSet validColumns) throws StandardException {
-        if (!directDestinationBaseFetch
-                || forUpdate
-                || !table.gen2A1()
-                || prefetchedDirectory != null) {
-            return null;
-        }
-        MvccRawStoreTable.BaseFetchResult result;
-        MvccRawStoreRuntime.TableReadBoundary operationBoundary = enterReadBoundary();
-        try {
-            long snapshotSequence = statementSnapshotLease != null
-                    ? statementSnapshotSequence
-                    : context.snapshotSequence();
-            result = currentBaseFetchDecoder(projection).readVisibleInto(
-                    location,
-                    snapshotSequence,
-                    context.transactionId(),
-                    readDirectoryContainer(),
-                    readVersionReader(),
-                    destRow,
-                    validColumns);
-        } finally {
-            closeOperationReadBoundary(operationBoundary);
-        }
-        if (!result.found()) {
-            return Boolean.FALSE;
-        }
-        if (location.getWriteVersion() == 0L) {
-            location.setWriteVersion(result.versionId());
-        }
-        return Boolean.TRUE;
     }
 
     @Override
@@ -563,7 +505,7 @@ final class MvccRawStoreConglomerateController
     }
 
     private MvccRawStoreRuntime.TableReadBoundary enterReadBoundary() {
-        if (!statementReadBoundaryEnabled) {
+        if (forUpdate || statementSnapshotLease == null) {
             return runtime.enterTableRead(table);
         }
         if (statementReadBoundary == null) {
