@@ -17949,6 +17949,421 @@ tasks.register('runDelosGen2C3F02DirectDestinationBaseFetchABDiagnostic') {
 }
 
 
+
+// Phase 2T: isolate the canonical F02 RANGE_SCAN_1000 scale surface.
+// The earlier 1-client/10k embedded diagnostic is already near Heap/Derby;
+// this server-only 2x2 matrix isolates data size and client concurrency.
+def delosGen2C3F02ScaleSurfaceRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f02-scale-surface'
+def delosGen2C3F02ScaleSurfaceDatabaseRoot =
+        'tmp/delos-gen2-c3-f02-scale-surface'
+
+tasks.register('runDelosGen2C3F02ScaleSurfaceDiagnostic', JavaExec) { task ->
+    group = 'verification'
+    description = 'Runs a 2x2 SERVER F02 RANGE_SCAN_1000 matrix across 10k/100k rows and 1/8 clients for Delos Heap vs Gen2 MVCC.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(derbyTestsClassDir, delosNetworkClientClasspath)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3F02ScaleSurfaceRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F02 scale-surface diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory.dir(
+                delosGen2C3F02ScaleSurfaceRoot).get().asFile
+        File databaseDir = rootProject.layout.buildDirectory.dir(
+                delosGen2C3F02ScaleSurfaceDatabaseRoot).get().asFile
+        project.delete(reportDir)
+        project.delete(databaseDir)
+        reportDir.mkdirs()
+        databaseDir.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f02ScaleSurfaceDiagnostic': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2DirectDestinationBaseFetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        databaseDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000,100000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '5',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+
+
+// Phase 3M-A8: isolate whether the F02 8-client collapse is intrinsic to
+// embedded Gen2 execution or introduced by the DRDA/server boundary.
+def delosGen2C3F02EmbeddedConcurrencyRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f02-embedded-concurrency'
+def delosGen2C3F02EmbeddedConcurrencyDatabaseRoot =
+        'tmp/delos-gen2-c3-f02-embedded-concurrency'
+
+tasks.register('runDelosGen2C3F02EmbeddedConcurrencyDiagnostic', JavaExec) { task ->
+    group = 'verification'
+    description = 'Measures embedded Heap/MVCC RANGE_SCAN_1000 at 1c and 8c to isolate the F02 concurrency collapse.'
+    dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosGen2C3F02EmbeddedConcurrencyRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F02 embedded concurrency diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory
+                .dir(delosGen2C3F02EmbeddedConcurrencyRoot).get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir(delosGen2C3F02EmbeddedConcurrencyDatabaseRoot).get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f02EmbeddedConcurrencyDiagnostic': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2DirectDestinationBaseFetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap,delos_mvcc,upstream_derby',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '500000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '5',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
+tasks.register('runDelosGen2C3F02Embedded8cJfrDiagnostic', JavaExec) { task ->
+    group = 'verification'
+    description = 'Profiles embedded 8-client Heap/MVCC RANGE_SCAN_1000 with JFR after the clean concurrency diagnostic.'
+    dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    mustRunAfter tasks.named('runDelosGen2C3F02EmbeddedConcurrencyDiagnostic')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir)
+    outputs.upToDateWhen { false }
+    def reportRoot = "${delosGen2C3F02EmbeddedConcurrencyRoot}/jfr-8c"
+    outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F02 embedded 8c JFR diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosGen2C3F02EmbeddedConcurrencyDatabaseRoot}-jfr").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f02EmbeddedConcurrencyDiagnostic': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2DirectDestinationBaseFetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                        upstreamDerbyBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap,delos_mvcc,upstream_derby',
+                'delosdb.benchmark.crossEngineConcurrency.profileTargets':
+                        'delos_heap,delos_mvcc',
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '3000000',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '100',
+                'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '30000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '2',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+        File profiles = new File(reportDir, 'profiles')
+        def recordings = profiles.isDirectory()
+                ? profiles.listFiles().findAll { it.name.endsWith('.jfr') }.sort { it.name }
+                : []
+        if (recordings.size() != 2) {
+            throw new GradleException(
+                    "F02 embedded 8c JFR expected 2 recordings, found ${recordings.size()}")
+        }
+        File views = new File(reportDir, 'jfr-views')
+        views.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            recordings.each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '60', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                def stdout = execOutput.standardOutput.asText.get()
+                def stderr = execOutput.standardError.asText.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "F02 embedded 8c JFR view ${view} failed for ${recording.name}: ${stderr.trim()}")
+                }
+                new File(views, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(stdout, 'UTF-8')
+            }
+        }
+        recordings.each { recording ->
+            def execOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'print',
+                        '--events', 'jdk.ThreadPark',
+                        '--stack-depth', '64',
+                        recording.absolutePath
+                ignoreExitValue = true
+            }
+            if (execOutput.result.get().exitValue == 0) {
+                new File(views, recording.name.replace('.jfr', '-thread-park.txt'))
+                        .setText(execOutput.standardOutput.asText.get(), 'UTF-8')
+            }
+        }
+        new File(reportDir, 'PROFILE-NOTES.txt').setText(
+                'F02 embedded 8-client RANGE_SCAN_1000 contention attribution\n' +
+                'Targets=delos_heap,delos_mvcc\n' +
+                'Rows=10000\nClients=8\nTableShape=PRIMARY_KEY_ONLY\n' +
+                'MVCC=Gen2-C3; physical scan cost=true; physical RowLocation cost=true\n' +
+                'Direct-destination=false; base-fetch prefetch=false; projected-current=false\n' +
+                'Interpretation=JFR attribution only; throughput in this recording is not acceptance throughput.\n',
+                'UTF-8')
+    }
+}
+
+
+// Phase 3M-A9: test whether statement-lifetime table-read boundaries remove
+// the embedded 8-client non-covering range collapse proven by JFR.
+def delosGen2C3F02StatementReadBoundaryRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f02-statement-read-boundary-ab'
+def delosGen2C3F02StatementReadBoundaryDatabaseRoot =
+        'tmp/delos-gen2-c3-f02-statement-read-boundary-ab'
+
+def registerDelosGen2C3F02StatementReadBoundaryDiagnostic = {
+    String taskName, String lane, boolean statementBoundary ->
+
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = "Runs embedded 8-client RANGE_SCAN_1000 with statement-lifetime MVCC table-read boundary ${statementBoundary ? 'ON' : 'OFF'}."
+        dependsOn tasks.named('compileTestJava'),
+                tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir)
+        outputs.upToDateWhen { false }
+
+        def reportRoot = "${delosGen2C3F02StatementReadBoundaryRoot}/${lane}"
+        def databaseRoot = "${delosGen2C3F02StatementReadBoundaryDatabaseRoot}/${lane}"
+        outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+
+        doFirst {
+            def saneValue = providers.gradleProperty('delosdb.sane')
+                    .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+            if (saneValue != 'false') {
+                throw new GradleException(
+                        'F02 statement read-boundary A/B requires a release build; rerun with -Pdelosdb.sane=false')
+            }
+            File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+            File databaseDir = rootProject.layout.buildDirectory.dir(databaseRoot).get().asFile
+            project.delete(reportDir)
+            project.delete(databaseDir)
+            reportDir.mkdirs()
+            databaseDir.mkdirs()
+            def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+            systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                    'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.f02EmbeddedConcurrencyDiagnostic': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2DirectDestinationBaseFetch': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2StatementReadBoundary':
+                            Boolean.toString(statementBoundary),
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                            rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                            derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                            rootProject.files(rawStoreInternalTestSupportClassDir, derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath':
+                            upstreamDerbyBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets':
+                            'delos_heap,delos_mvcc,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '10',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'RANGE_SCAN_1000',
+                    'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '50',
+                    'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanTargetRowsPerClient': '500000',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMinQueriesPerClient': '5',
+                    'delosdb.benchmark.crossEngineConcurrency.rangeScanMaxQueriesPerClient': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '1000',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                    'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                    'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+    }
+}
+
+def delosGen2C3F02StatementReadBoundaryOffTask =
+        registerDelosGen2C3F02StatementReadBoundaryDiagnostic(
+                'runDelosGen2C3F02StatementReadBoundaryOffDiagnostic', 'boundary-off', false)
+def delosGen2C3F02StatementReadBoundaryOnTask =
+        registerDelosGen2C3F02StatementReadBoundaryDiagnostic(
+                'runDelosGen2C3F02StatementReadBoundaryOnDiagnostic', 'boundary-on', true)
+
+delosGen2C3F02StatementReadBoundaryOnTask.configure {
+    mustRunAfter delosGen2C3F02StatementReadBoundaryOffTask
+}
+
+tasks.register('runDelosGen2C3F02StatementReadBoundaryABDiagnostic') {
+    group = 'verification'
+    description = 'Runs embedded 8-client F02 RANGE_SCAN_1000 with statement-lifetime table-read boundary OFF then ON.'
+    dependsOn delosGen2C3F02StatementReadBoundaryOffTask,
+            delosGen2C3F02StatementReadBoundaryOnTask
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            delosGen2C3F02StatementReadBoundaryRoot))
+}
+
 // Phase 4A F08 mutation attribution.
 // Diagnostic-only: profile the existing JDBC INSERT_1 and INSERT_100 paths
 // before introducing a production batch-mutation abstraction.
@@ -19220,6 +19635,9 @@ tasks.register('runDelosGen2C3PrimaryKeyRangeScanFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2StatementReadBoundary':
+                        providers.gradleProperty('delosdb.benchmark.mvccGen2StatementReadBoundary')
+                                .getOrElse('false'),
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,

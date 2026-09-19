@@ -26,6 +26,8 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
     private static final String GEN2_DIRECT_DESTINATION_BASE_FETCH_PROPERTY =
             "delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled";
+    private static final String GEN2_STATEMENT_READ_BOUNDARY_PROPERTY =
+            "delosdb.experimental.mvccGen2StatementReadBoundary.enabled";
 
     public void testUnchangedPrimaryKeyUpdateHistoryRollbackAndReopen() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
@@ -160,19 +162,39 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
     }
 
     public void testBaseFetchPreservesCurrentHistoryAndRollback() throws Exception {
+        runBaseFetchCurrentHistoryAndRollback(true, false,
+                "mvcc-gen2-c3-direct-destination-base-fetch");
+    }
+
+    public void testStatementReadBoundaryPreservesCurrentHistoryAndRollback() throws Exception {
+        runBaseFetchCurrentHistoryAndRollback(false, true,
+                "mvcc-gen2-c3-statement-read-boundary");
+    }
+
+    private void runBaseFetchCurrentHistoryAndRollback(
+            boolean directDestination,
+            boolean statementReadBoundary,
+            String databaseSuffix) throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
         String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
         String previousProjectedRead = System.getProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY);
         String previousDirectDestination =
                 System.getProperty(GEN2_DIRECT_DESTINATION_BASE_FETCH_PROPERTY);
-        String database = databaseName("mvcc-gen2-c3-direct-destination-base-fetch");
+        String previousStatementBoundary =
+                System.getProperty(GEN2_STATEMENT_READ_BOUNDARY_PROPERTY);
+        String database = databaseName(databaseSuffix);
         String oldPayload = "x".repeat(2048);
         String newPayload = "y".repeat(2048);
         try {
             System.setProperty(GEN2_B_PK_PROPERTY, "true");
             System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
             System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "false");
-            System.setProperty(GEN2_DIRECT_DESTINATION_BASE_FETCH_PROPERTY, "true");
+            System.setProperty(
+                    GEN2_DIRECT_DESTINATION_BASE_FETCH_PROPERTY,
+                    Boolean.toString(directDestination));
+            System.setProperty(
+                    GEN2_STATEMENT_READ_BOUNDARY_PROPERTY,
+                    Boolean.toString(statementReadBoundary));
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -232,6 +254,7 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
                 writer.commit();
             }
         } finally {
+            restoreProperty(GEN2_STATEMENT_READ_BOUNDARY_PROPERTY, previousStatementBoundary);
             restoreProperty(
                     GEN2_DIRECT_DESTINATION_BASE_FETCH_PROPERTY, previousDirectDestination);
             restoreProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, previousProjectedRead);

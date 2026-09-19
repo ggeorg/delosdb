@@ -55,6 +55,8 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreTable.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
     private final boolean directDestinationBaseFetch;
     private final boolean baseFetchPagePrefetchRequested;
+    private final boolean statementReadBoundaryEnabled;
+    private MvccRawStoreRuntime.TableReadBoundary statementReadBoundary;
     private long[] prefetchedDirectoryRowIds;
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
@@ -89,6 +91,10 @@ final class MvccRawStoreConglomerateController
             statementSnapshotLease = null;
             statementSnapshotSequence = Long.MIN_VALUE;
         }
+        statementReadBoundaryEnabled = !forUpdate
+                && statementSnapshotLease != null
+                && Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_STATEMENT_READ_BOUNDARY_ENABLED_PROPERTY);
     }
 
     @Override
@@ -101,6 +107,10 @@ final class MvccRawStoreConglomerateController
             }
             if (readDirectoryContainer != null) {
                 readDirectoryContainer.close();
+            }
+            if (statementReadBoundary != null) {
+                statementReadBoundary.close();
+                statementReadBoundary = null;
             }
             if (statementSnapshotLease != null) {
                 statementSnapshotLease.close();
@@ -221,13 +231,12 @@ final class MvccRawStoreConglomerateController
         }
 
         MvccRawStoreTable.VisibleRow visible;
-        if (readCommittedRecheck) {
-            try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+        MvccRawStoreRuntime.TableReadBoundary operationBoundary = enterReadBoundary();
+        try {
+            if (readCommittedRecheck) {
                 visible = MvccRawStoreTable.readLockedCurrentForWrite(
                         rawTransaction, table, location, projection);
-            }
-        } else {
-            try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            } else {
                 long snapshotSequence = statementSnapshotLease != null
                         ? statementSnapshotSequence
                         : context.snapshotSequence();
@@ -267,6 +276,8 @@ final class MvccRawStoreConglomerateController
                                             rawTransaction, table, location, projection, context);
                 }
             }
+        } finally {
+            closeOperationReadBoundary(operationBoundary);
         }
         if (visible == null) {
             return false;
@@ -292,7 +303,8 @@ final class MvccRawStoreConglomerateController
             return null;
         }
         MvccRawStoreTable.BaseFetchResult result;
-        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+        MvccRawStoreRuntime.TableReadBoundary operationBoundary = enterReadBoundary();
+        try {
             long snapshotSequence = statementSnapshotLease != null
                     ? statementSnapshotSequence
                     : context.snapshotSequence();
@@ -304,6 +316,8 @@ final class MvccRawStoreConglomerateController
                     readVersionReader(),
                     destRow,
                     validColumns);
+        } finally {
+            closeOperationReadBoundary(operationBoundary);
         }
         if (!result.found()) {
             return Boolean.FALSE;
@@ -546,6 +560,23 @@ final class MvccRawStoreConglomerateController
                 row,
                 context,
                 destination);
+    }
+
+    private MvccRawStoreRuntime.TableReadBoundary enterReadBoundary() {
+        if (!statementReadBoundaryEnabled) {
+            return runtime.enterTableRead(table);
+        }
+        if (statementReadBoundary == null) {
+            statementReadBoundary = runtime.enterTableRead(table);
+        }
+        return null;
+    }
+
+    private static void closeOperationReadBoundary(
+            MvccRawStoreRuntime.TableReadBoundary operationBoundary) {
+        if (operationBoundary != null) {
+            operationBoundary.close();
+        }
     }
 
     private ContainerHandle readDirectoryContainer() throws StandardException {

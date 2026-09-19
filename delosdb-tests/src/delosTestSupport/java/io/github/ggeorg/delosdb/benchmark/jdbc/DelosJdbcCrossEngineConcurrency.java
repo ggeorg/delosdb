@@ -3475,6 +3475,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + mvccGen2SinglePassCurrentScanEnabled());
             command.add("-Ddelosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled="
                     + mvccGen2DirectDestinationBaseFetchEnabled());
+            command.add("-Ddelosdb.experimental.mvccGen2StatementReadBoundary.enabled="
+                    + mvccGen2StatementReadBoundaryEnabled());
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -3561,6 +3563,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (mvccGen2C3ReadServerEnabled()) {
             addProperty(command, "mvccGen2C3ReadServer", true);
+        }
+        if (f02ScaleSurfaceDiagnosticEnabled()) {
+            addProperty(command, "f02ScaleSurfaceDiagnostic", true);
+        }
+        if (f02EmbeddedConcurrencyDiagnosticEnabled()) {
+            addProperty(command, "f02EmbeddedConcurrencyDiagnostic", true);
         }
         if (freshRealisticTransactionFitnessEnabled()) {
             addProperty(command, "freshRealisticTransactionFitness", true);
@@ -3748,6 +3756,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add(
                             "-Ddelosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled="
                                     + mvccGen2DirectDestinationBaseFetchEnabled());
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.mvccGen2StatementReadBoundary.enabled="
+                                    + mvccGen2StatementReadBoundaryEnabled());
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3968,6 +3979,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
                 .append("MVCC direct-destination base fetch experiment: ")
                 .append(mvccGen2DirectDestinationBaseFetchEnabled()).append('\n')
+                .append("MVCC statement-lifetime read boundary experiment: ")
+                .append(mvccGen2StatementReadBoundaryEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
@@ -9520,6 +9533,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2C3UpdateServerEnabled()).append('\n')
                 .append("MVCC Gen2-C3 read server enabled: ")
                 .append(mvccGen2C3ReadServerEnabled()).append('\n')
+                .append("F02 scale-surface diagnostic: ")
+                .append(f02ScaleSurfaceDiagnosticEnabled()).append('\n')
+                .append("F02 embedded concurrency diagnostic: ")
+                .append(f02EmbeddedConcurrencyDiagnosticEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read enabled: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost enabled: ")
@@ -9530,6 +9547,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
                 .append("MVCC direct-destination base fetch enabled: ")
                 .append(mvccGen2DirectDestinationBaseFetchEnabled()).append('\n')
+                .append("MVCC statement-lifetime read boundary enabled: ")
+                .append(mvccGen2StatementReadBoundaryEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
@@ -9819,6 +9838,19 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccGen2DirectDestinationBaseFetchEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccGen2DirectDestinationBaseFetch", "false"));
+    }
+
+    private static boolean mvccGen2StatementReadBoundaryEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                PREFIX + "mvccGen2StatementReadBoundary", "false"));
+    }
+
+    private static boolean f02ScaleSurfaceDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f02ScaleSurfaceDiagnostic");
+    }
+
+    private static boolean f02EmbeddedConcurrencyDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f02EmbeddedConcurrencyDiagnostic");
     }
 
     private static boolean mvccRefreshMultiJoinStatisticsEnabled() {
@@ -10833,10 +10865,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(GEN2_C3_POSTGRESQL_UPDATE_TARGETS);
             boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+            boolean f02ScaleSurfaceDiagnostic = f02ScaleSurfaceDiagnosticEnabled()
+                    && mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
+            boolean f02EmbeddedConcurrencyDiagnostic = f02EmbeddedConcurrencyDiagnosticEnabled()
+                    && mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(RANGE_SCAN_JFR_TARGETS);
             boolean freshRealisticTransactionFitness = freshRealisticTransactionFitnessEnabled()
                     && mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
-            boolean gen2C3ReadJfr = mvccGen2C3ReadServerEnabled()
+            boolean gen2C3ReadJfr = !f02EmbeddedConcurrencyDiagnostic
+                    && mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(RANGE_SCAN_JFR_TARGETS);
             boolean gen2C3ProjectedCurrentRead = mvccGen2C3ReadServerEnabled()
                     && mvccGen2ProjectedCurrentReadEnabled()
@@ -10862,6 +10901,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2C3UpdateThroughputSentinel
                     && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ProjectedCurrentRead
+                    && !f02ScaleSurfaceDiagnostic
                     && !drdaServerPhaseDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
@@ -10897,7 +10937,52 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (gen2C3ReadFitness || gen2C3ProjectedCurrentRead) {
+            if (f02ScaleSurfaceDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_1000))) {
+                    throw new IllegalArgumentException(
+                            "F02 scale-surface diagnostic requires RANGE_SCAN_1000 only");
+                }
+                if (!clientValues().equals(List.of(1, 8))) {
+                    throw new IllegalArgumentException(
+                            "F02 scale-surface diagnostic requires clients=1,8");
+                }
+                if (!rowCounts().equals(List.of(10000, 100000))) {
+                    throw new IllegalArgumentException(
+                            "F02 scale-surface diagnostic requires rows=10000,100000");
+                }
+                if (!widthValues().equals(List.of(10))) {
+                    throw new IllegalArgumentException(
+                            "F02 scale-surface diagnostic requires width 10");
+                }
+                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F02 scale-surface diagnostic requires PRIMARY_KEY_ONLY table shape");
+                }
+            }
+            if (f02EmbeddedConcurrencyDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_1000))) {
+                    throw new IllegalArgumentException(
+                            "F02 embedded concurrency diagnostic requires RANGE_SCAN_1000 only");
+                }
+                List<Integer> embeddedConcurrencyClients = clientValues();
+                if (!embeddedConcurrencyClients.equals(List.of(1, 8))
+                        && !embeddedConcurrencyClients.equals(List.of(8))) {
+                    throw new IllegalArgumentException(
+                            "F02 embedded concurrency diagnostic requires clients=1,8 or clients=8");
+                }
+                if (!rowCounts().equals(List.of(10000))) {
+                    throw new IllegalArgumentException(
+                            "F02 embedded concurrency diagnostic requires rows=10000");
+                }
+                if (!widthValues().equals(List.of(10))) {
+                    throw new IllegalArgumentException(
+                            "F02 embedded concurrency diagnostic requires width 10");
+                }
+                if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F02 embedded concurrency diagnostic requires PRIMARY_KEY_ONLY table shape");
+                }
+            } else if (gen2C3ReadFitness || gen2C3ProjectedCurrentRead) {
                 boolean pointReadFitness = configuredWorkloads.equals(
                         List.of(Workload.PRIMARY_KEY_READ_RANDOM));
                 boolean rangeScanFitness = configuredWorkloads.equals(List.of(
@@ -11066,11 +11151,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-B throughput sentinel requires PRIMARY_KEY_ONLY INSERT table shape");
                 }
-            } else if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+            } else if (!f02ScaleSurfaceDiagnostic
+                    && !"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
                                 + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
-                                + "gen2C3UpdateThroughputSentinel=true, or Gen2-C3 read fitness");
+                                + "gen2C3UpdateThroughputSentinel=true, Gen2-C3 read fitness, "
+                                + "or the F02 scale-surface diagnostic");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);
@@ -11143,6 +11230,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
+                    && !f02EmbeddedConcurrencyDiagnostic
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
@@ -11178,7 +11266,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             if (target == null && !mvccOnlyDiagnostic && !drdaProtocolDiagnostic
-                    && !drdaServerPhaseDiagnostic && (runs < 4 || (runs & 3) != 0)) {
+                    && !drdaServerPhaseDiagnostic && !f02EmbeddedConcurrencyDiagnostic
+                    && (runs < 4 || (runs & 3) != 0)) {
                 throw new IllegalArgumentException("runs must be a multiple of 4 for orthogonal order");
             }
             if (target == null && drdaProtocolDiagnostic && runs < 2) {
@@ -11196,10 +11285,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
-                if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic) {
+                if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic) {
                     if (delosClientClasspath.isBlank()) {
                         throw new IllegalArgumentException(
-                                "Delos network client classpath is required for DRDA diagnostics");
+                                f02ScaleSurfaceDiagnostic
+                                        ? "F02 scale-surface diagnostic requires the Delos network client classpath"
+                                        : "Delos network client classpath is required for DRDA diagnostics");
                     }
                 } else if (mutationSchemaAttribution) {
                     if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()) {
@@ -11242,10 +11333,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
                             throw new IllegalArgumentException("DRDA server benchmark images are required");
                         }
-                    } else if (drdaServerPhaseDiagnostic) {
+                    } else if (drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic) {
                         if (delosServerImage.isBlank()) {
                             throw new IllegalArgumentException(
-                                    "Delos server image is required for DRDA server phase evidence");
+                                    f02ScaleSurfaceDiagnostic
+                                            ? "F02 scale-surface diagnostic requires the Delos server image"
+                                            : "Delos server image is required for DRDA server phase evidence");
                         }
                     } else if (mutationSchemaAttribution) {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {

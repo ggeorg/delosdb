@@ -1,87 +1,44 @@
-DelosDB overlay: Gen2-C3 direct-to-destination base-fetch experiment
+DelosDB overlay: canonical F02 statement-read-boundary candidate wiring
 
 Purpose:
-- Test the remaining approximately constant per-row Gen2 tax on non-covering
-  INDEX_TO_BASE_ROW range execution.
-- Remove only the intermediate visible CURRENT payload materialization:
-    CURRENT template -> cloned VisibleRow.values() -> copyRow(destination)
-  becomes:
-    CURRENT template -> destination DVDs
-  when CURRENT itself is visible.
-- Keep HISTORY fallback on the existing VisibleRow/copy path.
-
-Experimental property:
-- delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled
-- default OFF
-
-Production experiment:
-- Applies only to read-only Gen2-A1/C1/C3 base fetches with no prefetched directory.
-- Reuses the already-promoted CurrentBaseFetchDecoder and statement-lifetime resources.
-- CURRENT kind/format validation, row/version identity, lazy creator fetch,
-  lazy HISTORY metadata, physical RowLocation hint lookup and fallback lookup remain unchanged.
-- For visible non-tombstone CURRENT rows, copy only requested payload fields directly
-  from the reusable RawStore CURRENT template into caller-owned destination DVDs.
-- If a destination holder is absent, clone with forced materialization before publishing it.
-- Return only found/version metadata to the conglomerate controller.
-- HISTORY fallback continues through the existing VisibleRow ownership path.
-
-Correctness coverage:
-- Existing Gen2-C3 forced secondary-index/base-row test now enables this experiment.
-- Covers committed CURRENT, writer-own uncommitted CURRENT, foreign-reader HISTORY fallback,
-  repeatable-read history after writer commit, fresh CURRENT after snapshot end, and rollback.
-- Projected-current experiment remains explicitly OFF.
-
-Matched performance diagnostic:
-- Reuses the accepted Gen2-C3 one-client RANGE_SCAN_1000 diagnostic contract.
-- Targets: delos_heap, delos_mvcc, upstream_derby.
-- Table shape: PRIMARY_KEY_ONLY.
-- Four runs per lane.
-- Physical scan cost ON.
-- Physical RowLocation cost ON.
-- Page-prefetch and projected-current experiments OFF.
-- OFF and ON lanes differ only in direct-destination base fetch.
-- SQL semantic oracle ON.
-
-New Gradle tasks:
-- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchOffDiagnostic
-- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchOnDiagnostic
-- :delosdb-tests:runDelosGen2C3F02DirectDestinationBaseFetchABDiagnostic
-
-What this does NOT change:
-- Default production behavior remains unchanged.
-- No optimizer costing change.
-- No SQL/index maintenance change.
-- No update/read-committed recheck or write-version path change.
-- No RowLocation format change.
-- No TABLE_SCAN architecture change.
-- No page-prefetch, batching or ORDER BY experiment.
-- No RawStore WAL/undo/recovery or durable-format change.
-- Indexed DELETE remains blocked.
-- No benchmark threshold change.
-
-Pre-delivery verification:
-- Changed production storage sources type-compiled successfully under available JDK 21
-  using a flattened current-source dependency tree.
-- Changed benchmark-support Java type-compiled successfully.
-- Changed correctness test type-compiled with a minimal local JUnit 3 compatibility stub;
-  authoritative verification remains the user's JDK 25 Gradle build.
-- Repository-integrity inventory against the modified current tree:
-    duplicateProductionMethodGroups=43 (baseline 43)
-    duplicateProductionMethods=103 (baseline 103)
-    estimatedDuplicateProductionLines=953 (baseline 953)
-    productionMethods100Plus=442 (baseline 442)
-    productionMethodsComplexity20Plus=168 (baseline 168)
-    productionGenericCatches=410 (baseline 410)
-    parseErrors=0
-    compilerAuthorityViolations=0
-    compilerAuthorityCompromiseCandidates=0
-- No production monotonic integrity metric exceeds its existing baseline.
-- ZIP integrity and duplicate-entry checks performed after packaging.
+- Exercise the JFR-proven statement-lifetime TableReadBoundary candidate in the existing
+  canonical SERVER/8-client F02 range-scan fitness/sentinel.
+- Reuse the already-registered canonical task and validation contract.
+- Do not add a new benchmark mode or weaken any existing validator.
 
 Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 - delosdb-tests/build.gradle
+
+Harness behavior:
+- runDelosGen2C3PrimaryKeyRangeScanFitness now reads:
+    -Pdelosdb.benchmark.mvccGen2StatementReadBoundary=true|false
+- It forwards that value through the existing benchmark property:
+    delosdb.benchmark.crossEngineConcurrency.mvccGen2StatementReadBoundary
+- Default remains false unless explicitly enabled.
+
+Canonical F02 shape remains unchanged:
+- SERVER / 8 clients
+- 100,000 rows
+- 8 runs
+- six-engine product matrix
+- RANGE_SCAN_INDEX_ONLY_1000
+- RANGE_SCAN_100
+- RANGE_SCAN_1000
+- RANGE_SCAN_FULL
+- semantic oracle ON
+- physical RowLocation costing ON
+
+Production behavior:
+- No production source changes in this overlay.
+- The statement-read-boundary experiment remains feature-gated/default OFF.
+- No SQL, workload, threshold, optimizer, storage-format, WAL, undo or recovery changes.
+
+Evidence motivating this gate:
+- Embedded 8c RANGE_SCAN_1000 A/B:
+    Gen2 OFF 337.19 tx/s
+    Gen2 ON  547.83 tx/s
+    gain     +62.47%
+    Gen2/Heap 65.96% -> 103.28%
+    Gen2/upstream Derby 67.40% -> 102.44%
+- All A/B engines remained below 15% IQR/median.
+- Semantic fingerprints matched.

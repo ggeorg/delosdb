@@ -44,6 +44,8 @@ final class MvccRawStoreFormat {
             "delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled";
     static final String GEN2_DIRECT_DESTINATION_BASE_FETCH_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2DirectDestinationBaseFetch.enabled";
+    static final String GEN2_STATEMENT_READ_BOUNDARY_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2StatementReadBoundary.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;
