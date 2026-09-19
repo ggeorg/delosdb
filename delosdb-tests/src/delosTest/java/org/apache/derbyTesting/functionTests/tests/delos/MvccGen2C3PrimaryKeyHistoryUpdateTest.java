@@ -24,8 +24,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String GEN2_PROJECTED_CURRENT_READ_PROPERTY =
             "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled";
-    private static final String GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY =
-            "delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled";
 
     public void testUnchangedPrimaryKeyUpdateHistoryRollbackAndReopen() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
@@ -159,11 +157,10 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
         }
     }
 
-    public void testConsolidatedBaseFetchPreservesCurrentHistoryAndRollback() throws Exception {
+    public void testBaseFetchPreservesCurrentHistoryAndRollback() throws Exception {
         String previousPk = System.getProperty(GEN2_B_PK_PROPERTY);
         String previousHistory = System.getProperty(GEN2_C1_HISTORY_PROPERTY);
         String previousProjectedRead = System.getProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY);
-        String previousBaseFetch = System.getProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY);
         String database = databaseName("mvcc-gen2-c3-consolidated-base-fetch");
         String oldPayload = "x".repeat(2048);
         String newPayload = "y".repeat(2048);
@@ -171,7 +168,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
             System.setProperty(GEN2_B_PK_PROPERTY, "true");
             System.setProperty(GEN2_C1_HISTORY_PROPERTY, "true");
             System.setProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, "false");
-            System.setProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY, "true");
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
                 executeUpdate(setup,
@@ -231,7 +227,6 @@ public final class MvccGen2C3PrimaryKeyHistoryUpdateTest extends MvccSqlTestSupp
                 writer.commit();
             }
         } finally {
-            restoreProperty(GEN2_CONSOLIDATED_BASE_FETCH_PROPERTY, previousBaseFetch);
             restoreProperty(GEN2_PROJECTED_CURRENT_READ_PROPERTY, previousProjectedRead);
             restoreProperty(GEN2_B_PK_PROPERTY, previousPk);
             restoreProperty(GEN2_C1_HISTORY_PROPERTY, previousHistory);

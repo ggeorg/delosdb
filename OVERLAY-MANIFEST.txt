@@ -1,27 +1,72 @@
-DelosDB overlay: canonical F03 consolidated base-fetch candidate wiring
+DelosDB overlay: promote consolidated Gen2 non-covering base fetch
 
-Purpose:
-- Exercise the validated consolidated non-covering base-fetch candidate in the existing
-  canonical SERVER/8-client F03 projection fitness task.
-- Keep the canonical task default unchanged unless explicitly enabled with:
-  -Pdelosdb.benchmark.mvccGen2ConsolidatedBaseFetch=true
-
-Harness changes:
-- Forward benchmark property mvccGen2ConsolidatedBaseFetch into:
-  delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled
-  for embedded MVCC workers and the Delos MVCC DRDA server.
-- Record the candidate state in server-container-manifest.txt and
-  cross-engine-concurrency-summary.txt.
-- Allow runDelosGen2C3ProjectionFitness / Sentinel to opt into the candidate via a Gradle property.
+Decision:
+- Promote the consolidated read-only Gen2 INDEX_TO_BASE_ROW/base-row fetch decoder.
+- Remove the experiment selector/property and experiment-only benchmark plumbing.
+- Keep update/write base fetch semantics unchanged.
+- Keep the rejected page-local base-fetch prefetch experiment separate and default OFF.
 
 Production behavior:
-- No production storage/optimizer source changed by this overlay.
-- Candidate remains default OFF.
-- No benchmark SQL, workload matrix, dispersion threshold, semantic oracle,
-  RowLocation costing, TABLE_SCAN behavior, RawStore persistence, WAL, undo or recovery changes.
+- Read-only Gen2-A1/C1/C3 base fetches with no prefetched directory always use
+  CurrentBaseFetchDecoder.
+- The decoder retains:
+    physical RowLocation page/slot lookup first
+    statement-lifetime CURRENT template reuse
+    projection-aware CURRENT payload fetch
+    CURRENT kind/format validation
+    row/version identity
+    lazy creator transaction fetch only for UNCOMMITTED_SEQUENCE
+    lazy predecessor/hint fetch only when HISTORY fallback is required
+    statement-lifetime CURRENT container and version-reader reuse
+    VisibleRow ownership/cloning semantics
+- Update/read-committed recheck and write-version paths remain unchanged.
+- Explicit base-fetch page-prefetch diagnostics remain separate and bypass the promoted decoder
+  when a prefetched directory is supplied.
 
-Evidence basis for this gate:
-- Phase-2K covered negative control: 0.048489 -> 0.049859 ms (~2.8% noise).
-- Phase-2K non-covering two-column: 0.317247 -> 0.237334 ms (-25.2%, 1.34x faster).
-- Phase-2K non-covering full-row: 0.321699 -> 0.298399 ms (-7.2%, 1.08x faster).
-- Both A/B lanes VALID; worst governing dispersion 4.68%.
+Cleanup:
+- Remove delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled.
+- Remove experiment-only Phase-2K OFF/ON Gradle tasks.
+- Remove canonical F03 opt-in Gradle property.
+- Remove benchmark worker/server forwarding and evidence markers for the retired experiment.
+- Correctness coverage now validates the promoted default without setting a feature property.
+
+Evidence:
+- Matched Phase-2K A/B, both lanes VALID:
+    covered control       0.048489 -> 0.049859 ms (neutral)
+    two-column base fetch 0.317247 -> 0.237334 ms (-25.2%, 1.34x faster)
+    full-row base fetch   0.321699 -> 0.298399 ms (-7.2%, 1.08x faster)
+- Canonical SERVER/8c candidate run #1 completed the full F03 sentinel GREEN.
+- Preserved SERVER/8c candidate run #2 reproduced the same causal shape:
+    covered               7374.04 -> 7356.84 q/s (-0.2%)
+    two-column            3372.02 -> 4106.98 q/s (+21.8%)
+    full-row               494.66 -> 521.09 q/s (+5.3%)
+    two-column PG ratio     54.55% -> 66.64%
+- Run #2 is not promoted as a new canonical score because broad orthogonalized run-slot
+  environmental collapses violate the >20% run-range rule.
+- Semantic fingerprints matched across all engines/runs/workloads in the preserved report.
+- Repository integrity was GREEN after shared CURRENT-read helper deduplication.
+
+Unchanged:
+- RowLocation costing.
+- Materialized TABLE_SCAN CURRENT decoder.
+- Projected-current experiment/default.
+- Streaming experiments.
+- SQL/index maintenance.
+- Indexed DELETE blocker.
+- RawStore WAL, undo, recovery and durable formats.
+- Benchmark thresholds and semantic-oracle rules.
+
+Changed files:
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle
+
+Pre-delivery checks:
+- No retired consolidated-base-fetch property/task/marker references remain in the changed
+  production/test/benchmark files.
+- ZIP integrity and duplicate-entry checks are performed during packaging.
+- Full Gradle/JDK25 verification is not executable in this environment because Gradle 9.5.1
+  is not cached and outbound distribution download is unavailable; the user's JDK25 Gradle
+  run remains authoritative.

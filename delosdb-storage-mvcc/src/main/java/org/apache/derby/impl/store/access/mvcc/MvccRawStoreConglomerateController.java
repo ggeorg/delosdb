@@ -54,7 +54,6 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreVersionRows.FetchProjection readCurrentBaseFetchProjection;
     private MvccRawStoreTable.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
     private final boolean baseFetchPagePrefetchRequested;
-    private final boolean consolidatedBaseFetchRequested;
     private long[] prefetchedDirectoryRowIds;
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
@@ -75,11 +74,6 @@ final class MvccRawStoreConglomerateController
         this.forUpdate = forUpdate;
         this.baseFetchPagePrefetchRequested =
                 !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
-        this.consolidatedBaseFetchRequested =
-                !forUpdate
-                        && table.gen2A1()
-                        && Boolean.getBoolean(
-                                MvccRawStoreFormat.GEN2_CONSOLIDATED_BASE_FETCH_ENABLED_PROPERTY);
         // IndexRowToBaseRowResultSet opens one base ConglomerateController for
         // the SQL statement. Cursor-stability row locking identifies the
         // READ COMMITTED base-fetch path, which must observe a fresh committed
@@ -223,7 +217,7 @@ final class MvccRawStoreConglomerateController
                 long snapshotSequence = statementSnapshotLease != null
                         ? statementSnapshotSequence
                         : context.snapshotSequence();
-                if (consolidatedBaseFetchRequested && prefetchedDirectory == null) {
+                if (!forUpdate && table.gen2A1() && prefetchedDirectory == null) {
                     visible = currentBaseFetchDecoder(projection).readVisibleAt(
                             location,
                             snapshotSequence,
