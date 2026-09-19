@@ -1,72 +1,27 @@
-DelosDB overlay: Gen2-C3 consolidated non-covering base-fetch experiment
+DelosDB overlay: canonical F03 consolidated base-fetch candidate wiring
 
 Purpose:
-- Test the remaining F02/F03 non-covering INDEX_TO_BASE_ROW runtime tax.
-- Do not change the already-promoted materialized TABLE_SCAN CURRENT decoder.
-- Do not restore rejected page-local prefetch, bounded candidate batching, cache-size tuning,
-  ORDER BY removal, or projected-current-alone experiments.
+- Exercise the validated consolidated non-covering base-fetch candidate in the existing
+  canonical SERVER/8-client F03 projection fitness task.
+- Keep the canonical task default unchanged unless explicitly enabled with:
+  -Pdelosdb.benchmark.mvccGen2ConsolidatedBaseFetch=true
 
-Experimental property:
-- delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled
-- default OFF
+Harness changes:
+- Forward benchmark property mvccGen2ConsolidatedBaseFetch into:
+  delosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled
+  for embedded MVCC workers and the Delos MVCC DRDA server.
+- Record the candidate state in server-container-manifest.txt and
+  cross-engine-concurrency-summary.txt.
+- Allow runDelosGen2C3ProjectionFitness / Sentinel to opt into the candidate via a Gradle property.
 
-Candidate read-only Gen2 base-fetch path:
-- Reuse one CURRENT RawStore template per base ConglomerateController / FetchProjection.
-- Use the SQL valid-column FetchProjection directly for CURRENT payload fields.
-- Always fetch/validate CURRENT kind and format tags.
-- Always fetch row/version identity required by VisibleRow and RowLocation semantics.
-- Fetch creator transaction id only when beginSequence == UNCOMMITTED_SEQUENCE.
-- Fetch predecessor id/page/record only when CURRENT is not visible and HISTORY fallback is needed.
-- Reuse the statement-lifetime CURRENT container and version reader already owned by the controller.
-- Preserve locator-hint-first lookup and fallback container scan semantics.
-- Preserve VisibleRow cloning/copy ownership; direct-to-destination materialization is intentionally
-  deferred so this remains the smallest causal experiment.
+Production behavior:
+- No production storage/optimizer source changed by this overlay.
+- Candidate remains default OFF.
+- No benchmark SQL, workload matrix, dispersion threshold, semantic oracle,
+  RowLocation costing, TABLE_SCAN behavior, RawStore persistence, WAL, undo or recovery changes.
 
-Correctness:
-- Adds a Gen2-C3 secondary-index -> INDEX_TO_BASE_ROW test with projected narrow reads.
-- Covers committed CURRENT, writer-own uncommitted CURRENT, foreign-reader HISTORY fallback,
-  repeatable-read history after writer commit, fresh CURRENT after snapshot end, and rollback.
-- The old projected-current property is explicitly OFF in this test.
-
-Performance diagnostic:
-- Reuses the existing matched Phase-2K F03 decomposition.
-- Explicitly requires Gen2-B1/C1/C2 and rejects projected-current/page-prefetch contamination.
-- A/B lanes differ only in consolidated base fetch OFF vs ON.
-- Covered projection is the negative control.
-- Two-column projection exercises narrow non-covering base fetch.
-- Full-row projection exercises non-covering base fetch without a projection-width advantage.
-- The Phase-2K summary records consolidatedBaseFetch=true|false.
-
-New Gradle tasks:
-- :delosdb-tests:runDelosGen2C3F03ConsolidatedBaseFetchOffDiagnostic
-- :delosdb-tests:runDelosGen2C3F03ConsolidatedBaseFetchOnDiagnostic
-- :delosdb-tests:runDelosGen2C3F03ConsolidatedBaseFetchABDiagnostic
-
-What this does NOT change:
-- Default production behavior remains unchanged because the feature flag defaults OFF.
-- No optimizer costing changes.
-- No RowLocation format changes.
-- No SQL/index maintenance changes.
-- No streaming changes.
-- No projected-current default changes.
-- No RawStore WAL/undo/recovery or durable-format changes.
-- No benchmark thresholds or semantic-oracle rules change.
-- Indexed DELETE remains blocked.
-
-Pre-delivery checks:
-- Changed production sources compile successfully together with a manually assembled sourcepath
-  under the available JDK 21; this validates Java syntax/type integration for the affected storage
-  classes. The authoritative repository build remains the user's JDK 25 Gradle build.
-- New production methods are under the repository's 100-line method threshold.
-- No new broad catch was added.
-- No trailing whitespace in changed files.
-- Gradle task names were checked against the current build.gradle and are unique.
-- ZIP integrity and duplicate-entry checks performed after packaging.
-
-Changed-file SHA-256:
-220bb777208fa14a9994ae22832e7ba8a06cdbee8996fc66b7488578e2d4d5e5  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-51615335e0edc3525e2633f910b881f2f8e557c0819fb0cf5260b60f0ac5ba91  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
-4fc2a414fe0f0d0f896d851b2ad83ace13371ad7696764702c2b26fa5c54036a  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-f05149e3ece542d1f85dcf16c800b46b056c2fba2d9cc30efae72cd609c47f95  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccGen2C3PrimaryKeyHistoryUpdateTest.java
-79aa3f7e11aa6b11948f595ed8bc0944a0497a1b9f159d66f7ed7f1071c6ae56  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-08f8c0ba82ba80723fdb6e8a710292de15725a95bc60980e1c380b6ad66d4a1a  delosdb-tests/build.gradle
+Evidence basis for this gate:
+- Phase-2K covered negative control: 0.048489 -> 0.049859 ms (~2.8% noise).
+- Phase-2K non-covering two-column: 0.317247 -> 0.237334 ms (-25.2%, 1.34x faster).
+- Phase-2K non-covering full-row: 0.321699 -> 0.298399 ms (-7.2%, 1.08x faster).
+- Both A/B lanes VALID; worst governing dispersion 4.68%.

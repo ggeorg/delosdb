@@ -3476,6 +3476,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     + mvccPhysicalRowLocationCostEnabled());
             command.add("-Ddelosdb.experimental.mvccGen2SinglePassCurrentScan.enabled="
                     + mvccGen2SinglePassCurrentScanEnabled());
+            command.add("-Ddelosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled="
+                    + mvccGen2ConsolidatedBaseFetchEnabled());
             String slots = System.getProperty(
                     PREFIX + "mvccCurrentRowReadCacheSlots", "").trim();
             if (!slots.isEmpty()) {
@@ -3746,6 +3748,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + mvccPhysicalRowLocationCostEnabled());
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2SinglePassCurrentScan.enabled="
                             + mvccGen2SinglePassCurrentScanEnabled());
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2ConsolidatedBaseFetch.enabled="
+                            + mvccGen2ConsolidatedBaseFetchEnabled());
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
@@ -3964,6 +3968,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC single-pass CURRENT scan experiment: ")
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
+                .append("MVCC consolidated base fetch experiment: ")
+                .append(mvccGen2ConsolidatedBaseFetchEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
@@ -9524,6 +9530,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
                 .append("MVCC single-pass CURRENT scan enabled: ")
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
+                .append("MVCC consolidated base fetch enabled: ")
+                .append(mvccGen2ConsolidatedBaseFetchEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
@@ -9808,6 +9816,11 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccGen2SinglePassCurrentScanEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccGen2SinglePassCurrentScan", "false"));
+    }
+
+    private static boolean mvccGen2ConsolidatedBaseFetchEnabled() {
+        return Boolean.parseBoolean(System.getProperty(
+                PREFIX + "mvccGen2ConsolidatedBaseFetch", "false"));
     }
 
     private static boolean mvccRefreshMultiJoinStatisticsEnabled() {
