@@ -56,12 +56,14 @@ final class DRDAServerPhaseEvidence {
     private long openExecuteNanos;
     private long openMetadataNanos;
     private long openQueryDataNanos;
+    private long openRowAdvanceNanos;
     private long openSendNanos;
     private long openTotalNanos;
 
     private long continueParseNanos;
     private long continueMetadataNanos;
     private long continueQueryDataNanos;
+    private long continueRowAdvanceNanos;
     private long continueSendNanos;
     private long continueTotalNanos;
 
@@ -143,6 +145,18 @@ final class DRDAServerPhaseEvidence {
         }
     }
 
+    void recordRowAdvance(long started) {
+        long elapsed = elapsed(started);
+        if (elapsed == 0L) {
+            return;
+        }
+        if (currentCommand == CodePoint.OPNQRY) {
+            openRowAdvanceNanos += elapsed;
+        } else if (currentCommand == CodePoint.CNTQRY) {
+            continueRowAdvanceNanos += elapsed;
+        }
+    }
+
     void recordSend(long started) {
         long elapsed = elapsed(started);
         if (elapsed == 0L) {
@@ -211,11 +225,13 @@ final class DRDAServerPhaseEvidence {
                 + "|openExecuteNanos=" + openExecuteNanos
                 + "|openMetadataNanos=" + openMetadataNanos
                 + "|openQueryDataNanos=" + openQueryDataNanos
+                + "|openRowAdvanceNanos=" + openRowAdvanceNanos
                 + "|openSendNanos=" + openSendNanos
                 + "|openTotalNanos=" + openTotalNanos
                 + "|continueParseNanos=" + continueParseNanos
                 + "|continueMetadataNanos=" + continueMetadataNanos
                 + "|continueQueryDataNanos=" + continueQueryDataNanos
+                + "|continueRowAdvanceNanos=" + continueRowAdvanceNanos
                 + "|continueSendNanos=" + continueSendNanos
                 + "|continueTotalNanos=" + continueTotalNanos);
         System.out.flush();

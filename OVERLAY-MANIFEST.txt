@@ -1,17 +1,21 @@
-DelosDB Gen2-C3 Phase 2W F04 DRDA server-phase diagnostic overlay
+DelosDB Gen2-C3 F04 QRYDTA row-advance decomposition overlay
 
 Purpose:
-- Preserve the current promoted Gen2 read architecture and F04 SQL.
-- Capture Delos Heap/MVCC Network Server command phases for JOIN_INDEXED_1TO1 and JOIN_INDEXED_FANOUT.
-- Measure eight client connections with a fixed 20-query warmup and 20-query capture window per connection.
-- Separate server execute time from QRYDTA construction, send time, and CNTQRY continuation work.
-- Preserve SQL semantic-oracle validation and exact expected result-row counts.
+- extend the existing F04 DRDA server-phase diagnostic only
+- split QRYDTA time into aggregate ResultSet row-advance time and residual QRYDTA work
+- distinguish engine row production from JDBC getter / DRDA encoding work
+- preserve canonical F04 SQL and all production execution behavior when diagnostics are disabled
 
 Changed files:
-- delosdb-tests/build.gradle
+- delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAServerPhaseEvidence.java
+- delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle
 
-Production behavior changed: no
-Canonical benchmark thresholds changed: no
-Canonical F04 benchmark rerun required: no
-Existing historical diagnostics removed or weakened: no
+Diagnostic task:
+- :delosdb-tests:runDelosGen2C3F04DrdaServerPhaseDiagnostic
+
+No benchmark threshold changes.
+No canonical F04 rerun.
+No MVCC/Heap/optimizer/join behavior changes.
+No WAL/recovery/durable-format changes.

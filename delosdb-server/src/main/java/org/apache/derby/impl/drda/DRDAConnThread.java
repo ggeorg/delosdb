@@ -7406,10 +7406,15 @@ class DRDAConnThread extends Thread {
         if (rs != null)
         {
             numCols = stmt.getNumRsCols();
+            long rowAdvanceStarted = serverPhaseEvidence == null
+                    ? 0L : serverPhaseEvidence.startPhase();
             if (stmt.isScrollable()) {
                 hasdata = positionCursor(stmt, rs);
             } else {
                 hasdata = rs.next();
+            }
+            if (serverPhaseEvidence != null) {
+                serverPhaseEvidence.recordRowAdvance(rowAdvanceStarted);
             }
         }
         else    // it's for a CallableStatement

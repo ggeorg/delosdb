@@ -10813,11 +10813,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                             parseServerEvidenceLong(values, "openExecuteNanos"),
                             parseServerEvidenceLong(values, "openMetadataNanos"),
                             parseServerEvidenceLong(values, "openQueryDataNanos"),
+                            parseServerEvidenceLong(values, "openRowAdvanceNanos"),
                             parseServerEvidenceLong(values, "openSendNanos"),
                             parseServerEvidenceLong(values, "openTotalNanos"),
                             parseServerEvidenceLong(values, "continueParseNanos"),
                             parseServerEvidenceLong(values, "continueMetadataNanos"),
                             parseServerEvidenceLong(values, "continueQueryDataNanos"),
+                            parseServerEvidenceLong(values, "continueRowAdvanceNanos"),
                             parseServerEvidenceLong(values, "continueSendNanos"),
                             parseServerEvidenceLong(values, "continueTotalNanos")));
                 }
@@ -10951,8 +10953,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (value.openRows() <= 0L || value.openTotalNanos() <= 0L
                     || value.openExecuteNanos() <= 0L
-                    || value.openQueryDataNanos() <= 0L || value.openSendNanos() <= 0L) {
+                    || value.openQueryDataNanos() <= 0L || value.openRowAdvanceNanos() <= 0L
+                    || value.openSendNanos() <= 0L) {
                 throw new IllegalStateException("Missing F04 OPNQRY phase evidence: " + value);
+            }
+            if (value.openRowAdvanceNanos() > value.openQueryDataNanos()
+                    || value.continueRowAdvanceNanos() > value.continueQueryDataNanos()) {
+                throw new IllegalStateException("F04 row-advance timing exceeds QRYDTA timing: " + value);
             }
             if (value.continueQueries() > 0L
                     && (value.continueRows() <= 0L || value.continueTotalNanos() <= 0L
@@ -11069,19 +11076,21 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .thenComparingInt(DrdaServerPhaseEvidence::run));
         String header = "target,workload,run,connection,openQueries,continueQueries,resultColumns,"
                 + "openRows,continueRows,openParseNanos,openExecuteNanos,openMetadataNanos,"
-                + "openQueryDataNanos,openSendNanos,openResidualNanos,openTotalNanos,"
-                + "continueParseNanos,continueMetadataNanos,continueQueryDataNanos,continueSendNanos,"
-                + "continueResidualNanos,continueTotalNanos,averageOpenTotalMicros,"
-                + "averageOpenExecuteMicros,averageOpenQueryDataMicros,averageOpenSendMicros,"
+                + "openQueryDataNanos,openRowAdvanceNanos,openSendNanos,openResidualNanos,openTotalNanos,"
+                + "continueParseNanos,continueMetadataNanos,continueQueryDataNanos,continueRowAdvanceNanos,"
+                + "continueSendNanos,continueResidualNanos,continueTotalNanos,averageOpenTotalMicros,"
+                + "averageOpenExecuteMicros,averageOpenQueryDataMicros,averageOpenRowAdvanceMicros,"
+                + "averageOpenQueryDataResidualMicros,averageOpenSendMicros,"
                 + "openExecuteShare,openQueryDataShare,openSendShare,averageContinueTotalMicros,"
-                + "averageContinueQueryDataMicros,averageContinueSendMicros,continueQueryDataShare,"
+                + "averageContinueQueryDataMicros,averageContinueRowAdvanceMicros,"
+                + "averageContinueQueryDataResidualMicros,averageContinueSendMicros,continueQueryDataShare,"
                 + "continueSendShare";
         StringBuilder csv = new StringBuilder(header).append('\n');
         StringBuilder text = new StringBuilder()
                 .append("DelosDB Phase-1 DRDA server phase evidence\n")
                 .append("=========================================\n\n")
                 .append("Authority: Delos Network Server command processing for measured query ordinals 21-40.\n")
-                .append("Granularity: command-sized phases only; no per-row or per-column timers.\n")
+                .append("Granularity: command phases plus aggregate ResultSet row-advance timing; no per-column timers.\n")
                 .append("Evidence rows: ").append(sorted.size()).append("\n\n");
         for (DrdaServerPhaseEvidence value : sorted) {
             csv.append(value.toCsv()).append('\n');
@@ -11090,6 +11099,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     .append(" openTotalUs=").append(format(value.averageOpenTotalMicros()))
                     .append(" executeUs=").append(format(value.averageOpenExecuteMicros()))
                     .append(" qrydtaUs=").append(format(value.averageOpenQueryDataMicros()))
+                    .append(" rowAdvanceUs=").append(format(value.averageOpenRowAdvanceMicros()))
+                    .append(" qrydtaResidualUs=").append(format(value.averageOpenQueryDataResidualMicros()))
                     .append(" sendUs=").append(format(value.averageOpenSendMicros()))
                     .append(" qrydtaShare=").append(format(value.openQueryDataShare()))
                     .append(" continueTotalUs=").append(format(value.averageContinueTotalMicros()))
@@ -11114,7 +11125,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         Map<String, long[]> totals = new LinkedHashMap<>();
         for (DrdaServerPhaseEvidence value : evidence) {
             String key = value.target() + '|' + value.workload() + '|' + value.run();
-            long[] total = totals.computeIfAbsent(key, ignored -> new long[15]);
+            long[] total = totals.computeIfAbsent(key, ignored -> new long[17]);
             total[0]++;
             total[1] += value.openQueries();
             total[2] += value.continueQueries();
@@ -11123,26 +11134,30 @@ public final class DelosJdbcCrossEngineConcurrency {
             total[5] += value.openExecuteNanos();
             total[6] += value.openMetadataNanos();
             total[7] += value.openQueryDataNanos();
-            total[8] += value.openSendNanos();
-            total[9] += value.openTotalNanos();
-            total[10] += value.continueParseNanos();
-            total[11] += value.continueMetadataNanos();
-            total[12] += value.continueQueryDataNanos();
-            total[13] += value.continueSendNanos();
-            total[14] += value.continueTotalNanos();
+            total[8] += value.openRowAdvanceNanos();
+            total[9] += value.openSendNanos();
+            total[10] += value.openTotalNanos();
+            total[11] += value.continueParseNanos();
+            total[12] += value.continueMetadataNanos();
+            total[13] += value.continueQueryDataNanos();
+            total[14] += value.continueRowAdvanceNanos();
+            total[15] += value.continueSendNanos();
+            total[16] += value.continueTotalNanos();
         }
 
         String header = "target,workload,run,connections,openQueries,continueQueries,resultRows,"
                 + "averageOpenTotalMicros,averageOpenParseMicros,averageOpenExecuteMicros,"
-                + "averageOpenMetadataMicros,averageOpenQueryDataMicros,averageOpenSendMicros,"
+                + "averageOpenMetadataMicros,averageOpenQueryDataMicros,averageOpenRowAdvanceMicros,"
+                + "averageOpenQueryDataResidualMicros,averageOpenSendMicros,"
                 + "openParseShare,openExecuteShare,openMetadataShare,openQueryDataShare,openSendShare,"
                 + "averageContinueTotalMicros,averageContinueParseMicros,averageContinueMetadataMicros,"
-                + "averageContinueQueryDataMicros,averageContinueSendMicros,"
+                + "averageContinueQueryDataMicros,averageContinueRowAdvanceMicros,"
+                + "averageContinueQueryDataResidualMicros,averageContinueSendMicros,"
                 + "continueParseShare,continueMetadataShare,continueQueryDataShare,continueSendShare";
         StringBuilder csv = new StringBuilder(header).append('\n');
         StringBuilder text = new StringBuilder()
-                .append("DelosDB Phase-2W F04 DRDA server-phase aggregate\n")
-                .append("================================================\n\n")
+                .append("DelosDB Phase-2X F04 QRYDTA row-advance decomposition\n")
+                .append("=====================================================\n\n")
                 .append("diagnosticOnly=true\n")
                 .append("workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT\n")
                 .append("clients=").append(options.clients()).append('\n')
@@ -11155,45 +11170,48 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         for (Map.Entry<String, long[]> entry : totals.entrySet()) {
             String[] parts = entry.getKey().split("\\|");
-            String target = parts[0];
-            String workload = parts[1];
-            int run = Integer.parseInt(parts[2]);
             long[] total = entry.getValue();
             long openQueries = total[1];
             long continueQueries = total[2];
-            csv.append(target).append(',').append(workload).append(',').append(run).append(',')
+            long openQueryResidual = Math.max(0L, total[7] - total[8]);
+            long continueQueryResidual = Math.max(0L, total[13] - total[14]);
+            csv.append(parts[0]).append(',').append(parts[1]).append(',').append(parts[2]).append(',')
                     .append(total[0]).append(',').append(openQueries).append(',')
                     .append(continueQueries).append(',').append(total[3]).append(',')
-                    .append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[10], openQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[4], openQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[5], openQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[6], openQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[7], openQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[8], openQueries))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[4], total[9]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[5], total[9]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[6], total[9]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[7], total[9]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[8], total[9]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.micros(total[14], continueQueries))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.micros(total[10], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(openQueryResidual, openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[4], total[10]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[5], total[10]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[6], total[10]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[7], total[10]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[9], total[10]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[16], continueQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[11], continueQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[12], continueQueries))).append(',')
                     .append(format(DrdaServerPhaseEvidence.micros(total[13], continueQueries))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[10], total[14]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[11], total[14]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[12], total[14]))).append(',')
-                    .append(format(DrdaServerPhaseEvidence.share(total[13], total[14]))).append('\n');
+                    .append(format(DrdaServerPhaseEvidence.micros(total[14], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(continueQueryResidual, continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[15], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[11], total[16]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[12], total[16]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[13], total[16]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[15], total[16]))).append('\n');
 
-            text.append(target).append(' ').append(workload).append(" run=").append(run)
+            text.append(parts[0]).append(' ').append(parts[1]).append(" run=").append(parts[2])
                     .append(" connections=").append(total[0])
-                    .append(" openTotalUs=").append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries)))
+                    .append(" openTotalUs=").append(format(DrdaServerPhaseEvidence.micros(total[10], openQueries)))
                     .append(" executeUs=").append(format(DrdaServerPhaseEvidence.micros(total[5], openQueries)))
                     .append(" qrydtaUs=").append(format(DrdaServerPhaseEvidence.micros(total[7], openQueries)))
-                    .append(" sendUs=").append(format(DrdaServerPhaseEvidence.micros(total[8], openQueries)))
-                    .append(" executeShare=").append(format(DrdaServerPhaseEvidence.share(total[5], total[9])))
-                    .append(" qrydtaShare=").append(format(DrdaServerPhaseEvidence.share(total[7], total[9])))
-                    .append(" sendShare=").append(format(DrdaServerPhaseEvidence.share(total[8], total[9])))
+                    .append(" rowAdvanceUs=").append(format(DrdaServerPhaseEvidence.micros(total[8], openQueries)))
+                    .append(" qrydtaResidualUs=")
+                    .append(format(DrdaServerPhaseEvidence.micros(openQueryResidual, openQueries)))
+                    .append(" sendUs=").append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries)))
                     .append('\n');
         }
 
@@ -12466,11 +12484,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             long openExecuteNanos,
             long openMetadataNanos,
             long openQueryDataNanos,
+            long openRowAdvanceNanos,
             long openSendNanos,
             long openTotalNanos,
             long continueParseNanos,
             long continueMetadataNanos,
             long continueQueryDataNanos,
+            long continueRowAdvanceNanos,
             long continueSendNanos,
             long continueTotalNanos) {
 
@@ -12504,6 +12524,14 @@ public final class DelosJdbcCrossEngineConcurrency {
             return micros(openQueryDataNanos, openQueries);
         }
 
+        double averageOpenRowAdvanceMicros() {
+            return micros(openRowAdvanceNanos, openQueries);
+        }
+
+        double averageOpenQueryDataResidualMicros() {
+            return micros(Math.max(0L, openQueryDataNanos - openRowAdvanceNanos), openQueries);
+        }
+
         double averageOpenSendMicros() {
             return micros(openSendNanos, openQueries);
         }
@@ -12514,6 +12542,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         double averageContinueQueryDataMicros() {
             return micros(continueQueryDataNanos, continueQueries);
+        }
+
+        double averageContinueRowAdvanceMicros() {
+            return micros(continueRowAdvanceNanos, continueQueries);
+        }
+
+        double averageContinueQueryDataResidualMicros() {
+            return micros(Math.max(0L, continueQueryDataNanos - continueRowAdvanceNanos), continueQueries);
         }
 
         double averageContinueSendMicros() {
@@ -12547,16 +12583,21 @@ public final class DelosJdbcCrossEngineConcurrency {
                     Integer.toString(resultColumns), Long.toString(openRows), Long.toString(continueRows),
                     Long.toString(openParseNanos), Long.toString(openExecuteNanos),
                     Long.toString(openMetadataNanos), Long.toString(openQueryDataNanos),
-                    Long.toString(openSendNanos), Long.toString(openResidualNanos()),
+                    Long.toString(openRowAdvanceNanos), Long.toString(openSendNanos),
+                    Long.toString(openResidualNanos()),
                     Long.toString(openTotalNanos), Long.toString(continueParseNanos),
                     Long.toString(continueMetadataNanos), Long.toString(continueQueryDataNanos),
-                    Long.toString(continueSendNanos), Long.toString(continueResidualNanos()),
+                    Long.toString(continueRowAdvanceNanos), Long.toString(continueSendNanos),
+                    Long.toString(continueResidualNanos()),
                     Long.toString(continueTotalNanos), format(averageOpenTotalMicros()),
                     format(averageOpenExecuteMicros()), format(averageOpenQueryDataMicros()),
+                    format(averageOpenRowAdvanceMicros()), format(averageOpenQueryDataResidualMicros()),
                     format(averageOpenSendMicros()), format(openExecuteShare()),
                     format(openQueryDataShare()), format(openSendShare()),
                     format(averageContinueTotalMicros()),
                     format(averageContinueQueryDataMicros()),
+                    format(averageContinueRowAdvanceMicros()),
+                    format(averageContinueQueryDataResidualMicros()),
                     format(averageContinueSendMicros()),
                     format(continueQueryDataShare()), format(continueSendShare()));
         }

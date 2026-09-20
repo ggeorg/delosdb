@@ -17450,7 +17450,7 @@ tasks.register('runDelosGen2C3F04EmbeddedConcurrency', JavaExec) {
 // for both current simple-join shapes; no production behavior changes.
 tasks.register('runDelosGen2C3F04DrdaServerPhaseDiagnostic', JavaExec) {
     group = 'verification'
-    description = 'Captures F04 Heap/MVCC DRDA execute, QRYDTA, send, and continuation phase evidence at 8 clients.'
+    description = 'Captures F04 Heap/MVCC DRDA execute, QRYDTA row-advance, residual encoding, send, and continuation evidence at 8 clients.'
     dependsOn tasks.named('compileTestJava'), ':jars'
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     def delosNetworkClientClasspath = rootProject.files(
