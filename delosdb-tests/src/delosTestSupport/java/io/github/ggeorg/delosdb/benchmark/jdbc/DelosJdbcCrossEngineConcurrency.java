@@ -59,6 +59,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2P_PREFIX = "delosdb.phase2.f06CanonicalPlanFalsification.";
     private static final String PHASE2Q_PREFIX = "delosdb.phase2.f07SortDecomposition.";
     private static final String PHASE2U_PREFIX = "delosdb.phase2.f04CurrentJoinDecomposition.";
+    private static final String PHASE2V_PREFIX = "delosdb.phase2.f04EmbeddedConcurrency.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -184,6 +185,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2UF04CurrentJoinDecomposition();
             return;
         }
+        if (args.length == 1 && "phase2v-f04-embedded-concurrency".equals(args[0])) {
+            runPhase2VF04EmbeddedConcurrency();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -206,7 +211,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2r-f07-embedded-concurrency',"
                             + " exactly 'phase2s-f07-embedded-jfr',"
                             + " exactly 'phase2t-f07-streaming-falsification',"
-                            + " or exactly 'phase2u-f04-current-join-decomposition'");
+                            + " exactly 'phase2u-f04-current-join-decomposition',"
+                            + " or exactly 'phase2v-f04-embedded-concurrency'");
         }
     }
 
@@ -3182,6 +3188,463 @@ public final class DelosJdbcCrossEngineConcurrency {
         @Override
         public int[] parameters() {
             return parameters.clone();
+        }
+    }
+
+    private static void runPhase2VF04EmbeddedConcurrency() throws Exception {
+        Path reportDirectory = requiredPhase2VPath("reportDirectory");
+        Path databaseRoot = requiredPhase2VPath("databaseRoot");
+        assertPhase2VProductionReadSettings();
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f04-embedded-concurrency") + ";create=true";
+        DelosBenchmarkConfig config =
+                new DelosBenchmarkConfig(rowCount, payloadSize, SEED, commitBatchSize);
+        Phase2VFixtures fixtures =
+                phase2VPrepareFixtures(jdbcUrl, config, rowCount, commitBatchSize);
+
+        String statisticsBefore;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            statisticsBefore =
+                    phase2PStatisticsSnapshot(connection, fixtures.statisticsTables());
+            connection.rollback();
+        }
+        Files.writeString(reportDirectory.resolve("phase2v-sysstatistics-before.tsv"),
+                statisticsBefore, StandardCharsets.UTF_8);
+
+        LinkedHashMap<String, Phase2UVariant> variants = phase2VNaturalVariants(fixtures);
+        LinkedHashMap<String, ExplainCapture> plans =
+                phase2VCapturePlans(jdbcUrl, reportDirectory, variants);
+        LinkedHashMap<String, Phase2RConcurrencyMeasurement> measurements =
+                phase2VMeasureVariants(jdbcUrl, variants);
+        phase2VAssertSemantics(measurements);
+        phase2VWriteMeasurements(reportDirectory, measurements);
+
+        String statisticsAfter;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            statisticsAfter =
+                    phase2PStatisticsSnapshot(connection, fixtures.statisticsTables());
+            connection.rollback();
+        }
+        Files.writeString(reportDirectory.resolve("phase2v-sysstatistics-after.tsv"),
+                statisticsAfter, StandardCharsets.UTF_8);
+        boolean statisticsCatalogStable = statisticsBefore.equals(statisticsAfter);
+
+        String summary = phase2VSummary(
+                statisticsCatalogStable, plans, measurements);
+        Files.writeString(
+                reportDirectory.resolve("phase2v-f04-embedded-concurrency-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static void assertPhase2VProductionReadSettings() {
+        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
+        boolean physicalRowLocationCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalRowLocationCost.enabled", "true"));
+        boolean projectedCurrentRead = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean baseFetchPagePrefetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        if (!physicalScanCost || !physicalRowLocationCost
+                || projectedCurrentRead || baseFetchPagePrefetch) {
+            throw new IllegalStateException(
+                    "Phase-2V requires promoted F04 read settings");
+        }
+    }
+
+    private static Phase2VFixtures phase2VPrepareFixtures(
+            String jdbcUrl,
+            DelosBenchmarkConfig config,
+            int rowCount,
+            int commitBatchSize) throws Exception {
+        String heapBase;
+        String mvccBase;
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            DelosJdbcBenchmarkScenario heap = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2v_heap", "", false, config);
+            heap.prepare();
+            heapBase = heap.tableName();
+            prepareJoinDimensionFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareJoinFanoutFixture(setup, heapBase, "", rowCount, commitBatchSize);
+
+            DelosJdbcBenchmarkScenario mvcc = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2v_mvcc", " using delos_mvcc", false, config);
+            mvcc.prepare();
+            mvccBase = mvcc.tableName();
+            prepareJoinDimensionFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            prepareJoinFanoutFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+
+            List<String> statisticsTables = phase2VStatisticsTables(heapBase, mvccBase);
+            for (String table : statisticsTables) {
+                phase2BUpdateStatistics(setup, table);
+            }
+            setup.commit();
+            return new Phase2VFixtures(heapBase, mvccBase, statisticsTables);
+        }
+    }
+
+    private static List<String> phase2VStatisticsTables(String heapBase, String mvccBase) {
+        return List.of(
+                heapBase,
+                joinDimensionTableName(heapBase),
+                joinFanoutParentTableName(heapBase),
+                joinFanoutChildTableName(heapBase),
+                mvccBase,
+                joinDimensionTableName(mvccBase),
+                joinFanoutParentTableName(mvccBase),
+                joinFanoutChildTableName(mvccBase));
+    }
+
+    private static LinkedHashMap<String, Phase2UVariant> phase2VNaturalVariants(
+            Phase2VFixtures fixtures) {
+        LinkedHashMap<String, Phase2UVariant> variants = new LinkedHashMap<>();
+        variants.put("heap-1to1", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_1TO1, fixtures.heapBase()),
+                1_000, 1, new int[0]));
+        variants.put("mvcc-1to1", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_1TO1, fixtures.mvccBase()),
+                1_000, 1, new int[0]));
+        variants.put("heap-fanout", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_FANOUT, fixtures.heapBase()),
+                1_000, 2, new int[] {1, 100}));
+        variants.put("mvcc-fanout", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_FANOUT, fixtures.mvccBase()),
+                1_000, 2, new int[] {1, 100}));
+        return variants;
+    }
+
+    private static LinkedHashMap<String, ExplainCapture> phase2VCapturePlans(
+            String jdbcUrl,
+            Path reportDirectory,
+            Map<String, Phase2UVariant> variants) throws Exception {
+        LinkedHashMap<String, ExplainCapture> plans = new LinkedHashMap<>();
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, Phase2UVariant> entry : variants.entrySet()) {
+                ExplainCapture explain = capturePhase2UExplain(
+                        connection, entry.getValue(), false);
+                ExplainCapture analyze = capturePhase2UExplain(
+                        connection, entry.getValue(), true);
+                writePhase2ACapture(
+                        reportDirectory, entry.getKey() + "-explain", explain);
+                writePhase2ACapture(
+                        reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+                plans.put(entry.getKey(), analyze);
+            }
+            connection.rollback();
+        }
+        return plans;
+    }
+
+    private static LinkedHashMap<String, Phase2RConcurrencyMeasurement> phase2VMeasureVariants(
+            String jdbcUrl,
+            Map<String, Phase2UVariant> variants) throws Exception {
+        LinkedHashMap<String, Phase2RConcurrencyMeasurement> measurements =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, Phase2UVariant> entry : variants.entrySet()) {
+            for (int clients : List.of(1, 8)) {
+                String key = entry.getKey() + "-" + clients + "c";
+                measurements.put(
+                        key,
+                        phase2VMeasureConcurrent(
+                                jdbcUrl, entry.getValue(), key, clients));
+            }
+        }
+        return measurements;
+    }
+
+    private static Phase2RConcurrencyMeasurement phase2VMeasureConcurrent(
+            String jdbcUrl,
+            Phase2UVariant variant,
+            String name,
+            int clients) throws Exception {
+        int warmupRounds = 3;
+        int measuredRounds = 9;
+        int executionsPerClient = 16;
+        List<Connection> connections = new ArrayList<>();
+        List<PreparedStatement> statements = new ArrayList<>();
+        ExecutorService executor = Executors.newFixedThreadPool(clients);
+        try {
+            for (int client = 0; client < clients; client++) {
+                Connection connection = openPhase2AConnection(jdbcUrl);
+                connections.add(connection);
+                statements.add(connection.prepareStatement(variant.sql()));
+            }
+            long fingerprint = executePhase2URead(statements.get(0), variant);
+            for (int warmup = 0; warmup < warmupRounds; warmup++) {
+                phase2VConcurrentRound(
+                        executor, statements, variant, fingerprint, executionsPerClient);
+            }
+            List<Double> throughputs = new ArrayList<>();
+            for (int round = 0; round < measuredRounds; round++) {
+                throughputs.add(phase2VConcurrentRound(
+                        executor, statements, variant, fingerprint, executionsPerClient));
+            }
+            Distribution distribution = distribution(throughputs);
+            DelosMeasurementValidityContract.DispersionDecision decision =
+                    DelosMeasurementValidityContract.classifyCustom(
+                            distribution.iqr() / distribution.median(),
+                            distribution.mad() / distribution.median());
+            return new Phase2RConcurrencyMeasurement(
+                    fingerprint, throughputs, distribution, decision);
+        } finally {
+            phase2VCloseConcurrentResources(executor, statements, connections, name);
+        }
+    }
+
+    private static double phase2VConcurrentRound(
+            ExecutorService executor,
+            List<PreparedStatement> statements,
+            Phase2UVariant variant,
+            long fingerprint,
+            int executionsPerClient) throws Exception {
+        int clients = statements.size();
+        CountDownLatch ready = new CountDownLatch(clients);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Long>> futures = new ArrayList<>();
+        for (PreparedStatement statement : statements) {
+            futures.add(executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                for (int execution = 0; execution < executionsPerClient; execution++) {
+                    long actual = executePhase2URead(statement, variant);
+                    if (actual != fingerprint) {
+                        throw new IllegalStateException("Phase-2V semantic drift");
+                    }
+                }
+                return fingerprint;
+            }));
+        }
+        if (!ready.await(30L, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Phase-2V clients did not reach start barrier");
+        }
+        long started = System.nanoTime();
+        start.countDown();
+        for (Future<Long> future : futures) {
+            future.get(120L, TimeUnit.SECONDS);
+        }
+        double elapsedSeconds = (System.nanoTime() - started) / 1_000_000_000.0d;
+        return (clients * executionsPerClient) / elapsedSeconds;
+    }
+
+    private static void phase2VCloseConcurrentResources(
+            ExecutorService executor,
+            List<PreparedStatement> statements,
+            List<Connection> connections,
+            String name) throws Exception {
+        executor.shutdownNow();
+        SQLException failure = null;
+        for (PreparedStatement statement : statements) {
+            try {
+                statement.close();
+            } catch (SQLException closeFailure) {
+                failure = phase2VAccumulate(failure, closeFailure);
+            }
+        }
+        for (Connection connection : connections) {
+            try {
+                connection.rollback();
+                connection.close();
+            } catch (SQLException closeFailure) {
+                failure = phase2VAccumulate(failure, closeFailure);
+            }
+        }
+        if (failure != null) {
+            throw new SQLException("Phase-2V cleanup failed for " + name, failure);
+        }
+    }
+
+    private static SQLException phase2VAccumulate(
+            SQLException current, SQLException additional) {
+        if (current == null) {
+            return additional;
+        }
+        current.addSuppressed(additional);
+        return current;
+    }
+
+    private static void phase2VAssertSemantics(
+            Map<String, Phase2RConcurrencyMeasurement> measurements) {
+        phase2VAssertSemanticGroup(measurements, "1to1");
+        phase2VAssertSemanticGroup(measurements, "fanout");
+    }
+
+    private static void phase2VAssertSemanticGroup(
+            Map<String, Phase2RConcurrencyMeasurement> measurements, String workload) {
+        long expected = measurements.get("heap-" + workload + "-1c").fingerprint();
+        for (String provider : List.of("heap", "mvcc")) {
+            for (int clients : List.of(1, 8)) {
+                String key = provider + "-" + workload + "-" + clients + "c";
+                if (measurements.get(key).fingerprint() != expected) {
+                    throw new IllegalStateException(
+                            "Phase-2V semantic drift for " + key);
+                }
+            }
+        }
+    }
+
+    private static void phase2VWriteMeasurements(
+            Path reportDirectory,
+            Map<String, Phase2RConcurrencyMeasurement> measurements) throws IOException {
+        StringBuilder samples = new StringBuilder("variant\tround\tthroughputTxPerSec\n");
+        StringBuilder dispersion = new StringBuilder(
+                "variant\tmedianTxPerSec\tiqrToMedian\tmadToMedian\t"
+                        + "maxMinRatio\trunRangeStatus\tstatus\n");
+        for (Map.Entry<String, Phase2RConcurrencyMeasurement> entry : measurements.entrySet()) {
+            Phase2RConcurrencyMeasurement measurement = entry.getValue();
+            for (int index = 0; index < measurement.throughputs().size(); index++) {
+                samples.append(entry.getKey()).append('\t').append(index + 1).append('\t')
+                        .append(format(measurement.throughputs().get(index))).append('\n');
+            }
+            Distribution distribution = measurement.distribution();
+            double maxMin = distribution.max() / distribution.min();
+            dispersion.append(entry.getKey()).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(distribution.iqr() / distribution.median())).append('\t')
+                    .append(format(distribution.mad() / distribution.median())).append('\t')
+                    .append(format(maxMin)).append('\t')
+                    .append(maxMin <= 1.20d ? "VALID" : "INVALID").append('\t')
+                    .append(measurement.decision().status()).append('\n');
+        }
+        Files.writeString(reportDirectory.resolve("phase2v-repeated-throughput-samples.tsv"),
+                samples.toString(), StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("phase2v-dispersion.tsv"),
+                dispersion.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static String phase2VSummary(
+            boolean statisticsCatalogStable,
+            Map<String, ExplainCapture> plans,
+            Map<String, Phase2RConcurrencyMeasurement> measurements) {
+        double heapOne1 = phase2RMedian(measurements, "heap-1to1-1c");
+        double heapOne8 = phase2RMedian(measurements, "heap-1to1-8c");
+        double mvccOne1 = phase2RMedian(measurements, "mvcc-1to1-1c");
+        double mvccOne8 = phase2RMedian(measurements, "mvcc-1to1-8c");
+        double heapFan1 = phase2RMedian(measurements, "heap-fanout-1c");
+        double heapFan8 = phase2RMedian(measurements, "heap-fanout-8c");
+        double mvccFan1 = phase2RMedian(measurements, "mvcc-fanout-1c");
+        double mvccFan8 = phase2RMedian(measurements, "mvcc-fanout-8c");
+        String measurementStatus = phase2RStatus(measurements).toString();
+        String runRangeStatus = phase2RRunRangeStatus(measurements);
+        String classification = phase2VClassification(
+                statisticsCatalogStable, measurementStatus, runRangeStatus,
+                heapOne1, heapOne8, mvccOne1, mvccOne8,
+                heapFan1, heapFan8, mvccFan1, mvccFan8);
+        return "DelosDB Phase-2V F04 embedded concurrency decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT\n"
+                + "clients=1,8\n"
+                + "physicalScanCost=true\n"
+                + "physicalRowLocationCost=true\n"
+                + "projectedCurrentRead=false\n"
+                + "baseFetchPagePrefetch=false\n"
+                + "statisticsCatalogStable=" + statisticsCatalogStable + "\n"
+                + phase2VPlanSummary(plans)
+                + phase2VWorkloadSummary(
+                        "oneToOne", heapOne1, heapOne8, mvccOne1, mvccOne8)
+                + phase2VWorkloadSummary(
+                        "fanout", heapFan1, heapFan8, mvccFan1, mvccFan8)
+                + "semanticFingerprintsMatch=true\n"
+                + "measurementStatus=" + measurementStatus + "\n"
+                + "runRangeStatus=" + runRangeStatus + "\n"
+                + "classification=" + classification + "\n";
+    }
+
+    private static String phase2VPlanSummary(Map<String, ExplainCapture> plans) {
+        return "heapOneToOnePlanShape="
+                + phase2UPlanShape(plans.get("heap-1to1").text()) + "\n"
+                + "mvccOneToOnePlanShape="
+                + phase2UPlanShape(plans.get("mvcc-1to1").text()) + "\n"
+                + "heapFanoutPlanShape="
+                + phase2UPlanShape(plans.get("heap-fanout").text()) + "\n"
+                + "mvccFanoutPlanShape="
+                + phase2UPlanShape(plans.get("mvcc-fanout").text()) + "\n";
+    }
+
+    private static String phase2VWorkloadSummary(
+            String prefix,
+            double heap1,
+            double heap8,
+            double mvcc1,
+            double mvcc8) {
+        return prefix + "Heap1cTxPerSec=" + format(heap1) + "\n"
+                + prefix + "Heap8cTxPerSec=" + format(heap8) + "\n"
+                + prefix + "Mvcc1cTxPerSec=" + format(mvcc1) + "\n"
+                + prefix + "Mvcc8cTxPerSec=" + format(mvcc8) + "\n"
+                + prefix + "HeapScaling=" + format(heap8 / heap1) + "\n"
+                + prefix + "MvccScaling=" + format(mvcc8 / mvcc1) + "\n"
+                + prefix + "MvccVsHeap1c=" + format(mvcc1 / heap1) + "\n"
+                + prefix + "MvccVsHeap8c=" + format(mvcc8 / heap8) + "\n";
+    }
+
+    private static String phase2VClassification(
+            boolean statisticsCatalogStable,
+            String measurementStatus,
+            String runRangeStatus,
+            double heapOne1,
+            double heapOne8,
+            double mvccOne1,
+            double mvccOne8,
+            double heapFan1,
+            double heapFan8,
+            double mvccFan1,
+            double mvccFan8) {
+        if (!statisticsCatalogStable) {
+            return "INVALID_STATISTICS";
+        }
+        if ("INVALID".equals(measurementStatus) || "INVALID".equals(runRangeStatus)) {
+            return "INVALID_MEASUREMENT";
+        }
+        boolean oneConcurrency = phase2VConcurrencyLoss(
+                heapOne1, heapOne8, mvccOne1, mvccOne8);
+        boolean fanConcurrency = phase2VConcurrencyLoss(
+                heapFan1, heapFan8, mvccFan1, mvccFan8);
+        if (oneConcurrency && fanConcurrency) {
+            return "MVCC_F04_CONCURRENCY_PRIMARY";
+        }
+        if (oneConcurrency) {
+            return "MVCC_1TO1_CONCURRENCY_PRIMARY";
+        }
+        if (fanConcurrency) {
+            return "MVCC_FANOUT_CONCURRENCY_PRIMARY";
+        }
+        return "CONCURRENCY_NOT_PRIMARY";
+    }
+
+    private static boolean phase2VConcurrencyLoss(
+            double heap1,
+            double heap8,
+            double mvcc1,
+            double mvcc8) {
+        double heapScaling = heap8 / heap1;
+        double mvccScaling = mvcc8 / mvcc1;
+        double ratio1 = mvcc1 / heap1;
+        double ratio8 = mvcc8 / heap8;
+        return mvccScaling < heapScaling * 0.85d && ratio8 < ratio1 * 0.85d;
+    }
+
+    private static Path requiredPhase2VPath(String key) {
+        String value = System.getProperty(PHASE2V_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2V_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private record Phase2VFixtures(
+            String heapBase, String mvccBase, List<String> statisticsTables) {
+        private Phase2VFixtures {
+            statisticsTables = List.copyOf(statisticsTables);
         }
     }
 

@@ -1,40 +1,16 @@
-DelosDB overlay: add current F04 join plan and input-path decomposition
+DelosDB Gen2-C3 Phase 2V F04 embedded concurrency diagnostic overlay
 
 Purpose:
-- Preserve the completed F04 canonical benchmark as the current throughput baseline.
-- Capture current Heap and Gen2 natural plans for JOIN_INDEXED_1TO1 and JOIN_INDEXED_FANOUT.
-- Separate join execution from the relevant input paths before any production join optimization.
+- Stabilize F04 fixture statistics explicitly before measurement.
+- Preserve current promoted Gen2 read settings.
+- Compare Heap and Gen2 JOIN_INDEXED_1TO1 / JOIN_INDEXED_FANOUT at 1 and 8 embedded clients.
+- Capture current natural plans and semantic fingerprints.
+- Distinguish concurrency scaling loss from a universally slow join/input kernel.
 
-Diagnostic evidence:
-- exact canonical F04 SQL is reused through fitnessReadSql()
-- exact 10k-row / 128-byte / FULL_INDEXED fixture shape
-- Heap and Gen2 EXPLAIN plus EXPLAIN ANALYZE text/JSON
-- estimated plan rows and costs
-- repeated embedded medians, IQR/MAD dispersion, and max/min run range
-- semantic fingerprints and expected row counts
-- statistics-catalog snapshots before and after measurement
-- 1:1 base PK-range and dimension-input controls
-- fanout parent-range control
-- fanout child covered-index control
-- fanout child row-bearing control
+Changed files:
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Current Gen2 settings are asserted:
-- physical scan costing = true
-- physical RowLocation costing = true
-- projected CURRENT = false
-- base-fetch page prefetch = false
-- Gen2 B1/C1/C2 enabled
-
-What this does NOT change:
-- no production storage code
-- no join implementation
-- no optimizer cost formula
-- no canonical F04 benchmark definition or threshold
-- no MVCC visibility, RawStore, WAL, undo, recovery, or durable format
-- no existing historical F04/F06 diagnostic is modified or removed
-
-New task:
-- :delosdb-tests:runDelosGen2C3F04CurrentJoinDecomposition
-
-Report root:
-- build/reports/delosdb/benchmarks/gen2-c3-attribution/f04-current-join-decomposition
+Production behavior changed: no
+Canonical benchmark thresholds changed: no
+Existing historical diagnostics removed or weakened: no

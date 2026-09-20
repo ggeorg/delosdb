@@ -17351,6 +17351,100 @@ tasks.register('runDelosGen2C3F04CurrentJoinDecomposition', JavaExec) {
 }
 
 
+// Phase 2V: test whether the current F04 Heap/MVCC gap is primarily a
+// concurrency-scaling effect once statistics are established deterministically.
+tasks.register('runDelosGen2C3F04EmbeddedConcurrency', JavaExec) {
+    group = 'verification'
+    description = 'Measures current Heap/MVCC F04 1:1 and fanout scaling at 1 and 8 embedded clients.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2v-f04-embedded-concurrency'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f04-embedded-concurrency')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f04-embedded-concurrency')
+    outputs.dir(reportDir)
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F04 embedded concurrency diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f04EmbeddedConcurrency.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f04EmbeddedConcurrency.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false'
+        ])
+    }
+    doLast {
+        File summary = new File(reportDir.get().asFile,
+                'phase2v-f04-embedded-concurrency-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("F04 embedded concurrency summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                'diagnosticOnly=true',
+                'workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT',
+                'clients=1,8',
+                'physicalScanCost=true',
+                'physicalRowLocationCost=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'statisticsCatalogStable=true',
+                'oneToOneMvccVsHeap1c=',
+                'oneToOneMvccVsHeap8c=',
+                'fanoutMvccVsHeap1c=',
+                'fanoutMvccVsHeap8c=',
+                'measurementStatus=',
+                'runRangeStatus=',
+                'classification='
+        ].each { marker ->
+            if (!text.contains(marker)) {
+                throw new GradleException(
+                        "F04 embedded concurrency diagnostic missing evidence marker: ${marker}")
+            }
+        }
+        if (text.contains('measurementStatus=INVALID')
+                || text.contains('runRangeStatus=INVALID')) {
+            throw new GradleException(
+                    'F04 embedded concurrency measurement is INVALID; inspect the preserved report')
+        }
+        [
+                'heap-1to1-explain-analyze.txt',
+                'mvcc-1to1-explain-analyze.txt',
+                'heap-fanout-explain-analyze.txt',
+                'mvcc-fanout-explain-analyze.txt',
+                'phase2v-repeated-throughput-samples.tsv',
+                'phase2v-dispersion.tsv',
+                'phase2v-sysstatistics-before.tsv',
+                'phase2v-sysstatistics-after.tsv'
+        ].each { relativePath ->
+            File evidence = new File(reportDir.get().asFile, relativePath)
+            if (!evidence.isFile()) {
+                throw new GradleException("F04 embedded concurrency evidence missing: ${evidence}")
+            }
+        }
+    }
+}
+
+
+
 // Phase 2O: isolate the F06 raw two-column row-production path with a matched
 // index=null TABLE_SCAN control. Natural raw-input and canonical GROUP_HIGH_CARD
 // plans are captured separately so optimizer choice is evidence, not an assertion.
