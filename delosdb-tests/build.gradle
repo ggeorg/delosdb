@@ -17263,6 +17263,94 @@ tasks.register('runDelosGen2C3F04PhysicalScanCostExperiment', JavaExec) {
 }
 
 
+// Phase 2U: re-establish the exact current F04 natural plans after the
+// promoted scan, RowLocation, CURRENT/base-fetch, and read-boundary changes.
+// This is a short embedded diagnostic, not a replacement canonical benchmark.
+tasks.register('runDelosGen2C3F04CurrentJoinDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Captures current Heap/MVCC F04 1:1 and fanout plans, operator timing, and input-path decomposition.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2u-f04-current-join-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f04-current-join-decomposition')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f04-current-join-decomposition')
+    outputs.dir(reportDir)
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F04 current join decomposition requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f04CurrentJoinDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f04CurrentJoinDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false'
+        ])
+    }
+    doLast {
+        File summary = new File(reportDir.get().asFile,
+                'phase2u-f04-current-join-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException("F04 current join decomposition summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        [
+                'diagnosticOnly=true',
+                'workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT',
+                'physicalScanCost=true',
+                'physicalRowLocationCost=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false',
+                'statisticsCatalogStable=',
+                'oneToOneGen2RelativeThroughput=',
+                'fanoutGen2RelativeThroughput=',
+                'fanoutChildCoveredGen2RelativeThroughput=',
+                'fanoutChildRowbearingGen2RelativeThroughput=',
+                'measurementStatus='
+        ].each { marker ->
+            if (!text.contains(marker)) {
+                throw new GradleException(
+                        "F04 current join decomposition missing evidence marker: ${marker}")
+            }
+        }
+        if (text.contains('measurementStatus=INVALID')) {
+            throw new GradleException(
+                    'F04 current join decomposition dispersion is INVALID; inspect the preserved report')
+        }
+        [
+                'heap-1to1-natural-explain-analyze.txt',
+                'mvcc-1to1-natural-explain-analyze.txt',
+                'heap-fanout-natural-explain-analyze.txt',
+                'mvcc-fanout-natural-explain-analyze.txt',
+                'phase2u-operator-summary.tsv',
+                'phase2u-plan-estimates.tsv'
+        ].each { relativePath ->
+            File evidence = new File(reportDir.get().asFile, relativePath)
+            if (!evidence.isFile()) {
+                throw new GradleException("F04 current join evidence missing: ${evidence}")
+            }
+        }
+    }
+}
+
+
 // Phase 2O: isolate the F06 raw two-column row-production path with a matched
 // index=null TABLE_SCAN control. Natural raw-input and canonical GROUP_HIGH_CARD
 // plans are captured separately so optimizer choice is evidence, not an assertion.

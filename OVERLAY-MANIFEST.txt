@@ -1,43 +1,40 @@
-DelosDB overlay: align canonical benchmark RowLocation costing with production
+DelosDB overlay: add current F04 join plan and input-path decomposition
 
 Purpose:
-- Fix stale benchmark forwarding that defaulted physical Gen2 RowLocation costing to false
-  even after that cost model was promoted to normal/default-ON production behavior.
-- Make canonical F07/F11/F12/F13 read workloads measure the actual current Gen2 architecture.
-- Preserve explicit false only for diagnostics that intentionally compare the retired legacy cost.
+- Preserve the completed F04 canonical benchmark as the current throughput baseline.
+- Capture current Heap and Gen2 natural plans for JOIN_INDEXED_1TO1 and JOIN_INDEXED_FANOUT.
+- Separate join execution from the relevant input paths before any production join optimization.
 
-Evidence:
-- Previous canonical F07 with stale cost=false:
-    Gen2 ~295.8 tx/s, ~26.7% PostgreSQL.
-- Corrected canonical F07 with cost=true:
-    Gen2 863.14 tx/s
-    Heap 1113.68 tx/s
-    PostgreSQL 1114.70 tx/s
-    Gen2/PostgreSQL 77.43%
-    Gen2/Heap 77.50%
-    Gen2 IQR/median 4.39%
-    Gen2 max/min 1.062x
-    semantic oracle matched.
-- Throughput improvement vs stale F07 baseline: ~2.92x (+192%).
+Diagnostic evidence:
+- exact canonical F04 SQL is reused through fitnessReadSql()
+- exact 10k-row / 128-byte / FULL_INDEXED fixture shape
+- Heap and Gen2 EXPLAIN plus EXPLAIN ANALYZE text/JSON
+- estimated plan rows and costs
+- repeated embedded medians, IQR/MAD dispersion, and max/min run range
+- semantic fingerprints and expected row counts
+- statistics-catalog snapshots before and after measurement
+- 1:1 base PK-range and dimension-input controls
+- fanout parent-range control
+- fanout child covered-index control
+- fanout child row-bearing control
 
-Harness changes:
-- DelosJdbcCrossEngineConcurrency.mvccPhysicalRowLocationCostEnabled() default false -> true.
-- Canonical F07 explicitly sets mvccPhysicalRowLocationCost=true.
-- F07 sentinel requires the summary marker:
-    MVCC physical RowLocation cost enabled: true
-- Canonical F11 mixed reader/writer explicitly sets true.
-- Canonical F12 long-reader/writer explicitly sets true.
-- Canonical F13 realistic transaction explicitly sets true.
-- F01-F06 already explicitly used true and are unchanged.
-- Diagnostics that explicitly set false remain able to test the legacy model.
+Current Gen2 settings are asserted:
+- physical scan costing = true
+- physical RowLocation costing = true
+- projected CURRENT = false
+- base-fetch page prefetch = false
+- Gen2 B1/C1/C2 enabled
 
 What this does NOT change:
-- No production storage/optimizer code.
-- No RowLocation cost formula.
-- No SQL/workload definitions or thresholds.
-- No semantic oracle behavior.
-- No RawStore, MVCC visibility, WAL, undo, recovery, vacuum, or durable formats.
+- no production storage code
+- no join implementation
+- no optimizer cost formula
+- no canonical F04 benchmark definition or threshold
+- no MVCC visibility, RawStore, WAL, undo, recovery, or durable format
+- no existing historical F04/F06 diagnostic is modified or removed
 
-Decision:
-- The old F07 ~27% PostgreSQL score is retired as stale-harness evidence.
-- Correct current canonical F07 is 77.43% PostgreSQL.
+New task:
+- :delosdb-tests:runDelosGen2C3F04CurrentJoinDecomposition
+
+Report root:
+- build/reports/delosdb/benchmarks/gen2-c3-attribution/f04-current-join-decomposition

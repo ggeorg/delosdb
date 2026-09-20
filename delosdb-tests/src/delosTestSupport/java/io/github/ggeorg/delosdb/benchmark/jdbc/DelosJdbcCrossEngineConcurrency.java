@@ -58,6 +58,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2O_PREFIX = "delosdb.phase2.f06GroupInputJfr.";
     private static final String PHASE2P_PREFIX = "delosdb.phase2.f06CanonicalPlanFalsification.";
     private static final String PHASE2Q_PREFIX = "delosdb.phase2.f07SortDecomposition.";
+    private static final String PHASE2U_PREFIX = "delosdb.phase2.f04CurrentJoinDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -179,6 +180,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2TF07StreamingFalsification();
             return;
         }
+        if (args.length == 1 && "phase2u-f04-current-join-decomposition".equals(args[0])) {
+            runPhase2UF04CurrentJoinDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -199,7 +204,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2p-f06-canonical-plan-falsification',"
                             + " exactly 'phase2q-f07-sort-decomposition',"
                             + " exactly 'phase2r-f07-embedded-concurrency',"
-                            + " or exactly 'phase2s-f07-embedded-jfr'");
+                            + " exactly 'phase2s-f07-embedded-jfr',"
+                            + " exactly 'phase2t-f07-streaming-falsification',"
+                            + " or exactly 'phase2u-f04-current-join-decomposition'");
         }
     }
 
@@ -2701,6 +2708,481 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "phase2n-f04-f06-relational-decomposition-summary.txt"),
                 summary, StandardCharsets.UTF_8);
         System.out.println(summary);
+    }
+
+    private static void runPhase2UF04CurrentJoinDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2UPath("reportDirectory");
+        Path databaseRoot = requiredPhase2UPath("databaseRoot");
+        boolean physicalScanCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalScanCost.enabled", "true"));
+        boolean physicalRowLocationCost = Boolean.parseBoolean(System.getProperty(
+                "delosdb.experimental.mvccPhysicalRowLocationCost.enabled", "true"));
+        boolean projectedCurrentRead = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean baseFetchPagePrefetch = Boolean.getBoolean(
+                "delosdb.experimental.mvccBaseFetchPagePrefetch");
+        if (!physicalScanCost || !physicalRowLocationCost
+                || projectedCurrentRead || baseFetchPagePrefetch) {
+            throw new IllegalStateException(
+                    "Phase-2U requires current F04 production read settings: physical scan and "
+                            + "RowLocation costing enabled, projected-current and base-fetch "
+                            + "prefetch disabled");
+        }
+
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        int warmups = 2;
+        int warmupExecutionsPerVisit = 16;
+        int measuredRounds = 7;
+        int measuredExecutionsPerSample = 32;
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f04-current-join-decomposition") + ";create=true";
+        DelosBenchmarkConfig config = new DelosBenchmarkConfig(
+                rowCount, payloadSize, SEED, commitBatchSize);
+
+        String heapBase;
+        String mvccBase;
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            DelosJdbcBenchmarkScenario heap = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2u_heap", "", false, config);
+            heap.prepare();
+            heapBase = heap.tableName();
+            prepareJoinDimensionFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareJoinFanoutFixture(setup, heapBase, "", rowCount, commitBatchSize);
+
+            DelosJdbcBenchmarkScenario mvcc = new DelosJdbcBenchmarkScenario(
+                    setup, "phase2u_mvcc", " using delos_mvcc", false, config);
+            mvcc.prepare();
+            mvccBase = mvcc.tableName();
+            prepareJoinDimensionFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            prepareJoinFanoutFixture(
+                    setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        List<String> statisticsTables = List.of(
+                heapBase,
+                joinDimensionTableName(heapBase),
+                joinFanoutParentTableName(heapBase),
+                joinFanoutChildTableName(heapBase),
+                mvccBase,
+                joinDimensionTableName(mvccBase),
+                joinFanoutParentTableName(mvccBase),
+                joinFanoutChildTableName(mvccBase));
+
+        LinkedHashMap<String, Phase2UVariant> variants = new LinkedHashMap<>();
+        addPhase2UF04Variants(variants, "heap", heapBase);
+        addPhase2UF04Variants(variants, "mvcc", mvccBase);
+        writePhase2UQueryShapes(reportDirectory, variants);
+
+        String statisticsBefore;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            statisticsBefore = phase2PStatisticsSnapshot(connection, statisticsTables);
+            connection.rollback();
+        }
+        Files.writeString(reportDirectory.resolve("phase2u-sysstatistics-before.tsv"),
+                statisticsBefore, StandardCharsets.UTF_8);
+
+        LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
+        LinkedHashMap<String, Long> semanticByVariant = new LinkedHashMap<>();
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            for (Map.Entry<String, Phase2UVariant> entry : variants.entrySet()) {
+                String name = entry.getKey();
+                Phase2UVariant variant = entry.getValue();
+                ExplainCapture explain = capturePhase2UExplain(connection, variant, false);
+                ExplainCapture analyze = capturePhase2UExplain(connection, variant, true);
+                writePhase2ACapture(reportDirectory, name + "-explain", explain);
+                writePhase2ACapture(reportDirectory, name + "-explain-analyze", analyze);
+                analyzeByVariant.put(name, analyze);
+                try (PreparedStatement statement = connection.prepareStatement(variant.sql())) {
+                    semanticByVariant.put(name, executePhase2URead(statement, variant));
+                }
+            }
+            connection.rollback();
+        }
+        assertPhase2UProviderSemantics(semanticByVariant, variants);
+
+        LinkedHashMap<String, List<Double>> samples = new LinkedHashMap<>();
+        for (String name : variants.keySet()) {
+            samples.put(name, new ArrayList<>());
+        }
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, Phase2UVariant> entry : variants.entrySet()) {
+                    statements.put(entry.getKey(), connection.prepareStatement(entry.getValue().sql()));
+                }
+                List<String> names = new ArrayList<>(variants.keySet());
+                for (int round = -warmups; round < measuredRounds; round++) {
+                    int rotation = Math.floorMod(round + warmups, names.size());
+                    for (int offset = 0; offset < names.size(); offset++) {
+                        String name = names.get((rotation + offset) % names.size());
+                        Phase2UVariant variant = variants.get(name);
+                        int executions = round >= 0
+                                ? measuredExecutionsPerSample : warmupExecutionsPerVisit;
+                        long expectedFingerprint = semanticByVariant.get(name);
+                        long started = System.nanoTime();
+                        for (int execution = 0; execution < executions; execution++) {
+                            long fingerprint = executePhase2URead(statements.get(name), variant);
+                            if (fingerprint != expectedFingerprint) {
+                                throw new IllegalStateException(
+                                        "Phase-2U measured semantic drift for " + name);
+                            }
+                        }
+                        long elapsed = System.nanoTime() - started;
+                        if (round >= 0) {
+                            samples.get(name).add(elapsed / (executions * 1_000_000.0d));
+                        }
+                    }
+                }
+                connection.rollback();
+            } finally {
+                SQLException closeFailure = null;
+                for (PreparedStatement statement : statements.values()) {
+                    try {
+                        statement.close();
+                    } catch (SQLException failure) {
+                        if (closeFailure == null) {
+                            closeFailure = failure;
+                        } else {
+                            closeFailure.addSuppressed(failure);
+                        }
+                    }
+                }
+                if (closeFailure != null) {
+                    throw closeFailure;
+                }
+            }
+        }
+
+        LinkedHashMap<String, Distribution> distributions = new LinkedHashMap<>();
+        LinkedHashMap<String, DelosMeasurementValidityContract.Status> statuses =
+                writePhase2UMeasurementTables(reportDirectory, samples, analyzeByVariant, distributions);
+        DelosMeasurementValidityContract.Status combinedStatus =
+                DelosMeasurementValidityContract.combine(statuses.values().toArray(
+                        DelosMeasurementValidityContract.Status[]::new));
+
+        String statisticsAfter;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            statisticsAfter = phase2PStatisticsSnapshot(connection, statisticsTables);
+            connection.rollback();
+        }
+        Files.writeString(reportDirectory.resolve("phase2u-sysstatistics-after.tsv"),
+                statisticsAfter, StandardCharsets.UTF_8);
+        boolean statisticsCatalogStable = statisticsBefore.equals(statisticsAfter);
+
+        String summary = phase2USummary(
+                physicalScanCost,
+                physicalRowLocationCost,
+                projectedCurrentRead,
+                baseFetchPagePrefetch,
+                warmups,
+                warmupExecutionsPerVisit,
+                measuredRounds,
+                measuredExecutionsPerSample,
+                statisticsCatalogStable,
+                distributions,
+                combinedStatus);
+        Files.writeString(reportDirectory.resolve("phase2u-f04-current-join-summary.txt"),
+                summary, StandardCharsets.UTF_8);
+        System.out.println(summary);
+    }
+
+    private static void addPhase2UF04Variants(
+            Map<String, Phase2UVariant> variants, String provider, String base) {
+        String dimension = joinDimensionTableName(base);
+        String parent = joinFanoutParentTableName(base);
+        String child = joinFanoutChildTableName(base);
+        variants.put(provider + "-1to1-natural", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_1TO1, base), 1_000, 1, new int[0]));
+        variants.put(provider + "-1to1-base-range", new Phase2UVariant(
+                "select id from " + base + " where id between 1 and 1000", 1_000, 1, new int[0]));
+        variants.put(provider + "-1to1-dimension-scan", new Phase2UVariant(
+                "select id from " + dimension, 1_000, 1, new int[0]));
+        variants.put(provider + "-fanout-natural", new Phase2UVariant(
+                fitnessReadSql(Workload.JOIN_INDEXED_FANOUT, base), 1_000, 2, new int[] {1, 100}));
+        variants.put(provider + "-fanout-parent-range", new Phase2UVariant(
+                "select id from " + parent + " where id between ? and ?", 100, 1,
+                new int[] {1, 100}));
+        variants.put(provider + "-fanout-child-covered", new Phase2UVariant(
+                "select parent_id from " + child + " where parent_id between ? and ?", 1_000, 1,
+                new int[] {1, 100}));
+        variants.put(provider + "-fanout-child-rowbearing", new Phase2UVariant(
+                "select parent_id, id from " + child + " where parent_id between ? and ?", 1_000, 2,
+                new int[] {1, 100}));
+    }
+
+    private static void writePhase2UQueryShapes(
+            Path reportDirectory, Map<String, Phase2UVariant> variants) throws IOException {
+        StringBuilder out = new StringBuilder();
+        for (Map.Entry<String, Phase2UVariant> entry : variants.entrySet()) {
+            out.append("=== ").append(entry.getKey()).append(" ===\n")
+                    .append(entry.getValue().sql()).append("\nparameters=")
+                    .append(Arrays.toString(entry.getValue().parameters())).append("\n\n");
+        }
+        Files.writeString(reportDirectory.resolve("phase2u-query-shapes.txt"),
+                out.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static ExplainCapture capturePhase2UExplain(
+            Connection connection, Phase2UVariant variant, boolean analyze) throws SQLException {
+        long started = System.nanoTime();
+        try (PreparedStatement statement = connection.prepareStatement(
+                (analyze ? "explain analyze " : "explain ") + variant.sql())) {
+            bindPhase2UParameters(statement, variant.parameters());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new SQLException("Phase-2U EXPLAIN returned no row");
+                }
+                String text = resultSet.getString(1);
+                String json = resultSet.getString(2);
+                if (resultSet.next()) {
+                    throw new SQLException("Phase-2U EXPLAIN returned more than one row");
+                }
+                return new ExplainCapture(
+                        text, json, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+            }
+        }
+    }
+
+    private static long executePhase2URead(
+            PreparedStatement statement, Phase2UVariant variant) throws SQLException {
+        bindPhase2UParameters(statement, variant.parameters());
+        int rows = 0;
+        long fingerprint = 0L;
+        try (ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                long tuple = 0x9E3779B97F4A7C15L;
+                for (int column = 1; column <= variant.resultColumns(); column++) {
+                    tuple = mix(tuple, resultSet.getLong(column));
+                }
+                fingerprint += tuple;
+                rows++;
+            }
+        }
+        if (rows != variant.expectedRows()) {
+            throw new SQLException(
+                    "Phase-2U row-count drift: expected=" + variant.expectedRows()
+                            + ", actual=" + rows + ", sql=" + variant.sql());
+        }
+        return mix(fingerprint, rows);
+    }
+
+    private static void bindPhase2UParameters(PreparedStatement statement, int[] parameters)
+            throws SQLException {
+        for (int index = 0; index < parameters.length; index++) {
+            statement.setInt(index + 1, parameters[index]);
+        }
+    }
+
+    private static void assertPhase2UProviderSemantics(
+            Map<String, Long> fingerprints, Map<String, Phase2UVariant> variants) {
+        for (String name : variants.keySet()) {
+            if (!name.startsWith("heap-")) {
+                continue;
+            }
+            String suffix = name.substring("heap-".length());
+            long heap = fingerprints.get(name);
+            long mvcc = fingerprints.get("mvcc-" + suffix);
+            if (heap != mvcc) {
+                throw new IllegalStateException(
+                        "Phase-2U Heap/MVCC semantic drift for " + suffix
+                                + ": heap=" + heap + ", mvcc=" + mvcc);
+            }
+        }
+    }
+
+    private static LinkedHashMap<String, DelosMeasurementValidityContract.Status>
+            writePhase2UMeasurementTables(
+                    Path reportDirectory,
+                    Map<String, List<Double>> samples,
+                    Map<String, ExplainCapture> analyzeByVariant,
+                    Map<String, Distribution> distributions) throws IOException {
+        StringBuilder samplesTsv = new StringBuilder("variant\tround\telapsedMillis\n");
+        StringBuilder dispersionTsv = new StringBuilder(
+                "variant\tmedianMillis\tiqrToMedian\tmadToMedian\tmaxToMin\tstatus\n");
+        StringBuilder operatorTsv = new StringBuilder(
+                "variant\texplainAnalyzeWallMillis\tplanShape\tjoinNextMillis\t"
+                        + "indexToBaseNextMillis\tindexScanNextMillis\ttableScanNextMillis\t"
+                        + "totalOpenMillis\ttotalNextMillis\ttotalOpens\n");
+        StringBuilder estimatesTsv = new StringBuilder("variant\tnode\tkind\trows\tcost\n");
+        LinkedHashMap<String, DelosMeasurementValidityContract.Status> statuses =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, List<Double>> entry : samples.entrySet()) {
+            String name = entry.getKey();
+            for (int index = 0; index < entry.getValue().size(); index++) {
+                samplesTsv.append(name).append('\t').append(index + 1).append('\t')
+                        .append(format(entry.getValue().get(index))).append('\n');
+            }
+            Distribution distribution = distribution(entry.getValue());
+            distributions.put(name, distribution);
+            DelosMeasurementValidityContract.DispersionDecision decision =
+                    DelosMeasurementValidityContract.classifyCustom(
+                            distribution.iqr() / distribution.median(),
+                            distribution.mad() / distribution.median());
+            double maxToMin = distribution.max() / distribution.min();
+            DelosMeasurementValidityContract.Status status = maxToMin > 1.20d
+                    ? DelosMeasurementValidityContract.Status.INVALID : decision.status();
+            statuses.put(name, status);
+            dispersionTsv.append(name).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(decision.iqrToMedian())).append('\t')
+                    .append(format(decision.madToMedian())).append('\t')
+                    .append(format(maxToMin)).append('\t').append(status).append('\n');
+
+            ExplainCapture analyze = analyzeByVariant.get(name);
+            operatorTsv.append(name).append('\t').append(analyze.wallMillis()).append('\t')
+                    .append(phase2UPlanShape(analyze.text())).append('\t')
+                    .append(phase2ENodeFieldTotal(analyze.text(), "JOIN/JOIN", "nextMillis")).append('\t')
+                    .append(phase2EIndexToBaseNextMillis(analyze.text())).append('\t')
+                    .append(phase2EIndexScanNextMillis(analyze.text())).append('\t')
+                    .append(phase2ENodeFieldTotal(analyze.text(), "SCAN/TABLE_SCAN", "nextMillis"))
+                    .append('\t').append(sumPhase2AField(analyze.text(), "openMillis"))
+                    .append('\t').append(sumPhase2AField(analyze.text(), "nextMillis"))
+                    .append('\t').append(sumPhase2AField(analyze.text(), "opens")).append('\n');
+            appendPhase2UEstimates(estimatesTsv, name, analyze.text());
+        }
+        Files.writeString(reportDirectory.resolve("phase2u-repeated-execution-samples.tsv"),
+                samplesTsv.toString(), StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("phase2u-dispersion.tsv"),
+                dispersionTsv.toString(), StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("phase2u-operator-summary.tsv"),
+                operatorTsv.toString(), StandardCharsets.UTF_8);
+        Files.writeString(reportDirectory.resolve("phase2u-plan-estimates.tsv"),
+                estimatesTsv.toString(), StandardCharsets.UTF_8);
+        return statuses;
+    }
+
+    private static void appendPhase2UEstimates(
+            StringBuilder output, String variant, String planText) {
+        Matcher matcher = Pattern.compile(
+                "(?m)^\\s*(n\\d+)\\s+(\\S+)[^\\r\\n]*?\\srows=([0-9.Ee+-]+)\\s+cost=([0-9.Ee+-]+)")
+                .matcher(planText);
+        while (matcher.find()) {
+            output.append(variant).append('\t').append(matcher.group(1)).append('\t')
+                    .append(matcher.group(2)).append('\t').append(matcher.group(3)).append('\t')
+                    .append(matcher.group(4)).append('\n');
+        }
+    }
+
+    private static String phase2UPlanShape(String analyzeText) {
+        List<String> shape = new ArrayList<>();
+        if (analyzeText.contains("JOIN/JOIN join=HASH")
+                || analyzeText.contains("Hash Join ResultSet")) {
+            shape.add("HASH_JOIN");
+        }
+        if (analyzeText.contains("JOIN/JOIN join=NESTEDLOOP")
+                || analyzeText.contains("Nested Loop Join ResultSet")) {
+            shape.add("NESTED_LOOP");
+        }
+        if (analyzeText.contains("SORT") || analyzeText.contains("Sort ResultSet")) {
+            shape.add("SORT");
+        }
+        if (analyzeText.contains("SCAN/INDEX_TO_BASE_ROW")) {
+            shape.add("INDEX_TO_BASE_ROW");
+        }
+        if (analyzeText.contains("SCAN/INDEX_SCAN")) {
+            shape.add("INDEX_SCAN");
+        }
+        if (analyzeText.contains("SCAN/TABLE_SCAN")) {
+            shape.add("TABLE_SCAN");
+        }
+        return shape.isEmpty() ? "UNKNOWN" : String.join("+", shape);
+    }
+
+    private static String phase2USummary(
+            boolean physicalScanCost,
+            boolean physicalRowLocationCost,
+            boolean projectedCurrentRead,
+            boolean baseFetchPagePrefetch,
+            int warmups,
+            int warmupExecutionsPerVisit,
+            int measuredRounds,
+            int measuredExecutionsPerSample,
+            boolean statisticsCatalogStable,
+            Map<String, Distribution> distributions,
+            DelosMeasurementValidityContract.Status status) {
+        double heap1to1 = distributions.get("heap-1to1-natural").median();
+        double mvcc1to1 = distributions.get("mvcc-1to1-natural").median();
+        double heapFanout = distributions.get("heap-fanout-natural").median();
+        double mvccFanout = distributions.get("mvcc-fanout-natural").median();
+        return "DelosDB Phase-2U F04 current join decomposition\n"
+                + "diagnosticOnly=true\n"
+                + "workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT\n"
+                + "physicalScanCost=" + physicalScanCost + "\n"
+                + "physicalRowLocationCost=" + physicalRowLocationCost + "\n"
+                + "projectedCurrentRead=" + projectedCurrentRead + "\n"
+                + "baseFetchPagePrefetch=" + baseFetchPagePrefetch + "\n"
+                + "warmupsPerVariant=" + warmups + "\n"
+                + "warmupExecutionsPerVisit=" + warmupExecutionsPerVisit + "\n"
+                + "measuredRoundsPerVariant=" + measuredRounds + "\n"
+                + "measuredExecutionsPerSample=" + measuredExecutionsPerSample + "\n"
+                + "statisticsCatalogStable=" + statisticsCatalogStable + "\n"
+                + phase2URatioSummary("oneToOne", heap1to1, mvcc1to1)
+                + phase2URatioSummary("oneToOneBaseRange",
+                        distributions.get("heap-1to1-base-range").median(),
+                        distributions.get("mvcc-1to1-base-range").median())
+                + phase2URatioSummary("oneToOneDimensionScan",
+                        distributions.get("heap-1to1-dimension-scan").median(),
+                        distributions.get("mvcc-1to1-dimension-scan").median())
+                + phase2URatioSummary("fanout", heapFanout, mvccFanout)
+                + phase2URatioSummary("fanoutParentRange",
+                        distributions.get("heap-fanout-parent-range").median(),
+                        distributions.get("mvcc-fanout-parent-range").median())
+                + phase2URatioSummary("fanoutChildCovered",
+                        distributions.get("heap-fanout-child-covered").median(),
+                        distributions.get("mvcc-fanout-child-covered").median())
+                + phase2URatioSummary("fanoutChildRowbearing",
+                        distributions.get("heap-fanout-child-rowbearing").median(),
+                        distributions.get("mvcc-fanout-child-rowbearing").median())
+                + "heapOneToOneJoinVsInputSumRatio=" + format(heap1to1 / (
+                        distributions.get("heap-1to1-base-range").median()
+                                + distributions.get("heap-1to1-dimension-scan").median())) + "\n"
+                + "mvccOneToOneJoinVsInputSumRatio=" + format(mvcc1to1 / (
+                        distributions.get("mvcc-1to1-base-range").median()
+                                + distributions.get("mvcc-1to1-dimension-scan").median())) + "\n"
+                + "heapFanoutJoinVsInputSumRatio=" + format(heapFanout / (
+                        distributions.get("heap-fanout-parent-range").median()
+                                + distributions.get("heap-fanout-child-rowbearing").median())) + "\n"
+                + "mvccFanoutJoinVsInputSumRatio=" + format(mvccFanout / (
+                        distributions.get("mvcc-fanout-parent-range").median()
+                                + distributions.get("mvcc-fanout-child-rowbearing").median())) + "\n"
+                + "measurementStatus=" + status + "\n"
+                + "classification=EVIDENCE_READY_FOR_F04_CURRENT_PLAN_DECOMPOSITION\n";
+    }
+
+    private static String phase2URatioSummary(String prefix, double heapMillis, double mvccMillis) {
+        return prefix + "HeapMedianMillis=" + format(heapMillis) + "\n"
+                + prefix + "MvccMedianMillis=" + format(mvccMillis) + "\n"
+                + prefix + "MvccToHeapTimeRatio=" + format(mvccMillis / heapMillis) + "\n"
+                + prefix + "Gen2RelativeThroughput=" + format(heapMillis / mvccMillis) + "\n";
+    }
+
+    private static Path requiredPhase2UPath(String key) {
+        String value = System.getProperty(PHASE2U_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2U_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    private record Phase2UVariant(
+            String sql, int expectedRows, int resultColumns, int[] parameters) {
+        private Phase2UVariant {
+            parameters = parameters.clone();
+        }
+
+        @Override
+        public int[] parameters() {
+            return parameters.clone();
+        }
     }
 
     private static void runPhase2OF06GroupInputJfrAttribution() throws Exception {
