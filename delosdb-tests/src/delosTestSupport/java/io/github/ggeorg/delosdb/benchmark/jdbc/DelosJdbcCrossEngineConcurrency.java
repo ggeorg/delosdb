@@ -4476,6 +4476,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (drdaServerPhaseEvidenceEnabled() && target.isDrda()) {
             addProperty(command, "drdaServerPhaseEvidence", true);
         }
+        if (f07DrdaServerPhaseDiagnosticEnabled()) {
+            addProperty(command, "f07DrdaServerPhaseDiagnostic", true);
+        }
         command.add("-cp");
         command.add(options.benchmarkClasses() + java.io.File.pathSeparator + options.classpath(target));
         addProperty(command, "targets", targetIds(options.targetValues()));
@@ -4699,8 +4702,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if (drdaServerPhaseEvidenceEnabled()) {
                     javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence=true");
-                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.skipOpenQueries=20");
-                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.captureOpenQueries=20");
+                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.skipOpenQueries="
+                            + drdaServerPhaseSkipOpenQueries());
+                    javaCommand.add("-Ddelosdb.diagnostic.drdaServerPhaseEvidence.captureOpenQueries="
+                            + drdaServerPhaseCaptureOpenQueries());
                 }
                 javaCommand.addAll(List.of(
                         "-cp", "/opt/delos/lib/*",
@@ -5332,6 +5337,18 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean drdaServerPhaseEvidenceEnabled() {
         return Boolean.getBoolean(PREFIX + "drdaServerPhaseEvidence");
+    }
+
+    private static int drdaServerPhaseSkipOpenQueries() {
+        return Integer.getInteger(PREFIX + "drdaServerPhaseSkipOpenQueries", 20);
+    }
+
+    private static int drdaServerPhaseCaptureOpenQueries() {
+        return Integer.getInteger(PREFIX + "drdaServerPhaseCaptureOpenQueries", 20);
+    }
+
+    private static boolean f07DrdaServerPhaseDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f07DrdaServerPhaseDiagnostic");
     }
 
     private static void resetDrdaProtocolEvidence() {
@@ -9814,7 +9831,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     long continueQueries = parseServerEvidenceLong(values, "continueQueries");
                     int resultColumns = Math.toIntExact(parseServerEvidenceLong(values, "resultColumns"));
                     Workload workload;
-                    if (continueQueries > 0L) {
+                    if (f07DrdaServerPhaseDiagnosticEnabled()) {
+                        workload = Workload.SORT_FULL;
+                    } else if (continueQueries > 0L) {
                         workload = Workload.RANGE_SCAN_FULL;
                     } else if (resultColumns == 1) {
                         workload = Workload.RANGE_SCAN_INDEX_ONLY_1000;
@@ -9868,6 +9887,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void validateDrdaServerPhaseEvidence(
             Options options, List<DrdaServerPhaseEvidence> evidence) {
+        if (f07DrdaServerPhaseDiagnosticEnabled()) {
+            validateF07DrdaServerPhaseEvidence(options, evidence);
+            return;
+        }
         List<Target> expectedTargets = DRDA_SERVER_PHASE_EVIDENCE_TARGETS;
         if (!options.targetValues().equals(expectedTargets)) {
             throw new IllegalStateException(
@@ -9916,6 +9939,79 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+
+    private static void validateF07DrdaServerPhaseEvidence(
+            Options options, List<DrdaServerPhaseEvidence> evidence) {
+        List<Target> expectedTargets = DRDA_SERVER_PHASE_EVIDENCE_TARGETS;
+        if (!options.targetValues().equals(expectedTargets)) {
+            throw new IllegalStateException(
+                    "F07 DRDA server-phase evidence requires Delos Heap/MVCC DRDA targets: "
+                            + options.targetValues());
+        }
+        int expectedConnectionsPerTargetRun = options.clientValues().get(0);
+        int expected = expectedTargets.size() * options.runs() * expectedConnectionsPerTargetRun;
+        if (evidence.size() != expected) {
+            throw new IllegalStateException(
+                    "F07 DRDA server-phase evidence count mismatch: expected=" + expected
+                            + ", actual=" + evidence.size() + ", evidence=" + evidence);
+        }
+        Map<String, Integer> connectionCounts = new LinkedHashMap<>();
+        Map<String, DrdaServerPhaseEvidence> unique = new LinkedHashMap<>();
+        long expectedRows = (long) drdaServerPhaseCaptureOpenQueries()
+                * options.rowCounts().get(0);
+        for (DrdaServerPhaseEvidence value : evidence) {
+            if (value.workload() != Workload.SORT_FULL) {
+                throw new IllegalStateException("Unexpected F07 server-phase workload: " + value);
+            }
+            long expectedCaptureFirst = drdaServerPhaseSkipOpenQueries() + 1L;
+            long expectedCaptureLast = drdaServerPhaseSkipOpenQueries()
+                    + (long) drdaServerPhaseCaptureOpenQueries();
+            if (value.captureFirst() != expectedCaptureFirst
+                    || value.captureLast() != expectedCaptureLast
+                    || value.openQueries() != drdaServerPhaseCaptureOpenQueries()) {
+                throw new IllegalStateException("Unexpected F07 measured query window: " + value);
+            }
+            if (value.resultColumns() != 2 || value.sqlHash() == 0L) {
+                throw new IllegalStateException("Unexpected F07 statement shape: " + value);
+            }
+            if (value.openRows() + value.continueRows() != expectedRows) {
+                throw new IllegalStateException(
+                        "Unexpected F07 result-row count: expected=" + expectedRows + ", evidence=" + value);
+            }
+            if (value.openRows() <= 0L || value.openTotalNanos() <= 0L
+                    || value.openExecuteNanos() <= 0L
+                    || value.openQueryDataNanos() <= 0L || value.openSendNanos() <= 0L) {
+                throw new IllegalStateException("Missing F07 OPNQRY phase evidence: " + value);
+            }
+            if (value.continueQueries() <= 0L || value.continueRows() <= 0L
+                    || value.continueTotalNanos() <= 0L
+                    || value.continueQueryDataNanos() <= 0L || value.continueSendNanos() <= 0L) {
+                throw new IllegalStateException("Missing F07 CNTQRY phase evidence: " + value);
+            }
+            if (value.openAccountedNanos() > value.openTotalNanos()
+                    || value.continueAccountedNanos() > value.continueTotalNanos()) {
+                throw new IllegalStateException("F07 phase accounting exceeds total: " + value);
+            }
+            String targetRun = value.target() + '|' + value.run();
+            connectionCounts.merge(targetRun, 1, Integer::sum);
+            String uniqueKey = targetRun + '|' + value.connection();
+            if (unique.put(uniqueKey, value) != null) {
+                throw new IllegalStateException("Duplicate F07 DRDA server phase evidence: " + uniqueKey);
+            }
+        }
+        for (Target target : expectedTargets) {
+            for (int run = 1; run <= options.runs(); run++) {
+                String key = target.id() + '|' + run;
+                int actual = connectionCounts.getOrDefault(key, 0);
+                if (actual != expectedConnectionsPerTargetRun) {
+                    throw new IllegalStateException(
+                            "F07 server-phase connection count mismatch for " + key
+                                    + ": expected=" + expectedConnectionsPerTargetRun + ", actual=" + actual);
+                }
+            }
+        }
+    }
+
     private static void writeDrdaServerPhaseEvidence(
             Options options, List<DrdaServerPhaseEvidence> evidence) throws IOException {
         List<DrdaServerPhaseEvidence> sorted = new ArrayList<>(evidence);
@@ -9954,6 +10050,104 @@ public final class DelosJdbcCrossEngineConcurrency {
         Files.writeString(options.reportDirectory().resolve("drda-server-phase-evidence.csv"),
                 csv, StandardCharsets.UTF_8);
         Files.writeString(options.reportDirectory().resolve("drda-server-phase-evidence.txt"),
+                text, StandardCharsets.UTF_8);
+        if (f07DrdaServerPhaseDiagnosticEnabled()) {
+            writeF07DrdaServerPhaseAggregate(options, sorted);
+        }
+    }
+
+
+    private static void writeF07DrdaServerPhaseAggregate(
+            Options options, List<DrdaServerPhaseEvidence> evidence) throws IOException {
+        Map<String, long[]> totals = new LinkedHashMap<>();
+        for (DrdaServerPhaseEvidence value : evidence) {
+            String key = value.target() + '|' + value.run();
+            long[] total = totals.computeIfAbsent(key, ignored -> new long[16]);
+            total[0]++;
+            total[1] += value.openQueries();
+            total[2] += value.continueQueries();
+            total[3] += value.openRows() + value.continueRows();
+            total[4] += value.openParseNanos();
+            total[5] += value.openExecuteNanos();
+            total[6] += value.openMetadataNanos();
+            total[7] += value.openQueryDataNanos();
+            total[8] += value.openSendNanos();
+            total[9] += value.openTotalNanos();
+            total[10] += value.continueParseNanos();
+            total[11] += value.continueMetadataNanos();
+            total[12] += value.continueQueryDataNanos();
+            total[13] += value.continueSendNanos();
+            total[14] += value.continueTotalNanos();
+        }
+
+        String header = "target,run,connections,openQueries,continueQueries,resultRows,"
+                + "averageOpenTotalMicros,averageOpenParseMicros,averageOpenExecuteMicros,"
+                + "averageOpenMetadataMicros,averageOpenQueryDataMicros,averageOpenSendMicros,"
+                + "openParseShare,openExecuteShare,openMetadataShare,openQueryDataShare,openSendShare,"
+                + "averageContinueTotalMicros,averageContinueParseMicros,averageContinueMetadataMicros,"
+                + "averageContinueQueryDataMicros,averageContinueSendMicros,"
+                + "continueParseShare,continueMetadataShare,continueQueryDataShare,continueSendShare";
+        StringBuilder csv = new StringBuilder(header).append('\n');
+        StringBuilder text = new StringBuilder()
+                .append("DelosDB F07 DRDA server-phase aggregate\n")
+                .append("======================================\n\n")
+                .append("Workload: SORT_FULL\n")
+                .append("Clients: ").append(options.clients()).append('\n')
+                .append("Rows: ").append(options.rows()).append('\n')
+                .append("Capture: query ordinals ")
+                .append(drdaServerPhaseSkipOpenQueries() + 1)
+                .append('-')
+                .append(drdaServerPhaseSkipOpenQueries() + drdaServerPhaseCaptureOpenQueries())
+                .append(" per client connection\n\n");
+
+        for (Target target : DRDA_SERVER_PHASE_EVIDENCE_TARGETS) {
+            for (int run = 1; run <= options.runs(); run++) {
+                String key = target.id() + '|' + run;
+                long[] total = totals.get(key);
+                if (total == null) {
+                    continue;
+                }
+                double openQueries = total[1];
+                double continueQueries = total[2];
+                double openTotal = total[9];
+                double continueTotal = total[14];
+                csv.append(target.id()).append(',').append(run).append(',')
+                        .append(total[0]).append(',').append(total[1]).append(',')
+                        .append(total[2]).append(',').append(total[3]).append(',')
+                        .append(format(total[9] / (openQueries * 1_000.0))).append(',')
+                        .append(format(total[4] / (openQueries * 1_000.0))).append(',')
+                        .append(format(total[5] / (openQueries * 1_000.0))).append(',')
+                        .append(format(total[6] / (openQueries * 1_000.0))).append(',')
+                        .append(format(total[7] / (openQueries * 1_000.0))).append(',')
+                        .append(format(total[8] / (openQueries * 1_000.0))).append(',')
+                        .append(format((double) total[4] / openTotal)).append(',')
+                        .append(format((double) total[5] / openTotal)).append(',')
+                        .append(format((double) total[6] / openTotal)).append(',')
+                        .append(format((double) total[7] / openTotal)).append(',')
+                        .append(format((double) total[8] / openTotal)).append(',')
+                        .append(format(total[14] / (continueQueries * 1_000.0))).append(',')
+                        .append(format(total[10] / (continueQueries * 1_000.0))).append(',')
+                        .append(format(total[11] / (continueQueries * 1_000.0))).append(',')
+                        .append(format(total[12] / (continueQueries * 1_000.0))).append(',')
+                        .append(format(total[13] / (continueQueries * 1_000.0))).append(',')
+                        .append(format((double) total[10] / continueTotal)).append(',')
+                        .append(format((double) total[11] / continueTotal)).append(',')
+                        .append(format((double) total[12] / continueTotal)).append(',')
+                        .append(format((double) total[13] / continueTotal)).append('\n');
+                text.append(target.id()).append(" run=").append(run)
+                        .append(" openTotalUs=").append(format(total[9] / (openQueries * 1_000.0)))
+                        .append(" executeUs=").append(format(total[5] / (openQueries * 1_000.0)))
+                        .append(" qrydtaUs=").append(format(total[7] / (openQueries * 1_000.0)))
+                        .append(" sendUs=").append(format(total[8] / (openQueries * 1_000.0)))
+                        .append(" continueTotalUs=").append(format(total[14] / (continueQueries * 1_000.0)))
+                        .append(" continueQrydtaUs=").append(format(total[12] / (continueQueries * 1_000.0)))
+                        .append(" continueSendUs=").append(format(total[13] / (continueQueries * 1_000.0)))
+                        .append('\n');
+            }
+        }
+        Files.writeString(options.reportDirectory().resolve("f07-drda-server-phase-aggregate.csv"),
+                csv, StandardCharsets.UTF_8);
+        Files.writeString(options.reportDirectory().resolve("f07-drda-server-phase-aggregate.txt"),
                 text, StandardCharsets.UTF_8);
     }
 
@@ -10470,6 +10664,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(f02ScaleSurfaceDiagnosticEnabled()).append('\n')
                 .append("F02 embedded concurrency diagnostic: ")
                 .append(f02EmbeddedConcurrencyDiagnosticEnabled()).append('\n')
+                .append("F07 DRDA server-phase diagnostic: ")
+                .append(f07DrdaServerPhaseDiagnosticEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read enabled: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost enabled: ")
@@ -11801,6 +11997,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
+            boolean f07DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
+                    && f07DrdaServerPhaseDiagnosticEnabled();
             boolean currentBaselineTargets = currentBaselineEnabled()
                     && (configuredTargets.equals(CURRENT_BASELINE_EMBEDDED_TARGETS)
                             || configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS));
@@ -11856,7 +12054,54 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (f02ScaleSurfaceDiagnostic) {
+            if (f07DrdaServerPhaseDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(Workload.SORT_FULL))) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires SORT_FULL only");
+                }
+                if (!clientValues().equals(List.of(8))) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires exactly 8 clients");
+                }
+                if (!rowCounts().equals(List.of(10000))) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires rows=10000");
+                }
+                if (!widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires width 1");
+                }
+                if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires FULL_INDEXED table shape");
+                }
+                boolean shortPhaseShape = transactionsPerClient == 20
+                        && warmups == 1
+                        && iterations == 1
+                        && Double.compare(minimumWarmupSeconds, 0.0d) == 0
+                        && maximumWarmupIterations == 1
+                        && Double.compare(minimumMeasuredSeconds, 0.0d) == 0
+                        && maximumMeasuredIterations == 1;
+                boolean sustainedPhaseShape = (transactionsPerClient == 3
+                                || transactionsPerClient == 20)
+                        && warmups == 1
+                        && iterations == 1
+                        && Double.compare(minimumWarmupSeconds, 2.0d) == 0
+                        && maximumWarmupIterations == 5000
+                        && Double.compare(minimumMeasuredSeconds, 8.0d) == 0
+                        && maximumMeasuredIterations == 5000;
+                if ((!shortPhaseShape && !sustainedPhaseShape)
+                        || drdaServerPhaseSkipOpenQueries() < 0
+                        || drdaServerPhaseCaptureOpenQueries() <= 0
+                        || !sqlSemanticOracleEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F07 DRDA server-phase diagnostic requires transactionsPerClient=20 "
+                                    + "for the short phase shape, or transactionsPerClient=3|20 "
+                                    + "for the sustained phase shape, warmups=1, iterations=1, either "
+                                    + "2s warmup/8s measured sustained shape, a valid capture window, "
+                                    + "and SQL semantic oracle enabled");
+                }
+            } else if (f02ScaleSurfaceDiagnostic) {
                 if (!configuredWorkloads.equals(List.of(Workload.RANGE_SCAN_1000))) {
                     throw new IllegalArgumentException(
                             "F02 scale-surface diagnostic requires RANGE_SCAN_1000 only");
@@ -12149,7 +12394,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
-                    && !f02EmbeddedConcurrencyDiagnostic
+                    && !f02EmbeddedConcurrencyDiagnostic && !f07DrdaServerPhaseDiagnostic
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }

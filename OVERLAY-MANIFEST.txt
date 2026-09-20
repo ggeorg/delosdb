@@ -1,68 +1,56 @@
-DelosDB overlay: F07 materialized-vs-streaming TABLE_SCAN falsification
+DelosDB overlay: canonical F07 physical RowLocation-cost candidate wiring
 
 Purpose:
-- Test whether eager whole-table List<VisibleRow> materialization is the dominant remaining
-  Gen2 F07 cost before changing holdable scan architecture.
-- Reuse the existing StreamingBatchScan implementation under CLOSE_CURSORS_AT_COMMIT,
-  where streaming is already supported and semantically reachable.
-- Keep projected CURRENT enabled in both lanes so unnecessary wide-payload decoding does not
-  confound this experiment.
+- Test whether the canonical F07 SERVER regression is caused by stale benchmark plumbing
+  that still forces the retired legacy RowLocation/base-fetch cost model OFF.
+- Reuse the existing canonical six-engine F07 fitness/sentinel.
+- Change no production code and add no new benchmark contract.
 
-Canonical evidence motivating this diagnostic:
-- Projected CURRENT improves canonical SERVER F07 only modestly:
-    Gen2 ~295.8 -> ~316.8 tx/s (+7.1%)
-    Gen2/PostgreSQL ~26.7% -> ~28.3%
-- Candidate run is valid and semantic fingerprints match, so wide payload decode is real
-  but not the main remaining F07 deficit.
-- Current materialized Gen2 TABLE_SCAN still builds List<VisibleRow> for the whole table before
-  BulkTableScanResultSet can consume row 1, after which SORT materializes rows again.
+Critical discrepancy found in preserved evidence:
+- Canonical F07 summary:
+    MVCC physical RowLocation cost enabled: false
+    Gen2 ~295.8 tx/s
+- Fast sustained q3/q20 diagnostics:
+    MVCC physical RowLocation cost enabled: true
+    Gen2 ~884.7-898.3 tx/s
+- q3 vs q20 differs only ~1.5% for Gen2, falsifying synchronized-interval granularity
+  as the source of the ~3x canonical discrepancy.
 
-Matched A/B:
-- Embedded 10,000-row F07 fixture, FULL_INDEXED.
-- 8 clients.
-- CLOSE_CURSORS_AT_COMMIT in both lanes.
-- Four measured variants in each lane:
-    heap-input
-    mvcc-input
-    heap-sort
-    mvcc-sort
-- Raw input forces TABLE_SCAN and omits ORDER BY.
-- Sort uses the real F07 query:
-    select id, quantity from T order by quantity desc, id
-- projected CURRENT = true in both lanes.
-- single-pass/reusable flags = true in both lanes.
-- physical scan cost = true.
-- physical RowLocation cost = true.
-- fast-visibility / skipped-tags / lazy-field streaming experiments = false.
-- OFF lane: streamingBulkScan=false.
-- ON lane: streamingBulkScan=true.
-- 3 warmup rounds, 7 measured rounds, 2 executions/client/round.
-- Semantic fingerprints required to match.
-- IQR/MAD and max/min <=1.20 run-range validity recorded.
+Historical context:
+- Physical Gen2 RowLocation/base-fetch costing was already validated and promoted to
+  normal/default-ON behavior.
+- DelosJdbcCrossEngineConcurrency still defaults its benchmark forwarding property to false,
+  and canonical F07 never explicitly set it.
+- Therefore canonical F07 has been overriding the promoted storage default with stale legacy behavior.
 
-New tasks:
-- :delosdb-tests:runDelosGen2C3F07StreamingOffDiagnostic
-- :delosdb-tests:runDelosGen2C3F07StreamingOnDiagnostic
-- :delosdb-tests:runDelosGen2C3F07StreamingABDiagnostic
+Harness change:
+- Existing runDelosGen2C3SortFitness now accepts:
+    -Pdelosdb.benchmark.mvccPhysicalRowLocationCost=true|false
+- Default remains false in this candidate harness so the preserved canonical baseline remains
+  reproducible.
+- runDelosGen2C3SortSentinel validates the exact RowLocation-cost marker in the summary.
 
-Interpretation:
-- Strong MVCC input + sort improvement with Heap flat:
-    eager whole-scan materialization is a primary F07 cause.
-- Only a few percent improvement:
-    whole-list materialization is not the main remaining F07 cause.
-- Input improves strongly but sort does not:
-    a sort-side materialization/copy layer remains dominant.
+Canonical F07 shape remains unchanged:
+- six-engine SERVER matrix
+- 8 clients
+- 10,000 rows
+- SORT_FULL
+- FULL_INDEXED
+- 8 runs
+- transactionsPerClient=3
+- 2s minimum warmup
+- 5s minimum measured duration
+- SQL semantic oracle ON
 
 What this does NOT change:
-- No production code.
-- No holdable cursor behavior.
-- No canonical F07 task or thresholds.
+- No production source.
 - No optimizer cost formula.
-- No MVCC visibility, RowLocation, WAL, undo, recovery, or vacuum behavior.
+- No sort implementation.
+- No MVCC scan/decode path.
+- No workload SQL, thresholds, or target matrix.
+- No projected-current setting unless separately requested.
 
-Pre-delivery checks:
-- Modified benchmark-support Java type-compiles successfully with javac 21 against a flattened
-  current Delos source dependency tree.
-- Custom main argument executes before Options.validate(), avoiding coordinator contract coupling.
-- Task registration is unique.
-- ZIP integrity and duplicate-entry checks performed during packaging.
+Decision:
+- If enabling the already-promoted RowLocation cost restores F07 materially toward the
+  sustained diagnostic throughput, the canonical F07 baseline was measuring stale legacy
+  optimizer behavior and must be corrected before further F07 performance work.
