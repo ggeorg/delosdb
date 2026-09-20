@@ -171,6 +171,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2RF07EmbeddedConcurrency();
             return;
         }
+        if (args.length == 1 && "phase2s-f07-embedded-jfr".equals(args[0])) {
+            runPhase2SF07EmbeddedJfrAttribution();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -190,11 +194,115 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2o-f06-group-input-jfr',"
                             + " exactly 'phase2p-f06-canonical-plan-falsification',"
                             + " exactly 'phase2q-f07-sort-decomposition',"
-                            + " or exactly 'phase2r-f07-embedded-concurrency'");
+                            + " exactly 'phase2r-f07-embedded-concurrency',"
+                            + " or exactly 'phase2s-f07-embedded-jfr'");
         }
     }
 
 
+
+    private static void runPhase2SF07EmbeddedJfrAttribution() throws Exception {
+        Path reportDirectory = requiredPhase2RPath("reportDirectory");
+        Path databaseRoot = requiredPhase2RPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        DelosBenchmarkConfig config =
+                new DelosBenchmarkConfig(rowCount, payloadSize, SEED, commitBatchSize);
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f07-embedded-jfr").toAbsolutePath()
+                + ";create=true";
+
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2s_heap", "", true, config).prepare();
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2s_mvcc", " using delos_mvcc", true, config).prepare();
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2S_HEAP");
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2S_MVCC");
+            setup.commit();
+        }
+
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        sqlByVariant.put(
+                "heap-input", phase2QSortSql("DELOS_BENCH_P2S_HEAP", false, true));
+        sqlByVariant.put(
+                "mvcc-input", phase2QSortSql("DELOS_BENCH_P2S_MVCC", false, true));
+        sqlByVariant.put(
+                "heap-sort", phase2QSortSql("DELOS_BENCH_P2S_HEAP", true, false));
+        sqlByVariant.put(
+                "mvcc-sort", phase2QSortSql("DELOS_BENCH_P2S_MVCC", true, false));
+
+        Configuration profile = Configuration.getConfiguration("profile");
+        StringBuilder summary = new StringBuilder();
+        summary.append("DelosDB Phase-2S F07 embedded 8-client JFR attribution\n")
+                .append("diagnosticOnly=true\n")
+                .append("rows=").append(rowCount).append('\n')
+                .append("payloadSize=").append(payloadSize).append('\n')
+                .append("clients=8\n");
+        long inputReferenceFingerprint = Long.MIN_VALUE;
+        long sortReferenceFingerprint = Long.MIN_VALUE;
+        for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+            String variant = entry.getKey();
+            boolean ordered = variant.endsWith("-sort");
+            Path recordingPath = reportDirectory.resolve(variant + "-8c.jfr");
+            Phase2RConcurrencyMeasurement measurement;
+            try (Recording recording = new Recording(profile)) {
+                recording.setName("DelosDB-F07-" + variant + "-8c");
+                recording.start();
+                measurement = phase2RMeasureConcurrent(
+                        jdbcUrl,
+                        entry.getValue(),
+                        variant + "-8c",
+                        rowCount,
+                        ordered,
+                        8);
+                recording.stop();
+                recording.dump(recordingPath);
+            }
+            long referenceFingerprint = ordered
+                    ? sortReferenceFingerprint
+                    : inputReferenceFingerprint;
+            if (referenceFingerprint == Long.MIN_VALUE) {
+                if (ordered) {
+                    sortReferenceFingerprint = measurement.fingerprint();
+                } else {
+                    inputReferenceFingerprint = measurement.fingerprint();
+                }
+            } else if (measurement.fingerprint() != referenceFingerprint) {
+                throw new IllegalStateException(
+                        "Phase-2S semantic fingerprint mismatch for " + variant);
+            }
+            Distribution d = measurement.distribution();
+            double iqr = d.iqr() / d.median();
+            double mad = d.mad() / d.median();
+            double runRange = measurement.throughputs().stream()
+                    .mapToDouble(Double::doubleValue).max().orElseThrow()
+                    / measurement.throughputs().stream()
+                            .mapToDouble(Double::doubleValue).min().orElseThrow();
+            summary.append(variant).append("MedianTxPerSec=")
+                    .append(format(d.median())).append('\n')
+                    .append(variant).append("IqrToMedian=")
+                    .append(format(iqr)).append('\n')
+                    .append(variant).append("MadToMedian=")
+                    .append(format(mad)).append('\n')
+                    .append(variant).append("MaxMinRatio=")
+                    .append(format(runRange)).append('\n')
+                    .append(variant).append("Jfr=")
+                    .append(recordingPath.getFileName()).append('\n');
+        }
+        summary.append("semanticFingerprintsMatch=true\n");
+        Files.writeString(
+                reportDirectory.resolve("phase2s-f07-embedded-jfr-summary.txt"),
+                summary,
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
 
     private static void runPhase2RF07EmbeddedConcurrency() throws Exception {
         Path reportDirectory = requiredPhase2RPath("reportDirectory");
@@ -279,6 +387,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 + "rows=" + rowCount + "\n"
                 + "payloadSize=" + payloadSize + "\n"
                 + "clients=1,8\n"
+                + "projectedCurrentRead="
+                + Boolean.getBoolean(
+                        "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled")
+                + "\n"
                 + "heapInput1cTxPerSec="
                 + format(phase2RMedian(measurements, "heap-input-1c")) + "\n"
                 + "heapInput8cTxPerSec="

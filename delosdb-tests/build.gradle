@@ -20887,7 +20887,9 @@ tasks.register('runDelosGen2C3F07EmbeddedConcurrencyDiagnostic', JavaExec) {
                 'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
                 'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
                 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
-                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled':
+                        providers.gradleProperty('delosdb.benchmark.mvccGen2ProjectedCurrentRead')
+                                .getOrElse('false'),
                 'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
                 'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true'
@@ -22073,5 +22075,95 @@ tasks.register('runDelosGen2C3ProjectedCurrentRangeScanSentinel') {
                     .append(gen2 / heap).append('\n')
         }
         result.setText(out.toString(), 'UTF-8')
+    }
+}
+
+
+tasks.register('runDelosGen2C3F07Embedded8cJfrDiagnostic', JavaExec) {
+    group = 'verification'
+    description = 'Profiles Heap/Gen2 raw F07 input and SORT_FULL separately at embedded 8-client concurrency.'
+    dependsOn tasks.named('compileTestJava'),
+            tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2s-f07-embedded-jfr'
+    jvmArgs '-XX:FlightRecorderOptions=stackdepth=256'
+    outputs.upToDateWhen { false }
+    def reportRoot = 'reports/delosdb/benchmarks/gen2-c3-attribution/f07-embedded-jfr'
+    outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F07 embedded JFR diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+        File databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-gen2-c3-f07-embedded-jfr').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f07EmbeddedConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.phase2.f07EmbeddedConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true'
+        ])
+    }
+
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory.dir(reportRoot).get().asFile
+        def recordings = reportDir.listFiles().findAll { it.name.endsWith('.jfr') }.sort { it.name }
+        if (recordings.size() != 4) {
+            throw new GradleException(
+                    "F07 embedded JFR expected 4 recordings, found ${recordings.size()}")
+        }
+        File views = new File(reportDir, 'jfr-views')
+        views.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site'].each { view ->
+            recordings.each { recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '60', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                if (execOutput.result.get().exitValue != 0) {
+                    throw new GradleException(
+                            "F07 embedded JFR view ${view} failed for ${recording.name}: "
+                                    + execOutput.standardError.asText.get().trim())
+                }
+                new File(views, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(execOutput.standardOutput.asText.get(), 'UTF-8')
+            }
+        }
+        recordings.each { recording ->
+            def execOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'print',
+                        '--events', 'jdk.ThreadPark,jdk.JavaMonitorEnter',
+                        '--stack-depth', '64', recording.absolutePath
+                ignoreExitValue = true
+            }
+            if (execOutput.result.get().exitValue == 0) {
+                new File(views, recording.name.replace('.jfr', '-parks-monitors.txt'))
+                        .setText(execOutput.standardOutput.asText.get(), 'UTF-8')
+            }
+        }
+        new File(reportDir, 'PROFILE-NOTES.txt').setText(
+                'F07 embedded 8-client JFR attribution\n' +
+                'Separate recordings: heap-input, mvcc-input, heap-sort, mvcc-sort\n' +
+                'Rows=10000; clients=8; payload=128; FULL_INDEXED fixture\n' +
+                'Interpretation=JFR attribution only; throughput is not canonical acceptance evidence.\n',
+                'UTF-8')
     }
 }
