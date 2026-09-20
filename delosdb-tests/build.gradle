@@ -21240,9 +21240,7 @@ tasks.register('runDelosGen2C3SortFitness', JavaExec) {
                         providers.gradleProperty('delosdb.benchmark.mvccGen2ProjectedCurrentRead')
                                 .getOrElse('false'),
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
-                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost':
-                        providers.gradleProperty('delosdb.benchmark.mvccPhysicalRowLocationCost')
-                                .getOrElse('false'),
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
                 'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
@@ -21401,16 +21399,8 @@ tasks.register('runDelosGen2C3SortSentinel') {
             throw new GradleException(
                     "Gen2-C3 F07 run did not record ${projectedMarker}: ${summaryFile}")
         }
-        def expectedPhysicalRowLocationCost =
-                providers.gradleProperty('delosdb.benchmark.mvccPhysicalRowLocationCost')
-                        .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
-        if (!['true', 'false'].contains(expectedPhysicalRowLocationCost)) {
-            throw new GradleException(
-                    "Invalid -Pdelosdb.benchmark.mvccPhysicalRowLocationCost="
-                            + expectedPhysicalRowLocationCost + "; expected true or false")
-        }
         def rowLocationMarker =
-                "MVCC physical RowLocation cost enabled: ${expectedPhysicalRowLocationCost}"
+                "MVCC physical RowLocation cost enabled: true"
         if (!summary.contains(rowLocationMarker)) {
             throw new GradleException(
                     "Gen2-C3 F07 run did not record ${rowLocationMarker}: ${summaryFile}")
@@ -21492,6 +21482,7 @@ tasks.register('runDelosGen2C3MixedReaderWriterFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
@@ -21732,6 +21723,7 @@ tasks.register('runDelosGen2C3LongReaderWriterFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
@@ -22005,6 +21997,7 @@ tasks.register('runDelosGen2C3RealisticTransactionFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.freshRealisticTransactionFitness': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',

@@ -10952,7 +10952,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccPhysicalRowLocationCostEnabled() {
         return Boolean.parseBoolean(System.getProperty(
-                PREFIX + "mvccPhysicalRowLocationCost", "false"));
+                PREFIX + "mvccPhysicalRowLocationCost", "true"));
     }
 
     private static boolean mvccGen2SinglePassCurrentScanEnabled() {

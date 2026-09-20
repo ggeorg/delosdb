@@ -1,56 +1,43 @@
-DelosDB overlay: canonical F07 physical RowLocation-cost candidate wiring
+DelosDB overlay: align canonical benchmark RowLocation costing with production
 
 Purpose:
-- Test whether the canonical F07 SERVER regression is caused by stale benchmark plumbing
-  that still forces the retired legacy RowLocation/base-fetch cost model OFF.
-- Reuse the existing canonical six-engine F07 fitness/sentinel.
-- Change no production code and add no new benchmark contract.
+- Fix stale benchmark forwarding that defaulted physical Gen2 RowLocation costing to false
+  even after that cost model was promoted to normal/default-ON production behavior.
+- Make canonical F07/F11/F12/F13 read workloads measure the actual current Gen2 architecture.
+- Preserve explicit false only for diagnostics that intentionally compare the retired legacy cost.
 
-Critical discrepancy found in preserved evidence:
-- Canonical F07 summary:
-    MVCC physical RowLocation cost enabled: false
-    Gen2 ~295.8 tx/s
-- Fast sustained q3/q20 diagnostics:
+Evidence:
+- Previous canonical F07 with stale cost=false:
+    Gen2 ~295.8 tx/s, ~26.7% PostgreSQL.
+- Corrected canonical F07 with cost=true:
+    Gen2 863.14 tx/s
+    Heap 1113.68 tx/s
+    PostgreSQL 1114.70 tx/s
+    Gen2/PostgreSQL 77.43%
+    Gen2/Heap 77.50%
+    Gen2 IQR/median 4.39%
+    Gen2 max/min 1.062x
+    semantic oracle matched.
+- Throughput improvement vs stale F07 baseline: ~2.92x (+192%).
+
+Harness changes:
+- DelosJdbcCrossEngineConcurrency.mvccPhysicalRowLocationCostEnabled() default false -> true.
+- Canonical F07 explicitly sets mvccPhysicalRowLocationCost=true.
+- F07 sentinel requires the summary marker:
     MVCC physical RowLocation cost enabled: true
-    Gen2 ~884.7-898.3 tx/s
-- q3 vs q20 differs only ~1.5% for Gen2, falsifying synchronized-interval granularity
-  as the source of the ~3x canonical discrepancy.
-
-Historical context:
-- Physical Gen2 RowLocation/base-fetch costing was already validated and promoted to
-  normal/default-ON behavior.
-- DelosJdbcCrossEngineConcurrency still defaults its benchmark forwarding property to false,
-  and canonical F07 never explicitly set it.
-- Therefore canonical F07 has been overriding the promoted storage default with stale legacy behavior.
-
-Harness change:
-- Existing runDelosGen2C3SortFitness now accepts:
-    -Pdelosdb.benchmark.mvccPhysicalRowLocationCost=true|false
-- Default remains false in this candidate harness so the preserved canonical baseline remains
-  reproducible.
-- runDelosGen2C3SortSentinel validates the exact RowLocation-cost marker in the summary.
-
-Canonical F07 shape remains unchanged:
-- six-engine SERVER matrix
-- 8 clients
-- 10,000 rows
-- SORT_FULL
-- FULL_INDEXED
-- 8 runs
-- transactionsPerClient=3
-- 2s minimum warmup
-- 5s minimum measured duration
-- SQL semantic oracle ON
+- Canonical F11 mixed reader/writer explicitly sets true.
+- Canonical F12 long-reader/writer explicitly sets true.
+- Canonical F13 realistic transaction explicitly sets true.
+- F01-F06 already explicitly used true and are unchanged.
+- Diagnostics that explicitly set false remain able to test the legacy model.
 
 What this does NOT change:
-- No production source.
-- No optimizer cost formula.
-- No sort implementation.
-- No MVCC scan/decode path.
-- No workload SQL, thresholds, or target matrix.
-- No projected-current setting unless separately requested.
+- No production storage/optimizer code.
+- No RowLocation cost formula.
+- No SQL/workload definitions or thresholds.
+- No semantic oracle behavior.
+- No RawStore, MVCC visibility, WAL, undo, recovery, vacuum, or durable formats.
 
 Decision:
-- If enabling the already-promoted RowLocation cost restores F07 materially toward the
-  sustained diagnostic throughput, the canonical F07 baseline was measuring stale legacy
-  optimizer behavior and must be corrected before further F07 performance work.
+- The old F07 ~27% PostgreSQL score is retired as stale-harness evidence.
+- Correct current canonical F07 is 77.43% PostgreSQL.
