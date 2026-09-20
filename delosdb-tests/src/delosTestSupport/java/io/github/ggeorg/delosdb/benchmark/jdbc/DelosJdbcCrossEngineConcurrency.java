@@ -5424,6 +5424,14 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f04DrdaServerPhaseDiagnosticEnabled()) {
             addProperty(command, "f04DrdaServerPhaseDiagnostic", true);
         }
+        if (f04DrdaRowAdvanceJfrDiagnosticEnabled()) {
+            addProperty(command, "f04DrdaRowAdvanceJfrDiagnostic", true);
+        }
+        String profileServerTargets = System.getProperty(
+                PREFIX + "profileServerTargets", "").trim();
+        if (!profileServerTargets.isEmpty()) {
+            addProperty(command, "profileServerTargets", profileServerTargets);
+        }
         if (f07DrdaServerPhaseDiagnosticEnabled()) {
             addProperty(command, "f07DrdaServerPhaseDiagnostic", true);
         }
@@ -5555,6 +5563,43 @@ public final class DelosJdbcCrossEngineConcurrency {
                 && Boolean.getBoolean(PREFIX + "profileDelosMvccWorkers");
     }
 
+    private static boolean shouldProfileServer(Target target) {
+        String configuredTargets = System.getProperty(PREFIX + "profileServerTargets", "").trim();
+        if (configuredTargets.isEmpty()) {
+            return false;
+        }
+        for (String configured : configuredTargets.split(",")) {
+            if (target.id().equalsIgnoreCase(configured.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void addServerProfileMount(
+            Options options, Target target, List<String> command) throws IOException {
+        if (!shouldProfileServer(target)) {
+            return;
+        }
+        Path profileDirectory = options.reportDirectory().resolve("workers").resolve("server-jfr")
+                .toAbsolutePath().normalize();
+        Files.createDirectories(profileDirectory);
+        command.add("--mount");
+        command.add("type=bind,src=" + profileDirectory + ",dst=/opt/delos-jfr");
+    }
+
+    private static void addServerProfileJvmArgs(
+            Target target, int run, List<String> javaCommand) {
+        if (!shouldProfileServer(target)) {
+            return;
+        }
+        String recording = String.format(
+                Locale.ROOT, "/opt/delos-jfr/%02d-%s-server.jfr", run, target.id());
+        javaCommand.add("-XX:FlightRecorderOptions=stackdepth=256");
+        javaCommand.add("-XX:StartFlightRecording=filename=" + recording
+                + ",settings=profile,dumponexit=true,maxsize=512m");
+    }
+
     private static void addProperty(List<String> command, String name, Object value) {
         command.add("-D" + PREFIX + name + '=' + value);
     }
@@ -5613,10 +5658,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ",dst=/opt/delos/lib,readonly");
                 command.add("--workdir");
                 command.add("/var/lib/delosdb");
+                addServerProfileMount(options, target, command);
                 command.add(target.containerImage(options));
                 List<String> javaCommand = new ArrayList<>(List.of(
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
                         "-XX:+AlwaysPreTouch"));
+                addServerProfileJvmArgs(target, run, javaCommand);
                 if (target == Target.DELOS_HEAP_DRDA) {
                     javaCommand.add("-Ddelosdb.experimental.heapPageReadImage=true");
                     javaCommand.add("-Ddelosdb.experimental.fastRecordReadLock=true");
@@ -6297,6 +6344,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f04DrdaServerPhaseDiagnosticEnabled() {
         return Boolean.getBoolean(PREFIX + "f04DrdaServerPhaseDiagnostic");
+    }
+
+    private static boolean f04DrdaRowAdvanceJfrDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f04DrdaRowAdvanceJfrDiagnostic");
     }
 
     private static boolean f07DrdaServerPhaseDiagnosticEnabled() {
@@ -13189,6 +13240,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean f04DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
                     && f04DrdaServerPhaseDiagnosticEnabled();
+            boolean f04DrdaRowAdvanceJfrDiagnostic = f04DrdaRowAdvanceJfrDiagnosticEnabled()
+                    && mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean f07DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
                     && f07DrdaServerPhaseDiagnosticEnabled();
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -13212,6 +13266,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2C3ProjectedCurrentRead
                     && !f02ScaleSurfaceDiagnostic
                     && !drdaServerPhaseDiagnostic
+                    && !f04DrdaRowAdvanceJfrDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
@@ -13290,6 +13345,46 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     + "20 warmup/capture queries, transactionsPerClient=20, "
                                     + "warmups=1, iterations=1, zero-duration single-interval phases, "
                                     + "and SQL semantic oracle enabled");
+                }
+            } else if (f04DrdaRowAdvanceJfrDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(Workload.JOIN_INDEXED_1TO1))) {
+                    throw new IllegalArgumentException(
+                            "F04 row-advance JFR diagnostic requires JOIN_INDEXED_1TO1 only");
+                }
+                if (!clientValues().equals(List.of(8))
+                        || !rowCounts().equals(List.of(10000))
+                        || !widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F04 row-advance JFR diagnostic requires rows=10000, clients=8, width=1");
+                }
+                if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F04 row-advance JFR diagnostic requires FULL_INDEXED table shape");
+                }
+                boolean profileShape = transactionsPerClient == 100
+                        && warmups == 1
+                        && iterations == 1
+                        && Double.compare(minimumWarmupSeconds, 0.0d) == 0
+                        && maximumWarmupIterations == 1
+                        && Double.compare(minimumMeasuredSeconds, 0.0d) == 0
+                        && maximumMeasuredIterations == 1;
+                if (!profileShape
+                        || !sqlSemanticOracleEnabled()
+                        || !mvccPhysicalScanCostEnabled()
+                        || !mvccPhysicalRowLocationCostEnabled()
+                        || mvccGen2ProjectedCurrentReadEnabled()
+                        || Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
+                    throw new IllegalArgumentException(
+                            "F04 row-advance JFR diagnostic requires canonical Gen2 read settings, "
+                                    + "transactionsPerClient=100, warmups=1, iterations=1, "
+                                    + "zero-duration single-interval phases, and SQL semantic oracle enabled");
+                }
+                String expectedProfileTargets = "delos_heap_drda,delos_mvcc_drda";
+                if (!expectedProfileTargets.equals(
+                        System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
+                    throw new IllegalArgumentException(
+                            "F04 row-advance JFR diagnostic requires server profiling for "
+                                    + expectedProfileTargets);
                 }
             } else if (f07DrdaServerPhaseDiagnostic) {
                 if (!configuredWorkloads.equals(List.of(Workload.SORT_FULL))) {

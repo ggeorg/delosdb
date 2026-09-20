@@ -1,21 +1,33 @@
-DelosDB Gen2-C3 F04 QRYDTA row-advance decomposition overlay
+DelosDB Gen2-C3 F04 row-advance server JFR attribution overlay
 
 Purpose:
-- extend the existing F04 DRDA server-phase diagnostic only
-- split QRYDTA time into aggregate ResultSet row-advance time and residual QRYDTA work
-- distinguish engine row production from JDBC getter / DRDA encoding work
-- preserve canonical F04 SQL and all production execution behavior when diagnostics are disabled
+- continue from the Phase 2X proof that the F04 JOIN_INDEXED_1TO1 SERVER gap sits in ResultSet.next() row advancement
+- profile the actual Delos Network Server JVM rather than the JDBC client worker
+- compare Heap and Gen2 under the same 8-client JOIN_INDEXED_1TO1 workload
+- capture hot methods, allocation sites, and contention sites for source attribution
+- preserve canonical F04 SQL and all production behavior
 
 Changed files:
-- delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAServerPhaseEvidence.java
-- delosdb-server/src/main/java/org/apache/derby/impl/drda/DRDAConnThread.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 - delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
 Diagnostic task:
-- :delosdb-tests:runDelosGen2C3F04DrdaServerPhaseDiagnostic
+- :delosdb-tests:runDelosGen2C3F04RowAdvanceJfr
+
+Diagnostic shape:
+- targets: delos_heap_drda,delos_mvcc_drda
+- workload: JOIN_INDEXED_1TO1 only
+- rows: 10000
+- clients: 8
+- transactions per client: 100
+- runs: 4
+- server-side JFR settings=profile, stackdepth=256
+- physical scan cost=true
+- physical RowLocation cost=true
+- projected CURRENT=false
+- base-fetch prefetch=false
 
 No benchmark threshold changes.
 No canonical F04 rerun.
-No MVCC/Heap/optimizer/join behavior changes.
+No MVCC/Heap/optimizer/join production behavior changes.
 No WAL/recovery/durable-format changes.

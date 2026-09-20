@@ -1,0 +1,11 @@
+DelosDB Gen2-C3 F04 row-advance JFR path fix
+
+Purpose:
+- Align the server-side JFR bind-mount destination with the existing Phase 2Y Gradle evidence contract.
+- Server recordings are written under workers/server-jfr, where the task validator and evidence packager expect them.
+
+Changed files:
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+
+Production behavior changes: none.
+Benchmark workload/threshold changes: none.
