@@ -20848,6 +20848,53 @@ tasks.register('runDelosGen2C3F07SortDecomposition', JavaExec) {
     }
 }
 
+
+// Phase 2R: isolate whether canonical F07 degradation appears in raw Gen2 TABLE_SCAN
+// concurrency or only after ORDER BY/SORT is added.
+def delosGen2C3F07EmbeddedConcurrencyRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f07-embedded-concurrency'
+
+tasks.register('runDelosGen2C3F07EmbeddedConcurrencyDiagnostic', JavaExec) {
+    group = 'verification'
+    description = 'Compares 1c/8c Heap and Gen2 raw TABLE_SCAN input versus SORT_FULL in embedded execution.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2r-f07-embedded-concurrency'
+    outputs.upToDateWhen { false }
+
+    def reportDir = rootProject.layout.buildDirectory.dir(delosGen2C3F07EmbeddedConcurrencyRoot)
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f07-embedded-concurrency')
+    outputs.dir(reportDir)
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F07 embedded concurrency diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f07EmbeddedConcurrency.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f07EmbeddedConcurrency.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true'
+        ])
+    }
+}
+
 // Gen2-C3 F07 breadth baseline: ORDER BY / sort across the server product matrix.
 def delosGen2C3SortReportRoot = 'reports/delosdb/benchmarks/gen2-c3-fitness/f07-sort'
 def delosGen2C3SortDatabaseRoot = 'tmp/delos-gen2-c3-fitness/f07-sort'
