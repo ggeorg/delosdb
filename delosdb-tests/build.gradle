@@ -20931,7 +20931,9 @@ tasks.register('runDelosGen2C3SortFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
-                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead':
+                        providers.gradleProperty('delosdb.benchmark.mvccGen2ProjectedCurrentRead')
+                                .getOrElse('false'),
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
@@ -21077,9 +21079,19 @@ tasks.register('runDelosGen2C3SortSentinel') {
             throw new GradleException(
                     "Gen2-C3 F07 run does not prove the FULL_INDEXED fixture was used: ${summaryFile}")
         }
-        if (!summary.contains('MVCC Gen2 projected current read enabled: false')) {
+        def expectedProjectedCurrentRead =
+                providers.gradleProperty('delosdb.benchmark.mvccGen2ProjectedCurrentRead')
+                        .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!['true', 'false'].contains(expectedProjectedCurrentRead)) {
             throw new GradleException(
-                    "Gen2-C3 F07 baseline was contaminated by the projected-current experiment: ${summaryFile}")
+                    "Invalid -Pdelosdb.benchmark.mvccGen2ProjectedCurrentRead="
+                            + expectedProjectedCurrentRead + "; expected true or false")
+        }
+        def projectedMarker =
+                "MVCC Gen2 projected current read enabled: ${expectedProjectedCurrentRead}"
+        if (!summary.contains(projectedMarker)) {
+            throw new GradleException(
+                    "Gen2-C3 F07 run did not record ${projectedMarker}: ${summaryFile}")
         }
         def manifestFile = new File(root, 'server-container-manifest.txt')
         if (!manifestFile.isFile()) {
@@ -22078,6 +22090,61 @@ tasks.register('runDelosGen2C3ProjectedCurrentRangeScanSentinel') {
     }
 }
 
+
+
+// Phase 2T: falsify eager whole-scan materialization as the remaining F07 bottleneck.
+def registerDelosGen2C3F07StreamingFalsification = {
+    String taskName, String lane, boolean streaming ->
+    tasks.register(taskName, JavaExec) {
+        group = 'verification'
+        description = "Runs F07 non-holdable materialized-vs-streaming diagnostic (${lane})."
+        dependsOn tasks.named('compileTestJava'), ':jars'
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+        args 'phase2t-f07-streaming-falsification'
+        outputs.upToDateWhen { false }
+        def reportRoot = "reports/delosdb/benchmarks/gen2-c3-attribution/f07-streaming-ab/${lane}"
+        def databaseRoot = "tmp/delos-gen2-c3-f07-streaming-ab/${lane}"
+        outputs.dir(rootProject.layout.buildDirectory.dir(reportRoot))
+        doFirst {
+            systemProperties([
+                    'delosdb.phase2.f07StreamingFalsification.reportDirectory':
+                            rootProject.layout.buildDirectory.dir(reportRoot).get().asFile.absolutePath,
+                    'delosdb.phase2.f07StreamingFalsification.databaseRoot':
+                            rootProject.layout.buildDirectory.dir(databaseRoot).get().asFile.absolutePath,
+                    'delosdb.experimental.mvccGen2B1SqlPrimaryKey.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C1History.enabled': 'true',
+                    'delosdb.experimental.mvccGen2C2ArchivedUndo.enabled': 'true',
+                    'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'true',
+                    'delosdb.experimental.mvccPhysicalScanCost.enabled': 'true',
+                    'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true',
+                    'delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled': 'true',
+                    'delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled': 'true',
+                    'delosdb.experimental.mvccGen2StreamingBulkScan.enabled': Boolean.toString(streaming),
+                    'delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled': 'false',
+                    'delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled': 'false'
+            ])
+        }
+    }
+}
+
+def delosGen2C3F07StreamingOff = registerDelosGen2C3F07StreamingFalsification(
+        'runDelosGen2C3F07StreamingOffDiagnostic', 'off', false)
+def delosGen2C3F07StreamingOn = registerDelosGen2C3F07StreamingFalsification(
+        'runDelosGen2C3F07StreamingOnDiagnostic', 'on', true)
+
+delosGen2C3F07StreamingOn.configure {
+    mustRunAfter delosGen2C3F07StreamingOff
+}
+
+tasks.register('runDelosGen2C3F07StreamingABDiagnostic') {
+    group = 'verification'
+    description = 'Runs F07 non-holdable materialized-vs-streaming A/B.'
+    dependsOn delosGen2C3F07StreamingOff, delosGen2C3F07StreamingOn
+    outputs.upToDateWhen { false }
+}
 
 tasks.register('runDelosGen2C3F07Embedded8cJfrDiagnostic', JavaExec) {
     group = 'verification'

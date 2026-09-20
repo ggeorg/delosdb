@@ -175,6 +175,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2SF07EmbeddedJfrAttribution();
             return;
         }
+        if (args.length == 1 && "phase2t-f07-streaming-falsification".equals(args[0])) {
+            runPhase2TF07StreamingFalsification();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -200,6 +204,213 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
 
+
+    private static void runPhase2TF07StreamingFalsification() throws Exception {
+        Path reportDirectory = requiredPhase2TPath("reportDirectory");
+        Path databaseRoot = requiredPhase2TPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int payloadSize = 128;
+        int commitBatchSize = 100;
+        boolean streaming = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2StreamingBulkScan.enabled");
+        boolean projected = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled");
+        boolean singlePass = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled");
+        boolean reusable = Boolean.getBoolean(
+                "delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled");
+        if (!projected || !singlePass || !reusable) {
+            throw new IllegalStateException(
+                    "Phase-2T requires projected CURRENT plus single-pass/reusable scan flags");
+        }
+
+        DelosBenchmarkConfig config =
+                new DelosBenchmarkConfig(rowCount, payloadSize, SEED, commitBatchSize);
+        String jdbcUrl = "jdbc:derby:"
+                + databaseRoot.resolve("f07-streaming-falsification").toAbsolutePath()
+                + ";create=true";
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2t_heap", "", true, config).prepare();
+            new DelosJdbcBenchmarkScenario(
+                    setup, "p2t_mvcc", " using delos_mvcc", true, config).prepare();
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2T_HEAP");
+            phase2BUpdateStatistics(setup, "DELOS_BENCH_P2T_MVCC");
+            setup.commit();
+        }
+
+        LinkedHashMap<String, String> sqlByVariant = new LinkedHashMap<>();
+        sqlByVariant.put(
+                "heap-input", phase2QSortSql("DELOS_BENCH_P2T_HEAP", false, true));
+        sqlByVariant.put(
+                "mvcc-input", phase2QSortSql("DELOS_BENCH_P2T_MVCC", false, true));
+        sqlByVariant.put(
+                "heap-sort", phase2QSortSql("DELOS_BENCH_P2T_HEAP", true, false));
+        sqlByVariant.put(
+                "mvcc-sort", phase2QSortSql("DELOS_BENCH_P2T_MVCC", true, false));
+
+        LinkedHashMap<String, Phase2RConcurrencyMeasurement> measurements =
+                new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
+            boolean ordered = entry.getKey().endsWith("-sort");
+            measurements.put(
+                    entry.getKey(),
+                    phase2TMeasureConcurrent(
+                            jdbcUrl, entry.getValue(), entry.getKey(), rowCount, ordered, 8));
+        }
+        phase2TAssertSemantics(measurements);
+        phase2TWriteMeasurements(reportDirectory, measurements);
+
+        double inputRatio = phase2RRatio(measurements, "mvcc-input", "heap-input");
+        double sortRatio = phase2RRatio(measurements, "mvcc-sort", "heap-sort");
+        String summary = "DelosDB Phase-2T F07 streaming falsification\n"
+                + "diagnosticOnly=true\n"
+                + "rows=" + rowCount + "\n"
+                + "clients=8\n"
+                + "holdability=CLOSE_CURSORS_AT_COMMIT\n"
+                + "projectedCurrentRead=" + projected + "\n"
+                + "singlePassCurrentScan=" + singlePass + "\n"
+                + "reusableCurrentScanTemplate=" + reusable + "\n"
+                + "streamingBulkScan=" + streaming + "\n"
+                + "streamingReachable=" + streaming + "\n"
+                + "heapInputTxPerSec=" + format(phase2RMedian(measurements, "heap-input")) + "\n"
+                + "mvccInputTxPerSec=" + format(phase2RMedian(measurements, "mvcc-input")) + "\n"
+                + "heapSortTxPerSec=" + format(phase2RMedian(measurements, "heap-sort")) + "\n"
+                + "mvccSortTxPerSec=" + format(phase2RMedian(measurements, "mvcc-sort")) + "\n"
+                + "mvccVsHeapInput=" + format(inputRatio) + "\n"
+                + "mvccVsHeapSort=" + format(sortRatio) + "\n"
+                + "semanticFingerprintsMatch=true\n"
+                + "measurementStatus=" + phase2RStatus(measurements) + "\n"
+                + "runRangeStatus=" + phase2RRunRangeStatus(measurements) + "\n";
+        Files.writeString(
+                reportDirectory.resolve("phase2t-f07-streaming-summary.txt"),
+                summary,
+                StandardCharsets.UTF_8);
+        System.out.print(summary);
+    }
+
+    private static Phase2RConcurrencyMeasurement phase2TMeasureConcurrent(
+            String jdbcUrl,
+            String sql,
+            String variant,
+            int expectedRows,
+            boolean ordered,
+            int clients) throws Exception {
+        int warmupRounds = 3;
+        int measuredRounds = 7;
+        int executionsPerClient = 2;
+        List<Connection> connections = new ArrayList<>();
+        List<PreparedStatement> statements = new ArrayList<>();
+        ExecutorService executor = Executors.newFixedThreadPool(clients);
+        try {
+            for (int client = 0; client < clients; client++) {
+                Connection connection = openPhase2AConnection(jdbcUrl);
+                connection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
+                if (connection.getHoldability() != ResultSet.CLOSE_CURSORS_AT_COMMIT) {
+                    throw new IllegalStateException("Phase-2T non-holdable control not applied");
+                }
+                connections.add(connection);
+                statements.add(connection.prepareStatement(sql));
+            }
+            long fingerprint = phase2QExecute(statements.get(0), expectedRows, ordered);
+            for (int warmup = 0; warmup < warmupRounds; warmup++) {
+                phase2RConcurrentRound(
+                        executor, statements, expectedRows, ordered, fingerprint,
+                        executionsPerClient, false);
+            }
+            List<Double> throughputs = new ArrayList<>();
+            for (int round = 0; round < measuredRounds; round++) {
+                throughputs.add(phase2RConcurrentRound(
+                        executor, statements, expectedRows, ordered, fingerprint,
+                        executionsPerClient, true));
+            }
+            Distribution distribution = distribution(throughputs);
+            DelosMeasurementValidityContract.DispersionDecision decision =
+                    DelosMeasurementValidityContract.classifyCustom(
+                            distribution.iqr() / distribution.median(),
+                            distribution.mad() / distribution.median());
+            return new Phase2RConcurrencyMeasurement(
+                    fingerprint, throughputs, distribution, decision);
+        } finally {
+            executor.shutdownNow();
+            for (PreparedStatement statement : statements) {
+                try {
+                    statement.close();
+                } catch (SQLException ignored) {
+                    // Diagnostic cleanup only.
+                }
+            }
+            for (Connection connection : connections) {
+                try {
+                    connection.rollback();
+                } finally {
+                    connection.close();
+                }
+            }
+        }
+    }
+
+    private static void phase2TAssertSemantics(
+            Map<String, Phase2RConcurrencyMeasurement> measurements) {
+        long input = measurements.get("heap-input").fingerprint();
+        if (measurements.get("mvcc-input").fingerprint() != input) {
+            throw new IllegalStateException("Phase-2T input semantic drift");
+        }
+        long sorted = measurements.get("heap-sort").fingerprint();
+        if (measurements.get("mvcc-sort").fingerprint() != sorted) {
+            throw new IllegalStateException("Phase-2T sort semantic drift");
+        }
+    }
+
+    private static void phase2TWriteMeasurements(
+            Path reportDirectory,
+            Map<String, Phase2RConcurrencyMeasurement> measurements) throws IOException {
+        StringBuilder samples = new StringBuilder("variant\tround\tthroughputTxPerSec\n");
+        StringBuilder dispersion = new StringBuilder(
+                "variant\tmedianTxPerSec\tiqrToMedian\tmadToMedian\tgoverningDispersion"
+                        + "\tmaxMinRatio\trunRangeStatus\tstatus\n");
+        for (Map.Entry<String, Phase2RConcurrencyMeasurement> entry : measurements.entrySet()) {
+            Phase2RConcurrencyMeasurement measurement = entry.getValue();
+            for (int i = 0; i < measurement.throughputs().size(); i++) {
+                samples.append(entry.getKey()).append('\t').append(i + 1).append('\t')
+                        .append(format(measurement.throughputs().get(i))).append('\n');
+            }
+            Distribution distribution = measurement.distribution();
+            double maxMinRatio = distribution.min() == 0.0d
+                    ? Double.POSITIVE_INFINITY
+                    : distribution.max() / distribution.min();
+            double iqrRatio = distribution.iqr() / distribution.median();
+            double madRatio = distribution.mad() / distribution.median();
+            dispersion.append(entry.getKey()).append('\t')
+                    .append(format(distribution.median())).append('\t')
+                    .append(format(iqrRatio)).append('\t')
+                    .append(format(madRatio)).append('\t')
+                    .append(format(Math.max(iqrRatio, madRatio))).append('\t')
+                    .append(format(maxMinRatio)).append('\t')
+                    .append(maxMinRatio <= 1.20d ? "VALID" : "INVALID").append('\t')
+                    .append(measurement.decision().status()).append('\n');
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2t-repeated-throughput-samples.tsv"),
+                samples.toString(), StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDirectory.resolve("phase2t-dispersion.tsv"),
+                dispersion.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static Path requiredPhase2TPath(String key) {
+        String prefix = "delosdb.phase2.f07StreamingFalsification.";
+        String value = System.getProperty(prefix + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + prefix + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
 
     private static void runPhase2SF07EmbeddedJfrAttribution() throws Exception {
         Path reportDirectory = requiredPhase2RPath("reportDirectory");
