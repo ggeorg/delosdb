@@ -17445,6 +17445,145 @@ tasks.register('runDelosGen2C3F04EmbeddedConcurrency', JavaExec) {
 
 
 
+// Phase 2W: attribute the SERVER-only F04 deficit at the Delos Network Server
+// command level. Capture 20 measured queries on each of eight client connections
+// for both current simple-join shapes; no production behavior changes.
+tasks.register('runDelosGen2C3F04DrdaServerPhaseDiagnostic', JavaExec) {
+    group = 'verification'
+    description = 'Captures F04 Heap/MVCC DRDA execute, QRYDTA, send, and continuation phase evidence at 8 clients.'
+    dependsOn tasks.named('compileTestJava'), ':jars'
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(derbyTestsClassDir, delosNetworkClientClasspath)
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f04-drda-server-phase')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-f04-drda-server-phase')
+    outputs.dir(reportDir)
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F04 DRDA server-phase diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.drdaServerPhaseEvidence': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f04DrdaServerPhaseDiagnostic': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.drdaServerPhaseSkipOpenQueries': '20',
+                'delosdb.benchmark.crossEngineConcurrency.drdaServerPhaseCaptureOpenQueries': '20',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '20',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '1',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    doLast {
+        File summary = new File(reportDir.get().asFile, 'cross-engine-concurrency-summary.txt')
+        File raw = new File(reportDir.get().asFile, 'drda-server-phase-evidence.csv')
+        File aggregate = new File(reportDir.get().asFile, 'f04-drda-server-phase-aggregate.csv')
+        File aggregateText = new File(reportDir.get().asFile, 'f04-drda-server-phase-aggregate.txt')
+        File oracle = new File(reportDir.get().asFile, 'sql-semantic-oracle.csv')
+        [summary, raw, aggregate, aggregateText, oracle].each { File evidence ->
+            if (!evidence.isFile() || evidence.length() == 0L) {
+                throw new GradleException("F04 DRDA server-phase evidence missing: ${evidence}")
+            }
+        }
+
+        String summaryText = summary.getText('UTF-8')
+        [
+                'F04 DRDA server-phase diagnostic: true',
+                'MVCC Gen2-C3 read server enabled: true',
+                'MVCC physical scan cost enabled: true',
+                'MVCC physical RowLocation cost enabled: true',
+                'MVCC Gen2 projected current read enabled: false',
+                'Workloads: [JOIN_INDEXED_1TO1, JOIN_INDEXED_FANOUT]'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F04 DRDA server-phase summary missing evidence marker: ${marker}")
+            }
+        }
+
+        String aggregateBody = aggregateText.getText('UTF-8')
+        [
+                'diagnosticOnly=true',
+                'workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT',
+                'clients=8',
+                'captureOpenQueries=20',
+                'physicalScanCost=true',
+                'physicalRowLocationCost=true',
+                'projectedCurrentRead=false',
+                'baseFetchPagePrefetch=false'
+        ].each { String marker ->
+            if (!aggregateBody.contains(marker)) {
+                throw new GradleException(
+                        "F04 DRDA server-phase aggregate missing evidence marker: ${marker}")
+            }
+        }
+
+        def aggregateRows = aggregate.readLines('UTF-8').findAll { !it.isBlank() }
+        if (aggregateRows.size() != 17) {
+            throw new GradleException(
+                    "F04 DRDA server-phase aggregate expected 16 data rows, found ${aggregateRows.size() - 1}")
+        }
+    }
+}
+
+
 // Phase 2O: isolate the F06 raw two-column row-production path with a matched
 // index=null TABLE_SCAN control. Natural raw-input and canonical GROUP_HIGH_CARD
 // plans are captured separately so optimizer choice is evidence, not an assertion.

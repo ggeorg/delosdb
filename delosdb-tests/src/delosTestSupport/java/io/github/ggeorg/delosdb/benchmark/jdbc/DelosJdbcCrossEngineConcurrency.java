@@ -5421,6 +5421,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (drdaServerPhaseEvidenceEnabled() && target.isDrda()) {
             addProperty(command, "drdaServerPhaseEvidence", true);
         }
+        if (f04DrdaServerPhaseDiagnosticEnabled()) {
+            addProperty(command, "f04DrdaServerPhaseDiagnostic", true);
+        }
         if (f07DrdaServerPhaseDiagnosticEnabled()) {
             addProperty(command, "f07DrdaServerPhaseDiagnostic", true);
         }
@@ -6290,6 +6293,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static int drdaServerPhaseCaptureOpenQueries() {
         return Integer.getInteger(PREFIX + "drdaServerPhaseCaptureOpenQueries", 20);
+    }
+
+    private static boolean f04DrdaServerPhaseDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f04DrdaServerPhaseDiagnostic");
     }
 
     private static boolean f07DrdaServerPhaseDiagnosticEnabled() {
@@ -10776,7 +10783,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     long continueQueries = parseServerEvidenceLong(values, "continueQueries");
                     int resultColumns = Math.toIntExact(parseServerEvidenceLong(values, "resultColumns"));
                     Workload workload;
-                    if (f07DrdaServerPhaseDiagnosticEnabled()) {
+                    if (f04DrdaServerPhaseDiagnosticEnabled()) {
+                        workload = switch (resultColumns) {
+                            case 1 -> Workload.JOIN_INDEXED_1TO1;
+                            case 2 -> Workload.JOIN_INDEXED_FANOUT;
+                            default -> throw new IllegalStateException(
+                                    "Unexpected F04 DRDA server-phase result-column count: "
+                                            + resultColumns + " in " + values);
+                        };
+                    } else if (f07DrdaServerPhaseDiagnosticEnabled()) {
                         workload = Workload.SORT_FULL;
                     } else if (continueQueries > 0L) {
                         workload = Workload.RANGE_SCAN_FULL;
@@ -10832,6 +10847,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void validateDrdaServerPhaseEvidence(
             Options options, List<DrdaServerPhaseEvidence> evidence) {
+        if (f04DrdaServerPhaseDiagnosticEnabled()) {
+            validateF04DrdaServerPhaseEvidence(options, evidence);
+            return;
+        }
         if (f07DrdaServerPhaseDiagnosticEnabled()) {
             validateF07DrdaServerPhaseEvidence(options, evidence);
             return;
@@ -10880,6 +10899,91 @@ public final class DelosJdbcCrossEngineConcurrency {
             String key = value.target() + '|' + value.workload() + '|' + value.run();
             if (unique.put(key, value) != null) {
                 throw new IllegalStateException("Duplicate DRDA server phase evidence: " + key);
+            }
+        }
+    }
+
+
+    private static void validateF04DrdaServerPhaseEvidence(
+            Options options, List<DrdaServerPhaseEvidence> evidence) {
+        List<Target> expectedTargets = DRDA_SERVER_PHASE_EVIDENCE_TARGETS;
+        if (!options.targetValues().equals(expectedTargets)) {
+            throw new IllegalStateException(
+                    "F04 DRDA server-phase evidence requires Delos Heap/MVCC DRDA targets: "
+                            + options.targetValues());
+        }
+        int clients = options.clientValues().getFirst();
+        List<Workload> workloads = List.of(
+                Workload.JOIN_INDEXED_1TO1,
+                Workload.JOIN_INDEXED_FANOUT);
+        int expected = expectedTargets.size() * options.runs() * clients * workloads.size();
+        if (evidence.size() != expected) {
+            throw new IllegalStateException(
+                    "F04 DRDA server-phase evidence count mismatch: expected=" + expected
+                            + ", actual=" + evidence.size() + ", evidence=" + evidence);
+        }
+
+        Map<String, Integer> connectionCounts = new LinkedHashMap<>();
+        Map<String, DrdaServerPhaseEvidence> unique = new LinkedHashMap<>();
+        int rowCount = options.rowCounts().getFirst();
+        for (DrdaServerPhaseEvidence value : evidence) {
+            if (!workloads.contains(value.workload())) {
+                throw new IllegalStateException("Unexpected F04 server-phase workload: " + value);
+            }
+            long expectedCaptureFirst = drdaServerPhaseSkipOpenQueries() + 1L;
+            long expectedCaptureLast = drdaServerPhaseSkipOpenQueries()
+                    + (long) drdaServerPhaseCaptureOpenQueries();
+            if (value.captureFirst() != expectedCaptureFirst
+                    || value.captureLast() != expectedCaptureLast
+                    || value.openQueries() != drdaServerPhaseCaptureOpenQueries()) {
+                throw new IllegalStateException("Unexpected F04 measured query window: " + value);
+            }
+            int expectedColumns = value.workload() == Workload.JOIN_INDEXED_1TO1 ? 1 : 2;
+            if (value.resultColumns() != expectedColumns || value.sqlHash() == 0L) {
+                throw new IllegalStateException("Unexpected F04 statement shape: " + value);
+            }
+            long expectedRows = (long) drdaServerPhaseCaptureOpenQueries()
+                    * expectedFitnessRows(value.workload(), rowCount);
+            if (value.openRows() + value.continueRows() != expectedRows) {
+                throw new IllegalStateException(
+                        "Unexpected F04 result-row count: expected=" + expectedRows
+                                + ", evidence=" + value);
+            }
+            if (value.openRows() <= 0L || value.openTotalNanos() <= 0L
+                    || value.openExecuteNanos() <= 0L
+                    || value.openQueryDataNanos() <= 0L || value.openSendNanos() <= 0L) {
+                throw new IllegalStateException("Missing F04 OPNQRY phase evidence: " + value);
+            }
+            if (value.continueQueries() > 0L
+                    && (value.continueRows() <= 0L || value.continueTotalNanos() <= 0L
+                            || value.continueQueryDataNanos() <= 0L
+                            || value.continueSendNanos() <= 0L)) {
+                throw new IllegalStateException("Missing F04 CNTQRY phase evidence: " + value);
+            }
+            if (value.openAccountedNanos() > value.openTotalNanos()
+                    || value.continueAccountedNanos() > value.continueTotalNanos()) {
+                throw new IllegalStateException("F04 phase accounting exceeds total: " + value);
+            }
+
+            String targetWorkloadRun = value.target() + '|' + value.workload() + '|' + value.run();
+            connectionCounts.merge(targetWorkloadRun, 1, Integer::sum);
+            String uniqueKey = targetWorkloadRun + '|' + value.connection();
+            if (unique.put(uniqueKey, value) != null) {
+                throw new IllegalStateException(
+                        "Duplicate F04 DRDA server-phase evidence: " + uniqueKey);
+            }
+        }
+        for (Target target : expectedTargets) {
+            for (Workload workload : workloads) {
+                for (int run = 1; run <= options.runs(); run++) {
+                    String key = target.id() + '|' + workload + '|' + run;
+                    int actual = connectionCounts.getOrDefault(key, 0);
+                    if (actual != clients) {
+                        throw new IllegalStateException(
+                                "F04 server-phase connection count mismatch for " + key
+                                        + ": expected=" + clients + ", actual=" + actual);
+                    }
+                }
             }
         }
     }
@@ -10996,9 +11100,107 @@ public final class DelosJdbcCrossEngineConcurrency {
                 csv, StandardCharsets.UTF_8);
         Files.writeString(options.reportDirectory().resolve("drda-server-phase-evidence.txt"),
                 text, StandardCharsets.UTF_8);
+        if (f04DrdaServerPhaseDiagnosticEnabled()) {
+            writeF04DrdaServerPhaseAggregate(options, sorted);
+        }
         if (f07DrdaServerPhaseDiagnosticEnabled()) {
             writeF07DrdaServerPhaseAggregate(options, sorted);
         }
+    }
+
+
+    private static void writeF04DrdaServerPhaseAggregate(
+            Options options, List<DrdaServerPhaseEvidence> evidence) throws IOException {
+        Map<String, long[]> totals = new LinkedHashMap<>();
+        for (DrdaServerPhaseEvidence value : evidence) {
+            String key = value.target() + '|' + value.workload() + '|' + value.run();
+            long[] total = totals.computeIfAbsent(key, ignored -> new long[15]);
+            total[0]++;
+            total[1] += value.openQueries();
+            total[2] += value.continueQueries();
+            total[3] += value.openRows() + value.continueRows();
+            total[4] += value.openParseNanos();
+            total[5] += value.openExecuteNanos();
+            total[6] += value.openMetadataNanos();
+            total[7] += value.openQueryDataNanos();
+            total[8] += value.openSendNanos();
+            total[9] += value.openTotalNanos();
+            total[10] += value.continueParseNanos();
+            total[11] += value.continueMetadataNanos();
+            total[12] += value.continueQueryDataNanos();
+            total[13] += value.continueSendNanos();
+            total[14] += value.continueTotalNanos();
+        }
+
+        String header = "target,workload,run,connections,openQueries,continueQueries,resultRows,"
+                + "averageOpenTotalMicros,averageOpenParseMicros,averageOpenExecuteMicros,"
+                + "averageOpenMetadataMicros,averageOpenQueryDataMicros,averageOpenSendMicros,"
+                + "openParseShare,openExecuteShare,openMetadataShare,openQueryDataShare,openSendShare,"
+                + "averageContinueTotalMicros,averageContinueParseMicros,averageContinueMetadataMicros,"
+                + "averageContinueQueryDataMicros,averageContinueSendMicros,"
+                + "continueParseShare,continueMetadataShare,continueQueryDataShare,continueSendShare";
+        StringBuilder csv = new StringBuilder(header).append('\n');
+        StringBuilder text = new StringBuilder()
+                .append("DelosDB Phase-2W F04 DRDA server-phase aggregate\n")
+                .append("================================================\n\n")
+                .append("diagnosticOnly=true\n")
+                .append("workloads=JOIN_INDEXED_1TO1,JOIN_INDEXED_FANOUT\n")
+                .append("clients=").append(options.clients()).append('\n')
+                .append("captureOpenQueries=").append(drdaServerPhaseCaptureOpenQueries()).append('\n')
+                .append("physicalScanCost=").append(mvccPhysicalScanCostEnabled()).append('\n')
+                .append("physicalRowLocationCost=").append(mvccPhysicalRowLocationCostEnabled()).append('\n')
+                .append("projectedCurrentRead=").append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
+                .append("baseFetchPagePrefetch=")
+                .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append("\n\n");
+
+        for (Map.Entry<String, long[]> entry : totals.entrySet()) {
+            String[] parts = entry.getKey().split("\\|");
+            String target = parts[0];
+            String workload = parts[1];
+            int run = Integer.parseInt(parts[2]);
+            long[] total = entry.getValue();
+            long openQueries = total[1];
+            long continueQueries = total[2];
+            csv.append(target).append(',').append(workload).append(',').append(run).append(',')
+                    .append(total[0]).append(',').append(openQueries).append(',')
+                    .append(continueQueries).append(',').append(total[3]).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[4], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[5], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[6], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[7], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[8], openQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[4], total[9]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[5], total[9]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[6], total[9]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[7], total[9]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[8], total[9]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[14], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[10], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[11], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[12], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.micros(total[13], continueQueries))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[10], total[14]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[11], total[14]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[12], total[14]))).append(',')
+                    .append(format(DrdaServerPhaseEvidence.share(total[13], total[14]))).append('\n');
+
+            text.append(target).append(' ').append(workload).append(" run=").append(run)
+                    .append(" connections=").append(total[0])
+                    .append(" openTotalUs=").append(format(DrdaServerPhaseEvidence.micros(total[9], openQueries)))
+                    .append(" executeUs=").append(format(DrdaServerPhaseEvidence.micros(total[5], openQueries)))
+                    .append(" qrydtaUs=").append(format(DrdaServerPhaseEvidence.micros(total[7], openQueries)))
+                    .append(" sendUs=").append(format(DrdaServerPhaseEvidence.micros(total[8], openQueries)))
+                    .append(" executeShare=").append(format(DrdaServerPhaseEvidence.share(total[5], total[9])))
+                    .append(" qrydtaShare=").append(format(DrdaServerPhaseEvidence.share(total[7], total[9])))
+                    .append(" sendShare=").append(format(DrdaServerPhaseEvidence.share(total[8], total[9])))
+                    .append('\n');
+        }
+
+        Files.writeString(options.reportDirectory().resolve("f04-drda-server-phase-aggregate.csv"),
+                csv, StandardCharsets.UTF_8);
+        Files.writeString(options.reportDirectory().resolve("f04-drda-server-phase-aggregate.txt"),
+                text, StandardCharsets.UTF_8);
     }
 
 
@@ -11609,6 +11811,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(f02ScaleSurfaceDiagnosticEnabled()).append('\n')
                 .append("F02 embedded concurrency diagnostic: ")
                 .append(f02EmbeddedConcurrencyDiagnosticEnabled()).append('\n')
+                .append("F04 DRDA server-phase diagnostic: ")
+                .append(f04DrdaServerPhaseDiagnosticEnabled()).append('\n')
                 .append("F07 DRDA server-phase diagnostic: ")
                 .append(f07DrdaServerPhaseDiagnosticEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read enabled: ")
@@ -12942,6 +13146,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && configuredTargets.equals(CURRENT_BASELINE_SERVER_TARGETS);
             boolean drdaServerPhaseDiagnostic = drdaServerPhaseEvidenceEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
+            boolean f04DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
+                    && f04DrdaServerPhaseDiagnosticEnabled();
             boolean f07DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
                     && f07DrdaServerPhaseDiagnosticEnabled();
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -12999,7 +13205,52 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
-            if (f07DrdaServerPhaseDiagnostic) {
+            if (f04DrdaServerPhaseDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(
+                        Workload.JOIN_INDEXED_1TO1,
+                        Workload.JOIN_INDEXED_FANOUT))) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires the two F04 join workloads");
+                }
+                if (!clientValues().equals(List.of(8))) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires exactly 8 clients");
+                }
+                if (!rowCounts().equals(List.of(10000))) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires rows=10000");
+                }
+                if (!widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires width 1");
+                }
+                if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires FULL_INDEXED table shape");
+                }
+                boolean phaseShape = transactionsPerClient == 20
+                        && warmups == 1
+                        && iterations == 1
+                        && Double.compare(minimumWarmupSeconds, 0.0d) == 0
+                        && maximumWarmupIterations == 1
+                        && Double.compare(minimumMeasuredSeconds, 0.0d) == 0
+                        && maximumMeasuredIterations == 1;
+                if (!phaseShape
+                        || drdaServerPhaseSkipOpenQueries() != 20
+                        || drdaServerPhaseCaptureOpenQueries() != 20
+                        || !sqlSemanticOracleEnabled()
+                        || !mvccGen2C3ReadServerEnabled()
+                        || !mvccPhysicalScanCostEnabled()
+                        || !mvccPhysicalRowLocationCostEnabled()
+                        || mvccGen2ProjectedCurrentReadEnabled()
+                        || Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
+                    throw new IllegalArgumentException(
+                            "F04 DRDA server-phase diagnostic requires canonical Gen2 read settings, "
+                                    + "20 warmup/capture queries, transactionsPerClient=20, "
+                                    + "warmups=1, iterations=1, zero-duration single-interval phases, "
+                                    + "and SQL semantic oracle enabled");
+                }
+            } else if (f07DrdaServerPhaseDiagnostic) {
                 if (!configuredWorkloads.equals(List.of(Workload.SORT_FULL))) {
                     throw new IllegalArgumentException(
                             "F07 DRDA server-phase diagnostic requires SORT_FULL only");
@@ -13339,7 +13590,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
-                    && !f02EmbeddedConcurrencyDiagnostic && !f07DrdaServerPhaseDiagnostic
+                    && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
+                    && !f07DrdaServerPhaseDiagnostic
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }

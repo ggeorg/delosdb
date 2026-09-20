@@ -1,11 +1,11 @@
-DelosDB Gen2-C3 Phase 2V F04 embedded concurrency diagnostic overlay
+DelosDB Gen2-C3 Phase 2W F04 DRDA server-phase diagnostic overlay
 
 Purpose:
-- Stabilize F04 fixture statistics explicitly before measurement.
-- Preserve current promoted Gen2 read settings.
-- Compare Heap and Gen2 JOIN_INDEXED_1TO1 / JOIN_INDEXED_FANOUT at 1 and 8 embedded clients.
-- Capture current natural plans and semantic fingerprints.
-- Distinguish concurrency scaling loss from a universally slow join/input kernel.
+- Preserve the current promoted Gen2 read architecture and F04 SQL.
+- Capture Delos Heap/MVCC Network Server command phases for JOIN_INDEXED_1TO1 and JOIN_INDEXED_FANOUT.
+- Measure eight client connections with a fixed 20-query warmup and 20-query capture window per connection.
+- Separate server execute time from QRYDTA construction, send time, and CNTQRY continuation work.
+- Preserve SQL semantic-oracle validation and exact expected result-row counts.
 
 Changed files:
 - delosdb-tests/build.gradle
@@ -13,4 +13,5 @@ Changed files:
 
 Production behavior changed: no
 Canonical benchmark thresholds changed: no
+Canonical F04 benchmark rerun required: no
 Existing historical diagnostics removed or weakened: no
