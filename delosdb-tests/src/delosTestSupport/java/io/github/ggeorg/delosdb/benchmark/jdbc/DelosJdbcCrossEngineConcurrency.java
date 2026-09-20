@@ -13727,7 +13727,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
                     && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
-                    && !f07DrdaServerPhaseDiagnostic
+                    && !f04DrdaRowAdvanceJfrDiagnostic && !f07DrdaServerPhaseDiagnostic
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
