@@ -1,16 +1,20 @@
-DelosDB Gen2-C3 F04 evidence-marker contract fix
-
-Changed files
--------------
-delosdb-tests/build.gradle
+DelosDB Gen2-C3 F04 canonical statistics stabilization overlay
 
 Purpose
 -------
-Validate the disposable-index-statistics diagnostic state from the server
-container manifest, which is the evidence file that actually records it,
-instead of incorrectly requiring the marker in the benchmark summary.
+Make canonical F04 simple-join fixtures establish Delos statistics
+synchronously before measurement, avoiding asynchronous/order-dependent
+optimizer state after the MVCC unique-cardinality production correction.
 
-Behavior
---------
-Harness-only. No production engine, optimizer, MVCC, RawStore, WAL, recovery,
-durable-format, workload, cost-model, or benchmark-threshold changes.
+Changes
+-------
+- Canonical runDelosGen2C3SimpleJoinFitness explicitly enables
+  refreshSimpleJoinStatistics.
+- JOIN_INDEXED_FANOUT now refreshes both parent and child Delos statistics
+  when simple-join statistics refresh is enabled.
+- Canonical sentinel requires the summary marker proving refresh was enabled.
+
+Scope
+-----
+Harness only. No production optimizer, storage, MVCC, RawStore, WAL,
+recovery, durable-format, workload SQL, or benchmark-threshold changes.

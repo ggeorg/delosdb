@@ -20691,6 +20691,7 @@ tasks.register('runDelosGen2C3SimpleJoinFitness', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': physicalScanCostValue,
+                'delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.projectVersion': rootProject.version.toString(),
@@ -20840,6 +20841,10 @@ tasks.register('runDelosGen2C3SimpleJoinSentinel') {
         if (!summary.contains('MVCC Gen2 projected current read enabled: false')) {
             throw new GradleException(
                     "Gen2-C3 F04 baseline was contaminated by the projected-current experiment: ${summaryFile}")
+        }
+        if (!summary.contains('Simple-join statistics refresh enabled: true')) {
+            throw new GradleException(
+                    "Gen2-C3 F04 canonical run does not prove deterministic simple-join statistics refresh: ${summaryFile}")
         }
         def expectedPhysicalScanCost = providers.gradleProperty(delosGen2C3JoinPhysicalScanCostProperty)
                 .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)

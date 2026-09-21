@@ -7516,6 +7516,19 @@ public final class DelosJdbcCrossEngineConcurrency {
                 prepareJoinFanoutFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+                if (refreshSimpleJoinStatisticsEnabled()
+                        && (options.target() == Target.DELOS_HEAP_DRDA
+                                || options.target() == Target.DELOS_MVCC_DRDA)) {
+                    phase2BUpdateStatistics(
+                            verifier, joinFanoutParentTableName(scenario.tableName()));
+                    phase2BUpdateStatistics(
+                            verifier, joinFanoutChildTableName(scenario.tableName()));
+                    verifier.commit();
+                    System.out.printf(Locale.ROOT,
+                            "FIXTURE simple-join-statistics-refreshed target=%s workload=%s%n",
+                            options.target().id(), spec.workload().name());
+                    System.out.flush();
+                }
             } else if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE
                     || spec.workload() == Workload.JOIN_4WAY_FANOUT) {
                 prepareMultiJoinFixture(
