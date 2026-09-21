@@ -17616,6 +17616,13 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
             throw new GradleException(
                     'delosdb.f04.refreshSimpleJoinStatistics must be true or false')
         }
+        def keepDisposableStatsValue = providers.gradleProperty(
+                'delosdb.f04.keepDisposableStats')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!(keepDisposableStatsValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.f04.keepDisposableStats must be true or false')
+        }
         delete(reportDir)
         delete(databaseRoot)
         reportDir.get().asFile.mkdirs()
@@ -17626,6 +17633,8 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.f04DrdaRowAdvanceJfrDiagnostic': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics':
                         refreshSimpleJoinStatisticsValue,
+                'derby.storage.indexStats.debug.keepDisposableStats':
+                        keepDisposableStatsValue,
                 'delosdb.benchmark.crossEngineConcurrency.f04ServerPlanCostMatrix': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
                         'delos_heap_drda,delos_mvcc_drda',
@@ -17690,6 +17699,9 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
         def refreshSimpleJoinStatisticsValue = providers.gradleProperty(
                 'delosdb.f04.refreshSimpleJoinStatistics')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        def keepDisposableStatsValue = providers.gradleProperty(
+                'delosdb.f04.keepDisposableStats')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         [
                 'MVCC Gen2-C3 read server enabled: true',
                 'MVCC physical scan cost enabled: true',
@@ -17698,6 +17710,7 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'Workloads: [JOIN_INDEXED_1TO1]',
                 'Clients: 8',
                 "Simple-join statistics refresh enabled: ${refreshSimpleJoinStatisticsValue}",
+                "Derby keep disposable index stats enabled: ${keepDisposableStatsValue}",
                 'F04 server plan cost matrix enabled: true'
         ].each { String marker ->
             if (!summaryText.contains(marker)) {

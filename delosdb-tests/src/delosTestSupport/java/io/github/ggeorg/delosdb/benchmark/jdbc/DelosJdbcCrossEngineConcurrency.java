@@ -5670,6 +5670,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
                         "-XX:+AlwaysPreTouch"));
                 addServerProfileJvmArgs(target, run, javaCommand);
+                if (Boolean.getBoolean("derby.storage.indexStats.debug.keepDisposableStats")) {
+                    javaCommand.add("-Dderby.storage.indexStats.debug.keepDisposableStats=true");
+                }
                 if (target == Target.DELOS_HEAP_DRDA) {
                     javaCommand.add("-Ddelosdb.experimental.heapPageReadImage=true");
                     javaCommand.add("-Ddelosdb.experimental.fastRecordReadLock=true");
@@ -5925,6 +5928,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Simple-join statistics refresh enabled: ")
                 .append(refreshSimpleJoinStatisticsEnabled()).append('\n')
+                .append("Derby keep disposable index stats enabled: ")
+                .append(Boolean.getBoolean("derby.storage.indexStats.debug.keepDisposableStats")).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")

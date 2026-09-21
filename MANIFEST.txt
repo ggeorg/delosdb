@@ -1,15 +1,25 @@
-DelosDB Gen2-C3 F04 SERVER plan-cost matrix diagnostic overlay
+DelosDB Gen2-C3 F04 disposable-statistics falsification overlay
 
-Purpose:
-- Extend the existing F04 JOIN_INDEXED_1TO1 server-side JFR diagnostic.
-- Capture the exact server-compiled natural plan for Heap and Gen2.
-- Capture estimated alternatives for fixed base-first/dimension-first HASH and NESTEDLOOP plans.
-- Preserve the existing stable-statistics switch, semantic oracle, JFR profile, and benchmark settings.
+Purpose
+-------
+Forward Derby's existing single-column unique-index statistics debug switch
+into the F04 SERVER/JFR diagnostic so we can test whether the Gen2 nested-loop
+plan is driven by a stale/low store row-count estimate.
 
-Changed files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Changed files
+-------------
+delosdb-tests/build.gradle
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Production behavior changed: no
-Benchmark thresholds changed: no
-Canonical F04 task changed: no
+Behavior
+--------
+Diagnostic-only.
+No production optimizer, storage, MVCC, RawStore, WAL, recovery, or durable-format changes.
+The F04 diagnostic may be run with:
+  -Pdelosdb.f04.refreshSimpleJoinStatistics=true
+  -Pdelosdb.f04.keepDisposableStats=true
+
+The latter becomes the JVM property:
+  derby.storage.indexStats.debug.keepDisposableStats=true
+
+and is forwarded to the actual Delos DRDA server JVMs.
