@@ -33,6 +33,10 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical lookup and visibility traversal for one MVCC version container. */
 final class MvccRawStoreVersionReader implements AutoCloseable {
+    private static final String SINGLE_PASS_HINT_DECODE_PROPERTY =
+            "delosdb.experimental.mvccSinglePassVersionHintDecode";
+    private static final String REUSE_VERSION_HINT_PAGE_RUN_PROPERTY =
+            "delosdb.experimental.mvccReuseVersionHintPageRun";
     private final Transaction transaction;
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
@@ -43,6 +47,8 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
     private MvccRawStoreVersionRows.Decoder primaryDecoder;
     private MvccRawStoreVersionRows.FetchProjection secondaryProjection;
     private MvccRawStoreVersionRows.Decoder secondaryDecoder;
+    private Page retainedHintPage;
+    private long retainedHintPageNumber = -1L;
 
     MvccRawStoreVersionReader(
             Transaction transaction,
@@ -263,6 +269,9 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         if (metrics != null) {
             metrics.versionLogicalFallback();
         }
+        if (Boolean.getBoolean(REUSE_VERSION_HINT_PAGE_RUN_PROPERTY)) {
+            releaseRetainedHintPage();
+        }
         return findByLogicalId(rowId, versionId, projection);
     }
 
@@ -275,11 +284,9 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             return null;
         }
         Page page = null;
+        boolean retainPage = false;
         try {
-            page = container.getPage(hint.pageNumber());
-            if (page != null && metrics != null) {
-                metrics.versionPageAcquired();
-            }
+            page = acquireHintPage(hint.pageNumber());
             if (page == null) {
                 return null;
             }
@@ -296,6 +303,19 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
+            }
+            if (Boolean.getBoolean(SINGLE_PASS_HINT_DECODE_PROPERTY)) {
+                MvccRawStoreTable.VersionRecord decoded =
+                        decoder(projection).decodeAtSlot(page, slot);
+                if (metrics != null) {
+                    metrics.versionSlotFetched();
+                }
+                if (decoded == null
+                        || decoded.rowId() != rowId
+                        || decoded.versionId() != versionId) {
+                    return null;
+                }
+                return decoded;
             }
             page.fetchFromSlot(
                     null,
@@ -324,11 +344,50 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             if (metrics != null) {
                 metrics.versionSlotFetched();
             }
+            retainPage = decoded != null;
             return decoded;
         } finally {
-            if (page != null) {
-                page.unlatch();
+            if (page != null
+                    && (!Boolean.getBoolean(REUSE_VERSION_HINT_PAGE_RUN_PROPERTY)
+                            || !retainPage)) {
+                releaseHintPage(page);
             }
+        }
+    }
+
+    private Page acquireHintPage(long pageNumber) throws StandardException {
+        if (!Boolean.getBoolean(REUSE_VERSION_HINT_PAGE_RUN_PROPERTY)) {
+            Page page = container.getPage(pageNumber);
+            if (page != null && metrics != null) {
+                metrics.versionPageAcquired();
+            }
+            return page;
+        }
+        if (retainedHintPage != null && retainedHintPageNumber == pageNumber) {
+            return retainedHintPage;
+        }
+        releaseRetainedHintPage();
+        retainedHintPage = container.getPage(pageNumber);
+        retainedHintPageNumber = retainedHintPage != null ? pageNumber : -1L;
+        if (retainedHintPage != null && metrics != null) {
+            metrics.versionPageAcquired();
+        }
+        return retainedHintPage;
+    }
+
+    private void releaseHintPage(Page page) {
+        if (page == retainedHintPage) {
+            releaseRetainedHintPage();
+            return;
+        }
+        page.unlatch();
+    }
+
+    private void releaseRetainedHintPage() {
+        if (retainedHintPage != null) {
+            retainedHintPage.unlatch();
+            retainedHintPage = null;
+            retainedHintPageNumber = -1L;
         }
     }
 
@@ -429,6 +488,7 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
 
     @Override
     public void close() {
+        releaseRetainedHintPage();
         if (container != null) {
             container.close();
         }

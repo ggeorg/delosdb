@@ -1,42 +1,55 @@
-DelosDB Gen2-C3 F05 read-head template reuse A/B overlay
+DelosDB Gen2-C3 F05 version-page run reuse A/B overlay
 
 Purpose
 -------
-Falsify whether the dominant allocation pressure remaining after the
-read-directory-head-only experiment materially contributes to F05 matched-plan
-latency.
+Falsify whether repeated RawStore version-page reacquisition is a primary
+contributor to the remaining matched-plan F05 MVCC base-fetch gap.
 
 Current evidence
 ----------------
-Phase-2H baseline:
-  Heap = 0.804483 ms/execution
-  Gen2 = 1.520972 ms/execution
+After directory-head trimming, read-head template reuse, and single-pass
+hinted-version decode:
 
-Read-directory-head-only ON:
-  Heap = 0.767307 ms/execution
-  Gen2 = 1.374313 ms/execution
-  Gen2 improvement = ~9.6%
-  ratio = 1.791087x
+  Heap = 0.761323 ms/execution
+  Gen2 = 1.280053 ms/execution
+  ratio = 1.681353x
 
-Current Gen2 allocation-by-site:
-  DataValueFactoryImpl.getNullDVDWithUCS_BASICcollation = 78.23%
-  directoryTemplate                              = 2.17%
-  decodeDirectoryReadHead                        = 0.62%
+Projected-version payload-holder reuse removed the SQLInteger.cloneValue
+allocation hotspot but regressed Gen2 slightly:
 
-Raw allocation stacks show the 78.23% site is entirely the six-field typed
-template created by decodeDirectoryReadHead.
+  Gen2 = 1.305144 ms/execution
+
+That hypothesis is therefore rejected as the primary fix.
+
+In the latest raw JFR, approximately 97% of sampled PageKey allocation weight
+on the Gen2 side comes from:
+
+  MvccRawStoreVersionReader.findByHint
+  -> ContainerHandle.getPage
+  -> FileContainer.getUserPage
+  -> new PageKey(...)
 
 Experiment
 ----------
-Requires the previous read-directory-head-only experiment to remain ON:
-  -Ddelosdb.experimental.mvccReadDirectoryHeadOnly=true
+OFF by default:
+  existing per-fetch version-page getPage/unlatch behavior
 
-Additional OFF-by-default switch:
-  -Ddelosdb.experimental.mvccReuseReadDirectoryHeadTemplate=true
+ON:
+  -Ddelosdb.experimental.mvccReuseVersionHintPageRun=true
 
-When both are enabled, the six-field typed directory read-head template is
-reused per thread. Physical page fetch, kind/format checks, row identity,
-version visibility, CURRENT/HISTORY semantics, mutation/commit paths,
-WAL/recovery and durable formats are unchanged.
+When enabled, MvccRawStoreVersionReader retains a successfully decoded hinted
+version page across consecutive hinted lookups to the same page. On page
+number change, fallback, close, failed lookup, or exception, the retained page
+is released.
 
-This is diagnostic only. Do not promote directly from this overlay.
+This experiment intentionally tests the cost of repeated page reacquisition.
+It is NOT a production design: holding a RawStore page latch across base-row
+fetch calls can alter writer concurrency and must not be promoted directly.
+
+No changes
+----------
+No visibility rules.
+No version-chain semantics.
+No CURRENT/HISTORY semantics.
+No WAL/recovery or durable-format changes.
+No optimizer/join/benchmark-threshold changes.

@@ -31,6 +31,8 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical RawStore version-row templates and projection-aware decoding. */
 final class MvccRawStoreVersionRows {
+    private static final String REUSE_PROJECTED_PAYLOAD_HOLDERS_PROPERTY =
+            "delosdb.experimental.mvccReuseProjectedVersionPayloadHolders";
     static final class FetchProjection {
         private final FormatableBitSet payloadColumns;
         private final FetchDescriptor baseDescriptor;
@@ -118,6 +120,7 @@ final class MvccRawStoreVersionRows {
         private final FetchProjection projection;
         private Object[] baseRow;
         private Object[] hintRow;
+        private StoreDataValue[] reusableProjectedValues;
 
         Decoder(
                 Transaction transaction,
@@ -155,7 +158,38 @@ final class MvccRawStoreVersionRows {
                     != MvccRawStoreFormat.FORMAT_VERSION) {
                 throw new IllegalStateException("RawStore MVCC version row format is unsupported");
             }
+            if (projection != null
+                    && projection.includesPayload()
+                    && Boolean.getBoolean(REUSE_PROJECTED_PAYLOAD_HOLDERS_PROPERTY)) {
+                return decodeWithReusableProjectedValues(row, handle);
+            }
             return decode(row, table, handle, projection);
+        }
+
+        private MvccRawStoreTable.VersionRecord decodeWithReusableProjectedValues(
+                Object[] row,
+                RecordHandle handle) throws StandardException {
+            if (reusableProjectedValues == null) {
+                reusableProjectedValues = new StoreDataValue[table.columnCount()];
+            }
+            for (int index = 0; index < reusableProjectedValues.length; index++) {
+                if (!projection.includes(index)) {
+                    continue;
+                }
+                StoreDataValue source = (StoreDataValue)
+                        row[MvccRawStoreFormat.VERSION_PAYLOAD_START + index];
+                if (source == null) {
+                    reusableProjectedValues[index] = null;
+                    continue;
+                }
+                StoreDataValue destination = reusableProjectedValues[index];
+                if (destination == null
+                        || !StoreValueCopySupport.copyValue(destination, source)) {
+                    reusableProjectedValues[index] =
+                            StoreValueCopySupport.cloneValue(source, true);
+                }
+            }
+            return record(row, table, handle, reusableProjectedValues);
         }
 
         private Object[] row(boolean includeHint) throws StandardException {
@@ -279,6 +313,14 @@ final class MvccRawStoreVersionRows {
                 }
             }
         }
+        return record(row, table, handle, values);
+    }
+
+    private static MvccRawStoreTable.VersionRecord record(
+            Object[] row,
+            MvccRawStoreTable.Descriptor table,
+            RecordHandle handle,
+            StoreDataValue[] values) throws StandardException {
         boolean hasHint = row.length == MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
         MvccRawStoreTable.RecordHint previousHint = hasHint
                 ? new MvccRawStoreTable.RecordHint(
