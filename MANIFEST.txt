@@ -1,38 +1,43 @@
-DelosDB Gen2-C3 F04 fanout server JFR attribution overlay
+DelosDB Gen2-C3 F04 fanout NOHOLD statement-boundary A/B overlay
 
 Purpose
 -------
-Profile the remaining canonical JOIN_INDEXED_FANOUT gap on Heap and Gen2
-with deterministic simple-join statistics and the accepted MVCC cardinality
-production behavior.
+Falsify the JFR-derived hypothesis that JOIN_INDEXED_FANOUT falls outside the
+promoted statement-lifetime MVCC base-fetch read boundary because Derby's
+bulk/hash index side uses READ_COMMITTED_NOHOLDLOCK.
 
-Changed files
--------------
-delosdb-tests/build.gradle
-delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Observed current fanout JFR path
+--------------------------------
+MvccRawStoreConglomerateController.fetch
+-> enterReadBoundary
+-> MvccRawStoreRuntime.enterTableRead
+-> ReentrantReadWriteLock acquire/release
 
-New task
---------
-:delosdb-tests:runDelosGen2C3F04FanoutJfr
+Source asymmetry
+----------------
+MvccRawStoreScanController already treats READ_COMMITTED_NOHOLDLOCK as a
+statement-snapshot isolation level.
 
-Diagnostic contract
--------------------
-Workload=JOIN_INDEXED_FANOUT
-Targets=delos_heap_drda,delos_mvcc_drda
-Rows=10000
-Clients=8
-TransactionsPerClient=100
-Runs=4
-Simple-join statistics refresh=true
-Disposable-index statistics debug=false
-MVCC physical scan cost=true
-MVCC physical RowLocation cost=true
-Projected CURRENT=false
-Base-fetch prefetch=false
-Server-side JFR for both targets
+MvccRawStoreConglomerateController currently requires
+lockingPolicy.supportsImmutablePageRead() before using its statement-lifetime
+snapshot/read boundary. Derby's RowLocking2nohold does not advertise that
+capability, so the fanout base-row path falls back to per-fetch boundaries.
 
-Scope
------
-Diagnostic/harness only.
-No production optimizer, join, storage, MVCC, RawStore, WAL, recovery,
-durable-format, canonical workload SQL, or benchmark-threshold changes.
+Experiment
+----------
+Default OFF:
+  existing production behavior
+
+Explicit ON:
+  -Pdelosdb.f04.noHoldStatementReadBoundary=true
+
+When ON, read-only MVCC base controllers may reuse the existing statement
+snapshot/read-boundary path even when the inherited locking policy does not
+advertise immutable-page read support.
+
+This is diagnostic only. Do not promote directly from this overlay.
+
+No changes
+----------
+No SQL, optimizer costing, join implementation, RawStore WAL/recovery,
+durable format, benchmark thresholds, or semantic-oracle weakening.

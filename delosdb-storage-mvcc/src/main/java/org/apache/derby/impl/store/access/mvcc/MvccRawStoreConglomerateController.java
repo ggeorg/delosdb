@@ -40,6 +40,8 @@ final class MvccRawStoreConglomerateController
     private final Transaction rawTransaction;
     private static final String BASE_FETCH_PAGE_PREFETCH_PROPERTY =
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
+    private static final String BASE_FETCH_NOHOLD_STATEMENT_BOUNDARY_PROPERTY =
+            "delosdb.experimental.mvccBaseFetchNoHoldStatementReadBoundary";
 
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
@@ -80,7 +82,11 @@ final class MvccRawStoreConglomerateController
         // READ COMMITTED base-fetch path, which must observe a fresh committed
         // horizon for each statement just like MvccRawStoreScanController.
         // Retain the horizon until close so vacuum cannot cross the statement.
-        if (!forUpdate && lockingPolicy != null && lockingPolicy.supportsImmutablePageRead()) {
+        boolean statementReadBoundaryEligible = !forUpdate
+                && lockingPolicy != null
+                && (lockingPolicy.supportsImmutablePageRead()
+                        || Boolean.getBoolean(BASE_FETCH_NOHOLD_STATEMENT_BOUNDARY_PROPERTY));
+        if (statementReadBoundaryEligible) {
             statementSnapshotLease = runtime.openSnapshotLease();
             statementSnapshotSequence = statementSnapshotLease.sequence();
         } else {

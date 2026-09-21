@@ -17829,11 +17829,20 @@ tasks.register('runDelosGen2C3F04FanoutJfr', JavaExec) {
         delete(databaseRoot)
         reportDir.get().asFile.mkdirs()
         def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        def noHoldBoundaryValue = providers.gradleProperty(
+                'delosdb.f04.noHoldStatementReadBoundary')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!(noHoldBoundaryValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.f04.noHoldStatementReadBoundary must be true or false')
+        }
         systemProperties([
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.f04FanoutJfrDiagnostic': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchNoHoldStatementBoundary':
+                        noHoldBoundaryValue,
                 'derby.storage.indexStats.debug.keepDisposableStats': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
                         'delos_heap_drda,delos_mvcc_drda',
@@ -17897,6 +17906,14 @@ tasks.register('runDelosGen2C3F04FanoutJfr', JavaExec) {
         }
 
         String summaryText = summary.getText('UTF-8')
+        def expectedNoHoldBoundary = providers.gradleProperty(
+                'delosdb.f04.noHoldStatementReadBoundary')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!summaryText.contains(
+                "MVCC base-fetch NOHOLD statement boundary enabled: ${expectedNoHoldBoundary}")) {
+            throw new GradleException(
+                    'F04 fanout JFR summary does not prove the requested NOHOLD boundary state')
+        }
         [
                 'MVCC Gen2-C3 read server enabled: true',
                 'MVCC physical scan cost enabled: true',
@@ -17967,6 +17984,7 @@ tasks.register('runDelosGen2C3F04FanoutJfr', JavaExec) {
                         'MVCC physical RowLocation cost=true\n' +
                         'Projected CURRENT=false\n' +
                         'Base-fetch prefetch=false\n' +
+                        "NOHOLD statement read boundary=${expectedNoHoldBoundary}\n" +
                         'JFR settings=profile; stackdepth=256; one server recording per target/run\n' +
                         'Interpretation=source attribution only; JFR-enabled throughput is not canonical acceptance TPS.\n',
                 'UTF-8')
