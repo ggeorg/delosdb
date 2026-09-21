@@ -1,11 +1,11 @@
-DelosDB Gen2-C3 F04 row-advance JFR client-contract fix
+DelosDB F04 row-advance server JFR graceful-shutdown fix
 
-Changed file:
+Changed files:
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Change:
-- Exempts the dedicated F04 row-advance JFR diagnostic from the generic coordinator scaling rule that requires clients to include 1.
-- The dedicated diagnostic's existing validation still requires exactly clients=8, rows=10000, width=1, JOIN_INDEXED_1TO1, canonical Gen2 read flags, and the configured server JFR targets.
-- Preserves the prior workers/server-jfr evidence-path fix.
+Purpose:
+- Preserve the existing fast docker rm -f teardown for ordinary benchmark containers.
+- Gracefully stop only server containers with server-side JFR profiling enabled.
+- Allow -XX:StartFlightRecording(...,dumponexit=true) to flush the recording before Docker removes the --rm container.
 
-No production engine behavior, benchmark workload, threshold, optimizer, MVCC, RawStore, WAL, or durable-format change.
+No production engine behavior, benchmark workload, benchmark threshold, optimizer setting, MVCC setting, or durable format is changed.

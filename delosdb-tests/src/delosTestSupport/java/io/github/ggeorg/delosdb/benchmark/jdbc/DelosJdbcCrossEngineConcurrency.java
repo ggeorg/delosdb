@@ -5772,7 +5772,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 ? options.reportDirectory().resolve("server-phase-logs").resolve(
                         String.format(Locale.ROOT, "%02d-%s.log", run, target.id()))
                 : null;
-        ContainerServer server = new ContainerServer(name, endpoint, serverEvidenceLog);
+        ContainerServer server = new ContainerServer(
+                name, endpoint, serverEvidenceLog, shouldProfileServer(target));
         try {
             awaitReady(options, target, endpoint);
             return server;
@@ -12672,12 +12673,15 @@ public final class DelosJdbcCrossEngineConcurrency {
         private final String name;
         private final ServerEndpoint endpoint;
         private final Path capturedLog;
+        private final boolean gracefulShutdown;
         private boolean closed;
 
-        private ContainerServer(String name, ServerEndpoint endpoint, Path capturedLog) {
+        private ContainerServer(
+                String name, ServerEndpoint endpoint, Path capturedLog, boolean gracefulShutdown) {
             this.name = name;
             this.endpoint = endpoint;
             this.capturedLog = capturedLog;
+            this.gracefulShutdown = gracefulShutdown;
         }
 
         ServerEndpoint endpoint() {
@@ -12713,6 +12717,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             }
             try {
+                if (gracefulShutdown) {
+                    CommandResult stopped = runCommand(30,
+                            List.of("docker", "stop", "--time", "15", name));
+                    if (stopped.exitCode() == 0) {
+                        return;
+                    }
+                }
                 runCommand(30, List.of("docker", "rm", "-f", name));
             } catch (Exception ignored) {
             }
@@ -13782,12 +13793,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException("Embedded benchmark classpaths are required");
             }
             if (containerMode()) {
-                if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic) {
+                if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic
+                        || f04DrdaRowAdvanceJfrDiagnostic) {
                     if (delosClientClasspath.isBlank()) {
+                        String diagnosticName = f02ScaleSurfaceDiagnostic
+                                ? "F02 scale-surface diagnostic"
+                                : f04DrdaRowAdvanceJfrDiagnostic
+                                        ? "F04 row-advance JFR diagnostic"
+                                        : "DRDA diagnostic";
                         throw new IllegalArgumentException(
-                                f02ScaleSurfaceDiagnostic
-                                        ? "F02 scale-surface diagnostic requires the Delos network client classpath"
-                                        : "Delos network client classpath is required for DRDA diagnostics");
+                                diagnosticName + " requires the Delos network client classpath");
                     }
                 } else if (mutationSchemaAttribution) {
                     if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()) {
@@ -13830,12 +13845,16 @@ public final class DelosJdbcCrossEngineConcurrency {
                         if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
                             throw new IllegalArgumentException("DRDA server benchmark images are required");
                         }
-                    } else if (drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic) {
+                    } else if (drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic
+                            || f04DrdaRowAdvanceJfrDiagnostic) {
                         if (delosServerImage.isBlank()) {
+                            String diagnosticName = f02ScaleSurfaceDiagnostic
+                                    ? "F02 scale-surface diagnostic"
+                                    : f04DrdaRowAdvanceJfrDiagnostic
+                                            ? "F04 row-advance JFR diagnostic"
+                                            : "DRDA server phase evidence";
                             throw new IllegalArgumentException(
-                                    f02ScaleSurfaceDiagnostic
-                                            ? "F02 scale-surface diagnostic requires the Delos server image"
-                                            : "Delos server image is required for DRDA server phase evidence");
+                                    diagnosticName + " requires the Delos server image");
                         }
                     } else if (mutationSchemaAttribution) {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
