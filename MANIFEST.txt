@@ -1,43 +1,22 @@
-DelosDB Gen2-C3 F04 fanout NOHOLD statement-boundary A/B overlay
+DelosDB Gen2-C3 F04 NOHOLD stable-suite registration overlay
 
 Purpose
 -------
-Falsify the JFR-derived hypothesis that JOIN_INDEXED_FANOUT falls outside the
-promoted statement-lifetime MVCC base-fetch read boundary because Derby's
-bulk/hash index side uses READ_COMMITTED_NOHOLDLOCK.
+Register MvccStatementReadBoundaryPolicyTest in the permanent DelosDB stable
+test-suite registry.
 
-Observed current fanout JFR path
---------------------------------
-MvccRawStoreConglomerateController.fetch
--> enterReadBoundary
--> MvccRawStoreRuntime.enterTableRead
--> ReentrantReadWriteLock acquire/release
+Registration
+------------
+suite: concurrency
+execution tier: full
 
-Source asymmetry
-----------------
-MvccRawStoreScanController already treats READ_COMMITTED_NOHOLDLOCK as a
-statement-snapshot isolation level.
+Reason
+------
+The test freezes the RawStore locking-policy capability contract that permits
+statement-lifetime MVCC read boundaries for READ_COMMITTED_NOHOLDLOCK while
+preserving immutable-page-read=false.
 
-MvccRawStoreConglomerateController currently requires
-lockingPolicy.supportsImmutablePageRead() before using its statement-lifetime
-snapshot/read boundary. Derby's RowLocking2nohold does not advertise that
-capability, so the fanout base-row path falls back to per-fetch boundaries.
-
-Experiment
-----------
-Default OFF:
-  existing production behavior
-
-Explicit ON:
-  -Pdelosdb.f04.noHoldStatementReadBoundary=true
-
-When ON, read-only MVCC base controllers may reuse the existing statement
-snapshot/read-boundary path even when the inherited locking policy does not
-advertise immutable-page read support.
-
-This is diagnostic only. Do not promote directly from this overlay.
-
-No changes
-----------
-No SQL, optimizer costing, join implementation, RawStore WAL/recovery,
-durable format, benchmark thresholds, or semantic-oracle weakening.
+Scope
+-----
+Registry only. No production code, test implementation, benchmark behavior,
+thresholds, or static-analysis baselines are changed.

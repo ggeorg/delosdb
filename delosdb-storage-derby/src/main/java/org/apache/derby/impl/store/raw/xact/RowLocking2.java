@@ -223,5 +223,11 @@ public class RowLocking2 extends RowLockingRR
         return true;
     }
 
+    @Override
+    public boolean supportsStatementReadBoundary()
+    {
+        return true;
+    }
+
 
 }

@@ -5386,9 +5386,6 @@ public final class DelosJdbcCrossEngineConcurrency {
             if (Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
                 command.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
             }
-            if (mvccBaseFetchNoHoldStatementBoundaryEnabled()) {
-                addProperty(command, "mvccBaseFetchNoHoldStatementBoundary", true);
-            }
         }
         String rangeBulkFetchDefault = System.getProperty(
                 PREFIX + "rangeBulkFetchDefault", "").trim();
@@ -5687,11 +5684,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                         && Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
                     javaCommand.add("-Ddelosdb.experimental.mvccBaseFetchPagePrefetch=true");
                 }
-                if (target == Target.DELOS_MVCC_DRDA
-                        && mvccBaseFetchNoHoldStatementBoundaryEnabled()) {
-                    javaCommand.add(
-                            "-Ddelosdb.experimental.mvccBaseFetchNoHoldStatementReadBoundary=true");
-                }
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2A1ServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2A1.enabled=true");
                 }
@@ -5927,8 +5919,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(" (0=driver default)\n")
                 .append("MVCC base-fetch directory-page prefetch experiment: ")
                 .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
-                .append("MVCC base-fetch NOHOLD statement boundary experiment: ")
-                .append(mvccBaseFetchNoHoldStatementBoundaryEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read experiment: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost experiment: ")
@@ -12014,8 +12004,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccPhysicalScanCostEnabled()).append('\n')
                 .append("MVCC physical RowLocation cost enabled: ")
                 .append(mvccPhysicalRowLocationCostEnabled()).append('\n')
-                .append("MVCC base-fetch NOHOLD statement boundary enabled: ")
-                .append(mvccBaseFetchNoHoldStatementBoundaryEnabled()).append('\n')
                 .append("MVCC single-pass CURRENT scan enabled: ")
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
@@ -12301,10 +12289,6 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static boolean mvccPhysicalRowLocationCostEnabled() {
         return Boolean.parseBoolean(System.getProperty(
                 PREFIX + "mvccPhysicalRowLocationCost", "true"));
-    }
-
-    private static boolean mvccBaseFetchNoHoldStatementBoundaryEnabled() {
-        return Boolean.getBoolean(PREFIX + "mvccBaseFetchNoHoldStatementBoundary");
     }
 
     private static boolean mvccGen2SinglePassCurrentScanEnabled() {

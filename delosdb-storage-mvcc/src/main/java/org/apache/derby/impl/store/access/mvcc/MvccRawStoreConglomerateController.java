@@ -40,8 +40,6 @@ final class MvccRawStoreConglomerateController
     private final Transaction rawTransaction;
     private static final String BASE_FETCH_PAGE_PREFETCH_PROPERTY =
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
-    private static final String BASE_FETCH_NOHOLD_STATEMENT_BOUNDARY_PROPERTY =
-            "delosdb.experimental.mvccBaseFetchNoHoldStatementReadBoundary";
 
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
@@ -78,14 +76,13 @@ final class MvccRawStoreConglomerateController
         this.baseFetchPagePrefetchRequested =
                 !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
         // IndexRowToBaseRowResultSet opens one base ConglomerateController for
-        // the SQL statement. Cursor-stability row locking identifies the
-        // READ COMMITTED base-fetch path, which must observe a fresh committed
-        // horizon for each statement just like MvccRawStoreScanController.
-        // Retain the horizon until close so vacuum cannot cross the statement.
+        // the SQL statement. Read-only row-locking policies that advertise a
+        // statement read boundary may retain the fresh statement horizon and
+        // table-read coordination until controller close. This includes the
+        // READ COMMITTED NOHOLD path without enabling immutable-page reads.
         boolean statementReadBoundaryEligible = !forUpdate
                 && lockingPolicy != null
-                && (lockingPolicy.supportsImmutablePageRead()
-                        || Boolean.getBoolean(BASE_FETCH_NOHOLD_STATEMENT_BOUNDARY_PROPERTY));
+                && lockingPolicy.supportsStatementReadBoundary();
         if (statementReadBoundaryEligible) {
             statementSnapshotLease = runtime.openSnapshotLease();
             statementSnapshotSequence = statementSnapshotLease.sequence();

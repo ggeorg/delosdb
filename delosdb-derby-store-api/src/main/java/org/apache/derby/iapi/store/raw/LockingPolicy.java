@@ -212,5 +212,17 @@ public interface LockingPolicy {
     default boolean supportsImmutablePageRead() {
         return false;
     }
+
+    /**
+     * Whether a read-only access method may keep its read-side coordination
+     * boundary for the lifetime of the statement/controller.
+     * <p>
+     * This is deliberately separate from {@link #supportsImmutablePageRead()}:
+     * a zero-duration row-locking policy may be safe for statement-snapshot
+     * coordination without being safe for an immutable-page fast path.
+     */
+    default boolean supportsStatementReadBoundary() {
+        return false;
+    }
 }
 
