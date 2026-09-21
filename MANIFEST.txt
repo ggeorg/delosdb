@@ -1,55 +1,71 @@
-DelosDB Gen2-C3 F05 version-page run reuse A/B overlay
+DelosDB Gen2-C3 F05 base-fetch current-anchor A/B overlay
 
 Purpose
 -------
-Falsify whether repeated RawStore version-page reacquisition is a primary
-contributor to the remaining matched-plan F05 MVCC base-fetch gap.
+Falsify whether the remaining matched-plan F05 MVCC base-fetch gap is
+materially caused by resolving the stable-row directory before every ordinary
+non-covering CURRENT-version fetch.
 
-Current evidence
-----------------
-After directory-head trimming, read-head template reuse, and single-pass
-hinted-version decode:
+Evidence leading here
+---------------------
+Accepted/partial improvements:
+- read-directory-head-only: ~9.6% Gen2 improvement
+- read-head template reuse: ~1.8% additional improvement
+- single-pass hinted version decode: ~5.1% additional improvement
 
-  Heap = 0.761323 ms/execution
-  Gen2 = 1.280053 ms/execution
-  ratio = 1.681353x
+Rejected as primary:
+- projected version payload-holder reuse
+- version-page run/latch reuse
 
-Projected-version payload-holder reuse removed the SQLInteger.cloneValue
-allocation hotspot but regressed Gen2 slightly:
+Latest page-run experiment:
+  Heap = 0.800615 ms/execution
+  Gen2 = 1.312409 ms/execution
+  ratio = 1.639252x
 
-  Gen2 = 1.305144 ms/execution
+The page-run result is slightly worse than the 1.280053 ms single-pass
+baseline, so repeated getPage/PageKey work is not the main cause.
 
-That hypothesis is therefore rejected as the primary fix.
+Structural difference
+---------------------
+The ordinary MVCC IndexRowToBaseRow path still does:
 
-In the latest raw JFR, approximately 97% of sampled PageKey allocation weight
-on the Gen2 side comes from:
+  directory physical record
+  -> current version physical record
+  -> payload
 
-  MvccRawStoreVersionReader.findByHint
-  -> ContainerHandle.getPage
-  -> FileContainer.getUserPage
-  -> new PageKey(...)
+DelosDB already maintains a CurrentRowAnchor cache containing:
+- row id
+- current committed version id
+- begin sequence
+- flags
+- current version RecordHint
+- directory RowLocation
 
 Experiment
 ----------
 OFF by default:
-  existing per-fetch version-page getPage/unlatch behavior
+  existing directory-first base-fetch path
 
 ON:
-  -Ddelosdb.experimental.mvccReuseVersionHintPageRun=true
+  -Ddelosdb.experimental.mvccBaseFetchCurrentRowAnchor=true
 
-When enabled, MvccRawStoreVersionReader retains a successfully decoded hinted
-version page across consecutive hinted lookups to the same page. On page
-number change, fallback, close, failed lookup, or exception, the retained page
-is released.
+For a read-only non-A1 fetch with no prefetched directory, the controller:
+1. checks for a local pending version;
+2. looks up the existing CurrentRowAnchor;
+3. requires it to be snapshot-visible and non-tombstone;
+4. decodes the anchored current version directly;
+5. validates anchored version identity/sequence/flags through the existing
+   MvccRawStoreVersionReader.findAnchoredCurrent() contract;
+6. falls back to the existing directory-first path on any miss/staleness.
 
-This experiment intentionally tests the cost of repeated page reacquisition.
-It is NOT a production design: holding a RawStore page latch across base-row
-fetch calls can alter writer concurrency and must not be promoted directly.
+This is diagnostic only. Do not promote directly from this overlay.
 
 No changes
 ----------
+No RowLocation durable format.
+No SQL index format.
 No visibility rules.
-No version-chain semantics.
+No mutation/update/delete path changes.
 No CURRENT/HISTORY semantics.
-No WAL/recovery or durable-format changes.
+No RawStore WAL/recovery or durable-format changes.
 No optimizer/join/benchmark-threshold changes.

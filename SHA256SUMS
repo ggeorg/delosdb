@@ -1,2 +1,2 @@
-2caa89d5330f21a55d1ef28c4e14563e0ef257073fe5d727fd4c52173ac17aea  MANIFEST.txt
-3e20d60c77f95137cb770f90acd714a891fc4d379492d60f4f574f5d214e42f9  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionReader.java
+b9b9677f9b3c0c7c82c1e5860a1088dc6232e4d13a2d1fda7ac2b5935f20d15d  MANIFEST.txt
+ed8fa653fb9baacb8b53427ea452974148a210a7c0600371a45041b1f287f87a  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java

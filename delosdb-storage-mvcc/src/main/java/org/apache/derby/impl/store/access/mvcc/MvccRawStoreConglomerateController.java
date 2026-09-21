@@ -40,6 +40,8 @@ final class MvccRawStoreConglomerateController
     private final Transaction rawTransaction;
     private static final String BASE_FETCH_PAGE_PREFETCH_PROPERTY =
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
+    private static final String BASE_FETCH_CURRENT_ANCHOR_PROPERTY =
+            "delosdb.experimental.mvccBaseFetchCurrentRowAnchor";
 
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
@@ -224,7 +226,19 @@ final class MvccRawStoreConglomerateController
                 long snapshotSequence = statementSnapshotLease != null
                         ? statementSnapshotSequence
                         : context.snapshotSequence();
-                if (!forUpdate && table.gen2A1() && prefetchedDirectory == null) {
+                MvccRawStoreTable.VisibleRow anchored = !forUpdate
+                        && !table.gen2A1()
+                        && prefetchedDirectory == null
+                        && Boolean.getBoolean(BASE_FETCH_CURRENT_ANCHOR_PROPERTY)
+                                ? readAnchoredCurrent(
+                                        location,
+                                        projection,
+                                        context,
+                                        snapshotSequence)
+                                : null;
+                if (anchored != null) {
+                    visible = anchored;
+                } else if (!forUpdate && table.gen2A1() && prefetchedDirectory == null) {
                     visible = currentBaseFetchDecoder(projection).readVisibleAt(
                             location,
                             snapshotSequence,
@@ -280,6 +294,33 @@ final class MvccRawStoreConglomerateController
             FormatableBitSet validColumns,
             boolean waitForLock) throws StandardException {
         return fetch(loc, destRow, validColumns);
+    }
+
+    private MvccRawStoreTable.VisibleRow readAnchoredCurrent(
+            MvccRowLocation location,
+            MvccRawStoreVersionRows.FetchProjection projection,
+            MvccRawStoreTransactionContext context,
+            long snapshotSequence) throws StandardException {
+        if (context.hasPendingVersion(table, location.rowId())) {
+            return null;
+        }
+        MvccRawStoreRuntime.CurrentRowAnchor anchor =
+                context.currentRowAnchor(table, location.rowId());
+        if (anchor == null || !anchor.visibleTo(snapshotSequence) || anchor.tombstone()) {
+            return null;
+        }
+        MvccRawStoreTable.VersionRecord current =
+                readVersionReader().findAnchoredCurrent(anchor, projection);
+        if (current == null) {
+            context.invalidateCurrentRowAnchor(table, location.rowId(), anchor);
+            return null;
+        }
+        return new MvccRawStoreTable.VisibleRow(
+                location.rowId(),
+                current.versionId(),
+                current.values(),
+                current.handle(),
+                anchor.directoryLocation());
     }
 
     @Override
