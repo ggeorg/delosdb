@@ -17626,6 +17626,7 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.f04DrdaRowAdvanceJfrDiagnostic': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics':
                         refreshSimpleJoinStatisticsValue,
+                'delosdb.benchmark.crossEngineConcurrency.f04ServerPlanCostMatrix': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
                         'delos_heap_drda,delos_mvcc_drda',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
@@ -17696,11 +17697,31 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'MVCC Gen2 projected current read enabled: false',
                 'Workloads: [JOIN_INDEXED_1TO1]',
                 'Clients: 8',
-                "Simple-join statistics refresh enabled: ${refreshSimpleJoinStatisticsValue}"
+                "Simple-join statistics refresh enabled: ${refreshSimpleJoinStatisticsValue}",
+                'F04 server plan cost matrix enabled: true'
         ].each { String marker ->
             if (!summaryText.contains(marker)) {
                 throw new GradleException(
                         "F04 row-advance JFR summary missing evidence marker: ${marker}")
+            }
+        }
+
+        File workerDir = new File(output, 'workers')
+        ['delos_heap_drda', 'delos_mvcc_drda'].each { String target ->
+            (1..4).each { int run ->
+                File matrix = new File(workerDir, String.format(
+                        java.util.Locale.ROOT, 'f04-plan-%02d-%s-cost-matrix.tsv', run, target))
+                if (!matrix.isFile() || matrix.length() == 0L) {
+                    throw new GradleException("F04 plan-cost matrix evidence missing: ${matrix}")
+                }
+                String body = matrix.getText('UTF-8')
+                ['natural', 'base-first-hash', 'base-first-nestedloop',
+                 'dimension-first-hash', 'dimension-first-nestedloop'].each { String variant ->
+                    if (!body.contains(variant)) {
+                        throw new GradleException(
+                                "F04 plan-cost matrix missing variant ${variant}: ${matrix}")
+                    }
+                }
             }
         }
 

@@ -1,11 +1,15 @@
-DelosDB F04 row-advance server JFR graceful-shutdown fix
-
-Changed files:
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+DelosDB Gen2-C3 F04 SERVER plan-cost matrix diagnostic overlay
 
 Purpose:
-- Preserve the existing fast docker rm -f teardown for ordinary benchmark containers.
-- Gracefully stop only server containers with server-side JFR profiling enabled.
-- Allow -XX:StartFlightRecording(...,dumponexit=true) to flush the recording before Docker removes the --rm container.
+- Extend the existing F04 JOIN_INDEXED_1TO1 server-side JFR diagnostic.
+- Capture the exact server-compiled natural plan for Heap and Gen2.
+- Capture estimated alternatives for fixed base-first/dimension-first HASH and NESTEDLOOP plans.
+- Preserve the existing stable-statistics switch, semantic oracle, JFR profile, and benchmark settings.
 
-No production engine behavior, benchmark workload, benchmark threshold, optimizer setting, MVCC setting, or durable format is changed.
+Changed files:
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+
+Production behavior changed: no
+Benchmark thresholds changed: no
+Canonical F04 task changed: no

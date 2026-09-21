@@ -5484,6 +5484,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (refreshSimpleJoinStatisticsEnabled()) {
             addProperty(command, "refreshSimpleJoinStatistics", true);
         }
+        if (f04ServerPlanCostMatrixEnabled()) {
+            addProperty(command, "f04ServerPlanCostMatrix", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -6076,6 +6079,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             String productVersion = csvSafe(metadata.getDatabaseProductVersion());
             String driverVersion = csvSafe(metadata.getDriverVersion());
             List<String> tables = prepareTables(verifier, options, spec, config);
+            if (f04ServerPlanCostMatrixEnabled()) {
+                captureF04ServerPlanCostMatrix(verifier, options, spec, tables.get(0));
+            }
             configureRangeBulkFetchDefault(verifier, options, spec);
             if (options.target() == Target.SQLITE) {
                 writeSqliteRuntimeMetadata(verifier, options, spec, config, tables);
@@ -7405,6 +7411,72 @@ public final class DelosJdbcCrossEngineConcurrency {
             statement.execute();
         }
         connection.commit();
+    }
+
+    private static void captureF04ServerPlanCostMatrix(
+            Connection connection, Options options, Spec spec, String base)
+            throws SQLException, IOException {
+        if (spec.workload() != Workload.JOIN_INDEXED_1TO1
+                || (options.target() != Target.DELOS_HEAP_DRDA
+                        && options.target() != Target.DELOS_MVCC_DRDA)) {
+            throw new IllegalStateException(
+                    "F04 server plan-cost matrix is valid only for Delos Heap/MVCC JOIN_INDEXED_1TO1");
+        }
+        String dimension = joinDimensionTableName(base);
+        String basePkIndex = phase2BPrimaryKeyIndex(connection, base, "ID");
+        String dimensionPkIndex = phase2BPrimaryKeyIndex(connection, dimension, "ID");
+        LinkedHashMap<String, String> variants = new LinkedHashMap<>();
+        variants.put("natural", fitnessReadSql(Workload.JOIN_INDEXED_1TO1, base));
+        variants.put("base-first-hash", phase2ZForcedJoinSql(
+                base, "a", basePkIndex, dimension, "b", dimensionPkIndex, "HASH"));
+        variants.put("base-first-nestedloop", phase2ZForcedJoinSql(
+                base, "a", basePkIndex, dimension, "b", dimensionPkIndex, "NESTEDLOOP"));
+        variants.put("dimension-first-hash", phase2ZForcedJoinSql(
+                dimension, "b", dimensionPkIndex, base, "a", basePkIndex, "HASH"));
+        variants.put("dimension-first-nestedloop", phase2ZForcedJoinSql(
+                dimension, "b", dimensionPkIndex, base, "a", basePkIndex, "NESTEDLOOP"));
+
+        String prefix = String.format(
+                Locale.ROOT, "f04-plan-%02d-%s-", options.run(), options.target().id());
+        StringBuilder summary = new StringBuilder("variant\tplanShape\ttopEstimatedCost\n");
+        for (Map.Entry<String, String> entry : variants.entrySet()) {
+            ExplainCapture explain = capturePhase2NExplain(connection, entry.getValue(), false);
+            writePhase2ACapture(
+                    options.reportDirectory(), prefix + entry.getKey() + "-explain", explain);
+            summary.append(entry.getKey()).append('\t')
+                    .append(phase2UPlanShape(explain.text())).append('\t')
+                    .append(format(phase2ZTopEstimatedCost(explain.text()))).append('\n');
+        }
+        Files.writeString(
+                options.reportDirectory().resolve(prefix + "cost-matrix.tsv"),
+                summary.toString(), StandardCharsets.UTF_8);
+    }
+
+    private static String phase2ZForcedJoinSql(
+            String firstTable,
+            String firstAlias,
+            String firstIndex,
+            String secondTable,
+            String secondAlias,
+            String secondIndex,
+            String joinStrategy) {
+        return "select a.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
+                + firstTable + " " + firstAlias
+                + " --DERBY-PROPERTIES index='" + firstIndex + "'\n"
+                + "join " + secondTable + " " + secondAlias
+                + " --DERBY-PROPERTIES index='" + secondIndex
+                + "', joinStrategy=" + joinStrategy + "\n"
+                + "on a.id = b.id";
+    }
+
+    private static double phase2ZTopEstimatedCost(String planText) {
+        Matcher matcher = Pattern.compile(
+                "(?m)^\\s*n\\d+\\s+[^\\n]*?\\bcost=([0-9.Ee+\\-]+)")
+                .matcher(planText);
+        if (!matcher.find()) {
+            throw new IllegalStateException("F04 plan-cost matrix missing estimated cost:\n" + planText);
+        }
+        return Double.parseDouble(matcher.group(1));
     }
 
     private static List<String> prepareTables(
@@ -11913,6 +11985,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
                 .append("Simple-join statistics refresh enabled: ")
                 .append(refreshSimpleJoinStatisticsEnabled()).append('\n')
+                .append("F04 server plan cost matrix enabled: ")
+                .append(f04ServerPlanCostMatrixEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
                 .append(freshRealisticTransactionFitnessEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
@@ -12211,6 +12285,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean refreshSimpleJoinStatisticsEnabled() {
         return Boolean.getBoolean(PREFIX + "refreshSimpleJoinStatistics");
+    }
+
+    private static boolean f04ServerPlanCostMatrixEnabled() {
+        return Boolean.getBoolean(PREFIX + "f04ServerPlanCostMatrix");
     }
 
     private static String insertTableShape() {
