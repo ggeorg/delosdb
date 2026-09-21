@@ -1,39 +1,16 @@
-DelosDB Gen2-C3 F04 MVCC unique-index cardinality candidate
-
-Purpose
--------
-Retain single-column unique-index statistics for delos_mvcc tables so the
-optimizer has a stable logical row-count/cardinality authority. Preserve
-Derby's disposable-statistics behavior for Heap tables.
-
-Evidence
---------
-The matched F04 SERVER/8c falsification with Derby's existing
-keepDisposableStats debug switch changed Gen2 from a nested-loop/B-tree-reopen
-plan to HASH_JOIN and improved median throughput from 2348.01 tx/s to
-4190.56 tx/s while Heap stayed essentially unchanged (3267.26 -> 3249.05).
+DelosDB Gen2-C3 F04 evidence-marker contract fix
 
 Changed files
 -------------
-delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java
-delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java
-delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateIndexConstantAction.java
-delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.java
+delosdb-tests/build.gradle
 
-Production behavior
--------------------
-- delos_mvcc single-column unique indexes are no longer treated as disposable
-  cardinality statistics.
-- Heap keeps Derby's existing disposable-statistics behavior.
-- Automatic statistics qualification now includes unique-only delos_mvcc tables.
-- Index creation on populated delos_mvcc tables may retain the exact unique-index
-  statistics already computed during creation.
+Purpose
+-------
+Validate the disposable-index-statistics diagnostic state from the server
+container manifest, which is the evidence file that actually records it,
+instead of incorrectly requiring the marker in the benchmark summary.
 
-Not changed
------------
-No join implementation changes.
-No B-tree runtime changes.
-No RawStore WAL/recovery changes.
-No MVCC visibility changes.
-No benchmark thresholds changed.
-No durable table/index format changes.
+Behavior
+--------
+Harness-only. No production engine, optimizer, MVCC, RawStore, WAL, recovery,
+durable-format, workload, cost-model, or benchmark-threshold changes.

@@ -17690,12 +17690,14 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
         File output = reportDir.get().asFile
         File summary = new File(output, 'cross-engine-concurrency-summary.txt')
         File oracle = new File(output, 'sql-semantic-oracle.csv')
-        [summary, oracle].each { File evidence ->
+        File serverManifest = new File(output, 'server-container-manifest.txt')
+        [summary, oracle, serverManifest].each { File evidence ->
             if (!evidence.isFile() || evidence.length() == 0L) {
                 throw new GradleException("F04 row-advance JFR evidence missing: ${evidence}")
             }
         }
         String summaryText = summary.getText('UTF-8')
+        String serverManifestText = serverManifest.getText('UTF-8')
         def refreshSimpleJoinStatisticsValue = providers.gradleProperty(
                 'delosdb.f04.refreshSimpleJoinStatistics')
                 .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
@@ -17710,13 +17712,18 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'Workloads: [JOIN_INDEXED_1TO1]',
                 'Clients: 8',
                 "Simple-join statistics refresh enabled: ${refreshSimpleJoinStatisticsValue}",
-                "Derby keep disposable index stats enabled: ${keepDisposableStatsValue}",
                 'F04 server plan cost matrix enabled: true'
         ].each { String marker ->
             if (!summaryText.contains(marker)) {
                 throw new GradleException(
                         "F04 row-advance JFR summary missing evidence marker: ${marker}")
             }
+        }
+        String disposableStatsMarker =
+                "Derby keep disposable index stats enabled: ${keepDisposableStatsValue}"
+        if (!serverManifestText.contains(disposableStatsMarker)) {
+            throw new GradleException(
+                    "F04 row-advance JFR server manifest missing evidence marker: ${disposableStatsMarker}")
         }
 
         File workerDir = new File(output, 'workers')
