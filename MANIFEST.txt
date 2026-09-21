@@ -1,25 +1,39 @@
-DelosDB Gen2-C3 F04 disposable-statistics falsification overlay
+DelosDB Gen2-C3 F04 MVCC unique-index cardinality candidate
 
 Purpose
 -------
-Forward Derby's existing single-column unique-index statistics debug switch
-into the F04 SERVER/JFR diagnostic so we can test whether the Gen2 nested-loop
-plan is driven by a stale/low store row-count estimate.
+Retain single-column unique-index statistics for delos_mvcc tables so the
+optimizer has a stable logical row-count/cardinality authority. Preserve
+Derby's disposable-statistics behavior for Heap tables.
+
+Evidence
+--------
+The matched F04 SERVER/8c falsification with Derby's existing
+keepDisposableStats debug switch changed Gen2 from a nested-loop/B-tree-reopen
+plan to HASH_JOIN and improved median throughput from 2348.01 tx/s to
+4190.56 tx/s while Heap stayed essentially unchanged (3267.26 -> 3249.05).
 
 Changed files
 -------------
-delosdb-tests/build.gradle
-delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/FromBaseTable.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CreateIndexConstantAction.java
+delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/MvccCardinalityCostAuthorityTest.java
 
-Behavior
---------
-Diagnostic-only.
-No production optimizer, storage, MVCC, RawStore, WAL, recovery, or durable-format changes.
-The F04 diagnostic may be run with:
-  -Pdelosdb.f04.refreshSimpleJoinStatistics=true
-  -Pdelosdb.f04.keepDisposableStats=true
+Production behavior
+-------------------
+- delos_mvcc single-column unique indexes are no longer treated as disposable
+  cardinality statistics.
+- Heap keeps Derby's existing disposable-statistics behavior.
+- Automatic statistics qualification now includes unique-only delos_mvcc tables.
+- Index creation on populated delos_mvcc tables may retain the exact unique-index
+  statistics already computed during creation.
 
-The latter becomes the JVM property:
-  derby.storage.indexStats.debug.keepDisposableStats=true
-
-and is forwarded to the actual Delos DRDA server JVMs.
+Not changed
+-----------
+No join implementation changes.
+No B-tree runtime changes.
+No RawStore WAL/recovery changes.
+No MVCC visibility changes.
+No benchmark thresholds changed.
+No durable table/index format changes.

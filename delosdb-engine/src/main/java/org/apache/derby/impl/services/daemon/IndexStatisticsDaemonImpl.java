@@ -247,6 +247,19 @@ public class IndexStatisticsDaemonImpl
                 "}) -> " + databaseName);
     }
 
+    /**
+     * Tells whether statistics for a single-column unique index may be
+     * discarded for the given table. Heap tables retain Derby's 10.9+
+     * behavior. Delos MVCC tables keep the statistic because their RawStore
+     * base conglomerate is the logical-row directory; its unlogged physical
+     * row-count estimate can lag significantly on small hot tables and is not
+     * a sufficient cardinality authority for join costing.
+     */
+    public boolean shouldSkipDisposableStats(TableDescriptor td) {
+        return skipDisposableStats
+                && !"delos_mvcc".equals(td.getStorageProviderName());
+    }
+
     /** Tells if the database is 10.9 or newer. */
     private boolean dbAtLeast10_9(Database db) {
         try {
@@ -466,9 +479,10 @@ public class IndexStatisticsDaemonImpl
 
                 IndexRowGenerator irg = cds[i].getIndexDescriptor();
 
-                // Skip single-column unique indexes unless we're told not to,
-                // or we are running in soft-upgrade-mode on a pre 10.9 db.
-                if (skipDisposableStats) {
+                // Skip single-column unique indexes unless the table needs
+                // them as a cardinality authority, we're told not to, or we
+                // are running in soft-upgrade-mode on a pre 10.9 db.
+                if (shouldSkipDisposableStats(td)) {
                     if (irg.isUnique() && irg.numberOfOrderedColumns() == 1) {
                         conglomerateNumber[i] = -1;
                         continue;

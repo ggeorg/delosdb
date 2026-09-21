@@ -5101,7 +5101,7 @@ class FromBaseTable extends FromTable
             // TODO: Rewrite if-logic when the temporary override is removed.
             if (istatDaemon == null) { // Read-only database
                 qualifiedIndexes = 0;
-            } else if (istatDaemon.skipDisposableStats) {
+            } else if (istatDaemon.shouldSkipDisposableStats(td)) {
                 qualifiedIndexes = td.getQualifiedNumberOfIndexes(2, true);
             } else {
                 qualifiedIndexes = td.getTotalNumberOfIndexes();

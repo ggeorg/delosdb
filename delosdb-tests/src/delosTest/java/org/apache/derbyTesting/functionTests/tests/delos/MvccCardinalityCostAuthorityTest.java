@@ -97,6 +97,86 @@ public final class MvccCardinalityCostAuthorityTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testMvccSingleColumnUniqueStatisticsRemainCardinalityAuthority()
+            throws Exception {
+        String database = databaseName("mvcc-unique-cardinality-authority");
+        try (SystemPropertyScope ignored = setSystemProperty(
+                "derby.storage.indexStats.debug.keepDisposableStats", "false")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table mvcc_unique_cardinality_t ("
+                                + "id int primary key, group_id int, payload varchar(32)) "
+                                + "using delos_mvcc");
+                insertRows(connection, "MVCC_UNIQUE_CARDINALITY_T");
+                connection.commit();
+
+                MvccRawStoreMetadataInspection.setBaseScanEstimatedRowCount(
+                        connection, "MVCC_UNIQUE_CARDINALITY_T", 7L);
+                assertEquals(
+                        7L,
+                        MvccRawStoreMetadataInspection.storeCostEstimatedRowCount(
+                                connection, "MVCC_UNIQUE_CARDINALITY_T"));
+
+                executeUpdate(connection,
+                        "call syscs_util.syscs_update_statistics("
+                                + "'APP', 'MVCC_UNIQUE_CARDINALITY_T', null)");
+                connection.commit();
+
+                assertEquals(
+                        "MVCC unique-key statistics must refresh the base cardinality authority",
+                        (long) ROW_COUNT,
+                        MvccRawStoreMetadataInspection.storeCostEstimatedRowCount(
+                                connection, "MVCC_UNIQUE_CARDINALITY_T"));
+                assertRows(connection,
+                        "select count(*) from sys.sysstatistics s, sys.systables t "
+                                + "where s.tableid = t.tableid "
+                                + "and t.tablename = 'MVCC_UNIQUE_CARDINALITY_T'",
+                        "1");
+                connection.commit();
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testHeapSingleColumnUniqueStatisticsRemainDisposable()
+            throws Exception {
+        String database = databaseName("heap-unique-cardinality-regression");
+        try (SystemPropertyScope ignored = setSystemProperty(
+                "derby.storage.indexStats.debug.keepDisposableStats", "false")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table heap_unique_cardinality_t ("
+                                + "id int primary key, group_id int, payload varchar(32))");
+                insertRows(connection, "HEAP_UNIQUE_CARDINALITY_T");
+                connection.commit();
+
+                MvccRawStoreMetadataInspection.setBaseScanEstimatedRowCount(
+                        connection, "HEAP_UNIQUE_CARDINALITY_T", 9L);
+                executeUpdate(connection,
+                        "call syscs_util.syscs_update_statistics("
+                                + "'APP', 'HEAP_UNIQUE_CARDINALITY_T', null)");
+                connection.commit();
+
+                assertEquals(
+                        "Heap must retain Derby's disposable single-column unique-statistics policy",
+                        9L,
+                        MvccRawStoreMetadataInspection.storeCostEstimatedRowCount(
+                                connection, "HEAP_UNIQUE_CARDINALITY_T"));
+                assertRows(connection,
+                        "select count(*) from sys.sysstatistics s, sys.systables t "
+                                + "where s.tableid = t.tableid "
+                                + "and t.tablename = 'HEAP_UNIQUE_CARDINALITY_T'",
+                        "0");
+                connection.commit();
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
     public void testMvccPhysicalScanCostAccountsForCurrentContainerGeometry()
             throws Exception {
         String database = databaseName("mvcc-physical-scan-cost");

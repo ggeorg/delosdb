@@ -1046,7 +1046,7 @@ class CreateIndexConstantAction extends IndexConstantAction
 		CardinalityCounter cCount = (CardinalityCounter)rowSource;
 
         long numRows = cCount.getRowCount();
-        if (addStatistics(dd, indexRowGenerator, numRows))
+        if (addStatistics(dd, td, indexRowGenerator, numRows))
 		{
 			long[] c = cCount.getCardinality();
 			for (int i = 0; i < c.length; i++)
@@ -1106,6 +1106,7 @@ class CreateIndexConstantAction extends IndexConstantAction
      * statistics up to date.
      *
      * @param dd the data dictionary
+     * @param td the base table descriptor
      * @param irg the index row generator
      * @param numRows the number of rows in the index
      * @return {@code true} if statistics should be written to
@@ -1113,6 +1114,7 @@ class CreateIndexConstantAction extends IndexConstantAction
      * @throws StandardException if accessing the data dictionary fails
      */
     private boolean addStatistics(DataDictionary dd,
+                                  TableDescriptor td,
                                   IndexRowGenerator irg,
                                   long numRows)
             throws StandardException {
@@ -1120,9 +1122,10 @@ class CreateIndexConstantAction extends IndexConstantAction
         if (dd.checkVersion(DataDictionary.DD_VERSION_DERBY_10_9, null) &&
                 // This horrible piece of code will hopefully go away soon!
                ((IndexStatisticsDaemonImpl)dd.getIndexStatsRefresher(false)).
-                    skipDisposableStats) {
+                    shouldSkipDisposableStats(td)) {
             if (add && irg.isUnique() && irg.numberOfOrderedColumns() == 1) {
-                // Do not add statistics for single-column unique indexes.
+                // Heap retains Derby's disposable-statistics behavior. Delos
+                // MVCC keeps these statistics as its cardinality authority.
                 add = false;
             }
         }
