@@ -5427,6 +5427,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f04DrdaRowAdvanceJfrDiagnosticEnabled()) {
             addProperty(command, "f04DrdaRowAdvanceJfrDiagnostic", true);
         }
+        if (f04FanoutJfrDiagnosticEnabled()) {
+            addProperty(command, "f04FanoutJfrDiagnostic", true);
+        }
         String profileServerTargets = System.getProperty(
                 PREFIX + "profileServerTargets", "").trim();
         if (!profileServerTargets.isEmpty()) {
@@ -6365,6 +6368,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f04DrdaRowAdvanceJfrDiagnosticEnabled() {
         return Boolean.getBoolean(PREFIX + "f04DrdaRowAdvanceJfrDiagnostic");
+    }
+
+    private static boolean f04FanoutJfrDiagnosticEnabled() {
+        return Boolean.getBoolean(PREFIX + "f04FanoutJfrDiagnostic");
     }
 
     private static boolean f07DrdaServerPhaseDiagnosticEnabled() {
@@ -13372,6 +13379,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean f04DrdaRowAdvanceJfrDiagnostic = f04DrdaRowAdvanceJfrDiagnosticEnabled()
                     && mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
+            boolean f04FanoutJfrDiagnostic = f04FanoutJfrDiagnosticEnabled()
+                    && mvccGen2C3ReadServerEnabled()
+                    && configuredTargets.equals(DRDA_SERVER_PHASE_EVIDENCE_TARGETS);
             boolean f07DrdaServerPhaseDiagnostic = drdaServerPhaseDiagnostic
                     && f07DrdaServerPhaseDiagnosticEnabled();
             boolean currentBaselineTargets = currentBaselineEnabled()
@@ -13396,6 +13406,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !f02ScaleSurfaceDiagnostic
                     && !drdaServerPhaseDiagnostic
                     && !f04DrdaRowAdvanceJfrDiagnostic
+                    && !f04FanoutJfrDiagnostic
                     && !currentBaselineTargets) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
@@ -13513,6 +13524,48 @@ public final class DelosJdbcCrossEngineConcurrency {
                         System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
                     throw new IllegalArgumentException(
                             "F04 row-advance JFR diagnostic requires server profiling for "
+                                    + expectedProfileTargets);
+                }
+            } else if (f04FanoutJfrDiagnostic) {
+                if (!configuredWorkloads.equals(List.of(Workload.JOIN_INDEXED_FANOUT))) {
+                    throw new IllegalArgumentException(
+                            "F04 fanout JFR diagnostic requires JOIN_INDEXED_FANOUT only");
+                }
+                if (!clientValues().equals(List.of(8))
+                        || !rowCounts().equals(List.of(10000))
+                        || !widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F04 fanout JFR diagnostic requires rows=10000, clients=8, width=1");
+                }
+                if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
+                    throw new IllegalArgumentException(
+                            "F04 fanout JFR diagnostic requires FULL_INDEXED table shape");
+                }
+                boolean profileShape = transactionsPerClient == 100
+                        && warmups == 1
+                        && iterations == 1
+                        && Double.compare(minimumWarmupSeconds, 0.0d) == 0
+                        && maximumWarmupIterations == 1
+                        && Double.compare(minimumMeasuredSeconds, 0.0d) == 0
+                        && maximumMeasuredIterations == 1;
+                if (!profileShape
+                        || !sqlSemanticOracleEnabled()
+                        || !refreshSimpleJoinStatisticsEnabled()
+                        || !mvccPhysicalScanCostEnabled()
+                        || !mvccPhysicalRowLocationCostEnabled()
+                        || mvccGen2ProjectedCurrentReadEnabled()
+                        || Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")) {
+                    throw new IllegalArgumentException(
+                            "F04 fanout JFR diagnostic requires canonical Gen2 read settings, "
+                                    + "simple-join statistics refresh, transactionsPerClient=100, "
+                                    + "warmups=1, iterations=1, zero-duration single-interval phases, "
+                                    + "and SQL semantic oracle enabled");
+                }
+                String expectedProfileTargets = "delos_heap_drda,delos_mvcc_drda";
+                if (!expectedProfileTargets.equals(
+                        System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
+                    throw new IllegalArgumentException(
+                            "F04 fanout JFR diagnostic requires server profiling for "
                                     + expectedProfileTargets);
                 }
             } else if (f07DrdaServerPhaseDiagnostic) {
@@ -13856,7 +13909,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
                     && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
-                    && !f04DrdaRowAdvanceJfrDiagnostic && !f07DrdaServerPhaseDiagnostic
+                    && !f04DrdaRowAdvanceJfrDiagnostic && !f04FanoutJfrDiagnostic
+                    && !f07DrdaServerPhaseDiagnostic
                     && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
@@ -13912,13 +13966,15 @@ public final class DelosJdbcCrossEngineConcurrency {
             }
             if (containerMode()) {
                 if (drdaProtocolDiagnostic || drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic
-                        || f04DrdaRowAdvanceJfrDiagnostic) {
+                        || f04DrdaRowAdvanceJfrDiagnostic || f04FanoutJfrDiagnostic) {
                     if (delosClientClasspath.isBlank()) {
                         String diagnosticName = f02ScaleSurfaceDiagnostic
                                 ? "F02 scale-surface diagnostic"
                                 : f04DrdaRowAdvanceJfrDiagnostic
                                         ? "F04 row-advance JFR diagnostic"
-                                        : "DRDA diagnostic";
+                                        : f04FanoutJfrDiagnostic
+                                                ? "F04 fanout JFR diagnostic"
+                                                : "DRDA diagnostic";
                         throw new IllegalArgumentException(
                                 diagnosticName + " requires the Delos network client classpath");
                     }
@@ -13964,13 +14020,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                             throw new IllegalArgumentException("DRDA server benchmark images are required");
                         }
                     } else if (drdaServerPhaseDiagnostic || f02ScaleSurfaceDiagnostic
-                            || f04DrdaRowAdvanceJfrDiagnostic) {
+                            || f04DrdaRowAdvanceJfrDiagnostic || f04FanoutJfrDiagnostic) {
                         if (delosServerImage.isBlank()) {
                             String diagnosticName = f02ScaleSurfaceDiagnostic
                                     ? "F02 scale-surface diagnostic"
                                     : f04DrdaRowAdvanceJfrDiagnostic
                                             ? "F04 row-advance JFR diagnostic"
-                                            : "DRDA server phase evidence";
+                                            : f04FanoutJfrDiagnostic
+                                                    ? "F04 fanout JFR diagnostic"
+                                                    : "DRDA server phase evidence";
                             throw new IllegalArgumentException(
                                     diagnosticName + " requires the Delos server image");
                         }

@@ -1,20 +1,38 @@
-DelosDB Gen2-C3 F04 canonical statistics stabilization overlay
+DelosDB Gen2-C3 F04 fanout server JFR attribution overlay
 
 Purpose
 -------
-Make canonical F04 simple-join fixtures establish Delos statistics
-synchronously before measurement, avoiding asynchronous/order-dependent
-optimizer state after the MVCC unique-cardinality production correction.
+Profile the remaining canonical JOIN_INDEXED_FANOUT gap on Heap and Gen2
+with deterministic simple-join statistics and the accepted MVCC cardinality
+production behavior.
 
-Changes
--------
-- Canonical runDelosGen2C3SimpleJoinFitness explicitly enables
-  refreshSimpleJoinStatistics.
-- JOIN_INDEXED_FANOUT now refreshes both parent and child Delos statistics
-  when simple-join statistics refresh is enabled.
-- Canonical sentinel requires the summary marker proving refresh was enabled.
+Changed files
+-------------
+delosdb-tests/build.gradle
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+
+New task
+--------
+:delosdb-tests:runDelosGen2C3F04FanoutJfr
+
+Diagnostic contract
+-------------------
+Workload=JOIN_INDEXED_FANOUT
+Targets=delos_heap_drda,delos_mvcc_drda
+Rows=10000
+Clients=8
+TransactionsPerClient=100
+Runs=4
+Simple-join statistics refresh=true
+Disposable-index statistics debug=false
+MVCC physical scan cost=true
+MVCC physical RowLocation cost=true
+Projected CURRENT=false
+Base-fetch prefetch=false
+Server-side JFR for both targets
 
 Scope
 -----
-Harness only. No production optimizer, storage, MVCC, RawStore, WAL,
-recovery, durable-format, workload SQL, or benchmark-threshold changes.
+Diagnostic/harness only.
+No production optimizer, join, storage, MVCC, RawStore, WAL, recovery,
+durable-format, canonical workload SQL, or benchmark-threshold changes.
