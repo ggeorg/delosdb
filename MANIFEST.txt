@@ -1,22 +1,42 @@
-DelosDB Gen2-C3 F04 NOHOLD stable-suite registration overlay
+DelosDB Gen2-C3 F05 read-head template reuse A/B overlay
 
 Purpose
 -------
-Register MvccStatementReadBoundaryPolicyTest in the permanent DelosDB stable
-test-suite registry.
+Falsify whether the dominant allocation pressure remaining after the
+read-directory-head-only experiment materially contributes to F05 matched-plan
+latency.
 
-Registration
-------------
-suite: concurrency
-execution tier: full
+Current evidence
+----------------
+Phase-2H baseline:
+  Heap = 0.804483 ms/execution
+  Gen2 = 1.520972 ms/execution
 
-Reason
-------
-The test freezes the RawStore locking-policy capability contract that permits
-statement-lifetime MVCC read boundaries for READ_COMMITTED_NOHOLDLOCK while
-preserving immutable-page-read=false.
+Read-directory-head-only ON:
+  Heap = 0.767307 ms/execution
+  Gen2 = 1.374313 ms/execution
+  Gen2 improvement = ~9.6%
+  ratio = 1.791087x
 
-Scope
------
-Registry only. No production code, test implementation, benchmark behavior,
-thresholds, or static-analysis baselines are changed.
+Current Gen2 allocation-by-site:
+  DataValueFactoryImpl.getNullDVDWithUCS_BASICcollation = 78.23%
+  directoryTemplate                              = 2.17%
+  decodeDirectoryReadHead                        = 0.62%
+
+Raw allocation stacks show the 78.23% site is entirely the six-field typed
+template created by decodeDirectoryReadHead.
+
+Experiment
+----------
+Requires the previous read-directory-head-only experiment to remain ON:
+  -Ddelosdb.experimental.mvccReadDirectoryHeadOnly=true
+
+Additional OFF-by-default switch:
+  -Ddelosdb.experimental.mvccReuseReadDirectoryHeadTemplate=true
+
+When both are enabled, the six-field typed directory read-head template is
+reused per thread. Physical page fetch, kind/format checks, row identity,
+version visibility, CURRENT/HISTORY semantics, mutation/commit paths,
+WAL/recovery and durable formats are unchanged.
+
+This is diagnostic only. Do not promote directly from this overlay.

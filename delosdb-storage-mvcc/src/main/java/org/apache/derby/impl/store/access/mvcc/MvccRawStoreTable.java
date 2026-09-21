@@ -40,6 +40,10 @@ import org.apache.derby.shared.common.reference.SQLState;
 /** One table encoded entirely as ordinary RawStore rows and containers. */
 final class MvccRawStoreTable {
     private static final int OVERFLOW_THRESHOLD = 100;
+    private static final String REUSE_READ_DIRECTORY_HEAD_TEMPLATE_PROPERTY =
+            "delosdb.experimental.mvccReuseReadDirectoryHeadTemplate";
+    private static final ThreadLocal<Object[]> READ_DIRECTORY_HEAD_TEMPLATE =
+            new ThreadLocal<>();
 
     static final class Descriptor {
         private final ContainerKey metadataContainer;
@@ -3160,6 +3164,62 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.VERSION_END_SEQUENCE,
                 MvccRawStoreFormat.longValue(transaction, commitSequence),
                 null);
+    }
+
+    static DirectoryRecord decodeDirectoryReadHead(
+            Transaction transaction,
+            Page page,
+            int slot) throws StandardException {
+        int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        boolean gen2A1Current = fieldCount > MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT;
+        if (fieldCount != MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                && fieldCount != MvccRawStoreFormat.DIRECTORY_HEAD_SUMMARY_FIELD_COUNT
+                && !gen2A1Current) {
+            throw new IllegalStateException(
+                    "RawStore MVCC directory row has unsupported field count: " + fieldCount);
+        }
+        boolean hasHint = fieldCount >= MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT;
+        int readFieldCount = hasHint
+                ? MvccRawStoreFormat.DIRECTORY_HINT_FIELD_COUNT
+                : MvccRawStoreFormat.DIRECTORY_BASE_FIELD_COUNT;
+        Object[] row;
+        if (Boolean.getBoolean(REUSE_READ_DIRECTORY_HEAD_TEMPLATE_PROPERTY)) {
+            row = READ_DIRECTORY_HEAD_TEMPLATE.get();
+            if (row == null || row.length != readFieldCount) {
+                row = directoryTemplate(transaction, readFieldCount);
+                READ_DIRECTORY_HEAD_TEMPLATE.set(row);
+            }
+        } else {
+            row = directoryTemplate(transaction, readFieldCount);
+        }
+        RecordHandle handle = page.fetchFromSlot(null, slot, row, null, false);
+        if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
+                != MvccRawStoreFormat.DIRECTORY_KIND) {
+            return null;
+        }
+        if (MvccRawStoreFormat.intAt(row, MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
+                != MvccRawStoreFormat.FORMAT_VERSION) {
+            throw new IllegalStateException("RawStore MVCC directory row format is unsupported");
+        }
+        RecordHint hint = hasHint
+                ? new RecordHint(
+                        MvccRawStoreFormat.longAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_HINT_PAGE),
+                        MvccRawStoreFormat.intAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_HINT_RECORD))
+                : RecordHint.NONE;
+        return new DirectoryRecord(
+                MvccRawStoreFormat.longAt(row, MvccRawStoreFormat.DIRECTORY_ROW_ID),
+                new DirectoryHead(
+                        MvccRawStoreFormat.longAt(
+                                row,
+                                MvccRawStoreFormat.DIRECTORY_HEAD_VERSION_ID),
+                        hint,
+                        DirectoryHeadSummary.NONE),
+                handle);
     }
 
     static DirectoryRecord decodeDirectory(

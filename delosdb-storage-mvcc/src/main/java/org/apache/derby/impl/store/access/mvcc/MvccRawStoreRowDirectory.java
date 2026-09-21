@@ -22,6 +22,9 @@ import org.apache.derby.shared.common.reference.SQLState;
 
 /** Physical addressing and mutation of the stable-row directory. */
 final class MvccRawStoreRowDirectory {
+    private static final String READ_DIRECTORY_HEAD_ONLY_PROPERTY =
+            "delosdb.experimental.mvccReadDirectoryHeadOnly";
+
     private MvccRawStoreRowDirectory() {
     }
 
@@ -244,7 +247,9 @@ final class MvccRawStoreRowDirectory {
             return null;
         }
         MvccRawStoreTable.DirectoryRecord directory =
-                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+                Boolean.getBoolean(READ_DIRECTORY_HEAD_ONLY_PROPERTY)
+                        ? MvccRawStoreTable.decodeDirectoryReadHead(transaction, page, slot)
+                        : MvccRawStoreTable.decodeDirectory(transaction, page, slot);
         return directory != null && directory.rowId() == rowLocation.rowId()
                 ? directory
                 : null;
