@@ -17609,6 +17609,13 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
             throw new GradleException(
                     'Gen2-C3 F04 row-advance JFR diagnostic requires a release build; rerun with -Pdelosdb.sane=false')
         }
+        def refreshSimpleJoinStatisticsValue = providers.gradleProperty(
+                'delosdb.f04.refreshSimpleJoinStatistics')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
+        if (!(refreshSimpleJoinStatisticsValue in ['true', 'false'])) {
+            throw new GradleException(
+                    'delosdb.f04.refreshSimpleJoinStatistics must be true or false')
+        }
         delete(reportDir)
         delete(databaseRoot)
         reportDir.get().asFile.mkdirs()
@@ -17617,6 +17624,8 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.f04DrdaRowAdvanceJfrDiagnostic': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics':
+                        refreshSimpleJoinStatisticsValue,
                 'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
                         'delos_heap_drda,delos_mvcc_drda',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
@@ -17677,13 +17686,17 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
             }
         }
         String summaryText = summary.getText('UTF-8')
+        def refreshSimpleJoinStatisticsValue = providers.gradleProperty(
+                'delosdb.f04.refreshSimpleJoinStatistics')
+                .getOrElse('false').trim().toLowerCase(java.util.Locale.ROOT)
         [
                 'MVCC Gen2-C3 read server enabled: true',
                 'MVCC physical scan cost enabled: true',
                 'MVCC physical RowLocation cost enabled: true',
                 'MVCC Gen2 projected current read enabled: false',
                 'Workloads: [JOIN_INDEXED_1TO1]',
-                'Clients: 8'
+                'Clients: 8',
+                "Simple-join statistics refresh enabled: ${refreshSimpleJoinStatisticsValue}"
         ].each { String marker ->
             if (!summaryText.contains(marker)) {
                 throw new GradleException(
@@ -17738,6 +17751,7 @@ tasks.register('runDelosGen2C3F04RowAdvanceJfr', JavaExec) {
                         'MVCC physical RowLocation cost=true\n' +
                         'Projected CURRENT=false\n' +
                         'Base-fetch prefetch=false\n' +
+                        "Simple-join statistics refresh=${refreshSimpleJoinStatisticsValue}\n" +
                         'JFR settings=profile; stackdepth=256; one server recording per target/run\n' +
                         'Interpretation=source attribution only; JFR-enabled throughput is not canonical acceptance TPS.\n',
                 'UTF-8')

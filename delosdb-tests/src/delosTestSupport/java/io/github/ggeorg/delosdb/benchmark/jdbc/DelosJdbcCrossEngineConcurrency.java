@@ -5481,6 +5481,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccRefreshMultiJoinStatisticsEnabled()) {
             addProperty(command, "mvccRefreshMultiJoinStatistics", true);
         }
+        if (refreshSimpleJoinStatisticsEnabled()) {
+            addProperty(command, "refreshSimpleJoinStatistics", true);
+        }
         addProperty(command, "transactionsPerClient", options.transactionsPerClient());
         addProperty(command, "fixedWorkloadOperationBudgetPerClient",
                 options.fixedWorkloadOperationBudgetPerClient());
@@ -5917,6 +5920,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
+                .append("Simple-join statistics refresh enabled: ")
+                .append(refreshSimpleJoinStatisticsEnabled()).append('\n')
                 .append("Analysis schema: cross-engine-concurrency-v1\n")
                 .append("Expected invariant: identical final-state semantic fingerprint for every target/run/cell\n")
                 .append("Known limitation: contextual comparison; Docker virtualization, engine defaults, and ")
@@ -7419,6 +7424,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                 prepareJoinDimensionFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+                if (refreshSimpleJoinStatisticsEnabled()
+                        && (options.target() == Target.DELOS_HEAP_DRDA
+                                || options.target() == Target.DELOS_MVCC_DRDA)) {
+                    phase2BUpdateStatistics(verifier, scenario.tableName());
+                    phase2BUpdateStatistics(verifier, joinDimensionTableName(scenario.tableName()));
+                    verifier.commit();
+                    System.out.printf(Locale.ROOT,
+                            "FIXTURE simple-join-statistics-refreshed target=%s workload=%s%n",
+                            options.target().id(), spec.workload().name());
+                    System.out.flush();
+                }
             } else if (spec.workload() == Workload.JOIN_INDEXED_FANOUT) {
                 prepareJoinFanoutFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
@@ -11895,6 +11911,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2SinglePassCurrentScanEnabled()).append('\n')
                 .append("MVCC multi-join statistics refresh enabled: ")
                 .append(mvccRefreshMultiJoinStatisticsEnabled()).append('\n')
+                .append("Simple-join statistics refresh enabled: ")
+                .append(refreshSimpleJoinStatisticsEnabled()).append('\n')
                 .append("Fresh realistic transaction fitness: ")
                 .append(freshRealisticTransactionFitnessEnabled()).append('\n')
                 .append("Each client owns one JDBC connection and reuses prepared statements where applicable.\n");
@@ -12189,6 +12207,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccRefreshMultiJoinStatisticsEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccRefreshMultiJoinStatistics");
+    }
+
+    private static boolean refreshSimpleJoinStatisticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "refreshSimpleJoinStatistics");
     }
 
     private static String insertTableShape() {

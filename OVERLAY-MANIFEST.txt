@@ -1,33 +1,34 @@
-DelosDB Gen2-C3 F04 row-advance server JFR attribution overlay
+DelosDB Gen2-C3 F04 stable-statistics JFR falsification overlay
 
-Purpose:
-- continue from the Phase 2X proof that the F04 JOIN_INDEXED_1TO1 SERVER gap sits in ResultSet.next() row advancement
-- profile the actual Delos Network Server JVM rather than the JDBC client worker
-- compare Heap and Gen2 under the same 8-client JOIN_INDEXED_1TO1 workload
-- capture hot methods, allocation sites, and contention sites for source attribution
-- preserve canonical F04 SQL and all production behavior
+Purpose
+-------
+Add a diagnostic-only switch to refresh statistics for the F04 JOIN_INDEXED_1TO1
+base and dimension tables before measurement. The Phase 2Y server-JFR task can
+then be rerun under otherwise identical conditions to determine whether the
+Heap-vs-Gen2 operator divergence is caused by statistics/plan state.
 
-Changed files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Changed files
+-------------
+delosdb-tests/build.gradle
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Diagnostic task:
-- :delosdb-tests:runDelosGen2C3F04RowAdvanceJfr
+Diagnostic property
+-------------------
+Gradle: -Pdelosdb.f04.refreshSimpleJoinStatistics=true
+Worker: delosdb.benchmark.crossEngineConcurrency.refreshSimpleJoinStatistics=true
 
-Diagnostic shape:
-- targets: delos_heap_drda,delos_mvcc_drda
-- workload: JOIN_INDEXED_1TO1 only
-- rows: 10000
-- clients: 8
-- transactions per client: 100
-- runs: 4
-- server-side JFR settings=profile, stackdepth=256
-- physical scan cost=true
-- physical RowLocation cost=true
-- projected CURRENT=false
-- base-fetch prefetch=false
+Behavior
+--------
+When enabled for the dedicated Delos Heap/MVCC DRDA F04 1:1 diagnostic, the
+fixture explicitly invokes SYSCS_UTIL.SYSCS_UPDATE_STATISTICS for the base and
+join-dimension tables before the timed workload. The setting is forwarded to
+workers and recorded in summary/profile evidence.
 
-No benchmark threshold changes.
-No canonical F04 rerun.
-No MVCC/Heap/optimizer/join production behavior changes.
-No WAL/recovery/durable-format changes.
+Not changed
+-----------
+No production engine code.
+No optimizer cost model.
+No join implementation.
+No B-tree/MVCC implementation.
+No benchmark thresholds or workload SQL.
+No canonical F04 task behavior unless this diagnostic property is explicitly set.
