@@ -1,3 +1,17 @@
-DelosDB post-modernization mutation checkpoint correction
+DelosDB F08-B INSERT / commit decomposition diagnostic overlay
 
-Fixes F08-F10 harness only: 8-client checkpoint exemption, correct Gen2 A1/B/C1/C3 server modes, exact UPDATE evidence marker, and longer F10 case timeout without changing workload geometry. No production engine changes or benchmark threshold weakening.
+Changed files:
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+
+Purpose:
+- Add a diagnostic-only F08 lane separating JDBC INSERT execution from commit/stamping cost.
+- Compare Heap BARE vs Gen2-A1 BARE and Heap PK vs Gen2-B PK.
+- Measure widths 1 and 100.
+- Preserve the permanent F08 INSERT_100 PreparedStatement.executeBatch() shape.
+- Record median executeBatch and commit times, phase page-read deltas, total flushed WAL span,
+  and decoded RawStore WAL operation count/bytes.
+
+Production behavior changed: NO
+Benchmark thresholds changed: NO
+Existing benchmark tasks changed semantically: NO
