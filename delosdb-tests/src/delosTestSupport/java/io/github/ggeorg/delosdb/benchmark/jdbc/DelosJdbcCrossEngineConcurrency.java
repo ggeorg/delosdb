@@ -13697,6 +13697,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 boolean multiWayJoinFitness = configuredWorkloads.equals(List.of(
                         Workload.JOIN_3WAY_SELECTIVE,
                         Workload.JOIN_4WAY_FANOUT));
+                boolean f05RowProductionControl = configuredWorkloads.equals(List.of(
+                        Workload.JOIN_3WAY_SELECTIVE,
+                        Workload.JOIN_3WAY_SELECTIVE_AGGREGATE));
                 boolean groupByFitness = configuredWorkloads.equals(List.of(
                         Workload.GROUP_LOW_CARD,
                         Workload.GROUP_HIGH_CARD));
@@ -13718,7 +13721,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     + "BANK_TRANSACTION,ORDER_ENTRY_MIX");
                 }
                 if ((!pointReadFitness && !rangeScanFitness && !projectionFitness
-                                && !simpleJoinFitness && !multiWayJoinFitness && !groupByFitness
+                                && !simpleJoinFitness && !multiWayJoinFitness
+                                && !f05RowProductionControl && !groupByFitness
                                 && !sortFitness && !mixedReaderWriterGen2Fitness && !longReaderWriterGen2Fitness
                                 && !realisticTransactionGen2Fitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
@@ -13736,7 +13740,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 List<Integer> expectedClients = longReaderWriterGen2Fitness
                         ? List.of(4)
                         : (rangeScanFitness || projectionFitness
-                                        || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                        || simpleJoinFitness || multiWayJoinFitness
+                                        || f05RowProductionControl || groupByFitness || sortFitness
                                         || mixedReaderWriterGen2Fitness || realisticTransactionGen2Fitness)
                                 ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
@@ -13744,7 +13749,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
                 List<Integer> expectedWidths = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                || simpleJoinFitness || multiWayJoinFitness
+                                || f05RowProductionControl || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? List.of(1) : List.of(10);
@@ -13753,7 +13759,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 read fitness requires widths " + expectedWidths);
                 }
                 String expectedTableShape = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
+                                || simpleJoinFitness || multiWayJoinFitness
+                                || f05RowProductionControl || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";

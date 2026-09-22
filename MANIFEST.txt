@@ -1,31 +1,24 @@
-DelosDB Gen2-C3 F05 row-production control overlay
+DelosDB Gen2-C3 F05 row-production control validator fix
 
 Purpose
 -------
-Separate F05 three-way relational execution from result-row production /
-wire-consumption cost across the full SERVER engine matrix.
+Allow the dedicated F05 row-production diagnostic workload pair through the
+existing Gen2-C3 read-fitness validator without weakening canonical workload
+contracts.
 
-Diagnostic workloads
---------------------
+Accepted diagnostic workload set
+--------------------------------
 JOIN_3WAY_SELECTIVE
-  Existing canonical query returning 1200 rows:
-    c.id, o.id, l.id
-
 JOIN_3WAY_SELECTIVE_AGGREGATE
-  Same joins, same predicates, and consumes all three ids, but returns one row:
-    count(*), sum(c.id), sum(o.id), sum(l.id)
 
-Both workloads use the same multi-join fixture, indexes, deterministic Delos
-statistics refresh, Gen2-C3 read architecture, physical scan cost, and
-physical RowLocation cost.
+The diagnostic inherits the existing F05 execution contract:
+- clients = 8
+- widths = 1
+- table shape = FULL_INDEXED
 
-Interpretation
---------------
-If PostgreSQL's advantage shrinks materially on the aggregate control, a
-large part of the canonical gap is row production / JDBC / protocol work.
+Canonical F05 remains:
+- JOIN_3WAY_SELECTIVE
+- JOIN_4WAY_FANOUT
 
-If the PostgreSQL advantage remains similar, the gap is primarily relational
-execution below result production.
-
-Diagnostic only. No production engine, storage, optimizer, WAL/recovery,
-durable-format, or benchmark-threshold changes.
+No production code, SQL, optimizer behavior, benchmark thresholds, or
+semantic-oracle behavior changes.
