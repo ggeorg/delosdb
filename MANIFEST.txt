@@ -1,38 +1,37 @@
-DelosDB Gen2-C3 F05 batched base-fetch reachability fix
+DelosDB Gen2-C3 F05 primary-key-suffix secondary-index control
 
 Purpose
 -------
-Make Phase-2D explicitly use CLOSE_CURSORS_AT_COMMIT so the new bounded
-INDEX_TO_BASE_ROW batch experiment is actually reachable.
+Emulate the intended physical effect of automatically carrying primary-key
+identity in non-unique secondary indexes, without changing the storage engine.
 
-Root cause
-----------
-IndexRowToBaseRowResultSet enables the diagnostic batch path only for a
-non-holdable result set.
+Matched workloads
+-----------------
+JOIN_3WAY_SELECTIVE
+  ORDER(customer_id)
+  LINE(order_id)
 
-Phase-2D previously used openPhase2AConnection(), which leaves Derby's default
-HOLD_CURSORS_OVER_COMMIT unchanged. Therefore the prior "batch ON" report did
-not exercise AccessMethodBaseFetchBatch at all.
+JOIN_3WAY_SELECTIVE_PK_SUFFIX
+  ORDER(customer_id, id)
+  LINE(order_id, id)
 
-Change
-------
-Only Phase-2D connections now explicitly use:
-  ResultSet.CLOSE_CURSORS_AT_COMMIT
+The PK-suffix workload REPLACES the original secondary indexes with the
+composite versions. It does not create duplicate alternative indexes.
 
-The summary records:
-  benchmarkHoldability=CLOSE_CURSORS_AT_COMMIT
+The SQL query, table rows, result cardinality, six SERVER engines, Gen2-C3
+settings, deterministic statistics, and semantic oracle are otherwise the same.
 
-Why two measurements are required
----------------------------------
-Cursor holdability itself can affect DelosDB read-path reachability. Compare:
-1. scalar/OFF with CLOSE_CURSORS_AT_COMMIT
-2. batch/ON with CLOSE_CURSORS_AT_COMMIT
+Why this control comes before production design
+-----------------------------------------------
+Current Derby B-tree storage requires nKeyFields == physical row width, so true
+non-key INCLUDE columns are not yet physically supported.
 
-Do not compare the new ON measurement directly to the previous default-
-holdability Phase-2D result.
+Appending PK identity as a trailing key is physically valid for these
+non-unique secondary indexes and is a faithful performance proxy for automatic
+PK suffixing. A transparent production implementation would still require
+separating logical index columns from hidden physical stored columns so JDBC
+metadata, index sharing, ALTER logic, uniqueness semantics, and DDL remain
+unchanged.
 
-Scope
------
-Diagnostic harness only.
-No production SQL engine, MVCC, RawStore, optimizer, WAL/recovery, durable
-format, benchmark thresholds, or semantic-oracle changes.
+Diagnostic only. No production engine, optimizer, storage, WAL/recovery,
+durable-format, or benchmark-threshold changes.
