@@ -33,10 +33,6 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical lookup and visibility traversal for one MVCC version container. */
 final class MvccRawStoreVersionReader implements AutoCloseable {
-    private static final String SINGLE_PASS_HINT_DECODE_PROPERTY =
-            "delosdb.experimental.mvccSinglePassVersionHintDecode";
-    private static final String LAZY_VERSION_CHAIN_METADATA_PROPERTY =
-            "delosdb.experimental.mvccLazyVersionChainMetadata";
     private final Transaction transaction;
     private final MvccRawStoreTable.Descriptor table;
     private final ContainerHandle container;
@@ -203,59 +199,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         return visible(version, transactionId, snapshotSequence) ? version : null;
     }
 
-    private MvccRawStoreTable.VersionRecord findVisibleHeadByHint(
-            long rowId,
-            long versionId,
-            MvccRawStoreTable.RecordHint hint,
-            long transactionId,
-            long snapshotSequence,
-            MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
-        if (container == null || !hint.valid()) {
-            return null;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(hint.pageNumber());
-            if (page != null && metrics != null) {
-                metrics.versionPageAcquired();
-            }
-            if (page == null) {
-                return null;
-            }
-            RecordHandle handle = page.getRecordHandle(hint.recordId());
-            if (handle == null) {
-                return null;
-            }
-            int slot = page.getSlotNumber(handle);
-            if (page.isDeletedAtSlot(slot)) {
-                return null;
-            }
-            MvccRawStoreTable.VersionRecord candidate =
-                    decoder(projection).decodeVisibleHeadAtSlot(page, slot);
-            if (metrics != null) {
-                metrics.versionSlotFetched();
-            }
-            if (candidate == null
-                    || candidate.rowId() != rowId
-                    || candidate.versionId() != versionId) {
-                return null;
-            }
-            if (candidate.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-                return null;
-            }
-            if (metrics != null) {
-                metrics.visibilityChecked();
-            }
-            return visible(candidate, transactionId, snapshotSequence)
-                    ? candidate
-                    : null;
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-        }
-    }
-
     MvccRawStoreTable.VersionRecord findVisible(
             long rowId,
             MvccRawStoreTable.DirectoryHead head,
@@ -265,18 +208,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
         long versionId = head.versionId();
         long firstVersionId = versionId;
         MvccRawStoreTable.RecordHint hint = head.hint();
-        if (Boolean.getBoolean(LAZY_VERSION_CHAIN_METADATA_PROPERTY)) {
-            MvccRawStoreTable.VersionRecord visibleHead = findVisibleHeadByHint(
-                    rowId,
-                    versionId,
-                    hint,
-                    transactionId,
-                    snapshotSequence,
-                    projection);
-            if (visibleHead != null) {
-                return visibleHead;
-            }
-        }
         Set<Long> visited = null;
         boolean first = true;
         while (versionId != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
@@ -365,19 +296,6 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
             int hintFieldCount = MvccRawStoreFormat.versionHintFieldCount(table.columnCount());
             if (fieldCount != baseFieldCount && fieldCount != hintFieldCount) {
                 return null;
-            }
-            if (Boolean.getBoolean(SINGLE_PASS_HINT_DECODE_PROPERTY)) {
-                MvccRawStoreTable.VersionRecord decoded =
-                        decoder(projection).decodeAtSlot(page, slot);
-                if (metrics != null) {
-                    metrics.versionSlotFetched();
-                }
-                if (decoded == null
-                        || decoded.rowId() != rowId
-                        || decoded.versionId() != versionId) {
-                    return null;
-                }
-                return decoded;
             }
             page.fetchFromSlot(
                     null,

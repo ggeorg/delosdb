@@ -1,55 +1,41 @@
-DelosDB Gen2-C3 F05 batched base-fetch A/B overlay
+DelosDB Gen2-C3 F05 rejected-experiment cleanup overlay
 
 Purpose
 -------
-Falsify whether scalar INDEX_TO_BASE_ROW execution is the primary remaining
-F05 selective-join bottleneck by batching a bounded group of index RowLocations
-and decoding rows from the same Gen2-C3 CURRENT page under one page latch.
+Remove stale Phase-2H diagnostic source that accumulated in the working tree
+before testing the new Gen2-C3 batched INDEX_TO_BASE_ROW experiment.
 
-Evidence
---------
-The F05 covering control changes only the inner indexes and moves Gen2 from:
-  2140 tx/s non-covering
-to:
-  3462 tx/s covering
-while PostgreSQL remains essentially flat:
-  3397 -> 3402 tx/s
+Why this is required
+--------------------
+The batching overlay restores MvccRawStoreTable from the clean current C3
+source, but MvccRawStoreRowDirectory was still carrying the rejected
+mvccReadDirectoryHeadOnly experiment and referenced:
+  MvccRawStoreTable.decodeDirectoryReadHead(...)
 
-The forced plan decomposition proves the same nested-loop shape and row/open
-counts before and after covering. Non-covering has exactly two
-INDEX_TO_BASE_ROW nodes; covering has zero.
+That method correctly no longer exists after restoring the clean table source,
+causing compilation to fail.
 
-Experiment
-----------
-OFF by default.
+Restored files
+--------------
+MvccRawStoreRowDirectory.java
+  removes read-directory-head-only diagnostic
 
-Enable both:
-  -Ddelosdb.experimental.indexToBaseRowBatchFetch=true
-  -Ddelosdb.experimental.mvccBaseFetchBatch=true
+MvccRawStoreVersionReader.java
+  removes rejected single-pass/page-run/lazy-metadata diagnostics
 
-Optional:
-  -Ddelosdb.experimental.indexToBaseRowBatchSize=16
+MvccRawStoreVersionRows.java
+  removes rejected projected-payload/lazy-metadata diagnostics
 
-SQL engine:
-- IndexRowToBaseRowResultSet looks ahead up to the bounded batch size.
-- Source rows are detached so logical result order is preserved.
-- The optional access-method batch API receives corresponding RowLocations.
+BTreeScan.java
+  removes rejected SearchParameters reuse diagnostic
 
-Gen2-C3 access method:
-- read-only statement-snapshot controllers only;
-- groups supplied CURRENT RowLocations by physical page;
-- latches each referenced CURRENT page once;
-- decodes every matching row from that page;
-- writes each result into its original batch slot;
-- any miss/stale hint/invisible row falls back to the existing scalar fetch.
+Scope
+-----
+The new batched base-fetch experiment is NOT removed:
+  AccessMethodBaseFetchBatch.java
+  IndexRowToBaseRowResultSet.java
+  MvccRawStoreConglomerateController.java
+  MvccRawStoreTable.java
 
-No semantic changes
--------------------
-No result reordering.
-No optimizer or join-strategy changes.
-No UPDATE/DELETE path changes.
-No visibility/CURRENT/HISTORY changes.
-No RawStore WAL/recovery or durable-format changes.
-No benchmark thresholds or semantic-oracle weakening.
-
-Diagnostic only. Do not promote directly from this overlay.
+Production F04 cardinality and NOHOLD statement-boundary promotions are also
+untouched.
