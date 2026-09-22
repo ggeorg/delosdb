@@ -1,44 +1,21 @@
-DelosDB F08-D commit-stamp page-level WAL batching control
+DelosDB F08-E commit-stamp elision upper-bound control
 
-Purpose
--------
-Falsify whether the remaining per-row RawStore UpdateFieldOperation/logAndDo
-layer is a major contributor to Gen2 INSERT commit cost after F08-C proved
-container/page reuse alone is only a partial improvement.
+Purpose:
+- Diagnostic-only causal upper bound for F08 fresh INSERT commit stamping.
+- Adds a default-OFF property that deliberately skips commit-time CURRENT-row stamps
+  only when the entire pending set is a fresh inline INSERT batch.
+- The no-stamp lane is intentionally NON-SEMANTIC after commit: rows retain
+  UNCOMMITTED_SEQUENCE and normal post-commit visibility is not valid.
+- This is not a production candidate and must not be enabled outside the focused task.
 
-Prerequisite
-------------
-Apply after the accepted F08-B diagnostic and F08-C page-reuse control. This
-is an incremental experimental overlay based on the current delosdb 86 source
-authority plus those already-applied controls.
+Changed files:
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+- delosdb-tests/build.gradle
 
-Experiment
-----------
-Default-off property:
-  delosdb.experimental.mvccGen2CommitStampWalBatch.enabled
+Focused task:
+:delosdb-tests:runDelosF08CommitStampElisionUpperBound
 
-When F08-C fresh-inline INSERT page reuse is active, F08-D groups commit stamps
-by physical page and writes the same beginSequence field changes through one
-RawStore physical WAL operation per affected page rather than one
-UpdateFieldOperation/logAndDo call per row.
-
-Preserved
----------
-- persisted per-row beginSequence/commit-sequence semantics
-- RawStore as the single WAL, undo, crash-recovery and persistence authority
-- logical row count and physical CURRENT/PK topology
-- transaction commit-sequence reservation/publication
-- fallback for stale RowLocation hints
-- scalar/default behavior when the experimental property is off
-- UPDATE/DELETE/history stamping paths
-- benchmark thresholds and assertions
-
-Focused proof
--------------
-Task:
-  :delosdb-tests:runDelosF08CommitStampWalBatchControl
-
-The task compares scalar, page-reuse, and page+WAL-batched commit stamping for
-BARE and PK INSERT at widths 1 and 100; verifies WAL-operation collapse; runs
-Gen2-A1/Gen2-B lifecycle tests; and includes crash proofs on both sides of the
-RawStore commit boundary for a 100-row batched stamp transaction.
+Expected report directory:
+build/reports/delosdb/benchmarks/f08-commit-stamp-elision-upper-bound

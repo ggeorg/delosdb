@@ -2273,6 +2273,16 @@ final class MvccRawStoreTable {
             Transaction rawTransaction,
             List<PendingVersion> pending,
             long commitSequence) throws StandardException {
+        // F08-E diagnostic only: this deliberately leaves fresh committed CURRENT rows
+        // carrying UNCOMMITTED_SEQUENCE so their normal post-commit visibility is not
+        // semantically valid. It exists solely to measure the absolute upper bound of
+        // removing the commit-time restamp layer. The property is default-off and must
+        // never be enabled as a production behavior.
+        if (Boolean.getBoolean(
+                        MvccRawStoreFormat.GEN2_COMMIT_STAMP_ELISION_CONTROL_ENABLED_PROPERTY)
+                && freshInlineInsertBatch(pending)) {
+            return;
+        }
         if (Boolean.getBoolean(MvccRawStoreFormat.GEN2_COMMIT_STAMP_BATCH_ENABLED_PROPERTY)
                 && freshInlineInsertBatch(pending)) {
             MvccRawStoreRowDirectory.stampCommittedHeadsByHint(

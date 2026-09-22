@@ -964,6 +964,35 @@ tasks.named('runDelosF08CommitStampWalBatchControl') {
     }
 }
 
+registerDelosFocusedTest(
+        'runDelosF08CommitStampElisionUpperBound',
+        'Runs the deliberately non-semantic F08 fresh-INSERT no-stamp upper-bound control.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.class'
+        ],
+        [
+                'delosdb.benchmark.f08InsertCommit.fixtureRows': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.fixtureRows').getOrElse('1000'),
+                'delosdb.benchmark.f08InsertCommit.repetitions': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.repetitions').getOrElse('11'),
+                'delosdb.benchmark.f08InsertCommit.noStampControl': 'true',
+                'delosdb.benchmark.f08InsertCommit.batchControl': 'false',
+                'delosdb.benchmark.f08InsertCommit.walBatchControl': 'false',
+                'delosdb.benchmark.f08InsertCommit.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/f08-commit-stamp-elision-upper-bound').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosF08CommitStampElisionUpperBound') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-commit-stamp-elision-upper-bound'))
+    doFirst {
+        project.delete(rootProject.layout.buildDirectory.dir(
+                'reports/delosdb/benchmarks/f08-commit-stamp-elision-upper-bound').get().asFile)
+    }
+}
+
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
