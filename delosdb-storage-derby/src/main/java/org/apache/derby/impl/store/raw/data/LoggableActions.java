@@ -118,6 +118,20 @@ public class LoggableActions implements PageActions  {
 		doAction(t, page, lop);
 	}
 
+    public void actionUpdateFields(
+            RawTransaction t,
+            BasePage page,
+            int[] slots,
+            int[] recordIds,
+            int fieldId,
+            Object newValue)
+            throws StandardException {
+        UpdateFieldsOperation lop = new UpdateFieldsOperation(
+                t, page, slots, recordIds, fieldId, newValue);
+        doAction(t, page, lop);
+    }
+
+
 	public int actionInsert(
     RawTransaction          t, 
     BasePage                page, 

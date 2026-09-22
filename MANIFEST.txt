@@ -1,13 +1,44 @@
-DelosDB F08-B INSERT / commit decomposition compile-fix overlay
+DelosDB F08-D commit-stamp page-level WAL batching control
 
-Changed files:
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+Purpose
+-------
+Falsify whether the remaining per-row RawStore UpdateFieldOperation/logAndDo
+layer is a major contributor to Gen2 INSERT commit cost after F08-C proved
+container/page reuse alone is only a partial improvement.
 
-Purpose:
-- Fix the diagnostic harness compile failure caused by TransactionManager.getRawStoreXact() declaring StandardException.
-- Propagate StandardException from the rawTransaction() helper; its callers already propagate Exception.
+Prerequisite
+------------
+Apply after the accepted F08-B diagnostic and F08-C page-reuse control. This
+is an incremental experimental overlay based on the current delosdb 86 source
+authority plus those already-applied controls.
 
-Production behavior changed: NO
-Benchmark semantics changed: NO
-Benchmark thresholds changed: NO
-Diagnostic measurements changed: NO
+Experiment
+----------
+Default-off property:
+  delosdb.experimental.mvccGen2CommitStampWalBatch.enabled
+
+When F08-C fresh-inline INSERT page reuse is active, F08-D groups commit stamps
+by physical page and writes the same beginSequence field changes through one
+RawStore physical WAL operation per affected page rather than one
+UpdateFieldOperation/logAndDo call per row.
+
+Preserved
+---------
+- persisted per-row beginSequence/commit-sequence semantics
+- RawStore as the single WAL, undo, crash-recovery and persistence authority
+- logical row count and physical CURRENT/PK topology
+- transaction commit-sequence reservation/publication
+- fallback for stale RowLocation hints
+- scalar/default behavior when the experimental property is off
+- UPDATE/DELETE/history stamping paths
+- benchmark thresholds and assertions
+
+Focused proof
+-------------
+Task:
+  :delosdb-tests:runDelosF08CommitStampWalBatchControl
+
+The task compares scalar, page-reuse, and page+WAL-batched commit stamping for
+BARE and PK INSERT at widths 1 and 100; verifies WAL-operation collapse; runs
+Gen2-A1/Gen2-B lifecycle tests; and includes crash proofs on both sides of the
+RawStore commit boundary for a 100-row batched stamp transaction.

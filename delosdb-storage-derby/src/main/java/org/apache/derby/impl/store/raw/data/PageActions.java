@@ -156,6 +156,30 @@ public interface PageActions
     LogicalUndo             undo)
 		throws StandardException;
 
+
+    /**
+     * Update one field on multiple records of the same latched page as one
+     * physical RawStore action. This path is only for updates which require no
+     * logical undo.
+     *
+     * @param t          transaction
+     * @param page       target page
+     * @param slots      target slots
+     * @param recordIds  record identifiers corresponding to {@code slots}
+     * @param fieldId    field identifier
+     * @param newValue   replacement value shared by all targets
+     *
+     * @exception StandardException Standard Derby error policy
+     */
+    public void actionUpdateFields(
+            RawTransaction t,
+            BasePage page,
+            int[] slots,
+            int[] recordIds,
+            int fieldId,
+            Object newValue)
+            throws StandardException;
+
     /**
      * Insert record at the given slot with this recordId. 
      * <p>

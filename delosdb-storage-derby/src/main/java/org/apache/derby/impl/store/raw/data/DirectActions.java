@@ -173,6 +173,35 @@ public class DirectActions implements PageActions  {
 
 	}
 
+    public void actionUpdateFields(
+            RawTransaction t,
+            BasePage page,
+            int[] slots,
+            int[] recordIds,
+            int fieldId,
+            Object newValue)
+            throws StandardException {
+        try {
+            for (int slot : slots) {
+                outBytes.reset();
+                page.logColumn(
+                        slot,
+                        fieldId,
+                        newValue,
+                        (DynamicByteArrayOutputStream) outBytes,
+                        100);
+                limitIn.setData(outBytes.getByteArray());
+                limitIn.setPosition(outBytes.getBeginPosition());
+                limitIn.setLimit(outBytes.getPosition() - outBytes.getBeginPosition());
+                page.storeField((LogInstant) null, slot, fieldId, limitIn);
+            }
+        } catch (IOException ioe) {
+            throw StandardException.newException(
+                    SQLState.DATA_UNEXPECTED_EXCEPTION, ioe);
+        }
+    }
+
+
 	public int actionInsert(
     RawTransaction          t, 
     BasePage                page, 

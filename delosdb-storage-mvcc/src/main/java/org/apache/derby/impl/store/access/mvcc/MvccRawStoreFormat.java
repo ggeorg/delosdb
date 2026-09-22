@@ -42,6 +42,10 @@ final class MvccRawStoreFormat {
             "delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled";
     static final String GEN2_LAZY_CURRENT_IDENTITY_FETCH_ENABLED_PROPERTY =
             "delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled";
+    static final String GEN2_COMMIT_STAMP_BATCH_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2CommitStampBatch.enabled";
+    static final String GEN2_COMMIT_STAMP_WAL_BATCH_ENABLED_PROPERTY =
+            "delosdb.experimental.mvccGen2CommitStampWalBatch.enabled";
 
     static final long MAGIC = 0x44454c4f534d5643L; // "DELOSMVC"
     static final int FORMAT_VERSION = 1;

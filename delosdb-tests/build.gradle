@@ -901,6 +901,69 @@ tasks.named('runDelosF08InsertCommitDecomposition') {
     }
 }
 
+registerDelosFocusedTest(
+        'runDelosF08CommitStampBatchingControl',
+        'Runs a matched scalar-vs-page-reuse F08 commit-stamping control plus Gen2 A1/B lifecycle checks.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccGen2A1BareTableTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccGen2BPrimaryKeyTableTest.class'
+        ],
+        [
+                'delosdb.benchmark.f08InsertCommit.fixtureRows': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.fixtureRows').getOrElse('1000'),
+                'delosdb.benchmark.f08InsertCommit.repetitions': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.repetitions').getOrElse('9'),
+                'delosdb.benchmark.f08InsertCommit.batchControl': 'true',
+                'delosdb.experimental.mvccGen2CommitStampBatch.enabled': 'true',
+                'delosdb.benchmark.f08InsertCommit.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/f08-commit-stamp-batching-control').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosF08CommitStampBatchingControl') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-commit-stamp-batching-control'))
+    doFirst {
+        project.delete(rootProject.layout.buildDirectory.dir(
+                'reports/delosdb/benchmarks/f08-commit-stamp-batching-control').get().asFile)
+    }
+}
+
+registerDelosFocusedTest(
+        'runDelosF08CommitStampWalBatchControl',
+        'Runs scalar, page-reuse and page-level WAL-batched F08 commit-stamp controls.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/F08CommitStampWalBatchRecoveryTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccGen2A1BareTableTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/MvccGen2BPrimaryKeyTableTest.class'
+        ],
+        [
+                'delosdb.benchmark.f08InsertCommit.fixtureRows': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.fixtureRows').getOrElse('1000'),
+                'delosdb.benchmark.f08InsertCommit.repetitions': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.repetitions').getOrElse('9'),
+                'delosdb.benchmark.f08InsertCommit.batchControl': 'true',
+                'delosdb.benchmark.f08InsertCommit.walBatchControl': 'true',
+                'delosdb.experimental.mvccGen2CommitStampBatch.enabled': 'true',
+                'delosdb.experimental.mvccGen2CommitStampWalBatch.enabled': 'true',
+                'delosdb.benchmark.f08InsertCommit.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/f08-commit-stamp-wal-batch-control').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosF08CommitStampWalBatchControl') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-commit-stamp-wal-batch-control'))
+    doFirst {
+        project.delete(rootProject.layout.buildDirectory.dir(
+                'reports/delosdb/benchmarks/f08-commit-stamp-wal-batch-control').get().asFile)
+    }
+}
+
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')

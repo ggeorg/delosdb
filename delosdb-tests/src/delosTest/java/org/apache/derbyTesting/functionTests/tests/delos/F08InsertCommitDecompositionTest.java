@@ -32,8 +32,8 @@ import org.apache.derby.impl.store.raw.log.LogCounter;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * F08-B diagnostic: separates JDBC batch execution from transaction commit for
- * Heap and the current Gen2 INSERT topologies without changing production code.
+ * F08-B/F08-C/F08-D diagnostic: separates JDBC batch execution from transaction commit
+ * and compares scalar commit stamping, page reuse, and page-level RawStore WAL batching.
  */
 public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
     private static final String REPORT_DIRECTORY_PROPERTY =
@@ -42,6 +42,14 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             "delosdb.benchmark.f08InsertCommit.fixtureRows";
     private static final String REPETITIONS_PROPERTY =
             "delosdb.benchmark.f08InsertCommit.repetitions";
+    private static final String BATCH_CONTROL_PROPERTY =
+            "delosdb.benchmark.f08InsertCommit.batchControl";
+    private static final String WAL_BATCH_CONTROL_PROPERTY =
+            "delosdb.benchmark.f08InsertCommit.walBatchControl";
+    private static final String COMMIT_STAMP_BATCH_PROPERTY =
+            "delosdb.experimental.mvccGen2CommitStampBatch.enabled";
+    private static final String COMMIT_STAMP_WAL_BATCH_PROPERTY =
+            "delosdb.experimental.mvccGen2CommitStampWalBatch.enabled";
     private static final int PAYLOAD_WIDTH = 96;
 
     public void testInsertCommitDecomposition() throws Exception {
@@ -50,14 +58,110 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         assertTrue("F08-B fixture needs at least 100 rows", fixtureRows >= 100);
         assertTrue("F08-B needs at least 3 repetitions", repetitions >= 3);
 
+        boolean batchControl = Boolean.getBoolean(BATCH_CONTROL_PROPERTY);
+        boolean walBatchControl = Boolean.getBoolean(WAL_BATCH_CONTROL_PROPERTY);
         List<Observation> observations = new ArrayList<>();
         for (int width : new int[] {1, 100}) {
             observations.add(measure(Provider.HEAP, Shape.BARE, width, fixtureRows, repetitions));
             observations.add(measure(Provider.GEN2_A1, Shape.BARE, width, fixtureRows, repetitions));
+            if (batchControl) {
+                observations.add(measure(
+                        Provider.GEN2_A1_BATCHED, Shape.BARE, width, fixtureRows, repetitions));
+            }
+            if (walBatchControl) {
+                observations.add(measure(
+                        Provider.GEN2_A1_WAL_BATCHED,
+                        Shape.BARE,
+                        width,
+                        fixtureRows,
+                        repetitions));
+            }
             observations.add(measure(Provider.HEAP, Shape.PRIMARY_KEY, width, fixtureRows, repetitions));
             observations.add(measure(Provider.GEN2_B, Shape.PRIMARY_KEY, width, fixtureRows, repetitions));
+            if (batchControl) {
+                observations.add(measure(
+                        Provider.GEN2_B_BATCHED, Shape.PRIMARY_KEY, width, fixtureRows, repetitions));
+            }
+            if (walBatchControl) {
+                observations.add(measure(
+                        Provider.GEN2_B_WAL_BATCHED,
+                        Shape.PRIMARY_KEY,
+                        width,
+                        fixtureRows,
+                        repetitions));
+            }
+        }
+        if (batchControl) {
+            assertCommitStampWalParity(observations);
+        }
+        if (walBatchControl) {
+            assertCommitStampWalBatching(observations);
         }
         writeReports(fixtureRows, repetitions, observations);
+    }
+
+    private static void assertCommitStampWalParity(List<Observation> observations) {
+        for (Shape shape : Shape.values()) {
+            Provider scalar = shape == Shape.BARE ? Provider.GEN2_A1 : Provider.GEN2_B;
+            Provider batched = shape == Shape.BARE
+                    ? Provider.GEN2_A1_BATCHED
+                    : Provider.GEN2_B_BATCHED;
+            for (int width : new int[] {1, 100}) {
+                Observation scalarObservation = observation(observations, scalar, shape, width);
+                Observation batchedObservation = observation(observations, batched, shape, width);
+                WalSummary scalarUpdates = scalarObservation.wal().get("UpdateFieldOperation");
+                WalSummary batchedUpdates = batchedObservation.wal().get("UpdateFieldOperation");
+                assertNotNull("scalar commit-stamp WAL is missing", scalarUpdates);
+                assertNotNull("batched commit-stamp WAL is missing", batchedUpdates);
+                assertEquals("page reuse must not change commit-stamp WAL record count",
+                        scalarUpdates.count(), batchedUpdates.count());
+                assertEquals("page reuse must not change commit-stamp WAL bytes",
+                        scalarUpdates.bytes(), batchedUpdates.bytes());
+            }
+        }
+    }
+
+    private static void assertCommitStampWalBatching(List<Observation> observations) {
+        for (Shape shape : Shape.values()) {
+            Provider pageReuse = shape == Shape.BARE
+                    ? Provider.GEN2_A1_BATCHED
+                    : Provider.GEN2_B_BATCHED;
+            Provider walBatched = shape == Shape.BARE
+                    ? Provider.GEN2_A1_WAL_BATCHED
+                    : Provider.GEN2_B_WAL_BATCHED;
+            Observation pageReuseObservation =
+                    observation(observations, pageReuse, shape, 100);
+            Observation walBatchedObservation =
+                    observation(observations, walBatched, shape, 100);
+
+            WalSummary scalarUpdates =
+                    pageReuseObservation.wal().get("UpdateFieldOperation");
+            WalSummary batchedUpdates =
+                    walBatchedObservation.wal().get("UpdateFieldsOperation");
+            assertNotNull("page-reuse commit-stamp WAL is missing", scalarUpdates);
+            assertNotNull("page-level batched commit-stamp WAL is missing", batchedUpdates);
+            assertTrue(
+                    "page-level WAL batching must collapse commit-stamp log records",
+                    batchedUpdates.count() < scalarUpdates.count());
+
+            WalSummary residualScalar =
+                    walBatchedObservation.wal().get("UpdateFieldOperation");
+            long residualCount = residualScalar == null ? 0L : residualScalar.count();
+            assertTrue(
+                    "page-level WAL batching must reduce scalar field-update records",
+                    residualCount < scalarUpdates.count());
+        }
+    }
+
+    private static Observation observation(
+            List<Observation> observations, Provider provider, Shape shape, int width) {
+        return observations.stream()
+                .filter(observation -> observation.provider() == provider
+                        && observation.shape() == shape
+                        && observation.width() == width)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "missing F08 observation for " + provider + '/' + shape + '/' + width));
     }
 
     private Observation measure(
@@ -72,6 +176,9 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         String previousA1 = System.getProperty("delosdb.experimental.mvccGen2A1.enabled");
         String previousB = System.getProperty("delosdb.experimental.mvccGen2B.pk.enabled");
         String previousC1 = System.getProperty("delosdb.experimental.mvccGen2C1.history.enabled");
+        String previousCommitStampBatch = System.getProperty(COMMIT_STAMP_BATCH_PROPERTY);
+        String previousCommitStampWalBatch =
+                System.getProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY);
         configure(provider);
         try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
@@ -136,21 +243,37 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             restore("delosdb.experimental.mvccGen2A1.enabled", previousA1);
             restore("delosdb.experimental.mvccGen2B.pk.enabled", previousB);
             restore("delosdb.experimental.mvccGen2C1.history.enabled", previousC1);
+            restore(COMMIT_STAMP_BATCH_PROPERTY, previousCommitStampBatch);
+            restore(COMMIT_STAMP_WAL_BATCH_PROPERTY, previousCommitStampWalBatch);
             shutdownDatabase(database);
         }
     }
 
     private static void configure(Provider provider) {
         System.clearProperty("delosdb.experimental.mvccGen2C1.history.enabled");
-        if (provider == Provider.GEN2_A1) {
+        if (provider == Provider.GEN2_A1
+                || provider == Provider.GEN2_A1_BATCHED
+                || provider == Provider.GEN2_A1_WAL_BATCHED) {
             System.setProperty("delosdb.experimental.mvccGen2A1.enabled", "true");
             System.clearProperty("delosdb.experimental.mvccGen2B.pk.enabled");
-        } else if (provider == Provider.GEN2_B) {
+        } else if (provider == Provider.GEN2_B
+                || provider == Provider.GEN2_B_BATCHED
+                || provider == Provider.GEN2_B_WAL_BATCHED) {
             System.clearProperty("delosdb.experimental.mvccGen2A1.enabled");
             System.setProperty("delosdb.experimental.mvccGen2B.pk.enabled", "true");
         } else {
             System.clearProperty("delosdb.experimental.mvccGen2A1.enabled");
             System.clearProperty("delosdb.experimental.mvccGen2B.pk.enabled");
+        }
+        if (provider.pageReuseCommitStamp) {
+            System.setProperty(COMMIT_STAMP_BATCH_PROPERTY, "true");
+        } else {
+            System.clearProperty(COMMIT_STAMP_BATCH_PROPERTY);
+        }
+        if (provider.walBatchedCommitStamp) {
+            System.setProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY, "true");
+        } else {
+            System.clearProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY);
         }
     }
 
@@ -365,14 +488,25 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
     }
 
     private enum Provider {
-        HEAP("Delos Heap"),
-        GEN2_A1("MVCC Gen2-A1"),
-        GEN2_B("MVCC Gen2-B");
+        HEAP("Delos Heap", false, false),
+        GEN2_A1("MVCC Gen2-A1 scalar stamp", false, false),
+        GEN2_A1_BATCHED("MVCC Gen2-A1 page-reuse stamp", true, false),
+        GEN2_A1_WAL_BATCHED("MVCC Gen2-A1 page+WAL batched stamp", true, true),
+        GEN2_B("MVCC Gen2-B scalar stamp", false, false),
+        GEN2_B_BATCHED("MVCC Gen2-B page-reuse stamp", true, false),
+        GEN2_B_WAL_BATCHED("MVCC Gen2-B page+WAL batched stamp", true, true);
 
         private final String display;
+        private final boolean pageReuseCommitStamp;
+        private final boolean walBatchedCommitStamp;
 
-        Provider(String display) {
+        Provider(
+                String display,
+                boolean pageReuseCommitStamp,
+                boolean walBatchedCommitStamp) {
             this.display = display;
+            this.pageReuseCommitStamp = pageReuseCommitStamp;
+            this.walBatchedCommitStamp = walBatchedCommitStamp;
         }
     }
 

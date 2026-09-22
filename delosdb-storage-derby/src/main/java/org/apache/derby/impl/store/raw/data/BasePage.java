@@ -1149,6 +1149,43 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		return handle;
 	}
 
+    @Override
+    public void updateFieldAtSlots(
+            int[] slots,
+            int fieldId,
+            Object newValue) throws StandardException {
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(isLatched());
+            SanityManager.ASSERT(newValue != null);
+        }
+        if (slots == null) {
+            throw new IllegalArgumentException("slots must not be null");
+        }
+        if (slots.length == 0) {
+            return;
+        }
+        if (slots.length == 1) {
+            updateFieldAtSlot(slots[0], fieldId, newValue, null);
+            return;
+        }
+        if (!owner.updateOK()) {
+            throw StandardException.newException(SQLState.DATA_CONTAINER_READ_ONLY);
+        }
+
+        int[] recordIds = new int[slots.length];
+        for (int index = 0; index < slots.length; index++) {
+            int slot = slots[index];
+            if (isDeletedAtSlot(slot)) {
+                throw StandardException.newException(SQLState.DATA_UPDATE_DELETED_RECORD);
+            }
+            recordIds[index] = getRecordHandleAtSlot(slot).getId();
+        }
+
+        RawTransaction t = owner.getTransaction();
+        owner.getActionSet().actionUpdateFields(
+                t, this, slots, recordIds, fieldId, newValue);
+    }
+
 	/** @see Page#fetchNumFields
 		@exception StandardException Standard exception policy. 
 	*/

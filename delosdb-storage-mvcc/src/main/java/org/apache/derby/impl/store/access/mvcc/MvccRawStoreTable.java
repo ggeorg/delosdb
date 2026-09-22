@@ -2273,6 +2273,14 @@ final class MvccRawStoreTable {
             Transaction rawTransaction,
             List<PendingVersion> pending,
             long commitSequence) throws StandardException {
+        if (Boolean.getBoolean(MvccRawStoreFormat.GEN2_COMMIT_STAMP_BATCH_ENABLED_PROPERTY)
+                && freshInlineInsertBatch(pending)) {
+            MvccRawStoreRowDirectory.stampCommittedHeadsByHint(
+                    rawTransaction,
+                    pending,
+                    commitSequence);
+            return;
+        }
         List<PendingVersion> ordered = new ArrayList<>(pending);
         ordered.sort(Comparator
                 .comparingLong((PendingVersion version) ->
@@ -2302,6 +2310,22 @@ final class MvccRawStoreTable {
                         commitSequence);
             }
         }
+    }
+
+    private static boolean freshInlineInsertBatch(List<PendingVersion> pending) {
+        if (pending.isEmpty()) {
+            return false;
+        }
+        for (PendingVersion version : pending) {
+            MvccRowLocation location = version.directoryLocation();
+            if (!version.inlineCurrent()
+                    || version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION
+                    || location == null
+                    || !location.hasLocatorHint()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static void rebuildOrderedIndexForTransaction(

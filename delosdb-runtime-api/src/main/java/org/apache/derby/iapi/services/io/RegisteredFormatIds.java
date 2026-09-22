@@ -544,6 +544,7 @@ private static final    String[] TwoByte = {
         /* 483 */       null, // reserved: retired DelosDB external lifecycle undo
         /* 484 */       "org.apache.derby.impl.store.raw.data.ArchivedUpdateOperation",
         /* 485 */       "org.apache.derby.impl.store.raw.data.ArchivedImageCompensation",
+        /* 486 */       "org.apache.derby.impl.store.raw.data.UpdateFieldsOperation",
 };
 
     /**

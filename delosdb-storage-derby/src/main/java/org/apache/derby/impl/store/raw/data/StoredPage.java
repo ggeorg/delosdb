@@ -6884,6 +6884,22 @@ public class StoredPage extends CachedPage
     }
 
     /**
+        Update one field on multiple records at specified slots.
+        @exception StandardException Standard Derby error policy
+    */
+    @Override
+    public void updateFieldAtSlots(
+            int[] slots,
+            int fieldId,
+            Object newValue) throws StandardException {
+        try {
+            super.updateFieldAtSlots(slots, fieldId, newValue);
+        } catch (NoSpaceOnPage nsop) {
+            throw StandardException.newException(SQLState.DATA_NO_SPACE_FOR_RECORD);
+        }
+    }
+
+    /**
         Get the number of fields on the row at slot
         @exception StandardException Standard Derby error policy
     */

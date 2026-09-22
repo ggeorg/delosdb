@@ -10,7 +10,10 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
@@ -293,6 +296,240 @@ final class MvccRawStoreRowDirectory {
                 page.unlatch();
             }
         }
+    }
+
+    static void stampCommittedHeadsByHint(
+            Transaction transaction,
+            List<MvccRawStoreTable.PendingVersion> pending,
+            long commitSequence) throws StandardException {
+        if (Boolean.getBoolean(
+                MvccRawStoreFormat.GEN2_COMMIT_STAMP_WAL_BATCH_ENABLED_PROPERTY)) {
+            stampCommittedHeadsByHintWalBatch(transaction, pending, commitSequence);
+            return;
+        }
+        List<MvccRawStoreTable.PendingVersion> ordered = new ArrayList<>(pending);
+        ordered.sort(Comparator
+                .comparingLong((MvccRawStoreTable.PendingVersion version) ->
+                        version.table().metadataContainer().getSegmentId())
+                .thenComparingLong(version ->
+                        version.table().metadataContainer().getContainerId())
+                .thenComparingLong(version -> version.directoryLocation().locatorPageId())
+                .thenComparingInt(version -> version.directoryLocation().locatorSlotId()));
+
+        List<MvccRawStoreTable.PendingVersion> fallback = new ArrayList<>();
+        MvccRawStoreTable.Descriptor openTable = null;
+        ContainerHandle container = null;
+        Page page = null;
+        long openPageNumber = Long.MIN_VALUE;
+        try {
+            for (MvccRawStoreTable.PendingVersion version : ordered) {
+                MvccRowLocation location = version.directoryLocation();
+                if (location == null || !location.hasLocatorHint()) {
+                    fallback.add(version);
+                    continue;
+                }
+
+                if (openTable == null
+                        || !openTable.metadataContainer().equals(
+                                version.table().metadataContainer())) {
+                    if (page != null) {
+                        page.unlatch();
+                        page = null;
+                    }
+                    if (container != null) {
+                        container.close();
+                        container = null;
+                    }
+                    openTable = version.table();
+                    openPageNumber = Long.MIN_VALUE;
+                    container = transaction.openContainer(
+                            openTable.metadataContainer(),
+                            MvccRawStorePhysicalLocking.rowLevel(transaction),
+                            ContainerHandle.MODE_FORUPDATE);
+                    if (container == null) {
+                        fallback.add(version);
+                        openTable = null;
+                        continue;
+                    }
+                }
+
+                if (page == null || openPageNumber != location.locatorPageId()) {
+                    if (page != null) {
+                        page.unlatch();
+                    }
+                    page = container.getPage(location.locatorPageId());
+                    openPageNumber = location.locatorPageId();
+                }
+                if (page == null) {
+                    fallback.add(version);
+                    continue;
+                }
+
+                int slot = location.locatorSlotId();
+                if (!isDirectorySlot(page, slot)) {
+                    fallback.add(version);
+                    continue;
+                }
+                MvccRawStoreTable.DirectoryRecord directory =
+                        MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+                if (directory == null || directory.rowId() != version.rowId()) {
+                    fallback.add(version);
+                    continue;
+                }
+                stampCommittedHeadAtSlot(
+                        transaction,
+                        page,
+                        slot,
+                        directory,
+                        version,
+                        commitSequence);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            if (container != null) {
+                container.close();
+            }
+        }
+
+        // Physical locators are hints, never row identity. Preserve the existing
+        // logical fallback path if any hint became stale before commit.
+        for (MvccRawStoreTable.PendingVersion version : fallback) {
+            stampCommittedHead(transaction, version, commitSequence);
+        }
+    }
+
+    private static void stampCommittedHeadsByHintWalBatch(
+            Transaction transaction,
+            List<MvccRawStoreTable.PendingVersion> pending,
+            long commitSequence) throws StandardException {
+        List<MvccRawStoreTable.PendingVersion> ordered = new ArrayList<>(pending);
+        ordered.sort(Comparator
+                .comparingLong((MvccRawStoreTable.PendingVersion version) ->
+                        version.table().metadataContainer().getSegmentId())
+                .thenComparingLong(version ->
+                        version.table().metadataContainer().getContainerId())
+                .thenComparingLong(version -> version.directoryLocation().locatorPageId())
+                .thenComparingInt(version -> version.directoryLocation().locatorSlotId()));
+
+        List<MvccRawStoreTable.PendingVersion> fallback = new ArrayList<>();
+        List<Integer> stampSlots = new ArrayList<>();
+        MvccRawStoreTable.Descriptor openTable = null;
+        ContainerHandle container = null;
+        Page page = null;
+        long openPageNumber = Long.MIN_VALUE;
+        try {
+            for (MvccRawStoreTable.PendingVersion version : ordered) {
+                MvccRowLocation location = version.directoryLocation();
+                if (location == null || !location.hasLocatorHint()) {
+                    fallback.add(version);
+                    continue;
+                }
+
+                if (openTable == null
+                        || !openTable.metadataContainer().equals(
+                                version.table().metadataContainer())) {
+                    flushCommitStampSlots(
+                            transaction, page, stampSlots, commitSequence);
+                    if (page != null) {
+                        page.unlatch();
+                        page = null;
+                    }
+                    if (container != null) {
+                        container.close();
+                        container = null;
+                    }
+                    openTable = version.table();
+                    openPageNumber = Long.MIN_VALUE;
+                    container = transaction.openContainer(
+                            openTable.metadataContainer(),
+                            MvccRawStorePhysicalLocking.rowLevel(transaction),
+                            ContainerHandle.MODE_FORUPDATE);
+                    if (container == null) {
+                        fallback.add(version);
+                        openTable = null;
+                        continue;
+                    }
+                }
+
+                if (page == null || openPageNumber != location.locatorPageId()) {
+                    flushCommitStampSlots(
+                            transaction, page, stampSlots, commitSequence);
+                    if (page != null) {
+                        page.unlatch();
+                    }
+                    page = container.getPage(location.locatorPageId());
+                    openPageNumber = location.locatorPageId();
+                }
+                if (page == null) {
+                    fallback.add(version);
+                    continue;
+                }
+
+                int slot = location.locatorSlotId();
+                if (!isDirectorySlot(page, slot)) {
+                    fallback.add(version);
+                    continue;
+                }
+                MvccRawStoreTable.DirectoryRecord directory =
+                        MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+                if (directory == null || directory.rowId() != version.rowId()) {
+                    fallback.add(version);
+                    continue;
+                }
+
+                MvccRawStoreTable.DirectoryHead head = directory.head();
+                if (head.versionId() != version.versionId()) {
+                    continue;
+                }
+                MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
+                if (summary.available()
+                        && summary.creatorTransactionId() == version.creatorTransactionId()
+                        && summary.beginSequence()
+                                == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                        && summary.flags() == version.flags()) {
+                    stampSlots.add(slot);
+                    continue;
+                }
+                if (version.inlineCurrent()) {
+                    throw new IllegalStateException(
+                            "MVCC Gen2-A1 current-row head summary changed before commit");
+                }
+                fallback.add(version);
+            }
+            flushCommitStampSlots(transaction, page, stampSlots, commitSequence);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            if (container != null) {
+                container.close();
+            }
+        }
+
+        for (MvccRawStoreTable.PendingVersion version : fallback) {
+            stampCommittedHead(transaction, version, commitSequence);
+        }
+    }
+
+    private static void flushCommitStampSlots(
+            Transaction transaction,
+            Page page,
+            List<Integer> stampSlots,
+            long commitSequence) throws StandardException {
+        if (page == null || stampSlots.isEmpty()) {
+            return;
+        }
+        int[] slots = new int[stampSlots.size()];
+        for (int index = 0; index < slots.length; index++) {
+            slots[index] = stampSlots.get(index);
+        }
+        page.updateFieldAtSlots(
+                slots,
+                MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
+                MvccRawStoreFormat.longValue(transaction, commitSequence));
+        stampSlots.clear();
     }
 
     static void stampCommittedHead(

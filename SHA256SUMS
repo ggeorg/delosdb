@@ -1,2 +1,14 @@
-69d6ae37843e6e5e44db592c505c8a3f703a1a14867e23e4c9eea40159060ccf  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
-1b0b55d87409fa7a0c6208bc3f1811f44a5f696a15c9552702b85e4aae7a5a20  MANIFEST.txt
+3d5b20924c4c83262596453158d46e183e3eefb311a5cab4c51f537079dccb8f  delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/Page.java
+b2fe71fad25bcf8804f8949ecbbad6be6a901b8bf99432d248f77f6cb009568b  delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/StoredFormatIds.java
+64a2336768531fdf70cd6318c4a13b53a7510dccd00f560b2d897a367c74f3f1  delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/RegisteredFormatIds.java
+e2a55993fef80ce7d2fa7c4e27810f66f7a79bf62e1c3c1e0cc36d00e672b0c6  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PageActions.java
+b8b90a893821f06065497749679082673eb33766098e4d34a56254c6a048d685  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BasePage.java
+ffb2dd82af12c7678b6f1c2087921218f73f0228fea9f14cb1be8747acacddc9  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java
+4a7e6493fb4017560d05f72fa2b5f8e24bc4eee3926cdfba954e61d700bfa125  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/DirectActions.java
+a3a5acc5d4271b62857693ada8a70afe21d0ddfde8ee68fd03870efbf916040f  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/LoggableActions.java
+dd9579842820a546b9a858a8a36aaf55d939caface8064437f511b90cd2d25ac  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/UpdateFieldsOperation.java
+d4afa2034299e2978a05eeef7b7ee3f0e29bd90f1f151f0895fddb0d70f4c838  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+927075f1d56dabdeeb0212b1e3165e39e08b87f601fc58fef6f1fa67d9ea14de  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRowDirectory.java
+2e521798560660c25cf522a6ccea35f4015f9b9bcc848f63bf2c14516ab60b06  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+31b3445cd306edcd4f49d543940a1197707f2807c51b803d26d2aa760b9ca5ab  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08CommitStampWalBatchRecoveryTest.java
+e609434b4e086e574e3dc91ca48e3413fc3b53ac6e1d50929548686c04972537  delosdb-tests/build.gradle

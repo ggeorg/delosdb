@@ -748,6 +748,33 @@ public interface Page
 
 
     /**
+     * Update the same field on multiple records while the page remains latched.
+     * <p>
+     * The default implementation preserves legacy semantics by delegating to
+     * {@link #updateFieldAtSlot(int, int, Object, LogicalUndo)} once per slot.
+     * RawStore implementations may override this to log/apply the physical
+     * changes as one page operation when logical undo is not required.
+     *
+     * @param slots       slot numbers to update
+     * @param fieldId     field identifier to update
+     * @param newValue    replacement value shared by all target records
+     *
+     * @exception StandardException Standard Derby error policy
+     */
+    public default void updateFieldAtSlots(
+            int[] slots,
+            int fieldId,
+            Object newValue) throws StandardException {
+        if (slots == null) {
+            throw new IllegalArgumentException("slots must not be null");
+        }
+        for (int slot : slots) {
+            updateFieldAtSlot(slot, fieldId, newValue, null);
+        }
+    }
+
+
+    /**
      * Fetch the number of fields in a record.
      * <p>
      *

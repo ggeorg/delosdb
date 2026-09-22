@@ -1701,9 +1701,11 @@ public interface StoredFormatIds {
     public static final int LOGOP_ARCHIVED_UPDATE_V1 = (MIN_ID_2 + 484);
     /** Self-contained before-image compensation for an archived-source UPDATE. */
     public static final int LOGOP_ARCHIVED_IMAGE_UNDO_V1 = (MIN_ID_2 + 485);
+    /** Page-level batch of same-field physical updates. */
+    public static final int LOGOP_UPDATE_FIELDS = (MIN_ID_2 + 486);
 
     public static final int MAX_ID_2 =
-            (MIN_ID_2 + 485);
+            (MIN_ID_2 + 486);
 
     // DO NOT USE 4 BYTE IDS ANYMORE
     static public final int MAX_ID_4 =
