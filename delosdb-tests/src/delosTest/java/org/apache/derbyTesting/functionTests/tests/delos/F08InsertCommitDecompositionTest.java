@@ -29,6 +29,7 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.impl.jdbc.EmbedConnection;
 import org.apache.derby.impl.store.raw.data.RawStoreWalAccountingTestSupport;
 import org.apache.derby.impl.store.raw.log.LogCounter;
+import org.apache.derby.shared.common.error.StandardException;
 
 /**
  * F08-B diagnostic: separates JDBC batch execution from transaction commit for
@@ -232,7 +233,7 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         return rawTransaction(connection).getLogFactory().getFirstUnflushedInstantAsLong();
     }
 
-    private static RawTransaction rawTransaction(Connection connection) {
+    private static RawTransaction rawTransaction(Connection connection) throws StandardException {
         if (!(connection instanceof EmbedConnection embedded)) {
             throw new AssertionError("embedded connection required for F08-B accounting");
         }

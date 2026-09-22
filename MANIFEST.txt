@@ -1,17 +1,13 @@
-DelosDB F08-B INSERT / commit decomposition diagnostic overlay
+DelosDB F08-B INSERT / commit decomposition compile-fix overlay
 
 Changed files:
-- delosdb-tests/build.gradle
 - delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
 
 Purpose:
-- Add a diagnostic-only F08 lane separating JDBC INSERT execution from commit/stamping cost.
-- Compare Heap BARE vs Gen2-A1 BARE and Heap PK vs Gen2-B PK.
-- Measure widths 1 and 100.
-- Preserve the permanent F08 INSERT_100 PreparedStatement.executeBatch() shape.
-- Record median executeBatch and commit times, phase page-read deltas, total flushed WAL span,
-  and decoded RawStore WAL operation count/bytes.
+- Fix the diagnostic harness compile failure caused by TransactionManager.getRawStoreXact() declaring StandardException.
+- Propagate StandardException from the rawTransaction() helper; its callers already propagate Exception.
 
 Production behavior changed: NO
+Benchmark semantics changed: NO
 Benchmark thresholds changed: NO
-Existing benchmark tasks changed semantically: NO
+Diagnostic measurements changed: NO
