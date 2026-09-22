@@ -1,41 +1,38 @@
-DelosDB Gen2-C3 F05 rejected-experiment cleanup overlay
+DelosDB Gen2-C3 F05 batched base-fetch reachability fix
 
 Purpose
 -------
-Remove stale Phase-2H diagnostic source that accumulated in the working tree
-before testing the new Gen2-C3 batched INDEX_TO_BASE_ROW experiment.
+Make Phase-2D explicitly use CLOSE_CURSORS_AT_COMMIT so the new bounded
+INDEX_TO_BASE_ROW batch experiment is actually reachable.
 
-Why this is required
---------------------
-The batching overlay restores MvccRawStoreTable from the clean current C3
-source, but MvccRawStoreRowDirectory was still carrying the rejected
-mvccReadDirectoryHeadOnly experiment and referenced:
-  MvccRawStoreTable.decodeDirectoryReadHead(...)
+Root cause
+----------
+IndexRowToBaseRowResultSet enables the diagnostic batch path only for a
+non-holdable result set.
 
-That method correctly no longer exists after restoring the clean table source,
-causing compilation to fail.
+Phase-2D previously used openPhase2AConnection(), which leaves Derby's default
+HOLD_CURSORS_OVER_COMMIT unchanged. Therefore the prior "batch ON" report did
+not exercise AccessMethodBaseFetchBatch at all.
 
-Restored files
---------------
-MvccRawStoreRowDirectory.java
-  removes read-directory-head-only diagnostic
+Change
+------
+Only Phase-2D connections now explicitly use:
+  ResultSet.CLOSE_CURSORS_AT_COMMIT
 
-MvccRawStoreVersionReader.java
-  removes rejected single-pass/page-run/lazy-metadata diagnostics
+The summary records:
+  benchmarkHoldability=CLOSE_CURSORS_AT_COMMIT
 
-MvccRawStoreVersionRows.java
-  removes rejected projected-payload/lazy-metadata diagnostics
+Why two measurements are required
+---------------------------------
+Cursor holdability itself can affect DelosDB read-path reachability. Compare:
+1. scalar/OFF with CLOSE_CURSORS_AT_COMMIT
+2. batch/ON with CLOSE_CURSORS_AT_COMMIT
 
-BTreeScan.java
-  removes rejected SearchParameters reuse diagnostic
+Do not compare the new ON measurement directly to the previous default-
+holdability Phase-2D result.
 
 Scope
 -----
-The new batched base-fetch experiment is NOT removed:
-  AccessMethodBaseFetchBatch.java
-  IndexRowToBaseRowResultSet.java
-  MvccRawStoreConglomerateController.java
-  MvccRawStoreTable.java
-
-Production F04 cardinality and NOHOLD statement-boundary promotions are also
-untouched.
+Diagnostic harness only.
+No production SQL engine, MVCC, RawStore, optimizer, WAL/recovery, durable
+format, benchmark thresholds, or semantic-oracle changes.

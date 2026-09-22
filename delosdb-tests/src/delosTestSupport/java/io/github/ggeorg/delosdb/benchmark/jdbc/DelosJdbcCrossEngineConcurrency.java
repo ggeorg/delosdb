@@ -1396,7 +1396,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         String database = databaseRoot.resolve("f05-residual-indexed-access").toString();
         String jdbcUrl = "jdbc:derby:" + database + ";create=true";
 
-        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+        try (Connection setup = openPhase2DConnection(jdbcUrl)) {
             prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
             prepareMultiJoinFixture(setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
             setup.commit();
@@ -1404,7 +1404,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         String heapPkIndex;
         String mvccPkIndex;
-        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+        try (Connection connection = openPhase2DConnection(jdbcUrl)) {
             heapPkIndex = phase2BPrimaryKeyIndex(
                     connection, multiJoinCustomerTableName(heapBase), "ID");
             mvccPkIndex = phase2BPrimaryKeyIndex(
@@ -1431,12 +1431,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         LinkedHashMap<String, ExplainCapture> explainByVariant = new LinkedHashMap<>();
         LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
-            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
                 explainByVariant.put(
                         entry.getKey(), capturePhase2AExplain(connection, entry.getValue(), false));
                 connection.rollback();
             }
-            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
                 analyzeByVariant.put(
                         entry.getKey(), capturePhase2AExplain(connection, entry.getValue(), true));
                 connection.rollback();
@@ -1445,7 +1445,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         long semanticFingerprint = Long.MIN_VALUE;
         for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
-            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
                 long fingerprint = executePhase2AQuery(connection, entry.getValue(), expectedRows);
                 connection.rollback();
                 if (semanticFingerprint == Long.MIN_VALUE) {
@@ -1494,7 +1494,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         for (String variant : sqlByVariant.keySet()) {
             samples.put(variant, new ArrayList<>());
         }
-        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+        try (Connection connection = openPhase2DConnection(jdbcUrl)) {
             LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
             try {
                 for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
@@ -1657,6 +1657,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         String summary = "DelosDB Phase-2D F05 residual indexed-access decomposition\n"
+                + "benchmarkHoldability=CLOSE_CURSORS_AT_COMMIT\n"
                 + "rows=" + rowCount + "\n"
                 + "expectedResultRows=" + expectedRows + "\n"
                 + "warmupsPerVariant=" + warmups + "\n"
@@ -1689,6 +1690,21 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + "\n\nMVCC natural post-statistics SQL:\n" + mvccNaturalSql + "\n",
                 StandardCharsets.UTF_8);
         System.out.print(summary);
+    }
+
+    private static Connection openPhase2DConnection(String jdbcUrl) throws SQLException {
+        Connection connection = openPhase2AConnection(jdbcUrl);
+        connection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
+        if (connection.getHoldability() != ResultSet.CLOSE_CURSORS_AT_COMMIT) {
+            try {
+                connection.close();
+            } catch (SQLException ignored) {
+                // Preserve the primary reachability failure.
+            }
+            throw new IllegalStateException(
+                    "Phase-2D CLOSE_CURSORS_AT_COMMIT control was not applied");
+        }
+        return connection;
     }
 
     private static void runPhase2EF05BaseFetchAttribution() throws Exception {
