@@ -280,8 +280,10 @@ public final class MvccCurrentRowTopologyTestSupport {
                             new MvccRawStoreTable.DirectoryHead(versionId, hint, summary);
 
                     MvccRawStoreTable.VersionRecord visible = null;
-                    boolean locallyVisible = summary.visibleTo(
-                            state.context().transactionId(), snapshotSequence);
+                    boolean locallyVisible = state.context().currentVisibleTo(
+                            summary.creatorTransactionId(),
+                            summary.beginSequence(),
+                            snapshotSequence);
                     if (locallyVisible) {
                         localVisible++;
                         if (summary.tombstone()) {

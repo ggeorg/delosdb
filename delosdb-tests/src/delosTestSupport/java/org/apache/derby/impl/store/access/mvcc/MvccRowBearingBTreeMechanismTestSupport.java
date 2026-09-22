@@ -447,8 +447,10 @@ public final class MvccRowBearingBTreeMechanismTestSupport {
                                     decoded.creatorTransactionId(),
                                     decoded.beginSequence(),
                                     decoded.flags());
-                    if (summary.visibleTo(
-                            state.context().transactionId(), snapshotSequence)) {
+                    if (state.context().currentVisibleTo(
+                            summary.creatorTransactionId(),
+                            summary.beginSequence(),
+                            snapshotSequence)) {
                         localVisible++;
                         if (summary.tombstone()) {
                             continue;
@@ -696,7 +698,10 @@ public final class MvccRowBearingBTreeMechanismTestSupport {
                                 candidate.creatorTransactionId(),
                                 candidate.beginSequence(),
                                 candidate.flags());
-                if (!summary.visibleTo(state.context().transactionId(), snapshotSequence)) {
+                if (!state.context().currentVisibleTo(
+                        summary.creatorTransactionId(),
+                        summary.beginSequence(),
+                        snapshotSequence)) {
                     continue;
                 }
                 if (chosen == null || candidate.beginSequence() > chosen.beginSequence()) {

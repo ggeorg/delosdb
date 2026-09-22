@@ -1,37 +1,22 @@
-DelosDB F08-F transaction-status visibility control
+DelosDB F08-F raw-store internal test-support visibility compile fix
+
+Changed files
+-------------
+- delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java
+- delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java
 
 Purpose
 -------
-Falsify whether replacing per-row fresh-INSERT commit restamping with one durable
-transaction-status record per committing transaction can retain MVCC snapshot,
-rollback, reopen, uniqueness, and crash-recovery semantics while recovering the
-large commit-time upper bound established by F08-E.
+Fix compileRawStoreInternalTestSupport after F08-F removed the legacy
+DirectoryHeadSummary.visibleTo(transactionId, snapshotSequence) helper.
 
-Scope
------
-- Experimental and default OFF.
-- Fresh inline Gen2 INSERT transactions only (Gen2-A1 / Gen2-B current-row topology).
-- Persists transactionId -> commitSequence in the existing RawStore-backed database
-  metadata container in the same user RawStore transaction as the inserted rows.
-- Unstamped CURRENT visibility resolves creatorTransactionId through that durable
-  commit-status mapping against the existing snapshot commit-sequence frontier.
-- Reloads durable transaction statuses on database boot/reopen.
-- Preserves compatibility with normally stamped CURRENT rows.
-- Adds focused BARE/PK timing/WAL control plus snapshot, rollback, reopen,
-  duplicate-key, and both RawStore crash-boundary proofs.
+The three affected test-support fast paths already have MvccRawStoreTransactionContext.
+They now delegate to context.currentVisibleTo(creatorTransactionId,
+beginSequence, snapshotSequence), which is the single transaction-status-aware
+visibility authority used by the F08-F production path.
 
-Not a production promotion
---------------------------
-The status ledger is deliberately simple and append-only for causal validation.
-It has not yet been proven under the canonical 8-client F08 server workload and
-may introduce metadata-container contention or long-term status-retention cost.
-UPDATE/DELETE/history migration for status-backed CURRENT rows is outside this
-fresh-INSERT control and must be designed before any production promotion.
-
-Feature property
-----------------
-delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled
-
-Focused task
-------------
-:delosdb-tests:runDelosF08TransactionStatusVisibilityControl
+Production behavior changed: NO
+F08-F transaction-status semantics changed: NO
+Benchmark thresholds changed: NO
+Assertions weakened: NO
+Legacy visibility helper restored: NO
