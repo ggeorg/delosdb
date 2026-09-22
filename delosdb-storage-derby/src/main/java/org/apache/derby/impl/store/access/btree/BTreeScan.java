@@ -70,6 +70,8 @@ import org.apache.derby.iapi.store.access.BackingStoreHashtable;
 
 public abstract class BTreeScan extends OpenBTree implements ScanManager
 {
+    private static final String REUSE_START_SEARCH_PARAMETERS_PROPERTY =
+            "delosdb.experimental.btreeReuseStartSearchParameters";
 
     /*
     ** Fields of BTreeScan
@@ -189,6 +191,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     private boolean snapshotPointHeldExhausted;
     private LeafReadSnapshotPrefixHit snapshotPrefixHit;
     private int snapshotPrefixIndex;
+    private SearchParameters reusableStartSearchParameters;
 
 
     /**
@@ -394,12 +397,11 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
                         (init_startSearchOperator == ScanController.GE) ||
                         (init_startSearchOperator == ScanController.GT));
 
-                SearchParameters sp = new SearchParameters(
-                    init_startKeyValue, 
-                    ((init_startSearchOperator == ScanController.GE) ? 
-                        SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH : 
-                        SearchParameters.POSITION_RIGHT_OF_PARTIAL_KEY_MATCH),
-                    init_template, this, false);
+                int partialMatchOperator =
+                        init_startSearchOperator == ScanController.GE
+                                ? SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH
+                                : SearchParameters.POSITION_RIGHT_OF_PARTIAL_KEY_MATCH;
+                SearchParameters sp = startSearchParameters(partialMatchOperator);
 
                 pos.current_leaf = searchFromRoot(sp, true);
 
@@ -492,6 +494,37 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
         if (SanityManager.DEBUG)
             SanityManager.ASSERT(pos.current_leaf != null);
+    }
+
+    private SearchParameters startSearchParameters(int partialMatchOperator)
+            throws StandardException {
+        if (!Boolean.getBoolean(REUSE_START_SEARCH_PARAMETERS_PROPERTY)) {
+            return new SearchParameters(
+                    init_startKeyValue,
+                    partialMatchOperator,
+                    init_template,
+                    this,
+                    false);
+        }
+        SearchParameters parameters = reusableStartSearchParameters;
+        if (parameters == null) {
+            parameters = new SearchParameters(
+                    init_startKeyValue,
+                    partialMatchOperator,
+                    init_template,
+                    this,
+                    false);
+            reusableStartSearchParameters = parameters;
+            return parameters;
+        }
+        parameters.searchKey = init_startKeyValue;
+        parameters.partial_key_match_op = partialMatchOperator;
+        parameters.template = init_template;
+        parameters.btree = this;
+        parameters.resultSlot = 0;
+        parameters.resultExact = false;
+        parameters.searchForOptimizer = false;
+        return parameters;
     }
 
     /**
