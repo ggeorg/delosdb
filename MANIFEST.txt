@@ -1,37 +1,44 @@
-DelosDB Gen2-C3 F05 primary-key-suffix secondary-index control
+DelosDB pre-full-benchmark cleanup overlay
 
 Purpose
 -------
-Emulate the intended physical effect of automatically carrying primary-key
-identity in non-unique secondary indexes, without changing the storage engine.
+Return the working tree to the accepted post-modernization production state
+before running the full cross-engine benchmark checkpoint.
 
-Matched workloads
------------------
-JOIN_3WAY_SELECTIVE
-  ORDER(customer_id)
-  LINE(order_id)
+KEPT
+----
+- MVCC unique-index cardinality production fix.
+- Statement-lifetime MVCC read boundaries for NOHOLD base fetches.
+- MvccStatementReadBoundaryPolicyTest and stable-suite registration.
+- Physical scan costing default.
+- Physical RowLocation costing default.
+- Consolidated materialized CURRENT decoder.
+- Consolidated non-covering base fetch decoder.
+- Statement-lifetime read boundaries.
+- Canonical F04 simple-join statistics stabilization.
+- Canonical F05 multi-join statistics stabilization.
+- Existing permanent benchmark and attribution infrastructure from the
+  accepted source authority.
 
-JOIN_3WAY_SELECTIVE_PK_SUFFIX
-  ORDER(customer_id, id)
-  LINE(order_id, id)
+REMOVED / RESTORED
+------------------
+- Failed bounded/page-grouped INDEX_TO_BASE_ROW batch prototype:
+    AccessMethodBaseFetchBatch
+    IndexRowToBaseRowResultSet batch buffering
+    MVCC batch fetch implementation
+    hinted-page batch decoder helper
+- Temporary F05 row-production, covering-index, PK-suffix and covering-plan
+  diagnostic workload/task additions.
+- Phase-2D CLOSE_CURSORS_AT_COMMIT reachability modification that existed only
+  to test the rejected batching prototype.
 
-The PK-suffix workload REPLACES the original secondary indexes with the
-composite versions. It does not create duplicate alternative indexes.
+Deletion
+--------
+Run:
+  sh cleanup-pre-full-benchmark.sh
 
-The SQL query, table rows, result cardinality, six SERVER engines, Gen2-C3
-settings, deterministic statistics, and semantic oracle are otherwise the same.
+The cleanup script removes the obsolete AccessMethodBaseFetchBatch.java file
+and deletes itself.
 
-Why this control comes before production design
------------------------------------------------
-Current Derby B-tree storage requires nKeyFields == physical row width, so true
-non-key INCLUDE columns are not yet physically supported.
-
-Appending PK identity as a trailing key is physically valid for these
-non-unique secondary indexes and is a faithful performance proxy for automatic
-PK suffixing. A transparent production implementation would still require
-separating logical index columns from hidden physical stored columns so JDBC
-metadata, index sharing, ALTER logic, uniqueness semantics, and DDL remain
-unchanged.
-
-Diagnostic only. No production engine, optimizer, storage, WAL/recovery,
-durable-format, or benchmark-threshold changes.
+No benchmark thresholds are changed.
+No production performance promotion is reverted.

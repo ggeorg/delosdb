@@ -471,25 +471,6 @@ final class MvccRawStoreTable {
             this.payloadStart = currentPayloadStart(table);
         }
 
-        VisibleRow readVisibleAtHintedPage(
-                MvccRowLocation rowLocation,
-                Page page,
-                long snapshotSequence,
-                long transactionId,
-                MvccRawStoreVersionReader versionReader) throws StandardException {
-            if (rowLocation == null || page == null || !rowLocation.hasLocatorHint()) {
-                return null;
-            }
-            LookupResult hinted = decodeCandidate(
-                    page,
-                    rowLocation.locatorSlotId(),
-                    rowLocation.rowId(),
-                    snapshotSequence,
-                    transactionId,
-                    versionReader);
-            return hinted.matched() ? hinted.visible() : null;
-        }
-
         VisibleRow readVisibleAt(
                 MvccRowLocation rowLocation,
                 long snapshotSequence,

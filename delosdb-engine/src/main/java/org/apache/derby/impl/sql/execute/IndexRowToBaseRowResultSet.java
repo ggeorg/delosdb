@@ -37,8 +37,6 @@ import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
-import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchBatch;
-import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
@@ -71,22 +69,9 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 	private boolean                 closeBaseCCHere;
 	private boolean					forUpdate;
 	private DataValueDescriptor[]	rowArray;
-    private static final String BASE_FETCH_BATCH_PROPERTY =
-            "delosdb.experimental.indexToBaseRowBatchFetch";
-    private static final int BASE_FETCH_BATCH_SIZE =
-            Math.max(2, Integer.getInteger("delosdb.experimental.indexToBaseRowBatchSize", 16));
-
     private AccessMethodBaseFetchPagePrefetch baseFetchPagePrefetch;
     private BulkTableScanResultSet baseFetchBulkSource;
     private StoreRowLocation[] baseFetchPrefetchRowLocations;
-    private AccessMethodBaseFetchBatch baseFetchBatch;
-    private ExecRow[] baseFetchBatchSourceRows;
-    private StoreRowLocation[] baseFetchBatchRowLocations;
-    private StoreDataValue[][] baseFetchBatchDestRows;
-    private boolean[] baseFetchBatchExists;
-    private int baseFetchBatchCount;
-    private int baseFetchBatchPosition;
-    private int baseFetchBatchCurrent = -1;
 
 	// changed a whole bunch
 	RowLocation	baseRowLocation;
@@ -347,7 +332,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 
 		source.reopenCore();
         clearBaseFetchPagePrefetch();
-        clearBaseFetchBatchState();
 
 		numOpens++;
 		openTime += getElapsedMillis(beginTime);
@@ -388,7 +372,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 		 */
 		do 
 		{
-			sourceRow = nextBaseFetchSourceRow();
+			sourceRow = source.getNextRowCore();
 
 			if (sourceRow != null) {
 
@@ -403,23 +387,16 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 				baseRowLocation = (RowLocation)
 						sourceRow.getColumn(sourceRow.nColumns());
 
-                if (baseFetchBatch == null) {
-                    prefetchBufferedBaseRows();
-                }
+                prefetchBufferedBaseRows();
 
 				// Fetch the columns coming from the heap
-                boolean row_exists;
-                if (baseFetchBatchCurrent >= 0) {
-                    row_exists = baseFetchBatchExists[baseFetchBatchCurrent];
-                    if (row_exists) {
-                        copyBatchedHeapRow(baseFetchBatchCurrent);
-                    }
-                } else {
-                    row_exists = baseCC.fetch(
-                            baseRowLocation,
-                            rowArray,
-                            _includeRowLocation ? _heapColsWithoutRowLocation : accessedHeapCols);
-                }
+				boolean row_exists = 
+                    baseCC.fetch
+                    (
+                     baseRowLocation,
+                     rowArray,
+                     _includeRowLocation ? _heapColsWithoutRowLocation : accessedHeapCols
+                     );
 
                 if (row_exists)
                 {
@@ -431,7 +408,7 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 					 * then we will be getting all of the columns anew
 					 * from the index (indexCols == null).
 					 */
-					if (! copiedFromSource || baseFetchBatch != null)
+					if (! copiedFromSource)
 					{
 						copiedFromSource = true;
 
@@ -535,12 +512,6 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
             baseFetchPagePrefetch = null;
             baseFetchBulkSource = null;
             baseFetchPrefetchRowLocations = null;
-            baseFetchBatch = null;
-            baseFetchBatchSourceRows = null;
-            baseFetchBatchRowLocations = null;
-            baseFetchBatchDestRows = null;
-            baseFetchBatchExists = null;
-            clearBaseFetchBatchState();
 	        source.close();
 
 			super.close();
@@ -552,108 +523,10 @@ class IndexRowToBaseRowResultSet extends NoPutResultSetImpl
 		closeTime += getElapsedMillis(beginTime);
 	}
 
-    private ExecRow nextBaseFetchSourceRow() throws StandardException {
-        if (baseFetchBatch == null) {
-            baseFetchBatchCurrent = -1;
-            return source.getNextRowCore();
-        }
-        if (baseFetchBatchPosition >= baseFetchBatchCount) {
-            loadBaseFetchBatch();
-        }
-        if (baseFetchBatchCount == 0) {
-            baseFetchBatchCurrent = -1;
-            return null;
-        }
-        baseFetchBatchCurrent = baseFetchBatchPosition++;
-        return baseFetchBatchSourceRows[baseFetchBatchCurrent];
-    }
-
-    private void loadBaseFetchBatch() throws StandardException {
-        clearBaseFetchBatchState();
-        for (int index = 0; index < baseFetchBatchSourceRows.length; index++) {
-            ExecRow sourceRow = source.getNextRowCore();
-            if (sourceRow == null) {
-                break;
-            }
-            ExecRow detached = sourceRow.getClone();
-            StoreRowLocation location = (StoreRowLocation)
-                    detached.getColumn(detached.nColumns());
-            baseFetchBatchSourceRows[index] = detached;
-            baseFetchBatchRowLocations[index] = location;
-            baseFetchBatchDestRows[index] = batchDestinationRow(
-                    baseFetchBatchDestRows[index]);
-            baseFetchBatchCount++;
-        }
-        if (baseFetchBatchCount > 0) {
-            baseFetchBatch.fetchBaseRows(
-                    baseFetchBatchRowLocations,
-                    baseFetchBatchDestRows,
-                    _includeRowLocation ? _heapColsWithoutRowLocation : accessedHeapCols,
-                    baseFetchBatchExists,
-                    baseFetchBatchCount);
-        }
-    }
-
-    private StoreDataValue[] batchDestinationRow(StoreDataValue[] reusable) {
-        StoreDataValue[] destination = reusable;
-        if (destination == null || destination.length != rowArray.length) {
-            destination = new StoreDataValue[rowArray.length];
-            for (int index = 0; index < rowArray.length; index++) {
-                if (rowArray[index] != null) {
-                    destination[index] = rowArray[index].getNewNull();
-                }
-            }
-            return destination;
-        }
-        for (StoreDataValue value : destination) {
-            if (value instanceof DataValueDescriptor dvd) {
-                dvd.setToNull();
-            }
-        }
-        return destination;
-    }
-
-    private void copyBatchedHeapRow(int batchIndex) throws StandardException {
-        StoreDataValue[] sourceValues = baseFetchBatchDestRows[batchIndex];
-        for (int index = 0; index < rowArray.length; index++) {
-            if (rowArray[index] == null || sourceValues[index] == null) {
-                continue;
-            }
-            rowArray[index].setValue((DataValueDescriptor) sourceValues[index]);
-        }
-    }
-
-    private void clearBaseFetchBatchState() {
-        baseFetchBatchCount = 0;
-        baseFetchBatchPosition = 0;
-        baseFetchBatchCurrent = -1;
-        if (baseFetchBatchSourceRows != null) {
-            for (int index = 0; index < baseFetchBatchSourceRows.length; index++) {
-                baseFetchBatchSourceRows[index] = null;
-                baseFetchBatchRowLocations[index] = null;
-                baseFetchBatchExists[index] = false;
-            }
-        }
-    }
-
     private void configureBaseFetchPagePrefetch() {
         baseFetchPagePrefetch = null;
         baseFetchBulkSource = null;
         baseFetchPrefetchRowLocations = null;
-        baseFetchBatch = null;
-        clearBaseFetchBatchState();
-        if (!forUpdate
-                && !activation.getResultSetHoldability()
-                && Boolean.getBoolean(BASE_FETCH_BATCH_PROPERTY)
-                && baseCC instanceof AccessMethodBaseFetchBatch batch
-                && batch.baseFetchBatchEnabled()) {
-            baseFetchBatch = batch;
-            baseFetchBatchSourceRows = new ExecRow[BASE_FETCH_BATCH_SIZE];
-            baseFetchBatchRowLocations = new StoreRowLocation[BASE_FETCH_BATCH_SIZE];
-            baseFetchBatchDestRows = new StoreDataValue[BASE_FETCH_BATCH_SIZE][];
-            baseFetchBatchExists = new boolean[BASE_FETCH_BATCH_SIZE];
-            return;
-        }
         if (forUpdate
                 || activation.getResultSetHoldability()
                 || !(source instanceof BulkTableScanResultSet bulkSource)

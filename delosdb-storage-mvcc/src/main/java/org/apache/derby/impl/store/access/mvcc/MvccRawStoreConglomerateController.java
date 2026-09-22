@@ -16,7 +16,6 @@ import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
-import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchBatch;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
@@ -33,7 +32,6 @@ import org.apache.derby.shared.common.error.StandardException;
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController
         implements ConglomerateController, AccessMethodBaseFetchPagePrefetch,
-                AccessMethodBaseFetchBatch,
                 AccessMethodIndexBuildLifecycle, AccessMethodReadCommittedUpdateRecheck,
                 AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
@@ -42,8 +40,6 @@ final class MvccRawStoreConglomerateController
     private final Transaction rawTransaction;
     private static final String BASE_FETCH_PAGE_PREFETCH_PROPERTY =
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
-    private static final String BASE_FETCH_BATCH_PROPERTY =
-            "delosdb.experimental.mvccBaseFetchBatch";
 
     private final boolean forUpdate;
     private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
@@ -115,96 +111,6 @@ final class MvccRawStoreConglomerateController
                 statementSnapshotLease.close();
             }
             transactionManager.closeMe(this);
-        }
-    }
-
-    @Override
-    public boolean baseFetchBatchEnabled() {
-        return !forUpdate
-                && table.gen2A1()
-                && statementSnapshotLease != null
-                && Boolean.getBoolean(BASE_FETCH_BATCH_PROPERTY);
-    }
-
-    @Override
-    public void fetchBaseRows(
-            StoreRowLocation[] rowLocations,
-            StoreDataValue[][] destRows,
-            FormatableBitSet validColumns,
-            boolean[] rowExists,
-            int count) throws StandardException {
-        ensureOpen();
-        if (!baseFetchBatchEnabled()
-                || rowLocations == null
-                || destRows == null
-                || rowExists == null) {
-            throw new IllegalStateException("MVCC base-fetch batch is not available");
-        }
-        int limit = Math.min(
-                count,
-                Math.min(rowLocations.length, Math.min(destRows.length, rowExists.length)));
-        boolean[] attempted = new boolean[limit];
-        MvccRawStoreTransactionContext context =
-                runtime.context(transactionManager, rawTransaction);
-        MvccRawStoreVersionRows.FetchProjection projection = readProjection(validColumns);
-        MvccRawStoreTable.CurrentBaseFetchDecoder decoder =
-                currentBaseFetchDecoder(projection);
-        MvccRawStoreRuntime.TableReadBoundary operationBoundary = enterReadBoundary();
-        try {
-            for (int index = 0; index < limit; index++) {
-                if (attempted[index] || rowLocations[index] == null) {
-                    continue;
-                }
-                MvccRowLocation first = MvccRowLocation.from(rowLocations[index]);
-                if (!first.hasLocatorHint()) {
-                    continue;
-                }
-                long pageNumber = first.locatorPageId();
-                Page page = null;
-                try {
-                    page = readDirectoryContainer().getPage(pageNumber);
-                    if (page == null) {
-                        continue;
-                    }
-                    for (int candidate = index; candidate < limit; candidate++) {
-                        if (attempted[candidate] || rowLocations[candidate] == null) {
-                            continue;
-                        }
-                        MvccRowLocation location =
-                                MvccRowLocation.from(rowLocations[candidate]);
-                        if (!location.hasLocatorHint()
-                                || location.locatorPageId() != pageNumber) {
-                            continue;
-                        }
-                        attempted[candidate] = true;
-                        MvccRawStoreTable.VisibleRow visible =
-                                decoder.readVisibleAtHintedPage(
-                                        location,
-                                        page,
-                                        statementSnapshotSequence,
-                                        context.transactionId(),
-                                        readVersionReader());
-                        if (visible != null) {
-                            location.setWriteVersion(visible.versionId());
-                            StoreValueCopySupport.copyRow(
-                                    visible.values(), destRows[candidate], validColumns);
-                            rowExists[candidate] = true;
-                        }
-                    }
-                } finally {
-                    if (page != null) {
-                        page.unlatch();
-                    }
-                }
-            }
-        } finally {
-            closeOperationReadBoundary(operationBoundary);
-        }
-        for (int index = 0; index < limit; index++) {
-            if (!rowExists[index]) {
-                rowExists[index] = fetch(
-                        rowLocations[index], destRows[index], validColumns);
-            }
         }
     }
 

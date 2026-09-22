@@ -60,8 +60,6 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2Q_PREFIX = "delosdb.phase2.f07SortDecomposition.";
     private static final String PHASE2U_PREFIX = "delosdb.phase2.f04CurrentJoinDecomposition.";
     private static final String PHASE2V_PREFIX = "delosdb.phase2.f04EmbeddedConcurrency.";
-    private static final String PHASE2W_PREFIX =
-            "delosdb.phase2.f05CoveringPlanDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -191,10 +189,6 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2VF04EmbeddedConcurrency();
             return;
         }
-        if (args.length == 1 && "phase2w-f05-covering-plan-decomposition".equals(args[0])) {
-            runPhase2WF05CoveringPlanDecomposition();
-            return;
-        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -218,8 +212,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2s-f07-embedded-jfr',"
                             + " exactly 'phase2t-f07-streaming-falsification',"
                             + " exactly 'phase2u-f04-current-join-decomposition',"
-                            + " exactly 'phase2v-f04-embedded-concurrency',"
-                            + " or exactly 'phase2w-f05-covering-plan-decomposition'");
+                            + " or exactly 'phase2v-f04-embedded-concurrency'");
         }
     }
 
@@ -1396,7 +1389,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         String database = databaseRoot.resolve("f05-residual-indexed-access").toString();
         String jdbcUrl = "jdbc:derby:" + database + ";create=true";
 
-        try (Connection setup = openPhase2DConnection(jdbcUrl)) {
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
             prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
             prepareMultiJoinFixture(setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
             setup.commit();
@@ -1404,7 +1397,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         String heapPkIndex;
         String mvccPkIndex;
-        try (Connection connection = openPhase2DConnection(jdbcUrl)) {
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
             heapPkIndex = phase2BPrimaryKeyIndex(
                     connection, multiJoinCustomerTableName(heapBase), "ID");
             mvccPkIndex = phase2BPrimaryKeyIndex(
@@ -1431,12 +1424,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         LinkedHashMap<String, ExplainCapture> explainByVariant = new LinkedHashMap<>();
         LinkedHashMap<String, ExplainCapture> analyzeByVariant = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
-            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
                 explainByVariant.put(
                         entry.getKey(), capturePhase2AExplain(connection, entry.getValue(), false));
                 connection.rollback();
             }
-            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
                 analyzeByVariant.put(
                         entry.getKey(), capturePhase2AExplain(connection, entry.getValue(), true));
                 connection.rollback();
@@ -1445,7 +1438,7 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         long semanticFingerprint = Long.MIN_VALUE;
         for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
-            try (Connection connection = openPhase2DConnection(jdbcUrl)) {
+            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
                 long fingerprint = executePhase2AQuery(connection, entry.getValue(), expectedRows);
                 connection.rollback();
                 if (semanticFingerprint == Long.MIN_VALUE) {
@@ -1494,7 +1487,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         for (String variant : sqlByVariant.keySet()) {
             samples.put(variant, new ArrayList<>());
         }
-        try (Connection connection = openPhase2DConnection(jdbcUrl)) {
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
             LinkedHashMap<String, PreparedStatement> statements = new LinkedHashMap<>();
             try {
                 for (Map.Entry<String, String> entry : sqlByVariant.entrySet()) {
@@ -1657,7 +1650,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
 
         String summary = "DelosDB Phase-2D F05 residual indexed-access decomposition\n"
-                + "benchmarkHoldability=CLOSE_CURSORS_AT_COMMIT\n"
                 + "rows=" + rowCount + "\n"
                 + "expectedResultRows=" + expectedRows + "\n"
                 + "warmupsPerVariant=" + warmups + "\n"
@@ -1690,21 +1682,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + "\n\nMVCC natural post-statistics SQL:\n" + mvccNaturalSql + "\n",
                 StandardCharsets.UTF_8);
         System.out.print(summary);
-    }
-
-    private static Connection openPhase2DConnection(String jdbcUrl) throws SQLException {
-        Connection connection = openPhase2AConnection(jdbcUrl);
-        connection.setHoldability(ResultSet.CLOSE_CURSORS_AT_COMMIT);
-        if (connection.getHoldability() != ResultSet.CLOSE_CURSORS_AT_COMMIT) {
-            try {
-                connection.close();
-            } catch (SQLException ignored) {
-                // Preserve the primary reachability failure.
-            }
-            throw new IllegalStateException(
-                    "Phase-2D CLOSE_CURSORS_AT_COMMIT control was not applied");
-        }
-        return connection;
     }
 
     private static void runPhase2EF05BaseFetchAttribution() throws Exception {
@@ -4583,213 +4560,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         return Path.of(value).toAbsolutePath().normalize();
     }
-
-
-    private static void runPhase2WF05CoveringPlanDecomposition() throws Exception {
-        Path reportDirectory = requiredPhase2WPath("reportDirectory");
-        Path databaseRoot = requiredPhase2WPath("databaseRoot");
-        deleteRecursively(reportDirectory);
-        deleteRecursively(databaseRoot);
-        Files.createDirectories(reportDirectory);
-        Files.createDirectories(databaseRoot);
-
-        int rowCount = 10_000;
-        int commitBatchSize = 1_000;
-        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
-        String heapBase = "P2W_HEAP";
-        String mvccBase = "P2W_MVCC";
-        String database = databaseRoot.resolve("f05-covering-plan-decomposition").toString();
-        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
-
-        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
-            prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
-            prepareMultiJoinFixture(setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
-            setup.commit();
-        }
-
-        String heapPk;
-        String mvccPk;
-        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
-            heapPk = phase2BPrimaryKeyIndex(
-                    connection, multiJoinCustomerTableName(heapBase), "ID");
-            mvccPk = phase2BPrimaryKeyIndex(
-                    connection, multiJoinCustomerTableName(mvccBase), "ID");
-            phase2WRefreshStatistics(connection, heapBase);
-            phase2WRefreshStatistics(connection, mvccBase);
-            connection.commit();
-        }
-
-        LinkedHashMap<String, String> before = new LinkedHashMap<>();
-        before.put("heap-natural-noncover",
-                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, heapBase));
-        before.put("heap-forced-noncover",
-                phase2BForcedIndexedSql(heapBase, heapPk));
-        before.put("mvcc-natural-noncover",
-                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase));
-        before.put("mvcc-forced-noncover",
-                phase2BForcedIndexedSql(mvccBase, mvccPk));
-        long fingerprint = phase2WCaptureVariants(
-                jdbcUrl, reportDirectory, before, expectedRows, Long.MIN_VALUE);
-
-        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
-            phase2WCreateCoveringIndexes(connection, heapBase);
-            phase2WCreateCoveringIndexes(connection, mvccBase);
-            phase2WRefreshStatistics(connection, heapBase);
-            phase2WRefreshStatistics(connection, mvccBase);
-            connection.commit();
-        }
-
-        LinkedHashMap<String, String> after = new LinkedHashMap<>();
-        after.put("heap-natural-cover",
-                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, heapBase));
-        after.put("heap-forced-cover",
-                phase2WForcedCoveringSql(heapBase, heapPk));
-        after.put("mvcc-natural-cover",
-                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase));
-        after.put("mvcc-forced-cover",
-                phase2WForcedCoveringSql(mvccBase, mvccPk));
-        phase2WCaptureVariants(
-                jdbcUrl, reportDirectory, after, expectedRows, fingerprint);
-
-        StringBuilder summary = new StringBuilder();
-        summary.append("DelosDB Phase-2W F05 covering plan decomposition\n")
-                .append("diagnosticOnly=true\n")
-                .append("gen2C3Enabled=")
-                .append(Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled"))
-                .append('\n')
-                .append("rows=").append(rowCount).append('\n')
-                .append("expectedRows=").append(expectedRows).append('\n');
-        for (String variant : List.of(
-                "heap-natural-noncover",
-                "heap-forced-noncover",
-                "mvcc-natural-noncover",
-                "mvcc-forced-noncover",
-                "heap-natural-cover",
-                "heap-forced-cover",
-                "mvcc-natural-cover",
-                "mvcc-forced-cover")) {
-            String text = Files.readString(
-                    reportDirectory.resolve(variant + "-explain-analyze.txt"),
-                    StandardCharsets.UTF_8);
-            summary.append(variant)
-                    .append(".indexToBaseRows=")
-                    .append(phase2WPlanKindCount(text, "SCAN/INDEX_TO_BASE_ROW"))
-                    .append('\n')
-                    .append(variant)
-                    .append(".indexScans=")
-                    .append(phase2WPlanKindCount(text, "SCAN/INDEX_SCAN"))
-                    .append('\n')
-                    .append(variant)
-                    .append(".hashJoins=")
-                    .append(phase2WPlanKindCount(text, "JOIN/HASH"))
-                    .append('\n')
-                    .append(variant)
-                    .append(".nestedLoops=")
-                    .append(phase2WPlanKindCount(text, "JOIN/NESTED_LOOP"))
-                    .append('\n')
-                    .append(variant)
-                    .append(".openMillis=")
-                    .append(sumPhase2AField(text, "openMillis"))
-                    .append('\n')
-                    .append(variant)
-                    .append(".nextMillis=")
-                    .append(sumPhase2AField(text, "nextMillis"))
-                    .append('\n');
-        }
-        Files.writeString(
-                reportDirectory.resolve("phase2w-f05-covering-plan-decomposition-summary.txt"),
-                summary.toString(),
-                StandardCharsets.UTF_8);
-    }
-
-    private static long phase2WCaptureVariants(
-            String jdbcUrl,
-            Path reportDirectory,
-            LinkedHashMap<String, String> variants,
-            int expectedRows,
-            long expectedFingerprint) throws Exception {
-        long fingerprint = expectedFingerprint;
-        for (Map.Entry<String, String> entry : variants.entrySet()) {
-            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
-                ExplainCapture explain =
-                        capturePhase2AExplain(connection, entry.getValue(), false);
-                ExplainCapture analyze =
-                        capturePhase2AExplain(connection, entry.getValue(), true);
-                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain", explain);
-                writePhase2ACapture(
-                        reportDirectory, entry.getKey() + "-explain-analyze", analyze);
-                long actual = executePhase2AQuery(
-                        connection, entry.getValue(), expectedRows);
-                if (fingerprint == Long.MIN_VALUE) {
-                    fingerprint = actual;
-                } else if (actual != fingerprint) {
-                    throw new IllegalStateException(
-                            "Phase-2W SQL semantic drift for " + entry.getKey()
-                                    + ": expected=" + fingerprint + ", actual=" + actual);
-                }
-                connection.rollback();
-            }
-        }
-        return fingerprint;
-    }
-
-    private static void phase2WCreateCoveringIndexes(
-            Connection connection,
-            String base) throws SQLException {
-        String order = multiJoinOrderTableName(base);
-        String line = multiJoinLineTableName(base);
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(
-                    "create index " + order + "_C_ID_COVER_IDX on "
-                            + order + " (customer_id, id)");
-            statement.executeUpdate(
-                    "create index " + line + "_O_ID_COVER_IDX on "
-                            + line + " (order_id, id)");
-        }
-    }
-
-    private static void phase2WRefreshStatistics(
-            Connection connection,
-            String base) throws SQLException {
-        phase2BUpdateStatistics(connection, multiJoinCustomerTableName(base));
-        phase2BUpdateStatistics(connection, multiJoinOrderTableName(base));
-        phase2BUpdateStatistics(connection, multiJoinLineTableName(base));
-    }
-
-    private static String phase2WForcedCoveringSql(String base, String customerPkIndex) {
-        String customer = multiJoinCustomerTableName(base);
-        String order = multiJoinOrderTableName(base);
-        String line = multiJoinLineTableName(base);
-        return "select c.id, o.id, l.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
-                + customer + " c --DERBY-PROPERTIES index='" + customerPkIndex + "'\n"
-                + "join " + order + " o --DERBY-PROPERTIES index=" + order
-                + "_C_ID_COVER_IDX, joinStrategy=NESTEDLOOP\n"
-                + "on o.customer_id = c.id\n"
-                + "join " + line + " l --DERBY-PROPERTIES index=" + line
-                + "_O_ID_COVER_IDX, joinStrategy=NESTEDLOOP\n"
-                + "on l.order_id = o.id\n"
-                + "where c.id between ? and ?";
-    }
-
-    private static int phase2WPlanKindCount(String text, String planKind) {
-        Matcher matcher = Pattern.compile(
-                "(?m)^\\s*n\\d+\\s+" + Pattern.quote(planKind) + "(?:\\s|$)")
-                .matcher(text);
-        int count = 0;
-        while (matcher.find()) {
-            count++;
-        }
-        return count;
-    }
-
-    private static Path requiredPhase2WPath(String key) {
-        String value = System.getProperty(PHASE2W_PREFIX + key, "").trim();
-        if (value.isEmpty()) {
-            throw new IllegalArgumentException("Missing -D" + PHASE2W_PREFIX + key);
-        }
-        return Path.of(value).toAbsolutePath().normalize();
-    }
-
 
     private static void runPhase2KF03ProjectionMaterializationDecomposition() throws Exception {
         Path reportDirectory = requiredPhase2KPath("reportDirectory");
@@ -7767,17 +7537,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.out.flush();
                 }
             } else if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE
-                    || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING
-                    || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX
-                    || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || spec.workload() == Workload.JOIN_4WAY_FANOUT) {
                 prepareMultiJoinFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
-                        config.rowCount(), config.commitBatchSize(),
-                        spec.workload() == Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX);
-                if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING) {
-                    prepareMultiJoinCoveringIndexes(verifier, scenario.tableName());
-                }
+                        config.rowCount(), config.commitBatchSize());
                 if (mvccRefreshMultiJoinStatisticsEnabled()
                         && options.target() == Target.DELOS_MVCC_DRDA) {
                     phase2BUpdateStatistics(verifier, multiJoinCustomerTableName(scenario.tableName()));
@@ -7970,9 +7733,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append("; create index ").append(joinFanoutChildTableName(table)).append("_P_IDX on ")
                         .append(joinFanoutChildTableName(table)).append(" (parent_id)");
             } else if (workload == Workload.JOIN_3WAY_SELECTIVE
-                    || workload == Workload.JOIN_3WAY_SELECTIVE_COVERING
-                    || workload == Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX
-                    || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || workload == Workload.JOIN_4WAY_FANOUT) {
                 ddl.append("; create table ").append(multiJoinCustomerTableName(table))
                         .append(" (id int not null primary key, bucket int not null)")
@@ -9032,9 +8792,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 spec.workload() == Workload.PROJECTION_COVERED
                                         || spec.workload() == Workload.JOIN_INDEXED_1TO1
                                         || spec.workload() == Workload.JOIN_3WAY_SELECTIVE
-                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING
-                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX
-                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                                         || spec.workload() == Workload.JOIN_4WAY_FANOUT
                                         ? DelosSqlSemanticOracle.RowOrder.UNORDERED
                                         : DelosSqlSemanticOracle.RowOrder.ORDERED;
@@ -10215,17 +9972,6 @@ public final class DelosJdbcCrossEngineConcurrency {
             String createTableSuffix,
             int rowCount,
             int commitBatchSize) throws SQLException {
-        prepareMultiJoinFixture(
-                connection, table, createTableSuffix, rowCount, commitBatchSize, false);
-    }
-
-    private static void prepareMultiJoinFixture(
-            Connection connection,
-            String table,
-            String createTableSuffix,
-            int rowCount,
-            int commitBatchSize,
-            boolean secondaryPrimaryKeySuffix) throws SQLException {
         String customer = multiJoinCustomerTableName(table);
         String order = multiJoinOrderTableName(table);
         String line = multiJoinLineTableName(table);
@@ -10239,20 +9985,12 @@ public final class DelosJdbcCrossEngineConcurrency {
             statement.executeUpdate(
                     "create table " + order
                             + " (id int not null primary key, customer_id int not null)" + createTableSuffix);
-            statement.executeUpdate(
-                    "create index " + order + "_C_IDX on " + order
-                            + (secondaryPrimaryKeySuffix
-                                    ? " (customer_id, id)"
-                                    : " (customer_id)"));
+            statement.executeUpdate("create index " + order + "_C_IDX on " + order + " (customer_id)");
             statement.executeUpdate(
                     "create table " + line
                             + " (id int not null primary key, order_id int not null,"
                             + " line_no int not null, item_id int not null)" + createTableSuffix);
-            statement.executeUpdate(
-                    "create index " + line + "_O_IDX on " + line
-                            + (secondaryPrimaryKeySuffix
-                                    ? " (order_id, id)"
-                                    : " (order_id)"));
+            statement.executeUpdate("create index " + line + "_O_IDX on " + line + " (order_id)");
             statement.executeUpdate(
                     "create table " + item + " (id int not null primary key)" + createTableSuffix);
         }
@@ -10311,22 +10049,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 connection.commit();
             }
         }
-    }
-
-    private static void prepareMultiJoinCoveringIndexes(
-            Connection connection,
-            String table) throws SQLException {
-        String order = multiJoinOrderTableName(table);
-        String line = multiJoinLineTableName(table);
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(
-                    "create index " + order + "_C_ID_COVER_IDX on "
-                            + order + " (customer_id, id)");
-            statement.executeUpdate(
-                    "create index " + line + "_O_ID_COVER_IDX on "
-                            + line + " (order_id, id)");
-        }
-        connection.commit();
     }
 
     private static void prepareHighCardGroupFixture(
@@ -10727,16 +10449,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     "select p.id, c.id from " + joinFanoutParentTableName(table) + " p join "
                             + joinFanoutChildTableName(table)
                             + " c on c.parent_id = p.id where p.id between ? and ? order by p.id, c.id";
-            case JOIN_3WAY_SELECTIVE,
-                    JOIN_3WAY_SELECTIVE_COVERING,
-                    JOIN_3WAY_SELECTIVE_PK_SUFFIX ->
+            case JOIN_3WAY_SELECTIVE ->
                     "select c.id, o.id, l.id from " + multiJoinCustomerTableName(table) + " c join "
-                            + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
-                            + multiJoinLineTableName(table)
-                            + " l on l.order_id = o.id where c.id between ? and ?";
-            case JOIN_3WAY_SELECTIVE_AGGREGATE ->
-                    "select count(*), sum(c.id), sum(o.id), sum(l.id) from "
-                            + multiJoinCustomerTableName(table) + " c join "
                             + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
                             + multiJoinLineTableName(table)
                             + " l on l.order_id = o.id where c.id between ? and ?";
@@ -10761,10 +10475,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || workload == Workload.PROJECTION_FULL_ROW) {
             statement.setInt(1, FITNESS_CATEGORY);
         } else if (workload == Workload.JOIN_INDEXED_FANOUT
-                || workload == Workload.JOIN_3WAY_SELECTIVE
-                || workload == Workload.JOIN_3WAY_SELECTIVE_COVERING
-                || workload == Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX
-                || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE) {
+                || workload == Workload.JOIN_3WAY_SELECTIVE) {
             statement.setInt(1, 1);
             statement.setInt(2, 100);
         } else if (workload == Workload.JOIN_4WAY_FANOUT) {
@@ -10786,11 +10497,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             case GROUP_LOW_CARD -> Math.min(17, rowCount);
             case JOIN_INDEXED_1TO1, GROUP_HIGH_CARD -> Math.min(1000, rowCount);
             case JOIN_INDEXED_FANOUT -> joinSelectiveParents(rowCount) * 10;
-            case JOIN_3WAY_SELECTIVE,
-                    JOIN_3WAY_SELECTIVE_COVERING,
-                    JOIN_3WAY_SELECTIVE_PK_SUFFIX ->
-                    joinSelectiveParents(rowCount) * 4 * 3;
-            case JOIN_3WAY_SELECTIVE_AGGREGATE -> 1;
+            case JOIN_3WAY_SELECTIVE -> joinSelectiveParents(rowCount) * 4 * 3;
             case JOIN_4WAY_FANOUT -> joinBucketParents(rowCount, 7) * 4 * 3;
             case SORT_FULL -> rowCount;
             default -> throw new IllegalArgumentException("Not a fitness read workload: " + workload);
@@ -10828,19 +10535,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                         fingerprint = mix(fingerprint, resultSet.getInt(1));
                         fingerprint = mix(fingerprint, resultSet.getInt(2));
                     }
-                    case JOIN_3WAY_SELECTIVE,
-                            JOIN_3WAY_SELECTIVE_COVERING,
-                            JOIN_3WAY_SELECTIVE_PK_SUFFIX -> {
+                    case JOIN_3WAY_SELECTIVE -> {
                         long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
                         tuple = mix(tuple, resultSet.getInt(2));
                         tuple = mix(tuple, resultSet.getInt(3));
                         fingerprint += tuple;
-                    }
-                    case JOIN_3WAY_SELECTIVE_AGGREGATE -> {
-                        fingerprint = mix(fingerprint, resultSet.getLong(1));
-                        fingerprint = mix(fingerprint, resultSet.getLong(2));
-                        fingerprint = mix(fingerprint, resultSet.getLong(3));
-                        fingerprint = mix(fingerprint, resultSet.getLong(4));
                     }
                     case JOIN_4WAY_FANOUT -> {
                         long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
@@ -12672,9 +12371,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         JOIN_INDEXED_1TO1(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_INDEXED_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_3WAY_SELECTIVE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
-        JOIN_3WAY_SELECTIVE_COVERING(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
-        JOIN_3WAY_SELECTIVE_PK_SUFFIX(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
-        JOIN_3WAY_SELECTIVE_AGGREGATE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_4WAY_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_HIGH_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
@@ -12781,9 +12477,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == JOIN_INDEXED_1TO1
                     || this == JOIN_INDEXED_FANOUT
                     || this == JOIN_3WAY_SELECTIVE
-                    || this == JOIN_3WAY_SELECTIVE_COVERING
-                    || this == JOIN_3WAY_SELECTIVE_PK_SUFFIX
-                    || this == JOIN_3WAY_SELECTIVE_AGGREGATE
                     || this == JOIN_4WAY_FANOUT
                     || this == GROUP_HIGH_CARD
                     || this == SORT_FULL;
@@ -13985,15 +13678,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 boolean multiWayJoinFitness = configuredWorkloads.equals(List.of(
                         Workload.JOIN_3WAY_SELECTIVE,
                         Workload.JOIN_4WAY_FANOUT));
-                boolean f05RowProductionControl = configuredWorkloads.equals(List.of(
-                        Workload.JOIN_3WAY_SELECTIVE,
-                        Workload.JOIN_3WAY_SELECTIVE_AGGREGATE));
-                boolean f05CoveringJoinControl = configuredWorkloads.equals(List.of(
-                        Workload.JOIN_3WAY_SELECTIVE,
-                        Workload.JOIN_3WAY_SELECTIVE_COVERING));
-                boolean f05PrimaryKeySuffixControl = configuredWorkloads.equals(List.of(
-                        Workload.JOIN_3WAY_SELECTIVE,
-                        Workload.JOIN_3WAY_SELECTIVE_PK_SUFFIX));
                 boolean groupByFitness = configuredWorkloads.equals(List.of(
                         Workload.GROUP_LOW_CARD,
                         Workload.GROUP_HIGH_CARD));
@@ -14015,8 +13699,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                                     + "BANK_TRANSACTION,ORDER_ENTRY_MIX");
                 }
                 if ((!pointReadFitness && !rangeScanFitness && !projectionFitness
-                                && !simpleJoinFitness && !multiWayJoinFitness
-                                && !f05RowProductionControl && !f05CoveringJoinControl && !f05PrimaryKeySuffixControl && !groupByFitness
+                                && !simpleJoinFitness && !multiWayJoinFitness && !groupByFitness
                                 && !sortFitness && !mixedReaderWriterGen2Fitness && !longReaderWriterGen2Fitness
                                 && !realisticTransactionGen2Fitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
@@ -14034,8 +13717,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 List<Integer> expectedClients = longReaderWriterGen2Fitness
                         ? List.of(4)
                         : (rangeScanFitness || projectionFitness
-                                        || simpleJoinFitness || multiWayJoinFitness
-                                        || f05RowProductionControl || f05CoveringJoinControl || f05PrimaryKeySuffixControl || groupByFitness || sortFitness
+                                        || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
                                         || mixedReaderWriterGen2Fitness || realisticTransactionGen2Fitness)
                                 ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
@@ -14043,8 +13725,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 read fitness requires clients " + expectedClients);
                 }
                 List<Integer> expectedWidths = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness
-                                || f05RowProductionControl || f05CoveringJoinControl || f05PrimaryKeySuffixControl || groupByFitness || sortFitness
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? List.of(1) : List.of(10);
@@ -14053,8 +13734,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 read fitness requires widths " + expectedWidths);
                 }
                 String expectedTableShape = (projectionFitness
-                                || simpleJoinFitness || multiWayJoinFitness
-                                || f05RowProductionControl || f05CoveringJoinControl || f05PrimaryKeySuffixControl || groupByFitness || sortFitness
+                                || simpleJoinFitness || multiWayJoinFitness || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";
