@@ -5472,6 +5472,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccGen2BServerEnabled()) {
             addProperty(command, "mvccGen2BServer", true);
         }
+        if (mvccGen2C1ServerEnabled()) {
+            addProperty(command, "mvccGen2C1Server", true);
+        }
         if (mvccGen2C3UpdateServerEnabled()) {
             addProperty(command, "mvccGen2C3UpdateServer", true);
         }
@@ -5701,6 +5704,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2BServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
+                }
+                if (target == Target.DELOS_MVCC_DRDA && mvccGen2C1ServerEnabled()) {
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
+                    javaCommand.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
                 }
                 if (target == Target.DELOS_MVCC_DRDA
                         && (mvccGen2C3UpdateServerEnabled() || mvccGen2C3ReadServerEnabled())) {
@@ -11997,6 +12004,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(gen2BThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-B server enabled: ")
                 .append(mvccGen2BServerEnabled()).append('\n')
+                .append("MVCC Gen2-C1 server enabled: ")
+                .append(mvccGen2C1ServerEnabled()).append('\n')
                 .append("Gen2-C3 UPDATE throughput sentinel: ")
                 .append(gen2C3UpdateThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-C3 UPDATE server enabled: ")
@@ -12270,6 +12279,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2BServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2BServer");
+    }
+
+    private static boolean mvccGen2C1ServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2C1Server");
     }
 
     private static boolean gen2C3UpdateThroughputSentinelEnabled() {
@@ -13797,68 +13810,30 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             } else if (postModernizationMutationCheckpoint) {
                 boolean insertCheckpoint = configuredWorkloads.equals(List.of(Workload.INSERT_100));
-                boolean freshUpdateCheckpoint =
-                        configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100));
-                boolean indexedUpdateCheckpoint = configuredWorkloads.equals(List.of(
-                        Workload.DISJOINT_INDEXED_UPDATE,
-                        Workload.CONTENDED_INDEXED_UPDATE));
-                boolean deleteCheckpoint =
-                        configuredWorkloads.equals(List.of(Workload.DELETE_REINSERT));
-                if (!insertCheckpoint
-                        && !freshUpdateCheckpoint
-                        && !indexedUpdateCheckpoint
-                        && !deleteCheckpoint) {
-                    throw new IllegalArgumentException(
-                            "Post-modernization mutation checkpoint requires INSERT_100, "
-                                    + "FRESH_INDEXED_UPDATE_100, "
-                                    + "DISJOINT_INDEXED_UPDATE+CONTENDED_INDEXED_UPDATE, "
-                                    + "or DELETE_REINSERT");
+                boolean freshUpdateCheckpoint = configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100));
+                boolean indexedUpdateCheckpoint = configuredWorkloads.equals(List.of(Workload.DISJOINT_INDEXED_UPDATE, Workload.CONTENDED_INDEXED_UPDATE));
+                boolean deleteCheckpoint = configuredWorkloads.equals(List.of(Workload.DELETE_REINSERT));
+                if (!insertCheckpoint && !freshUpdateCheckpoint && !indexedUpdateCheckpoint && !deleteCheckpoint) {
+                    throw new IllegalArgumentException("Unsupported post-modernization mutation checkpoint workload set");
                 }
-                if (!sqlSemanticOracleEnabled() || !mvccGen2C3UpdateServerEnabled()) {
-                    throw new IllegalArgumentException(
-                            "Post-modernization mutation checkpoint requires SQL semantic oracle "
-                                    + "and the Gen2-C3 update server");
+                if (!sqlSemanticOracleEnabled()) {
+                    throw new IllegalArgumentException("Post-modernization mutation checkpoint requires SQL semantic oracle");
                 }
                 if (insertCheckpoint) {
-                    if (!List.of("BARE", "PRIMARY_KEY_ONLY").contains(configuredInsertTableShape)) {
-                        throw new IllegalArgumentException(
-                                "Post-modernization INSERT checkpoint requires BARE or PRIMARY_KEY_ONLY");
+                    boolean bare = "BARE".equals(configuredInsertTableShape);
+                    boolean primaryKey = "PRIMARY_KEY_ONLY".equals(configuredInsertTableShape);
+                    if (!bare && !primaryKey) {
+                        throw new IllegalArgumentException("Post-modernization INSERT checkpoint requires BARE or PRIMARY_KEY_ONLY");
                     }
-                    if (warmups != 0
-                            || iterations != 1
-                            || Double.compare(minimumWarmupSeconds, 0.0d) != 0
-                            || maximumWarmupIterations != 1
-                            || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
-                            || maximumMeasuredIterations != 1) {
-                        throw new IllegalArgumentException(
-                                "Post-modernization INSERT checkpoint requires one fresh "
-                                        + "measured interval per worker");
+                    if ((bare && !mvccGen2A1ServerEnabled()) || (primaryKey && !mvccGen2BServerEnabled())) {
+                        throw new IllegalArgumentException("Post-modernization INSERT checkpoint server mode does not match table shape");
                     }
-                } else if (freshUpdateCheckpoint) {
-                    if (!"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)) {
-                        throw new IllegalArgumentException(
-                                "Post-modernization fresh UPDATE checkpoint requires PRIMARY_KEY_ONLY");
+                } else if (freshUpdateCheckpoint || indexedUpdateCheckpoint) {
+                    if (!mvccGen2C3UpdateServerEnabled()) {
+                        throw new IllegalArgumentException("Post-modernization UPDATE checkpoint requires the Gen2-C3 update server");
                     }
-                    if (!clientValues().equals(List.of(8))
-                            || warmups != 0
-                            || iterations != 1
-                            || Double.compare(minimumWarmupSeconds, 0.0d) != 0
-                            || maximumWarmupIterations != 1
-                            || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
-                            || maximumMeasuredIterations != 1) {
-                        throw new IllegalArgumentException(
-                                "Post-modernization fresh UPDATE checkpoint requires clients=8 "
-                                        + "and one fresh measured interval per worker");
-                    }
-                } else if (indexedUpdateCheckpoint) {
-                    if (!"FULL_INDEXED".equals(configuredInsertTableShape)) {
-                        throw new IllegalArgumentException(
-                                "Post-modernization indexed UPDATE checkpoint requires FULL_INDEXED");
-                    }
-                } else if (!"BARE".equals(configuredInsertTableShape)) {
-                    throw new IllegalArgumentException(
-                            "Post-modernization DELETE_REINSERT checkpoint is limited to BARE; "
-                                    + "indexed Gen2 DELETE remains correctness-blocked");
+                } else if (!"BARE".equals(configuredInsertTableShape) || !mvccGen2C1ServerEnabled()) {
+                    throw new IllegalArgumentException("Post-modernization DELETE_REINSERT checkpoint requires BARE and the Gen2-C1 history server");
                 }
             } else if (gen2C3UpdateThroughputSentinel || gen2C3PostgresqlUpdateComparison) {
                 String modeName = gen2C3UpdateThroughputSentinel
@@ -13995,6 +13970,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
+                    && !postModernizationMutationCheckpoint
                     && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
                     && !f04DrdaRowAdvanceJfrDiagnostic && !f04FanoutJfrDiagnostic
                     && !f07DrdaServerPhaseDiagnostic

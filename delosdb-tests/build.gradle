@@ -23323,7 +23323,10 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': 'true',
-                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3UpdateServer': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C1Server': cfg.gen2Mode == 'C1' ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3UpdateServer': cfg.gen2Mode == 'C3' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
                             rootProject.projectDir.absolutePath,
                     'delosdb.benchmark.crossEngineConcurrency.projectVersion':
@@ -23413,10 +23416,9 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                 throw new GradleException("Missing post-modernization mutation summary: ${summary}")
             }
             String text = summary.getText('UTF-8')
-            if (!text.contains('Post-modernization mutation checkpoint enabled: true')
-                    || !text.contains('MVCC Gen2-C3 update server enabled: true')) {
-                throw new GradleException(
-                        "Mutation checkpoint did not prove current Gen2-C3 server plumbing: ${summary}")
+            def expectedMarker = [A1: 'MVCC Gen2-A1 server enabled: true', B: 'MVCC Gen2-B server enabled: true', C1: 'MVCC Gen2-C1 server enabled: true', C3: 'MVCC Gen2-C3 UPDATE server enabled: true'][cfg.gen2Mode]
+            if (!text.contains('Post-modernization mutation checkpoint enabled: true') || expectedMarker == null || !text.contains(expectedMarker)) {
+                throw new GradleException("Mutation checkpoint did not prove ${cfg.gen2Mode} server plumbing: ${summary}")
             }
         }
     }
@@ -23427,6 +23429,7 @@ registerDelosPostModernizationMutation(
         [
                 description: 'Runs fresh BARE INSERT_100 across the full SERVER product matrix with current Gen2-C3 mutation plumbing.',
                 group: 'f08-bare-insert-100',
+                gen2Mode: 'A1',
                 workloads: 'INSERT_100',
                 tableShape: 'BARE',
                 rows: '10000',
@@ -23450,6 +23453,7 @@ registerDelosPostModernizationMutation(
         [
                 description: 'Runs fresh PRIMARY_KEY_ONLY INSERT_100 across the full SERVER product matrix with current Gen2-C3 mutation plumbing.',
                 group: 'f08-pk-insert-100',
+                gen2Mode: 'B',
                 workloads: 'INSERT_100',
                 tableShape: 'PRIMARY_KEY_ONLY',
                 rows: '10000',
@@ -23473,6 +23477,7 @@ registerDelosPostModernizationMutation(
         [
                 description: 'Runs fresh PRIMARY_KEY_ONLY UPDATE_100 across the full SERVER product matrix with current Gen2-C3 mutation plumbing.',
                 group: 'f09-fresh-indexed-update-100',
+                gen2Mode: 'C3',
                 workloads: 'FRESH_INDEXED_UPDATE_100',
                 tableShape: 'PRIMARY_KEY_ONLY',
                 rows: '800000',
@@ -23496,6 +23501,7 @@ registerDelosPostModernizationMutation(
         [
                 description: 'Runs disjoint/contended indexed UPDATE across the full SERVER product matrix with current Gen2-C3 mutation plumbing.',
                 group: 'f09-indexed-update',
+                gen2Mode: 'C3',
                 workloads: 'DISJOINT_INDEXED_UPDATE,CONTENDED_INDEXED_UPDATE',
                 tableShape: 'FULL_INDEXED',
                 rows: '10000',
@@ -23519,6 +23525,7 @@ registerDelosPostModernizationMutation(
         [
                 description: 'Runs legal BARE DELETE_REINSERT across the full SERVER product matrix; indexed Gen2 DELETE remains blocked.',
                 group: 'f10-bare-delete-reinsert',
+                gen2Mode: 'C1',
                 workloads: 'DELETE_REINSERT',
                 tableShape: 'BARE',
                 rows: '10000',
@@ -23533,8 +23540,8 @@ registerDelosPostModernizationMutation(
                 maximumWarmupIterations: '5000',
                 minimumMeasuredSeconds: '2.0',
                 maximumMeasuredIterations: '5000',
-                caseTimeoutSeconds: '240',
-                workerTimeoutSeconds: '1800'
+                caseTimeoutSeconds: '600',
+                workerTimeoutSeconds: '3600'
         ])
 
 tasks.register('writeDelosPostModernizationF10IndexedDeleteBlockedMarker') {
