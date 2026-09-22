@@ -1,3 +1,3 @@
-6bcf6c99317ecff859bc54978f4e6275939898778f6e47f9c249012e50163f64  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java
-2e16e56afc96c99eea2e5e6e60405d4fc197d4999a16526f327bf058803b28f0  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java
-1ae2d00347f2dfa7d3c953512a3517516fc642cf79351a854422b8c7ba121298  MANIFEST.txt
+af4cabb6618e6c54cfaa8327ce4eb50bee5f26ad611a1382ff365ff706112361  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
+0a47fe2f8a06d7cc4c760510f13f50cf982ac6c00b45d8a4585900c32ecea648  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
+d5d7c00595d72b814d665e0dbc68d2cc015fa0107c02a3c853592c3bc9f83bbe  MANIFEST.txt

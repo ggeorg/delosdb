@@ -404,7 +404,7 @@ final class MvccRawStoreRuntime {
                 return;
             }
             committedTransactionSequences.putAll(
-                    metadata.readCommittedTransactionStatuses(transactionManager.getRawStoreXact()));
+                    metadata.readCommittedTransactionStatuses(transactionManager));
             committedTransactionStatusesLoaded = true;
         }
     }

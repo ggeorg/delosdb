@@ -312,6 +312,32 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
+    Map<Long, Long> readCommittedTransactionStatuses(TransactionManager parent)
+            throws StandardException {
+        TransactionController child = null;
+        boolean committed = false;
+        try {
+            child = parent.startNestedUserTransaction(false, true);
+            if (!(child instanceof TransactionManager childManager)) {
+                throw StandardException.newException(
+                        SQLState.NOT_IMPLEMENTED,
+                        "RawStore MVCC transaction-status reload requires a Derby transaction manager");
+            }
+            Map<Long, Long> statuses = readCommittedTransactionStatuses(
+                    childManager.getRawStoreXact());
+            child.commit();
+            committed = true;
+            return statuses;
+        } catch (StandardException | RuntimeException | Error failure) {
+            if (!committed) {
+                abortChild(child, failure);
+            }
+            throw failure;
+        } finally {
+            destroyChild(child);
+        }
+    }
+
     Map<Long, Long> readCommittedTransactionStatuses(Transaction transaction)
             throws StandardException {
         ContainerHandle container = transaction.openContainer(
