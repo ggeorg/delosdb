@@ -1,29 +1,55 @@
-DelosDB Gen2-C3 F05 covering plan decomposition overlay
+DelosDB Gen2-C3 F05 batched base-fetch A/B overlay
 
 Purpose
 -------
-Prove whether the large six-engine throughput gain from adding covering
-ORDER(customer_id,id) and LINE(order_id,id) indexes is caused by eliminating
-INDEX_TO_BASE_ROW, rather than by an unrelated optimizer/join-plan change.
+Falsify whether scalar INDEX_TO_BASE_ROW execution is the primary remaining
+F05 selective-join bottleneck by batching a bounded group of index RowLocations
+and decoding rows from the same Gen2-C3 CURRENT page under one page latch.
 
-Captured variants
------------------
-Heap and Gen2-C3:
-- natural non-covering
-- forced indexed/NL non-covering
-- natural covering
-- forced indexed/NL covering
+Evidence
+--------
+The F05 covering control changes only the inner indexes and moves Gen2 from:
+  2140 tx/s non-covering
+to:
+  3462 tx/s covering
+while PostgreSQL remains essentially flat:
+  3397 -> 3402 tx/s
 
-For each variant the diagnostic writes EXPLAIN and EXPLAIN ANALYZE and
-summarizes:
-- INDEX_TO_BASE_ROW node count
-- INDEX_SCAN node count
-- HASH join count
-- NESTED LOOP count
-- total openMillis
-- total nextMillis
+The forced plan decomposition proves the same nested-loop shape and row/open
+counts before and after covering. Non-covering has exactly two
+INDEX_TO_BASE_ROW nodes; covering has zero.
 
-All variants must produce the same semantic fingerprint.
+Experiment
+----------
+OFF by default.
 
-Diagnostic only. No production SQL engine, storage, optimizer, WAL/recovery,
-durable-format, or benchmark-threshold changes.
+Enable both:
+  -Ddelosdb.experimental.indexToBaseRowBatchFetch=true
+  -Ddelosdb.experimental.mvccBaseFetchBatch=true
+
+Optional:
+  -Ddelosdb.experimental.indexToBaseRowBatchSize=16
+
+SQL engine:
+- IndexRowToBaseRowResultSet looks ahead up to the bounded batch size.
+- Source rows are detached so logical result order is preserved.
+- The optional access-method batch API receives corresponding RowLocations.
+
+Gen2-C3 access method:
+- read-only statement-snapshot controllers only;
+- groups supplied CURRENT RowLocations by physical page;
+- latches each referenced CURRENT page once;
+- decodes every matching row from that page;
+- writes each result into its original batch slot;
+- any miss/stale hint/invisible row falls back to the existing scalar fetch.
+
+No semantic changes
+-------------------
+No result reordering.
+No optimizer or join-strategy changes.
+No UPDATE/DELETE path changes.
+No visibility/CURRENT/HISTORY changes.
+No RawStore WAL/recovery or durable-format changes.
+No benchmark thresholds or semantic-oracle weakening.
+
+Diagnostic only. Do not promote directly from this overlay.
