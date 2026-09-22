@@ -11,6 +11,8 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Properties;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
@@ -44,6 +46,12 @@ final class MvccRawStoreDatabaseMetadata {
     static final int NEXT_COMMIT_SEQUENCE_FIELD = 4;
     static final int RECOVERY_PUBLICATION_CEILING_FIELD = 5;
     static final int FIELD_COUNT = 6;
+
+    private static final long TRANSACTION_STATUS_MAGIC = 0x44454c4f5354584eL; // "DELOSTXN"
+    private static final int TRANSACTION_STATUS_MAGIC_FIELD = 0;
+    private static final int TRANSACTION_STATUS_TRANSACTION_ID_FIELD = 1;
+    private static final int TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD = 2;
+    private static final int TRANSACTION_STATUS_FIELD_COUNT = 3;
 
     private static final int INSERT_FLAGS = Page.INSERT_UNDO_WITH_PURGE;
     private static final int SEGMENT_ID = 0;
@@ -254,6 +262,150 @@ final class MvccRawStoreDatabaseMetadata {
         } finally {
             destroyRaw(nested, committed);
         }
+    }
+
+    void stageCommittedTransactionStatus(
+            Transaction parent,
+            long transactionId,
+            long commitSequence) throws StandardException {
+        if (transactionId <= 0L || commitSequence <= 0L) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC committed transaction status requires positive IDs: tx="
+                            + transactionId + ", commit=" + commitSequence);
+        }
+        ContainerHandle container = parent.openContainer(
+                requireContainerKey(),
+                lockingPolicy(parent),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw missingContainer();
+        }
+        Page page = null;
+        try {
+            Object[] row = transactionStatusRow(parent, transactionId, commitSequence);
+            page = container.getPageForInsert(0);
+            if (insertTransactionStatus(page, row)) {
+                return;
+            }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+            page = container.getPageForInsert(ContainerHandle.GET_PAGE_UNFILLED);
+            if (insertTransactionStatus(page, row)) {
+                return;
+            }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+            page = container.addPage();
+            if (!insertTransactionStatus(page, row)) {
+                throw new IllegalStateException(
+                        "RawStore MVCC transaction-status row did not fit on an empty page");
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    Map<Long, Long> readCommittedTransactionStatuses(Transaction transaction)
+            throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                requireContainerKey(),
+                lockingPolicy(transaction),
+                ContainerHandle.MODE_READONLY);
+        if (container == null) {
+            throw missingContainer();
+        }
+        Map<Long, Long> statuses = new LinkedHashMap<>();
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            validateControlRow(transaction, page);
+            while (page != null) {
+                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                        ? Page.FIRST_SLOT_NUMBER + 1
+                        : Page.FIRST_SLOT_NUMBER;
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)
+                            || page.fetchNumFieldsAtSlot(slot) != TRANSACTION_STATUS_FIELD_COUNT) {
+                        continue;
+                    }
+                    Object[] row = transactionStatusTemplate(transaction);
+                    page.fetchFromSlot(null, slot, row, null, false);
+                    if (MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_MAGIC_FIELD)
+                            != TRANSACTION_STATUS_MAGIC) {
+                        continue;
+                    }
+                    long transactionId = MvccRawStoreFormat.longAt(
+                            row, TRANSACTION_STATUS_TRANSACTION_ID_FIELD);
+                    long commitSequence = MvccRawStoreFormat.longAt(
+                            row, TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD);
+                    if (transactionId <= 0L || commitSequence <= 0L) {
+                        throw new IllegalStateException(
+                                "RawStore MVCC transaction-status row is invalid: tx="
+                                        + transactionId + ", commit=" + commitSequence);
+                    }
+                    Long previous = statuses.put(transactionId, commitSequence);
+                    if (previous != null && previous.longValue() != commitSequence) {
+                        throw new IllegalStateException(
+                                "RawStore MVCC transaction status is duplicated with different commit sequences: tx="
+                                        + transactionId + ", first=" + previous + ", second=" + commitSequence);
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+            return Map.copyOf(statuses);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+    }
+
+    private static boolean insertTransactionStatus(Page page, Object[] row)
+            throws StandardException {
+        if (page == null) {
+            return false;
+        }
+        return page.insertAtSlot(
+                        page.recordCount(),
+                        row,
+                        null,
+                        null,
+                        (byte) INSERT_FLAGS,
+                        100)
+                != null;
+    }
+
+    private static Object[] transactionStatusRow(
+            Transaction transaction,
+            long transactionId,
+            long commitSequence) throws StandardException {
+        Object[] row = transactionStatusTemplate(transaction);
+        row[TRANSACTION_STATUS_MAGIC_FIELD] =
+                MvccRawStoreFormat.longValue(transaction, TRANSACTION_STATUS_MAGIC);
+        row[TRANSACTION_STATUS_TRANSACTION_ID_FIELD] =
+                MvccRawStoreFormat.longValue(transaction, transactionId);
+        row[TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD] =
+                MvccRawStoreFormat.longValue(transaction, commitSequence);
+        return row;
+    }
+
+    private static Object[] transactionStatusTemplate(Transaction transaction)
+            throws StandardException {
+        return new Object[] {
+                MvccRawStoreFormat.longValue(transaction, 0L),
+                MvccRawStoreFormat.longValue(transaction, 0L),
+                MvccRawStoreFormat.longValue(transaction, 0L)
+        };
     }
 
     private static void initialize(Transaction transaction, ContainerKey key)

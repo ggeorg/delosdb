@@ -1,21 +1,37 @@
-DelosDB F08-E commit-stamp elision upper-bound control
+DelosDB F08-F transaction-status visibility control
 
-Purpose:
-- Diagnostic-only causal upper bound for F08 fresh INSERT commit stamping.
-- Adds a default-OFF property that deliberately skips commit-time CURRENT-row stamps
-  only when the entire pending set is a fresh inline INSERT batch.
-- The no-stamp lane is intentionally NON-SEMANTIC after commit: rows retain
-  UNCOMMITTED_SEQUENCE and normal post-commit visibility is not valid.
-- This is not a production candidate and must not be enabled outside the focused task.
+Purpose
+-------
+Falsify whether replacing per-row fresh-INSERT commit restamping with one durable
+transaction-status record per committing transaction can retain MVCC snapshot,
+rollback, reopen, uniqueness, and crash-recovery semantics while recovering the
+large commit-time upper bound established by F08-E.
 
-Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
-- delosdb-tests/build.gradle
+Scope
+-----
+- Experimental and default OFF.
+- Fresh inline Gen2 INSERT transactions only (Gen2-A1 / Gen2-B current-row topology).
+- Persists transactionId -> commitSequence in the existing RawStore-backed database
+  metadata container in the same user RawStore transaction as the inserted rows.
+- Unstamped CURRENT visibility resolves creatorTransactionId through that durable
+  commit-status mapping against the existing snapshot commit-sequence frontier.
+- Reloads durable transaction statuses on database boot/reopen.
+- Preserves compatibility with normally stamped CURRENT rows.
+- Adds focused BARE/PK timing/WAL control plus snapshot, rollback, reopen,
+  duplicate-key, and both RawStore crash-boundary proofs.
 
-Focused task:
-:delosdb-tests:runDelosF08CommitStampElisionUpperBound
+Not a production promotion
+--------------------------
+The status ledger is deliberately simple and append-only for causal validation.
+It has not yet been proven under the canonical 8-client F08 server workload and
+may introduce metadata-container contention or long-term status-retention cost.
+UPDATE/DELETE/history migration for status-backed CURRENT rows is outside this
+fresh-INSERT control and must be designed before any production promotion.
 
-Expected report directory:
-build/reports/delosdb/benchmarks/f08-commit-stamp-elision-upper-bound
+Feature property
+----------------
+delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled
+
+Focused task
+------------
+:delosdb-tests:runDelosF08TransactionStatusVisibilityControl

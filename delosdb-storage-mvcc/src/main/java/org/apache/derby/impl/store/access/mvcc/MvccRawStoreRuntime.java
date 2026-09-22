@@ -89,9 +89,12 @@ final class MvccRawStoreRuntime {
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
+    private final Map<Long, Long> committedTransactionSequences = new ConcurrentHashMap<>();
+    private volatile boolean committedTransactionStatusesLoaded;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final int commitSequenceReservationBlockSize;
     private final boolean concurrentCommitPublication;
+    private final boolean transactionStatusVisibility;
     private final AtomicReferenceArray<CurrentRowAnchor> currentRowAnchors;
     private final AtomicReferenceArray<CurrentVersionReadImage> currentVersionReadImages;
     private final TreeSet<Long> terminalCommitSequences = new TreeSet<>();
@@ -131,6 +134,8 @@ final class MvccRawStoreRuntime {
         }
         concurrentCommitPublication = Boolean.parseBoolean(System.getProperty(
                 CONCURRENT_COMMIT_PUBLICATION_PROPERTY, "true"));
+        transactionStatusVisibility = Boolean.getBoolean(
+                MvccRawStoreFormat.GEN2_TRANSACTION_STATUS_VISIBILITY_ENABLED_PROPERTY);
         String slotText = System.getProperty(CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY, "4096");
         int slots;
         try {
@@ -386,6 +391,50 @@ final class MvccRawStoreRuntime {
         if (recoveryPublicationCeiling >= 0L) {
             observeRecoveryPublicationCeiling(recoveryPublicationCeiling);
         }
+        ensureCommittedTransactionStatusesLoaded(transactionManager);
+    }
+
+    private void ensureCommittedTransactionStatusesLoaded(TransactionManager transactionManager)
+            throws StandardException {
+        if (!transactionStatusVisibilityEnabled() || committedTransactionStatusesLoaded) {
+            return;
+        }
+        synchronized (committedTransactionSequences) {
+            if (committedTransactionStatusesLoaded) {
+                return;
+            }
+            committedTransactionSequences.putAll(
+                    metadata.readCommittedTransactionStatuses(transactionManager.getRawStoreXact()));
+            committedTransactionStatusesLoaded = true;
+        }
+    }
+
+    boolean transactionStatusVisibilityEnabled() {
+        return transactionStatusVisibility;
+    }
+
+    void stageCommittedTransactionStatus(
+            Transaction rawTransaction,
+            long transactionId,
+            long commitSequence) throws StandardException {
+        metadata.stageCommittedTransactionStatus(rawTransaction, transactionId, commitSequence);
+    }
+
+    void publishCommittedTransactionStatus(long transactionId, long commitSequence) {
+        Long previous = committedTransactionSequences.put(transactionId, commitSequence);
+        if (previous != null && previous.longValue() != commitSequence) {
+            throw new IllegalStateException(
+                    "RawStore MVCC transaction status changed after commit: tx="
+                            + transactionId + ", first=" + previous + ", second=" + commitSequence);
+        }
+    }
+
+    long committedTransactionSequence(long transactionId) {
+        if (!transactionStatusVisibilityEnabled() || transactionId <= 0L) {
+            return 0L;
+        }
+        Long sequence = committedTransactionSequences.get(transactionId);
+        return sequence == null ? 0L : sequence.longValue();
     }
 
     void lockShared(Transaction transaction, MvccRawStoreLogicalLock lock)

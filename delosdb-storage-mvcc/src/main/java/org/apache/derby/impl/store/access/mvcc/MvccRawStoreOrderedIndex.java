@@ -200,7 +200,10 @@ final class MvccRawStoreOrderedIndex {
                             transaction, table, candidateEntry.rowLocation());
                     MvccRawStoreTable.DirectoryHeadSummary summary = directory.head().summary();
                     if (summary.available()
-                            && summary.visibleTo(context.transactionId(), committedSequence)
+                            && context.currentVisibleTo(
+                                    summary.creatorTransactionId(),
+                                    summary.beginSequence(),
+                                    committedSequence)
                             && summary.tombstone()) {
                         continue;
                     }

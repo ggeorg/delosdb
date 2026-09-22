@@ -1,5 +1,12 @@
-d81e84e39a0d48cf24eb4053084a25950df619658a1b25473301c61dfe146a4f  ./MANIFEST.txt
-59df2211618c76197d7e50c33e4caf5d038a699083cd1e1531fa72c0d2f2125c  ./delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
-e162d0cab92f4be67e51718e6882f76d087d7519ba714b30c23b211311a9f113  ./delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
-c4d671bcb916c15b9a31cb0046fd3a77d779c8d9bfb67714720f63ab5f74eca5  ./delosdb-tests/build.gradle
-0c5c3a44fb6a61cf7a3f17079606606e652f25b171d1ee078bf719de14195231  ./delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+0a1e885a1186ef7de3bb51bcb6aad7d1e954a0fb488e2f9e3868a464af4c4aab  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
+678be406e7653a2ed1ff579d95d384eae03e73c0cd105934f7d5b487cc5905d0  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
+64a76cbf8619570d84f73dfea1409bcab871bcd695c132ef4dfb933f28819403  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+04432601fd63539ddaacc0fdecdc9d83bc07872eac3651b718314baa86e08b7b  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReader.java
+6c20e3b1b88e9db9e445ddbda20abc7538157f0986671a055fdddf95640be977  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java
+8d9f39471dc45908b75b581aa770d75666fc028a272deec9176d7234f5348395  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
+a249ebb0708bcd0937e3290526368feab12528ae55f3069ba65007861567ad4e  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
+b79174b8ec730124bb00ee33d7e5896b2d353b7ecc221ef91c710c3a49dd614d  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
+4235c40f63c3d803076497085a6d4321e6a5df23a11b361ba572b6af732615d2  delosdb-tests/build.gradle
+3f626ec35662c318cbc1ed2dd76e59851d6bc9519653f4de296dcdcd3990fc0e  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.java
+41cc266c61110d7b8c5e2ae78663a92bb565bc142d8a59fed2afac1760258dfc  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java
+6fe9c2a8e53aed24b9f1a8758ac5b3827ce2ede807b39c6d1c00055d5366b1df  MANIFEST.txt

@@ -228,7 +228,7 @@ final class MvccRawStoreConglomerateController
                     visible = currentBaseFetchDecoder(projection).readVisibleAt(
                             location,
                             snapshotSequence,
-                            context.transactionId(),
+                            context,
                             readDirectoryContainer(),
                             readVersionReader());
                 } else {

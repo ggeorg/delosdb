@@ -211,7 +211,10 @@ final class MvccRawStoreIndexedReader implements AutoCloseable {
             if (summary.available()) {
                 metrics.directoryHeadSummaryChecked();
                 metrics.visibilityChecked();
-                if (summary.visibleTo(context.transactionId(), snapshotSequence)) {
+                if (context.currentVisibleTo(
+                        summary.creatorTransactionId(),
+                        summary.beginSequence(),
+                        snapshotSequence)) {
                     metrics.directoryHeadSummaryHit();
                     metrics.coveredCandidate();
                     if (summary.tombstone()) {

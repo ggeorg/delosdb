@@ -993,6 +993,38 @@ tasks.named('runDelosF08CommitStampElisionUpperBound') {
     }
 }
 
+registerDelosFocusedTest(
+        'runDelosF08TransactionStatusVisibilityControl',
+        'Runs the F08-F durable transaction-status visibility control with semantic and crash-recovery proofs.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/F08InsertCommitDecompositionTest.class',
+                'org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.class'
+        ],
+        [
+                'delosdb.benchmark.f08InsertCommit.fixtureRows': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.fixtureRows').getOrElse('1000'),
+                'delosdb.benchmark.f08InsertCommit.repetitions': providers.gradleProperty(
+                        'delosdb.benchmark.f08InsertCommit.repetitions').getOrElse('11'),
+                'delosdb.benchmark.f08InsertCommit.transactionStatusControl': 'true',
+                'delosdb.benchmark.f08InsertCommit.noStampControl': 'false',
+                'delosdb.benchmark.f08InsertCommit.batchControl': 'false',
+                'delosdb.benchmark.f08InsertCommit.walBatchControl': 'false',
+                'delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled': 'true',
+                'delosdb.benchmark.f08InsertCommit.reportDirectory': rootProject.layout.buildDirectory
+                        .dir('reports/delosdb/benchmarks/f08-transaction-status-visibility-control').get().asFile.absolutePath
+        ])
+
+tasks.named('runDelosF08TransactionStatusVisibilityControl') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-transaction-status-visibility-control'))
+    doFirst {
+        project.delete(rootProject.layout.buildDirectory.dir(
+                'reports/delosdb/benchmarks/f08-transaction-status-visibility-control').get().asFile)
+    }
+}
+
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
     systemProperty 'delosdb.experimental.mvccGen2C2.archivedUndo.enabled', gen2C2ArchivedUndo
     dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')

@@ -57,6 +57,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private MvccRawStoreRuntime.SnapshotLease snapshotLease;
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
+    private boolean transactionStatusCommitStaged;
     private boolean vacuumMutation;
 
     MvccRawStoreTransactionContext(
@@ -426,6 +427,20 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return runtime.isTransactionActive(candidateTransactionId);
     }
 
+    boolean currentVisibleTo(
+            long creatorTransactionId,
+            long beginSequence,
+            long snapshotSequence) {
+        if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            if (creatorTransactionId != 0L && creatorTransactionId == transactionId) {
+                return true;
+            }
+            long committedSequence = runtime.committedTransactionSequence(creatorTransactionId);
+            return committedSequence > 0L && committedSequence <= snapshotSequence;
+        }
+        return beginSequence > 0L && beginSequence <= snapshotSequence;
+    }
+
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
         List<MvccRawStoreTable.PendingVersion> committableVersions =
@@ -452,10 +467,17 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         publicationLockHeld = !runtime.concurrentCommitPublication();
         try {
             stageAllocatorHighWaters();
-            MvccRawStoreTable.stampPendingVersions(
-                    rawTransaction,
-                    committableVersions,
-                    reservedCommitSequence);
+            transactionStatusCommitStaged = runtime.transactionStatusVisibilityEnabled()
+                    && MvccRawStoreTable.freshInlineInsertBatch(committableVersions);
+            if (transactionStatusCommitStaged) {
+                runtime.stageCommittedTransactionStatus(
+                        rawTransaction, transactionId, reservedCommitSequence);
+            } else {
+                MvccRawStoreTable.stampPendingVersions(
+                        rawTransaction,
+                        committableVersions,
+                        reservedCommitSequence);
+            }
             publishOrderedIndexReplacements(committableIndexes);
             if (publicationLockHeld) {
                 runtime.stageCommittedHighWater(rawTransaction, reservedCommitSequence);
@@ -495,6 +517,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreRuntime.haltAtFailurePoint(
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
+            if (transactionStatusCommitStaged) {
+                runtime.publishCommittedTransactionStatus(transactionId, reservedCommitSequence);
+            }
             // The RawStore commit is durable at this point, but the commit
             // sequence is not yet visible to new snapshots. Publish the
             // transient current-row anchor first so a snapshot which observes
@@ -514,6 +539,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             runtime.publishConcurrentCommit(transactionId, reservedCommitSequence);
         }
         reservedCommitSequence = 0L;
+        transactionStatusCommitStaged = false;
         clearLocalState();
         committedCreates.forEach(runtime::registerTable);
         runtime.afterUserCommit(committedVersions);
@@ -524,6 +550,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     public void commitFailed(CommitMode mode, Throwable failure) {
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
+        transactionStatusCommitStaged = false;
         if (!runtime.concurrentCommitPublication()) {
             reservedCommitSequence = 0L;
         }
@@ -533,6 +560,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     public void beforeAbort() {
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
+        transactionStatusCommitStaged = false;
     }
 
     @Override
