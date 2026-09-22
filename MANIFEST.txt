@@ -1,44 +1,42 @@
-DelosDB pre-full-benchmark cleanup overlay
+DelosDB post-modernization full cross-engine checkpoint overlay
 
 Purpose
 -------
-Return the working tree to the accepted post-modernization production state
-before running the full cross-engine benchmark checkpoint.
+Complete the benchmark-clean tree with a scientifically comparable full
+SERVER checkpoint across:
+- DelosDB Gen2-C3
+- DelosDB Heap
+- upstream Derby
+- H2 (retained reference)
+- PostgreSQL 18.4
+- MariaDB 12.3.2
 
-KEPT
-----
-- MVCC unique-index cardinality production fix.
-- Statement-lifetime MVCC read boundaries for NOHOLD base fetches.
-- MvccStatementReadBoundaryPolicyTest and stable-suite registration.
-- Physical scan costing default.
-- Physical RowLocation costing default.
-- Consolidated materialized CURRENT decoder.
-- Consolidated non-covering base fetch decoder.
-- Statement-lifetime read boundaries.
-- Canonical F04 simple-join statistics stabilization.
-- Canonical F05 multi-join statistics stabilization.
-- Existing permanent benchmark and attribution infrastructure from the
-  accepted source authority.
+What this adds
+--------------
+1. Fixes mutation server-flag forwarding from coordinator to worker for:
+   - mvccGen2A1Server
+   - mvccGen2BServer
+   - mvccGen2C3UpdateServer
 
-REMOVED / RESTORED
-------------------
-- Failed bounded/page-grouped INDEX_TO_BASE_ROW batch prototype:
-    AccessMethodBaseFetchBatch
-    IndexRowToBaseRowResultSet batch buffering
-    MVCC batch fetch implementation
-    hinted-page batch decoder helper
-- Temporary F05 row-production, covering-index, PK-suffix and covering-plan
-  diagnostic workload/task additions.
-- Phase-2D CLOSE_CURSORS_AT_COMMIT reachability modification that existed only
-  to test the rejected batching prototype.
+   Older mutation plumbing forwarded sentinel mode but not these server-enable
+   flags. F08/F09 exact historical numbers must therefore be re-established.
 
-Deletion
---------
-Run:
-  sh cleanup-pre-full-benchmark.sh
+2. Adds current Gen2-C3 six-engine mutation checkpoint tasks:
+   - F08 BARE INSERT_100
+   - F08 PRIMARY_KEY_ONLY INSERT_100
+   - F09 FRESH_INDEXED_UPDATE_100
+   - F09 DISJOINT_INDEXED_UPDATE + CONTENDED_INDEXED_UPDATE
+   - F10 legal BARE DELETE_REINSERT
 
-The cleanup script removes the obsolete AccessMethodBaseFetchBatch.java file
-and deletes itself.
+3. Records indexed Gen2 DELETE as BLOCKED rather than bypassing the historical
+   SQL-index reachability correctness guard.
 
-No benchmark thresholds are changed.
-No production performance promotion is reverted.
+4. Adds umbrella task:
+   runDelosPostModernizationFullCrossEngineCheckpoint
+
+The existing canonical Gen2-C3 sentinels remain authoritative for:
+F01-F07 and F11-F13.
+
+No production SQL/storage behavior is changed.
+No benchmark thresholds are weakened.
+No correctness guard is bypassed.
