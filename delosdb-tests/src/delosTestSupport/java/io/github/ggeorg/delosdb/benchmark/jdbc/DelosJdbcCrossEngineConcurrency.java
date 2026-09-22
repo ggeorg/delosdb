@@ -7537,11 +7537,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.out.flush();
                 }
             } else if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                    || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING
                     || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || spec.workload() == Workload.JOIN_4WAY_FANOUT) {
                 prepareMultiJoinFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
                         config.rowCount(), config.commitBatchSize());
+                if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING) {
+                    prepareMultiJoinCoveringIndexes(verifier, scenario.tableName());
+                }
                 if (mvccRefreshMultiJoinStatisticsEnabled()
                         && options.target() == Target.DELOS_MVCC_DRDA) {
                     phase2BUpdateStatistics(verifier, multiJoinCustomerTableName(scenario.tableName()));
@@ -7734,6 +7738,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append("; create index ").append(joinFanoutChildTableName(table)).append("_P_IDX on ")
                         .append(joinFanoutChildTableName(table)).append(" (parent_id)");
             } else if (workload == Workload.JOIN_3WAY_SELECTIVE
+                    || workload == Workload.JOIN_3WAY_SELECTIVE_COVERING
                     || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || workload == Workload.JOIN_4WAY_FANOUT) {
                 ddl.append("; create table ").append(multiJoinCustomerTableName(table))
@@ -8794,6 +8799,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 spec.workload() == Workload.PROJECTION_COVERED
                                         || spec.workload() == Workload.JOIN_INDEXED_1TO1
                                         || spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_COVERING
                                         || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                                         || spec.workload() == Workload.JOIN_4WAY_FANOUT
                                         ? DelosSqlSemanticOracle.RowOrder.UNORDERED
@@ -10054,6 +10060,22 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
     }
 
+    private static void prepareMultiJoinCoveringIndexes(
+            Connection connection,
+            String table) throws SQLException {
+        String order = multiJoinOrderTableName(table);
+        String line = multiJoinLineTableName(table);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create index " + order + "_C_ID_COVER_IDX on "
+                            + order + " (customer_id, id)");
+            statement.executeUpdate(
+                    "create index " + line + "_O_ID_COVER_IDX on "
+                            + line + " (order_id, id)");
+        }
+        connection.commit();
+    }
+
     private static void prepareHighCardGroupFixture(
             Connection connection,
             String table,
@@ -10452,7 +10474,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     "select p.id, c.id from " + joinFanoutParentTableName(table) + " p join "
                             + joinFanoutChildTableName(table)
                             + " c on c.parent_id = p.id where p.id between ? and ? order by p.id, c.id";
-            case JOIN_3WAY_SELECTIVE ->
+            case JOIN_3WAY_SELECTIVE, JOIN_3WAY_SELECTIVE_COVERING ->
                     "select c.id, o.id, l.id from " + multiJoinCustomerTableName(table) + " c join "
                             + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
                             + multiJoinLineTableName(table)
@@ -10485,6 +10507,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             statement.setInt(1, FITNESS_CATEGORY);
         } else if (workload == Workload.JOIN_INDEXED_FANOUT
                 || workload == Workload.JOIN_3WAY_SELECTIVE
+                || workload == Workload.JOIN_3WAY_SELECTIVE_COVERING
                 || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE) {
             statement.setInt(1, 1);
             statement.setInt(2, 100);
@@ -10507,7 +10530,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             case GROUP_LOW_CARD -> Math.min(17, rowCount);
             case JOIN_INDEXED_1TO1, GROUP_HIGH_CARD -> Math.min(1000, rowCount);
             case JOIN_INDEXED_FANOUT -> joinSelectiveParents(rowCount) * 10;
-            case JOIN_3WAY_SELECTIVE -> joinSelectiveParents(rowCount) * 4 * 3;
+            case JOIN_3WAY_SELECTIVE, JOIN_3WAY_SELECTIVE_COVERING ->
+                    joinSelectiveParents(rowCount) * 4 * 3;
             case JOIN_3WAY_SELECTIVE_AGGREGATE -> 1;
             case JOIN_4WAY_FANOUT -> joinBucketParents(rowCount, 7) * 4 * 3;
             case SORT_FULL -> rowCount;
@@ -10546,7 +10570,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         fingerprint = mix(fingerprint, resultSet.getInt(1));
                         fingerprint = mix(fingerprint, resultSet.getInt(2));
                     }
-                    case JOIN_3WAY_SELECTIVE -> {
+                    case JOIN_3WAY_SELECTIVE, JOIN_3WAY_SELECTIVE_COVERING -> {
                         long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
                         tuple = mix(tuple, resultSet.getInt(2));
                         tuple = mix(tuple, resultSet.getInt(3));
@@ -12388,6 +12412,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         JOIN_INDEXED_1TO1(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_INDEXED_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_3WAY_SELECTIVE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_3WAY_SELECTIVE_COVERING(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_3WAY_SELECTIVE_AGGREGATE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_4WAY_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_HIGH_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
@@ -12495,6 +12520,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == JOIN_INDEXED_1TO1
                     || this == JOIN_INDEXED_FANOUT
                     || this == JOIN_3WAY_SELECTIVE
+                    || this == JOIN_3WAY_SELECTIVE_COVERING
                     || this == JOIN_3WAY_SELECTIVE_AGGREGATE
                     || this == JOIN_4WAY_FANOUT
                     || this == GROUP_HIGH_CARD
@@ -13700,6 +13726,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 boolean f05RowProductionControl = configuredWorkloads.equals(List.of(
                         Workload.JOIN_3WAY_SELECTIVE,
                         Workload.JOIN_3WAY_SELECTIVE_AGGREGATE));
+                boolean f05CoveringJoinControl = configuredWorkloads.equals(List.of(
+                        Workload.JOIN_3WAY_SELECTIVE,
+                        Workload.JOIN_3WAY_SELECTIVE_COVERING));
                 boolean groupByFitness = configuredWorkloads.equals(List.of(
                         Workload.GROUP_LOW_CARD,
                         Workload.GROUP_HIGH_CARD));
@@ -13722,7 +13751,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 if ((!pointReadFitness && !rangeScanFitness && !projectionFitness
                                 && !simpleJoinFitness && !multiWayJoinFitness
-                                && !f05RowProductionControl && !groupByFitness
+                                && !f05RowProductionControl && !f05CoveringJoinControl && !groupByFitness
                                 && !sortFitness && !mixedReaderWriterGen2Fitness && !longReaderWriterGen2Fitness
                                 && !realisticTransactionGen2Fitness)
                         || (gen2C3ProjectedCurrentRead && !rangeScanFitness)) {
@@ -13741,7 +13770,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         ? List.of(4)
                         : (rangeScanFitness || projectionFitness
                                         || simpleJoinFitness || multiWayJoinFitness
-                                        || f05RowProductionControl || groupByFitness || sortFitness
+                                        || f05RowProductionControl || f05CoveringJoinControl || groupByFitness || sortFitness
                                         || mixedReaderWriterGen2Fitness || realisticTransactionGen2Fitness)
                                 ? List.of(8) : List.of(1, 8);
                 if (!clientValues().equals(expectedClients)) {
@@ -13750,7 +13779,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 List<Integer> expectedWidths = (projectionFitness
                                 || simpleJoinFitness || multiWayJoinFitness
-                                || f05RowProductionControl || groupByFitness || sortFitness
+                                || f05RowProductionControl || f05CoveringJoinControl || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? List.of(1) : List.of(10);
@@ -13760,7 +13789,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
                 String expectedTableShape = (projectionFitness
                                 || simpleJoinFitness || multiWayJoinFitness
-                                || f05RowProductionControl || groupByFitness || sortFitness
+                                || f05RowProductionControl || f05CoveringJoinControl || groupByFitness || sortFitness
                                 || mixedReaderWriterGen2Fitness || longReaderWriterGen2Fitness
                                 || realisticTransactionGen2Fitness)
                         ? "FULL_INDEXED" : "PRIMARY_KEY_ONLY";

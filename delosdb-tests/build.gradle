@@ -21316,6 +21316,130 @@ tasks.register('runDelosGen2C3F05RowProductionControl', JavaExec) {
     }
 }
 
+
+def delosGen2C3F05CoveringJoinControlReportRoot =
+        'reports/delosdb/benchmarks/gen2-c3-attribution/f05-covering-join-control'
+def delosGen2C3F05CoveringJoinControlDatabaseRoot =
+        'tmp/delos-gen2-c3-attribution/f05-covering-join-control'
+
+tasks.register('runDelosGen2C3F05CoveringJoinControl', JavaExec) {
+    group = 'verification'
+    description = 'Compares canonical vs covering-index F05 three-way joins across the SERVER engine matrix.'
+    dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            h2BenchmarkRuntime,
+            postgresqlBenchmarkRuntime,
+            mariadbBenchmarkRuntime)
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            delosGen2C3F05CoveringJoinControlReportRoot))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F05 covering-join control requires -Pdelosdb.sane=false')
+        }
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3ReadServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalRowLocationCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2ProjectedCurrentRead': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccPhysicalScanCost': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccRefreshMultiJoinStatistics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda,h2_server,postgresql,mariadb',
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2Classpath':
+                        h2BenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.h2ServerJar':
+                        h2BenchmarkRuntime.singleFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlClasspath':
+                        postgresqlBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbClasspath':
+                        mariadbBenchmarkRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlImage':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.serverContainer.postgresqlImage')
+                                .getOrElse('postgres:18.4'),
+                'delosdb.benchmark.crossEngineConcurrency.mariadbImage':
+                        providers.gradleProperty(
+                                'delosdb.benchmark.serverContainer.mariadbImage')
+                                .getOrElse('mariadb:12.3.2'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion':
+                        upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.h2DriverVersion':
+                        h2BenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.postgresqlDriverVersion':
+                        postgresqlBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.mariadbDriverVersion':
+                        mariadbBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3F05CoveringJoinControlDatabaseRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        rootProject.layout.buildDirectory.dir(
+                                delosGen2C3F05CoveringJoinControlReportRoot)
+                                .get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads':
+                        'JOIN_3WAY_SELECTIVE,JOIN_3WAY_SELECTIVE_COVERING',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '3',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '0',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'FULL_INDEXED',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '2',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '3',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '2.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '5.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '5000',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '3600',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+}
+
 tasks.register('runDelosGen2C3MultiWayJoinSentinel') {
     group = 'benchmark'
     description = 'Runs and validates the SERVER Gen2-C3 F05 multi-way join fitness comparison.'
