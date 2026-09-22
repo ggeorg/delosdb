@@ -1,77 +1,31 @@
-DelosDB Gen2-C3 F05 lazy version-chain metadata A/B overlay
+DelosDB Gen2-C3 F05 row-production control overlay
 
 Purpose
 -------
-Falsify whether the remaining matched-plan F05 MVCC base-fetch gap is
-materially caused by eagerly decoding version-chain metadata on the common
-visible current-version hit.
+Separate F05 three-way relational execution from result-row production /
+wire-consumption cost across the full SERVER engine matrix.
 
-Evidence leading here
----------------------
-Best accepted diagnostic combination so far:
-  read-directory-head-only
-  + read-head template reuse
-  + single-pass hinted version decode
+Diagnostic workloads
+--------------------
+JOIN_3WAY_SELECTIVE
+  Existing canonical query returning 1200 rows:
+    c.id, o.id, l.id
 
-  Heap = 0.761323 ms/execution
-  Gen2 = 1.280053 ms/execution
-  ratio = 1.681353x
+JOIN_3WAY_SELECTIVE_AGGREGATE
+  Same joins, same predicates, and consumes all three ids, but returns one row:
+    count(*), sum(c.id), sum(o.id), sum(l.id)
 
-Rejected as primary:
-  projected payload-holder reuse
-  version-page run reuse
-  CurrentRowAnchor directory bypass
-  larger CurrentRowAnchor cache
-  BTree SearchParameters reuse
+Both workloads use the same multi-join fixture, indexes, deterministic Delos
+statistics refresh, Gen2-C3 read architecture, physical scan cost, and
+physical RowLocation cost.
 
-The BTree experiment removed its allocation hotspot almost completely
-(~70% -> 0.02%) but produced:
-  Gen2 = 1.290203 ms/execution
+Interpretation
+--------------
+If PostgreSQL's advantage shrinks materially on the aggregate control, a
+large part of the canonical gap is row production / JDBC / protocol work.
 
-The surviving CPU profile remains dominated by:
-  StoreTypeUtil.readExternalFromArray
-  StoredPage.readRecordFromArray
+If the PostgreSQL advantage remains similar, the gap is primarily relational
+execution below result production.
 
-Current version-row projection always fetches all metadata fields, including
-creator/predecessor fields that the common committed-visible head does not
-need.
-
-Experiment
-----------
-OFF by default:
-  existing full version-row metadata projection
-
-ON:
-  -Ddelosdb.experimental.mvccLazyVersionChainMetadata=true
-
-For only the first hinted version in findVisible(), the decoder fetches:
-  kind
-  format
-  rowId
-  versionId
-  beginSequence
-  endSequence
-  flags
-  requested payload
-
-It intentionally omits:
-  creatorTransactionId
-  previousVersionId
-  previous-version physical hint
-
-If the version is committed and visible to the statement snapshot, it returns
-immediately. If it is uncommitted, not visible, stale, missing, or otherwise
-needs predecessor metadata, the existing full decoder/path is used unchanged.
-
-The overlay keeps the previously accepted single-pass hinted-version
-diagnostic and removes no visibility fallback.
-
-No changes
-----------
-No SQL or optimizer changes.
-No mutation/update/delete changes.
-No CURRENT/HISTORY or version-chain semantics.
-No RawStore WAL/recovery or durable formats.
-No benchmark thresholds or semantic-oracle weakening.
-
-This is diagnostic only. Do not promote directly from this overlay.
+Diagnostic only. No production engine, storage, optimizer, WAL/recovery,
+durable-format, or benchmark-threshold changes.

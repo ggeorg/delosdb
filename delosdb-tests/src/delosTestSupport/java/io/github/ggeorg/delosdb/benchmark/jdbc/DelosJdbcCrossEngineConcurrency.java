@@ -7537,6 +7537,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     System.out.flush();
                 }
             } else if (spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                    || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || spec.workload() == Workload.JOIN_4WAY_FANOUT) {
                 prepareMultiJoinFixture(
                         verifier, scenario.tableName(), options.target().createTableSuffix(),
@@ -7733,6 +7734,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         .append("; create index ").append(joinFanoutChildTableName(table)).append("_P_IDX on ")
                         .append(joinFanoutChildTableName(table)).append(" (parent_id)");
             } else if (workload == Workload.JOIN_3WAY_SELECTIVE
+                    || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                     || workload == Workload.JOIN_4WAY_FANOUT) {
                 ddl.append("; create table ").append(multiJoinCustomerTableName(table))
                         .append(" (id int not null primary key, bucket int not null)")
@@ -8792,6 +8794,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                                 spec.workload() == Workload.PROJECTION_COVERED
                                         || spec.workload() == Workload.JOIN_INDEXED_1TO1
                                         || spec.workload() == Workload.JOIN_3WAY_SELECTIVE
+                                        || spec.workload() == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE
                                         || spec.workload() == Workload.JOIN_4WAY_FANOUT
                                         ? DelosSqlSemanticOracle.RowOrder.UNORDERED
                                         : DelosSqlSemanticOracle.RowOrder.ORDERED;
@@ -10454,6 +10457,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
                             + multiJoinLineTableName(table)
                             + " l on l.order_id = o.id where c.id between ? and ?";
+            case JOIN_3WAY_SELECTIVE_AGGREGATE ->
+                    "select count(*), sum(c.id), sum(o.id), sum(l.id) from "
+                            + multiJoinCustomerTableName(table) + " c join "
+                            + multiJoinOrderTableName(table) + " o on o.customer_id = c.id join "
+                            + multiJoinLineTableName(table)
+                            + " l on l.order_id = o.id where c.id between ? and ?";
             case JOIN_4WAY_FANOUT ->
                     "select c.id, o.id, l.line_no, i.id from " + multiJoinCustomerTableName(table)
                             + " c join " + multiJoinOrderTableName(table)
@@ -10475,7 +10484,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 || workload == Workload.PROJECTION_FULL_ROW) {
             statement.setInt(1, FITNESS_CATEGORY);
         } else if (workload == Workload.JOIN_INDEXED_FANOUT
-                || workload == Workload.JOIN_3WAY_SELECTIVE) {
+                || workload == Workload.JOIN_3WAY_SELECTIVE
+                || workload == Workload.JOIN_3WAY_SELECTIVE_AGGREGATE) {
             statement.setInt(1, 1);
             statement.setInt(2, 100);
         } else if (workload == Workload.JOIN_4WAY_FANOUT) {
@@ -10498,6 +10508,7 @@ public final class DelosJdbcCrossEngineConcurrency {
             case JOIN_INDEXED_1TO1, GROUP_HIGH_CARD -> Math.min(1000, rowCount);
             case JOIN_INDEXED_FANOUT -> joinSelectiveParents(rowCount) * 10;
             case JOIN_3WAY_SELECTIVE -> joinSelectiveParents(rowCount) * 4 * 3;
+            case JOIN_3WAY_SELECTIVE_AGGREGATE -> 1;
             case JOIN_4WAY_FANOUT -> joinBucketParents(rowCount, 7) * 4 * 3;
             case SORT_FULL -> rowCount;
             default -> throw new IllegalArgumentException("Not a fitness read workload: " + workload);
@@ -10540,6 +10551,12 @@ public final class DelosJdbcCrossEngineConcurrency {
                         tuple = mix(tuple, resultSet.getInt(2));
                         tuple = mix(tuple, resultSet.getInt(3));
                         fingerprint += tuple;
+                    }
+                    case JOIN_3WAY_SELECTIVE_AGGREGATE -> {
+                        fingerprint = mix(fingerprint, resultSet.getLong(1));
+                        fingerprint = mix(fingerprint, resultSet.getLong(2));
+                        fingerprint = mix(fingerprint, resultSet.getLong(3));
+                        fingerprint = mix(fingerprint, resultSet.getLong(4));
                     }
                     case JOIN_4WAY_FANOUT -> {
                         long tuple = mix(0x9E3779B97F4A7C15L, resultSet.getInt(1));
@@ -12371,6 +12388,7 @@ public final class DelosJdbcCrossEngineConcurrency {
         JOIN_INDEXED_1TO1(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_INDEXED_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_3WAY_SELECTIVE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
+        JOIN_3WAY_SELECTIVE_AGGREGATE(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         JOIN_4WAY_FANOUT(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         GROUP_HIGH_CARD(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
         SORT_FULL(false, false, true, 1, Connection.TRANSACTION_READ_COMMITTED),
@@ -12477,6 +12495,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     || this == JOIN_INDEXED_1TO1
                     || this == JOIN_INDEXED_FANOUT
                     || this == JOIN_3WAY_SELECTIVE
+                    || this == JOIN_3WAY_SELECTIVE_AGGREGATE
                     || this == JOIN_4WAY_FANOUT
                     || this == GROUP_HIGH_CARD
                     || this == SORT_FULL;
