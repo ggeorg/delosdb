@@ -1,33 +1,29 @@
-DelosDB Gen2-C3 F05 covering-join control overlay
+DelosDB Gen2-C3 F05 covering plan decomposition overlay
 
 Purpose
 -------
-Separate non-covering base-row materialization from shared relational join
-execution on the current Gen2-C3 F05 three-way selective workload.
+Prove whether the large six-engine throughput gain from adding covering
+ORDER(customer_id,id) and LINE(order_id,id) indexes is caused by eliminating
+INDEX_TO_BASE_ROW, rather than by an unrelated optimizer/join-plan change.
 
-Workloads
----------
-JOIN_3WAY_SELECTIVE
-  Existing canonical shape.
+Captured variants
+-----------------
+Heap and Gen2-C3:
+- natural non-covering
+- forced indexed/NL non-covering
+- natural covering
+- forced indexed/NL covering
 
-JOIN_3WAY_SELECTIVE_COVERING
-  Identical SQL and cardinality, but the fixture additionally creates:
-    ORDER(customer_id, id)
-    LINE(order_id, id)
+For each variant the diagnostic writes EXPLAIN and EXPLAIN ANALYZE and
+summarizes:
+- INDEX_TO_BASE_ROW node count
+- INDEX_SCAN node count
+- HASH join count
+- NESTED LOOP count
+- total openMillis
+- total nextMillis
 
-These indexes contain the join key plus the selected table id, allowing ORDER
-and LINE to be satisfied index-only when selected by the optimizer.
+All variants must produce the same semantic fingerprint.
 
-All six SERVER engines receive the same additional indexes.
-
-Interpretation
---------------
-If Gen2/PostgreSQL closes materially on the covering workload, non-covering
-base-row materialization remains important.
-
-If the PostgreSQL advantage remains similar even when the inner legs become
-covering/index-only, the residual gap is primarily shared relational execution
-(join/projection/generated-row machinery), not MVCC base fetching.
-
-Diagnostic only. No production engine, optimizer, storage, WAL/recovery,
+Diagnostic only. No production SQL engine, storage, optimizer, WAL/recovery,
 durable-format, or benchmark-threshold changes.

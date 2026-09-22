@@ -60,6 +60,8 @@ public final class DelosJdbcCrossEngineConcurrency {
     private static final String PHASE2Q_PREFIX = "delosdb.phase2.f07SortDecomposition.";
     private static final String PHASE2U_PREFIX = "delosdb.phase2.f04CurrentJoinDecomposition.";
     private static final String PHASE2V_PREFIX = "delosdb.phase2.f04EmbeddedConcurrency.";
+    private static final String PHASE2W_PREFIX =
+            "delosdb.phase2.f05CoveringPlanDecomposition.";
     private static final long SEED = 0x5DE10DBL;
     private static final List<Target> READ_DECOMPOSITION_TARGETS = List.of(
             Target.DELOS_HEAP, Target.UPSTREAM_DERBY, Target.H2);
@@ -189,6 +191,10 @@ public final class DelosJdbcCrossEngineConcurrency {
             runPhase2VF04EmbeddedConcurrency();
             return;
         }
+        if (args.length == 1 && "phase2w-f05-covering-plan-decomposition".equals(args[0])) {
+            runPhase2WF05CoveringPlanDecomposition();
+            return;
+        }
         Options options = Options.fromSystemProperties();
         options.validate();
         if (args.length == 1 && "worker".equals(args[0])) {
@@ -212,7 +218,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                             + " exactly 'phase2s-f07-embedded-jfr',"
                             + " exactly 'phase2t-f07-streaming-falsification',"
                             + " exactly 'phase2u-f04-current-join-decomposition',"
-                            + " or exactly 'phase2v-f04-embedded-concurrency'");
+                            + " exactly 'phase2v-f04-embedded-concurrency',"
+                            + " or exactly 'phase2w-f05-covering-plan-decomposition'");
         }
     }
 
@@ -4560,6 +4567,213 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         return Path.of(value).toAbsolutePath().normalize();
     }
+
+
+    private static void runPhase2WF05CoveringPlanDecomposition() throws Exception {
+        Path reportDirectory = requiredPhase2WPath("reportDirectory");
+        Path databaseRoot = requiredPhase2WPath("databaseRoot");
+        deleteRecursively(reportDirectory);
+        deleteRecursively(databaseRoot);
+        Files.createDirectories(reportDirectory);
+        Files.createDirectories(databaseRoot);
+
+        int rowCount = 10_000;
+        int commitBatchSize = 1_000;
+        int expectedRows = expectedFitnessRows(Workload.JOIN_3WAY_SELECTIVE, rowCount);
+        String heapBase = "P2W_HEAP";
+        String mvccBase = "P2W_MVCC";
+        String database = databaseRoot.resolve("f05-covering-plan-decomposition").toString();
+        String jdbcUrl = "jdbc:derby:" + database + ";create=true";
+
+        try (Connection setup = openPhase2AConnection(jdbcUrl)) {
+            prepareMultiJoinFixture(setup, heapBase, "", rowCount, commitBatchSize);
+            prepareMultiJoinFixture(setup, mvccBase, " using delos_mvcc", rowCount, commitBatchSize);
+            setup.commit();
+        }
+
+        String heapPk;
+        String mvccPk;
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            heapPk = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(heapBase), "ID");
+            mvccPk = phase2BPrimaryKeyIndex(
+                    connection, multiJoinCustomerTableName(mvccBase), "ID");
+            phase2WRefreshStatistics(connection, heapBase);
+            phase2WRefreshStatistics(connection, mvccBase);
+            connection.commit();
+        }
+
+        LinkedHashMap<String, String> before = new LinkedHashMap<>();
+        before.put("heap-natural-noncover",
+                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, heapBase));
+        before.put("heap-forced-noncover",
+                phase2BForcedIndexedSql(heapBase, heapPk));
+        before.put("mvcc-natural-noncover",
+                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase));
+        before.put("mvcc-forced-noncover",
+                phase2BForcedIndexedSql(mvccBase, mvccPk));
+        long fingerprint = phase2WCaptureVariants(
+                jdbcUrl, reportDirectory, before, expectedRows, Long.MIN_VALUE);
+
+        try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+            phase2WCreateCoveringIndexes(connection, heapBase);
+            phase2WCreateCoveringIndexes(connection, mvccBase);
+            phase2WRefreshStatistics(connection, heapBase);
+            phase2WRefreshStatistics(connection, mvccBase);
+            connection.commit();
+        }
+
+        LinkedHashMap<String, String> after = new LinkedHashMap<>();
+        after.put("heap-natural-cover",
+                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, heapBase));
+        after.put("heap-forced-cover",
+                phase2WForcedCoveringSql(heapBase, heapPk));
+        after.put("mvcc-natural-cover",
+                fitnessReadSql(Workload.JOIN_3WAY_SELECTIVE, mvccBase));
+        after.put("mvcc-forced-cover",
+                phase2WForcedCoveringSql(mvccBase, mvccPk));
+        phase2WCaptureVariants(
+                jdbcUrl, reportDirectory, after, expectedRows, fingerprint);
+
+        StringBuilder summary = new StringBuilder();
+        summary.append("DelosDB Phase-2W F05 covering plan decomposition\n")
+                .append("diagnosticOnly=true\n")
+                .append("gen2C3Enabled=")
+                .append(Boolean.getBoolean("delosdb.experimental.mvccGen2B.pk.enabled"))
+                .append('\n')
+                .append("rows=").append(rowCount).append('\n')
+                .append("expectedRows=").append(expectedRows).append('\n');
+        for (String variant : List.of(
+                "heap-natural-noncover",
+                "heap-forced-noncover",
+                "mvcc-natural-noncover",
+                "mvcc-forced-noncover",
+                "heap-natural-cover",
+                "heap-forced-cover",
+                "mvcc-natural-cover",
+                "mvcc-forced-cover")) {
+            String text = Files.readString(
+                    reportDirectory.resolve(variant + "-explain-analyze.txt"),
+                    StandardCharsets.UTF_8);
+            summary.append(variant)
+                    .append(".indexToBaseRows=")
+                    .append(phase2WPlanKindCount(text, "SCAN/INDEX_TO_BASE_ROW"))
+                    .append('\n')
+                    .append(variant)
+                    .append(".indexScans=")
+                    .append(phase2WPlanKindCount(text, "SCAN/INDEX_SCAN"))
+                    .append('\n')
+                    .append(variant)
+                    .append(".hashJoins=")
+                    .append(phase2WPlanKindCount(text, "JOIN/HASH"))
+                    .append('\n')
+                    .append(variant)
+                    .append(".nestedLoops=")
+                    .append(phase2WPlanKindCount(text, "JOIN/NESTED_LOOP"))
+                    .append('\n')
+                    .append(variant)
+                    .append(".openMillis=")
+                    .append(sumPhase2AField(text, "openMillis"))
+                    .append('\n')
+                    .append(variant)
+                    .append(".nextMillis=")
+                    .append(sumPhase2AField(text, "nextMillis"))
+                    .append('\n');
+        }
+        Files.writeString(
+                reportDirectory.resolve("phase2w-f05-covering-plan-decomposition-summary.txt"),
+                summary.toString(),
+                StandardCharsets.UTF_8);
+    }
+
+    private static long phase2WCaptureVariants(
+            String jdbcUrl,
+            Path reportDirectory,
+            LinkedHashMap<String, String> variants,
+            int expectedRows,
+            long expectedFingerprint) throws Exception {
+        long fingerprint = expectedFingerprint;
+        for (Map.Entry<String, String> entry : variants.entrySet()) {
+            try (Connection connection = openPhase2AConnection(jdbcUrl)) {
+                ExplainCapture explain =
+                        capturePhase2AExplain(connection, entry.getValue(), false);
+                ExplainCapture analyze =
+                        capturePhase2AExplain(connection, entry.getValue(), true);
+                writePhase2ACapture(reportDirectory, entry.getKey() + "-explain", explain);
+                writePhase2ACapture(
+                        reportDirectory, entry.getKey() + "-explain-analyze", analyze);
+                long actual = executePhase2AQuery(
+                        connection, entry.getValue(), expectedRows);
+                if (fingerprint == Long.MIN_VALUE) {
+                    fingerprint = actual;
+                } else if (actual != fingerprint) {
+                    throw new IllegalStateException(
+                            "Phase-2W SQL semantic drift for " + entry.getKey()
+                                    + ": expected=" + fingerprint + ", actual=" + actual);
+                }
+                connection.rollback();
+            }
+        }
+        return fingerprint;
+    }
+
+    private static void phase2WCreateCoveringIndexes(
+            Connection connection,
+            String base) throws SQLException {
+        String order = multiJoinOrderTableName(base);
+        String line = multiJoinLineTableName(base);
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "create index " + order + "_C_ID_COVER_IDX on "
+                            + order + " (customer_id, id)");
+            statement.executeUpdate(
+                    "create index " + line + "_O_ID_COVER_IDX on "
+                            + line + " (order_id, id)");
+        }
+    }
+
+    private static void phase2WRefreshStatistics(
+            Connection connection,
+            String base) throws SQLException {
+        phase2BUpdateStatistics(connection, multiJoinCustomerTableName(base));
+        phase2BUpdateStatistics(connection, multiJoinOrderTableName(base));
+        phase2BUpdateStatistics(connection, multiJoinLineTableName(base));
+    }
+
+    private static String phase2WForcedCoveringSql(String base, String customerPkIndex) {
+        String customer = multiJoinCustomerTableName(base);
+        String order = multiJoinOrderTableName(base);
+        String line = multiJoinLineTableName(base);
+        return "select c.id, o.id, l.id from --DERBY-PROPERTIES joinOrder=FIXED\n"
+                + customer + " c --DERBY-PROPERTIES index='" + customerPkIndex + "'\n"
+                + "join " + order + " o --DERBY-PROPERTIES index=" + order
+                + "_C_ID_COVER_IDX, joinStrategy=NESTEDLOOP\n"
+                + "on o.customer_id = c.id\n"
+                + "join " + line + " l --DERBY-PROPERTIES index=" + line
+                + "_O_ID_COVER_IDX, joinStrategy=NESTEDLOOP\n"
+                + "on l.order_id = o.id\n"
+                + "where c.id between ? and ?";
+    }
+
+    private static int phase2WPlanKindCount(String text, String planKind) {
+        Matcher matcher = Pattern.compile(
+                "(?m)^\\s*n\\d+\\s+" + Pattern.quote(planKind) + "(?:\\s|$)")
+                .matcher(text);
+        int count = 0;
+        while (matcher.find()) {
+            count++;
+        }
+        return count;
+    }
+
+    private static Path requiredPhase2WPath(String key) {
+        String value = System.getProperty(PHASE2W_PREFIX + key, "").trim();
+        if (value.isEmpty()) {
+            throw new IllegalArgumentException("Missing -D" + PHASE2W_PREFIX + key);
+        }
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
 
     private static void runPhase2KF03ProjectionMaterializationDecomposition() throws Exception {
         Path reportDirectory = requiredPhase2KPath("reportDirectory");

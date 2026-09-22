@@ -16976,6 +16976,61 @@ tasks.register('runDelosPhase2JF05CompatibilityNativePathDecomposition', JavaExe
 
 
 
+
+// Phase 2W: prove whether the F05 covering-index throughput gain is actually
+// INDEX_TO_BASE_ROW elimination or a broader optimizer/join-plan change.
+tasks.register('runDelosGen2C3F05CoveringPlanDecomposition', JavaExec) {
+    group = 'verification'
+    description = 'Captures F05 Heap/Gen2-C3 natural and forced plans before and after covering indexes.'
+    dependsOn tasks.named('compileTestJava')
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(derbyTestsClassDir, derbyRuntimeJars)
+    args 'phase2w-f05-covering-plan-decomposition'
+    outputs.upToDateWhen { false }
+    def reportDir = rootProject.layout.buildDirectory
+            .dir('reports/delosdb/benchmarks/gen2-c3-attribution/f05-covering-plan-decomposition')
+    def databaseRoot = rootProject.layout.buildDirectory
+            .dir('tmp/delos-gen2-c3-attribution/f05-covering-plan-decomposition')
+    outputs.dir(reportDir)
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'Gen2-C3 F05 covering plan decomposition requires -Pdelosdb.sane=false')
+        }
+        delete(reportDir)
+        delete(databaseRoot)
+        reportDir.get().asFile.mkdirs()
+        systemProperties([
+                'delosdb.phase2.f05CoveringPlanDecomposition.reportDirectory':
+                        reportDir.get().asFile.absolutePath,
+                'delosdb.phase2.f05CoveringPlanDecomposition.databaseRoot':
+                        databaseRoot.get().asFile.absolutePath,
+                'delosdb.experimental.mvccGen2B.pk.enabled': 'true',
+                'delosdb.experimental.mvccGen2C1.history.enabled': 'true',
+                'delosdb.experimental.mvccGen2C2.archivedUndo.enabled': 'true',
+                'delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled': 'false',
+                'delosdb.experimental.mvccBaseFetchPagePrefetch': 'false',
+                'delosdb.experimental.mvccPhysicalRowLocationCost.enabled': 'true'
+        ])
+    }
+    doLast {
+        File summary = new File(reportDir.get().asFile,
+                'phase2w-f05-covering-plan-decomposition-summary.txt')
+        if (!summary.isFile()) {
+            throw new GradleException(
+                    "Gen2-C3 F05 covering plan decomposition summary missing: ${summary}")
+        }
+        String text = summary.getText('UTF-8')
+        if (!text.contains('gen2C3Enabled=true')) {
+            throw new GradleException(
+                    'F05 covering plan decomposition did not prove Gen2-C3 enablement')
+        }
+    }
+}
+
+
 // Phase 2K: classify the untouched F03 projection/materialization deficit after
 // closing the F05 decomposition. Force the same category-index access shape on
 // Heap and MVCC, then separate covered-index, narrow base-row, and full-row work.
