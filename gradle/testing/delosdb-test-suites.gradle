@@ -294,10 +294,11 @@ tasks.named('delosSystemTests', Test) {
             context.delosV1ModularImageDatabaseRoot.get().asFile.absolutePath
 }
 
-// Active performance-harness classes retain their existing dedicated configuration
+// Active performance-harness classes retain their dedicated configuration
 // and remain outside ordinary correctness suites. releaseVerification reaches
-// only the frozen pre-Stage-3 performance authority through this aggregate.
+// the registered active performance authority through this aggregate.
 def performanceFocusedTasks = [
+        'runDelosF08InsertCommitDecomposition',
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosHeapPageReadImageCorrectnessProof',
         'runDelosJdbcBenchmarkBaseline',
@@ -368,6 +369,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         }
 
         Set<String> expectedPerformanceClasses = [
+                'org.apache.derbyTesting.functionTests.tests.delos.F08InsertCommitDecompositionTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.HeapDiagnosticsPerformanceAuditTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.HeapPageReadImageArchitectureProofTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBaselineTest',

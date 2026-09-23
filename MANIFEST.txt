@@ -1,30 +1,11 @@
-F08-F transaction-status ledger lock-lifecycle fix
+DelosDB F08-H upstream Derby server JFR fix
 
-Classification:
-  production integration defect in the default-OFF F08-F experimental path
+Changed repository files: 1
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Root cause:
-  The first transaction-status ledger reload used the caller's RawStore
-  transaction. Under container locking, closing the read handle retained the
-  metadata-container lock until the caller transaction ended. The existing
-  nested-top transaction-ID allocator then timed out trying to open the same
-  metadata container FOR UPDATE.
+Purpose:
+- instrument UPSTREAM_DERBY_DRDA with the same server-JFR bind mount and JVM recording options already used by Delos DRDA targets;
+- preserve graceful container shutdown so dumponexit recordings are flushed;
+- fail F08 transaction-status attribution preflight unless profileServerTargets is exactly delos_heap_drda,delos_mvcc_drda,upstream_derby_drda.
 
-Fix:
-  Reload committed transaction statuses through a short-lived nested user
-  transaction, commit it, then destroy it before returning to the caller.
-  This releases the metadata-container read lock before transaction-ID
-  allocation or DDL/write work begins.
-
-Semantics intentionally unchanged:
-  - transaction-status visibility model
-  - transaction ID allocation
-  - commit sequence allocation
-  - RawStore WAL/undo/recovery authority
-  - status-ledger row format
-  - commit publication ordering
-  - benchmark thresholds/assertions
-
-Changed repository files: 2
-  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
-  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
+No production code, benchmark workload, iteration count, threshold, or target set is changed.

@@ -435,7 +435,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             if (creatorTransactionId != 0L && creatorTransactionId == transactionId) {
                 return true;
             }
-            long committedSequence = runtime.committedTransactionSequence(creatorTransactionId);
+            long committedSequence = runtime.transactionStatuses.committedSequence(creatorTransactionId);
             return committedSequence > 0L && committedSequence <= snapshotSequence;
         }
         return beginSequence > 0L && beginSequence <= snapshotSequence;
@@ -467,10 +467,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         publicationLockHeld = !runtime.concurrentCommitPublication();
         try {
             stageAllocatorHighWaters();
-            transactionStatusCommitStaged = runtime.transactionStatusVisibilityEnabled()
+            transactionStatusCommitStaged = runtime.transactionStatuses.enabled()
                     && MvccRawStoreTable.freshInlineInsertBatch(committableVersions);
             if (transactionStatusCommitStaged) {
-                runtime.stageCommittedTransactionStatus(
+                runtime.transactionStatuses.stage(
                         rawTransaction, transactionId, reservedCommitSequence);
             } else {
                 MvccRawStoreTable.stampPendingVersions(
@@ -518,7 +518,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                     MvccRawStoreRuntime.AFTER_RAW_COMMIT_BEFORE_PUBLICATION,
                     92);
             if (transactionStatusCommitStaged) {
-                runtime.publishCommittedTransactionStatus(transactionId, reservedCommitSequence);
+                runtime.transactionStatuses.publish(transactionId, reservedCommitSequence);
             }
             // The RawStore commit is durable at this point, but the commit
             // sequence is not yet visible to new snapshots. Publish the

@@ -23431,6 +23431,9 @@ def delosPostModernizationMutationDbRoot =
         'tmp/delos-post-modernization-checkpoint/mutations'
 
 def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
+    def reportRoot = cfg.reportRoot ?: delosPostModernizationMutationRoot
+    def databaseRootPath = cfg.databaseRootPath ?: delosPostModernizationMutationDbRoot
+    boolean transactionStatusCrossEngine = cfg.transactionStatusCrossEngine == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23448,7 +23451,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                 mariadbBenchmarkRuntime)
         outputs.upToDateWhen { false }
         outputs.dir(rootProject.layout.buildDirectory.dir(
-                "${delosPostModernizationMutationRoot}/${cfg.group}"))
+                "${reportRoot}/${cfg.group}"))
         doFirst {
             def saneValue = providers.gradleProperty('delosdb.sane')
                     .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
@@ -23457,10 +23460,10 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                         'Post-modernization mutation checkpoint requires -Pdelosdb.sane=false')
             }
             def reportDir = rootProject.layout.buildDirectory
-                    .dir("${delosPostModernizationMutationRoot}/${cfg.group}")
+                    .dir("${reportRoot}/${cfg.group}")
                     .get().asFile
             def databaseRoot = rootProject.layout.buildDirectory
-                    .dir("${delosPostModernizationMutationDbRoot}/${cfg.group}")
+                    .dir("${databaseRootPath}/${cfg.group}")
                     .get().asFile
             project.delete(reportDir)
             project.delete(databaseRoot)
@@ -23470,7 +23473,9 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             systemProperties([
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
-                    'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': transactionStatusCrossEngine ? 'false' : 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': transactionStatusCrossEngine ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2C1Server': cfg.gen2Mode == 'C1' ? 'true' : 'false',
@@ -23557,7 +23562,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
         doLast {
             def summary = new File(
                     rootProject.layout.buildDirectory
-                            .dir("${delosPostModernizationMutationRoot}/${cfg.group}")
+                            .dir("${reportRoot}/${cfg.group}")
                             .get().asFile,
                     'cross-engine-concurrency-summary.txt')
             if (!summary.isFile()) {
@@ -23565,8 +23570,17 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             }
             String text = summary.getText('UTF-8')
             def expectedMarker = [A1: 'MVCC Gen2-A1 server enabled: true', B: 'MVCC Gen2-B server enabled: true', C1: 'MVCC Gen2-C1 server enabled: true', C3: 'MVCC Gen2-C3 UPDATE server enabled: true'][cfg.gen2Mode]
-            if (!text.contains('Post-modernization mutation checkpoint enabled: true') || expectedMarker == null || !text.contains(expectedMarker)) {
-                throw new GradleException("Mutation checkpoint did not prove ${cfg.gen2Mode} server plumbing: ${summary}")
+            if (expectedMarker == null || !text.contains(expectedMarker)) {
+                throw new GradleException("Mutation benchmark did not prove ${cfg.gen2Mode} server plumbing: ${summary}")
+            }
+            if (transactionStatusCrossEngine) {
+                if (!text.contains('F08 transaction-status cross-engine diagnostic: true')
+                        || !text.contains('MVCC Gen2 transaction-status visibility server enabled: true')) {
+                    throw new GradleException(
+                            "F08 transaction-status benchmark did not prove status-visibility server plumbing: ${summary}")
+                }
+            } else if (!text.contains('Post-modernization mutation checkpoint enabled: true')) {
+                throw new GradleException("Mutation checkpoint marker is missing: ${summary}")
             }
         }
     }
@@ -23619,6 +23633,96 @@ registerDelosPostModernizationMutation(
                 caseTimeoutSeconds: '600',
                 workerTimeoutSeconds: '2400'
         ])
+
+def delosF08TransactionStatusCrossEngineRoot =
+        'reports/delosdb/benchmarks/f08-transaction-status-cross-engine'
+def delosF08TransactionStatusCrossEngineDbRoot =
+        'tmp/delos-f08-transaction-status-cross-engine'
+
+def registerDelosF08TransactionStatusCrossEngine = {
+    String taskName, String groupName, String gen2Mode, String workload,
+    String tableShape, String transactionsPerClient, String fixedBudget ->
+    registerDelosPostModernizationMutation(
+            taskName,
+            [
+                    description: "Runs F08-G ${tableShape} ${workload} across the full SERVER product matrix with transaction-status visibility enabled on Gen2.",
+                    group: groupName,
+                    gen2Mode: gen2Mode,
+                    transactionStatusCrossEngine: true,
+                    reportRoot: delosF08TransactionStatusCrossEngineRoot,
+                    databaseRootPath: delosF08TransactionStatusCrossEngineDbRoot,
+                    workloads: workload,
+                    tableShape: tableShape,
+                    rows: '10000',
+                    clients: '8',
+                    widths: '1',
+                    transactionsPerClient: transactionsPerClient,
+                    fixedBudget: fixedBudget,
+                    fixtureBatch: '100',
+                    warmups: '0',
+                    iterations: '1',
+                    minimumWarmupSeconds: '0.0',
+                    maximumWarmupIterations: '1',
+                    minimumMeasuredSeconds: '0.0',
+                    maximumMeasuredIterations: '1',
+                    caseTimeoutSeconds: '600',
+                    workerTimeoutSeconds: '2400'
+            ])
+}
+
+registerDelosF08TransactionStatusCrossEngine(
+        'runDelosF08TransactionStatusBareInsert1CrossEngine',
+        'bare-insert-1', 'A1', 'INSERT_1', 'BARE', '10000', '10000')
+
+registerDelosF08TransactionStatusCrossEngine(
+        'runDelosF08TransactionStatusBareInsert100CrossEngine',
+        'bare-insert-100', 'A1', 'INSERT_100', 'BARE', '2500', '250000')
+
+registerDelosF08TransactionStatusCrossEngine(
+        'runDelosF08TransactionStatusPrimaryKeyInsert1CrossEngine',
+        'primary-key-insert-1', 'B', 'INSERT_1', 'PRIMARY_KEY_ONLY', '10000', '10000')
+
+registerDelosF08TransactionStatusCrossEngine(
+        'runDelosF08TransactionStatusPrimaryKeyInsert100CrossEngine',
+        'primary-key-insert-100', 'B', 'INSERT_100', 'PRIMARY_KEY_ONLY', '2500', '250000')
+
+tasks.named('runDelosF08TransactionStatusBareInsert100CrossEngine') {
+    mustRunAfter tasks.named('runDelosF08TransactionStatusBareInsert1CrossEngine')
+}
+tasks.named('runDelosF08TransactionStatusPrimaryKeyInsert1CrossEngine') {
+    mustRunAfter tasks.named('runDelosF08TransactionStatusBareInsert100CrossEngine')
+}
+tasks.named('runDelosF08TransactionStatusPrimaryKeyInsert100CrossEngine') {
+    mustRunAfter tasks.named('runDelosF08TransactionStatusPrimaryKeyInsert1CrossEngine')
+}
+
+tasks.register('runDelosF08TransactionStatusCrossEngineScaling') {
+    group = 'benchmark'
+    description = 'Runs F08-G transaction-status INSERT_1/INSERT_100 scaling across BARE and PRIMARY_KEY_ONLY shapes.'
+    dependsOn tasks.named('runDelosF08TransactionStatusBareInsert1CrossEngine'),
+            tasks.named('runDelosF08TransactionStatusBareInsert100CrossEngine'),
+            tasks.named('runDelosF08TransactionStatusPrimaryKeyInsert1CrossEngine'),
+            tasks.named('runDelosF08TransactionStatusPrimaryKeyInsert100CrossEngine')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08TransactionStatusCrossEngineRoot))
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(delosF08TransactionStatusCrossEngineRoot).get().asFile
+        ['bare-insert-1', 'bare-insert-100',
+         'primary-key-insert-1', 'primary-key-insert-100'].each { String reportGroup ->
+            def reportDir = new File(root, reportGroup)
+            ['cross-engine-concurrency-summary.txt',
+             'cross-engine-concurrency-ratios.csv',
+             'cross-engine-concurrency-dispersion.csv'].each { String reportName ->
+                def report = new File(reportDir, reportName)
+                if (!report.isFile()) {
+                    throw new GradleException(
+                            "Missing F08 transaction-status cross-engine report: ${report}")
+                }
+            }
+        }
+    }
+}
 
 registerDelosPostModernizationMutation(
         'runDelosPostModernizationF09FreshIndexedUpdateCheckpoint',
@@ -23730,4 +23834,212 @@ tasks.register('runDelosPostModernizationFullCrossEngineCheckpoint') {
             tasks.named('runDelosGen2C3MixedReaderWriterSentinel'),
             tasks.named('runDelosGen2C3LongReaderWriterSentinel'),
             tasks.named('runDelosGen2C3RealisticTransactionSentinel'))
+}
+
+
+// F08-H: server-side attribution for the remaining shared INSERT_100 gap.
+// Profiles BARE versus PRIMARY_KEY_ONLY after transaction-status visibility so
+// shared base-row work can be separated from SQL B-tree maintenance.
+def delosF08SharedInsertServerJfrRoot =
+        'reports/delosdb/benchmarks/f08-shared-insert-server-jfr'
+def delosF08SharedInsertServerJfrDbRoot =
+        'tmp/delos-f08-shared-insert-server-jfr'
+def delosF08SharedInsertServerJfrTargets =
+        'delos_heap_drda,delos_mvcc_drda,upstream_derby_drda'
+
+def configureDelosF08SharedInsertServerJfr = {
+    JavaExec task,
+    String reportGroup,
+    String tableShape,
+    boolean gen2A1 ->
+
+    task.group = 'benchmark'
+    task.description = "Profiles F08-H ${tableShape} INSERT_100 server execution for Heap, Gen2-status, and upstream Derby."
+    task.dependsOn tasks.named('compileTestJava'), ':jars',
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+    task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    def delosNetworkClientClasspath = rootProject.files(
+            rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
+            rootProject.layout.buildDirectory.file('libs/derbyshared.jar'))
+    task.classpath = rootProject.files(
+            derbyTestsClassDir,
+            delosNetworkClientClasspath,
+            upstreamDerbyNetworkClientRuntime)
+    task.outputs.upToDateWhen { false }
+    task.outputs.dir(rootProject.layout.buildDirectory.dir(
+            "${delosF08SharedInsertServerJfrRoot}/${reportGroup}"))
+
+    task.doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F08-H shared INSERT server JFR requires -Pdelosdb.sane=false')
+        }
+        def reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrDbRoot}/${reportGroup}").get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+        def javaExecutable = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        task.systemProperties([
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': gen2A1 ? 'true' : 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': gen2A1 ? 'false' : 'true',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C1Server': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3UpdateServer': 'false',
+                'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
+                        delosF08SharedInsertServerJfrTargets,
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.projectVersion':
+                        rootProject.version.toString(),
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable': javaExecutable,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.targets':
+                        delosF08SharedInsertServerJfrTargets,
+                'delosdb.benchmark.crossEngineConcurrency.delosClientClasspath':
+                        delosNetworkClientClasspath.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClientClasspath':
+                        upstreamDerbyNetworkClientRuntime.asPath,
+                'delosdb.benchmark.crossEngineConcurrency.delosRuntimeDirectory':
+                        rootProject.layout.buildDirectory.dir('libs').get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerRuntimeDirectory':
+                        upstreamDerbyNetworkServerRuntimeDirectory.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.delosServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyServerImage':
+                        providers.gradleProperty('delosdb.benchmark.serverContainer.upstreamDerbyServerImage')
+                                .getOrElse('eclipse-temurin:25.0.3_9-jre-noble'),
+                'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyVersion':
+                        upstreamDerbyBenchmarkVersion,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot':
+                        databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
+                        reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '500',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '50000',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': tableShape,
+                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '4',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                'delosdb.benchmark.crossEngineConcurrency.containerStartupTimeoutSeconds': '120',
+                'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+        ])
+    }
+
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        File oracle = new File(reportDir, 'sql-semantic-oracle.csv')
+        [summary, oracle].each { File evidence ->
+            if (!evidence.isFile() || evidence.length() == 0L) {
+                throw new GradleException("F08-H evidence missing: ${evidence}")
+            }
+        }
+        String summaryText = summary.getText('UTF-8')
+        [
+                'Workloads: [INSERT_100]',
+                'Clients: 8',
+                "INSERT table shape: ${tableShape}",
+                'F08 transaction-status cross-engine diagnostic: true',
+                'MVCC Gen2 transaction-status visibility server enabled: true',
+                gen2A1
+                        ? 'MVCC Gen2-A1 server enabled: true'
+                        : 'MVCC Gen2-B server enabled: true'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F08-H summary missing evidence marker '${marker}': ${summary}")
+            }
+        }
+
+        File profileDir = new File(reportDir, 'workers/server-jfr')
+        def recordingFiles = profileDir.isDirectory() ? profileDir.listFiles() : null
+        def recordings = recordingFiles == null
+                ? []
+                : recordingFiles.findAll { it.name.endsWith('.jfr') }.sort { it.name }
+        int expectedRecordings = 12
+        if (recordings.size() != expectedRecordings) {
+            throw new GradleException(
+                    "F08-H expected ${expectedRecordings} server JFR recordings for ${tableShape}, found ${recordings.size()}")
+        }
+        recordings.each { File recording ->
+            if (recording.length() == 0L) {
+                throw new GradleException("Empty F08-H server JFR recording: ${recording}")
+            }
+        }
+
+        File viewDir = new File(reportDir, 'jfr-views')
+        viewDir.mkdirs()
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        ['hot-methods', 'allocation-by-site', 'contention-by-site',
+         'file-writes-by-path', 'events-by-count'].each { String view ->
+            recordings.each { File recording ->
+                def execOutput = providers.exec {
+                    commandLine jfrTool.absolutePath, 'view', '--width', '240',
+                            '--cell-height', '40', view, recording.absolutePath
+                    ignoreExitValue = true
+                }
+                def result = execOutput.result.get()
+                if (result.exitValue != 0) {
+                    throw new GradleException(
+                            "F08-H JFR view ${view} failed for ${recording.name}: "
+                                    + execOutput.standardError.asText.get().trim())
+                }
+                new File(viewDir, recording.name.replace('.jfr', "-${view}.txt"))
+                        .setText(execOutput.standardOutput.asText.get(), 'UTF-8')
+            }
+        }
+        new File(reportDir, 'PROFILE-NOTES.txt').setText(
+                'F08-H shared INSERT_100 server JFR attribution\n' +
+                        "TableShape=${tableShape}\n" +
+                        'Targets=delos_heap_drda,delos_mvcc_drda,upstream_derby_drda\n' +
+                        'Rows=10000\nClients=8\nOperationsPerTransaction=100\n' +
+                        'TransactionsPerClient=500\nRuns=4\n' +
+                        'Gen2 transaction-status visibility=true\n' +
+                        'JFR settings=profile; stackdepth=256; one server recording per target/run\n' +
+                        'Interpretation=server-side attribution only; JFR-enabled throughput is not canonical acceptance TPS.\n',
+                'UTF-8')
+    }
+}
+
+tasks.register('runDelosF08SharedInsertBareServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(task, 'bare', 'BARE', true)
+}
+
+tasks.register('runDelosF08SharedInsertPrimaryKeyServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(task, 'primary-key', 'PRIMARY_KEY_ONLY', false)
+    mustRunAfter tasks.named('runDelosF08SharedInsertBareServerJfr')
+}
+
+tasks.register('runDelosF08SharedInsertServerJfr') {
+    group = 'benchmark'
+    description = 'Profiles F08-H BARE and PRIMARY_KEY_ONLY INSERT_100 server execution after transaction-status visibility.'
+    dependsOn tasks.named('runDelosF08SharedInsertBareServerJfr'),
+            tasks.named('runDelosF08SharedInsertPrimaryKeyServerJfr')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
 }

@@ -307,14 +307,7 @@ final class MvccRawStoreRowDirectory {
             stampCommittedHeadsByHintWalBatch(transaction, pending, commitSequence);
             return;
         }
-        List<MvccRawStoreTable.PendingVersion> ordered = new ArrayList<>(pending);
-        ordered.sort(Comparator
-                .comparingLong((MvccRawStoreTable.PendingVersion version) ->
-                        version.table().metadataContainer().getSegmentId())
-                .thenComparingLong(version ->
-                        version.table().metadataContainer().getContainerId())
-                .thenComparingLong(version -> version.directoryLocation().locatorPageId())
-                .thenComparingInt(version -> version.directoryLocation().locatorSlotId()));
+        List<MvccRawStoreTable.PendingVersion> ordered = orderByPhysicalHint(pending);
 
         List<MvccRawStoreTable.PendingVersion> fallback = new ArrayList<>();
         MvccRawStoreTable.Descriptor openTable = null;
@@ -395,23 +388,14 @@ final class MvccRawStoreRowDirectory {
 
         // Physical locators are hints, never row identity. Preserve the existing
         // logical fallback path if any hint became stale before commit.
-        for (MvccRawStoreTable.PendingVersion version : fallback) {
-            stampCommittedHead(transaction, version, commitSequence);
-        }
+        stampFallbackHeads(transaction, fallback, commitSequence);
     }
 
     private static void stampCommittedHeadsByHintWalBatch(
             Transaction transaction,
             List<MvccRawStoreTable.PendingVersion> pending,
             long commitSequence) throws StandardException {
-        List<MvccRawStoreTable.PendingVersion> ordered = new ArrayList<>(pending);
-        ordered.sort(Comparator
-                .comparingLong((MvccRawStoreTable.PendingVersion version) ->
-                        version.table().metadataContainer().getSegmentId())
-                .thenComparingLong(version ->
-                        version.table().metadataContainer().getContainerId())
-                .thenComparingLong(version -> version.directoryLocation().locatorPageId())
-                .thenComparingInt(version -> version.directoryLocation().locatorSlotId()));
+        List<MvccRawStoreTable.PendingVersion> ordered = orderByPhysicalHint(pending);
 
         List<MvccRawStoreTable.PendingVersion> fallback = new ArrayList<>();
         List<Integer> stampSlots = new ArrayList<>();
@@ -467,36 +451,8 @@ final class MvccRawStoreRowDirectory {
                     continue;
                 }
 
-                int slot = location.locatorSlotId();
-                if (!isDirectorySlot(page, slot)) {
-                    fallback.add(version);
-                    continue;
-                }
-                MvccRawStoreTable.DirectoryRecord directory =
-                        MvccRawStoreTable.decodeDirectory(transaction, page, slot);
-                if (directory == null || directory.rowId() != version.rowId()) {
-                    fallback.add(version);
-                    continue;
-                }
-
-                MvccRawStoreTable.DirectoryHead head = directory.head();
-                if (head.versionId() != version.versionId()) {
-                    continue;
-                }
-                MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
-                if (summary.available()
-                        && summary.creatorTransactionId() == version.creatorTransactionId()
-                        && summary.beginSequence()
-                                == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
-                        && summary.flags() == version.flags()) {
-                    stampSlots.add(slot);
-                    continue;
-                }
-                if (version.inlineCurrent()) {
-                    throw new IllegalStateException(
-                            "MVCC Gen2-A1 current-row head summary changed before commit");
-                }
-                fallback.add(version);
+                collectCommitStampSlot(
+                        transaction, page, version, fallback, stampSlots);
             }
             flushCommitStampSlots(transaction, page, stampSlots, commitSequence);
         } finally {
@@ -508,6 +464,63 @@ final class MvccRawStoreRowDirectory {
             }
         }
 
+        stampFallbackHeads(transaction, fallback, commitSequence);
+    }
+
+    private static List<MvccRawStoreTable.PendingVersion> orderByPhysicalHint(
+            List<MvccRawStoreTable.PendingVersion> pending) {
+        List<MvccRawStoreTable.PendingVersion> ordered = new ArrayList<>(pending);
+        ordered.sort(Comparator
+                .comparingLong((MvccRawStoreTable.PendingVersion version) ->
+                        version.table().metadataContainer().getSegmentId())
+                .thenComparingLong(version ->
+                        version.table().metadataContainer().getContainerId())
+                .thenComparingLong(version -> version.directoryLocation().locatorPageId())
+                .thenComparingInt(version -> version.directoryLocation().locatorSlotId()));
+        return ordered;
+    }
+
+    private static void collectCommitStampSlot(
+            Transaction transaction,
+            Page page,
+            MvccRawStoreTable.PendingVersion version,
+            List<MvccRawStoreTable.PendingVersion> fallback,
+            List<Integer> stampSlots) throws StandardException {
+        int slot = version.directoryLocation().locatorSlotId();
+        if (!isDirectorySlot(page, slot)) {
+            fallback.add(version);
+            return;
+        }
+        MvccRawStoreTable.DirectoryRecord directory =
+                MvccRawStoreTable.decodeDirectory(transaction, page, slot);
+        if (directory == null || directory.rowId() != version.rowId()) {
+            fallback.add(version);
+            return;
+        }
+
+        MvccRawStoreTable.DirectoryHead head = directory.head();
+        if (head.versionId() != version.versionId()) {
+            return;
+        }
+        MvccRawStoreTable.DirectoryHeadSummary summary = head.summary();
+        if (summary.available()
+                && summary.creatorTransactionId() == version.creatorTransactionId()
+                && summary.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                && summary.flags() == version.flags()) {
+            stampSlots.add(slot);
+            return;
+        }
+        if (version.inlineCurrent()) {
+            throw new IllegalStateException(
+                    "MVCC Gen2-A1 current-row head summary changed before commit");
+        }
+        fallback.add(version);
+    }
+
+    private static void stampFallbackHeads(
+            Transaction transaction,
+            List<MvccRawStoreTable.PendingVersion> fallback,
+            long commitSequence) throws StandardException {
         for (MvccRawStoreTable.PendingVersion version : fallback) {
             stampCommittedHead(transaction, version, commitSequence);
         }

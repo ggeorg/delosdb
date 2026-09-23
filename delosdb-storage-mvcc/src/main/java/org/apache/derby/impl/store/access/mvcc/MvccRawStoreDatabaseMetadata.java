@@ -314,27 +314,11 @@ final class MvccRawStoreDatabaseMetadata {
 
     Map<Long, Long> readCommittedTransactionStatuses(TransactionManager parent)
             throws StandardException {
-        TransactionController child = null;
-        boolean committed = false;
-        try {
-            child = parent.startNestedUserTransaction(false, true);
-            if (!(child instanceof TransactionManager childManager)) {
-                throw StandardException.newException(
-                        SQLState.NOT_IMPLEMENTED,
-                        "RawStore MVCC transaction-status reload requires a Derby transaction manager");
-            }
+        try (ChildTransactionScope child = ChildTransactionScope.open(parent)) {
             Map<Long, Long> statuses = readCommittedTransactionStatuses(
-                    childManager.getRawStoreXact());
+                    child.manager().getRawStoreXact());
             child.commit();
-            committed = true;
             return statuses;
-        } catch (StandardException | RuntimeException | Error failure) {
-            if (!committed) {
-                abortChild(child, failure);
-            }
-            throw failure;
-        } finally {
-            destroyChild(child);
         }
     }
 
@@ -538,6 +522,46 @@ final class MvccRawStoreDatabaseMetadata {
                 MvccRawStoreFormat.longValue(transaction, 0L),
                 MvccRawStoreFormat.longValue(transaction, 0L)
         };
+    }
+
+    private static final class ChildTransactionScope implements AutoCloseable {
+        private final TransactionController child;
+        private boolean committed;
+
+        private ChildTransactionScope(TransactionController child) {
+            this.child = child;
+        }
+
+        static ChildTransactionScope open(TransactionManager parent)
+                throws StandardException {
+            return new ChildTransactionScope(
+                    parent.startNestedUserTransaction(false, true));
+        }
+
+        TransactionManager manager() throws StandardException {
+            if (child instanceof TransactionManager childManager) {
+                return childManager;
+            }
+            throw StandardException.newException(
+                    SQLState.NOT_IMPLEMENTED,
+                    "RawStore MVCC transaction-status reload requires a Derby transaction manager");
+        }
+
+        void commit() throws StandardException {
+            child.commit();
+            committed = true;
+        }
+
+        @Override
+        public void close() throws StandardException {
+            try {
+                if (!committed) {
+                    child.abort();
+                }
+            } finally {
+                child.destroy();
+            }
+        }
     }
 
     private ContainerKey requireContainerKey() {

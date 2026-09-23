@@ -84,6 +84,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
     private static final List<Target> F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
+    private static final List<Target> F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS = List.of(
+            Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA, Target.UPSTREAM_DERBY_DRDA);
     private static final List<Target> DRDA_SERVER_PHASE_EVIDENCE_TARGETS = List.of(
             Target.DELOS_HEAP_DRDA, Target.DELOS_MVCC_DRDA);
     private static final List<Target> CURRENT_BASELINE_EMBEDDED_TARGETS = List.of(
@@ -5351,6 +5353,9 @@ public final class DelosJdbcCrossEngineConcurrency {
             command.add("-Ddelosdb.experimental.fastRecordReadLock=true");
         }
         if (target == Target.DELOS_MVCC) {
+            if (mvccGen2TransactionStatusVisibilityServerEnabled()) {
+                command.add("-Ddelosdb.experimental.mvccGen2TransactionStatusVisibility.enabled=true");
+            }
             if (mvccGen2C3ReadServerEnabled()) {
                 command.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                 command.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
@@ -5471,6 +5476,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (mvccGen2BServerEnabled()) {
             addProperty(command, "mvccGen2BServer", true);
+        }
+        if (mvccGen2TransactionStatusVisibilityServerEnabled()) {
+            addProperty(command, "mvccGen2TransactionStatusVisibilityServer", true);
+        }
+        if (f08TransactionStatusCrossEngineEnabled()) {
+            addProperty(command, "f08TransactionStatusCrossEngine", true);
         }
         if (mvccGen2C1ServerEnabled()) {
             addProperty(command, "mvccGen2C1Server", true);
@@ -5705,6 +5716,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2BServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2B.pk.enabled=true");
                 }
+                if (target == Target.DELOS_MVCC_DRDA
+                        && mvccGen2TransactionStatusVisibilityServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.mvccGen2TransactionStatusVisibility.enabled=true");
+                }
                 if (target == Target.DELOS_MVCC_DRDA && mvccGen2C1ServerEnabled()) {
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C1.history.enabled=true");
                     javaCommand.add("-Ddelosdb.experimental.mvccGen2C2.archivedUndo.enabled=true");
@@ -5746,12 +5762,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ",dst=/opt/derby/lib,readonly");
                 command.add("--workdir");
                 command.add("/var/lib/derby");
+                addServerProfileMount(options, target, command);
                 command.add(target.containerImage(options));
-                command.addAll(List.of(
+                List<String> javaCommand = new ArrayList<>(List.of(
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
-                        "-XX:+AlwaysPreTouch", "-cp", "/opt/derby/lib/*",
+                        "-XX:+AlwaysPreTouch"));
+                addServerProfileJvmArgs(target, run, javaCommand);
+                javaCommand.addAll(List.of(
+                        "-cp", "/opt/derby/lib/*",
                         "org.apache.derby.drda.NetworkServerControl", "start",
                         "-h", "0.0.0.0", "-p", Integer.toString(target.containerPort())));
+                command.addAll(javaCommand);
             }
             case H2_SERVER -> {
                 command.add("--mount");
@@ -8220,9 +8241,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                             : null;
                     if (gen2A1ThroughputSentinelEnabled()
                             || gen2BThroughputSentinelEnabled()
-                            || postModernizationMutationCheckpointEnabled()) {
-                        // One fresh append-only interval per database. The full checkpoint
-                        // deliberately excludes cleanup DELETE from INSERT timing/semantics.
+                            || postModernizationMutationCheckpointEnabled()
+                            || f08TransactionStatusCrossEngineEnabled()) {
+                        // One fresh append-only interval per database. These benchmark modes
+                        // deliberately exclude cleanup DELETE from INSERT timing/semantics.
                         verifier.rollback();
                         return new Verification(mix(fingerprint, insertedFingerprint), oracle);
                     }
@@ -12004,6 +12026,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(gen2BThroughputSentinelEnabled()).append('\n')
                 .append("MVCC Gen2-B server enabled: ")
                 .append(mvccGen2BServerEnabled()).append('\n')
+                .append("MVCC Gen2 transaction-status visibility server enabled: ")
+                .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
+                .append("F08 transaction-status cross-engine diagnostic: ")
+                .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
                 .append("MVCC Gen2-C1 server enabled: ")
                 .append(mvccGen2C1ServerEnabled()).append('\n')
                 .append("Gen2-C3 UPDATE throughput sentinel: ")
@@ -12279,6 +12305,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2BServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2BServer");
+    }
+
+    private static boolean mvccGen2TransactionStatusVisibilityServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "mvccGen2TransactionStatusVisibilityServer");
+    }
+
+    private static boolean f08TransactionStatusCrossEngineEnabled() {
+        return Boolean.getBoolean(PREFIX + "f08TransactionStatusCrossEngine");
     }
 
     private static boolean mvccGen2C1ServerEnabled() {
@@ -13390,6 +13424,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean postModernizationMutationCheckpoint =
                     postModernizationMutationCheckpointEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+            boolean f08TransactionStatusAttribution =
+                    f08TransactionStatusCrossEngineEnabled()
+                    && configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS);
+            boolean f08TransactionStatusCrossEngine =
+                    f08TransactionStatusCrossEngineEnabled()
+                    && (configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                            || f08TransactionStatusAttribution);
             boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
             boolean f02ScaleSurfaceDiagnostic = f02ScaleSurfaceDiagnosticEnabled()
@@ -13437,6 +13478,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel
                     && !gen2C3PostgresqlUpdateComparison
+                    && !f08TransactionStatusCrossEngine
                     && !gen2C3ProjectedCurrentRead
                     && !f02ScaleSurfaceDiagnostic
                     && !drdaServerPhaseDiagnostic
@@ -13453,6 +13495,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                         + ", host recovery diagnostic " + HOST_RECOVERY_DIAGNOSTIC_TARGETS
                         + ", DRDA protocol diagnostic " + DRDA_PROTOCOL_EVIDENCE_TARGETS
                         + ", F08 mutation-schema attribution " + F08_MUTATION_SCHEMA_ATTRIBUTION_TARGETS
+                        + ", F08 transaction-status attribution "
+                        + F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS
                         + ", Gen2-A1 throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", Gen2-B throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
                         + ", Gen2-C3 UPDATE throughput sentinel " + CURRENT_BASELINE_SERVER_TARGETS
@@ -13808,6 +13852,50 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-C3 range-scan JFR requires PRIMARY_KEY_ONLY table shape");
                 }
+            } else if (f08TransactionStatusCrossEngine) {
+                if (configuredWorkloads.size() != 1 || !configuredWorkloads.get(0).isInsert()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires exactly one INSERT workload");
+                }
+                if (!clientValues().equals(List.of(8)) || !widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires clients=8,widths=1");
+                }
+                if (!sqlSemanticOracleEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires SQL semantic oracle");
+                }
+                if (warmups != 0
+                        || iterations != 1
+                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                        || maximumWarmupIterations != 1
+                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                        || maximumMeasuredIterations != 1) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires one fresh measured INSERT interval per worker");
+                }
+                boolean bare = "BARE".equals(configuredInsertTableShape);
+                boolean primaryKey = "PRIMARY_KEY_ONLY".equals(configuredInsertTableShape);
+                if (!bare && !primaryKey) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires BARE or PRIMARY_KEY_ONLY");
+                }
+                if ((bare && !mvccGen2A1ServerEnabled())
+                        || (primaryKey && !mvccGen2BServerEnabled())
+                        || !mvccGen2TransactionStatusVisibilityServerEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
+                }
+                if (f08TransactionStatusAttribution) {
+                    String expectedProfileTargets =
+                            "delos_heap_drda,delos_mvcc_drda,upstream_derby_drda";
+                    if (!expectedProfileTargets.equals(
+                            System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
+                        throw new IllegalArgumentException(
+                                "F08 transaction-status attribution requires server profiling for "
+                                        + expectedProfileTargets);
+                    }
+                }
             } else if (postModernizationMutationCheckpoint) {
                 boolean insertCheckpoint = configuredWorkloads.equals(List.of(Workload.INSERT_100));
                 boolean freshUpdateCheckpoint = configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100));
@@ -13970,7 +14058,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !gen2A1ThroughputSentinel && !gen2BThroughputSentinel
                     && !gen2C3UpdateThroughputSentinel && !gen2C3PostgresqlUpdateComparison
                     && !gen2C3ReadFitness && !gen2C3ProjectedCurrentRead
-                    && !postModernizationMutationCheckpoint
+                    && !postModernizationMutationCheckpoint && !f08TransactionStatusCrossEngine
                     && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
                     && !f04DrdaRowAdvanceJfrDiagnostic && !f04FanoutJfrDiagnostic
                     && !f07DrdaServerPhaseDiagnostic
@@ -14041,10 +14129,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                         throw new IllegalArgumentException(
                                 diagnosticName + " requires the Delos network client classpath");
                     }
-                } else if (mutationSchemaAttribution) {
+                } else if (mutationSchemaAttribution || f08TransactionStatusAttribution) {
                     if (delosClientClasspath.isBlank() || upstreamDerbyClientClasspath.isBlank()) {
+                        String diagnosticName = mutationSchemaAttribution
+                                ? "F08 mutation-schema attribution"
+                                : "F08 transaction-status attribution";
                         throw new IllegalArgumentException(
-                                "F08 mutation-schema attribution client classpaths are required");
+                                diagnosticName + " client classpaths are required");
                     }
                 } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel || gen2C3UpdateThroughputSentinel) {
                     if (delosClientClasspath.isBlank()) {
@@ -14095,15 +14186,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                             throw new IllegalArgumentException(
                                     diagnosticName + " requires the Delos server image");
                         }
-                    } else if (mutationSchemaAttribution) {
+                    } else if (mutationSchemaAttribution || f08TransactionStatusAttribution) {
                         if (!Files.isDirectory(upstreamDerbyServerRuntimeDirectory)) {
                             throw new IllegalArgumentException(
                                     "Upstream Derby server runtime directory does not exist: "
                                             + upstreamDerbyServerRuntimeDirectory);
                         }
                         if (delosServerImage.isBlank() || upstreamDerbyServerImage.isBlank()) {
+                            String diagnosticName = mutationSchemaAttribution
+                                    ? "F08 mutation-schema attribution"
+                                    : "F08 transaction-status attribution";
                             throw new IllegalArgumentException(
-                                    "F08 mutation-schema attribution server images are required");
+                                    diagnosticName + " server images are required");
                         }
                     } else if (gen2A1ThroughputSentinel || gen2BThroughputSentinel || gen2C3UpdateThroughputSentinel) {
                         if (delosServerImage.isBlank()) {
