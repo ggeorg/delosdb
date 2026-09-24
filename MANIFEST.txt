@@ -1,11 +1,14 @@
-DelosDB F08-H upstream Derby server JFR fix
+F08-I B-tree INSERT root-routing snapshot causal experiment
 
-Changed repository files: 1
+Changed repository files:
+- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/build.gradle
 
 Purpose:
-- instrument UPSTREAM_DERBY_DRDA with the same server-JFR bind mount and JVM recording options already used by Delos DRDA targets;
-- preserve graceful container shutdown so dumponexit recordings are flushed;
-- fail F08 transaction-status attribution preflight unless profileServerTargets is exactly delos_heap_drda,delos_mvcc_drda,upstream_derby_drda.
+- Add a default-OFF INSERT path that first attempts the existing validated immutable B-tree root-routing snapshot.
+- Fall back to the inherited latched ROOTPAGEID search whenever the snapshot is absent or invalidated.
+- Add explicit server-property plumbing and an F08-I PRIMARY_KEY_ONLY INSERT_100 server-JFR task.
+- Preserve upstream Derby as an unchanged comparator.
 
-No production code, benchmark workload, iteration count, threshold, or target set is changed.
+Production default is unchanged.

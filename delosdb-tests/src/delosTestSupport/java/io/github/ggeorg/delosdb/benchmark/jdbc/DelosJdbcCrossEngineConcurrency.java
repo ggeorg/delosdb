@@ -5699,6 +5699,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
                         "-XX:+AlwaysPreTouch"));
                 addServerProfileJvmArgs(target, run, javaCommand);
+                if (btreeInsertRootRoutingSnapshotServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
+                }
                 if (Boolean.getBoolean("derby.storage.indexStats.debug.keepDisposableStats")) {
                     javaCommand.add("-Dderby.storage.indexStats.debug.keepDisposableStats=true");
                 }
@@ -12030,6 +12034,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
                 .append("F08 transaction-status cross-engine diagnostic: ")
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
+                .append("B-tree INSERT root-routing snapshot server enabled: ")
+                .append(btreeInsertRootRoutingSnapshotServerEnabled()).append('\n')
                 .append("MVCC Gen2-C1 server enabled: ")
                 .append(mvccGen2C1ServerEnabled()).append('\n')
                 .append("Gen2-C3 UPDATE throughput sentinel: ")
@@ -12313,6 +12319,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f08TransactionStatusCrossEngineEnabled() {
         return Boolean.getBoolean(PREFIX + "f08TransactionStatusCrossEngine");
+    }
+
+    private static boolean btreeInsertRootRoutingSnapshotServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "btreeInsertRootRoutingSnapshotServer");
     }
 
     private static boolean mvccGen2C1ServerEnabled() {

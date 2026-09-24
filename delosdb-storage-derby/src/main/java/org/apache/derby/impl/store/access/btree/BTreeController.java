@@ -68,6 +68,10 @@ import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
 public class BTreeController extends OpenBTree implements ConglomerateController
 {
 
+    private static final boolean INSERT_ROOT_ROUTING_SNAPSHOT =
+            Boolean.getBoolean(
+                    "delosdb.experimental.btreeInsertRootRoutingSnapshot.enabled");
+
     transient StoreDataValue[] scratch_template = null;
 
     /**
@@ -656,6 +660,18 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         return NO_MATCH;
     }
 
+    private LeafControlRow findInsertLeaf(SearchParameters sp)
+            throws StandardException {
+        if (INSERT_ROOT_ROUTING_SNAPSHOT) {
+            ControlRow routed =
+                    getConglomerate().searchFromRootRoutingSnapshot(this, sp);
+            if (routed != null) {
+                return (LeafControlRow) routed;
+            }
+        }
+        return (LeafControlRow) ControlRow.get(this, BTree.ROOTPAGEID).search(sp);
+    }
+
 	/**
     Insert a row into the conglomerate.
 
@@ -729,8 +745,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             if (SanityManager.DEBUG)
                 SanityManager.ASSERT(this.container != null);
 
-            targetleaf = (LeafControlRow)
-                ControlRow.get(this, BTree.ROOTPAGEID).search(sp);
+            targetleaf = findInsertLeaf(sp);
 
 
             // Row locking - first lock row previous to row being inserted:
