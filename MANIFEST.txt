@@ -1,27 +1,16 @@
-DelosDB F08-J branch-routing integrity and wiring fix
-
-Purpose:
-- Fix the F08-J repository-integrity regressions without raising baselines.
-- Wire the branch-routing experiment into the actual B-tree INSERT path.
-- Preserve the accepted F08-I root-only behavior when branch routing is disabled.
-- Move root+branch INSERT routing into a focused helper so BTree remains below
-  the repository 1000-line production-class threshold.
-
-Root causes fixed:
-- INSERT_BRANCH_ROUTING_SNAPSHOT was declared but never read.
-- BTreeController.findInsertLeaf() still called only searchFromRootRoutingSnapshot(),
-  so the F08-J branch-routing code was unreachable.
-- Adding the branch-routing implementation directly to BTree increased the BTree
-  class from 971 lines in accepted F08-I to 1034 lines, crossing the 1000-line gate.
+DelosDB F08-K multi-row INSERT statement-shape control
 
 Changed repository files:
-- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java
-- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
-- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeInsertRoutingSnapshots.java
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Behavior:
-- branch flag ON: try validated root+branch routing first, then root-only routing,
-  then the inherited latched-root path.
-- branch flag OFF / root flag ON: preserve F08-I root-only routing exactly.
-- both flags OFF: preserve inherited B-tree INSERT path.
-- production flags remain default OFF.
+Purpose:
+- Compare existing JDBC INSERT_100 batching (100 single-row statement executions)
+  with one SQL INSERT statement containing 100 VALUES rows.
+- Keep PRIMARY_KEY_ONLY shape, 8 clients, 100 logical inserts/transaction,
+  one commit/transaction, transaction-status visibility on Gen2, and the full
+  SERVER product matrix unchanged.
+- Isolate repeated server statement/RowChanger/controller lifecycle from
+  physical row/index/WAL work.
+
+Production behavior changed: none.

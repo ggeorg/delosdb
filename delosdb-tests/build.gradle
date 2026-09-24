@@ -23434,6 +23434,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
     def reportRoot = cfg.reportRoot ?: delosPostModernizationMutationRoot
     def databaseRootPath = cfg.databaseRootPath ?: delosPostModernizationMutationDbRoot
     boolean transactionStatusCrossEngine = cfg.transactionStatusCrossEngine == true
+    boolean f08MultiRowInsertControl = cfg.f08MultiRowInsertControl == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23475,6 +23476,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': transactionStatusCrossEngine ? 'false' : 'true',
                     'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': transactionStatusCrossEngine ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.f08MultiRowInsertControl': f08MultiRowInsertControl ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -23578,6 +23580,12 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                         || !text.contains('MVCC Gen2 transaction-status visibility server enabled: true')) {
                     throw new GradleException(
                             "F08 transaction-status benchmark did not prove status-visibility server plumbing: ${summary}")
+                }
+                def expectedMultiRowMarker =
+                        "F08 multi-row INSERT control: ${f08MultiRowInsertControl ? 'true' : 'false'}"
+                if (!text.contains(expectedMultiRowMarker)) {
+                    throw new GradleException(
+                            "F08 multi-row INSERT control marker mismatch: ${summary}")
                 }
             } else if (!text.contains('Post-modernization mutation checkpoint enabled: true')) {
                 throw new GradleException("Mutation checkpoint marker is missing: ${summary}")
@@ -23721,6 +23729,90 @@ tasks.register('runDelosF08TransactionStatusCrossEngineScaling') {
                 }
             }
         }
+    }
+}
+
+// F08-K: distinguish JDBC batch statement churn from physical INSERT/index work.
+// The control preserves 100 inserted rows per transaction but executes them as
+// one SQL multi-row VALUES statement instead of 100 batched single-row statements.
+def delosF08MultiRowInsertControlRoot =
+        'reports/delosdb/benchmarks/f08-multirow-insert-control'
+def delosF08MultiRowInsertControlDbRoot =
+        'tmp/delos-f08-multirow-insert-control'
+
+def registerDelosF08MultiRowInsertControl = { String taskName, String groupName, boolean multiRow ->
+    registerDelosPostModernizationMutation(
+            taskName,
+            [
+                    description: multiRow
+                            ? 'Runs F08-K PRIMARY_KEY_ONLY INSERT_100 as one 100-row VALUES statement across the full SERVER product matrix.'
+                            : 'Runs F08-K PRIMARY_KEY_ONLY INSERT_100 as the existing JDBC batch across the full SERVER product matrix.',
+                    group: groupName,
+                    gen2Mode: 'B',
+                    transactionStatusCrossEngine: true,
+                    f08MultiRowInsertControl: multiRow,
+                    reportRoot: delosF08MultiRowInsertControlRoot,
+                    databaseRootPath: delosF08MultiRowInsertControlDbRoot,
+                    workloads: 'INSERT_100',
+                    tableShape: 'PRIMARY_KEY_ONLY',
+                    rows: '10000',
+                    clients: '8',
+                    widths: '1',
+                    transactionsPerClient: '2500',
+                    fixedBudget: '250000',
+                    fixtureBatch: '100',
+                    warmups: '0',
+                    iterations: '1',
+                    minimumWarmupSeconds: '0.0',
+                    maximumWarmupIterations: '1',
+                    minimumMeasuredSeconds: '0.0',
+                    maximumMeasuredIterations: '1',
+                    caseTimeoutSeconds: '600',
+                    workerTimeoutSeconds: '2400'
+            ])
+}
+
+registerDelosF08MultiRowInsertControl(
+        'runDelosF08PrimaryKeyJdbcBatch100Control',
+        'jdbc-batch-100', false)
+registerDelosF08MultiRowInsertControl(
+        'runDelosF08PrimaryKeyMultiRow100Control',
+        'multirow-values-100', true)
+
+tasks.named('runDelosF08PrimaryKeyMultiRow100Control') {
+    mustRunAfter tasks.named('runDelosF08PrimaryKeyJdbcBatch100Control')
+}
+
+tasks.register('runDelosF08MultiRowInsert100Control') {
+    group = 'benchmark'
+    description = 'Runs the matched F08-K JDBC-batch versus one-statement multi-row INSERT_100 control.'
+    dependsOn tasks.named('runDelosF08PrimaryKeyJdbcBatch100Control'),
+            tasks.named('runDelosF08PrimaryKeyMultiRow100Control')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08MultiRowInsertControlRoot))
+    doLast {
+        def root = rootProject.layout.buildDirectory
+                .dir(delosF08MultiRowInsertControlRoot).get().asFile
+        ['jdbc-batch-100', 'multirow-values-100'].each { String reportGroup ->
+            def reportDir = new File(root, reportGroup)
+            ['cross-engine-concurrency-summary.txt',
+             'cross-engine-concurrency-ratios.csv',
+             'cross-engine-concurrency-dispersion.csv',
+             'sql-semantic-oracle.txt'].each { String reportName ->
+                def report = new File(reportDir, reportName)
+                if (!report.isFile()) {
+                    throw new GradleException(
+                            "Missing F08-K multi-row INSERT control report: ${report}")
+                }
+            }
+        }
+        new File(root, 'CONTROL-NOTES.txt').setText(
+                'F08-K PRIMARY_KEY_ONLY INSERT_100 statement-shape control\n' +
+                'jdbc-batch-100 = 100 PreparedStatement batch elements per transaction\n' +
+                'multirow-values-100 = one INSERT ... VALUES statement containing 100 rows per transaction\n' +
+                'Both shapes insert the same logical rows and commit once per 100 operations.\n' +
+                'Interpretation: isolates repeated server statement/controller lifecycle from physical row/index work.\n',
+                'UTF-8')
     }
 }
 

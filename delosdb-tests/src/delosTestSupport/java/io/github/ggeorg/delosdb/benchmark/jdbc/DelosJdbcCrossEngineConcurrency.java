@@ -5483,6 +5483,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f08TransactionStatusCrossEngineEnabled()) {
             addProperty(command, "f08TransactionStatusCrossEngine", true);
         }
+        if (f08MultiRowInsertControlEnabled()) {
+            addProperty(command, "f08MultiRowInsertControl", true);
+        }
         if (mvccGen2C1ServerEnabled()) {
             addProperty(command, "mvccGen2C1Server", true);
         }
@@ -9479,9 +9482,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     localUpdate = connection.prepareStatement(
                             "update " + table + " set quantity = quantity + 1 where id = ?");
                 } else if (workload.isInsert()) {
+                    int rowsPerStatement = f08MultiRowInsertControlEnabled()
+                            && workload == Workload.INSERT_100 ? 100 : 1;
                     localInsertRow = connection.prepareStatement(
-                            "insert into " + table
-                                    + " (id, category, bucket, quantity, payload) values (?, ?, ?, ?, ?)");
+                            fitnessInsertSql(table, rowsPerStatement));
                 } else if (workload.isDeleteReinsert()) {
                     localDeleteRow = connection.prepareStatement("delete from " + table + " where id = ?");
                     localInsertRow = connection.prepareStatement(
@@ -9722,6 +9726,26 @@ public final class DelosJdbcCrossEngineConcurrency {
         private long executeInsertTransaction(int transaction, int operationsPerTransaction)
                 throws SQLException {
             long fingerprint = 1L;
+            if (f08MultiRowInsertControlEnabled()) {
+                if (workload != Workload.INSERT_100 || operationsPerTransaction != 100) {
+                    throw new SQLException(
+                            "F08 multi-row INSERT control requires INSERT_100 with 100 operations");
+                }
+                insertRow.clearParameters();
+                for (int operation = 0; operation < operationsPerTransaction; operation++) {
+                    int id = insertBaseId + transaction * operationsPerTransaction + operation;
+                    bindFitnessInsert(
+                            insertRow, operation * 5 + 1, id, payloadSize);
+                    fingerprint = mix(fingerprint, id);
+                }
+                int count = insertRow.executeUpdate();
+                if (count != operationsPerTransaction && count != Statement.SUCCESS_NO_INFO) {
+                    throw new SQLException(
+                            "F08 multi-row INSERT returned unexpected update count: expected="
+                                    + operationsPerTransaction + ", actual=" + count);
+                }
+                return fingerprint;
+            }
             if (operationsPerTransaction == 1) {
                 int id = insertBaseId + transaction;
                 bindFitnessInsert(insertRow, id, payloadSize);
@@ -10392,11 +10416,30 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static void bindFitnessInsert(PreparedStatement statement, int id, int payloadSize)
             throws SQLException {
-        statement.setInt(1, id);
-        statement.setInt(2, id % 17);
-        statement.setInt(3, id % 11);
-        statement.setInt(4, fitnessInsertQuantity(id));
-        statement.setString(5, fitnessPayload(id, payloadSize));
+        bindFitnessInsert(statement, 1, id, payloadSize);
+    }
+
+    private static void bindFitnessInsert(
+            PreparedStatement statement, int firstParameter, int id, int payloadSize)
+            throws SQLException {
+        statement.setInt(firstParameter, id);
+        statement.setInt(firstParameter + 1, id % 17);
+        statement.setInt(firstParameter + 2, id % 11);
+        statement.setInt(firstParameter + 3, fitnessInsertQuantity(id));
+        statement.setString(firstParameter + 4, fitnessPayload(id, payloadSize));
+    }
+
+    private static String fitnessInsertSql(String table, int rowsPerStatement) {
+        StringBuilder sql = new StringBuilder(
+                "insert into " + table
+                        + " (id, category, bucket, quantity, payload) values ");
+        for (int row = 0; row < rowsPerStatement; row++) {
+            if (row != 0) {
+                sql.append(", ");
+            }
+            sql.append("(?, ?, ?, ?, ?)");
+        }
+        return sql.toString();
     }
 
     private static int fitnessInsertQuantity(int id) {
@@ -12038,6 +12081,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
                 .append("F08 transaction-status cross-engine diagnostic: ")
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
+                .append("F08 multi-row INSERT control: ")
+                .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("B-tree INSERT root-routing snapshot server enabled: ")
                 .append(btreeInsertRootRoutingSnapshotServerEnabled()).append('\n')
                 .append("B-tree INSERT branch-routing snapshot server enabled: ")
@@ -12325,6 +12370,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f08TransactionStatusCrossEngineEnabled() {
         return Boolean.getBoolean(PREFIX + "f08TransactionStatusCrossEngine");
+    }
+
+    private static boolean f08MultiRowInsertControlEnabled() {
+        return Boolean.getBoolean(PREFIX + "f08MultiRowInsertControl");
     }
 
     private static boolean btreeInsertRootRoutingSnapshotServerEnabled() {
@@ -13905,6 +13954,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                         || !mvccGen2TransactionStatusVisibilityServerEnabled()) {
                     throw new IllegalArgumentException(
                             "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
+                }
+                if (f08MultiRowInsertControlEnabled()) {
+                    if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
+                            || !primaryKey) {
+                        throw new IllegalArgumentException(
+                                "F08 multi-row INSERT control requires the full SERVER matrix, "
+                                        + "PRIMARY_KEY_ONLY, and INSERT_100");
+                    }
                 }
                 if (f08TransactionStatusAttribution) {
                     String expectedProfileTargets =
