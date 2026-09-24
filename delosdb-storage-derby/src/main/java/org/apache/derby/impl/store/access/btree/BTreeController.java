@@ -71,6 +71,9 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     private static final boolean INSERT_ROOT_ROUTING_SNAPSHOT =
             Boolean.getBoolean(
                     "delosdb.experimental.btreeInsertRootRoutingSnapshot.enabled");
+    private static final boolean INSERT_BRANCH_ROUTING_SNAPSHOT =
+            Boolean.getBoolean(
+                    "delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled");
 
     transient StoreDataValue[] scratch_template = null;
 

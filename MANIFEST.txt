@@ -1,14 +1,28 @@
-F08-I B-tree INSERT root-routing snapshot causal experiment
+DelosDB F08-J B-tree INSERT branch-routing snapshot experiment
+
+Purpose:
+- Extend the validated F08-I root-routing experiment with the existing immutable
+  level-1 B-tree branch routing snapshots.
+- Route INSERT searches root snapshot -> branch snapshot -> authoritative leaf,
+  validating retained snapshots before and after leaf acquisition/search.
+- Fall back to the current root-snapshot or inherited latched-root path whenever
+  routing snapshots are absent, stale, or unsupported by the current tree height.
+- Keep the production experiment default OFF.
+- Add a focused F08-J server-JFR task using the same PRIMARY_KEY_ONLY INSERT_100
+  shape and the same Heap / Gen2-status / upstream Derby comparator set as F08-I.
 
 Changed repository files:
+- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java
 - delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 - delosdb-tests/build.gradle
 
-Purpose:
-- Add a default-OFF INSERT path that first attempts the existing validated immutable B-tree root-routing snapshot.
-- Fall back to the inherited latched ROOTPAGEID search whenever the snapshot is absent or invalidated.
-- Add explicit server-property plumbing and an F08-I PRIMARY_KEY_ONLY INSERT_100 server-JFR task.
-- Preserve upstream Derby as an unchanged comparator.
+Production flags:
+- delosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=false by default
+- delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled=false by default
 
-Production default is unchanged.
+Focused task:
+- :delosdb-tests:runDelosF08BTreeInsertBranchRoutingSnapshotServerJfr
+
+Expected report root:
+- build/reports/delosdb/benchmarks/f08-shared-insert-server-jfr/primary-key-branch-routing-snapshot

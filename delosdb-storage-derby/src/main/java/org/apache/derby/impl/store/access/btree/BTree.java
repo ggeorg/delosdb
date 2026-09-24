@@ -260,6 +260,69 @@ public abstract class BTree extends GenericConglomerate
         return null;
     }
 
+    final ControlRow searchFromInsertRoutingSnapshots(
+            OpenBTree openBtree, SearchParameters params)
+            throws StandardException {
+        RootRoutingSnapshot root = rootRoutingSnapshot;
+        if (root == null || root.rootLevel != 2) {
+            return null;
+        }
+
+        long branchPageNumber = root.search(params, this);
+        if (rootRoutingSnapshot != root) {
+            return null;
+        }
+
+        BTreeBranchRoutingSnapshots snapshots = branchRoutingSnapshots();
+        BTreeBranchRoutingSnapshots.Snapshot branch =
+                snapshots.get(branchPageNumber);
+        if (branch == null) {
+            ControlRow control = ControlRow.get(openBtree, branchPageNumber);
+            try {
+                if (rootRoutingSnapshot != root
+                        || !(control instanceof BranchControlRow branchControl)
+                        || branchControl.getLevel() != 1) {
+                    return null;
+                }
+                branch = observeBranchRoutingSnapshot(branchControl, openBtree);
+            } finally {
+                control.release();
+            }
+        }
+
+        long leafPageNumber = branch.route(
+                params.searchKey, params.partial_key_match_op, this);
+        if (!insertRoutingSnapshotsStillCurrent(
+                root, snapshots, branchPageNumber, branch)) {
+            return null;
+        }
+
+        ControlRow leaf = ControlRow.get(openBtree, leafPageNumber);
+        if (!insertRoutingSnapshotsStillCurrent(
+                root, snapshots, branchPageNumber, branch)) {
+            leaf.release();
+            return null;
+        }
+
+        ControlRow result = leaf.search(params);
+        if (insertRoutingSnapshotsStillCurrent(
+                root, snapshots, branchPageNumber, branch)) {
+            return result;
+        }
+        result.release();
+        return null;
+    }
+
+    private boolean insertRoutingSnapshotsStillCurrent(
+            RootRoutingSnapshot root,
+            BTreeBranchRoutingSnapshots snapshots,
+            long branchPageNumber,
+            BTreeBranchRoutingSnapshots.Snapshot branch) {
+        return rootRoutingSnapshot == root
+                && branchRoutingSnapshots == snapshots
+                && snapshots.isCurrent(branchPageNumber, branch);
+    }
+
     final int rootRoutingTreeHeight() {
         RootRoutingSnapshot snapshot = rootRoutingSnapshot;
         return snapshot == null ? 0 : snapshot.rootLevel + 1;

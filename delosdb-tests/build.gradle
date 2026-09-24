@@ -23852,12 +23852,15 @@ def configureDelosF08SharedInsertServerJfr = {
     String reportGroup,
     String tableShape,
     boolean gen2A1,
-    boolean insertRootRoutingSnapshot ->
+    boolean insertRootRoutingSnapshot,
+    boolean insertBranchRoutingSnapshot ->
 
     task.group = 'benchmark'
-    task.description = insertRootRoutingSnapshot
-            ? "Profiles F08-I ${tableShape} INSERT_100 with validated B-tree root-routing snapshot inserts."
-            : "Profiles F08-H ${tableShape} INSERT_100 server execution for Heap, Gen2-status, and upstream Derby."
+    task.description = insertBranchRoutingSnapshot
+            ? "Profiles F08-J ${tableShape} INSERT_100 with validated B-tree root+branch routing snapshot inserts."
+            : insertRootRoutingSnapshot
+                    ? "Profiles F08-I ${tableShape} INSERT_100 with validated B-tree root-routing snapshot inserts."
+                    : "Profiles F08-H ${tableShape} INSERT_100 server execution for Heap, Gen2-status, and upstream Derby."
     task.dependsOn tasks.named('compileTestJava'), ':jars',
             tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
     task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
@@ -23900,6 +23903,8 @@ def configureDelosF08SharedInsertServerJfr = {
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2C3UpdateServer': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.btreeInsertRootRoutingSnapshotServer':
                         insertRootRoutingSnapshot ? 'true' : 'false',
+                'delosdb.benchmark.crossEngineConcurrency.btreeInsertBranchRoutingSnapshotServer':
+                        insertBranchRoutingSnapshot ? 'true' : 'false',
                 'delosdb.benchmark.crossEngineConcurrency.profileServerTargets':
                         delosF08SharedInsertServerJfrTargets,
                 'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
@@ -23972,6 +23977,7 @@ def configureDelosF08SharedInsertServerJfr = {
                 'F08 transaction-status cross-engine diagnostic: true',
                 'MVCC Gen2 transaction-status visibility server enabled: true',
                 "B-tree INSERT root-routing snapshot server enabled: ${insertRootRoutingSnapshot}",
+                "B-tree INSERT branch-routing snapshot server enabled: ${insertBranchRoutingSnapshot}",
                 gen2A1
                         ? 'MVCC Gen2-A1 server enabled: true'
                         : 'MVCC Gen2-B server enabled: true'
@@ -24027,6 +24033,7 @@ def configureDelosF08SharedInsertServerJfr = {
                         'TransactionsPerClient=500\nRuns=4\n' +
                         'Gen2 transaction-status visibility=true\n' +
                         "B-tree insert root-routing snapshot=${insertRootRoutingSnapshot}\n" +
+                        "B-tree insert branch-routing snapshot=${insertBranchRoutingSnapshot}\n" +
                         'JFR settings=profile; stackdepth=256; one server recording per target/run\n' +
                         'Interpretation=server-side attribution only; JFR-enabled throughput is not canonical acceptance TPS.\n',
                 'UTF-8')
@@ -24034,18 +24041,25 @@ def configureDelosF08SharedInsertServerJfr = {
 }
 
 tasks.register('runDelosF08SharedInsertBareServerJfr', JavaExec) { task ->
-    configureDelosF08SharedInsertServerJfr(task, 'bare', 'BARE', true, false)
+    configureDelosF08SharedInsertServerJfr(task, 'bare', 'BARE', true, false, false)
 }
 
 tasks.register('runDelosF08SharedInsertPrimaryKeyServerJfr', JavaExec) { task ->
     configureDelosF08SharedInsertServerJfr(
-            task, 'primary-key', 'PRIMARY_KEY_ONLY', false, false)
+            task, 'primary-key', 'PRIMARY_KEY_ONLY', false, false, false)
     mustRunAfter tasks.named('runDelosF08SharedInsertBareServerJfr')
 }
 
 tasks.register('runDelosF08BTreeInsertRootRoutingSnapshotServerJfr', JavaExec) { task ->
     configureDelosF08SharedInsertServerJfr(
-            task, 'primary-key-root-routing-snapshot', 'PRIMARY_KEY_ONLY', false, true)
+            task, 'primary-key-root-routing-snapshot', 'PRIMARY_KEY_ONLY',
+            false, true, false)
+}
+
+tasks.register('runDelosF08BTreeInsertBranchRoutingSnapshotServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(
+            task, 'primary-key-branch-routing-snapshot', 'PRIMARY_KEY_ONLY',
+            false, true, true)
 }
 
 tasks.register('runDelosF08SharedInsertServerJfr') {
