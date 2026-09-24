@@ -263,57 +263,18 @@ public abstract class BTree extends GenericConglomerate
     final ControlRow searchFromInsertRoutingSnapshots(
             OpenBTree openBtree, SearchParameters params)
             throws StandardException {
-        RootRoutingSnapshot root = rootRoutingSnapshot;
-        if (root == null || root.rootLevel != 2) {
-            return null;
-        }
-
-        long branchPageNumber = root.search(params, this);
-        if (rootRoutingSnapshot != root) {
-            return null;
-        }
-
-        BTreeBranchRoutingSnapshots snapshots = branchRoutingSnapshots();
-        BTreeBranchRoutingSnapshots.Snapshot branch =
-                snapshots.get(branchPageNumber);
-        if (branch == null) {
-            ControlRow control = ControlRow.get(openBtree, branchPageNumber);
-            try {
-                if (rootRoutingSnapshot != root
-                        || !(control instanceof BranchControlRow branchControl)
-                        || branchControl.getLevel() != 1) {
-                    return null;
-                }
-                branch = observeBranchRoutingSnapshot(branchControl, openBtree);
-            } finally {
-                control.release();
-            }
-        }
-
-        long leafPageNumber = branch.route(
-                params.searchKey, params.partial_key_match_op, this);
-        if (!insertRoutingSnapshotsStillCurrent(
-                root, snapshots, branchPageNumber, branch)) {
-            return null;
-        }
-
-        ControlRow leaf = ControlRow.get(openBtree, leafPageNumber);
-        if (!insertRoutingSnapshotsStillCurrent(
-                root, snapshots, branchPageNumber, branch)) {
-            leaf.release();
-            return null;
-        }
-
-        ControlRow result = leaf.search(params);
-        if (insertRoutingSnapshotsStillCurrent(
-                root, snapshots, branchPageNumber, branch)) {
-            return result;
-        }
-        result.release();
-        return null;
+        return BTreeInsertRoutingSnapshots.search(this, openBtree, params);
     }
 
-    private boolean insertRoutingSnapshotsStillCurrent(
+    final RootRoutingSnapshot insertRootRoutingSnapshot() {
+        return rootRoutingSnapshot;
+    }
+
+    final BTreeBranchRoutingSnapshots insertBranchRoutingSnapshots() {
+        return branchRoutingSnapshots();
+    }
+
+    final boolean insertRoutingSnapshotsStillCurrent(
             RootRoutingSnapshot root,
             BTreeBranchRoutingSnapshots snapshots,
             long branchPageNumber,
@@ -501,9 +462,9 @@ public abstract class BTree extends GenericConglomerate
         return snapshots;
     }
 
-    private static final class RootRoutingSnapshot {
+    static final class RootRoutingSnapshot {
         private final long pageVersion;
-        private final int rootLevel;
+        final int rootLevel;
         private final StoreDataValue[][] branchRows;
         private final long[] childPageIds;
 
@@ -538,7 +499,7 @@ public abstract class BTree extends GenericConglomerate
                     pageVersion, root.getLevel(), branchRows, childPageIds);
         }
 
-        private long search(SearchParameters params, BTree btree)
+        long search(SearchParameters params, BTree btree)
                 throws StandardException {
             int leftSlot = 0;
             int rightSlot = branchRows.length + 1;

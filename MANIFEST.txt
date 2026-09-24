@@ -1,28 +1,27 @@
-DelosDB F08-J B-tree INSERT branch-routing snapshot experiment
+DelosDB F08-J branch-routing integrity and wiring fix
 
 Purpose:
-- Extend the validated F08-I root-routing experiment with the existing immutable
-  level-1 B-tree branch routing snapshots.
-- Route INSERT searches root snapshot -> branch snapshot -> authoritative leaf,
-  validating retained snapshots before and after leaf acquisition/search.
-- Fall back to the current root-snapshot or inherited latched-root path whenever
-  routing snapshots are absent, stale, or unsupported by the current tree height.
-- Keep the production experiment default OFF.
-- Add a focused F08-J server-JFR task using the same PRIMARY_KEY_ONLY INSERT_100
-  shape and the same Heap / Gen2-status / upstream Derby comparator set as F08-I.
+- Fix the F08-J repository-integrity regressions without raising baselines.
+- Wire the branch-routing experiment into the actual B-tree INSERT path.
+- Preserve the accepted F08-I root-only behavior when branch routing is disabled.
+- Move root+branch INSERT routing into a focused helper so BTree remains below
+  the repository 1000-line production-class threshold.
+
+Root causes fixed:
+- INSERT_BRANCH_ROUTING_SNAPSHOT was declared but never read.
+- BTreeController.findInsertLeaf() still called only searchFromRootRoutingSnapshot(),
+  so the F08-J branch-routing code was unreachable.
+- Adding the branch-routing implementation directly to BTree increased the BTree
+  class from 971 lines in accepted F08-I to 1034 lines, crossing the 1000-line gate.
 
 Changed repository files:
 - delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTree.java
 - delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/build.gradle
+- delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeInsertRoutingSnapshots.java
 
-Production flags:
-- delosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=false by default
-- delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled=false by default
-
-Focused task:
-- :delosdb-tests:runDelosF08BTreeInsertBranchRoutingSnapshotServerJfr
-
-Expected report root:
-- build/reports/delosdb/benchmarks/f08-shared-insert-server-jfr/primary-key-branch-routing-snapshot
+Behavior:
+- branch flag ON: try validated root+branch routing first, then root-only routing,
+  then the inherited latched-root path.
+- branch flag OFF / root flag ON: preserve F08-I root-only routing exactly.
+- both flags OFF: preserve inherited B-tree INSERT path.
+- production flags remain default OFF.

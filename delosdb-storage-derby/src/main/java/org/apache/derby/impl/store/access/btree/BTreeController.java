@@ -665,6 +665,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
     private LeafControlRow findInsertLeaf(SearchParameters sp)
             throws StandardException {
+        if (INSERT_BRANCH_ROUTING_SNAPSHOT) {
+            ControlRow routed =
+                    getConglomerate().searchFromInsertRoutingSnapshots(this, sp);
+            if (routed != null) {
+                return (LeafControlRow) routed;
+            }
+        }
         if (INSERT_ROOT_ROUTING_SNAPSHOT) {
             ControlRow routed =
                     getConglomerate().searchFromRootRoutingSnapshot(this, sp);
