@@ -23984,7 +23984,10 @@ def configureDelosF08SharedInsertServerJfr = {
     boolean gen2A1,
     boolean insertRootRoutingSnapshot,
     boolean insertBranchRoutingSnapshot,
-    String payloadBytes ->
+    String payloadBytes,
+    String clientCount = '8',
+    String fixedBudgetPerClient = '50000',
+    boolean contentionScalingSlice = false ->
 
     task.group = 'benchmark'
     task.description = insertBranchRoutingSnapshot
@@ -24026,6 +24029,10 @@ def configureDelosF08SharedInsertServerJfr = {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling':
+                        contentionScalingSlice ? 'true' : 'false',
+                'delosdb.benchmark.crossEngineConcurrency.f08ContentionScalingSlice':
+                        contentionScalingSlice ? 'true' : 'false',
                 'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': 'false',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': gen2A1 ? 'true' : 'false',
@@ -24068,11 +24075,11 @@ def configureDelosF08SharedInsertServerJfr = {
                 'delosdb.benchmark.crossEngineConcurrency.reportDirectory':
                         reportDir.absolutePath,
                 'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
-                'delosdb.benchmark.crossEngineConcurrency.clients': '8',
+                'delosdb.benchmark.crossEngineConcurrency.clients': clientCount,
                 'delosdb.benchmark.crossEngineConcurrency.widths': '1',
                 'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '500',
-                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '50000',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': fixedBudgetPerClient,
                 'delosdb.benchmark.crossEngineConcurrency.insertTableShape': tableShape,
                 'delosdb.benchmark.crossEngineConcurrency.payload': payloadBytes,
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
@@ -24103,7 +24110,7 @@ def configureDelosF08SharedInsertServerJfr = {
         String summaryText = summary.getText('UTF-8')
         [
                 'Workloads: [INSERT_100]',
-                'Clients: 8',
+                "Clients: ${clientCount}",
                 "INSERT table shape: ${tableShape}",
                 'F08 transaction-status cross-engine diagnostic: true',
                 'MVCC Gen2 transaction-status visibility server enabled: true',
@@ -24160,7 +24167,7 @@ def configureDelosF08SharedInsertServerJfr = {
                 'F08-H shared INSERT_100 server JFR attribution\n' +
                         "TableShape=${tableShape}\n" +
                         'Targets=delos_heap_drda,delos_mvcc_drda,upstream_derby_drda\n' +
-                        'Rows=10000\nClients=8\nOperationsPerTransaction=100\n' +
+                        "Rows=10000\nClients=${clientCount}\nOperationsPerTransaction=100\n" +
                         'TransactionsPerClient=500\nRuns=4\n' +
                         'Gen2 transaction-status visibility=true\n' +
                         "B-tree insert root-routing snapshot=${insertRootRoutingSnapshot}\n" +
@@ -24501,6 +24508,118 @@ tasks.register('runDelosF08RawStoreLogAppendContentionServerJfr', JavaExec) { ta
                 'Derby-family servers: derby.storage.logBufferSize=1048576 and derby.system.durability=test.\n' +
                 'Server JFR: profile.jfc with jdk.JavaMonitorEnter threshold=1 us.\n' +
                 'NON-DURABLE diagnostic only. Interpret contention-by-site total/count for LogToFile append monitor versus total execution time.\n',
+                'UTF-8')
+    }
+}
+
+
+// F08-Q: measure how the two dominant shared RawStore monitors scale with
+// concurrency. Each slice is isolated in its own server recording so monitor
+// counts/blocked time map unambiguously to one client count. Physical WAL I/O
+// remains minimized exactly as in F08-P.
+def configureDelosF08RawStoreContentionScalingSlice = {
+    JavaExec task, int clients, String fixedBudgetPerClient ->
+    String reportGroup = "primary-key-contention-clients-${clients}"
+    configureDelosF08SharedInsertServerJfr(
+            task, reportGroup, 'PRIMARY_KEY_ONLY', false, false, false, '16',
+            Integer.toString(clients), fixedBudgetPerClient, true)
+    task.description = "Profiles F08-Q ${clients}-client RawStore contention scaling at the 16-byte payload floor."
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer',
+                '1048576')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer',
+                'true')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.profileServerJavaMonitorEnterThreshold',
+                '1us')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                "Clients: ${clients}",
+                'Payload bytes: 16',
+                'F08 fixed-cost client-scaling diagnostic: true',
+                'F08 contention-scaling slice diagnostic: true',
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true'
+        ].each { String marker ->
+            File evidence = marker.startsWith('Payload bytes:')
+                    ? new File(reportDir, 'server-container-manifest.txt')
+                    : summary
+            if (!evidence.isFile() || !evidence.getText('UTF-8').contains(marker)) {
+                throw new GradleException(
+                        "F08-Q evidence missing marker '${marker}': ${evidence}")
+            }
+        }
+        File jfrDir = new File(reportDir, 'workers/server-jfr')
+        File views = new File(reportDir, 'jfr-views')
+        File jfrTool = new File(System.getProperty('java.home'), 'bin/jfr')
+        def recordings = jfrDir.isDirectory()
+                ? (jfrDir.listFiles()?.findAll { it.name.endsWith('-server.jfr') }?.sort { it.name } ?: [])
+                : []
+        if (recordings.size() != 12) {
+            throw new GradleException(
+                    "F08-Q expected 12 server JFR recordings for ${clients} clients, found ${recordings.size()}")
+        }
+        recordings.each { File recording ->
+            def execOutput = providers.exec {
+                commandLine jfrTool.absolutePath, 'view', '--width', '220',
+                        'contention-by-class', recording.absolutePath
+                ignoreExitValue = true
+            }
+            if (execOutput.result.get().exitValue != 0) {
+                throw new GradleException(
+                        "F08-Q contention-by-class failed for ${recording.name}: "
+                                + execOutput.standardError.asText.get().trim())
+            }
+            new File(views, recording.name.replace('.jfr', '-contention-by-class.txt'))
+                    .setText(execOutput.standardOutput.asText.get(), 'UTF-8')
+        }
+    }
+}
+
+tasks.register('runDelosF08RawStoreContentionClient1ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreContentionScalingSlice(task, 1, '400000')
+}
+
+tasks.register('runDelosF08RawStoreContentionClient2ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreContentionScalingSlice(task, 2, '200000')
+    mustRunAfter tasks.named('runDelosF08RawStoreContentionClient1ServerJfr')
+}
+
+tasks.register('runDelosF08RawStoreContentionClient4ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreContentionScalingSlice(task, 4, '100000')
+    mustRunAfter tasks.named('runDelosF08RawStoreContentionClient2ServerJfr')
+}
+
+tasks.register('runDelosF08RawStoreContentionClient8ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreContentionScalingSlice(task, 8, '50000')
+    mustRunAfter tasks.named('runDelosF08RawStoreContentionClient4ServerJfr')
+}
+
+tasks.register('runDelosF08RawStoreContentionScalingServerJfr') {
+    group = 'benchmark'
+    description = 'Runs F08-Q 1/2/4/8-client RawStore monitor-contention attribution with physical WAL I/O minimized.'
+    dependsOn tasks.named('runDelosF08RawStoreContentionClient1ServerJfr'),
+            tasks.named('runDelosF08RawStoreContentionClient2ServerJfr'),
+            tasks.named('runDelosF08RawStoreContentionClient4ServerJfr'),
+            tasks.named('runDelosF08RawStoreContentionClient8ServerJfr')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08SharedInsertServerJfrRoot).get().asFile
+        new File(root, 'F08-Q-NOTES.txt').setText(
+                'F08-Q RawStore monitor-contention client scaling\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8; constant 400000 logical inserted rows per target/run.\n' +
+                'Targets: Heap + Gen2-status + upstream Derby.\n' +
+                'Derby-family servers: logBufferSize=1048576; durability=test. NON-DURABLE diagnostic only.\n' +
+                'Server JFR JavaMonitorEnter threshold=1 us. Compare AllocationCache/pageValid and LogToFile/append monitor count + blocked time as concurrency rises.\n',
                 'UTF-8')
     }
 }

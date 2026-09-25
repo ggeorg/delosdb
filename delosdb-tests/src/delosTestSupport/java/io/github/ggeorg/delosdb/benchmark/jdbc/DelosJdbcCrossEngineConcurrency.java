@@ -5486,6 +5486,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f08FixedCostClientScalingEnabled()) {
             addProperty(command, "f08FixedCostClientScaling", true);
         }
+        if (f08ContentionScalingSliceEnabled()) {
+            addProperty(command, "f08ContentionScalingSlice", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -12135,6 +12138,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
                 .append("F08 fixed-cost client-scaling diagnostic: ")
                 .append(f08FixedCostClientScalingEnabled()).append('\n')
+                .append("F08 contention-scaling slice diagnostic: ")
+                .append(f08ContentionScalingSliceEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12433,6 +12438,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f08FixedCostClientScalingEnabled() {
         return Boolean.getBoolean(PREFIX + "f08FixedCostClientScaling");
+    }
+
+    private static boolean f08ContentionScalingSliceEnabled() {
+        return Boolean.getBoolean(PREFIX + "f08ContentionScalingSlice");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {
@@ -13994,16 +14003,26 @@ public final class DelosJdbcCrossEngineConcurrency {
                 }
             } else if (f08TransactionStatusCrossEngine) {
                 boolean f08FixedCostClientScaling = f08FixedCostClientScalingEnabled();
+                boolean f08ContentionScalingSlice = f08ContentionScalingSliceEnabled();
                 if (configuredWorkloads.size() != 1 || !configuredWorkloads.get(0).isInsert()) {
                     throw new IllegalArgumentException(
                             "F08 transaction-status cross-engine diagnostic requires exactly one INSERT workload");
                 }
-                List<Integer> expectedF08Clients = f08FixedCostClientScaling
-                        ? List.of(1, 2, 4, 8) : List.of(8);
-                if (!clientValues().equals(expectedF08Clients) || !widthValues().equals(List.of(1))) {
+                List<Integer> actualF08Clients = clientValues();
+                boolean validF08Clients;
+                if (f08ContentionScalingSlice) {
+                    validF08Clients = f08FixedCostClientScaling
+                            && actualF08Clients.size() == 1
+                            && List.of(1, 2, 4, 8).contains(actualF08Clients.get(0));
+                } else {
+                    List<Integer> expectedF08Clients = f08FixedCostClientScaling
+                            ? List.of(1, 2, 4, 8) : List.of(8);
+                    validF08Clients = actualF08Clients.equals(expectedF08Clients);
+                }
+                if (!validF08Clients || !widthValues().equals(List.of(1))) {
                     throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires clients="
-                                    + expectedF08Clients + ",widths=1");
+                            "F08 transaction-status cross-engine diagnostic has invalid clients="
+                                    + actualF08Clients + ",widths=" + widthValues());
                 }
                 if (!sqlSemanticOracleEnabled()) {
                     throw new IllegalArgumentException(
@@ -14031,15 +14050,25 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
                 }
                 if (f08FixedCostClientScaling) {
-                    if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                    boolean validScalingTargets = f08ContentionScalingSlice
+                            ? configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS)
+                            : configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+                    if (!validScalingTargets
                             || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
                             || !primaryKey
                             || payload != 16
                             || f08MultiRowInsertControlEnabled()) {
                         throw new IllegalArgumentException(
-                                "F08 fixed-cost client scaling requires the full SERVER matrix, "
-                                        + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
+                                f08ContentionScalingSlice
+                                        ? "F08 contention-scaling slice requires Derby-family SERVER targets, "
+                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape"
+                                        : "F08 fixed-cost client scaling requires the full SERVER matrix, "
+                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
                     }
+                }
+                if (f08ContentionScalingSlice && !f08TransactionStatusAttribution) {
+                    throw new IllegalArgumentException(
+                            "F08 contention-scaling slice requires the Derby-family attribution target set");
                 }
                 if (f08MultiRowInsertControlEnabled()) {
                     if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)

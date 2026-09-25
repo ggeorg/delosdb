@@ -1,10 +1,13 @@
-F08-P RawStore log-append contention JFR diagnostic
+DelosDB F08-Q RawStore monitor-contention client-scaling overlay
 
 Changed repository files:
 - delosdb-tests/build.gradle
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
 Purpose:
-- Run the validated 8-client, 16-byte PRIMARY_KEY_ONLY INSERT_100 server-JFR diagnostic with Derby-family physical WAL I/O minimized (1 MiB log buffer + durability=test).
-- Derive a profile.jfc configuration with jdk.JavaMonitorEnter threshold=1 us so short monitor-enter stalls are visible.
-- Keep production code unchanged.
+- profile 1/2/4/8-client PK INSERT_100 slices independently with a 1 us JavaMonitorEnter threshold
+- keep payload=16, transaction-status visibility enabled, 1 MiB RawStore log buffer, and durability=test
+- keep a constant 400000 logical inserted rows per target/run across client counts
+- attribute contention scaling separately for AllocationCache/pageValid and LogToFile append
+
+No production source changes.
