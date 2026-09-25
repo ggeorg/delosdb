@@ -5483,6 +5483,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f08TransactionStatusCrossEngineEnabled()) {
             addProperty(command, "f08TransactionStatusCrossEngine", true);
         }
+        if (f08FixedCostClientScalingEnabled()) {
+            addProperty(command, "f08FixedCostClientScaling", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -5614,16 +5617,49 @@ public final class DelosJdbcCrossEngineConcurrency {
         return false;
     }
 
+    private static final String SERVER_PROFILE_MONITOR_SETTINGS =
+            "server-profile-monitor.jfc";
+
     private static void addServerProfileMount(
-            Options options, Target target, List<String> command) throws IOException {
+            Options options, Target target, List<String> command) throws Exception {
         if (!shouldProfileServer(target)) {
             return;
         }
         Path profileDirectory = options.reportDirectory().resolve("workers").resolve("server-jfr")
                 .toAbsolutePath().normalize();
         Files.createDirectories(profileDirectory);
+        prepareServerProfileMonitorSettings(options, profileDirectory);
         command.add("--mount");
         command.add("type=bind,src=" + profileDirectory + ",dst=/opt/delos-jfr");
+    }
+
+    private static void prepareServerProfileMonitorSettings(
+            Options options, Path profileDirectory) throws Exception {
+        String threshold = serverProfileJavaMonitorEnterThreshold();
+        if (threshold.isEmpty()) {
+            return;
+        }
+        Path settings = profileDirectory.resolve(SERVER_PROFILE_MONITOR_SETTINGS);
+        if (Files.isRegularFile(settings)) {
+            return;
+        }
+        Path jfrTool = options.javaExecutable().getParent().resolve("jfr");
+        if (!Files.isRegularFile(jfrTool)) {
+            throw new IllegalStateException("JFR tool does not exist: " + jfrTool);
+        }
+        CommandResult configured = runCommand(30, List.of(
+                jfrTool.toString(), "configure", "--input", "profile.jfc",
+                "jdk.JavaMonitorEnter#threshold=" + threshold,
+                "--output", settings.toString()));
+        if (configured.exitCode() != 0 || !Files.isRegularFile(settings)) {
+            throw new IllegalStateException(
+                    "Could not generate server JFR monitor settings:\n" + configured.output());
+        }
+    }
+
+    private static String serverProfileJavaMonitorEnterThreshold() {
+        return System.getProperty(
+                PREFIX + "profileServerJavaMonitorEnterThreshold", "").trim();
     }
 
     private static void addServerProfileJvmArgs(
@@ -5633,9 +5669,23 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         String recording = String.format(
                 Locale.ROOT, "/opt/delos-jfr/%02d-%s-server.jfr", run, target.id());
+        String threshold = serverProfileJavaMonitorEnterThreshold();
+        String settings = threshold.isEmpty()
+                ? "profile"
+                : "/opt/delos-jfr/" + SERVER_PROFILE_MONITOR_SETTINGS;
         javaCommand.add("-XX:FlightRecorderOptions=stackdepth=256");
         javaCommand.add("-XX:StartFlightRecording=filename=" + recording
-                + ",settings=profile,dumponexit=true,maxsize=512m");
+                + ",settings=" + settings + ",dumponexit=true,maxsize=512m");
+    }
+
+    private static void addRawStoreLogControlJvmArgs(List<String> javaCommand) {
+        String logBufferSize = rawStoreLogBufferSizeServerOverride();
+        if (!logBufferSize.isEmpty()) {
+            javaCommand.add("-Dderby.storage.logBufferSize=" + logBufferSize);
+        }
+        if (rawStoreDurabilityTestNoSyncServerEnabled()) {
+            javaCommand.add("-Dderby.system.durability=test");
+        }
     }
 
     private static void addProperty(List<String> command, String name, Object value) {
@@ -5702,6 +5752,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
                         "-XX:+AlwaysPreTouch"));
                 addServerProfileJvmArgs(target, run, javaCommand);
+                addRawStoreLogControlJvmArgs(javaCommand);
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
@@ -5779,6 +5830,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "java", "-Xms" + options.childHeap(), "-Xmx" + options.childHeap(),
                         "-XX:+AlwaysPreTouch"));
                 addServerProfileJvmArgs(target, run, javaCommand);
+                addRawStoreLogControlJvmArgs(javaCommand);
                 javaCommand.addAll(List.of(
                         "-cp", "/opt/derby/lib/*",
                         "org.apache.derby.drda.NetworkServerControl", "start",
@@ -12081,8 +12133,15 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
                 .append("F08 transaction-status cross-engine diagnostic: ")
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
+                .append("F08 fixed-cost client-scaling diagnostic: ")
+                .append(f08FixedCostClientScalingEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
+                .append("RawStore log buffer size server override: ")
+                .append(rawStoreLogBufferSizeServerOverride().isEmpty()
+                        ? "default" : rawStoreLogBufferSizeServerOverride()).append('\n')
+                .append("RawStore durability test no-sync server enabled: ")
+                .append(rawStoreDurabilityTestNoSyncServerEnabled()).append('\n')
                 .append("B-tree INSERT root-routing snapshot server enabled: ")
                 .append(btreeInsertRootRoutingSnapshotServerEnabled()).append('\n')
                 .append("B-tree INSERT branch-routing snapshot server enabled: ")
@@ -12372,8 +12431,20 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "f08TransactionStatusCrossEngine");
     }
 
+    private static boolean f08FixedCostClientScalingEnabled() {
+        return Boolean.getBoolean(PREFIX + "f08FixedCostClientScaling");
+    }
+
     private static boolean f08MultiRowInsertControlEnabled() {
         return Boolean.getBoolean(PREFIX + "f08MultiRowInsertControl");
+    }
+
+    private static String rawStoreLogBufferSizeServerOverride() {
+        return System.getProperty(PREFIX + "rawStoreLogBufferSizeServer", "").trim();
+    }
+
+    private static boolean rawStoreDurabilityTestNoSyncServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStoreDurabilityTestNoSyncServer");
     }
 
     private static boolean btreeInsertRootRoutingSnapshotServerEnabled() {
@@ -13922,13 +13993,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 range-scan JFR requires PRIMARY_KEY_ONLY table shape");
                 }
             } else if (f08TransactionStatusCrossEngine) {
+                boolean f08FixedCostClientScaling = f08FixedCostClientScalingEnabled();
                 if (configuredWorkloads.size() != 1 || !configuredWorkloads.get(0).isInsert()) {
                     throw new IllegalArgumentException(
                             "F08 transaction-status cross-engine diagnostic requires exactly one INSERT workload");
                 }
-                if (!clientValues().equals(List.of(8)) || !widthValues().equals(List.of(1))) {
+                List<Integer> expectedF08Clients = f08FixedCostClientScaling
+                        ? List.of(1, 2, 4, 8) : List.of(8);
+                if (!clientValues().equals(expectedF08Clients) || !widthValues().equals(List.of(1))) {
                     throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires clients=8,widths=1");
+                            "F08 transaction-status cross-engine diagnostic requires clients="
+                                    + expectedF08Clients + ",widths=1");
                 }
                 if (!sqlSemanticOracleEnabled()) {
                     throw new IllegalArgumentException(
@@ -13954,6 +14029,17 @@ public final class DelosJdbcCrossEngineConcurrency {
                         || !mvccGen2TransactionStatusVisibilityServerEnabled()) {
                     throw new IllegalArgumentException(
                             "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
+                }
+                if (f08FixedCostClientScaling) {
+                    if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
+                            || !primaryKey
+                            || payload != 16
+                            || f08MultiRowInsertControlEnabled()) {
+                        throw new IllegalArgumentException(
+                                "F08 fixed-cost client scaling requires the full SERVER matrix, "
+                                        + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
+                    }
                 }
                 if (f08MultiRowInsertControlEnabled()) {
                     if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)

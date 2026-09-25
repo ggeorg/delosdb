@@ -1,16 +1,10 @@
-DelosDB F08-K multi-row INSERT statement-shape control
+F08-P RawStore log-append contention JFR diagnostic
 
 Changed repository files:
 - delosdb-tests/build.gradle
 - delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
 Purpose:
-- Compare existing JDBC INSERT_100 batching (100 single-row statement executions)
-  with one SQL INSERT statement containing 100 VALUES rows.
-- Keep PRIMARY_KEY_ONLY shape, 8 clients, 100 logical inserts/transaction,
-  one commit/transaction, transaction-status visibility on Gen2, and the full
-  SERVER product matrix unchanged.
-- Isolate repeated server statement/RowChanger/controller lifecycle from
-  physical row/index/WAL work.
-
-Production behavior changed: none.
+- Run the validated 8-client, 16-byte PRIMARY_KEY_ONLY INSERT_100 server-JFR diagnostic with Derby-family physical WAL I/O minimized (1 MiB log buffer + durability=test).
+- Derive a profile.jfc configuration with jdk.JavaMonitorEnter threshold=1 us so short monitor-enter stalls are visible.
+- Keep production code unchanged.

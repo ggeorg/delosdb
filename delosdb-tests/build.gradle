@@ -23434,7 +23434,12 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
     def reportRoot = cfg.reportRoot ?: delosPostModernizationMutationRoot
     def databaseRootPath = cfg.databaseRootPath ?: delosPostModernizationMutationDbRoot
     boolean transactionStatusCrossEngine = cfg.transactionStatusCrossEngine == true
+    boolean f08FixedCostClientScaling = cfg.f08FixedCostClientScaling == true
     boolean f08MultiRowInsertControl = cfg.f08MultiRowInsertControl == true
+    String rawStoreLogBufferSizeServer =
+            (cfg.rawStoreLogBufferSizeServer ?: '').toString()
+    boolean rawStoreDurabilityTestNoSyncServer =
+            cfg.rawStoreDurabilityTestNoSyncServer == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23476,7 +23481,12 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': transactionStatusCrossEngine ? 'false' : 'true',
                     'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': transactionStatusCrossEngine ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling': f08FixedCostClientScaling ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.f08MultiRowInsertControl': f08MultiRowInsertControl ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer':
+                            rawStoreLogBufferSizeServer,
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer':
+                            rawStoreDurabilityTestNoSyncServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -23540,7 +23550,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient':
                             cfg.fixedBudget,
                     'delosdb.benchmark.crossEngineConcurrency.insertTableShape': cfg.tableShape,
-                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': cfg.payload ?: '128',
                     'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': cfg.fixtureBatch,
                     'delosdb.benchmark.crossEngineConcurrency.warmups': cfg.warmups,
                     'delosdb.benchmark.crossEngineConcurrency.iterations': cfg.iterations,
@@ -23552,7 +23562,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             cfg.minimumMeasuredSeconds,
                     'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations':
                             cfg.maximumMeasuredIterations,
-                    'delosdb.benchmark.crossEngineConcurrency.runs': '8',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': cfg.runs ?: '8',
                     'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds':
                             cfg.caseTimeoutSeconds,
                     'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds':
@@ -23581,11 +23591,39 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     throw new GradleException(
                             "F08 transaction-status benchmark did not prove status-visibility server plumbing: ${summary}")
                 }
+                def expectedScalingMarker =
+                        "F08 fixed-cost client-scaling diagnostic: ${f08FixedCostClientScaling ? 'true' : 'false'}"
+                if (!text.contains(expectedScalingMarker)) {
+                    throw new GradleException(
+                            "F08 fixed-cost client-scaling marker mismatch: ${summary}")
+                }
                 def expectedMultiRowMarker =
                         "F08 multi-row INSERT control: ${f08MultiRowInsertControl ? 'true' : 'false'}"
                 if (!text.contains(expectedMultiRowMarker)) {
                     throw new GradleException(
                             "F08 multi-row INSERT control marker mismatch: ${summary}")
+                }
+                if (f08FixedCostClientScaling) {
+                    File manifest = new File(summary.parentFile, 'server-container-manifest.txt')
+                    if (!manifest.isFile()
+                            || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+                        throw new GradleException(
+                                "F08 fixed-cost client scaling did not prove 16-byte payload: ${manifest}")
+                    }
+                }
+                if (!rawStoreLogBufferSizeServer.isEmpty()
+                        || rawStoreDurabilityTestNoSyncServer) {
+                    String expectedBuffer = rawStoreLogBufferSizeServer.isEmpty()
+                            ? 'default' : rawStoreLogBufferSizeServer
+                    [
+                            "RawStore log buffer size server override: ${expectedBuffer}",
+                            "RawStore durability test no-sync server enabled: ${rawStoreDurabilityTestNoSyncServer}"
+                    ].each { String marker ->
+                        if (!text.contains(marker)) {
+                            throw new GradleException(
+                                    "F08 RawStore client-scaling control missing evidence marker '${marker}': ${summary}")
+                        }
+                    }
                 }
             } else if (!text.contains('Post-modernization mutation checkpoint enabled: true')) {
                 throw new GradleException("Mutation checkpoint marker is missing: ${summary}")
@@ -23945,7 +23983,8 @@ def configureDelosF08SharedInsertServerJfr = {
     String tableShape,
     boolean gen2A1,
     boolean insertRootRoutingSnapshot,
-    boolean insertBranchRoutingSnapshot ->
+    boolean insertBranchRoutingSnapshot,
+    String payloadBytes ->
 
     task.group = 'benchmark'
     task.description = insertBranchRoutingSnapshot
@@ -24035,7 +24074,7 @@ def configureDelosF08SharedInsertServerJfr = {
                 'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '500',
                 'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '50000',
                 'delosdb.benchmark.crossEngineConcurrency.insertTableShape': tableShape,
-                'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                'delosdb.benchmark.crossEngineConcurrency.payload': payloadBytes,
                 'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
                 'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
                 'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
@@ -24133,25 +24172,25 @@ def configureDelosF08SharedInsertServerJfr = {
 }
 
 tasks.register('runDelosF08SharedInsertBareServerJfr', JavaExec) { task ->
-    configureDelosF08SharedInsertServerJfr(task, 'bare', 'BARE', true, false, false)
+    configureDelosF08SharedInsertServerJfr(task, 'bare', 'BARE', true, false, false, '128')
 }
 
 tasks.register('runDelosF08SharedInsertPrimaryKeyServerJfr', JavaExec) { task ->
     configureDelosF08SharedInsertServerJfr(
-            task, 'primary-key', 'PRIMARY_KEY_ONLY', false, false, false)
+            task, 'primary-key', 'PRIMARY_KEY_ONLY', false, false, false, '128')
     mustRunAfter tasks.named('runDelosF08SharedInsertBareServerJfr')
 }
 
 tasks.register('runDelosF08BTreeInsertRootRoutingSnapshotServerJfr', JavaExec) { task ->
     configureDelosF08SharedInsertServerJfr(
             task, 'primary-key-root-routing-snapshot', 'PRIMARY_KEY_ONLY',
-            false, true, false)
+            false, true, false, '128')
 }
 
 tasks.register('runDelosF08BTreeInsertBranchRoutingSnapshotServerJfr', JavaExec) { task ->
     configureDelosF08SharedInsertServerJfr(
             task, 'primary-key-branch-routing-snapshot', 'PRIMARY_KEY_ONLY',
-            false, true, true)
+            false, true, true, '128')
 }
 
 tasks.register('runDelosF08SharedInsertServerJfr') {
@@ -24161,4 +24200,307 @@ tasks.register('runDelosF08SharedInsertServerJfr') {
             tasks.named('runDelosF08SharedInsertPrimaryKeyServerJfr')
     outputs.upToDateWhen { false }
     outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
+}
+
+
+// F08-L: isolate RawStore log buffering and commit-sync cost without changing
+// row/index semantics. All three modes use the same PK INSERT_100 workload.
+def configureDelosF08RawStoreLogControl = {
+    JavaExec task, String reportGroup, String logBufferSize, boolean durabilityTestNoSync ->
+    configureDelosF08SharedInsertServerJfr(
+            task, reportGroup, 'PRIMARY_KEY_ONLY', false, false, false, '128')
+    task.description = durabilityTestNoSync
+            ? 'Profiles F08-L PK INSERT_100 with Derby durability=test (non-durable sync upper bound).'
+            : logBufferSize
+                    ? "Profiles F08-L PK INSERT_100 with Derby log buffer ${logBufferSize} bytes."
+                    : 'Profiles F08-L PK INSERT_100 with default durable RawStore log settings.'
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer',
+                logBufferSize ?: '')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer',
+                durabilityTestNoSync ? 'true' : 'false')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String text = summary.getText('UTF-8')
+        String expectedBuffer = logBufferSize ?: 'default'
+        [
+                "RawStore log buffer size server override: ${expectedBuffer}",
+                "RawStore durability test no-sync server enabled: ${durabilityTestNoSync}"
+        ].each { String marker ->
+            if (!text.contains(marker)) {
+                throw new GradleException(
+                        "F08-L summary missing evidence marker '${marker}': ${summary}")
+            }
+        }
+    }
+}
+
+tasks.register('runDelosF08RawStoreLogBaselineServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreLogControl(
+            task, 'primary-key-log-baseline', '', false)
+}
+
+tasks.register('runDelosF08RawStoreLogBuffer1mServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreLogControl(
+            task, 'primary-key-log-buffer-1m', '1048576', false)
+    mustRunAfter tasks.named('runDelosF08RawStoreLogBaselineServerJfr')
+}
+
+tasks.register('runDelosF08RawStoreNoSyncServerJfr', JavaExec) { task ->
+    configureDelosF08RawStoreLogControl(
+            task, 'primary-key-log-no-sync', '', true)
+    mustRunAfter tasks.named('runDelosF08RawStoreLogBuffer1mServerJfr')
+}
+
+tasks.register('runDelosF08RawStoreLogControlsServerJfr') {
+    group = 'benchmark'
+    description = 'Runs F08-L default-buffer, 1 MiB-buffer, and non-durable no-sync PK INSERT_100 server controls.'
+    dependsOn tasks.named('runDelosF08RawStoreLogBaselineServerJfr'),
+            tasks.named('runDelosF08RawStoreLogBuffer1mServerJfr'),
+            tasks.named('runDelosF08RawStoreNoSyncServerJfr')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08SharedInsertServerJfrRoot).get().asFile
+        new File(root, 'F08-L-NOTES.txt').setText(
+                'F08-L RawStore log-path causal controls\n' +
+                'primary-key-log-baseline = default 32 KiB durable Derby log configuration\n' +
+                'primary-key-log-buffer-1m = derby.storage.logBufferSize=1048576, durable\n' +
+                'primary-key-log-no-sync = derby.system.durability=test, default log buffer; NON-DURABLE upper bound\n' +
+                'All modes: PRIMARY_KEY_ONLY INSERT_100, 8 clients, 100 operations/transaction, Heap + Gen2-status + upstream Derby.\n' +
+                'Interpretation: large-buffer gain implicates log-buffer/write frequency; no-sync gain implicates commit sync; neither gain implicates per-record serialization/apply/page work.\n',
+                'UTF-8')
+    }
+}
+
+// F08-M: distinguish byte-proportional row/WAL encoding cost from fixed
+// per-record RawStore logging/page-apply overhead. The physical/index shape,
+// transaction width, and server targets remain identical; only payload bytes vary.
+def configureDelosF08RawStorePayloadControl = {
+    JavaExec task, String reportGroup, String payloadBytes ->
+    configureDelosF08SharedInsertServerJfr(
+            task, reportGroup, 'PRIMARY_KEY_ONLY', false, false, false, payloadBytes)
+    task.description = "Profiles F08-M PK INSERT_100 with ${payloadBytes}-byte payloads for RawStore byte-scaling attribution."
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        String marker = "Payload bytes: ${payloadBytes}"
+        if (!manifest.isFile() || !manifest.getText('UTF-8').contains(marker)) {
+            throw new GradleException(
+                    "F08-M manifest missing payload evidence marker '${marker}': ${manifest}")
+        }
+    }
+}
+
+tasks.register('runDelosF08RawStorePayload16ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePayloadControl(task, 'primary-key-payload-16', '16')
+}
+
+tasks.register('runDelosF08RawStorePayload128ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePayloadControl(task, 'primary-key-payload-128', '128')
+    mustRunAfter tasks.named('runDelosF08RawStorePayload16ServerJfr')
+}
+
+tasks.register('runDelosF08RawStorePayload1024ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePayloadControl(task, 'primary-key-payload-1024', '1024')
+    mustRunAfter tasks.named('runDelosF08RawStorePayload128ServerJfr')
+}
+
+tasks.register('runDelosF08RawStorePayloadScalingServerJfr') {
+    group = 'benchmark'
+    description = 'Runs F08-M 16/128/1024-byte PK INSERT_100 payload-scaling server attribution.'
+    dependsOn tasks.named('runDelosF08RawStorePayload16ServerJfr'),
+            tasks.named('runDelosF08RawStorePayload128ServerJfr'),
+            tasks.named('runDelosF08RawStorePayload1024ServerJfr')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08SharedInsertServerJfrRoot).get().asFile
+        ['primary-key-payload-16', 'primary-key-payload-128', 'primary-key-payload-1024']
+                .each { String reportGroup ->
+                    File reportDir = new File(root, reportGroup)
+                    ['cross-engine-concurrency-summary.txt',
+                     'cross-engine-concurrency-dispersion.csv',
+                     'sql-semantic-oracle.csv'].each { String reportName ->
+                        File report = new File(reportDir, reportName)
+                        if (!report.isFile() || report.length() == 0L) {
+                            throw new GradleException("Missing F08-M evidence: ${report}")
+                        }
+                    }
+                    File jfrDir = new File(reportDir, 'workers/server-jfr')
+                    int recordings = jfrDir.isDirectory()
+                            ? (jfrDir.listFiles()?.count { it.name.endsWith('-server.jfr') } ?: 0)
+                            : 0
+                    if (recordings != 12) {
+                        throw new GradleException(
+                                "F08-M expected 12 server JFR recordings for ${reportGroup}, found ${recordings}")
+                    }
+                }
+        new File(root, 'F08-M-NOTES.txt').setText(
+                'F08-M RawStore payload-size scaling control\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; 8 clients; 100 operations/transaction; 4 runs.\n' +
+                'Payloads: 16, 128, 1024 bytes.\n' +
+                'Targets: Heap + Gen2-status + upstream Derby.\n' +
+                'Interpretation: strong throughput/JFR scaling with bytes implicates serialization/copy cost; flat scaling implicates fixed per-record log/page machinery.\n',
+                'UTF-8')
+    }
+}
+
+// F08-N: isolate fixed per-record CPU cost from shared RawStore append
+// serialization by scaling concurrency at the 16-byte payload floor.
+def delosF08FixedCostClientScalingRoot =
+        'reports/delosdb/benchmarks/f08-fixed-cost-client-scaling'
+def delosF08FixedCostClientScalingDbRoot =
+        'tmp/delos-f08-fixed-cost-client-scaling'
+
+registerDelosPostModernizationMutation(
+        'runDelosF08FixedCostClientScaling',
+        [
+                description: 'Runs F08-N 16-byte PK INSERT_100 at 1/2/4/8 clients across the full SERVER matrix.',
+                group: 'pk-insert-100-payload-16-clients-1-2-4-8',
+                gen2Mode: 'B',
+                transactionStatusCrossEngine: true,
+                f08FixedCostClientScaling: true,
+                reportRoot: delosF08FixedCostClientScalingRoot,
+                databaseRootPath: delosF08FixedCostClientScalingDbRoot,
+                workloads: 'INSERT_100',
+                tableShape: 'PRIMARY_KEY_ONLY',
+                rows: '10000',
+                clients: '1,2,4,8',
+                widths: '1',
+                transactionsPerClient: '2500',
+                fixedBudget: '250000',
+                payload: '16',
+                fixtureBatch: '100',
+                warmups: '0',
+                iterations: '1',
+                minimumWarmupSeconds: '0.0',
+                maximumWarmupIterations: '1',
+                minimumMeasuredSeconds: '0.0',
+                maximumMeasuredIterations: '1',
+                runs: '4',
+                caseTimeoutSeconds: '900',
+                workerTimeoutSeconds: '3600'
+        ])
+
+
+// F08-O: repeat the F08-N scaling curve with Derby-family durable log I/O
+// minimized. A 1 MiB buffer plus durability=test removes most physical WAL
+// write/sync cost while preserving the in-memory RawStore append/record path.
+registerDelosPostModernizationMutation(
+        'runDelosF08FixedCostClientScalingLogUpperBound',
+        [
+                description: 'Runs F08-O 16-byte PK INSERT_100 at 1/2/4/8 clients with Derby-family 1 MiB log buffer and durability=test.',
+                group: 'pk-insert-100-payload-16-clients-1-2-4-8-log-upper-bound',
+                gen2Mode: 'B',
+                transactionStatusCrossEngine: true,
+                f08FixedCostClientScaling: true,
+                rawStoreLogBufferSizeServer: '1048576',
+                rawStoreDurabilityTestNoSyncServer: true,
+                reportRoot: delosF08FixedCostClientScalingRoot,
+                databaseRootPath: delosF08FixedCostClientScalingDbRoot,
+                workloads: 'INSERT_100',
+                tableShape: 'PRIMARY_KEY_ONLY',
+                rows: '10000',
+                clients: '1,2,4,8',
+                widths: '1',
+                transactionsPerClient: '2500',
+                fixedBudget: '250000',
+                payload: '16',
+                fixtureBatch: '100',
+                warmups: '0',
+                iterations: '1',
+                minimumWarmupSeconds: '0.0',
+                maximumWarmupIterations: '1',
+                minimumMeasuredSeconds: '0.0',
+                maximumMeasuredIterations: '1',
+                runs: '4',
+                caseTimeoutSeconds: '900',
+                workerTimeoutSeconds: '3600'
+        ])
+
+tasks.named('runDelosF08FixedCostClientScalingLogUpperBound').configure {
+    mustRunAfter tasks.named('runDelosF08FixedCostClientScaling')
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08FixedCostClientScalingRoot).get().asFile
+        new File(root, 'F08-O-NOTES.txt').setText(
+                'F08-O fixed-cost INSERT client scaling with Derby-family physical WAL I/O minimized\n' +
+                'Workload: PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8; 4 runs.\n' +
+                'Derby-family servers: derby.storage.logBufferSize=1048576 and derby.system.durability=test.\n' +
+                'PostgreSQL/MariaDB/H2 remain on their normal benchmark settings and act as environmental/scaling controls.\n' +
+                'NON-DURABLE diagnostic upper bound only; never a production configuration.\n' +
+                'Interpretation: if Derby-family scaling still flattens, physical WAL write/sync is not the concurrency bottleneck and the in-memory serialized RawStore append/page path becomes primary.\n',
+                'UTF-8')
+    }
+}
+
+
+// F08-P: attribute the remaining 8-client scaling collapse to monitor wait in
+// the in-memory RawStore log append path. Physical WAL I/O remains minimized
+// (1 MiB log buffer + durability=test); server JFR lowers JavaMonitorEnter to
+// 1 us so short append-lock waits are observable instead of only >20 ms stalls.
+tasks.register('runDelosF08RawStoreLogAppendContentionServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(
+            task, 'primary-key-log-append-contention', 'PRIMARY_KEY_ONLY',
+            false, false, false, '16')
+    task.description = 'Profiles F08-P 8-client 16-byte PK INSERT_100 RawStore log-append contention with physical WAL I/O minimized.'
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer',
+                '1048576')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer',
+                'true')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.profileServerJavaMonitorEnterThreshold',
+                '1us')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/primary-key-log-append-contention")
+                .get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'Payload bytes: 16',
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true'
+        ].each { String marker ->
+            File evidence = marker.startsWith('Payload bytes:')
+                    ? new File(reportDir, 'server-container-manifest.txt')
+                    : summary
+            if (!evidence.isFile() || !evidence.getText('UTF-8').contains(marker)) {
+                throw new GradleException(
+                        "F08-P evidence missing marker '${marker}': ${evidence}")
+            }
+        }
+        File settings = new File(
+                reportDir, 'workers/server-jfr/server-profile-monitor.jfc')
+        if (!settings.isFile() || settings.length() == 0L) {
+            throw new GradleException("F08-P custom server JFR settings missing: ${settings}")
+        }
+        String settingsText = settings.getText('UTF-8')
+        if (!settingsText.contains('<event name="jdk.JavaMonitorEnter">')
+                || !settingsText.contains('>1 us</setting>')) {
+            throw new GradleException(
+                    "F08-P JavaMonitorEnter 1 us threshold missing: ${settings}")
+        }
+        new File(reportDir, 'F08-P-NOTES.txt').setText(
+                'F08-P RawStore in-memory log-append contention attribution\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=8; 4 runs.\n' +
+                'Targets: Heap + Gen2-status + upstream Derby.\n' +
+                'Derby-family servers: derby.storage.logBufferSize=1048576 and derby.system.durability=test.\n' +
+                'Server JFR: profile.jfc with jdk.JavaMonitorEnter threshold=1 us.\n' +
+                'NON-DURABLE diagnostic only. Interpret contention-by-site total/count for LogToFile append monitor versus total execution time.\n',
+                'UTF-8')
+    }
 }
