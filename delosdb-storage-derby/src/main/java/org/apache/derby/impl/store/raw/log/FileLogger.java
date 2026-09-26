@@ -125,6 +125,7 @@ public class FileLogger implements Logger {
 
 	private LogToFile logFactory;	// actually writes the log records.
 	private byte[] preparedAppendFrame;
+	private CombinedLogAppendRequest combinedAppendRequest;
 
 	/**
 		Make a new Logger with its own log record buffers
@@ -157,10 +158,11 @@ public class FileLogger implements Logger {
 	}
 
 	private long appendRecord(byte[] data, int dataOffset, int logicalLength,
-			byte[] optionalData, int optionalDataOffset, int optionalDataLength)
-			throws StandardException
+			byte[] optionalData, int optionalDataOffset, int optionalDataLength,
+			boolean combineEligible) throws StandardException
 	{
-		if (!logFactory.preframedLogAppendEnabled())
+		boolean combine = combineEligible && logFactory.combinedLogAppendEnabled();
+		if (!combine && !logFactory.preframedLogAppendEnabled())
 		{
 			return logFactory.appendLogRecord(
 					data, dataOffset, logicalLength, optionalData,
@@ -172,6 +174,14 @@ public class FileLogger implements Logger {
 		int frameLength = PreparedLogRecordFrame.prepare(
 				preparedAppendFrame, logicalLength, data, dataOffset, optionalData,
 				optionalDataOffset, optionalDataLength);
+		if (combine) {
+			if (combinedAppendRequest == null) {
+				combinedAppendRequest = new CombinedLogAppendRequest();
+			}
+			return logFactory.appendCombinedPreparedLogRecord(
+					combinedAppendRequest, preparedAppendFrame, frameLength,
+					logicalLength);
+		}
 		return logFactory.appendPreparedLogRecord(
 				preparedAppendFrame, frameLength, logicalLength);
 	}
@@ -357,15 +367,15 @@ public class FileLogger implements Logger {
 							// encryption has completely drained both the the
 							// logOuputBuffer array and the preparedLog array
 							instant = appendRecord(encryptionBuffer, 0,
-												encryptedLength, null, 
-												-1, 0);
+											encryptedLength, null,
+											-1, 0, false);
 						}
 						else
 						{
 							instant = appendRecord(logOutputBuffer.getByteArray(),
-												0, completeLength, preparedLog,
-												optionalDataOffset,
-												optionalDataLength);
+											0, completeLength, preparedLog,
+											optionalDataOffset,
+											optionalDataLength, false);
 						}
 						logInstant = new LogCounter(instant);
 
@@ -381,14 +391,14 @@ public class FileLogger implements Logger {
 						// encryption has completely drained both the the
 						// logOuputBuffer array and the preparedLog array
 						instant = appendRecord(encryptionBuffer, 0,
-											encryptedLength, null, -1, 0);
+										encryptedLength, null, -1, 0, true);
 					}
 					else
 					{
 						instant = appendRecord(logOutputBuffer.getByteArray(), 0,
-											completeLength, preparedLog,
-											optionalDataOffset,
-											optionalDataLength); 
+									completeLength, preparedLog,
+									optionalDataOffset,
+									optionalDataLength, true);
 					}
 
 					logInstant = new LogCounter(instant);
@@ -519,12 +529,12 @@ public class FileLogger implements Logger {
 						"encrypted log buffer length != log buffer len");
 
 				instant = appendRecord(encryptionBuffer,
-									0, encryptedLength, null, 0, 0);
+									0, encryptedLength, null, 0, 0, false);
 			}
 			else
 			{
 				instant = appendRecord(logOutputBuffer.getByteArray(),
-									0, completeLength, null, 0, 0);
+									0, completeLength, null, 0, 0, false);
 			}
 
 			LogInstant logInstant = new LogCounter(instant);

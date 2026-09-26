@@ -5495,6 +5495,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (rawStorePreframedLogAppendServerEnabled()) {
             addProperty(command, "rawStorePreframedLogAppendServer", true);
         }
+        if (rawStoreCombinedLogAppendServerEnabled()) {
+            addProperty(command, "rawStoreCombinedLogAppendServer", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -5769,6 +5772,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (rawStorePreframedLogAppendServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.rawStorePreframedLogAppend.enabled=true");
+                }
+                if (rawStoreCombinedLogAppendServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.rawStoreCombinedLogAppend.enabled=true");
                 }
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
@@ -12160,6 +12167,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(rawStorePageValiditySnapshotServerEnabled()).append('\n')
                 .append("RawStore preframed log append server enabled: ")
                 .append(rawStorePreframedLogAppendServerEnabled()).append('\n')
+                .append("RawStore combined log append server enabled: ")
+                .append(rawStoreCombinedLogAppendServerEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12470,6 +12479,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean rawStorePreframedLogAppendServerEnabled() {
         return Boolean.getBoolean(PREFIX + "rawStorePreframedLogAppendServer");
+    }
+
+    private static boolean rawStoreCombinedLogAppendServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStoreCombinedLogAppendServer");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {

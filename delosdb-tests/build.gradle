@@ -24872,3 +24872,68 @@ tasks.register('runDelosF08RawStorePageValiditySnapshotServerJfr') {
                 'UTF-8')
     }
 }
+
+
+// F08-U: flat-combine ordinary RawStore WAL appends. Concurrent log writers
+// queue reusable per-logger requests; one combiner drains currently pending
+// records through the unchanged authoritative LogToFile append path while
+// holding the existing WAL monitor once per batch. FIRST/LAST transaction
+// records retain the inherited direct path.
+tasks.register('runDelosF08RawStoreCombinedLogAppendServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(
+            task, 'primary-key-combined-log-append', 'PRIMARY_KEY_ONLY',
+            false, false, false, '16')
+    task.description = 'Profiles F08-U 8-client flat-combined RawStore WAL append with physical WAL I/O minimized.'
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer',
+                '1048576')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer',
+                'true')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.profileServerJavaMonitorEnterThreshold',
+                '1us')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreCombinedLogAppendServer',
+                'true')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/primary-key-combined-log-append")
+                .get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true',
+                'RawStore preframed log append server enabled: false',
+                'RawStore combined log append server enabled: true'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F08-U summary missing evidence marker '${marker}': ${summary}")
+            }
+        }
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        if (!manifest.isFile()
+                || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+            throw new GradleException(
+                    "F08-U manifest did not prove 16-byte payload: ${manifest}")
+        }
+        File settings = new File(
+                reportDir, 'workers/server-jfr/server-profile-monitor.jfc')
+        if (!settings.isFile() || settings.length() == 0L
+                || !settings.getText('UTF-8').contains('>1 us</setting>')) {
+            throw new GradleException(
+                    "F08-U JavaMonitorEnter 1 us settings missing: ${settings}")
+        }
+        new File(reportDir, 'F08-U-NOTES.txt').setText(
+                'F08-U RawStore flat-combined WAL append experiment\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=8; 4 runs.\n' +
+                'Delos Heap/Gen2: delosdb.experimental.rawStoreCombinedLogAppend.enabled=true; upstream Derby unchanged.\n' +
+                'Derby-family servers: 1 MiB log buffer + durability=test; JavaMonitorEnter threshold=1 us.\n' +
+                'Ordinary records queue reusable per-logger requests and one combiner drains them through the inherited LogToFile append authority; FIRST/LAST records remain direct.\n',
+                'UTF-8')
+    }
+}

@@ -132,3 +132,16 @@ tasks.register('runPreparedLogRecordFrameTest', JavaExec) {
 tasks.named('check') {
     dependsOn tasks.named('runPreparedLogRecordFrameTest')
 }
+
+
+tasks.register('runCombinedLogAppendQueueTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the RawStore flat-combined WAL append queue contract test.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.apache.derby.impl.store.raw.log.CombinedLogAppendQueueTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runCombinedLogAppendQueueTest')
+}

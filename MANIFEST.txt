@@ -1,19 +1,23 @@
-F08-T preframed WAL append experiment
+F08-U flat-combined RawStore WAL append experiment
 
-Production experiment (default OFF):
-- delosdb.experimental.rawStorePreframedLogAppend.enabled=true
-- Each private FileLogger assembles the physical WAL record wrapper before entering LogToFile.
-- LogToFile retains authoritative global ordering, LogInstant allocation, checksum reservation,
-  file switching, shared buffering, flush/sync, replication and recovery semantics.
-- Inside the shared append monitor the prepared path patches the authoritative 8-byte instant
-  and performs one contiguous copy into the existing LogAccessFile buffer.
+Production feature (default OFF):
+  delosdb.experimental.rawStoreCombinedLogAppend.enabled
 
-Focused verification:
-- runPreparedLogRecordFrameTest validates the exact physical wrapper layout and buffer reuse.
+Changed repository files:
+  delosdb-storage-derby/build.gradle
+  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueue.java
+  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendRequest.java
+  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
+  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
+  delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueueTest.java
+  delosdb-tests/build.gradle
+  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Benchmark:
-- runDelosF08RawStorePreframedLogAppendServerJfr
-- PRIMARY_KEY_ONLY INSERT_100, payload=16, clients=8, 4 runs.
-- Heap + Gen2-status enable the experiment; upstream Derby remains unchanged.
-- 1 MiB RawStore log buffer + durability=test isolate in-memory append serialization.
-- Server JFR uses JavaMonitorEnter threshold=1 us.
+Experiment:
+  Ordinary FileLogger logAndDo records use reusable per-logger append requests.
+  One active combiner drains pending requests FIFO through the inherited authoritative LogToFile append routine while holding the existing WAL monitor once per batch.
+  FIRST/LAST transaction records and undo remain on the inherited direct path.
+  No WAL format, LogInstant ordering, checksum, file-switch, flush, replication, recovery, or single-WAL authority changes.
+
+Benchmark task:
+  :delosdb-tests:runDelosF08RawStoreCombinedLogAppendServerJfr
