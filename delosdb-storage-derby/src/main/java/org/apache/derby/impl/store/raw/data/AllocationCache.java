@@ -665,6 +665,22 @@ class AllocationCache
 		}
 	}
 
+	/**
+	 * Create an immutable page-allocation view from the currently valid cache.
+	 * Caller must hold the FileContainer allocation-cache monitor.
+	 */
+	protected AllocationPageValiditySnapshot pageValiditySnapshot()
+	{
+		if (!isValid || numExtents == 0)
+			return null;
+
+		for (int i = 0; i < numExtents; i++)
+			if (extents[i] == null)
+				return null;
+
+		return new AllocationPageValiditySnapshot(extents, numExtents);
+	}
+
 	/** 
 	  dump the allocation cache information
 	*/

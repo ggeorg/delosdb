@@ -1,13 +1,19 @@
-DelosDB F08-Q RawStore monitor-contention client-scaling overlay
+F08-T preframed WAL append experiment
 
-Changed repository files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Production experiment (default OFF):
+- delosdb.experimental.rawStorePreframedLogAppend.enabled=true
+- Each private FileLogger assembles the physical WAL record wrapper before entering LogToFile.
+- LogToFile retains authoritative global ordering, LogInstant allocation, checksum reservation,
+  file switching, shared buffering, flush/sync, replication and recovery semantics.
+- Inside the shared append monitor the prepared path patches the authoritative 8-byte instant
+  and performs one contiguous copy into the existing LogAccessFile buffer.
 
-Purpose:
-- profile 1/2/4/8-client PK INSERT_100 slices independently with a 1 us JavaMonitorEnter threshold
-- keep payload=16, transaction-status visibility enabled, 1 MiB RawStore log buffer, and durability=test
-- keep a constant 400000 logical inserted rows per target/run across client counts
-- attribute contention scaling separately for AllocationCache/pageValid and LogToFile append
+Focused verification:
+- runPreparedLogRecordFrameTest validates the exact physical wrapper layout and buffer reuse.
 
-No production source changes.
+Benchmark:
+- runDelosF08RawStorePreframedLogAppendServerJfr
+- PRIMARY_KEY_ONLY INSERT_100, payload=16, clients=8, 4 runs.
+- Heap + Gen2-status enable the experiment; upstream Derby remains unchanged.
+- 1 MiB RawStore log buffer + durability=test isolate in-memory append serialization.
+- Server JFR uses JavaMonitorEnter threshold=1 us.

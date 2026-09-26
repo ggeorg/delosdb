@@ -343,6 +343,42 @@ public class LogAccessFile
     }
 
     /**
+     * Append a physical log-record frame that was assembled by the caller.
+     * The authoritative instant is patched only while LogToFile holds its
+     * append monitor, preserving the existing global ordering contract.
+     */
+    public void writePreparedLogRecord(
+            int logicalLength, long instant, byte[] frame, int frameLength)
+            throws StandardException, IOException {
+        int expectedLength = logicalLength + LOG_RECORD_FIXED_OVERHEAD_SIZE;
+        if (frameLength != expectedLength) {
+            throw new IOException("prepared log record length mismatch");
+        }
+
+        PreparedLogRecordFrame.patchInstant(frame, 0, instant);
+        if (frameLength <= currentBuffer.bytes_free) {
+            System.arraycopy(frame, 0, currentBuffer.buffer,
+                    currentBuffer.position, frameLength);
+            currentBuffer.position += frameLength;
+            currentBuffer.bytes_free -= frameLength;
+            currentBuffer.greatest_instant = instant;
+            return;
+        }
+
+        int bigBufferLength = checksumLogRecordSize + frameLength;
+        byte[] bigbuffer = new byte[bigBufferLength];
+        System.arraycopy(frame, 0, bigbuffer, checksumLogRecordSize, frameLength);
+        if (writeChecksum) {
+            checksumLogOperation.reset();
+            checksumLogOperation.update(
+                    bigbuffer, checksumLogRecordSize, frameLength);
+            writeChecksumLogRecord(bigbuffer);
+        }
+        flushLogAccessFile();
+        writeToLog(bigbuffer, 0, bigBufferLength, instant);
+    }
+
+    /**
      * Append a log record to a byte[]. Typically, the byte[] will be
      * currentBuffer, but if a log record that is too big to fit in a
      * buffer is added, buff will be a newly allocated byte[].

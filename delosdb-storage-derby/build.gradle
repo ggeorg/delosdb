@@ -107,3 +107,28 @@ tasks.register('runAccessMethodTransactionLifecycleTest', JavaExec) {
 tasks.named('check') {
     dependsOn tasks.named('runAccessMethodTransactionLifecycleTest')
 }
+
+tasks.register('runAllocationPageValiditySnapshotTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs immutable RawStore allocation page-validity snapshot semantics.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.apache.derby.impl.store.raw.data.AllocationPageValiditySnapshotTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runAllocationPageValiditySnapshotTest')
+}
+
+
+tasks.register('runPreparedLogRecordFrameTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the RawStore prepared physical WAL-frame contract test.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.apache.derby.impl.store.raw.log.PreparedLogRecordFrameTest'
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('runPreparedLogRecordFrameTest')
+}

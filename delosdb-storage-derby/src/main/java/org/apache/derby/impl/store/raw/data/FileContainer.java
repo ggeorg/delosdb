@@ -131,6 +131,9 @@ abstract class FileContainer
 	private static final int DEFAULT_PRE_ALLOC_SIZE = 8;
 	private static final int MAX_PRE_ALLOC_SIZE     = 1000;
 
+	private static final boolean PAGE_VALIDITY_SNAPSHOT_ENABLED =
+		Boolean.getBoolean("delosdb.experimental.rawStorePageValiditySnapshot.enabled");
+
 	/* 
 	** Mutable fields, only valid when the identity is valid.
 	*/
@@ -236,6 +239,11 @@ abstract class FileContainer
 		</PRE>
 	*/
 	protected AllocationCache	allocCache;
+
+	private final Object pageValiditySnapshotGuard =
+		PAGE_VALIDITY_SNAPSHOT_ENABLED ? new Object() : null;
+	private volatile PageValiditySnapshotState pageValiditySnapshotState =
+		PAGE_VALIDITY_SNAPSHOT_ENABLED ? new PageValiditySnapshotState(0, null) : null;
 
 	/*
 	 * array to store persistently stored fields
@@ -736,6 +744,7 @@ abstract class FileContainer
 		else
 			checksum.reset();
 
+		resetPageValiditySnapshotState();
 		if (allocCache == null)
 			allocCache = new AllocationCache();
 		else
@@ -840,6 +849,7 @@ abstract class FileContainer
                     org.apache.derby.iapi.util.StringUtil.hexDump(a)));
 		}
 
+		resetPageValiditySnapshotState();
 		allocCache.reset();
 
 		// set the in memory state
@@ -1313,6 +1323,7 @@ abstract class FileContainer
 
 			try
 			{
+				invalidatePageValiditySnapshot();
 				allocCache.invalidate(allocPage, allocPageNum); 
 
 				// Unlatch alloc page.  The page is protected by the dealloc
@@ -1447,6 +1458,7 @@ abstract class FileContainer
                 // while holding synchronization on cache and latch on 
                 // allocation page.  This should guarantee that only new info
                 // is seen after this operation completes.
+				invalidatePageValiditySnapshot();
 				allocCache.invalidate(); 
 
                 // reset, as pages may not exist after compress
@@ -1688,6 +1700,7 @@ abstract class FileContainer
                     }
 
 
+					invalidatePageValiditySnapshot();
 					allocCache.invalidate(allocPage, allocPage.getPageNumber());
 				}
 
@@ -2063,6 +2076,91 @@ abstract class FileContainer
 		}
 	}
 
+	private static final class PageValiditySnapshotState
+	{
+		private final int mutations;
+		private final AllocationPageValiditySnapshot snapshot;
+
+		private PageValiditySnapshotState(
+			int mutations, AllocationPageValiditySnapshot snapshot)
+		{
+			this.mutations = mutations;
+			this.snapshot = snapshot;
+		}
+	}
+
+	private void resetPageValiditySnapshotState()
+	{
+		if (PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			pageValiditySnapshotState = new PageValiditySnapshotState(0, null);
+	}
+
+	final void invalidatePageValiditySnapshot()
+	{
+		if (!PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			return;
+
+		synchronized (pageValiditySnapshotGuard)
+		{
+			PageValiditySnapshotState state = pageValiditySnapshotState;
+			pageValiditySnapshotState =
+				new PageValiditySnapshotState(state.mutations, null);
+		}
+	}
+
+	final void beginAllocationPageValidityMutation()
+	{
+		if (!PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			return;
+
+		synchronized (pageValiditySnapshotGuard)
+		{
+			PageValiditySnapshotState state = pageValiditySnapshotState;
+			pageValiditySnapshotState =
+				new PageValiditySnapshotState(state.mutations + 1, null);
+		}
+	}
+
+	final void endAllocationPageValidityMutation()
+	{
+		if (!PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			return;
+
+		synchronized (pageValiditySnapshotGuard)
+		{
+			PageValiditySnapshotState state = pageValiditySnapshotState;
+			if (SanityManager.DEBUG)
+				SanityManager.ASSERT(state.mutations > 0);
+			pageValiditySnapshotState =
+				new PageValiditySnapshotState(state.mutations - 1, null);
+		}
+	}
+
+	private void publishPageValiditySnapshot()
+	{
+		if (!PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			return;
+
+		synchronized (pageValiditySnapshotGuard)
+		{
+			PageValiditySnapshotState state = pageValiditySnapshotState;
+			if (state.mutations != 0)
+				return;
+
+			pageValiditySnapshotState = new PageValiditySnapshotState(
+				0, allocCache.pageValiditySnapshot());
+		}
+	}
+
+	private PageValiditySnapshotState currentPageValiditySnapshotState()
+	{
+		if (!PAGE_VALIDITY_SNAPSHOT_ENABLED)
+			return null;
+
+		PageValiditySnapshotState state = pageValiditySnapshotState;
+		return state.mutations == 0 && state.snapshot != null ? state : null;
+	}
+
 	private boolean pageValid(BaseContainerHandle handle, long pagenum)
 		 throws StandardException
 	{
@@ -2082,6 +2180,7 @@ abstract class FileContainer
 
                         retval = true;
                     }
+                    publishPageValiditySnapshot();
                 } catch (InterruptDetectedException e) {
                     // Retry. We needed to back all the way up here in the case
                     // of the (file) container having been closed due to an
@@ -2511,6 +2610,13 @@ abstract class FileContainer
         boolean overflowOK, boolean wait)
 		 throws StandardException
 	{
+		return getUserPage(handle, pageNumber, overflowOK, wait, true);
+	}
+
+	private BasePage getUserPage(BaseContainerHandle handle, long pageNumber,
+        boolean overflowOK, boolean wait, boolean allowValiditySnapshot)
+		 throws StandardException
+	{
 
 		if (SanityManager.DEBUG) 
         {
@@ -2529,7 +2635,16 @@ abstract class FileContainer
 		if (getCommittedDropState()) // committed and dropped, cannot get a page
 			return null;
 
-		if (!pageValid(handle, pageNumber))
+		PageValiditySnapshotState snapshotState = allowValiditySnapshot
+			? currentPageValiditySnapshotState() : null;
+		AllocationPageValiditySnapshot snapshot =
+			snapshotState == null ? null : snapshotState.snapshot;
+		if (snapshot != null)
+		{
+			if (!snapshot.isAllocated(pageNumber))
+				return null;
+		}
+		else if (!pageValid(handle, pageNumber))
 		{
 			return null;
 		}
@@ -2550,6 +2665,12 @@ abstract class FileContainer
 			// page was already released from cache
             return null;
         }
+
+		if (snapshotState != null && pageValiditySnapshotState != snapshotState)
+		{
+			page.unlatch();
+			return getUserPage(handle, pageNumber, overflowOK, wait, false);
+		}
 
 		// double check for overflow and deallocated page
 		// a page that was valid before maybe invalid by now if it was
@@ -2608,6 +2729,7 @@ abstract class FileContainer
 		// make sure alloc cache has no stale info
 		synchronized(allocCache)
 		{
+			invalidatePageValiditySnapshot();
 			allocCache.invalidate();
 		}
 		

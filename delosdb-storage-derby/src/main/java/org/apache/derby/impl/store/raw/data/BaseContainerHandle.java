@@ -954,6 +954,7 @@ public class BaseContainerHandle extends DerbyObservable
 
 	}
 
+
 	/**
 		@see ContainerHandle#isTemporaryContainer
 		@exception StandardException Standard Derby error policy

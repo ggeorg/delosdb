@@ -23440,6 +23440,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             (cfg.rawStoreLogBufferSizeServer ?: '').toString()
     boolean rawStoreDurabilityTestNoSyncServer =
             cfg.rawStoreDurabilityTestNoSyncServer == true
+    boolean rawStorePageValiditySnapshotServer =
+            cfg.rawStorePageValiditySnapshotServer == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23487,6 +23489,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             rawStoreLogBufferSizeServer,
                     'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer':
                             rawStoreDurabilityTestNoSyncServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStorePageValiditySnapshotServer':
+                            rawStorePageValiditySnapshotServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -23610,6 +23614,11 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                         throw new GradleException(
                                 "F08 fixed-cost client scaling did not prove 16-byte payload: ${manifest}")
                     }
+                }
+                if (rawStorePageValiditySnapshotServer
+                        && !text.contains('RawStore page-validity snapshot server enabled: true')) {
+                    throw new GradleException(
+                            "F08 page-validity snapshot benchmark did not prove server plumbing: ${summary}")
                 }
                 if (!rawStoreLogBufferSizeServer.isEmpty()
                         || rawStoreDurabilityTestNoSyncServer) {
@@ -23767,6 +23776,113 @@ tasks.register('runDelosF08TransactionStatusCrossEngineScaling') {
                 }
             }
         }
+    }
+}
+
+// F08-S: canonical durable validation for the F08-R page-validity snapshot.
+// The experimental snapshot remains default OFF; only the Delos Heap/Gen2
+// server JVMs launched by these tasks enable it. Normal RawStore durability
+// and the canonical 128-byte INSERT payload are retained.
+def delosF08PageValidityCanonicalRoot =
+        'reports/delosdb/benchmarks/f08-page-validity-snapshot-canonical'
+def delosF08PageValidityCanonicalDbRoot =
+        'tmp/delos-f08-page-validity-snapshot-canonical'
+
+def registerDelosF08PageValidityCanonical = {
+    String taskName, String groupName, String gen2Mode, String tableShape ->
+    registerDelosPostModernizationMutation(
+            taskName,
+            [
+                    description: "Runs F08-S ${tableShape} INSERT_100 across the full SERVER matrix with the page-validity snapshot enabled only on Delos servers.",
+                    group: groupName,
+                    gen2Mode: gen2Mode,
+                    transactionStatusCrossEngine: true,
+                    rawStorePageValiditySnapshotServer: true,
+                    reportRoot: delosF08PageValidityCanonicalRoot,
+                    databaseRootPath: delosF08PageValidityCanonicalDbRoot,
+                    workloads: 'INSERT_100',
+                    tableShape: tableShape,
+                    rows: '10000',
+                    clients: '8',
+                    widths: '1',
+                    transactionsPerClient: '2500',
+                    fixedBudget: '250000',
+                    payload: '128',
+                    fixtureBatch: '100',
+                    warmups: '0',
+                    iterations: '1',
+                    minimumWarmupSeconds: '0.0',
+                    maximumWarmupIterations: '1',
+                    minimumMeasuredSeconds: '0.0',
+                    maximumMeasuredIterations: '1',
+                    runs: '8',
+                    caseTimeoutSeconds: '600',
+                    workerTimeoutSeconds: '2400'
+            ])
+}
+
+registerDelosF08PageValidityCanonical(
+        'runDelosF08PageValiditySnapshotCanonicalBareInsert100CrossEngine',
+        'bare-insert-100', 'A1', 'BARE')
+
+registerDelosF08PageValidityCanonical(
+        'runDelosF08PageValiditySnapshotCanonicalPrimaryKeyInsert100CrossEngine',
+        'primary-key-insert-100', 'B', 'PRIMARY_KEY_ONLY')
+
+tasks.named('runDelosF08PageValiditySnapshotCanonicalPrimaryKeyInsert100CrossEngine') {
+    mustRunAfter tasks.named('runDelosF08PageValiditySnapshotCanonicalBareInsert100CrossEngine')
+}
+
+tasks.register('runDelosF08PageValiditySnapshotCanonicalCrossEngine') {
+    group = 'benchmark'
+    description = 'Runs F08-S canonical durable BARE/PK INSERT_100 validation for the immutable page-validity snapshot.'
+    dependsOn tasks.named('runDelosF08PageValiditySnapshotCanonicalBareInsert100CrossEngine'),
+            tasks.named('runDelosF08PageValiditySnapshotCanonicalPrimaryKeyInsert100CrossEngine')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08PageValidityCanonicalRoot))
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08PageValidityCanonicalRoot).get().asFile
+        ['bare-insert-100', 'primary-key-insert-100'].each { String reportGroup ->
+            File reportDir = new File(root, reportGroup)
+            ['cross-engine-concurrency-summary.txt',
+             'cross-engine-concurrency-ratios.csv',
+             'cross-engine-concurrency-dispersion.csv',
+             'sql-semantic-oracle.csv'].each { String reportName ->
+                File report = new File(reportDir, reportName)
+                if (!report.isFile() || report.length() == 0L) {
+                    throw new GradleException(
+                            "Missing F08-S canonical page-validity snapshot evidence: ${report}")
+                }
+            }
+            File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+            String summaryText = summary.getText('UTF-8')
+            [
+                    'Clients: 8',
+                    'F08 transaction-status cross-engine diagnostic: true',
+                    'MVCC Gen2 transaction-status visibility server enabled: true',
+                    'RawStore page-validity snapshot server enabled: true',
+                    'RawStore log buffer size server override: default',
+                    'RawStore durability test no-sync server enabled: false'
+            ].each { String marker ->
+                if (!summaryText.contains(marker)) {
+                    throw new GradleException(
+                            "F08-S summary missing evidence marker '${marker}': ${summary}")
+                }
+            }
+            File manifest = new File(reportDir, 'server-container-manifest.txt')
+            if (!manifest.isFile()
+                    || !manifest.getText('UTF-8').contains('Payload bytes: 128')) {
+                throw new GradleException(
+                        "F08-S manifest did not prove canonical 128-byte payload: ${manifest}")
+            }
+        }
+        new File(root, 'F08-S-NOTES.txt').setText(
+                'F08-S canonical durable validation of the immutable RawStore page-validity snapshot\n' +
+                'BARE + PRIMARY_KEY_ONLY INSERT_100; payload=128; clients=8; 8 runs; full SERVER product matrix.\n' +
+                'Delos Heap/Gen2 servers enable delosdb.experimental.rawStorePageValiditySnapshot.enabled=true; upstream Derby/H2/PostgreSQL/MariaDB are unchanged.\n' +
+                'Normal durability and default RawStore log buffering are retained. Compare against F08-G/current canonical INSERT evidence.\n',
+                'UTF-8')
     }
 }
 
@@ -24513,13 +24629,76 @@ tasks.register('runDelosF08RawStoreLogAppendContentionServerJfr', JavaExec) { ta
 }
 
 
+// F08-T: shorten the shared LogToFile append critical section without
+// changing WAL ordering or format. FileLogger assembles the physical record
+// wrapper privately; LogToFile still reserves the instant/checksum space and
+// copies the completed frame into the authoritative shared buffer.
+tasks.register('runDelosF08RawStorePreframedLogAppendServerJfr', JavaExec) { task ->
+    configureDelosF08SharedInsertServerJfr(
+            task, 'primary-key-preframed-log-append', 'PRIMARY_KEY_ONLY',
+            false, false, false, '16')
+    task.description = 'Profiles F08-T 8-client preframed RawStore WAL append with physical WAL I/O minimized.'
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer',
+                '1048576')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStoreDurabilityTestNoSyncServer',
+                'true')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.profileServerJavaMonitorEnterThreshold',
+                '1us')
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStorePreframedLogAppendServer',
+                'true')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/primary-key-preframed-log-append")
+                .get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true',
+                'RawStore preframed log append server enabled: true'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F08-T summary missing evidence marker '${marker}': ${summary}")
+            }
+        }
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        if (!manifest.isFile()
+                || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+            throw new GradleException(
+                    "F08-T manifest did not prove 16-byte payload: ${manifest}")
+        }
+        File settings = new File(
+                reportDir, 'workers/server-jfr/server-profile-monitor.jfc')
+        if (!settings.isFile() || settings.length() == 0L
+                || !settings.getText('UTF-8').contains('>1 us</setting>')) {
+            throw new GradleException(
+                    "F08-T JavaMonitorEnter 1 us settings missing: ${settings}")
+        }
+        new File(reportDir, 'F08-T-NOTES.txt').setText(
+                'F08-T RawStore preframed WAL append critical-section experiment\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=8; 4 runs.\n' +
+                'Delos Heap/Gen2: delosdb.experimental.rawStorePreframedLogAppend.enabled=true; upstream Derby unchanged.\n' +
+                'Derby-family servers: 1 MiB log buffer + durability=test; JavaMonitorEnter threshold=1 us.\n' +
+                'The experiment preserves WAL ordering/checksum/file-switch authority and only moves physical record framing outside LogToFile synchronization.\n',
+                'UTF-8')
+    }
+}
+
+
 // F08-Q: measure how the two dominant shared RawStore monitors scale with
 // concurrency. Each slice is isolated in its own server recording so monitor
 // counts/blocked time map unambiguously to one client count. Physical WAL I/O
 // remains minimized exactly as in F08-P.
 def configureDelosF08RawStoreContentionScalingSlice = {
-    JavaExec task, int clients, String fixedBudgetPerClient ->
-    String reportGroup = "primary-key-contention-clients-${clients}"
+    JavaExec task, int clients, String fixedBudgetPerClient, String configuredReportGroup ->
+    String reportGroup = configuredReportGroup ?: "primary-key-contention-clients-${clients}"
     configureDelosF08SharedInsertServerJfr(
             task, reportGroup, 'PRIMARY_KEY_ONLY', false, false, false, '16',
             Integer.toString(clients), fixedBudgetPerClient, true)
@@ -24584,21 +24763,21 @@ def configureDelosF08RawStoreContentionScalingSlice = {
 }
 
 tasks.register('runDelosF08RawStoreContentionClient1ServerJfr', JavaExec) { task ->
-    configureDelosF08RawStoreContentionScalingSlice(task, 1, '400000')
+    configureDelosF08RawStoreContentionScalingSlice(task, 1, '400000', null)
 }
 
 tasks.register('runDelosF08RawStoreContentionClient2ServerJfr', JavaExec) { task ->
-    configureDelosF08RawStoreContentionScalingSlice(task, 2, '200000')
+    configureDelosF08RawStoreContentionScalingSlice(task, 2, '200000', null)
     mustRunAfter tasks.named('runDelosF08RawStoreContentionClient1ServerJfr')
 }
 
 tasks.register('runDelosF08RawStoreContentionClient4ServerJfr', JavaExec) { task ->
-    configureDelosF08RawStoreContentionScalingSlice(task, 4, '100000')
+    configureDelosF08RawStoreContentionScalingSlice(task, 4, '100000', null)
     mustRunAfter tasks.named('runDelosF08RawStoreContentionClient2ServerJfr')
 }
 
 tasks.register('runDelosF08RawStoreContentionClient8ServerJfr', JavaExec) { task ->
-    configureDelosF08RawStoreContentionScalingSlice(task, 8, '50000')
+    configureDelosF08RawStoreContentionScalingSlice(task, 8, '50000', null)
     mustRunAfter tasks.named('runDelosF08RawStoreContentionClient4ServerJfr')
 }
 
@@ -24620,6 +24799,76 @@ tasks.register('runDelosF08RawStoreContentionScalingServerJfr') {
                 'Targets: Heap + Gen2-status + upstream Derby.\n' +
                 'Derby-family servers: logBufferSize=1048576; durability=test. NON-DURABLE diagnostic only.\n' +
                 'Server JFR JavaMonitorEnter threshold=1 us. Compare AllocationCache/pageValid and LogToFile/append monitor count + blocked time as concurrency rises.\n',
+                'UTF-8')
+    }
+}
+
+
+// F08-R: first shared RawStore production experiment. Delos Heap and Gen2 use
+// the default-OFF immutable allocation page-validity snapshot while upstream
+// Derby stays unchanged as the environmental comparator. Workload/JFR controls
+// remain identical to F08-Q so AllocationCache/pageValid contention can be
+// compared directly at 1/2/4/8 clients.
+def configureDelosF08RawStorePageValiditySnapshotSlice = {
+    JavaExec task, int clients, String fixedBudgetPerClient ->
+    String reportGroup = "primary-key-page-validity-snapshot-clients-${clients}"
+    configureDelosF08RawStoreContentionScalingSlice(
+            task, clients, fixedBudgetPerClient, reportGroup)
+    task.description = "Profiles F08-R ${clients}-client RawStore page-validity snapshot A/B at the 16-byte payload floor."
+    task.doFirst {
+        task.systemProperty(
+                'delosdb.benchmark.crossEngineConcurrency.rawStorePageValiditySnapshotServer',
+                'true')
+    }
+    task.doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedInsertServerJfrRoot}/${reportGroup}").get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String marker = 'RawStore page-validity snapshot server enabled: true'
+        if (!summary.isFile() || !summary.getText('UTF-8').contains(marker)) {
+            throw new GradleException(
+                    "F08-R summary missing evidence marker '${marker}': ${summary}")
+        }
+    }
+}
+
+tasks.register('runDelosF08RawStorePageValiditySnapshotClient1ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePageValiditySnapshotSlice(task, 1, '400000')
+}
+
+tasks.register('runDelosF08RawStorePageValiditySnapshotClient2ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePageValiditySnapshotSlice(task, 2, '200000')
+    mustRunAfter tasks.named('runDelosF08RawStorePageValiditySnapshotClient1ServerJfr')
+}
+
+tasks.register('runDelosF08RawStorePageValiditySnapshotClient4ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePageValiditySnapshotSlice(task, 4, '100000')
+    mustRunAfter tasks.named('runDelosF08RawStorePageValiditySnapshotClient2ServerJfr')
+}
+
+tasks.register('runDelosF08RawStorePageValiditySnapshotClient8ServerJfr', JavaExec) { task ->
+    configureDelosF08RawStorePageValiditySnapshotSlice(task, 8, '50000')
+    mustRunAfter tasks.named('runDelosF08RawStorePageValiditySnapshotClient4ServerJfr')
+}
+
+tasks.register('runDelosF08RawStorePageValiditySnapshotServerJfr') {
+    group = 'benchmark'
+    description = 'Runs F08-R 1/2/4/8-client immutable RawStore page-validity snapshot A/B attribution.'
+    dependsOn tasks.named('runDelosF08RawStorePageValiditySnapshotClient1ServerJfr'),
+            tasks.named('runDelosF08RawStorePageValiditySnapshotClient2ServerJfr'),
+            tasks.named('runDelosF08RawStorePageValiditySnapshotClient4ServerJfr'),
+            tasks.named('runDelosF08RawStorePageValiditySnapshotClient8ServerJfr')
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(delosF08SharedInsertServerJfrRoot))
+    doLast {
+        File root = rootProject.layout.buildDirectory
+                .dir(delosF08SharedInsertServerJfrRoot).get().asFile
+        new File(root, 'F08-R-NOTES.txt').setText(
+                'F08-R immutable RawStore allocation page-validity snapshot experiment\n' +
+                'PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8; constant 400000 logical inserted rows per target/run.\n' +
+                'Targets: Heap + Gen2-status use delosdb.experimental.rawStorePageValiditySnapshot.enabled=true; upstream Derby is unchanged.\n' +
+                'Derby-family servers: logBufferSize=1048576; durability=test. NON-DURABLE diagnostic only.\n' +
+                'Server JFR JavaMonitorEnter threshold=1 us. Compare against F08-Q for AllocationCache/pageValid wait removal, LogToFile wait, throughput, and semantic fingerprints.\n',
                 'UTF-8')
     }
 }

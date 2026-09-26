@@ -5489,6 +5489,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (f08ContentionScalingSliceEnabled()) {
             addProperty(command, "f08ContentionScalingSlice", true);
         }
+        if (rawStorePageValiditySnapshotServerEnabled()) {
+            addProperty(command, "rawStorePageValiditySnapshotServer", true);
+        }
+        if (rawStorePreframedLogAppendServerEnabled()) {
+            addProperty(command, "rawStorePreframedLogAppendServer", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -5756,6 +5762,14 @@ public final class DelosJdbcCrossEngineConcurrency {
                         "-XX:+AlwaysPreTouch"));
                 addServerProfileJvmArgs(target, run, javaCommand);
                 addRawStoreLogControlJvmArgs(javaCommand);
+                if (rawStorePageValiditySnapshotServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.rawStorePageValiditySnapshot.enabled=true");
+                }
+                if (rawStorePreframedLogAppendServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.rawStorePreframedLogAppend.enabled=true");
+                }
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
@@ -6025,6 +6039,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(" (0=driver default)\n")
                 .append("MVCC base-fetch directory-page prefetch experiment: ")
                 .append(Boolean.getBoolean(PREFIX + "mvccBaseFetchPagePrefetch")).append('\n')
+                .append("RawStore page-validity snapshot Delos server experiment: ")
+                .append(rawStorePageValiditySnapshotServerEnabled()).append('\n')
                 .append("MVCC Gen2 projected current read experiment: ")
                 .append(mvccGen2ProjectedCurrentReadEnabled()).append('\n')
                 .append("MVCC physical scan cost experiment: ")
@@ -12140,6 +12156,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(f08FixedCostClientScalingEnabled()).append('\n')
                 .append("F08 contention-scaling slice diagnostic: ")
                 .append(f08ContentionScalingSliceEnabled()).append('\n')
+                .append("RawStore page-validity snapshot server enabled: ")
+                .append(rawStorePageValiditySnapshotServerEnabled()).append('\n')
+                .append("RawStore preframed log append server enabled: ")
+                .append(rawStorePreframedLogAppendServerEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12442,6 +12462,14 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f08ContentionScalingSliceEnabled() {
         return Boolean.getBoolean(PREFIX + "f08ContentionScalingSlice");
+    }
+
+    private static boolean rawStorePageValiditySnapshotServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStorePageValiditySnapshotServer");
+    }
+
+    private static boolean rawStorePreframedLogAppendServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStorePreframedLogAppendServer");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {
