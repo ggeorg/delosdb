@@ -23431,6 +23431,11 @@ tasks.register('runDelosGen2C3F07Embedded8cJfrDiagnostic', JavaExec) {
 // Read/relational/OLTP lanes reuse the canonical Gen2-C3 sentinels above.
 // These mutation tasks fill the F08-F10 cross-engine gap with the same
 // SERVER product matrix and current Gen2-C3 mutation server.
+registerDelosFocusedTest(
+        'runDelosF08BenchmarkContract',
+        'Executes authoritative F08 benchmark-mode contracts before expensive benchmark matrices.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.class'])
+
 def delosPostModernizationMutationRoot =
         'reports/delosdb/benchmarks/post-modernization-checkpoint/mutations'
 def delosPostModernizationMutationDbRoot =
@@ -23440,6 +23445,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
     def reportRoot = cfg.reportRoot ?: delosPostModernizationMutationRoot
     def databaseRootPath = cfg.databaseRootPath ?: delosPostModernizationMutationDbRoot
     boolean transactionStatusCrossEngine = cfg.transactionStatusCrossEngine == true
+    String benchmarkContract = (cfg.benchmarkContract ?: '').toString().trim()
     boolean f08FixedCostClientScaling = cfg.f08FixedCostClientScaling == true
     boolean f08MultiRowInsertControl = cfg.f08MultiRowInsertControl == true
     String rawStoreLogBufferSizeServer =
@@ -23452,6 +23458,9 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             cfg.rawStoreConcurrentLogAppendServer == true
     boolean rawStoreMultiInsertPageServer =
             cfg.rawStoreMultiInsertPageServer == true
+    boolean rawStoreDurableCommitServer = cfg.rawStoreDurableCommitServer == true
+    boolean rawStoreDurableCommitDiagnosticsServer =
+            cfg.rawStoreDurableCommitDiagnosticsServer == true
     boolean btreeInsertRootRoutingSnapshotServer =
             cfg.btreeInsertRootRoutingSnapshotServer == true
     boolean btreeInsertBranchRoutingSnapshotServer =
@@ -23461,6 +23470,9 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
         description = cfg.description
         dependsOn tasks.named('compileTestJava'), ':jars',
                 tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+        if (!benchmarkContract.isEmpty()) {
+            dependsOn tasks.named('runDelosF08BenchmarkContract')
+        }
         mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
         def delosNetworkClientClasspath = rootProject.files(
                 rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
@@ -23496,6 +23508,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': transactionStatusCrossEngine ? 'false' : 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkContract': benchmarkContract,
                     'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling': f08FixedCostClientScaling ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.f08MultiRowInsertControl': f08MultiRowInsertControl ? 'true' : 'false',
@@ -23509,6 +23522,10 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             rawStoreConcurrentLogAppendServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.rawStoreMultiInsertPageServer':
                             rawStoreMultiInsertPageServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreDurableCommitServer':
+                            rawStoreDurableCommitServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreDurableCommitDiagnosticsServer':
+                            rawStoreDurableCommitDiagnosticsServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.btreeInsertRootRoutingSnapshotServer':
                             btreeInsertRootRoutingSnapshotServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.btreeInsertBranchRoutingSnapshotServer':
@@ -23607,6 +23624,11 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                 throw new GradleException("Missing post-modernization mutation summary: ${summary}")
             }
             String text = summary.getText('UTF-8')
+            if (!benchmarkContract.isEmpty()
+                    && !text.contains("Benchmark contract: ${benchmarkContract}")) {
+                throw new GradleException(
+                        "Mutation benchmark contract marker mismatch: ${summary}")
+            }
             def expectedMarker = [A1: 'MVCC Gen2-A1 server enabled: true', B: 'MVCC Gen2-B server enabled: true', C1: 'MVCC Gen2-C1 server enabled: true', C3: 'MVCC Gen2-C3 UPDATE server enabled: true'][cfg.gen2Mode]
             if (expectedMarker == null || !text.contains(expectedMarker)) {
                 throw new GradleException("Mutation benchmark did not prove ${cfg.gen2Mode} server plumbing: ${summary}")
@@ -23736,6 +23758,7 @@ def registerDelosF08TransactionStatusCrossEngine = {
                     group: groupName,
                     gen2Mode: gen2Mode,
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
                     reportRoot: delosF08TransactionStatusCrossEngineRoot,
                     databaseRootPath: delosF08TransactionStatusCrossEngineDbRoot,
                     workloads: workload,
@@ -23829,6 +23852,7 @@ def registerDelosF08PageValidityCanonical = {
                     group: groupName,
                     gen2Mode: gen2Mode,
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
                     rawStorePageValiditySnapshotServer: true,
                     reportRoot: delosF08PageValidityCanonicalRoot,
                     databaseRootPath: delosF08PageValidityCanonicalDbRoot,
@@ -23936,6 +23960,7 @@ def registerDelosF08MultiRowInsertControl = { String taskName, String groupName,
                     group: groupName,
                     gen2Mode: 'B',
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
                     f08MultiRowInsertControl: multiRow,
                     reportRoot: delosF08MultiRowInsertControlRoot,
                     databaseRootPath: delosF08MultiRowInsertControlDbRoot,
@@ -24144,7 +24169,8 @@ def configureDelosF08SharedInsertServerJfr = {
                     ? "Profiles F08-I ${tableShape} INSERT_100 with validated B-tree root-routing snapshot inserts."
                     : "Profiles F08-H ${tableShape} INSERT_100 server execution for Heap, Gen2-status, and upstream Derby."
     task.dependsOn tasks.named('compileTestJava'), ':jars',
-            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime'),
+            tasks.named('runDelosF08BenchmarkContract')
     task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     def delosNetworkClientClasspath = rootProject.files(
             rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
@@ -24176,6 +24202,8 @@ def configureDelosF08SharedInsertServerJfr = {
         task.systemProperties([
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkContract':
+                        contentionScalingSlice ? 'f08-contention-slice' : 'f08-transaction-status',
                 'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling':
                         contentionScalingSlice ? 'true' : 'false',
@@ -24523,6 +24551,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 reportRoot: delosF08FixedCostClientScalingRoot,
                 databaseRootPath: delosF08FixedCostClientScalingDbRoot,
@@ -24557,6 +24586,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8-log-upper-bound',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 rawStoreLogBufferSizeServer: '1048576',
                 rawStoreDurabilityTestNoSyncServer: true,
@@ -24990,6 +25020,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 rawStoreLogBufferSizeServer: '1048576',
                 rawStoreDurabilityTestNoSyncServer: true,
@@ -25097,6 +25128,7 @@ def registerDelosF08MultiInsertPageCausal = {
                     group: reportGroup,
                     gen2Mode: gen2Mode,
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-fixed-cost-scaling',
                     f08FixedCostClientScaling: true,
                     rawStoreLogBufferSizeServer: '1048576',
                     rawStoreDurabilityTestNoSyncServer: true,
@@ -25216,7 +25248,8 @@ tasks.register('runDelosF08MultiInsertPageCausal') {
 tasks.register('runDelosF08BTreeLeafLatchProof', JavaExec) {
     group = 'benchmark'
     description = 'Attributes F08 PK INSERT_100 page-latch contention by RawStore page/container at 1/2/4/8 clients.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars',
+            tasks.named('runDelosF08BenchmarkContract')
 
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     classpath = rootProject.files(
@@ -25282,6 +25315,7 @@ tasks.register('runDelosF08BTreeLeafLatchProof', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
                 'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '900',
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkContract': 'f08-btree-leaf-latch-proof',
                 'delosdb.benchmark.crossEngineConcurrency.f08BTreeLeafLatchProof': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
@@ -25327,7 +25361,8 @@ tasks.register('runDelosF08BTreeLeafLatchProof', JavaExec) {
 tasks.register('runDelosF08BTreeSplitAuthorityProof', JavaExec) {
     group = 'benchmark'
     description = 'Attributes F08 PK INSERT_100 B-tree split/internal-transaction work at 1/2/4/8 clients.'
-    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars',
+            tasks.named('runDelosF08BenchmarkContract')
 
     mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     classpath = rootProject.files(
@@ -25392,6 +25427,7 @@ tasks.register('runDelosF08BTreeSplitAuthorityProof', JavaExec) {
                 'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
                 'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
                 'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '900',
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkContract': 'f08-btree-split-authority-proof',
                 'delosdb.benchmark.crossEngineConcurrency.f08BTreeLeafLatchProof': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
@@ -25446,6 +25482,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 rawStoreLogBufferSizeServer: '1048576',
                 rawStoreDurabilityTestNoSyncServer: true,
@@ -25555,6 +25592,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-128-clients-8',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-transaction-status',
                 rawStorePageValiditySnapshotServer: true,
                 rawStoreMultiInsertPageServer: true,
                 btreeInsertRootRoutingSnapshotServer: true,
@@ -25657,4 +25695,253 @@ tasks.named('runDelosF08SharedAuthorityStackCanonical').configure {
                 'Purpose: determine whether the large 16-byte/no-sync scaling improvement survives canonical conditions before designing a coherent production architecture.\n',
                 'UTF-8')
     }
+}
+
+// F08 durability bottleneck-migration decomposition. The shared-authority
+// stack crossed the 200k op/s decision bar only in the 16-byte/no-sync lane,
+// while two canonical 128-byte/normal-durability attempts remained around the
+// Derby-family baseline and were dispersion-invalid. Hold the stack, workload,
+// payload, and client count constant and vary only the RawStore log buffer and
+// sync policy. This determines whether durability became the next dominant
+// authority after page/container/B-tree shared work was removed.
+def delosF08SharedAuthorityDurabilityRoot =
+        'reports/delosdb/benchmarks/f08-shared-authority-durability-decomposition'
+def delosF08SharedAuthorityDurabilityDbRoot =
+        'tmp/delos-f08-shared-authority-durability-decomposition'
+
+def registerDelosF08SharedAuthorityDurabilityMode = {
+    String taskName, String groupName, boolean noSync ->
+    registerDelosPostModernizationMutation(
+            taskName,
+            [
+                    description: "Runs F08 shared-authority durability decomposition (${noSync ? '1 MiB + no-sync' : '1 MiB durable'}).",
+                    group: groupName,
+                    gen2Mode: 'B',
+                    transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
+                    rawStoreLogBufferSizeServer: '1048576',
+                    rawStoreDurabilityTestNoSyncServer: noSync,
+                    rawStorePageValiditySnapshotServer: true,
+                    rawStoreMultiInsertPageServer: true,
+                    btreeInsertRootRoutingSnapshotServer: true,
+                    btreeInsertBranchRoutingSnapshotServer: true,
+                    reportRoot: delosF08SharedAuthorityDurabilityRoot,
+                    databaseRootPath: delosF08SharedAuthorityDurabilityDbRoot,
+                    workloads: 'INSERT_100',
+                    tableShape: 'PRIMARY_KEY_ONLY',
+                    rows: '10000',
+                    clients: '8',
+                    widths: '1',
+                    transactionsPerClient: '2500',
+                    fixedBudget: '250000',
+                    payload: '128',
+                    fixtureBatch: '100',
+                    warmups: '0',
+                    iterations: '1',
+                    minimumWarmupSeconds: '0.0',
+                    maximumWarmupIterations: '1',
+                    minimumMeasuredSeconds: '0.0',
+                    maximumMeasuredIterations: '1',
+                    runs: '4',
+                    caseTimeoutSeconds: '900',
+                    workerTimeoutSeconds: '3600'
+            ])
+
+    tasks.named(taskName).configure {
+        doLast {
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${delosF08SharedAuthorityDurabilityRoot}/${groupName}")
+                    .get().asFile
+            File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+            String summaryText = summary.getText('UTF-8')
+            [
+                    'Clients: 8',
+                    'RawStore page-validity snapshot server enabled: true',
+                    'RawStore multi-insert-page server enabled: true',
+                    'B-tree INSERT root-routing snapshot server enabled: true',
+                    'B-tree INSERT branch-routing snapshot server enabled: true',
+                    'RawStore concurrent log append server enabled: false',
+                    'RawStore preframed log append server enabled: false',
+                    'RawStore combined log append server enabled: false',
+                    'RawStore log buffer size server override: 1048576',
+                    "RawStore durability test no-sync server enabled: ${noSync}"
+            ].each { String marker ->
+                if (!summaryText.contains(marker)) {
+                    throw new GradleException(
+                            "F08 shared-authority durability decomposition missing evidence marker '${marker}': ${summary}")
+                }
+            }
+
+            File manifest = new File(reportDir, 'server-container-manifest.txt')
+            String manifestText = manifest.getText('UTF-8')
+            if (!manifestText.contains('Payload bytes: 128')
+                    || !manifestText.contains('Isolation: TRANSACTION_READ_COMMITTED')) {
+                throw new GradleException(
+                        "F08 shared-authority durability decomposition did not prove payload/isolation: ${manifest}")
+            }
+
+            File logDir = new File(reportDir, 'rawstore-multi-insert-page-logs')
+            ['delos_heap_drda', 'delos_mvcc_drda'].each { String targetId ->
+                boolean observed = false
+                if (logDir.isDirectory()) {
+                    logDir.listFiles()
+                            ?.findAll { File log -> log.isFile() && log.name.contains(targetId) }
+                            ?.each { File log ->
+                                if (log.getText('UTF-8').contains('DELOS_RAWSTORE_MULTI_INSERT_PAGE|')) {
+                                    observed = true
+                                }
+                            }
+                }
+                if (!observed) {
+                    throw new GradleException(
+                            "F08 shared-authority durability decomposition did not prove multi-insert-page activation for ${targetId}: ${logDir}")
+                }
+            }
+
+            new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                    'F08 shared-authority durability bottleneck-migration decomposition\n' +
+                    'Workload: PRIMARY_KEY_ONLY INSERT_100; payload=128; clients=8; 4 runs; full SERVER matrix.\n' +
+                    'Shared-authority stack remains fixed: page-validity snapshot + multi-insert-page + B-tree root/branch routing.\n' +
+                    'Rejected WAL-copy experiments remain OFF.\n' +
+                    'RawStore log buffer: 1 MiB. durability=test: ' + noSync + '.\n' +
+                    'Compare with the two existing default-buffer/normal-durability canonical runs.\n' +
+                    'Decision: a large no-sync step after the stack confirms durability/commit-flush bottleneck migration; a small step rejects durability as the missing canonical architecture.\n',
+                    'UTF-8')
+        }
+    }
+}
+
+registerDelosF08SharedAuthorityDurabilityMode(
+        'runDelosF08SharedAuthorityStackLargeBufferDurable',
+        'pk-insert-100-payload-128-clients-8-large-buffer-durable', false)
+registerDelosF08SharedAuthorityDurabilityMode(
+        'runDelosF08SharedAuthorityStackLargeBufferNoSync',
+        'pk-insert-100-payload-128-clients-8-large-buffer-nosync', true)
+
+tasks.named('runDelosF08SharedAuthorityStackLargeBufferNoSync').configure {
+    mustRunAfter tasks.named('runDelosF08SharedAuthorityStackLargeBufferDurable')
+}
+
+tasks.register('runDelosF08SharedAuthorityDurabilityDecomposition') {
+    group = 'benchmark'
+    description = 'Runs the 128-byte F08 shared-authority stack with a 1 MiB RawStore log buffer, with and without sync.'
+    dependsOn tasks.named('runDelosF08SharedAuthorityStackLargeBufferDurable')
+    dependsOn tasks.named('runDelosF08SharedAuthorityStackLargeBufferNoSync')
+}
+
+
+registerDelosFocusedTest(
+        'runDelosRawStoreDurableCommitBenchmarkContract',
+        'Executes canonical coordinator benchmark contracts before starting any server.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreDurableCommitBenchmarkContractTest.class'])
+
+registerDelosFocusedTest(
+        'runDelosRawStoreDurableCommitRecovery',
+        'Verifies mixed commit durability and uncommitted undo after process halt, using unchanged recovery.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreDurableCommitRecoveryTest.class'])
+
+// Both arms use the existing canonical mutation contract. Coordinator state is
+// the only changed production property; no new benchmark-mode allowlist exists.
+def durableCommitReportRoot = 'reports/delosdb/benchmarks/rawstore-durable-commit'
+def durableCommitDatabaseRoot = 'tmp/delos-rawstore-durable-commit'
+[false, true].each { boolean enabled ->
+    String mode = enabled ? 'coordinator-on' : 'coordinator-off'
+    String taskName = enabled
+            ? 'runDelosRawStoreDurableCommitCanonicalOn'
+            : 'runDelosRawStoreDurableCommitCanonicalOff'
+    registerDelosPostModernizationMutation(taskName, [
+            description: "Runs canonical durable INSERT with commit coordinator ${enabled ? 'ON' : 'OFF'}.",
+            group: mode,
+            reportRoot: durableCommitReportRoot,
+            databaseRootPath: durableCommitDatabaseRoot,
+            gen2Mode: 'B', transactionStatusCrossEngine: true,
+            benchmarkContract: 'rawstore-durable-commit-canonical',
+            rawStorePageValiditySnapshotServer: true,
+            rawStoreMultiInsertPageServer: true,
+            btreeInsertRootRoutingSnapshotServer: true,
+            btreeInsertBranchRoutingSnapshotServer: true,
+            rawStoreDurableCommitServer: enabled,
+            rawStoreDurableCommitDiagnosticsServer: true,
+            rawStoreLogBufferSizeServer: '', rawStoreDurabilityTestNoSyncServer: false,
+            workloads: 'INSERT_100', tableShape: 'PRIMARY_KEY_ONLY',
+            rows: '10000', clients: '8', widths: '1',
+            transactionsPerClient: '2500', fixedBudget: '250000',
+            payload: '128', fixtureBatch: '100',
+            warmups: '0', iterations: '1', minimumWarmupSeconds: '0.0',
+            maximumWarmupIterations: '1', minimumMeasuredSeconds: '0.0',
+            maximumMeasuredIterations: '1', runs: '8',
+            caseTimeoutSeconds: '900', workerTimeoutSeconds: '3600'
+    ])
+    tasks.named(taskName).configure {
+        dependsOn tasks.named('runDelosRawStoreDurableCommitBenchmarkContract')
+        doLast {
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${durableCommitReportRoot}/${mode}").get().asFile
+            String summary = new File(reportDir, 'cross-engine-concurrency-summary.txt').getText('UTF-8')
+            [
+                    "RawStore durable commit coordinator server enabled: ${enabled}",
+                    'RawStore durable commit diagnostics server enabled: true',
+                    'RawStore log buffer size server override: default',
+                    'RawStore durability test no-sync server enabled: false',
+                    'RawStore concurrent log append server enabled: false',
+                    'RawStore preframed log append server enabled: false',
+                    'RawStore combined log append server enabled: false',
+                    'RawStore page-validity snapshot server enabled: true',
+                    'RawStore multi-insert-page server enabled: true',
+                    'B-tree INSERT root-routing snapshot server enabled: true',
+                    'B-tree INSERT branch-routing snapshot server enabled: true',
+                    'Clients: 8'
+            ].each { marker ->
+                if (!summary.contains(marker)) {
+                    throw new GradleException("Durable commit ${mode} missing evidence: ${marker}")
+                }
+            }
+            String manifest = new File(reportDir, 'server-container-manifest.txt').getText('UTF-8')
+            if (!manifest.contains('Payload bytes: 128')
+                    || !manifest.contains('Isolation: TRANSACTION_READ_COMMITTED')) {
+                throw new GradleException("Durable commit ${mode} payload/isolation mismatch")
+            }
+            ['delos_heap_drda', 'delos_mvcc_drda'].each { target ->
+                (1..8).each { run ->
+                    File evidence = new File(reportDir, String.format(java.util.Locale.ROOT,
+                            'rawstore-durable-commit-logs/%02d-%s.log', run, target))
+                    if (!evidence.isFile()) {
+                        throw new GradleException("Missing durable commit server evidence: ${evidence}")
+                    }
+                    String log = evidence.getText('UTF-8')
+                    if (!log.contains("DELOS_RAWSTORE_DURABLE_COMMIT|enabled=${enabled}|")
+                            || !log.contains('DELOS_RAWSTORE_MULTI_INSERT_PAGE|')) {
+                        throw new GradleException("Missing active mechanism/configuration evidence: ${evidence}")
+                    }
+                    if (enabled) {
+                        def cohorts = log =~ /\|maxCohort=([0-9]+)/
+                        boolean grouped = false
+                        while (cohorts.find()) {
+                            grouped |= Integer.parseInt(cohorts.group(1)) >= 2
+                        }
+                        if (!grouped) {
+                            throw new GradleException("Coordinator did not acknowledge a real cohort: ${evidence}")
+                        }
+                    }
+                }
+            }
+            new File(reportDir, 'COMMIT-EVIDENCE-NOTES.txt').setText(
+                    'Canonical 128 B / 8-client INSERT_100 with normal durability and default log buffer.\n' +
+                    'The existing shared-authority stack and Gen2 transaction-status control are unchanged between arms.\n' +
+                    'Coordinator ON/OFF is the only production delta. No timer or batching delay.\n' +
+                    'Server counters are lifetime samples including setup; cohorts count flush delegations; flushSyncPhases count LogToFile sync/write phases, not OS syscalls.\n' +
+                    'Use measured CSVs for throughput and enforce existing dispersion/max-min rules.\n', 'UTF-8')
+        }
+    }
+}
+
+tasks.named('runDelosRawStoreDurableCommitCanonicalOn').configure {
+    mustRunAfter tasks.named('runDelosRawStoreDurableCommitCanonicalOff')
+}
+
+tasks.register('runDelosRawStoreDurableCommitCanonical') {
+    group = 'benchmark'
+    description = 'Compares existing and coordinated transaction-end durability with identical canonical settings.'
+    dependsOn tasks.named('runDelosRawStoreDurableCommitCanonicalOff')
+    dependsOn tasks.named('runDelosRawStoreDurableCommitCanonicalOn')
 }

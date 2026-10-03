@@ -620,7 +620,7 @@ public class FileLogger implements Logger {
             }
 		}
 
-		logFactory.flush(where);
+		logFactory.flushTransactionLog(where);
 	}
 
 	/**

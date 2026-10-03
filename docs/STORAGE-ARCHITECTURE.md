@@ -118,6 +118,16 @@ MVCC records stored inside that authority.
 
 See [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md).
 
+### Transaction-end durability coordination prototype
+
+The default-OFF durable-commit coordinator groups already-logged transaction-end requests before
+calling the existing `LogToFile.flush` path. It does not own WAL bytes, a durable state file, or a
+recovery decision. The inherited flush watermark remains authoritative; checkpoints, page write-ahead
+checks, log-file transitions, and `flushAll` retain their direct paths.
+
+The implementation boundary, limitations, evidence commands, and experimental-code disposition plan
+are documented in [`RAWSTORE-DURABLE-COMMIT.md`](RAWSTORE-DURABLE-COMMIT.md).
+
 ### Maintenance
 
 One database-owned service coordinates MVCC maintenance and vacuum with bounded work and reader-horizon

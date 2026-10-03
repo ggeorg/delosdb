@@ -248,6 +248,11 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	private static final boolean CONCURRENT_LOG_APPEND = Boolean.getBoolean(
 			"delosdb.experimental.rawStoreConcurrentLogAppend.enabled");
 
+	private static final boolean DURABLE_COMMIT_COORDINATOR = Boolean.getBoolean(
+            "delosdb.experimental.rawStoreDurableCommit.enabled");
+    private static final boolean DURABLE_COMMIT_DIAGNOSTICS = Boolean.getBoolean(
+            "delosdb.diagnostic.rawStoreDurableCommit");
+
 	// If you change this number, then JBMS 1.1x and 1.2x will give a really
 	// horrendous error message when booting against a db created by you.  When
 	// we decided that we don't need to worry about people mis-using the
@@ -503,6 +508,17 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			new ConcurrentLogAppendPublication();
 	private final AtomicInteger concurrentLogAppendActiveCopies = new AtomicInteger();
 	private final AtomicInteger concurrentLogAppendMaxCopies = new AtomicInteger();
+    private final DurableCommitCoordinator durableCommitCoordinator =
+            DURABLE_COMMIT_COORDINATOR
+                    ? new DurableCommitCoordinator(this::flushDurableCommitCohort) : null;
+    // Diagnostic lifetime counts, guarded by this; they are not durability state.
+    // A flush sync phase may write several write-synced buffers. These are
+    // LogToFile.flush phase counts, not OS fsync counts or all append I/O.
+    private long transactionDurabilityRequests;
+    private long flushSyncPhases;
+    private long flushSyncSuccesses;
+    private long flushSyncNanos;
+
 	private Thread concurrentLogAppendBarrierOwner;
 	private int concurrentLogAppendBarrierDepth;
 
@@ -1861,6 +1877,77 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		}
 		flush(fileNumber, wherePosition);
 	}
+
+    /**
+     * Transaction-end requests may share one flush caller. Page write-ahead
+     * checks and all lifecycle callers retain flush(LogInstant)'s direct path.
+     * No caller may wait for another thread while retaining this monitor.
+     */
+    void flushTransactionLog(LogInstant where) throws StandardException {
+        if ((!DURABLE_COMMIT_COORDINATOR && !DURABLE_COMMIT_DIAGNOSTICS)
+                || where == null || Thread.holdsLock(this)
+                || (durableCommitCoordinator != null
+                        && durableCommitCoordinator.isFlushingOnCurrentThread())) {
+            flush(where);
+            return;
+        }
+        boolean coordinate;
+        long requestNumber;
+        synchronized (this) {
+            requestNumber = DURABLE_COMMIT_DIAGNOSTICS
+                    ? ++transactionDurabilityRequests : 0;
+            coordinate = durableCommitCoordinator != null
+                    && !ReadOnlyDB && !stopped && !recoveryNeeded && !logNotSynced
+                    && !inReplicationMasterMode && !inReplicationSlaveMode
+                    && !inReplicationSlavePreMode;
+        }
+        if (coordinate) {
+            durableCommitCoordinator.awaitDurable(((LogCounter) where).getValueAsLong());
+            // Preserve the inherited corrupt/freeze check even when another
+            // transaction's flush covered this request before it was admitted.
+            flush((LogInstant) null);
+        } else {
+            flush(where);
+        }
+        if (DURABLE_COMMIT_DIAGNOSTICS
+                && ((requestNumber & (requestNumber - 1)) == 0
+                        || (requestNumber & 4095L) == 0)) {
+            reportDurableCommitDiagnostics();
+        }
+    }
+
+    private long flushDurableCommitCohort(long target) throws StandardException {
+        flush(LogCounter.getLogFileNumber(target), LogCounter.getLogFilePosition(target));
+        synchronized (this) {
+            checkCorrupt();
+            return getFirstUnflushedInstantAsLong();
+        }
+    }
+
+    private void reportDurableCommitDiagnostics() {
+        long requests;
+        long attempts;
+        long successes;
+        long nanos;
+        synchronized (this) {
+            requests = transactionDurabilityRequests;
+            attempts = flushSyncPhases;
+            successes = flushSyncSuccesses;
+            nanos = flushSyncNanos;
+        }
+        DurableCommitCoordinator.Snapshot snapshot = durableCommitCoordinator == null
+                ? null : durableCommitCoordinator.snapshot();
+        // Emission is outside both the WAL monitor and the admission lock.
+        // Samples include fixture/setup work and must not be divided by the
+        // benchmark's measured-only operation count.
+        System.out.println("DELOS_RAWSTORE_DURABLE_COMMIT|enabled="
+                + DURABLE_COMMIT_COORDINATOR + "|transactionRequests=" + requests
+                + "|cohorts=" + (snapshot == null ? 0 : snapshot.cohorts())
+                + "|acknowledged=" + (snapshot == null ? 0 : snapshot.acknowledgedRequests())
+                + "|maxCohort=" + (snapshot == null ? 0 : snapshot.maximumCohort())
+                + "|flushSyncPhases=" + attempts + "|flushSyncSuccesses=" + successes
+                + "|flushSyncNanos=" + nanos + "|scope=database-lifetime-sample");
+    }
 
 	/**
 		Flush all unwritten log record to disk and sync.
@@ -4454,6 +4541,13 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
             }
 		} // unfreeze log manager to accept more log records
 
+        boolean measureSync = DURABLE_COMMIT_DIAGNOSTICS && (isWriteSynced || !logNotSynced);
+        long syncStarted = measureSync ? System.nanoTime() : 0;
+        if (measureSync) {
+            synchronized (this) {
+                flushSyncPhases++;
+            }
+        }
 		boolean syncSuceed = false;
 		try
 		{
@@ -4519,6 +4613,12 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		{
 			synchronized(this)
 			{
+                if (measureSync) {
+                    flushSyncNanos += System.nanoTime() - syncStarted;
+                    if (syncSuceed) {
+                        flushSyncSuccesses++;
+                    }
+                }
 				logBeingFlushed = false; // done flushing
 
 				// update lastFlush under synchronized this instead of synchronized(logOut)
