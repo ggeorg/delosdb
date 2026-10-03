@@ -25192,3 +25192,115 @@ tasks.register('runDelosF08MultiInsertPageCausal') {
     dependsOn tasks.named('runDelosF08MultiInsertPageBareCausal'),
             tasks.named('runDelosF08MultiInsertPagePrimaryKeyCausal')
 }
+
+// F08 next-architecture proof: BARE continues scaling through eight writers,
+// while PRIMARY_KEY_ONLY regresses from four to eight. Before changing B-tree
+// behavior, attribute exclusive RawStore page-latch wait inside the PK path.
+// Run embedded Delos Heap so the existing in-process page-latch diagnostics can
+// identify the exact heap/index container and hottest pages. Physical WAL I/O
+// is minimized to match the F08 fixed-cost diagnostic lane.
+tasks.register('runDelosF08BTreeLeafLatchProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Attributes F08 PK INSERT_100 page-latch contention by RawStore page/container at 1/2/4/8 clients.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-btree-leaf-latch-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F08 B-tree leaf-latch proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/f08-btree-leaf-latch-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-f08-btree-leaf-latch-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.lockEntry': 'true',
+                'delosdb.diagnostic.lockWait': 'true',
+                'derby.storage.logBufferSize': '1048576',
+                'derby.system.durability': 'test',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2500',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '16',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '900',
+                'delosdb.benchmark.crossEngineConcurrency.f08BTreeLeafLatchProof': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockEntryDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.lockWaitDiagnostics': 'true'
+        ])
+    }
+
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/f08-btree-leaf-latch-proof').get().asFile
+        [
+                'page-latch-diagnostics-delos_heap-run-1.csv',
+                'page-latch-contention-by-page-delos_heap-run-1.csv',
+                'page-latch-authority-by-page-delos_heap-run-1.csv',
+                'derby-conglomerate-map-delos_heap-run-1.csv',
+                'lock-entry-diagnostics-delos_heap-run-1.csv',
+                'logical-lock-wait-diagnostics-delos_heap-run-1.csv'
+        ].each { String name ->
+            File evidence = new File(reportDir, name)
+            if (!evidence.isFile() || evidence.length() == 0L) {
+                throw new GradleException("F08 B-tree leaf-latch proof missing evidence: ${evidence}")
+            }
+        }
+        new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                'F08 B-tree leaf-latch attribution proof\n' +
+                'Workload: embedded Delos Heap PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8.\n' +
+                'Controls: derby.storage.logBufferSize=1048576; derby.system.durability=test. NON-DURABLE diagnostic only.\n' +
+                'No B-tree or RawStore behavior experiment is enabled. Multi-insert-page and concurrent-WAL controls remain OFF.\n' +
+                'Existing BasePage diagnostics report exclusive-latch requests, contention, wait time, maximum wait, and per-page authority.\n' +
+                'Existing lock diagnostics report lock-table entry mutex contention and logical waits by ContainerKey/RecordId/Other authority.\n' +
+                'derby-conglomerate-map identifies the heap and SQL PK index RawStore container IDs.\n' +
+                'Decision question: after page-latch attribution, does B-tree-specific RecordId key/gap locking explain the remaining 4->8 INSERT collapse?\n',
+                'UTF-8')
+    }
+}

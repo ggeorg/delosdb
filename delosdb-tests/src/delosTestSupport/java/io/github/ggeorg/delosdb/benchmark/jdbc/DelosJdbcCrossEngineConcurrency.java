@@ -12187,6 +12187,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(f08FixedCostClientScalingEnabled()).append('\n')
                 .append("F08 contention-scaling slice diagnostic: ")
                 .append(f08ContentionScalingSliceEnabled()).append('\n')
+                .append("F08 B-tree leaf-latch proof: ")
+                .append(f08BTreeLeafLatchProofEnabled()).append('\n')
                 .append("RawStore page-validity snapshot server enabled: ")
                 .append(rawStorePageValiditySnapshotServerEnabled()).append('\n')
                 .append("RawStore preframed log append server enabled: ")
@@ -12499,6 +12501,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean f08ContentionScalingSliceEnabled() {
         return Boolean.getBoolean(PREFIX + "f08ContentionScalingSlice");
+    }
+
+    private static boolean f08BTreeLeafLatchProofEnabled() {
+        return Boolean.getBoolean(PREFIX + "f08BTreeLeafLatchProof");
     }
 
     private static boolean rawStorePageValiditySnapshotServerEnabled() {
@@ -14256,13 +14262,42 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-B throughput sentinel requires PRIMARY_KEY_ONLY INSERT table shape");
                 }
+            } else if (f08BTreeLeafLatchProofEnabled()) {
+                if (!configuredTargets.equals(List.of(Target.DELOS_HEAP))
+                        || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
+                        || !clientValues().equals(List.of(1, 2, 4, 8))
+                        || !widthValues().equals(List.of(1))
+                        || !"PRIMARY_KEY_ONLY".equals(configuredInsertTableShape)
+                        || payload != 16
+                        || warmups != 0
+                        || iterations != 1
+                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                        || maximumWarmupIterations != 1
+                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                        || maximumMeasuredIterations != 1
+                        || !pageLatchDiagnosticsEnabled()
+                        || !heapAuthorityDiagnosticsEnabled()
+                        || rawStorePageValiditySnapshotServerEnabled()
+                        || rawStorePreframedLogAppendServerEnabled()
+                        || rawStoreCombinedLogAppendServerEnabled()
+                        || rawStoreConcurrentLogAppendServerEnabled()
+                        || rawStoreMultiInsertPageServerEnabled()
+                        || btreeInsertRootRoutingSnapshotServerEnabled()
+                        || btreeInsertBranchRoutingSnapshotServerEnabled()
+                        || f08MultiRowInsertControlEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F08 B-tree leaf-latch proof requires embedded Delos Heap, "
+                                    + "PRIMARY_KEY_ONLY INSERT_100, payload=16, clients=1,2,4,8, "
+                                    + "fresh single intervals, page-latch/heap-authority diagnostics, "
+                                    + "and no competing F08 RawStore/B-tree experiment");
+                }
             } else if (!f02ScaleSurfaceDiagnostic
                     && !"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
                                 + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
                                 + "gen2C3UpdateThroughputSentinel=true, Gen2-C3 read fitness, "
-                                + "or the F02 scale-surface diagnostic");
+                                + "the F08 B-tree leaf-latch proof, or the F02 scale-surface diagnostic");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);

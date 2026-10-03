@@ -1,11 +1,15 @@
-DelosDB F08 multi-insert-page BARE validation fix r3
+F08 B-tree lock-authority proof r3
 
-Changed files:
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Purpose
+- Extend the existing diagnostics-only B-tree leaf-latch proof with the already-present lock-entry and logical-lock-wait diagnostics.
+- Measure whether B-tree INSERT key/gap locking (RecordId authority) is the shared serialization point behind the remaining 4->8 PK INSERT collapse.
 
-Purpose:
-- Permit BARE INSERT_100 in F08 fixed-cost client scaling only when the RawStore multi-insert-page server experiment is enabled and the contention-scaling slice is disabled.
-- Preserve the existing PRIMARY_KEY_ONLY requirement for all prior F08 fixed-cost and contention-scaling experiments.
+Changed files
+- delosdb-tests/build.gradle
 
-No production files changed.
-No benchmark thresholds weakened.
+Behavior
+- No production Java changes.
+- No benchmark thresholds changed.
+- No B-tree/RawStore experiment enabled.
+- Same embedded Delos Heap PRIMARY_KEY_ONLY INSERT_100, 16-byte payload, clients 1/2/4/8, no-sync diagnostic lane.
+- Adds lock-entry-diagnostics-delos_heap-run-1.csv and logical-lock-wait-diagnostics-delos_heap-run-1.csv as required evidence.
