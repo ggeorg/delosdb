@@ -1,38 +1,26 @@
-DelosDB F08 benchmark contract ownership r1
-
-Source authority:
-- delosdb 90.zip
-- delosdb-rawstore-durable-commit-coordinator-r1-overlay.zip applied on top
-
+F08 post-U experimental tranche consolidation r1
+================================================
 Purpose:
-- Give the current F08 INSERT benchmark family an explicit runtime contract identity.
-- Centralize F08 workload/target/control validation in one Java owner.
-- Exercise that owner through the real cross-engine Options validator before expensive F08 tasks.
-- Preserve experiment-specific artifact/evidence checks with the tasks that produce those artifacts.
+- Remove rejected/default-OFF experiments introduced after the F08-U checkpoint.
+- Restore production source and associated benchmark/test wiring to the known F08-U/source89 baseline.
+- Restore repository-integrity counters to their checked-in maxima without raising baselines or classifications.
 
-Changed files:
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContract.java (new)
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.java (new)
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/RawStoreDurableCommitBenchmarkContractTest.java
-- gradle/testing/delos-test-suite-registry.tsv
+Removed experiment families:
+- concurrent RawStore WAL reservation/copy prototype
+- RawStore multi-insert-page causal prototype
+- B-tree structural split diagnostics
+- rejected RawStore durable-commit coordinator prototype
+- benchmark/test wiring introduced solely for those post-U experiments
 
-Behavioral scope:
-- No production database/storage code changes.
-- No benchmark workload, payload, client-count, target-matrix, durability, or threshold changes.
-- No assertion weakening.
-- F08 tasks now declare a recognized benchmark contract and emit it in benchmark summaries.
-- F08 contract rules previously distributed through Options.validate() are delegated to F08BenchmarkContract.
-- Existing experiment-specific evidence checks remain unchanged.
+Preserved from the F08-U baseline:
+- transaction-status candidate architecture
+- page-validity snapshot experiment
+- B-tree root/branch routing snapshots
+- preframed WAL experiment
+- flat-combined WAL experiment
+- all earlier accepted production architecture and tests
 
-Local verification performed in the analysis environment:
-- Actual DelosJdbcCrossEngineConcurrency + F08BenchmarkContract javac compilation: PASS (JDK 21 source compatibility check).
-- F08BenchmarkContractTest: 6/6 PASS.
-- RawStoreDurableCommitBenchmarkContractTest: 4/4 PASS.
-- DelosRepositoryIntegrityAudit after change: parseErrors=0, compilerAuthorityViolations=0.
-- All production integrity counters exactly unchanged from reconstructed pre-change source.
-- Changed-file whitespace/diff checks: PASS.
+The just-added benchmark-contract refactor is intentionally removed in this consolidation because it contained contracts for experiments being deleted. It will be reapplied against the restored clean baseline as the next maintainability tranche.
 
-Not verified here:
-- Full repository Gradle/JDK 25 execution. Run the commands supplied with the overlay on the user's JDK 25 environment.
+No performance thresholds, repository-integrity baselines, or classification inventories are changed.
+CLEANUP.sh is required because obsolete files are deleted.

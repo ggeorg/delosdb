@@ -5480,9 +5480,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccGen2TransactionStatusVisibilityServerEnabled()) {
             addProperty(command, "mvccGen2TransactionStatusVisibilityServer", true);
         }
-        if (!benchmarkContractId().isEmpty()) {
-            addProperty(command, "benchmarkContract", benchmarkContractId());
-        }
         if (f08TransactionStatusCrossEngineEnabled()) {
             addProperty(command, "f08TransactionStatusCrossEngine", true);
         }
@@ -5500,18 +5497,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         if (rawStoreCombinedLogAppendServerEnabled()) {
             addProperty(command, "rawStoreCombinedLogAppendServer", true);
-        }
-        if (rawStoreConcurrentLogAppendServerEnabled()) {
-            addProperty(command, "rawStoreConcurrentLogAppendServer", true);
-        }
-        if (rawStoreMultiInsertPageServerEnabled()) {
-            addProperty(command, "rawStoreMultiInsertPageServer", true);
-        }
-        if (rawStoreDurableCommitServerEnabled()) {
-            addProperty(command, "rawStoreDurableCommitServer", true);
-        }
-        if (rawStoreDurableCommitDiagnosticsServerEnabled()) {
-            addProperty(command, "rawStoreDurableCommitDiagnosticsServer", true);
         }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
@@ -5792,19 +5777,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add(
                             "-Ddelosdb.experimental.rawStoreCombinedLogAppend.enabled=true");
                 }
-                if (rawStoreConcurrentLogAppendServerEnabled()) {
-                    javaCommand.add(
-                            "-Ddelosdb.experimental.rawStoreConcurrentLogAppend.enabled=true");
-                }
-                if (rawStoreMultiInsertPageServerEnabled()) {
-                    javaCommand.add(
-                            "-Ddelosdb.experimental.rawStoreMultiInsertPage.enabled=true");
-                }
-                javaCommand.add("-Ddelosdb.experimental.rawStoreDurableCommit.enabled="
-                        + rawStoreDurableCommitServerEnabled());
-                if (rawStoreDurableCommitDiagnosticsServerEnabled()) {
-                    javaCommand.add("-Ddelosdb.diagnostic.rawStoreDurableCommit=true");
-                }
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
@@ -5934,25 +5906,11 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         int port = publishedPort(name, target.containerPort());
         ServerEndpoint endpoint = target.endpoint(port);
-        boolean delosDrdaTarget = target == Target.DELOS_HEAP_DRDA
-                || target == Target.DELOS_MVCC_DRDA;
-        Path serverEvidenceLog = null;
-        if (delosDrdaTarget && rawStoreDurableCommitDiagnosticsServerEnabled()) {
-            serverEvidenceLog = options.reportDirectory()
-                    .resolve("rawstore-durable-commit-logs")
-                    .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
-        } else if (delosDrdaTarget && rawStoreConcurrentLogAppendServerEnabled()) {
-            serverEvidenceLog = options.reportDirectory()
-                    .resolve("rawstore-concurrent-wal-logs")
-                    .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
-        } else if (delosDrdaTarget && rawStoreMultiInsertPageServerEnabled()) {
-            serverEvidenceLog = options.reportDirectory()
-                    .resolve("rawstore-multi-insert-page-logs")
-                    .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
-        } else if (delosDrdaTarget && drdaServerPhaseEvidenceEnabled()) {
-            serverEvidenceLog = options.reportDirectory().resolve("server-phase-logs").resolve(
-                    String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
-        }
+        Path serverEvidenceLog = drdaServerPhaseEvidenceEnabled()
+                && (target == Target.DELOS_HEAP_DRDA || target == Target.DELOS_MVCC_DRDA)
+                ? options.reportDirectory().resolve("server-phase-logs").resolve(
+                        String.format(Locale.ROOT, "%02d-%s.log", run, target.id()))
+                : null;
         ContainerServer server = new ContainerServer(
                 name, endpoint, serverEvidenceLog, shouldProfileServer(target));
         try {
@@ -6318,9 +6276,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockWaitDiagnosticsEnabled()) {
                     resetLockWaitDiagnostics();
                 }
-                if (btreeInsertStructuralDiagnosticsEnabled()) {
-                    resetBTreeInsertStructuralDiagnostics();
-                }
                 if (cacheEntryDiagnosticsEnabled()) {
                     resetCacheEntryDiagnostics();
                 }
@@ -6413,9 +6368,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] lockWaitDiagnostics = lockWaitDiagnosticsEnabled()
                         ? snapshotLockWaitDiagnostics()
                         : null;
-                long[] btreeInsertStructuralDiagnostics = btreeInsertStructuralDiagnosticsEnabled()
-                        ? snapshotBTreeInsertStructuralDiagnostics()
-                        : null;
                 String[] cacheEntryDiagnostics = cacheEntryDiagnosticsEnabled()
                         ? snapshotCacheEntryDiagnostics()
                         : null;
@@ -6458,11 +6410,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockWaitDiagnostics != null) {
                     writeLockWaitDiagnostics(
                             options, spec, config, measuredOperations, lockWaitDiagnostics);
-                }
-                if (btreeInsertStructuralDiagnostics != null) {
-                    writeBTreeInsertStructuralDiagnostics(
-                            options, spec, config, measuredOperations,
-                            btreeInsertStructuralDiagnostics);
                 }
                 if (cacheEntryDiagnostics != null) {
                     writeCacheEntryDiagnostics(
@@ -7460,88 +7407,6 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(',').append(format(hitRatio))
                 .append(',').append(format(fallbackRatio))
                 .append(',').append(format(bytesPerOperation))
-                .append('\n');
-        Files.writeString(
-                output, row.toString(), StandardCharsets.UTF_8,
-                java.nio.file.StandardOpenOption.CREATE,
-                java.nio.file.StandardOpenOption.APPEND);
-    }
-
-    private static boolean btreeInsertStructuralDiagnosticsEnabled() {
-        return Boolean.getBoolean(PREFIX + "btreeInsertStructuralDiagnostics");
-    }
-
-    private static void resetBTreeInsertStructuralDiagnostics()
-            throws ReflectiveOperationException {
-        Class<?> support = Class.forName(
-                "org.apache.derby.impl.store.access.btree.BTreeInsertStructuralDiagnosticTestSupport");
-        support.getMethod("reset").invoke(null);
-    }
-
-    private static long[] snapshotBTreeInsertStructuralDiagnostics()
-            throws ReflectiveOperationException {
-        Class<?> support = Class.forName(
-                "org.apache.derby.impl.store.access.btree.BTreeInsertStructuralDiagnosticTestSupport");
-        return (long[]) support.getMethod("snapshot").invoke(null);
-    }
-
-    private static void writeBTreeInsertStructuralDiagnostics(
-            Options options,
-            Spec spec,
-            DelosBenchmarkConfig config,
-            long measuredOperations,
-            long[] values) throws IOException {
-        if (values.length != 17) {
-            throw new IllegalStateException(
-                    "Unexpected B-tree insert structural diagnostic width: " + values.length);
-        }
-        Path output = options.reportDirectory().resolve(
-                "btree-insert-structural-diagnostics-" + options.target().id()
-                        + "-run-" + options.run() + ".csv");
-        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
-                + "splitPassCalls,actualSplitPasses,reclaimOnlyPasses,"
-                + "leafAlreadyHasSpace,leafPageSplits,leafRootGrows,branchPageSplits,"
-                + "branchRootGrows,splitRestarts,splitPassNanos,maxSplitPassNanos,"
-                + "internalXactAcquireNanos,splitOpenInitNanos,rootAcquireNanos,"
-                + "rootSplitForNanos,finalCommitNanos,finalDestroyNanos,"
-                + "splitPassesPerOperation,leafAlreadyHasSpacePercent,"
-                + "splitPassNanosPerOperation,splitPassNanosPerPass,"
-                + "rootAcquireNanosPerPass,rootSplitForNanosPerPass,finalCommitNanosPerPass\n";
-        if (!Files.exists(output)) {
-            Files.writeString(output, header, StandardCharsets.UTF_8);
-        }
-        long splitPasses = values[0];
-        double splitPassesPerOperation = measuredOperations == 0L
-                ? 0.0 : splitPasses / (double) measuredOperations;
-        double leafAlreadyHasSpacePercent = values[1] == 0L
-                ? 0.0 : values[3] * 100.0 / values[1];
-        double splitPassNanosPerOperation = measuredOperations == 0L
-                ? 0.0 : values[9] / (double) measuredOperations;
-        double splitPassNanosPerPass = splitPasses == 0L
-                ? 0.0 : values[9] / (double) splitPasses;
-        double rootAcquireNanosPerPass = splitPasses == 0L
-                ? 0.0 : values[13] / (double) splitPasses;
-        double rootSplitForNanosPerPass = splitPasses == 0L
-                ? 0.0 : values[14] / (double) splitPasses;
-        double finalCommitNanosPerPass = splitPasses == 0L
-                ? 0.0 : values[15] / (double) splitPasses;
-        StringBuilder row = new StringBuilder();
-        row.append(options.target().id()).append(',')
-                .append(spec.workload().name()).append(',')
-                .append(spec.clients()).append(',')
-                .append(spec.operationsPerTransaction()).append(',')
-                .append(config.rowCount()).append(',')
-                .append(measuredOperations);
-        for (long value : values) {
-            row.append(',').append(value);
-        }
-        row.append(',').append(format(splitPassesPerOperation))
-                .append(',').append(format(leafAlreadyHasSpacePercent))
-                .append(',').append(format(splitPassNanosPerOperation))
-                .append(',').append(format(splitPassNanosPerPass))
-                .append(',').append(format(rootAcquireNanosPerPass))
-                .append(',').append(format(rootSplitForNanosPerPass))
-                .append(',').append(format(finalCommitNanosPerPass))
                 .append('\n');
         Files.writeString(
                 output, row.toString(), StandardCharsets.UTF_8,
@@ -12292,30 +12157,18 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2BServerEnabled()).append('\n')
                 .append("MVCC Gen2 transaction-status visibility server enabled: ")
                 .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
-                .append("Benchmark contract: ")
-                .append(benchmarkContractId().isEmpty() ? "none" : benchmarkContractId()).append('\n')
                 .append("F08 transaction-status cross-engine diagnostic: ")
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
                 .append("F08 fixed-cost client-scaling diagnostic: ")
                 .append(f08FixedCostClientScalingEnabled()).append('\n')
                 .append("F08 contention-scaling slice diagnostic: ")
                 .append(f08ContentionScalingSliceEnabled()).append('\n')
-                .append("F08 B-tree leaf-latch proof: ")
-                .append(f08BTreeLeafLatchProofEnabled()).append('\n')
                 .append("RawStore page-validity snapshot server enabled: ")
                 .append(rawStorePageValiditySnapshotServerEnabled()).append('\n')
                 .append("RawStore preframed log append server enabled: ")
                 .append(rawStorePreframedLogAppendServerEnabled()).append('\n')
                 .append("RawStore combined log append server enabled: ")
                 .append(rawStoreCombinedLogAppendServerEnabled()).append('\n')
-                .append("RawStore concurrent log append server enabled: ")
-                .append(rawStoreConcurrentLogAppendServerEnabled()).append('\n')
-                .append("RawStore multi-insert-page server enabled: ")
-                .append(rawStoreMultiInsertPageServerEnabled()).append('\n')
-                .append("RawStore durable commit coordinator server enabled: ")
-                .append(rawStoreDurableCommitServerEnabled()).append('\n')
-                .append("RawStore durable commit diagnostics server enabled: ")
-                .append(rawStoreDurableCommitDiagnosticsServerEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12608,10 +12461,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "mvccGen2TransactionStatusVisibilityServer");
     }
 
-    private static String benchmarkContractId() {
-        return System.getProperty(PREFIX + "benchmarkContract", "").trim();
-    }
-
     private static boolean f08TransactionStatusCrossEngineEnabled() {
         return Boolean.getBoolean(PREFIX + "f08TransactionStatusCrossEngine");
     }
@@ -12624,10 +12473,6 @@ public final class DelosJdbcCrossEngineConcurrency {
         return Boolean.getBoolean(PREFIX + "f08ContentionScalingSlice");
     }
 
-    private static boolean f08BTreeLeafLatchProofEnabled() {
-        return Boolean.getBoolean(PREFIX + "f08BTreeLeafLatchProof");
-    }
-
     private static boolean rawStorePageValiditySnapshotServerEnabled() {
         return Boolean.getBoolean(PREFIX + "rawStorePageValiditySnapshotServer");
     }
@@ -12638,22 +12483,6 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean rawStoreCombinedLogAppendServerEnabled() {
         return Boolean.getBoolean(PREFIX + "rawStoreCombinedLogAppendServer");
-    }
-
-    private static boolean rawStoreConcurrentLogAppendServerEnabled() {
-        return Boolean.getBoolean(PREFIX + "rawStoreConcurrentLogAppendServer");
-    }
-
-    private static boolean rawStoreMultiInsertPageServerEnabled() {
-        return Boolean.getBoolean(PREFIX + "rawStoreMultiInsertPageServer");
-    }
-
-    private static boolean rawStoreDurableCommitServerEnabled() {
-        return Boolean.getBoolean(PREFIX + "rawStoreDurableCommitServer");
-    }
-
-    private static boolean rawStoreDurableCommitDiagnosticsServerEnabled() {
-        return Boolean.getBoolean(PREFIX + "rawStoreDurableCommitDiagnosticsServer");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {
@@ -13785,57 +13614,13 @@ public final class DelosJdbcCrossEngineConcurrency {
             boolean postModernizationMutationCheckpoint =
                     postModernizationMutationCheckpointEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
-            List<Workload> configuredWorkloads = workloadValues();
-            String configuredInsertTableShape = insertTableShape();
-            F08BenchmarkContract.Result f08BenchmarkContract = F08BenchmarkContract.validate(
-                    benchmarkContractId(),
-                    new F08BenchmarkContract.Context(
-                            new F08BenchmarkContract.TargetScope(
-                                    configuredTargets.equals(SERVER_PRODUCT_TARGETS),
-                                    configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS),
-                                    configuredTargets.equals(List.of(Target.DELOS_HEAP))),
-                            new F08BenchmarkContract.RunShape(
-                                    configuredWorkloads.stream().map(Enum::name).toList(),
-                                    clientValues(),
-                                    widthValues(),
-                                    configuredInsertTableShape,
-                                    payload),
-                            new F08BenchmarkContract.Timing(
-                                    sqlSemanticOracleEnabled(),
-                                    warmups,
-                                    iterations,
-                                    minimumWarmupSeconds,
-                                    maximumWarmupIterations,
-                                    minimumMeasuredSeconds,
-                                    maximumMeasuredIterations),
-                            new F08BenchmarkContract.Controls(
-                                    f08TransactionStatusCrossEngineEnabled(),
-                                    f08FixedCostClientScalingEnabled(),
-                                    f08ContentionScalingSliceEnabled(),
-                                    f08BTreeLeafLatchProofEnabled(),
-                                    btreeInsertStructuralDiagnosticsEnabled(),
-                                    mvccGen2A1ServerEnabled(),
-                                    mvccGen2BServerEnabled(),
-                                    mvccGen2TransactionStatusVisibilityServerEnabled(),
-                                    pageLatchDiagnosticsEnabled(),
-                                    heapAuthorityDiagnosticsEnabled(),
-                                    f08MultiRowInsertControlEnabled(),
-                                    rawStorePageValiditySnapshotServerEnabled(),
-                                    rawStorePreframedLogAppendServerEnabled(),
-                                    rawStoreCombinedLogAppendServerEnabled(),
-                                    rawStoreConcurrentLogAppendServerEnabled(),
-                                    rawStoreMultiInsertPageServerEnabled(),
-                                    rawStoreDurableCommitServerEnabled(),
-                                    rawStoreDurableCommitDiagnosticsServerEnabled(),
-                                    rawStoreLogBufferSizeServerOverride(),
-                                    rawStoreDurabilityTestNoSyncServerEnabled(),
-                                    btreeInsertRootRoutingSnapshotServerEnabled(),
-                                    btreeInsertBranchRoutingSnapshotServerEnabled()),
-                            System.getProperty(PREFIX + "profileServerTargets", "").trim()));
             boolean f08TransactionStatusAttribution =
-                    f08BenchmarkContract.transactionStatusAttribution();
-            boolean f08TransactionStatusCrossEngine = f08BenchmarkContract.active()
-                    && !f08BenchmarkContract.btreeProof();
+                    f08TransactionStatusCrossEngineEnabled()
+                    && configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS);
+            boolean f08TransactionStatusCrossEngine =
+                    f08TransactionStatusCrossEngineEnabled()
+                    && (configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                            || f08TransactionStatusAttribution);
             boolean gen2C3ReadFitness = mvccGen2C3ReadServerEnabled()
                     && configuredTargets.equals(SERVER_PRODUCT_TARGETS);
             boolean f02ScaleSurfaceDiagnostic = f02ScaleSurfaceDiagnosticEnabled()
@@ -13918,6 +13703,8 @@ public final class DelosJdbcCrossEngineConcurrency {
             parsePositive(rows, "rows", 100);
             parsePositive(clients, "clients", 1);
             parsePositive(widths, "widths", 1);
+            List<Workload> configuredWorkloads = workloadValues();
+            String configuredInsertTableShape = insertTableShape();
             if (!List.of("BARE", "PRIMARY_KEY_ONLY", "FULL_INDEXED")
                     .contains(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
@@ -14256,7 +14043,93 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 range-scan JFR requires PRIMARY_KEY_ONLY table shape");
                 }
             } else if (f08TransactionStatusCrossEngine) {
-                // F08 workload/configuration rules are owned by F08BenchmarkContract.
+                boolean f08FixedCostClientScaling = f08FixedCostClientScalingEnabled();
+                boolean f08ContentionScalingSlice = f08ContentionScalingSliceEnabled();
+                if (configuredWorkloads.size() != 1 || !configuredWorkloads.get(0).isInsert()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires exactly one INSERT workload");
+                }
+                List<Integer> actualF08Clients = clientValues();
+                boolean validF08Clients;
+                if (f08ContentionScalingSlice) {
+                    validF08Clients = f08FixedCostClientScaling
+                            && actualF08Clients.size() == 1
+                            && List.of(1, 2, 4, 8).contains(actualF08Clients.get(0));
+                } else {
+                    List<Integer> expectedF08Clients = f08FixedCostClientScaling
+                            ? List.of(1, 2, 4, 8) : List.of(8);
+                    validF08Clients = actualF08Clients.equals(expectedF08Clients);
+                }
+                if (!validF08Clients || !widthValues().equals(List.of(1))) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic has invalid clients="
+                                    + actualF08Clients + ",widths=" + widthValues());
+                }
+                if (!sqlSemanticOracleEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires SQL semantic oracle");
+                }
+                if (warmups != 0
+                        || iterations != 1
+                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
+                        || maximumWarmupIterations != 1
+                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
+                        || maximumMeasuredIterations != 1) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires one fresh measured INSERT interval per worker");
+                }
+                boolean bare = "BARE".equals(configuredInsertTableShape);
+                boolean primaryKey = "PRIMARY_KEY_ONLY".equals(configuredInsertTableShape);
+                if (!bare && !primaryKey) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic requires BARE or PRIMARY_KEY_ONLY");
+                }
+                if ((bare && !mvccGen2A1ServerEnabled())
+                        || (primaryKey && !mvccGen2BServerEnabled())
+                        || !mvccGen2TransactionStatusVisibilityServerEnabled()) {
+                    throw new IllegalArgumentException(
+                            "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
+                }
+                if (f08FixedCostClientScaling) {
+                    boolean validScalingTargets = f08ContentionScalingSlice
+                            ? configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS)
+                            : configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+                    if (!validScalingTargets
+                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
+                            || !primaryKey
+                            || payload != 16
+                            || f08MultiRowInsertControlEnabled()) {
+                        throw new IllegalArgumentException(
+                                f08ContentionScalingSlice
+                                        ? "F08 contention-scaling slice requires Derby-family SERVER targets, "
+                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape"
+                                        : "F08 fixed-cost client scaling requires the full SERVER matrix, "
+                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
+                    }
+                }
+                if (f08ContentionScalingSlice && !f08TransactionStatusAttribution) {
+                    throw new IllegalArgumentException(
+                            "F08 contention-scaling slice requires the Derby-family attribution target set");
+                }
+                if (f08MultiRowInsertControlEnabled()) {
+                    if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)
+                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
+                            || !primaryKey) {
+                        throw new IllegalArgumentException(
+                                "F08 multi-row INSERT control requires the full SERVER matrix, "
+                                        + "PRIMARY_KEY_ONLY, and INSERT_100");
+                    }
+                }
+                if (f08TransactionStatusAttribution) {
+                    String expectedProfileTargets =
+                            "delos_heap_drda,delos_mvcc_drda,upstream_derby_drda";
+                    if (!expectedProfileTargets.equals(
+                            System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
+                        throw new IllegalArgumentException(
+                                "F08 transaction-status attribution requires server profiling for "
+                                        + expectedProfileTargets);
+                    }
+                }
             } else if (postModernizationMutationCheckpoint) {
                 boolean insertCheckpoint = configuredWorkloads.equals(List.of(Workload.INSERT_100));
                 boolean freshUpdateCheckpoint = configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100));
@@ -14340,15 +14213,13 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-B throughput sentinel requires PRIMARY_KEY_ONLY INSERT table shape");
                 }
-            } else if (f08BenchmarkContract.btreeProof()) {
-                // F08 B-tree proof rules are owned by F08BenchmarkContract.
             } else if (!f02ScaleSurfaceDiagnostic
                     && !"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
                                 + "gen2A1ThroughputSentinel=true, gen2BThroughputSentinel=true, "
                                 + "gen2C3UpdateThroughputSentinel=true, Gen2-C3 read fitness, "
-                                + "the F08 B-tree leaf-latch proof, or the F02 scale-surface diagnostic");
+                                + "or the F02 scale-surface diagnostic");
             }
             boolean longReaderWriterFitness = !configuredWorkloads.isEmpty()
                     && configuredWorkloads.stream().allMatch(Workload::isLongReaderWriter);

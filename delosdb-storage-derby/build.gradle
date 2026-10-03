@@ -145,16 +145,3 @@ tasks.register('runCombinedLogAppendQueueTest', JavaExec) {
 tasks.named('check') {
     dependsOn tasks.named('runCombinedLogAppendQueueTest')
 }
-
-
-tasks.register('runDurableCommitCoordinatorTest', JavaExec) {
-    group = 'verification'
-    description = 'Checks durable commit cohorts, frontier coverage, interruption, and failure handoff.'
-    dependsOn tasks.named('testClasses')
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'org.apache.derby.impl.store.raw.log.DurableCommitCoordinatorTest'
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runDurableCommitCoordinatorTest')
-}

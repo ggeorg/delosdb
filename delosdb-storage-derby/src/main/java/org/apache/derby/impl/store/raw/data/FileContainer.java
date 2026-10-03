@@ -134,11 +134,6 @@ abstract class FileContainer
 	private static final boolean PAGE_VALIDITY_SNAPSHOT_ENABLED =
 		Boolean.getBoolean("delosdb.experimental.rawStorePageValiditySnapshot.enabled");
 
-	private static final boolean MULTI_INSERT_PAGE_ENABLED =
-		Boolean.getBoolean("delosdb.experimental.rawStoreMultiInsertPage.enabled");
-
-	private static final int MULTI_INSERT_PAGE_COUNT = 4;
-
 	/* 
 	** Mutable fields, only valid when the identity is valid.
 	*/
@@ -172,7 +167,6 @@ abstract class FileContainer
 	 */
 	private long lastInsertedPage[];
 	private int  lastInsertedPage_index;
-	private boolean multiInsertPagePromotionInProgress;
 
 	/** 
 		The last unfilled page found.  Use this for getPageForInsert.
@@ -3158,16 +3152,9 @@ abstract class FileContainer
 
                 if (p == null)
                 {
-                    // A concurrent inserter owns the current target page.
-                    // The inherited Derby source carries a dormant
-                    // switchToMultiInsertPageMode() design for this exact
-                    // condition.  Keep production behavior unchanged by
-                    // activating the fan-out only for the default-OFF F08
-                    // causal experiment.
-                    if (MULTI_INSERT_PAGE_ENABLED)
-                    {
-                        switchToMultiInsertPageMode(handle);
-                    }
+                    // most likely we could not get the latch NOWAIT, try again
+                    // with a new page, and tell the system to switch to 
+                    // multi-page mode.
 
                     localLastInsertedPage = getLastInsertedPage();
 
@@ -3565,76 +3552,6 @@ abstract class FileContainer
 		return minimumRecordSize;
 	}
 
-	/**
-	 * Promote the single shared heap insert target to a small ring of fresh
-	 * pages after the first observed NOWAIT page-latch collision.
-	 * <p>
-	 * This is a default-OFF causal experiment derived from Derby's dormant
-	 * multi-insert-page design.  Allocation remains under the existing
-	 * RawStore allocation/recovery authority; only the in-memory insert-page
-	 * hints fan out.
-	 */
-	private void switchToMultiInsertPageMode(
-	BaseContainerHandle handle)
-		throws StandardException
-	{
-		synchronized (this)
-		{
-			if (!MULTI_INSERT_PAGE_ENABLED ||
-				lastInsertedPage.length != 1 ||
-				multiInsertPagePromotionInProgress)
-			{
-				return;
-			}
-			multiInsertPagePromotionInProgress = true;
-		}
-
-		long[] insertPages = new long[MULTI_INSERT_PAGE_COUNT];
-		boolean promoted = false;
-		try
-		{
-			// Do not hold the FileContainer Java monitor while addPage() uses
-			// RawStore's nested allocation transaction and container locks.
-			for (int i = 0; i < insertPages.length; i++)
-			{
-				Page page = addPage(handle, false);
-				try
-				{
-					insertPages[i] = page.getPageNumber();
-				}
-				finally
-				{
-					page.unlatch();
-				}
-			}
-
-			synchronized (this)
-			{
-				// addPage() updates the normal single-page hint during allocation.
-				// Replace it atomically only after the complete fan-out exists.
-				lastInsertedPage = insertPages;
-				lastInsertedPage_index = 0;
-				promoted = true;
-			}
-
-			System.out.println(
-				"DELOS_RAWSTORE_MULTI_INSERT_PAGE|container=" + identity +
-				"|pages=" + insertPages.length);
-		}
-		finally
-		{
-			synchronized (this)
-			{
-				multiInsertPagePromotionInProgress = false;
-				if (!promoted && lastInsertedPage.length != 1)
-				{
-					// Defensive only: promotion is installed atomically above.
-					initializeLastInsertedPage(1);
-				}
-			}
-		}
-	}
-
 	/*
 	 * Setting and getting lastInserted Page and lastUnfilledPage in a thead
 	 * safe manner. 
@@ -3676,7 +3593,6 @@ abstract class FileContainer
             lastInsertedPage[i] = ContainerHandle.INVALID_PAGE_NUMBER;
 
         lastInsertedPage_index = 0;
-        multiInsertPagePromotionInProgress = false;
 	}
 
 	private synchronized void setLastInsertedPage(long val)

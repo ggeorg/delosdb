@@ -535,8 +535,6 @@ public class LeafControlRow extends ControlRow
             (this.page.spaceForInsert(splitrow, (FormatableBitSet) null,
 				AccessFactoryGlobals.BTREE_OVERFLOW_THRESHOLD)))
         {
-            BTreeInsertStructuralDiagnostics.increment(
-                    BTreeInsertStructuralDiagnostics.LEAF_ALREADY_HAS_SPACE);
             // The splitFor() operation is complete, commit the work done
             // before releasing the latches.
             open_btree.getXactMgr().commit();
@@ -558,8 +556,6 @@ public class LeafControlRow extends ControlRow
 
         if (this.getIsRoot())
         {
-            BTreeInsertStructuralDiagnostics.increment(
-                    BTreeInsertStructuralDiagnostics.LEAF_ROOT_GROWS);
             // Track.LeafSplitRoot++;
 
             growRoot(open_btree, template, this);
@@ -635,8 +631,6 @@ public class LeafControlRow extends ControlRow
         }
 
         // Create a new leaf page under the parent.
-        BTreeInsertStructuralDiagnostics.increment(
-                BTreeInsertStructuralDiagnostics.LEAF_PAGE_SPLITS);
         LeafControlRow newleaf = 
             LeafControlRow.allocate(open_btree, parent_page);
 

@@ -204,8 +204,6 @@ public class BranchControlRow extends ControlRow
     int                     flag)
         throws StandardException
 	{
-        BTreeInsertStructuralDiagnostics.increment(
-                BTreeInsertStructuralDiagnostics.SPLIT_RESTARTS);
         // release parent and current latch
         parent.release();
         child.release();
@@ -629,8 +627,6 @@ public class BranchControlRow extends ControlRow
 
 			if (this.getIsRoot())
 			{
-                BTreeInsertStructuralDiagnostics.increment(
-                        BTreeInsertStructuralDiagnostics.BRANCH_ROOT_GROWS);
 				// Track.BranchSplitRoot++;
 				growRoot(open_btree, template, this);
 
@@ -727,8 +723,6 @@ public class BranchControlRow extends ControlRow
 
 			// Allocate a new branch page and link it to the
 			// right of the current page.
-            BTreeInsertStructuralDiagnostics.increment(
-                    BTreeInsertStructuralDiagnostics.BRANCH_PAGE_SPLITS);
 			BranchControlRow newbranch =
                 BranchControlRow.allocate(open_btree, childpage,
                     this.getLevel(), parent);
