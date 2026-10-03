@@ -1,26 +1,29 @@
-F08 post-U experimental tranche consolidation r1
-================================================
-Purpose:
-- Remove rejected/default-OFF experiments introduced after the F08-U checkpoint.
-- Restore production source and associated benchmark/test wiring to the known F08-U/source89 baseline.
-- Restore repository-integrity counters to their checked-in maxima without raising baselines or classifications.
+DelosDB F08 benchmark-contract ownership r2
 
-Removed experiment families:
-- concurrent RawStore WAL reservation/copy prototype
-- RawStore multi-insert-page causal prototype
-- B-tree structural split diagnostics
-- rejected RawStore durable-commit coordinator prototype
-- benchmark/test wiring introduced solely for those post-U experiments
+Purpose
+- Centralize configuration rules for surviving F08 INSERT benchmark modes.
+- Require an explicit benchmark contract for F08-specific controls.
+- Run a cheap behavioral contract preflight before expensive F08 matrices.
+- Preserve experiment-specific runtime evidence checks with their owning tasks.
 
-Preserved from the F08-U baseline:
-- transaction-status candidate architecture
-- page-validity snapshot experiment
-- B-tree root/branch routing snapshots
-- preframed WAL experiment
-- flat-combined WAL experiment
-- all earlier accepted production architecture and tests
+Contracts
+- f08-transaction-status
+- f08-multi-row-insert
+- f08-fixed-cost-scaling
+- f08-contention-slice
 
-The just-added benchmark-contract refactor is intentionally removed in this consolidation because it contained contracts for experiments being deleted. It will be reapplied against the restored clean baseline as the next maintainability tranche.
+Changed files
+- delosdb-tests/build.gradle
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContract.java
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.java
+- gradle/testing/delos-test-suite-registry.tsv
 
-No performance thresholds, repository-integrity baselines, or classification inventories are changed.
-CLEANUP.sh is required because obsolete files are deleted.
+Verification performed in the build environment available to the assistant
+- javac compile of F08BenchmarkContract plus DelosJdbcCrossEngineConcurrency and required source dependencies: PASS (JDK 21)
+- F08BenchmarkContractTest: 6/6 PASS (JUnit)
+- trailing-whitespace check on changed files: PASS
+- production source changes: NONE
+
+Not run here
+- JDK 25 Gradle suite and repository static gates; run the commands supplied in the handoff response.

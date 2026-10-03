@@ -5480,6 +5480,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (mvccGen2TransactionStatusVisibilityServerEnabled()) {
             addProperty(command, "mvccGen2TransactionStatusVisibilityServer", true);
         }
+        if (!benchmarkContractId().isEmpty()) {
+            addProperty(command, "benchmarkContract", benchmarkContractId());
+        }
         if (f08TransactionStatusCrossEngineEnabled()) {
             addProperty(command, "f08TransactionStatusCrossEngine", true);
         }
@@ -12157,6 +12160,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(mvccGen2BServerEnabled()).append('\n')
                 .append("MVCC Gen2 transaction-status visibility server enabled: ")
                 .append(mvccGen2TransactionStatusVisibilityServerEnabled()).append('\n')
+                .append("Benchmark contract: ")
+                .append(benchmarkContractId().isEmpty() ? "none" : benchmarkContractId()).append('\n')
                 .append("F08 transaction-status cross-engine diagnostic: ")
                 .append(f08TransactionStatusCrossEngineEnabled()).append('\n')
                 .append("F08 fixed-cost client-scaling diagnostic: ")
@@ -12459,6 +12464,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean mvccGen2TransactionStatusVisibilityServerEnabled() {
         return Boolean.getBoolean(PREFIX + "mvccGen2TransactionStatusVisibilityServer");
+    }
+
+    private static String benchmarkContractId() {
+        return System.getProperty(PREFIX + "benchmarkContract", "").trim();
     }
 
     private static boolean f08TransactionStatusCrossEngineEnabled() {
@@ -13710,6 +13719,34 @@ public final class DelosJdbcCrossEngineConcurrency {
                 throw new IllegalArgumentException(
                         "Unknown INSERT benchmark table shape: " + configuredInsertTableShape);
             }
+            F08BenchmarkContract.validate(
+                    benchmarkContractId(),
+                    new F08BenchmarkContract.Context(
+                            new F08BenchmarkContract.TargetScope(
+                                    configuredTargets.equals(SERVER_PRODUCT_TARGETS),
+                                    f08TransactionStatusAttribution),
+                            new F08BenchmarkContract.RunShape(
+                                    configuredWorkloads.stream().map(Enum::name).toList(),
+                                    clientValues(), widthValues(), configuredInsertTableShape, payload),
+                            new F08BenchmarkContract.Timing(
+                                    sqlSemanticOracleEnabled(), warmups, iterations,
+                                    minimumWarmupSeconds, maximumWarmupIterations,
+                                    minimumMeasuredSeconds, maximumMeasuredIterations),
+                            new F08BenchmarkContract.Controls(
+                                    f08TransactionStatusCrossEngineEnabled(),
+                                    f08FixedCostClientScalingEnabled(),
+                                    f08ContentionScalingSliceEnabled(),
+                                    mvccGen2A1ServerEnabled(), mvccGen2BServerEnabled(),
+                                    mvccGen2TransactionStatusVisibilityServerEnabled(),
+                                    f08MultiRowInsertControlEnabled(),
+                                    rawStorePageValiditySnapshotServerEnabled(),
+                                    rawStorePreframedLogAppendServerEnabled(),
+                                    rawStoreCombinedLogAppendServerEnabled(),
+                                    rawStoreLogBufferSizeServerOverride(),
+                                    rawStoreDurabilityTestNoSyncServerEnabled(),
+                                    btreeInsertRootRoutingSnapshotServerEnabled(),
+                                    btreeInsertBranchRoutingSnapshotServerEnabled()),
+                            System.getProperty(PREFIX + "profileServerTargets", "").trim()));
             if (f04DrdaServerPhaseDiagnostic) {
                 if (!configuredWorkloads.equals(List.of(
                         Workload.JOIN_INDEXED_1TO1,
@@ -14043,93 +14080,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                             "Gen2-C3 range-scan JFR requires PRIMARY_KEY_ONLY table shape");
                 }
             } else if (f08TransactionStatusCrossEngine) {
-                boolean f08FixedCostClientScaling = f08FixedCostClientScalingEnabled();
-                boolean f08ContentionScalingSlice = f08ContentionScalingSliceEnabled();
-                if (configuredWorkloads.size() != 1 || !configuredWorkloads.get(0).isInsert()) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires exactly one INSERT workload");
-                }
-                List<Integer> actualF08Clients = clientValues();
-                boolean validF08Clients;
-                if (f08ContentionScalingSlice) {
-                    validF08Clients = f08FixedCostClientScaling
-                            && actualF08Clients.size() == 1
-                            && List.of(1, 2, 4, 8).contains(actualF08Clients.get(0));
-                } else {
-                    List<Integer> expectedF08Clients = f08FixedCostClientScaling
-                            ? List.of(1, 2, 4, 8) : List.of(8);
-                    validF08Clients = actualF08Clients.equals(expectedF08Clients);
-                }
-                if (!validF08Clients || !widthValues().equals(List.of(1))) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic has invalid clients="
-                                    + actualF08Clients + ",widths=" + widthValues());
-                }
-                if (!sqlSemanticOracleEnabled()) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires SQL semantic oracle");
-                }
-                if (warmups != 0
-                        || iterations != 1
-                        || Double.compare(minimumWarmupSeconds, 0.0d) != 0
-                        || maximumWarmupIterations != 1
-                        || Double.compare(minimumMeasuredSeconds, 0.0d) != 0
-                        || maximumMeasuredIterations != 1) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires one fresh measured INSERT interval per worker");
-                }
-                boolean bare = "BARE".equals(configuredInsertTableShape);
-                boolean primaryKey = "PRIMARY_KEY_ONLY".equals(configuredInsertTableShape);
-                if (!bare && !primaryKey) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic requires BARE or PRIMARY_KEY_ONLY");
-                }
-                if ((bare && !mvccGen2A1ServerEnabled())
-                        || (primaryKey && !mvccGen2BServerEnabled())
-                        || !mvccGen2TransactionStatusVisibilityServerEnabled()) {
-                    throw new IllegalArgumentException(
-                            "F08 transaction-status cross-engine diagnostic server mode does not match table shape/status visibility");
-                }
-                if (f08FixedCostClientScaling) {
-                    boolean validScalingTargets = f08ContentionScalingSlice
-                            ? configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS)
-                            : configuredTargets.equals(SERVER_PRODUCT_TARGETS);
-                    if (!validScalingTargets
-                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
-                            || !primaryKey
-                            || payload != 16
-                            || f08MultiRowInsertControlEnabled()) {
-                        throw new IllegalArgumentException(
-                                f08ContentionScalingSlice
-                                        ? "F08 contention-scaling slice requires Derby-family SERVER targets, "
-                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape"
-                                        : "F08 fixed-cost client scaling requires the full SERVER matrix, "
-                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
-                    }
-                }
-                if (f08ContentionScalingSlice && !f08TransactionStatusAttribution) {
-                    throw new IllegalArgumentException(
-                            "F08 contention-scaling slice requires the Derby-family attribution target set");
-                }
-                if (f08MultiRowInsertControlEnabled()) {
-                    if (!configuredTargets.equals(SERVER_PRODUCT_TARGETS)
-                            || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
-                            || !primaryKey) {
-                        throw new IllegalArgumentException(
-                                "F08 multi-row INSERT control requires the full SERVER matrix, "
-                                        + "PRIMARY_KEY_ONLY, and INSERT_100");
-                    }
-                }
-                if (f08TransactionStatusAttribution) {
-                    String expectedProfileTargets =
-                            "delos_heap_drda,delos_mvcc_drda,upstream_derby_drda";
-                    if (!expectedProfileTargets.equals(
-                            System.getProperty(PREFIX + "profileServerTargets", "").trim())) {
-                        throw new IllegalArgumentException(
-                                "F08 transaction-status attribution requires server profiling for "
-                                        + expectedProfileTargets);
-                    }
-                }
+                // F08 configuration is owned by F08BenchmarkContract and validated above.
             } else if (postModernizationMutationCheckpoint) {
                 boolean insertCheckpoint = configuredWorkloads.equals(List.of(Workload.INSERT_100));
                 boolean freshUpdateCheckpoint = configuredWorkloads.equals(List.of(Workload.FRESH_INDEXED_UPDATE_100));

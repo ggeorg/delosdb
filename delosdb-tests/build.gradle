@@ -23425,6 +23425,11 @@ tasks.register('runDelosGen2C3F07Embedded8cJfrDiagnostic', JavaExec) {
 // Read/relational/OLTP lanes reuse the canonical Gen2-C3 sentinels above.
 // These mutation tasks fill the F08-F10 cross-engine gap with the same
 // SERVER product matrix and current Gen2-C3 mutation server.
+registerDelosFocusedTest(
+        'runDelosF08BenchmarkContract',
+        'Executes authoritative F08 benchmark-mode contracts before expensive benchmark matrices.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.class'])
+
 def delosPostModernizationMutationRoot =
         'reports/delosdb/benchmarks/post-modernization-checkpoint/mutations'
 def delosPostModernizationMutationDbRoot =
@@ -23434,6 +23439,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
     def reportRoot = cfg.reportRoot ?: delosPostModernizationMutationRoot
     def databaseRootPath = cfg.databaseRootPath ?: delosPostModernizationMutationDbRoot
     boolean transactionStatusCrossEngine = cfg.transactionStatusCrossEngine == true
+    String benchmarkContract = (cfg.benchmarkContract ?: '').toString().trim()
     boolean f08FixedCostClientScaling = cfg.f08FixedCostClientScaling == true
     boolean f08MultiRowInsertControl = cfg.f08MultiRowInsertControl == true
     String rawStoreLogBufferSizeServer =
@@ -23447,6 +23453,9 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
         description = cfg.description
         dependsOn tasks.named('compileTestJava'), ':jars',
                 tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+        if (!benchmarkContract.isEmpty()) {
+            dependsOn tasks.named('runDelosF08BenchmarkContract')
+        }
         mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
         def delosNetworkClientClasspath = rootProject.files(
                 rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
@@ -23483,6 +23492,7 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                     'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                     'delosdb.benchmark.crossEngineConcurrency.postModernizationMutationCheckpoint': transactionStatusCrossEngine ? 'false' : 'true',
                     'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': transactionStatusCrossEngine ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkContract': benchmarkContract,
                     'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling': f08FixedCostClientScaling ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.f08MultiRowInsertControl': f08MultiRowInsertControl ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.rawStoreLogBufferSizeServer':
@@ -23588,6 +23598,11 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             def expectedMarker = [A1: 'MVCC Gen2-A1 server enabled: true', B: 'MVCC Gen2-B server enabled: true', C1: 'MVCC Gen2-C1 server enabled: true', C3: 'MVCC Gen2-C3 UPDATE server enabled: true'][cfg.gen2Mode]
             if (expectedMarker == null || !text.contains(expectedMarker)) {
                 throw new GradleException("Mutation benchmark did not prove ${cfg.gen2Mode} server plumbing: ${summary}")
+            }
+            if (!benchmarkContract.isEmpty()
+                    && !text.contains("Benchmark contract: ${benchmarkContract}")) {
+                throw new GradleException(
+                        "F08 benchmark contract marker mismatch: ${summary}")
             }
             if (transactionStatusCrossEngine) {
                 if (!text.contains('F08 transaction-status cross-engine diagnostic: true')
@@ -23704,6 +23719,7 @@ def registerDelosF08TransactionStatusCrossEngine = {
                     group: groupName,
                     gen2Mode: gen2Mode,
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
                     reportRoot: delosF08TransactionStatusCrossEngineRoot,
                     databaseRootPath: delosF08TransactionStatusCrossEngineDbRoot,
                     workloads: workload,
@@ -23797,6 +23813,7 @@ def registerDelosF08PageValidityCanonical = {
                     group: groupName,
                     gen2Mode: gen2Mode,
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-transaction-status',
                     rawStorePageValiditySnapshotServer: true,
                     reportRoot: delosF08PageValidityCanonicalRoot,
                     databaseRootPath: delosF08PageValidityCanonicalDbRoot,
@@ -23904,6 +23921,7 @@ def registerDelosF08MultiRowInsertControl = { String taskName, String groupName,
                     group: groupName,
                     gen2Mode: 'B',
                     transactionStatusCrossEngine: true,
+                    benchmarkContract: 'f08-multi-row-insert',
                     f08MultiRowInsertControl: multiRow,
                     reportRoot: delosF08MultiRowInsertControlRoot,
                     databaseRootPath: delosF08MultiRowInsertControlDbRoot,
@@ -24112,7 +24130,8 @@ def configureDelosF08SharedInsertServerJfr = {
                     ? "Profiles F08-I ${tableShape} INSERT_100 with validated B-tree root-routing snapshot inserts."
                     : "Profiles F08-H ${tableShape} INSERT_100 server execution for Heap, Gen2-status, and upstream Derby."
     task.dependsOn tasks.named('compileTestJava'), ':jars',
-            tasks.named('prepareUpstreamDerbyNetworkServerRuntime')
+            tasks.named('prepareUpstreamDerbyNetworkServerRuntime'),
+            tasks.named('runDelosF08BenchmarkContract')
     task.mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
     def delosNetworkClientClasspath = rootProject.files(
             rootProject.layout.buildDirectory.file('libs/derbyclient.jar'),
@@ -24145,6 +24164,8 @@ def configureDelosF08SharedInsertServerJfr = {
                 'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
                 'delosdb.benchmark.crossEngineConcurrency.sqlSemanticOracle': 'true',
                 'delosdb.benchmark.crossEngineConcurrency.f08TransactionStatusCrossEngine': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkContract':
+                        contentionScalingSlice ? 'f08-contention-slice' : 'f08-transaction-status',
                 'delosdb.benchmark.crossEngineConcurrency.f08FixedCostClientScaling':
                         contentionScalingSlice ? 'true' : 'false',
                 'delosdb.benchmark.crossEngineConcurrency.f08ContentionScalingSlice':
@@ -24228,6 +24249,7 @@ def configureDelosF08SharedInsertServerJfr = {
                 'Workloads: [INSERT_100]',
                 "Clients: ${clientCount}",
                 "INSERT table shape: ${tableShape}",
+                "Benchmark contract: ${contentionScalingSlice ? 'f08-contention-slice' : 'f08-transaction-status'}",
                 'F08 transaction-status cross-engine diagnostic: true',
                 'MVCC Gen2 transaction-status visibility server enabled: true',
                 "B-tree INSERT root-routing snapshot server enabled: ${insertRootRoutingSnapshot}",
@@ -24491,6 +24513,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 reportRoot: delosF08FixedCostClientScalingRoot,
                 databaseRootPath: delosF08FixedCostClientScalingDbRoot,
@@ -24525,6 +24548,7 @@ registerDelosPostModernizationMutation(
                 group: 'pk-insert-100-payload-16-clients-1-2-4-8-log-upper-bound',
                 gen2Mode: 'B',
                 transactionStatusCrossEngine: true,
+                benchmarkContract: 'f08-fixed-cost-scaling',
                 f08FixedCostClientScaling: true,
                 rawStoreLogBufferSizeServer: '1048576',
                 rawStoreDurabilityTestNoSyncServer: true,
