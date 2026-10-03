@@ -1,23 +1,28 @@
-F08-U flat-combined RawStore WAL append experiment
+DelosDB F08 concurrent RawStore WAL causal prototype
+Source authority: delosdb 89.zip
+Baseline commit recorded in source archive: ceddd8189ca5380dc4328a16c83ad8c07c9c4374
 
-Production feature (default OFF):
-  delosdb.experimental.rawStoreCombinedLogAppend.enabled
+Purpose
+- Test the architecture-level hypothesis that Derby-family concurrent INSERT scaling is limited by coupling WAL ordering and WAL payload copy under the single LogToFile append authority.
+- Preserve the existing RawStore WAL format, recovery, undo, checkpoint, and durability authority.
 
-Changed repository files:
-  delosdb-storage-derby/build.gradle
-  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueue.java
-  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendRequest.java
-  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
-  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
-  delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueueTest.java
-  delosdb-tests/build.gradle
-  delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+Experiment
+- Default OFF: delosdb.experimental.rawStoreConcurrentLogAppend.enabled=false unless explicitly enabled.
+- Ordinary prepared WAL records reserve disjoint current-buffer slices under LogToFile ordering, then patch/copy their frames after releasing the LogToFile monitor.
+- FIRST/LAST transaction records and CLRs use a serialized prepared-record path.
+- Flush, log-buffer/file transition, backward/forward scan-to-end, freeze, shutdown, and replication-role transitions quiesce outstanding concurrent reservations before crossing their inherited boundary.
+- Oversized records and replication modes fall back to the serialized path.
+- Existing on-disk WAL bytes and recovery record format are unchanged.
 
-Experiment:
-  Ordinary FileLogger logAndDo records use reusable per-logger append requests.
-  One active combiner drains pending requests FIFO through the inherited authoritative LogToFile append routine while holding the existing WAL monitor once per batch.
-  FIRST/LAST transaction records and undo remain on the inherited direct path.
-  No WAL format, LogInstant ordering, checksum, file-switch, flush, replication, recovery, or single-WAL authority changes.
+Causal evidence
+- New benchmark task: :delosdb-tests:runDelosF08ConcurrentWalAppendCausal
+- 16-byte PRIMARY_KEY_ONLY INSERT_100 at 1/2/4/8 clients, four runs.
+- Delos Heap/Gen2 use 1 MiB RawStore log buffer + durability=test + concurrent WAL experiment.
+- Upstream Derby and external engines remain unchanged.
+- Captured Delos server logs must prove maxConcurrentCopies >= 2 for each Delos target or the benchmark task fails.
 
-Benchmark task:
-  :delosdb-tests:runDelosF08RawStoreCombinedLogAppendServerJfr
+Local validation performed while creating overlay
+- Java parse-only validation: PASS for all changed/new Java files.
+- ConcurrentLogAppendPublicationTest standalone source-level test: PASS.
+- git diff --check on modified tracked files: PASS.
+- Full Gradle compile not executed in artifact environment because Gradle 9.5.1 wrapper distribution was not cached and outbound wrapper download was unavailable.

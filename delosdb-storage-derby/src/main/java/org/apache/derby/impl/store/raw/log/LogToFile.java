@@ -92,6 +92,7 @@ import java.net.URI;
 import java.net.URL;
 
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 
 /**
@@ -244,6 +245,8 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			"delosdb.experimental.rawStorePreframedLogAppend.enabled");
 	private static final boolean COMBINED_LOG_APPEND = Boolean.getBoolean(
 			"delosdb.experimental.rawStoreCombinedLogAppend.enabled");
+	private static final boolean CONCURRENT_LOG_APPEND = Boolean.getBoolean(
+			"delosdb.experimental.rawStoreConcurrentLogAppend.enabled");
 
 	// If you change this number, then JBMS 1.1x and 1.2x will give a really
 	// horrendous error message when booting against a db created by you.  When
@@ -496,6 +499,12 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	private CRC32 checksum = new CRC32(); // holder for the checksum
 	private final CombinedLogAppendQueue combinedLogAppendQueue =
 			new CombinedLogAppendQueue();
+	private final ConcurrentLogAppendPublication concurrentLogAppendPublication =
+			new ConcurrentLogAppendPublication();
+	private final AtomicInteger concurrentLogAppendActiveCopies = new AtomicInteger();
+	private final AtomicInteger concurrentLogAppendMaxCopies = new AtomicInteger();
+	private Thread concurrentLogAppendBarrierOwner;
+	private int concurrentLogAppendBarrierDepth;
 
  	
 	/**
@@ -640,6 +649,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 
 	boolean combinedLogAppendEnabled() {
 		return COMBINED_LOG_APPEND;
+	}
+
+	boolean concurrentLogAppendEnabled() {
+		return CONCURRENT_LOG_APPEND;
 	}
 
 	/**
@@ -2016,6 +2029,8 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		/////////////////////////////////////////////////////
 		synchronized (this)
 		{
+			beginConcurrentLogAppendBarrierLocked();
+			try {
 
 			// Make sure that this thread of control is guaranteed to complete
             // it's work of switching the log file without having to give up
@@ -2215,6 +2230,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
                 }
             }
 			inLogSwitch = false;
+			concurrentLogAppendPublication.resetPublished(logFileNumber, endPosition);
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
+			}
 		}
 		// unfreezes the log
 	}
@@ -2255,7 +2274,12 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			// point the log has been flushed which this routine
 			// could take advantage of. This would only help rollbacks though.
 
-			logOut.flushLogAccessFile();
+			beginConcurrentLogAppendBarrierLocked();
+			try {
+				logOut.flushLogAccessFile();
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
+			}
 		}
 	}
 	/** Get rid of old and unnecessary log files
@@ -2917,10 +2941,15 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		long startAt;
 		synchronized (this)
 		{
-			// flush the whole buffer to ensure the complete
-			// end of log is in the file.
-			logOut.flushLogAccessFile();
-			startAt = currentInstant();	
+			beginConcurrentLogAppendBarrierLocked();
+			try {
+				// flush the whole buffer to ensure the complete
+				// end of log is in the file.
+				logOut.flushLogAccessFile();
+				startAt = currentInstant();
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
+			}
 		}
 
 		return new Scan(this, startAt, stopAt, Scan.BACKWARD_FROM_LOG_END);
@@ -2968,9 +2997,14 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 						stopCounter.getLogFilePosition());
 		} else {
 			synchronized (this) {
-				if (logOut != null)
-					// flush to the end of the log
-					logOut.flushLogAccessFile();
+				beginConcurrentLogAppendBarrierLocked();
+				try {
+					if (logOut != null)
+						// flush to the end of the log
+						logOut.flushLogAccessFile();
+				} finally {
+					endConcurrentLogAppendBarrierLocked();
+				}
 			}
 		}
 
@@ -3538,16 +3572,21 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 
 		synchronized(this)
 		{
-			stopped = true;
+			beginConcurrentLogAppendBarrierLocked();
+			try {
+				stopped = true;
 
-			if (logOut != null) {
-				try {
-					logOut.flushLogAccessFile();
-					logOut.close();
+				if (logOut != null) {
+					try {
+						logOut.flushLogAccessFile();
+						logOut.close();
+					}
+					catch (IOException ioe) {}
+					catch(StandardException se){}
+					logOut = null;
 				}
-				catch (IOException ioe) {}
-				catch(StandardException se){}
-				logOut = null;
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
 			}
 		}
 
@@ -3828,6 +3867,224 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 				}
 				request = next;
 			}
+		}
+	}
+
+	long appendSerializedPreparedLogRecord(
+			byte[] preparedFrame, int preparedFrameLength, int logicalLength)
+			throws StandardException
+	{
+		if (!CONCURRENT_LOG_APPEND) {
+			return appendPreparedLogRecord(
+					preparedFrame, preparedFrameLength, logicalLength);
+		}
+		synchronized (this) {
+			beginConcurrentLogAppendBarrierLocked();
+			try {
+				long instant = appendLogRecordInternal(
+						null, 0, logicalLength, null, 0, 0, preparedFrame,
+						preparedFrameLength);
+				concurrentLogAppendPublication.resetPublished(
+						logFileNumber, endPosition);
+				return instant;
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
+			}
+		}
+	}
+
+	long appendConcurrentPreparedLogRecord(
+			byte[] preparedFrame, int preparedFrameLength, int logicalLength)
+			throws StandardException
+	{
+		if (!CONCURRENT_LOG_APPEND) {
+			return appendPreparedLogRecord(
+					preparedFrame, preparedFrameLength, logicalLength);
+		}
+
+		ConcurrentLogAppendReservation reservation = null;
+		try {
+			synchronized (this) {
+				awaitConcurrentLogAppendReservationPermissionLocked();
+
+				if (inReplicationSlavePreMode) {
+					return LogCounter.makeLogInstantAsLong(logFileNumber, endPosition);
+				}
+				if (corrupt != null) {
+					throw StandardException.newException(
+							SQLState.LOG_STORE_CORRUPT, corrupt);
+				}
+				if (logOut == null) {
+					throw StandardException.newException(SQLState.LOG_NULL);
+				}
+				if (ReadOnlyDB) {
+					throw StandardException.newException(SQLState.LOG_READ_ONLY_DB_UPDATE);
+				}
+				if (logicalLength <= 0
+						|| preparedFrameLength != logicalLength + LOG_RECORD_OVERHEAD) {
+					throw StandardException.newException(
+							SQLState.LOG_ZERO_LENGTH_LOG_RECORD);
+				}
+
+				if (inReplicationSlaveMode || inReplicationMasterMode
+						|| !logOut.preparedLogRecordFitsEmptyBuffer(preparedFrameLength)) {
+					return appendSerializedPreparedLogRecord(
+							preparedFrame, preparedFrameLength, logicalLength);
+				}
+
+				if (SanityManager.DEBUG) {
+					if (SanityManager.DEBUG_ON(TEST_LOG_INCOMPLETE_LOG_WRITE)) {
+						return appendSerializedPreparedLogRecord(
+								preparedFrame, preparedFrameLength, logicalLength);
+					}
+					if (SanityManager.DEBUG_ON(TEST_LOG_FULL)) {
+						testLogFull();
+					}
+				}
+
+				int checksumLogRecordSize = logOut.getChecksumLogRecordSize();
+				if ((endPosition + LOG_RECORD_OVERHEAD + logicalLength + INT_LENGTH
+						+ checksumLogRecordSize) >= LogCounter.MAX_LOGFILE_SIZE) {
+					beginConcurrentLogAppendBarrierLocked();
+					try {
+						switchLogFile();
+						concurrentLogAppendPublication.resetPublished(
+								logFileNumber, endPosition);
+					} finally {
+						endConcurrentLogAppendBarrierLocked();
+					}
+					if ((endPosition + LOG_RECORD_OVERHEAD + logicalLength + INT_LENGTH
+							+ checksumLogRecordSize) >= LogCounter.MAX_LOGFILE_SIZE) {
+						throw StandardException.newException(
+								SQLState.LOG_EXCEED_MAX_LOG_FILE_SIZE,
+								logFileNumber, endPosition, logicalLength,
+								LogCounter.MAX_LOGFILE_SIZE);
+					}
+				}
+
+				if (!logOut.preparedLogRecordFitsCurrentBuffer(preparedFrameLength)) {
+					beginConcurrentLogAppendBarrierLocked();
+					try {
+						// reserveSpaceForChecksum performs the inherited buffer switch
+						// after every prior concurrent copy has published.
+					} finally {
+						endConcurrentLogAppendBarrierLocked();
+					}
+				}
+
+				long publicationBasePosition = endPosition;
+				setEndPosition(endPosition + logOut.reserveSpaceForChecksum(
+						logicalLength, logFileNumber, endPosition));
+				long instant = LogCounter.makeLogInstantAsLong(
+						logFileNumber, endPosition);
+				long recordEndPosition = endPosition + preparedFrameLength;
+				reservation = logOut.reserveConcurrentPreparedLogRecord(
+						preparedFrameLength, instant, logFileNumber,
+						publicationBasePosition, recordEndPosition);
+				setEndPosition(recordEndPosition);
+				concurrentLogAppendPublication.reserve(reservation);
+			}
+
+			PreparedLogRecordFrame.patchInstant(
+					preparedFrame, 0, reservation.instant);
+			int activeCopies = concurrentLogAppendActiveCopies.incrementAndGet();
+			boolean newMaximum = updateConcurrentLogAppendMaximum(activeCopies);
+			try {
+				System.arraycopy(preparedFrame, 0, reservation.target,
+						reservation.targetOffset, reservation.frameLength);
+			} finally {
+				concurrentLogAppendActiveCopies.decrementAndGet();
+			}
+
+			synchronized (this) {
+				concurrentLogAppendPublication.complete(reservation);
+				notifyAll();
+			}
+			if (newMaximum && activeCopies > 1) {
+				System.out.println(
+						"DELOS_RAWSTORE_CONCURRENT_WAL|maxConcurrentCopies="
+								+ activeCopies);
+			}
+			return reservation.instant;
+		} catch (IOException ioe) {
+			throw markCorrupt(StandardException.newException(
+					SQLState.LOG_FULL, ioe));
+		} catch (RuntimeException failure) {
+			if (reservation != null && !reservation.complete) {
+				synchronized (this) {
+					if (!reservation.complete) {
+						concurrentLogAppendPublication.complete(reservation);
+						notifyAll();
+					}
+				}
+			}
+			throw markCorrupt(StandardException.newException(
+					SQLState.LOG_FULL, failure));
+		}
+	}
+
+	private boolean updateConcurrentLogAppendMaximum(int activeCopies) {
+		int observed = concurrentLogAppendMaxCopies.get();
+		while (activeCopies > observed) {
+			if (concurrentLogAppendMaxCopies.compareAndSet(observed, activeCopies)) {
+				return true;
+			}
+			observed = concurrentLogAppendMaxCopies.get();
+		}
+		return false;
+	}
+
+	private void awaitConcurrentLogAppendReservationPermissionLocked() {
+		if (!CONCURRENT_LOG_APPEND) {
+			return;
+		}
+		Thread current = Thread.currentThread();
+		while (concurrentLogAppendBarrierOwner != null
+				&& concurrentLogAppendBarrierOwner != current) {
+			waitForConcurrentLogAppendStateChangeLocked();
+		}
+	}
+
+	private void beginConcurrentLogAppendBarrierLocked() {
+		if (!CONCURRENT_LOG_APPEND) {
+			return;
+		}
+		Thread current = Thread.currentThread();
+		while (concurrentLogAppendBarrierOwner != null
+				&& concurrentLogAppendBarrierOwner != current) {
+			waitForConcurrentLogAppendStateChangeLocked();
+		}
+		if (concurrentLogAppendBarrierOwner == current) {
+			concurrentLogAppendBarrierDepth++;
+			return;
+		}
+		concurrentLogAppendBarrierOwner = current;
+		concurrentLogAppendBarrierDepth = 1;
+		while (concurrentLogAppendPublication.outstanding() != 0) {
+			waitForConcurrentLogAppendStateChangeLocked();
+		}
+	}
+
+	private void endConcurrentLogAppendBarrierLocked() {
+		if (!CONCURRENT_LOG_APPEND) {
+			return;
+		}
+		if (concurrentLogAppendBarrierOwner != Thread.currentThread()
+				|| concurrentLogAppendBarrierDepth <= 0) {
+			throw new IllegalStateException("concurrent WAL barrier ownership mismatch");
+		}
+		concurrentLogAppendBarrierDepth--;
+		if (concurrentLogAppendBarrierDepth == 0) {
+			concurrentLogAppendBarrierOwner = null;
+			notifyAll();
+		}
+	}
+
+	private void waitForConcurrentLogAppendStateChangeLocked() {
+		try {
+			wait();
+		} catch (InterruptedException ie) {
+			InterruptStatus.setInterrupted();
 		}
 	}
 
@@ -4139,6 +4396,8 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 					else
 					{
 						waited = false;
+						beginConcurrentLogAppendBarrierLocked();
+						try {
 
 						// logBeingFlushed is false, I am flushing the log now.
 						if(!isWriteSynced)
@@ -4157,6 +4416,9 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 						// once logBeingFlushed is set, need to release
 						// the logBeingFlushed flag in finally block.
 						logBeingFlushed = true;	
+						} finally {
+							endConcurrentLogAppendBarrierLocked();
+						}
 
                         // If in Replication Master mode - Notify the
                         // MasterFactory that log has been flushed to
@@ -4581,7 +4843,12 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		// of a write because writing to the log file is synchronized under this.
 		synchronized(this)
 		{
-			isFrozen = true;
+			beginConcurrentLogAppendBarrierLocked();
+			try {
+				isFrozen = true;
+			} finally {
+				endConcurrentLogAppendBarrierLocked();
+			}
 		}			
 	}
 
@@ -5296,10 +5563,23 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
      */
     public void startReplicationMasterRole(MasterFactory masterFactory) 
         throws StandardException {
-        this.masterFactory = masterFactory;
+        if (!CONCURRENT_LOG_APPEND) {
+            this.masterFactory = masterFactory;
+            synchronized (this) {
+                inReplicationMasterMode = true;
+                logOut.setReplicationMasterRole(masterFactory);
+            }
+            return;
+        }
         synchronized(this) {
-            inReplicationMasterMode = true;
-            logOut.setReplicationMasterRole(masterFactory);
+            beginConcurrentLogAppendBarrierLocked();
+            try {
+                this.masterFactory = masterFactory;
+                inReplicationMasterMode = true;
+                logOut.setReplicationMasterRole(masterFactory);
+            } finally {
+                endConcurrentLogAppendBarrierLocked();
+            }
         }
     }
 
@@ -5309,10 +5589,25 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
      * disk flush has taken place.
      */
     public void stopReplicationMasterRole() {
-        inReplicationMasterMode = false;
-        masterFactory = null;
-        if(logOut != null) {
-            logOut.stopReplicationMasterRole();
+        if (!CONCURRENT_LOG_APPEND) {
+            inReplicationMasterMode = false;
+            masterFactory = null;
+            if (logOut != null) {
+                logOut.stopReplicationMasterRole();
+            }
+            return;
+        }
+        synchronized (this) {
+            beginConcurrentLogAppendBarrierLocked();
+            try {
+                inReplicationMasterMode = false;
+                masterFactory = null;
+                if (logOut != null) {
+                    logOut.stopReplicationMasterRole();
+                }
+            } finally {
+                endConcurrentLogAppendBarrierLocked();
+            }
         }
     }
 

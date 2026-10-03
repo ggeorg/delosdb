@@ -5498,6 +5498,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (rawStoreCombinedLogAppendServerEnabled()) {
             addProperty(command, "rawStoreCombinedLogAppendServer", true);
         }
+        if (rawStoreConcurrentLogAppendServerEnabled()) {
+            addProperty(command, "rawStoreConcurrentLogAppendServer", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -5777,6 +5780,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add(
                             "-Ddelosdb.experimental.rawStoreCombinedLogAppend.enabled=true");
                 }
+                if (rawStoreConcurrentLogAppendServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.rawStoreConcurrentLogAppend.enabled=true");
+                }
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
@@ -5906,11 +5913,17 @@ public final class DelosJdbcCrossEngineConcurrency {
         }
         int port = publishedPort(name, target.containerPort());
         ServerEndpoint endpoint = target.endpoint(port);
-        Path serverEvidenceLog = drdaServerPhaseEvidenceEnabled()
-                && (target == Target.DELOS_HEAP_DRDA || target == Target.DELOS_MVCC_DRDA)
-                ? options.reportDirectory().resolve("server-phase-logs").resolve(
-                        String.format(Locale.ROOT, "%02d-%s.log", run, target.id()))
-                : null;
+        boolean delosDrdaTarget = target == Target.DELOS_HEAP_DRDA
+                || target == Target.DELOS_MVCC_DRDA;
+        Path serverEvidenceLog = null;
+        if (delosDrdaTarget && rawStoreConcurrentLogAppendServerEnabled()) {
+            serverEvidenceLog = options.reportDirectory()
+                    .resolve("rawstore-concurrent-wal-logs")
+                    .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
+        } else if (delosDrdaTarget && drdaServerPhaseEvidenceEnabled()) {
+            serverEvidenceLog = options.reportDirectory().resolve("server-phase-logs").resolve(
+                    String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
+        }
         ContainerServer server = new ContainerServer(
                 name, endpoint, serverEvidenceLog, shouldProfileServer(target));
         try {
@@ -12169,6 +12182,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(rawStorePreframedLogAppendServerEnabled()).append('\n')
                 .append("RawStore combined log append server enabled: ")
                 .append(rawStoreCombinedLogAppendServerEnabled()).append('\n')
+                .append("RawStore concurrent log append server enabled: ")
+                .append(rawStoreConcurrentLogAppendServerEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12483,6 +12498,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean rawStoreCombinedLogAppendServerEnabled() {
         return Boolean.getBoolean(PREFIX + "rawStoreCombinedLogAppendServer");
+    }
+
+    private static boolean rawStoreConcurrentLogAppendServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStoreConcurrentLogAppendServer");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {

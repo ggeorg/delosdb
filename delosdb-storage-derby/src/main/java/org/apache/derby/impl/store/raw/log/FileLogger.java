@@ -161,8 +161,13 @@ public class FileLogger implements Logger {
 			byte[] optionalData, int optionalDataOffset, int optionalDataLength,
 			boolean combineEligible) throws StandardException
 	{
-		boolean combine = combineEligible && logFactory.combinedLogAppendEnabled();
-		if (!combine && !logFactory.preframedLogAppendEnabled())
+		boolean concurrentEnabled = logFactory.concurrentLogAppendEnabled();
+		boolean concurrent = combineEligible && concurrentEnabled;
+		boolean combine = combineEligible && !concurrent
+				&& logFactory.combinedLogAppendEnabled();
+		boolean serializedPrepared = concurrentEnabled && !combineEligible;
+		if (!concurrent && !combine && !serializedPrepared
+				&& !logFactory.preframedLogAppendEnabled())
 		{
 			return logFactory.appendLogRecord(
 					data, dataOffset, logicalLength, optionalData,
@@ -174,6 +179,10 @@ public class FileLogger implements Logger {
 		int frameLength = PreparedLogRecordFrame.prepare(
 				preparedAppendFrame, logicalLength, data, dataOffset, optionalData,
 				optionalDataOffset, optionalDataLength);
+		if (concurrent) {
+			return logFactory.appendConcurrentPreparedLogRecord(
+					preparedAppendFrame, frameLength, logicalLength);
+		}
 		if (combine) {
 			if (combinedAppendRequest == null) {
 				combinedAppendRequest = new CombinedLogAppendRequest();
@@ -181,6 +190,10 @@ public class FileLogger implements Logger {
 			return logFactory.appendCombinedPreparedLogRecord(
 					combinedAppendRequest, preparedAppendFrame, frameLength,
 					logicalLength);
+		}
+		if (serializedPrepared) {
+			return logFactory.appendSerializedPreparedLogRecord(
+					preparedAppendFrame, frameLength, logicalLength);
 		}
 		return logFactory.appendPreparedLogRecord(
 				preparedAppendFrame, frameLength, logicalLength);

@@ -379,6 +379,46 @@ public class LogAccessFile
     }
 
     /**
+     * Whether a prepared frame can be represented by one normal WAL buffer.
+     * The caller supplies LogToFile synchronization.
+     */
+    boolean preparedLogRecordFitsEmptyBuffer(int frameLength) {
+        return frameLength <= currentBuffer.length;
+    }
+
+    /**
+     * Whether a prepared frame fits the currently active WAL buffer without a
+     * buffer switch. The caller supplies LogToFile synchronization.
+     */
+    boolean preparedLogRecordFitsCurrentBuffer(int frameLength) {
+        return frameLength <= currentBuffer.bytes_free;
+    }
+
+    /**
+     * Reserve one disjoint slice of the current in-memory WAL buffer. The
+     * caller has already reserved any checksum bytes and the authoritative log
+     * instant under LogToFile. The returned slice may then be filled without
+     * holding the LogToFile monitor.
+     */
+    ConcurrentLogAppendReservation reserveConcurrentPreparedLogRecord(
+            int frameLength,
+            long instant,
+            long logFileNumber,
+            long publicationBasePosition,
+            long endPosition) throws IOException {
+        if (frameLength <= 0 || frameLength > currentBuffer.bytes_free) {
+            throw new IOException("concurrent prepared log reservation does not fit current buffer");
+        }
+        int offset = currentBuffer.position;
+        currentBuffer.position += frameLength;
+        currentBuffer.bytes_free -= frameLength;
+        currentBuffer.greatest_instant = instant;
+        return new ConcurrentLogAppendReservation(
+                currentBuffer.buffer, offset, frameLength, instant,
+                logFileNumber, publicationBasePosition, endPosition);
+    }
+
+    /**
      * Append a log record to a byte[]. Typically, the byte[] will be
      * currentBuffer, but if a log record that is too big to fit in a
      * buffer is added, buff will be a newly allocated byte[].

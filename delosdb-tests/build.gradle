@@ -23442,6 +23442,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             cfg.rawStoreDurabilityTestNoSyncServer == true
     boolean rawStorePageValiditySnapshotServer =
             cfg.rawStorePageValiditySnapshotServer == true
+    boolean rawStoreConcurrentLogAppendServer =
+            cfg.rawStoreConcurrentLogAppendServer == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23491,6 +23493,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             rawStoreDurabilityTestNoSyncServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.rawStorePageValiditySnapshotServer':
                             rawStorePageValiditySnapshotServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreConcurrentLogAppendServer':
+                            rawStoreConcurrentLogAppendServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -23619,6 +23623,11 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                         && !text.contains('RawStore page-validity snapshot server enabled: true')) {
                     throw new GradleException(
                             "F08 page-validity snapshot benchmark did not prove server plumbing: ${summary}")
+                }
+                if (rawStoreConcurrentLogAppendServer
+                        && !text.contains('RawStore concurrent log append server enabled: true')) {
+                    throw new GradleException(
+                            "Concurrent RawStore WAL benchmark did not prove server plumbing: ${summary}")
                 }
                 if (!rawStoreLogBufferSizeServer.isEmpty()
                         || rawStoreDurabilityTestNoSyncServer) {
@@ -24934,6 +24943,112 @@ tasks.register('runDelosF08RawStoreCombinedLogAppendServerJfr', JavaExec) { task
                 'Delos Heap/Gen2: delosdb.experimental.rawStoreCombinedLogAppend.enabled=true; upstream Derby unchanged.\n' +
                 'Derby-family servers: 1 MiB log buffer + durability=test; JavaMonitorEnter threshold=1 us.\n' +
                 'Ordinary records queue reusable per-logger requests and one combiner drains them through the inherited LogToFile append authority; FIRST/LAST records remain direct.\n',
+                'UTF-8')
+    }
+}
+
+
+// Architecture-level F08 causal experiment: keep the existing RawStore WAL
+// format and recovery authority, but separate ordered byte-range reservation
+// from ordinary prepared-record copying. Delos Heap and Gen2 use the
+// default-OFF experiment; upstream Derby and the external engines stay
+// unchanged. The 1 MiB/no-sync controls deliberately match F08-O so this run
+// asks whether real parallel WAL copies change the 1/2/4/8-client scaling
+// curve rather than measuring physical log I/O.
+def delosF08ConcurrentWalCausalRoot =
+        'reports/delosdb/benchmarks/f08-concurrent-wal-causal'
+def delosF08ConcurrentWalCausalDbRoot =
+        'tmp/delos-f08-concurrent-wal-causal'
+
+registerDelosPostModernizationMutation(
+        'runDelosF08ConcurrentWalAppendCausal',
+        [
+                description: 'Runs the default-OFF concurrent RawStore WAL reservation/copy causal experiment at 1/2/4/8 clients.',
+                group: 'pk-insert-100-payload-16-clients-1-2-4-8',
+                gen2Mode: 'B',
+                transactionStatusCrossEngine: true,
+                f08FixedCostClientScaling: true,
+                rawStoreLogBufferSizeServer: '1048576',
+                rawStoreDurabilityTestNoSyncServer: true,
+                rawStoreConcurrentLogAppendServer: true,
+                reportRoot: delosF08ConcurrentWalCausalRoot,
+                databaseRootPath: delosF08ConcurrentWalCausalDbRoot,
+                workloads: 'INSERT_100',
+                tableShape: 'PRIMARY_KEY_ONLY',
+                rows: '10000',
+                clients: '1,2,4,8',
+                widths: '1',
+                transactionsPerClient: '2500',
+                fixedBudget: '250000',
+                payload: '16',
+                fixtureBatch: '100',
+                warmups: '0',
+                iterations: '1',
+                minimumWarmupSeconds: '0.0',
+                maximumWarmupIterations: '1',
+                minimumMeasuredSeconds: '0.0',
+                maximumMeasuredIterations: '1',
+                runs: '4',
+                caseTimeoutSeconds: '900',
+                workerTimeoutSeconds: '3600'
+        ])
+
+tasks.named('runDelosF08ConcurrentWalAppendCausal').configure {
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08ConcurrentWalCausalRoot}/pk-insert-100-payload-16-clients-1-2-4-8")
+                .get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'RawStore concurrent log append server enabled: true',
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true',
+                'F08 fixed-cost client-scaling diagnostic: true'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "Concurrent RawStore WAL causal run missing evidence marker '${marker}': ${summary}")
+            }
+        }
+
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        if (!manifest.isFile()
+                || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+            throw new GradleException(
+                    "Concurrent RawStore WAL causal manifest did not prove 16-byte payload: ${manifest}")
+        }
+
+        File logDir = new File(reportDir, 'rawstore-concurrent-wal-logs')
+        ['delos_heap_drda', 'delos_mvcc_drda'].each { String targetId ->
+            int maximum = 0
+            if (logDir.isDirectory()) {
+                logDir.listFiles()
+                        ?.findAll { File log -> log.isFile() && log.name.contains(targetId) }
+                        ?.each { File log ->
+                            def matcher = log.getText('UTF-8') =~
+                                    /DELOS_RAWSTORE_CONCURRENT_WAL\|maxConcurrentCopies=(\d+)/
+                            matcher.each { match ->
+                                maximum = Math.max(maximum, match[1].toInteger())
+                            }
+                        }
+            }
+            if (maximum < 2) {
+                throw new GradleException(
+                        "Concurrent RawStore WAL causal run did not prove overlapping payload copies for ${targetId}; maxConcurrentCopies=${maximum}, logs=${logDir}")
+            }
+        }
+
+        new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                'RawStore concurrent ordered WAL append causal prototype\n' +
+                'Workload: PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8; 4 runs.\n' +
+                'Delos Heap/Gen2 only: delosdb.experimental.rawStoreConcurrentLogAppend.enabled=true; upstream Derby is unchanged.\n' +
+                'Derby-family controls: 1 MiB log buffer + durability=test. NON-DURABLE diagnostic only.\n' +
+                'Ordinary prepared records reserve disjoint slices under the existing LogToFile ordering authority, then copy outside that monitor.\n' +
+                'FIRST/LAST records, CLRs, replication mode, oversized records, flush, scans, log switches, freeze, and shutdown retain conservative serialized/barrier behavior.\n' +
+                'On-disk WAL format, RawStore recovery, undo, and checkpoint authorities are unchanged.\n' +
+                'Mechanism evidence contract: each Delos target must report maxConcurrentCopies >= 2 in captured server logs.\n' +
+                'Decision question: does true overlapping WAL payload copy materially improve the 1->2->4->8 Derby-family scaling curve?\n',
                 'UTF-8')
     }
 }
