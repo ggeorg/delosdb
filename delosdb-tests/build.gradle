@@ -23444,6 +23444,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             cfg.rawStorePageValiditySnapshotServer == true
     boolean rawStoreConcurrentLogAppendServer =
             cfg.rawStoreConcurrentLogAppendServer == true
+    boolean rawStoreMultiInsertPageServer =
+            cfg.rawStoreMultiInsertPageServer == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23495,6 +23497,8 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             rawStorePageValiditySnapshotServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.rawStoreConcurrentLogAppendServer':
                             rawStoreConcurrentLogAppendServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreMultiInsertPageServer':
+                            rawStoreMultiInsertPageServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -23628,6 +23632,11 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                         && !text.contains('RawStore concurrent log append server enabled: true')) {
                     throw new GradleException(
                             "Concurrent RawStore WAL benchmark did not prove server plumbing: ${summary}")
+                }
+                if (rawStoreMultiInsertPageServer
+                        && !text.contains('RawStore multi-insert-page server enabled: true')) {
+                    throw new GradleException(
+                            "RawStore multi-insert-page benchmark did not prove server plumbing: ${summary}")
                 }
                 if (!rawStoreLogBufferSizeServer.isEmpty()
                         || rawStoreDurabilityTestNoSyncServer) {
@@ -25051,4 +25060,135 @@ tasks.named('runDelosF08ConcurrentWalAppendCausal').configure {
                 'Decision question: does true overlapping WAL payload copy materially improve the 1->2->4->8 Derby-family scaling curve?\n',
                 'UTF-8')
     }
+}
+
+// F08 architecture-level page-fan-out experiment. Derby's FileContainer
+// retains a dormant multi-insert-page design: after a NOWAIT collision on
+// the single shared lastInsertedPage hint it was intended to fan concurrent
+// inserters across several fresh heap pages. The inherited call is commented
+// out. Delos Heap/Gen2 enable a corrected default-OFF form of that mechanism;
+// upstream Derby remains unchanged. BARE isolates heap-page scalability while
+// PRIMARY_KEY_ONLY shows how much of the win survives the PK B-tree path.
+def delosF08MultiInsertPageCausalRoot =
+        'reports/delosdb/benchmarks/f08-multi-insert-page-causal'
+def delosF08MultiInsertPageCausalDbRoot =
+        'tmp/delos-f08-multi-insert-page-causal'
+
+def registerDelosF08MultiInsertPageCausal = {
+    String taskName, String reportGroup, String gen2Mode, String tableShape ->
+    registerDelosPostModernizationMutation(
+            taskName,
+            [
+                    description: "Runs the default-OFF RawStore multi-insert-page ${tableShape} causal experiment at 1/2/4/8 clients.",
+                    group: reportGroup,
+                    gen2Mode: gen2Mode,
+                    transactionStatusCrossEngine: true,
+                    f08FixedCostClientScaling: true,
+                    rawStoreLogBufferSizeServer: '1048576',
+                    rawStoreDurabilityTestNoSyncServer: true,
+                    rawStoreMultiInsertPageServer: true,
+                    reportRoot: delosF08MultiInsertPageCausalRoot,
+                    databaseRootPath: delosF08MultiInsertPageCausalDbRoot,
+                    workloads: 'INSERT_100',
+                    tableShape: tableShape,
+                    rows: '10000',
+                    clients: '1,2,4,8',
+                    widths: '1',
+                    transactionsPerClient: '2500',
+                    fixedBudget: '250000',
+                    payload: '16',
+                    fixtureBatch: '100',
+                    warmups: '0',
+                    iterations: '1',
+                    minimumWarmupSeconds: '0.0',
+                    maximumWarmupIterations: '1',
+                    minimumMeasuredSeconds: '0.0',
+                    maximumMeasuredIterations: '1',
+                    runs: '4',
+                    caseTimeoutSeconds: '900',
+                    workerTimeoutSeconds: '3600'
+            ])
+
+    tasks.named(taskName).configure {
+        doLast {
+            File reportDir = rootProject.layout.buildDirectory
+                    .dir("${delosF08MultiInsertPageCausalRoot}/${reportGroup}")
+                    .get().asFile
+            File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+            String summaryText = summary.getText('UTF-8')
+            [
+                    'RawStore multi-insert-page server enabled: true',
+                    'RawStore concurrent log append server enabled: false',
+                    'RawStore log buffer size server override: 1048576',
+                    'RawStore durability test no-sync server enabled: true',
+                    'F08 fixed-cost client-scaling diagnostic: true'
+            ].each { String marker ->
+                if (!summaryText.contains(marker)) {
+                    throw new GradleException(
+                            "RawStore multi-insert-page causal run missing evidence marker '${marker}': ${summary}")
+                }
+            }
+
+            File manifest = new File(reportDir, 'server-container-manifest.txt')
+            if (!manifest.isFile()
+                    || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+                throw new GradleException(
+                        "RawStore multi-insert-page manifest did not prove 16-byte payload: ${manifest}")
+            }
+
+            File logDir = new File(reportDir, 'rawstore-multi-insert-page-logs')
+            ['delos_heap_drda', 'delos_mvcc_drda'].each { String targetId ->
+                boolean observed = false
+                if (logDir.isDirectory()) {
+                    logDir.listFiles()
+                            ?.findAll { File log -> log.isFile() && log.name.contains(targetId) }
+                            ?.each { File log ->
+                                if (log.getText('UTF-8').contains(
+                                        'DELOS_RAWSTORE_MULTI_INSERT_PAGE|')) {
+                                    observed = true
+                                }
+                            }
+                }
+                if (!observed) {
+                    throw new GradleException(
+                            "RawStore multi-insert-page causal run did not prove contention-triggered page fan-out for ${targetId}; logs=${logDir}")
+                }
+            }
+
+            new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                    'RawStore multi-insert-page causal prototype\n' +
+                    "Workload: ${tableShape} INSERT_100; payload=16; clients=1,2,4,8; 4 runs.\n" +
+                    'Delos Heap/Gen2 only: delosdb.experimental.rawStoreMultiInsertPage.enabled=true; upstream Derby is unchanged.\n' +
+                    'Derby-family controls: 1 MiB log buffer + durability=test. NON-DURABLE diagnostic only.\n' +
+                    'The inherited single lastInsertedPage path remains production default. After a real NOWAIT latch collision the experiment allocates four fresh insert pages and rotates subsequent heap insert candidates across them.\n' +
+                    'WAL format/recovery, allocation ownership, page format, RowLocation semantics, SQL execution, and B-tree implementation are unchanged.\n' +
+                    'Mechanism evidence contract: each Delos target must emit DELOS_RAWSTORE_MULTI_INSERT_PAGE from captured server logs.\n' +
+                    'BARE isolates heap-page fan-out. PRIMARY_KEY_ONLY measures how much improvement survives the independent PK B-tree path.\n' +
+                    'Decision question: does removing the single shared heap insertion target materially improve the 1->2->4->8 Derby-family scaling curve?\n',
+                    'UTF-8')
+        }
+    }
+}
+
+registerDelosF08MultiInsertPageCausal(
+        'runDelosF08MultiInsertPageBareCausal',
+        'bare-insert-100-payload-16-clients-1-2-4-8',
+        'A1',
+        'BARE')
+
+registerDelosF08MultiInsertPageCausal(
+        'runDelosF08MultiInsertPagePrimaryKeyCausal',
+        'pk-insert-100-payload-16-clients-1-2-4-8',
+        'B',
+        'PRIMARY_KEY_ONLY')
+
+tasks.named('runDelosF08MultiInsertPagePrimaryKeyCausal').configure {
+    mustRunAfter tasks.named('runDelosF08MultiInsertPageBareCausal')
+}
+
+tasks.register('runDelosF08MultiInsertPageCausal') {
+    group = 'benchmark'
+    description = 'Runs BARE then PRIMARY_KEY_ONLY RawStore multi-insert-page causal scaling experiments.'
+    dependsOn tasks.named('runDelosF08MultiInsertPageBareCausal'),
+            tasks.named('runDelosF08MultiInsertPagePrimaryKeyCausal')
 }

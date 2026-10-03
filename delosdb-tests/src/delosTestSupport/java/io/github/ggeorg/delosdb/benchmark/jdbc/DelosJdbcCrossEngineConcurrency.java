@@ -5501,6 +5501,9 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (rawStoreConcurrentLogAppendServerEnabled()) {
             addProperty(command, "rawStoreConcurrentLogAppendServer", true);
         }
+        if (rawStoreMultiInsertPageServerEnabled()) {
+            addProperty(command, "rawStoreMultiInsertPageServer", true);
+        }
         if (f08MultiRowInsertControlEnabled()) {
             addProperty(command, "f08MultiRowInsertControl", true);
         }
@@ -5784,6 +5787,10 @@ public final class DelosJdbcCrossEngineConcurrency {
                     javaCommand.add(
                             "-Ddelosdb.experimental.rawStoreConcurrentLogAppend.enabled=true");
                 }
+                if (rawStoreMultiInsertPageServerEnabled()) {
+                    javaCommand.add(
+                            "-Ddelosdb.experimental.rawStoreMultiInsertPage.enabled=true");
+                }
                 if (btreeInsertRootRoutingSnapshotServerEnabled()) {
                     javaCommand.add(
                             "-Ddelosdb.experimental.btreeInsertRootRoutingSnapshot.enabled=true");
@@ -5919,6 +5926,10 @@ public final class DelosJdbcCrossEngineConcurrency {
         if (delosDrdaTarget && rawStoreConcurrentLogAppendServerEnabled()) {
             serverEvidenceLog = options.reportDirectory()
                     .resolve("rawstore-concurrent-wal-logs")
+                    .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
+        } else if (delosDrdaTarget && rawStoreMultiInsertPageServerEnabled()) {
+            serverEvidenceLog = options.reportDirectory()
+                    .resolve("rawstore-multi-insert-page-logs")
                     .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
         } else if (delosDrdaTarget && drdaServerPhaseEvidenceEnabled()) {
             serverEvidenceLog = options.reportDirectory().resolve("server-phase-logs").resolve(
@@ -12184,6 +12195,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(rawStoreCombinedLogAppendServerEnabled()).append('\n')
                 .append("RawStore concurrent log append server enabled: ")
                 .append(rawStoreConcurrentLogAppendServerEnabled()).append('\n')
+                .append("RawStore multi-insert-page server enabled: ")
+                .append(rawStoreMultiInsertPageServerEnabled()).append('\n')
                 .append("F08 multi-row INSERT control: ")
                 .append(f08MultiRowInsertControlEnabled()).append('\n')
                 .append("RawStore log buffer size server override: ")
@@ -12502,6 +12515,10 @@ public final class DelosJdbcCrossEngineConcurrency {
 
     private static boolean rawStoreConcurrentLogAppendServerEnabled() {
         return Boolean.getBoolean(PREFIX + "rawStoreConcurrentLogAppendServer");
+    }
+
+    private static boolean rawStoreMultiInsertPageServerEnabled() {
+        return Boolean.getBoolean(PREFIX + "rawStoreMultiInsertPageServer");
     }
 
     private static boolean f08MultiRowInsertControlEnabled() {

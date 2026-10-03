@@ -1,28 +1,43 @@
-DelosDB F08 concurrent RawStore WAL causal prototype
-Source authority: delosdb 89.zip
-Baseline commit recorded in source archive: ceddd8189ca5380dc4328a16c83ad8c07c9c4374
+DelosDB F08 multi-insert-page causal experiment
 
 Purpose
-- Test the architecture-level hypothesis that Derby-family concurrent INSERT scaling is limited by coupling WAL ordering and WAL payload copy under the single LogToFile append authority.
-- Preserve the existing RawStore WAL format, recovery, undo, checkpoint, and durability authority.
+-------
+Test whether Derby-family concurrent INSERT scaling is limited by routing all
+heap inserters through one container-global lastInsertedPage target.
+
+Production behavior
+-------------------
+Unchanged by default. The experiment is enabled only with:
+  -Ddelosdb.experimental.rawStoreMultiInsertPage.enabled=true
 
 Experiment
-- Default OFF: delosdb.experimental.rawStoreConcurrentLogAppend.enabled=false unless explicitly enabled.
-- Ordinary prepared WAL records reserve disjoint current-buffer slices under LogToFile ordering, then patch/copy their frames after releasing the LogToFile monitor.
-- FIRST/LAST transaction records and CLRs use a serialized prepared-record path.
-- Flush, log-buffer/file transition, backward/forward scan-to-end, freeze, shutdown, and replication-role transitions quiesce outstanding concurrent reservations before crossing their inherited boundary.
-- Oversized records and replication modes fall back to the serialized path.
-- Existing on-disk WAL bytes and recovery record format are unchanged.
+----------
+On a real NOWAIT latch collision against the single lastInsertedPage target,
+promote that FileContainer to a four-page in-memory insert-target ring. The
+pages are allocated through the existing RawStore allocation path and normal
+WAL/recovery authority. The page format, WAL format, RowLocation semantics,
+SQL execution, and B-tree implementation are unchanged.
 
-Causal evidence
-- New benchmark task: :delosdb-tests:runDelosF08ConcurrentWalAppendCausal
-- 16-byte PRIMARY_KEY_ONLY INSERT_100 at 1/2/4/8 clients, four runs.
-- Delos Heap/Gen2 use 1 MiB RawStore log buffer + durability=test + concurrent WAL experiment.
-- Upstream Derby and external engines remain unchanged.
-- Captured Delos server logs must prove maxConcurrentCopies >= 2 for each Delos target or the benchmark task fails.
+Benchmark
+---------
+Adds a combined causal benchmark with two 1/2/4/8-client slices:
+  BARE INSERT_100, 16-byte payload
+  PRIMARY_KEY_ONLY INSERT_100, 16-byte payload
 
-Local validation performed while creating overlay
-- Java parse-only validation: PASS for all changed/new Java files.
-- ConcurrentLogAppendPublicationTest standalone source-level test: PASS.
-- git diff --check on modified tracked files: PASS.
-- Full Gradle compile not executed in artifact environment because Gradle 9.5.1 wrapper distribution was not cached and outbound wrapper download was unavailable.
+Delos Heap and Gen2 alone enable the default-OFF experiment. Upstream Derby,
+PostgreSQL, MariaDB, and H2 remain unchanged. Derby-family runs use the same
+1 MiB log-buffer + durability=test diagnostic controls as F08-O, so the test
+focuses on in-memory concurrent-write architecture rather than physical WAL
+sync.
+
+Mechanism evidence
+------------------
+The benchmark captures Delos server logs and requires both Delos Heap and Gen2
+to emit DELOS_RAWSTORE_MULTI_INSERT_PAGE, proving that a real contention event
+promoted the heap container to page fan-out.
+
+Changed files
+-------------
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+delosdb-tests/build.gradle
