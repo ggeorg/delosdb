@@ -1,28 +1,13 @@
-DelosDB F08 B-tree split-authority proof r5 module-boundary fix
+DelosDB F08 shared-authority stack canonical validation overlay
 
-Purpose
--------
-Compile BTreeInsertStructuralDiagnosticTestSupport through the repository's existing
-org.apache.derby.engine test-patch mechanism instead of the org.apache.derby.tests
-module. This fixes the r4 compileTestJava split-package/module failure without
-changing production B-tree behavior or widening production visibility.
+Changed files:
+- delosdb-tests/build.gradle
 
-Changed files
--------------
-delosdb-tests/build.gradle
+Purpose:
+- Add an 8-client canonical validation task for the already-proven shared-authority stack.
+- Retain PRIMARY_KEY_ONLY INSERT_100 and Gen2 transaction-status visibility.
+- Enable only the page-validity snapshot, multi-insert-page, and B-tree root/branch routing controls on Delos servers.
+- Restore payload=128, default RawStore log buffering, and normal durability.
+- Keep rejected concurrent/preframed/combined WAL controls disabled.
 
-Behavior
---------
-- Registers BTreeInsertStructuralDiagnosticTestSupport as an internal engine test-support source.
-- Excludes that bridge from normal org.apache.derby.tests test compilation.
-- Copies it into prepareRawStoreInternalTestSupportSources so compileRawStoreInternalTestSupport
-  compiles it with --patch-module org.apache.derby.engine.
-- Reuses the existing rawStoreInternalTestSupportClassDir already present on the split-proof task classpath.
-
-Not changed
------------
-- No production Java code.
-- No B-tree insert/split behavior.
-- No RawStore/WAL/recovery behavior.
-- No benchmark thresholds or workload shape.
-- No new public API or module export.
+No production Java code is changed.

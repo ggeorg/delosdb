@@ -23452,6 +23452,10 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
             cfg.rawStoreConcurrentLogAppendServer == true
     boolean rawStoreMultiInsertPageServer =
             cfg.rawStoreMultiInsertPageServer == true
+    boolean btreeInsertRootRoutingSnapshotServer =
+            cfg.btreeInsertRootRoutingSnapshotServer == true
+    boolean btreeInsertBranchRoutingSnapshotServer =
+            cfg.btreeInsertBranchRoutingSnapshotServer == true
     tasks.register(taskName, JavaExec) {
         group = 'benchmark'
         description = cfg.description
@@ -23505,6 +23509,10 @@ def registerDelosPostModernizationMutation = { String taskName, Map cfg ->
                             rawStoreConcurrentLogAppendServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.rawStoreMultiInsertPageServer':
                             rawStoreMultiInsertPageServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.btreeInsertRootRoutingSnapshotServer':
+                            btreeInsertRootRoutingSnapshotServer ? 'true' : 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.btreeInsertBranchRoutingSnapshotServer':
+                            btreeInsertBranchRoutingSnapshotServer ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2TransactionStatusVisibilityServer': transactionStatusCrossEngine ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2A1Server': cfg.gen2Mode == 'A1' ? 'true' : 'false',
                     'delosdb.benchmark.crossEngineConcurrency.mvccGen2BServer': cfg.gen2Mode == 'B' ? 'true' : 'false',
@@ -25414,6 +25422,239 @@ tasks.register('runDelosF08BTreeSplitAuthorityProof', JavaExec) {
                 'Prior proof: RecordId previous-key/gap locking had zero logical waits and zero lock-entry mutex contention at eight clients.\n' +
                 'Structural counters measure split-pass frequency, already-has-space/no-op leaf passes, physical leaf/branch splits, split restarts, and internal-transaction phase time.\n' +
                 'Decision question: do concurrent right-edge inserts create a split herd or otherwise spend enough time in the separate root-to-leaf internal split transaction to explain the remaining 4->8 collapse?\n',
+                'UTF-8')
+    }
+}
+
+
+// F08 whole-path upper-bound experiment. The preceding causal proofs showed
+// that no single visible shared authority explains the Derby-family 4->8 PK
+// INSERT collapse. Stack only the independently validated mechanisms that
+// removed real shared work: immutable page-validity reads, heap insert-page
+// fan-out, and B-tree root+branch routing. Rejected WAL-copy/combining controls
+// remain OFF. This is not a promotion candidate; it measures whether cumulative
+// shared-authority removal is large enough to justify a coherent redesign.
+def delosF08SharedAuthorityStackRoot =
+        'reports/delosdb/benchmarks/f08-shared-authority-stack-causal'
+def delosF08SharedAuthorityStackDbRoot =
+        'tmp/delos-f08-shared-authority-stack-causal'
+
+registerDelosPostModernizationMutation(
+        'runDelosF08SharedAuthorityStackCausal',
+        [
+                description: 'Runs the F08 shared-authority upper-bound stack at 1/2/4/8 clients.',
+                group: 'pk-insert-100-payload-16-clients-1-2-4-8',
+                gen2Mode: 'B',
+                transactionStatusCrossEngine: true,
+                f08FixedCostClientScaling: true,
+                rawStoreLogBufferSizeServer: '1048576',
+                rawStoreDurabilityTestNoSyncServer: true,
+                rawStorePageValiditySnapshotServer: true,
+                rawStoreMultiInsertPageServer: true,
+                btreeInsertRootRoutingSnapshotServer: true,
+                btreeInsertBranchRoutingSnapshotServer: true,
+                reportRoot: delosF08SharedAuthorityStackRoot,
+                databaseRootPath: delosF08SharedAuthorityStackDbRoot,
+                workloads: 'INSERT_100',
+                tableShape: 'PRIMARY_KEY_ONLY',
+                rows: '10000',
+                clients: '1,2,4,8',
+                widths: '1',
+                transactionsPerClient: '2500',
+                fixedBudget: '250000',
+                payload: '16',
+                fixtureBatch: '100',
+                warmups: '0',
+                iterations: '1',
+                minimumWarmupSeconds: '0.0',
+                maximumWarmupIterations: '1',
+                minimumMeasuredSeconds: '0.0',
+                maximumMeasuredIterations: '1',
+                runs: '4',
+                caseTimeoutSeconds: '900',
+                workerTimeoutSeconds: '3600'
+        ])
+
+tasks.named('runDelosF08SharedAuthorityStackCausal').configure {
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedAuthorityStackRoot}/pk-insert-100-payload-16-clients-1-2-4-8")
+                .get().asFile
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'RawStore page-validity snapshot server enabled: true',
+                'RawStore multi-insert-page server enabled: true',
+                'B-tree INSERT root-routing snapshot server enabled: true',
+                'B-tree INSERT branch-routing snapshot server enabled: true',
+                'RawStore concurrent log append server enabled: false',
+                'RawStore preframed log append server enabled: false',
+                'RawStore combined log append server enabled: false',
+                'RawStore log buffer size server override: 1048576',
+                'RawStore durability test no-sync server enabled: true',
+                'F08 fixed-cost client-scaling diagnostic: true'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F08 shared-authority stack missing evidence marker '${marker}': ${summary}")
+            }
+        }
+
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        if (!manifest.isFile()
+                || !manifest.getText('UTF-8').contains('Payload bytes: 16')) {
+            throw new GradleException(
+                    "F08 shared-authority stack did not prove 16-byte payload: ${manifest}")
+        }
+
+        File logDir = new File(reportDir, 'rawstore-multi-insert-page-logs')
+        ['delos_heap_drda', 'delos_mvcc_drda'].each { String targetId ->
+            boolean observed = false
+            if (logDir.isDirectory()) {
+                logDir.listFiles()
+                        ?.findAll { File log -> log.isFile() && log.name.contains(targetId) }
+                        ?.each { File log ->
+                            if (log.getText('UTF-8').contains('DELOS_RAWSTORE_MULTI_INSERT_PAGE|')) {
+                                observed = true
+                            }
+                        }
+            }
+            if (!observed) {
+                throw new GradleException(
+                        "F08 shared-authority stack did not prove multi-insert-page activation for ${targetId}: ${logDir}")
+            }
+        }
+
+        new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                'F08 shared-authority upper-bound causal experiment\n' +
+                'Workload: PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8; 4 runs; full SERVER matrix.\n' +
+                'Delos Heap/Gen2 stack: page-validity snapshot + multi-insert-page + B-tree root routing + B-tree branch routing.\n' +
+                'Rejected controls remain OFF: concurrent WAL copy, preframed WAL append, flat-combined WAL append.\n' +
+                'Derby-family controls: 1 MiB log buffer + durability=test. NON-DURABLE diagnostic only.\n' +
+                'Purpose: measure the cumulative upper bound from independently proven shared-work removals, not promote the stack.\n' +
+                'Decision: a large scaling-shape improvement supports a coherent shared-authority redesign; a small result means a deeper unmeasured architecture still dominates.\n',
+                'UTF-8')
+    }
+}
+
+// F08 canonical validation of the shared-authority stack. The preceding
+// 16-byte/no-sync upper-bound experiment restored positive 4->8 scaling and
+// crossed the 200k op/s decision bar. This task keeps the same Delos-only
+// stack but restores the canonical 128-byte payload, default RawStore log
+// buffering, and normal durability before any production architecture is
+// selected or promoted.
+def delosF08SharedAuthorityStackCanonicalRoot =
+        'reports/delosdb/benchmarks/f08-shared-authority-stack-canonical'
+def delosF08SharedAuthorityStackCanonicalDbRoot =
+        'tmp/delos-f08-shared-authority-stack-canonical'
+
+registerDelosPostModernizationMutation(
+        'runDelosF08SharedAuthorityStackCanonical',
+        [
+                description: 'Runs canonical durable F08 shared-authority stack validation at 8 clients.',
+                group: 'pk-insert-100-payload-128-clients-8',
+                gen2Mode: 'B',
+                transactionStatusCrossEngine: true,
+                rawStorePageValiditySnapshotServer: true,
+                rawStoreMultiInsertPageServer: true,
+                btreeInsertRootRoutingSnapshotServer: true,
+                btreeInsertBranchRoutingSnapshotServer: true,
+                reportRoot: delosF08SharedAuthorityStackCanonicalRoot,
+                databaseRootPath: delosF08SharedAuthorityStackCanonicalDbRoot,
+                workloads: 'INSERT_100',
+                tableShape: 'PRIMARY_KEY_ONLY',
+                rows: '10000',
+                clients: '8',
+                widths: '1',
+                transactionsPerClient: '2500',
+                fixedBudget: '250000',
+                payload: '128',
+                fixtureBatch: '100',
+                warmups: '0',
+                iterations: '1',
+                minimumWarmupSeconds: '0.0',
+                maximumWarmupIterations: '1',
+                minimumMeasuredSeconds: '0.0',
+                maximumMeasuredIterations: '1',
+                runs: '8',
+                caseTimeoutSeconds: '900',
+                workerTimeoutSeconds: '3600'
+        ])
+
+tasks.named('runDelosF08SharedAuthorityStackCanonical').configure {
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir("${delosF08SharedAuthorityStackCanonicalRoot}/pk-insert-100-payload-128-clients-8")
+                .get().asFile
+        [
+                'cross-engine-concurrency-summary.txt',
+                'cross-engine-concurrency-ratios.csv',
+                'cross-engine-concurrency-dispersion.csv',
+                'sql-semantic-oracle.csv',
+                'server-container-manifest.txt'
+        ].each { String reportName ->
+            File report = new File(reportDir, reportName)
+            if (!report.isFile() || report.length() == 0L) {
+                throw new GradleException(
+                        "F08 canonical shared-authority stack missing evidence: ${report}")
+            }
+        }
+
+        File summary = new File(reportDir, 'cross-engine-concurrency-summary.txt')
+        String summaryText = summary.getText('UTF-8')
+        [
+                'Clients: 8',
+                'F08 transaction-status cross-engine diagnostic: true',
+                'MVCC Gen2 transaction-status visibility server enabled: true',
+                'RawStore page-validity snapshot server enabled: true',
+                'RawStore multi-insert-page server enabled: true',
+                'B-tree INSERT root-routing snapshot server enabled: true',
+                'B-tree INSERT branch-routing snapshot server enabled: true',
+                'RawStore concurrent log append server enabled: false',
+                'RawStore preframed log append server enabled: false',
+                'RawStore combined log append server enabled: false',
+                'RawStore log buffer size server override: default',
+                'RawStore durability test no-sync server enabled: false'
+        ].each { String marker ->
+            if (!summaryText.contains(marker)) {
+                throw new GradleException(
+                        "F08 canonical shared-authority stack missing evidence marker '${marker}': ${summary}")
+            }
+        }
+
+        File manifest = new File(reportDir, 'server-container-manifest.txt')
+        String manifestText = manifest.getText('UTF-8')
+        if (!manifestText.contains('Payload bytes: 128')
+                || !manifestText.contains('Isolation: TRANSACTION_READ_COMMITTED')) {
+            throw new GradleException(
+                    "F08 canonical shared-authority stack did not prove canonical payload/isolation: ${manifest}")
+        }
+
+        File logDir = new File(reportDir, 'rawstore-multi-insert-page-logs')
+        ['delos_heap_drda', 'delos_mvcc_drda'].each { String targetId ->
+            boolean observed = false
+            if (logDir.isDirectory()) {
+                logDir.listFiles()
+                        ?.findAll { File log -> log.isFile() && log.name.contains(targetId) }
+                        ?.each { File log ->
+                            if (log.getText('UTF-8').contains('DELOS_RAWSTORE_MULTI_INSERT_PAGE|')) {
+                                observed = true
+                            }
+                        }
+            }
+            if (!observed) {
+                throw new GradleException(
+                        "F08 canonical shared-authority stack did not prove multi-insert-page activation for ${targetId}: ${logDir}")
+            }
+        }
+
+        new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                'F08 canonical durable validation of the shared-authority stack\n' +
+                'Workload: PRIMARY_KEY_ONLY INSERT_100; payload=128; clients=8; 8 runs; full SERVER matrix.\n' +
+                'Delos Heap/Gen2 stack: page-validity snapshot + multi-insert-page + B-tree root routing + B-tree branch routing.\n' +
+                'Rejected controls remain OFF: concurrent WAL copy, preframed WAL append, flat-combined WAL append.\n' +
+                'Canonical controls: default RawStore log buffer and normal durability.\n' +
+                'Purpose: determine whether the large 16-byte/no-sync scaling improvement survives canonical conditions before designing a coherent production architecture.\n',
                 'UTF-8')
     }
 }
