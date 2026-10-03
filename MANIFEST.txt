@@ -1,43 +1,11 @@
-DelosDB F08 multi-insert-page causal experiment
+DelosDB F08 multi-insert-page BARE validation fix r3
 
-Purpose
--------
-Test whether Derby-family concurrent INSERT scaling is limited by routing all
-heap inserters through one container-global lastInsertedPage target.
+Changed files:
+- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 
-Production behavior
--------------------
-Unchanged by default. The experiment is enabled only with:
-  -Ddelosdb.experimental.rawStoreMultiInsertPage.enabled=true
+Purpose:
+- Permit BARE INSERT_100 in F08 fixed-cost client scaling only when the RawStore multi-insert-page server experiment is enabled and the contention-scaling slice is disabled.
+- Preserve the existing PRIMARY_KEY_ONLY requirement for all prior F08 fixed-cost and contention-scaling experiments.
 
-Experiment
-----------
-On a real NOWAIT latch collision against the single lastInsertedPage target,
-promote that FileContainer to a four-page in-memory insert-target ring. The
-pages are allocated through the existing RawStore allocation path and normal
-WAL/recovery authority. The page format, WAL format, RowLocation semantics,
-SQL execution, and B-tree implementation are unchanged.
-
-Benchmark
----------
-Adds a combined causal benchmark with two 1/2/4/8-client slices:
-  BARE INSERT_100, 16-byte payload
-  PRIMARY_KEY_ONLY INSERT_100, 16-byte payload
-
-Delos Heap and Gen2 alone enable the default-OFF experiment. Upstream Derby,
-PostgreSQL, MariaDB, and H2 remain unchanged. Derby-family runs use the same
-1 MiB log-buffer + durability=test diagnostic controls as F08-O, so the test
-focuses on in-memory concurrent-write architecture rather than physical WAL
-sync.
-
-Mechanism evidence
-------------------
-The benchmark captures Delos server logs and requires both Delos Heap and Gen2
-to emit DELOS_RAWSTORE_MULTI_INSERT_PAGE, proving that a real contention event
-promoted the heap container to page fan-out.
-
-Changed files
--------------
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java
-delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-delosdb-tests/build.gradle
+No production files changed.
+No benchmark thresholds weakened.

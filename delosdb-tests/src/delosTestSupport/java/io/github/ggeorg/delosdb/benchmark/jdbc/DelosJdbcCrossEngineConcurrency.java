@@ -14130,17 +14130,24 @@ public final class DelosJdbcCrossEngineConcurrency {
                     boolean validScalingTargets = f08ContentionScalingSlice
                             ? configuredTargets.equals(F08_TRANSACTION_STATUS_ATTRIBUTION_TARGETS)
                             : configuredTargets.equals(SERVER_PRODUCT_TARGETS);
+                    boolean multiInsertPageBareScaling = !f08ContentionScalingSlice
+                            && rawStoreMultiInsertPageServerEnabled()
+                            && bare;
                     if (!validScalingTargets
                             || !configuredWorkloads.equals(List.of(Workload.INSERT_100))
-                            || !primaryKey
+                            || (!primaryKey && !multiInsertPageBareScaling)
                             || payload != 16
                             || f08MultiRowInsertControlEnabled()) {
+                        String scalingRequirement = rawStoreMultiInsertPageServerEnabled()
+                                && !f08ContentionScalingSlice
+                                ? "BARE or PRIMARY_KEY_ONLY INSERT_100"
+                                : "PRIMARY_KEY_ONLY INSERT_100";
                         throw new IllegalArgumentException(
                                 f08ContentionScalingSlice
                                         ? "F08 contention-scaling slice requires Derby-family SERVER targets, "
                                                 + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape"
                                         : "F08 fixed-cost client scaling requires the full SERVER matrix, "
-                                                + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and JDBC batch shape");
+                                                + scalingRequirement + ", payload=16, and JDBC batch shape");
                     }
                 }
                 if (f08ContentionScalingSlice && !f08TransactionStatusAttribution) {
