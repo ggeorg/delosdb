@@ -6300,6 +6300,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockWaitDiagnosticsEnabled()) {
                     resetLockWaitDiagnostics();
                 }
+                if (btreeInsertStructuralDiagnosticsEnabled()) {
+                    resetBTreeInsertStructuralDiagnostics();
+                }
                 if (cacheEntryDiagnosticsEnabled()) {
                     resetCacheEntryDiagnostics();
                 }
@@ -6392,6 +6395,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 String[] lockWaitDiagnostics = lockWaitDiagnosticsEnabled()
                         ? snapshotLockWaitDiagnostics()
                         : null;
+                long[] btreeInsertStructuralDiagnostics = btreeInsertStructuralDiagnosticsEnabled()
+                        ? snapshotBTreeInsertStructuralDiagnostics()
+                        : null;
                 String[] cacheEntryDiagnostics = cacheEntryDiagnosticsEnabled()
                         ? snapshotCacheEntryDiagnostics()
                         : null;
@@ -6434,6 +6440,11 @@ public final class DelosJdbcCrossEngineConcurrency {
                 if (lockWaitDiagnostics != null) {
                     writeLockWaitDiagnostics(
                             options, spec, config, measuredOperations, lockWaitDiagnostics);
+                }
+                if (btreeInsertStructuralDiagnostics != null) {
+                    writeBTreeInsertStructuralDiagnostics(
+                            options, spec, config, measuredOperations,
+                            btreeInsertStructuralDiagnostics);
                 }
                 if (cacheEntryDiagnostics != null) {
                     writeCacheEntryDiagnostics(
@@ -7431,6 +7442,88 @@ public final class DelosJdbcCrossEngineConcurrency {
                 .append(',').append(format(hitRatio))
                 .append(',').append(format(fallbackRatio))
                 .append(',').append(format(bytesPerOperation))
+                .append('\n');
+        Files.writeString(
+                output, row.toString(), StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND);
+    }
+
+    private static boolean btreeInsertStructuralDiagnosticsEnabled() {
+        return Boolean.getBoolean(PREFIX + "btreeInsertStructuralDiagnostics");
+    }
+
+    private static void resetBTreeInsertStructuralDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.btree.BTreeInsertStructuralDiagnosticTestSupport");
+        support.getMethod("reset").invoke(null);
+    }
+
+    private static long[] snapshotBTreeInsertStructuralDiagnostics()
+            throws ReflectiveOperationException {
+        Class<?> support = Class.forName(
+                "org.apache.derby.impl.store.access.btree.BTreeInsertStructuralDiagnosticTestSupport");
+        return (long[]) support.getMethod("snapshot").invoke(null);
+    }
+
+    private static void writeBTreeInsertStructuralDiagnostics(
+            Options options,
+            Spec spec,
+            DelosBenchmarkConfig config,
+            long measuredOperations,
+            long[] values) throws IOException {
+        if (values.length != 17) {
+            throw new IllegalStateException(
+                    "Unexpected B-tree insert structural diagnostic width: " + values.length);
+        }
+        Path output = options.reportDirectory().resolve(
+                "btree-insert-structural-diagnostics-" + options.target().id()
+                        + "-run-" + options.run() + ".csv");
+        String header = "target,workload,clients,operationsPerTransaction,rowCount,measuredOperations,"
+                + "splitPassCalls,actualSplitPasses,reclaimOnlyPasses,"
+                + "leafAlreadyHasSpace,leafPageSplits,leafRootGrows,branchPageSplits,"
+                + "branchRootGrows,splitRestarts,splitPassNanos,maxSplitPassNanos,"
+                + "internalXactAcquireNanos,splitOpenInitNanos,rootAcquireNanos,"
+                + "rootSplitForNanos,finalCommitNanos,finalDestroyNanos,"
+                + "splitPassesPerOperation,leafAlreadyHasSpacePercent,"
+                + "splitPassNanosPerOperation,splitPassNanosPerPass,"
+                + "rootAcquireNanosPerPass,rootSplitForNanosPerPass,finalCommitNanosPerPass\n";
+        if (!Files.exists(output)) {
+            Files.writeString(output, header, StandardCharsets.UTF_8);
+        }
+        long splitPasses = values[0];
+        double splitPassesPerOperation = measuredOperations == 0L
+                ? 0.0 : splitPasses / (double) measuredOperations;
+        double leafAlreadyHasSpacePercent = values[1] == 0L
+                ? 0.0 : values[3] * 100.0 / values[1];
+        double splitPassNanosPerOperation = measuredOperations == 0L
+                ? 0.0 : values[9] / (double) measuredOperations;
+        double splitPassNanosPerPass = splitPasses == 0L
+                ? 0.0 : values[9] / (double) splitPasses;
+        double rootAcquireNanosPerPass = splitPasses == 0L
+                ? 0.0 : values[13] / (double) splitPasses;
+        double rootSplitForNanosPerPass = splitPasses == 0L
+                ? 0.0 : values[14] / (double) splitPasses;
+        double finalCommitNanosPerPass = splitPasses == 0L
+                ? 0.0 : values[15] / (double) splitPasses;
+        StringBuilder row = new StringBuilder();
+        row.append(options.target().id()).append(',')
+                .append(spec.workload().name()).append(',')
+                .append(spec.clients()).append(',')
+                .append(spec.operationsPerTransaction()).append(',')
+                .append(config.rowCount()).append(',')
+                .append(measuredOperations);
+        for (long value : values) {
+            row.append(',').append(value);
+        }
+        row.append(',').append(format(splitPassesPerOperation))
+                .append(',').append(format(leafAlreadyHasSpacePercent))
+                .append(',').append(format(splitPassNanosPerOperation))
+                .append(',').append(format(splitPassNanosPerPass))
+                .append(',').append(format(rootAcquireNanosPerPass))
+                .append(',').append(format(rootSplitForNanosPerPass))
+                .append(',').append(format(finalCommitNanosPerPass))
                 .append('\n');
         Files.writeString(
                 output, row.toString(), StandardCharsets.UTF_8,

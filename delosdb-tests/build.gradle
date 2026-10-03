@@ -79,6 +79,8 @@ def heapPageReadImageDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java')
 def btreePointReadDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java')
+def btreeInsertStructuralDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/BTreeInsertStructuralDiagnosticTestSupport.java')
 def deadlockVictimLifecycleTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java')
 def lockEntryDiagnosticTestSupportSource = file(
@@ -370,6 +372,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/btree/BTreeInsertStructuralDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockWaitDiagnosticTestSupport.java'
@@ -414,6 +417,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(btreePointReadDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/btree'
+    }
+    from(btreeInsertStructuralDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/access/btree'
     }
     from(deadlockVictimLifecycleTestSupportSource) {
@@ -25301,6 +25307,113 @@ tasks.register('runDelosF08BTreeLeafLatchProof', JavaExec) {
                 'Existing lock diagnostics report lock-table entry mutex contention and logical waits by ContainerKey/RecordId/Other authority.\n' +
                 'derby-conglomerate-map identifies the heap and SQL PK index RawStore container IDs.\n' +
                 'Decision question: after page-latch attribution, does B-tree-specific RecordId key/gap locking explain the remaining 4->8 INSERT collapse?\n',
+                'UTF-8')
+    }
+}
+
+// F08 structural B-tree proof: after WAL copy, heap insert-page fan-out,
+// leaf-page latch, and RecordId lock waiting have been ruled out as the primary
+// 4->8-client PK INSERT collapse, measure Derby's separate internal split
+// transaction directly. The diagnostic is observational only and reuses the
+// strict F08 B-tree proof benchmark shape.
+tasks.register('runDelosF08BTreeSplitAuthorityProof', JavaExec) {
+    group = 'benchmark'
+    description = 'Attributes F08 PK INSERT_100 B-tree split/internal-transaction work at 1/2/4/8 clients.'
+    dependsOn tasks.named('compileTestJava'), tasks.named('compileRawStoreInternalTestSupport'), ':jars'
+
+    mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+    classpath = rootProject.files(
+            derbyTestsClassDir,
+            rawStoreInternalTestSupportClassDir,
+            derbyRuntimeJars)
+    args 'worker'
+    outputs.upToDateWhen { false }
+    outputs.dir(rootProject.layout.buildDirectory.dir(
+            'reports/delosdb/benchmarks/f08-btree-split-authority-proof'))
+
+    doFirst {
+        def saneValue = providers.gradleProperty('delosdb.sane')
+                .getOrElse('true').trim().toLowerCase(java.util.Locale.ROOT)
+        if (saneValue != 'false') {
+            throw new GradleException(
+                    'F08 B-tree split-authority proof requires a release build; rerun with -Pdelosdb.sane=false')
+        }
+
+        def reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/f08-btree-split-authority-proof').get().asFile
+        def databaseRoot = rootProject.layout.buildDirectory
+                .dir('tmp/delos-jdbc-f08-btree-split-authority-proof').get().asFile
+        project.delete(reportDir)
+        project.delete(databaseRoot)
+        reportDir.mkdirs()
+        databaseRoot.mkdirs()
+
+        systemProperties([
+                'delosdb.diagnostic.pageLatch': 'true',
+                'delosdb.diagnostic.btreeInsertStructural': 'true',
+                'derby.storage.logBufferSize': '1048576',
+                'derby.system.durability': 'test',
+                'delosdb.benchmark.crossEngineConcurrency.sane': saneValue,
+                'delosdb.benchmark.crossEngineConcurrency.target': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap',
+                'delosdb.benchmark.crossEngineConcurrency.run': '1',
+                'delosdb.benchmark.crossEngineConcurrency.projectDirectory':
+                        rootProject.projectDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.javaExecutable':
+                        new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses':
+                        derbyTestsClassDir.get().asFile.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.delosClasspath':
+                        rootProject.files(derbyRuntimeJars).asPath,
+                'delosdb.benchmark.crossEngineConcurrency.databaseRoot': databaseRoot.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportDir.absolutePath,
+                'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                'delosdb.benchmark.crossEngineConcurrency.clients': '1,2,4,8',
+                'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
+                'delosdb.benchmark.crossEngineConcurrency.insertTableShape': 'PRIMARY_KEY_ONLY',
+                'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2500',
+                'delosdb.benchmark.crossEngineConcurrency.fixedWorkloadOperationBudgetPerClient': '250000',
+                'delosdb.benchmark.crossEngineConcurrency.payload': '16',
+                'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.runs': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumWarmupSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumWarmupIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.minimumMeasuredSeconds': '0.0',
+                'delosdb.benchmark.crossEngineConcurrency.maximumMeasuredIterations': '1',
+                'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '900',
+                'delosdb.benchmark.crossEngineConcurrency.f08BTreeLeafLatchProof': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.pageLatchDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.heapAuthorityDiagnostics': 'true',
+                'delosdb.benchmark.crossEngineConcurrency.btreeInsertStructuralDiagnostics': 'true'
+        ])
+    }
+
+    doLast {
+        File reportDir = rootProject.layout.buildDirectory
+                .dir('reports/delosdb/benchmarks/f08-btree-split-authority-proof').get().asFile
+        [
+                'btree-insert-structural-diagnostics-delos_heap-run-1.csv',
+                'page-latch-diagnostics-delos_heap-run-1.csv',
+                'page-latch-contention-by-page-delos_heap-run-1.csv',
+                'page-latch-authority-by-page-delos_heap-run-1.csv',
+                'derby-conglomerate-map-delos_heap-run-1.csv'
+        ].each { String name ->
+            File evidence = new File(reportDir, name)
+            if (!evidence.isFile() || evidence.length() == 0L) {
+                throw new GradleException("F08 B-tree split-authority proof missing evidence: ${evidence}")
+            }
+        }
+        new File(reportDir, 'ARCHITECTURE-NOTES.txt').setText(
+                'F08 B-tree split/internal-transaction attribution proof\n' +
+                'Workload: embedded Delos Heap PRIMARY_KEY_ONLY INSERT_100; payload=16; clients=1,2,4,8.\n' +
+                'Controls: derby.storage.logBufferSize=1048576; derby.system.durability=test. NON-DURABLE diagnostic only.\n' +
+                'No B-tree or RawStore behavior experiment is enabled. Multi-insert-page, concurrent-WAL, routing snapshots, and page-validity controls remain OFF.\n' +
+                'Prior proof: RecordId previous-key/gap locking had zero logical waits and zero lock-entry mutex contention at eight clients.\n' +
+                'Structural counters measure split-pass frequency, already-has-space/no-op leaf passes, physical leaf/branch splits, split restarts, and internal-transaction phase time.\n' +
+                'Decision question: do concurrent right-edge inserts create a split herd or otherwise spend enough time in the separate root-to-leaf internal split transaction to explain the remaining 4->8 collapse?\n',
                 'UTF-8')
     }
 }

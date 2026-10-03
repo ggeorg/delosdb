@@ -249,12 +249,19 @@ public class BTreeController extends OpenBTree implements ConglomerateController
     int                     flag)
         throws StandardException
     {
+        BTreeInsertStructuralDiagnostics.increment(
+                BTreeInsertStructuralDiagnostics.SPLIT_PASS_CALLS);
+        long splitPassStarted = BTreeInsertStructuralDiagnostics.startTimer();
         TransactionManager split_xact       = null;
         OpenBTree          split_open_btree = null;
         ControlRow         root             = null;
 
         // Get an internal transaction to be used for the split.
+        long phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
         split_xact = this.init_open_user_scans.getInternalTransaction();
+        BTreeInsertStructuralDiagnostics.addElapsed(
+                BTreeInsertStructuralDiagnostics.INTERNAL_XACT_ACQUIRE_NANOS,
+                phaseStarted);
 
         // open the btree again so that actions on it take place in the
         // split_xact, don't get any locks in this transaction.
@@ -352,10 +359,13 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         long new_leaf_pageno = leaf_pageno;
         if (do_split)
         {
+            BTreeInsertStructuralDiagnostics.increment(
+                    BTreeInsertStructuralDiagnostics.ACTUAL_SPLIT_PASSES);
             // no space was reclaimed from deleted rows, so do split to allow
             // space for a subsequent insert.
 
             split_open_btree = new OpenBTree();
+            phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
             split_open_btree.init(
                 this.init_open_user_scans,
                 split_xact,
@@ -375,26 +385,51 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 this.getConglomerate(),
                 (LogicalUndo) null,
                 (DynamicCompiledOpenConglomInfo) null);
+            BTreeInsertStructuralDiagnostics.addElapsed(
+                    BTreeInsertStructuralDiagnostics.SPLIT_OPEN_INIT_NANOS,
+                    phaseStarted);
 
 
             // Get the root page back, and perform a split following the
             // to-be-inserted key.  The split releases the root page latch.
+            phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
             root = ControlRow.get(split_open_btree, BTree.ROOTPAGEID);
+            BTreeInsertStructuralDiagnostics.addElapsed(
+                    BTreeInsertStructuralDiagnostics.ROOT_ACQUIRE_NANOS,
+                    phaseStarted);
 
             if (SanityManager.DEBUG)
                 SanityManager.ASSERT(root.page.isLatched());
 
+            phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
             new_leaf_pageno =
                 root.splitFor(
                     split_open_btree, scratch_template,
                     null, rowToInsert, flag);
+            BTreeInsertStructuralDiagnostics.addElapsed(
+                    BTreeInsertStructuralDiagnostics.ROOT_SPLIT_FOR_NANOS,
+                    phaseStarted);
 
             split_open_btree.close();
         }
+        else
+        {
+            BTreeInsertStructuralDiagnostics.increment(
+                    BTreeInsertStructuralDiagnostics.RECLAIM_ONLY_PASSES);
+        }
 
+        phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
         split_xact.commit();
+        BTreeInsertStructuralDiagnostics.addElapsed(
+                BTreeInsertStructuralDiagnostics.FINAL_COMMIT_NANOS,
+                phaseStarted);
 
+        phaseStarted = BTreeInsertStructuralDiagnostics.startTimer();
         split_xact.destroy();
+        BTreeInsertStructuralDiagnostics.addElapsed(
+                BTreeInsertStructuralDiagnostics.FINAL_DESTROY_NANOS,
+                phaseStarted);
+        BTreeInsertStructuralDiagnostics.finishSplitPass(splitPassStarted);
 
         return(new_leaf_pageno);
     }
