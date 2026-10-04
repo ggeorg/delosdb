@@ -30,6 +30,17 @@ own inserted status records concurrently.
 Database identity allocation and metadata-control-row updates keep their existing container-level
 serialization. This change does not weaken those authorities.
 
+## Concurrent-commit qualification
+
+The focused qualification diagnostic begins only after a transaction has successfully staged its
+status row and ends when RawStore reports the commit complete. A maximum concurrent value greater
+than one therefore proves that multiple status-backed transactions passed status staging and
+remained in the RawStore commit pipeline at the same time. It does not measure throughput and it is
+not a replacement for the later F08 performance matrix.
+
+The diagnostic is disabled by default and exists only to prevent another expensive benchmark from
+running when its concurrency prerequisite has not actually been demonstrated.
+
 ## Transition into history
 
 A fresh CURRENT row may remain physically stamped with `UNCOMMITTED_SEQUENCE` after its creating

@@ -1,1 +1,8 @@
-ceb1aa03c5ed7a6bc22066875632b606e880f27c100e1fdee4edb66a524df33e  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java
+98996df9bf576aa90219ad39c9315c6955ab36e54e13b4c4fa923851f0efd39c  ./MANIFEST.txt
+319ba263d8c40f0ccc0f6dde5ca4d3ef8b98f00328cf5fb6c4a4733b1a558102  ./delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
+9d82bd644f4a3d399e3510ecee6b818f92283161afa4d9a4e30fe35f29e84f44  ./delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnostics.java
+5bffc392d9cf3ddd5d1206fe43366343bab6abf4797cd34b7313bfe9ed7206e4  ./delosdb-tests/build.gradle
+a3a8fdab3d0e187a3158fd664947159c9694f0843f29e45aac2c3f26fb69892d  ./delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusConcurrentCommitQualificationTest.java
+5154d0e554bc7e8e7e62f87b63c77600a6c10ccce28edf468c41de6939db9036  ./delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnosticTestSupport.java
+464b3ea60a8c69eb8c6e4038b25e60f3cbaf4733940465944492ad7624963295  ./docs/design/GEN2-TRANSACTION-STATUS-VISIBILITY.md
+681269fedd84da37a6a3f227c86e440ef146be9065bdbf2c6dfe1368e6c38dda  ./gradle/testing/delos-test-suite-registry.tsv

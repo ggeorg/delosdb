@@ -58,6 +58,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
     private boolean transactionStatusCommitStaged;
+    private boolean transactionStatusCommitDiagnosticEntered;
     private boolean vacuumMutation;
 
     MvccRawStoreTransactionContext(
@@ -482,6 +483,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             if (transactionStatusCommitStaged) {
                 runtime.transactionStatuses.stage(
                         rawTransaction, transactionId, reservedCommitSequence);
+                transactionStatusCommitDiagnosticEntered =
+                        MvccTransactionStatusCommitDiagnostics.enter();
             } else {
                 MvccRawStoreTable.stampPendingVersions(
                         rawTransaction,
@@ -501,6 +504,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
                         93);
             }
         } catch (StandardException | RuntimeException | Error failure) {
+            exitTransactionStatusCommitDiagnostic();
             runtime.unlockWithoutPublication();
             if (publicationLockHeld) {
                 reservedCommitSequence = 0L;
@@ -512,6 +516,10 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void afterCommit(CommitMode mode, DatabaseInstant instant) {
+        // RawStore commit has completed before this callback. End the diagnostic
+        // interval immediately so it measures post-status-staging commit overlap,
+        // not publication/cache work performed after durability.
+        exitTransactionStatusCommitDiagnostic();
         List<MvccRawStoreTable.PendingVersion> committedVersions =
                 committablePendingVersions();
         List<MvccRawStoreTable.Descriptor> committedCreates =
@@ -558,6 +566,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void commitFailed(CommitMode mode, Throwable failure) {
+        exitTransactionStatusCommitDiagnostic();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
         transactionStatusCommitStaged = false;
@@ -568,6 +577,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void beforeAbort() {
+        exitTransactionStatusCommitDiagnostic();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
         transactionStatusCommitStaged = false;
@@ -581,8 +591,17 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
 
     @Override
     public void abortFailed(Throwable failure) {
+        exitTransactionStatusCommitDiagnostic();
         runtime.unlockWithoutPublication();
         publicationLockHeld = false;
+    }
+
+    private void exitTransactionStatusCommitDiagnostic() {
+        if (!transactionStatusCommitDiagnosticEntered) {
+            return;
+        }
+        transactionStatusCommitDiagnosticEntered = false;
+        MvccTransactionStatusCommitDiagnostics.exit();
     }
 
     @Override

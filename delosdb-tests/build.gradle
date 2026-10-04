@@ -97,6 +97,8 @@ def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def mvccSnapshotLeaseDiagnosticTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java')
+def mvccTransactionStatusCommitDiagnosticTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnosticTestSupport.java')
 def mvccCurrentRowTopologyTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java')
 def mvccRowBearingBTreeMechanismTestSupportSource = file(
@@ -379,6 +381,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java'
+            exclude 'org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccCurrentRowTopologyTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java'
             destinationDirectory.set(derbyTestsClassDir)
@@ -441,6 +444,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     from(mvccSnapshotLeaseDiagnosticTestSupportSource) {
+        into 'org/apache/derby/impl/store/access/mvcc'
+    }
+    from(mvccTransactionStatusCommitDiagnosticTestSupportSource) {
         into 'org/apache/derby/impl/store/access/mvcc'
     }
     from(mvccCurrentRowTopologyTestSupportSource) {
@@ -1023,6 +1029,22 @@ tasks.named('runDelosF08TransactionStatusVisibilityControl') {
         project.delete(rootProject.layout.buildDirectory.dir(
                 'reports/delosdb/benchmarks/f08-transaction-status-visibility-control').get().asFile)
     }
+}
+
+registerDelosFocusedTest(
+        'runDelosF08TransactionStatusConcurrentCommitQualification',
+        'Qualifies that transaction-status commits overlap after status staging before any full F08 matrix.',
+        [
+                'org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusConcurrentCommitQualificationTest.class'
+        ],
+        [
+                'delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled': 'true',
+                'delosdb.diagnostic.mvccTransactionStatusCommit': 'true'
+        ])
+
+tasks.named('runDelosF08TransactionStatusConcurrentCommitQualification') {
+    dependsOn rootProject.tasks.named('verifyDelosRuntimeStorageProviders')
+    outputs.upToDateWhen { false }
 }
 
 tasks.named('runDelosMutationPhysicalAmplificationLedger') {
