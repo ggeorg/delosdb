@@ -1817,10 +1817,12 @@ final class MvccRawStoreTable {
             return false;
         }
         validateWriteVersion(rowLocation, current.versionId());
-        if (current.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+        long archivedBeginSequence = context.committedBeginSequence(
+                current.creatorTransactionId(), current.beginSequence());
+        if (archivedBeginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-C1 cannot archive an uncommitted current image");
+                    "MVCC Gen2-C1 cannot archive a current image whose commit status is unresolved");
         }
 
         StoreDataValue[] values = StoreValueCopySupport.replacementRow(
@@ -1828,7 +1830,8 @@ final class MvccRawStoreTable {
                 replacement,
                 validColumns);
         long newVersionId = context.reserveVersionIdentifier(table);
-        Object[] historyRow = gen2HistoryRow(transaction, table, current);
+        Object[] historyRow = gen2HistoryRow(
+                transaction, table, current, archivedBeginSequence);
         RecordHandle historyHandle = insertRow(
                 transaction, table.versionContainer(), historyRow);
         RecordHint historyHint = RecordHint.of(historyHandle);
@@ -1896,7 +1899,13 @@ final class MvccRawStoreTable {
     private static Object[] gen2HistoryRow(
             Transaction transaction,
             Descriptor table,
-            Gen2A1CurrentRecord current) throws StandardException {
+            Gen2A1CurrentRecord current,
+            long beginSequence) throws StandardException {
+        if (beginSequence <= MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            throw new IllegalArgumentException(
+                    "MVCC Gen2 history rows require a committed begin sequence: "
+                            + beginSequence);
+        }
         Object[] row = MvccRawStoreVersionRows.template(transaction, table, true);
         row[MvccRawStoreFormat.VERSION_KIND_FIELD] = MvccRawStoreFormat.intValue(
                 transaction,
@@ -1912,8 +1921,7 @@ final class MvccRawStoreTable {
                 MvccRawStoreFormat.longValue(
                         transaction, current.creatorTransactionId());
         row[MvccRawStoreFormat.VERSION_BEGIN_SEQUENCE] =
-                MvccRawStoreFormat.longValue(
-                        transaction, current.beginSequence());
+                MvccRawStoreFormat.longValue(transaction, beginSequence);
         row[MvccRawStoreFormat.VERSION_END_SEQUENCE] =
                 MvccRawStoreFormat.longValue(
                         transaction, MvccRawStoreFormat.CURRENT_END_SEQUENCE);
@@ -2116,14 +2124,17 @@ final class MvccRawStoreTable {
             return false;
         }
         validateWriteVersion(rowLocation, current.versionId());
-        if (current.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+        long archivedBeginSequence = context.committedBeginSequence(
+                current.creatorTransactionId(), current.beginSequence());
+        if (archivedBeginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             throw StandardException.newException(
                     SQLState.NOT_IMPLEMENTED,
-                    "MVCC Gen2-C1 cannot archive an uncommitted current image");
+                    "MVCC Gen2-C1 cannot archive a current image whose commit status is unresolved");
         }
 
         long newVersionId = context.reserveVersionIdentifier(table);
-        Object[] historyRow = gen2HistoryRow(transaction, table, current);
+        Object[] historyRow = gen2HistoryRow(
+                transaction, table, current, archivedBeginSequence);
         RecordHandle historyHandle = insertRow(
                 transaction, table.versionContainer(), historyRow);
         RecordHint historyHint = RecordHint.of(historyHandle);

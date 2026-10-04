@@ -273,9 +273,15 @@ final class MvccRawStoreDatabaseMetadata {
                     "RawStore MVCC committed transaction status requires positive IDs: tx="
                             + transactionId + ", commit=" + commitSequence);
         }
+        // Transaction-status rows are append-only and transaction IDs are unique.
+        // Keep their physical mutation in the parent RawStore transaction, but do
+        // not serialize every committing writer behind the database-metadata
+        // container's transaction-duration exclusive lock. Record-level RawStore
+        // locking is sufficient for independent status rows; page latches continue
+        // to protect the physical insert itself.
         ContainerHandle container = parent.openContainer(
                 requireContainerKey(),
-                lockingPolicy(parent),
+                MvccRawStorePhysicalLocking.rowLevel(parent),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw missingContainer();

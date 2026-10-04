@@ -441,6 +441,16 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return beginSequence > 0L && beginSequence <= snapshotSequence;
     }
 
+    long committedBeginSequence(long creatorTransactionId, long beginSequence) {
+        if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            return beginSequence;
+        }
+        if (creatorTransactionId <= 0L || creatorTransactionId == transactionId) {
+            return MvccRawStoreFormat.UNCOMMITTED_SEQUENCE;
+        }
+        return runtime.transactionStatuses.committedSequence(creatorTransactionId);
+    }
+
     @Override
     public void beforeCommit(CommitMode mode) throws StandardException {
         List<MvccRawStoreTable.PendingVersion> committableVersions =

@@ -25,6 +25,8 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             "delosdb.experimental.mvccGen2A1.enabled";
     private static final String B_PROPERTY =
             "delosdb.experimental.mvccGen2B.pk.enabled";
+    private static final String C1_PROPERTY =
+            "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String STATUS_PROPERTY =
             "delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled";
     private static final String FAILURE_POINT_PROPERTY =
@@ -99,6 +101,102 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             try (Connection reopened = openDatabase(database, false)) {
                 assertRows(reopened, "select payload from T where id = 42", "v42");
                 assertRows(reopened, "select count(*) from T", Integer.toString(INSERT_WIDTH));
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testStatusBackedBareCurrentCanEnterHistory() throws Exception {
+        String database = databaseName("f08-tx-status-c1-history");
+        try (SystemPropertyScope a1 = clearSystemProperty(A1_PROPERTY);
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope c1 = setSystemProperty(C1_PROPERTY, "true");
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true")) {
+            try (Connection setup = openDatabase(database, true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table T (id int not null, payload varchar(128) not null) "
+                                + "using delos_mvcc");
+                insertOne(setup, "T", 1, "one");
+                insertOne(setup, "T", 2, "two");
+                setup.commit();
+            }
+
+            try (Connection historical = openDatabase(database, false);
+                 Connection writer = openDatabase(database, false);
+                 Connection observer = openDatabase(database, false)) {
+                historical.setAutoCommit(false);
+                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                writer.setAutoCommit(false);
+                observer.setAutoCommit(false);
+
+                assertRows(historical, "select id, payload from T order by id",
+                        "1|one", "2|two");
+                assertEquals(1, executeUpdate(
+                        writer, "update T set payload = 'one-updated' where id = 1"));
+                assertEquals(1, executeUpdate(writer, "delete from T where id = 2"));
+                writer.commit();
+
+                assertRows(historical, "select id, payload from T order by id",
+                        "1|one", "2|two");
+                historical.commit();
+                assertRows(observer, "select id, payload from T order by id",
+                        "1|one-updated");
+                observer.commit();
+            }
+
+            shutdownDatabase(database);
+        } finally {
+            shutdownIfBooted(database);
+        }
+
+        // The UPDATE/DELETE transaction materializes the predecessor begin sequence
+        // into history, so the resulting table no longer needs transaction-status
+        // visibility for these rows after reopen.
+        try (SystemPropertyScope a1 = clearSystemProperty(A1_PROPERTY);
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope c1 = setSystemProperty(C1_PROPERTY, "true");
+             SystemPropertyScope status = clearSystemProperty(STATUS_PROPERTY)) {
+            try (Connection reopened = openDatabase(database, false)) {
+                assertRows(reopened, "select id, payload from T order by id",
+                        "1|one-updated");
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testStatusBackedPrimaryKeyCurrentCanEnterHistory() throws Exception {
+        String database = databaseName("f08-tx-status-c3-history");
+        try (SystemPropertyScope a1 = clearSystemProperty(A1_PROPERTY);
+             SystemPropertyScope b = setSystemProperty(B_PROPERTY, "true");
+             SystemPropertyScope c1 = setSystemProperty(C1_PROPERTY, "true");
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table T (id int not null primary key, "
+                                + "payload varchar(128) not null) using delos_mvcc");
+                insertOne(connection, "T", 1, "v1");
+                connection.commit();
+                assertEquals(1, executeUpdate(
+                        connection, "update T set payload = 'v2' where id = 1"));
+                connection.commit();
+                assertRows(connection, "select id, payload from T", "1|v2");
+                connection.commit();
+            }
+            shutdownDatabase(database);
+        } finally {
+            shutdownIfBooted(database);
+        }
+
+        try (SystemPropertyScope a1 = clearSystemProperty(A1_PROPERTY);
+             SystemPropertyScope b = setSystemProperty(B_PROPERTY, "true");
+             SystemPropertyScope c1 = setSystemProperty(C1_PROPERTY, "true");
+             SystemPropertyScope status = clearSystemProperty(STATUS_PROPERTY)) {
+            try (Connection reopened = openDatabase(database, false)) {
+                assertRows(reopened, "select id, payload from T", "1|v2");
             }
         } finally {
             shutdownIfBooted(database);
