@@ -240,10 +240,6 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	public static final String DUMP_LOG_FROM_LOG_FILE = 
 		SanityManager.DEBUG ? "derby.storage.logDumpStart" : null;
 	protected static final String LOG_SYNC_STATISTICS = "LogSyncStatistics";
-	private static final boolean PREFRAMED_LOG_APPEND = Boolean.getBoolean(
-			"delosdb.experimental.rawStorePreframedLogAppend.enabled");
-	private static final boolean COMBINED_LOG_APPEND = Boolean.getBoolean(
-			"delosdb.experimental.rawStoreCombinedLogAppend.enabled");
 
 	// If you change this number, then JBMS 1.1x and 1.2x will give a really
 	// horrendous error message when booting against a db created by you.  When
@@ -494,8 +490,6 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	private boolean onDiskBeta;
 	
 	private CRC32 checksum = new CRC32(); // holder for the checksum
-	private final CombinedLogAppendQueue combinedLogAppendQueue =
-			new CombinedLogAppendQueue();
 
  	
 	/**
@@ -632,14 +626,6 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			return null;
 		else
 			return new FileLogger(this);
-	}
-
-	boolean preframedLogAppendEnabled() {
-		return PREFRAMED_LOG_APPEND;
-	}
-
-	boolean combinedLogAppendEnabled() {
-		return COMBINED_LOG_APPEND;
 	}
 
 	/**
@@ -3776,65 +3762,7 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 
 	*/
 	public long appendLogRecord(byte[] data, int offset, int length,
-			byte[] optionalData, int optionalDataOffset, int optionalDataLength)
-		 throws StandardException
-	{
-		return appendLogRecordInternal(
-				data, offset, length, optionalData, optionalDataOffset,
-				optionalDataLength, null, 0);
-	}
-
-	long appendPreparedLogRecord(
-			byte[] preparedFrame, int preparedFrameLength, int logicalLength)
-		 throws StandardException
-	{
-		return appendLogRecordInternal(
-				null, 0, logicalLength, null, 0, 0, preparedFrame,
-				preparedFrameLength);
-	}
-
-	long appendCombinedPreparedLogRecord(
-			CombinedLogAppendRequest request, byte[] preparedFrame,
-			int preparedFrameLength, int logicalLength) throws StandardException
-	{
-		request.prepare(preparedFrame, preparedFrameLength, logicalLength);
-		if (combinedLogAppendQueue.enqueue(request)) {
-			drainCombinedLogAppends();
-		}
-		return request.awaitCompletion();
-	}
-
-	private void drainCombinedLogAppends()
-	{
-		CombinedLogAppendRequest request;
-		while ((request = combinedLogAppendQueue.takeBatchOrDeactivate()) != null) {
-			drainCombinedLogAppendBatch(request);
-		}
-	}
-
-	private void drainCombinedLogAppendBatch(CombinedLogAppendRequest request)
-	{
-		synchronized (this) {
-			while (request != null) {
-				CombinedLogAppendRequest next = request.next;
-				request.next = null;
-				try {
-					long instant = appendPreparedLogRecord(
-							request.frame(), request.frameLength(),
-							request.logicalLength());
-					request.complete(instant);
-				} catch (StandardException exception) {
-					request.fail(exception);
-				}
-				request = next;
-			}
-		}
-	}
-
-	private long appendLogRecordInternal(
-			byte[] data, int offset, int length, byte[] optionalData,
-			int optionalDataOffset, int optionalDataLength, byte[] preparedFrame,
-			int preparedFrameLength)
+			byte[] optionalData, int optionalDataOffset, int optionalDataLength) 
 		 throws StandardException
 	{
         if (inReplicationSlavePreMode) {
@@ -3943,16 +3871,11 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 				instant = 
                     LogCounter.makeLogInstantAsLong(logFileNumber, endPosition);
 
-                if (preparedFrame == null) {
-                    logOut.writeLogRecord(
-                            length, instant, data, offset, optionalData,
-                            optionalDataOffset, optionalDataLength);
-                } else {
-                    logOut.writePreparedLogRecord(
-                            length, instant, preparedFrame, preparedFrameLength);
-                }
+                logOut.writeLogRecord(
+                    length, instant, data, offset, 
+                    optionalData, optionalDataOffset, optionalDataLength);
 
-				if (preparedFrame == null && optionalDataLength != 0)
+				if (optionalDataLength != 0) 
                 {
 					if (SanityManager.DEBUG)
 					{

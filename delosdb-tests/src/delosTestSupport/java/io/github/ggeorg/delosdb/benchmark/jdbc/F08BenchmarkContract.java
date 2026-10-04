@@ -119,11 +119,9 @@ final class F08BenchmarkContract {
                         + "PRIMARY_KEY_ONLY INSERT_100, payload=16, and one client count from 1,2,4,8");
         require(PROFILE_TARGETS.equals(context.profileServerTargets()),
                 "F08 transaction-status attribution requires server profiling for " + PROFILE_TARGETS);
-        require(!controls.preframedLogAppendServer()
-                        && !controls.combinedLogAppendServer()
-                        && !controls.rootRoutingSnapshotServer()
+        require(!controls.rootRoutingSnapshotServer()
                         && !controls.branchRoutingSnapshotServer(),
-                "F08 contention-scaling slice cannot combine with routing or WAL-append experiments");
+                "F08 contention-scaling slice cannot combine with routing experiments");
     }
 
     private static void validateCommonTransactionStatus(Context context) {
@@ -157,23 +155,12 @@ final class F08BenchmarkContract {
     }
 
     private static void requireMutuallyCompatibleExperiments(Controls controls) {
-        require(!(controls.preframedLogAppendServer() && controls.combinedLogAppendServer()),
-                "F08 preframed and combined WAL append experiments are mutually exclusive");
         require(!controls.branchRoutingSnapshotServer() || controls.rootRoutingSnapshotServer(),
                 "F08 branch-routing snapshot requires root-routing snapshot");
-        boolean walAppendExperiment = controls.preframedLogAppendServer()
-                || controls.combinedLogAppendServer();
-        boolean pageOrRoutingExperiment = controls.pageValiditySnapshotServer()
-                || controls.rootRoutingSnapshotServer()
-                || controls.branchRoutingSnapshotServer();
-        require(!(walAppendExperiment && pageOrRoutingExperiment),
-                "F08 WAL-append experiments cannot combine with page-validity or B-tree routing experiments");
     }
 
     private static void requireNoSharedAuthorityExperiment(Controls controls, String message) {
         require(!controls.pageValiditySnapshotServer()
-                        && !controls.preframedLogAppendServer()
-                        && !controls.combinedLogAppendServer()
                         && !controls.rootRoutingSnapshotServer()
                         && !controls.branchRoutingSnapshotServer(),
                 message);
@@ -236,10 +223,6 @@ final class F08BenchmarkContract {
             boolean mvccTransactionStatusVisibilityServer,
             boolean multiRowInsertControl,
             boolean pageValiditySnapshotServer,
-            boolean preframedLogAppendServer,
-            boolean combinedLogAppendServer,
-            String logBufferSizeOverride,
-            boolean durabilityTestNoSyncServer,
             boolean rootRoutingSnapshotServer,
             boolean branchRoutingSnapshotServer) {
 
@@ -249,8 +232,6 @@ final class F08BenchmarkContract {
                     || contentionScalingSlice
                     || multiRowInsertControl
                     || pageValiditySnapshotServer
-                    || preframedLogAppendServer
-                    || combinedLogAppendServer
                     || rootRoutingSnapshotServer
                     || branchRoutingSnapshotServer;
         }

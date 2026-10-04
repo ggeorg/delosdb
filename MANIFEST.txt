@@ -1,29 +1,40 @@
-DelosDB F08 benchmark-contract ownership r2
+DelosDB F08 WAL experiment consolidation r1
 
 Purpose
-- Centralize configuration rules for surviving F08 INSERT benchmark modes.
-- Require an explicit benchmark contract for F08-specific controls.
-- Run a cheap behavioral contract preflight before expensive F08 matrices.
-- Preserve experiment-specific runtime evidence checks with their owning tasks.
+-------
+Remove the rejected F08-T preframed WAL append and F08-U flat-combined WAL append experiments after their causal results were rejected as primary performance architecture.
 
-Contracts
-- f08-transaction-status
-- f08-multi-row-insert
-- f08-fixed-cost-scaling
-- f08-contention-slice
+Modified repository files
+-------------------------
+delosdb-storage-derby/build.gradle
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogAccessFile.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
+delosdb-tests/build.gradle
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
+delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContract.java
 
-Changed files
-- delosdb-tests/build.gradle
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
-- delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContract.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.java
-- gradle/testing/delos-test-suite-registry.tsv
+Files removed by CLEANUP.sh
+---------------------------
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/PreparedLogRecordFrame.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueue.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendRequest.java
+delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/PreparedLogRecordFrameTest.java
+delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueueTest.java
 
-Verification performed in the build environment available to the assistant
-- javac compile of F08BenchmarkContract plus DelosJdbcCrossEngineConcurrency and required source dependencies: PASS (JDK 21)
-- F08BenchmarkContractTest: 6/6 PASS (JUnit)
-- trailing-whitespace check on changed files: PASS
-- production source changes: NONE
+Preserved intentionally
+-----------------------
+RawStore page-validity snapshot experiment and test
+B-tree root/branch routing experiments
+F08 transaction-status, multi-row, fixed-cost, and contention benchmark contracts
+Inherited RawStore WAL format/order/checksum/flush/recovery behavior
 
-Not run here
-- JDK 25 Gradle suite and repository static gates; run the commands supplied in the handoff response.
+Verification performed
+----------------------
+- Restored FileLogger, LogAccessFile, and LogToFile exactly to pre-F08-T source revision f76e05c6.
+- Confirmed no preframed/combined WAL identifiers remain in storage or benchmark sources.
+- Confirmed page-validity and B-tree routing controls remain.
+- Compiled DelosJdbcCrossEngineConcurrency and F08BenchmarkContract with source-path dependencies on JDK 21.
+- Exercised six F08 contract validation scenarios successfully.
+- Ran DelosRepositoryIntegrityAudit: parseErrors=0, compilerAuthorityViolations=0, production baselines remain 43/953/442/168/136/410 for duplicate groups/duplicate lines/long methods/complex methods/large classes/generic catches.
+- Full JDK 25 Gradle gates remain user-side authoritative verification.
