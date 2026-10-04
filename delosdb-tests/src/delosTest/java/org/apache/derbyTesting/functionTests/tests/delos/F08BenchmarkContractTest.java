@@ -85,7 +85,7 @@ public final class F08BenchmarkContractTest extends TestCase {
         set("f08MultiRowInsertControl", "true");
         validate();
 
-        set("rawStorePageValiditySnapshotServer", "true");
+        set("btreeInsertRootRoutingSnapshotServer", "true");
         rejected("cannot combine with another F08 storage experiment");
     }
 

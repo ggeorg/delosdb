@@ -849,19 +849,6 @@ public class AllocPage extends StoredPage
 	}
 
 
-	private void beginAllocationPageValidityMutation()
-	{
-		if (owner.container instanceof FileContainer)
-			((FileContainer) owner.container).beginAllocationPageValidityMutation();
-	}
-
-	private void endAllocationPageValidityMutation()
-	{
-		if (owner.container instanceof FileContainer)
-			((FileContainer) owner.container).endAllocationPageValidityMutation();
-	}
-
-
 	/**
 		Do the actual page allocation/deallocation/ree underneath a log operation.
 		Change the page status to new status
@@ -876,25 +863,18 @@ public class AllocPage extends StoredPage
 		}
 
 		logAction(instant);
-		beginAllocationPageValidityMutation();
-		try
+
+		switch(newStatus)
 		{
-			switch(newStatus)
-			{
-			case AllocExtent.ALLOCATED_PAGE:
-				extent.allocPage(pageNumber);
-				break;
-			case AllocExtent.DEALLOCATED_PAGE:
-				extent.deallocPage(pageNumber);
-				break;
-			case AllocExtent.FREE_PAGE:
-				extent.deallocPage(pageNumber);
-				break;
-			}
-		}
-		finally
-		{
-			endAllocationPageValidityMutation();
+		case AllocExtent.ALLOCATED_PAGE:
+			extent.allocPage(pageNumber);
+			break;
+		case AllocExtent.DEALLOCATED_PAGE:
+			extent.deallocPage(pageNumber);
+			break;
+		case AllocExtent.FREE_PAGE:
+			extent.deallocPage(pageNumber);
+			break;
 		}
 	}
 
@@ -912,16 +892,9 @@ public class AllocPage extends StoredPage
 			SanityManager.ASSERT(isLatched(), "page is not latched");
 
 		logAction(instant);
-		beginAllocationPageValidityMutation();
-		try
-		{
-			nextAllocPageNumber = newAllocPageNum;
-			nextAllocPageOffset = newAllocPageOffset;
-		}
-		finally
-		{
-			endAllocationPageValidityMutation();
-		}
+
+		nextAllocPageNumber = newAllocPageNum;
+		nextAllocPageOffset = newAllocPageOffset;
 	}
 
     /**
@@ -964,15 +937,8 @@ public class AllocPage extends StoredPage
         }
 
 		logAction(instant);
-		beginAllocationPageValidityMutation();
-		try
-		{
-			extent.compressPages(new_highest_page, num_pages_truncated);
-		}
-		finally
-		{
-			endAllocationPageValidityMutation();
-		}
+
+        extent.compressPages(new_highest_page, num_pages_truncated);
 	}
 
     /**
@@ -985,15 +951,8 @@ public class AllocPage extends StoredPage
 		throws StandardException
     {
 		logAction(instant);
-		beginAllocationPageValidityMutation();
-		try
-		{
-			extent.undoCompressPages(new_highest_page, num_pages_truncated);
-		}
-		finally
-		{
-			endAllocationPageValidityMutation();
-		}
+
+        extent.undoCompressPages(new_highest_page, num_pages_truncated);
 
     }
 

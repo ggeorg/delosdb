@@ -107,17 +107,3 @@ tasks.register('runAccessMethodTransactionLifecycleTest', JavaExec) {
 tasks.named('check') {
     dependsOn tasks.named('runAccessMethodTransactionLifecycleTest')
 }
-
-tasks.register('runAllocationPageValiditySnapshotTest', JavaExec) {
-    group = 'verification'
-    description = 'Runs immutable RawStore allocation page-validity snapshot semantics.'
-    dependsOn tasks.named('testClasses')
-    classpath = sourceSets.test.runtimeClasspath
-    mainClass = 'org.apache.derby.impl.store.raw.data.AllocationPageValiditySnapshotTest'
-}
-
-tasks.named('check') {
-    dependsOn tasks.named('runAllocationPageValiditySnapshotTest')
-}
-
-

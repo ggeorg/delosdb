@@ -1,40 +1,51 @@
-DelosDB F08 WAL experiment consolidation r1
+DelosDB F08 page-validity experiment consolidation r1
 
 Purpose
 -------
-Remove the rejected F08-T preframed WAL append and F08-U flat-combined WAL append experiments after their causal results were rejected as primary performance architecture.
+Remove the default-OFF RawStore allocation page-validity snapshot experiment after canonical F08-S validation showed that its large diagnostic contention reduction did not translate into a material canonical product win.
+
+Classification
+--------------
+REMOVE:
+- RawStore page-validity snapshot production experiment
+- snapshot-specific unit test and Gradle task
+- F08-R/F08-S benchmark tasks and harness plumbing
+
+KEEP-DIAGNOSTIC (unchanged, default OFF):
+- B-tree INSERT root-routing snapshot
+- B-tree INSERT branch-routing snapshot
+
+The routing snapshots remain diagnostic rather than promoted because they produced a real secondary (~10%-class normalized) INSERT routing improvement, but they do not yet have standalone canonical promotion evidence.
 
 Modified repository files
 -------------------------
 delosdb-storage-derby/build.gradle
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogAccessFile.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocPage.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocationCache.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseContainerHandle.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java
 delosdb-tests/build.gradle
 delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/DelosJdbcCrossEngineConcurrency.java
 delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContract.java
+delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.java
 
 Files removed by CLEANUP.sh
 ---------------------------
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/PreparedLogRecordFrame.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueue.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendRequest.java
-delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/PreparedLogRecordFrameTest.java
-delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/log/CombinedLogAppendQueueTest.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocationPageValiditySnapshot.java
+delosdb-storage-derby/src/test/java/org/apache/derby/impl/store/raw/data/AllocationPageValiditySnapshotTest.java
 
 Preserved intentionally
 -----------------------
-RawStore page-validity snapshot experiment and test
-B-tree root/branch routing experiments
-F08 transaction-status, multi-row, fixed-cost, and contention benchmark contracts
-Inherited RawStore WAL format/order/checksum/flush/recovery behavior
+- authoritative RawStore AllocationCache/pageValid behavior
+- B-tree root/branch routing snapshot diagnostics
+- transaction-status, multi-row, fixed-cost, and contention F08 benchmark contracts
+- RawStore WAL/checkpoint/recovery behavior
 
 Verification performed
 ----------------------
-- Restored FileLogger, LogAccessFile, and LogToFile exactly to pre-F08-T source revision f76e05c6.
-- Confirmed no preframed/combined WAL identifiers remain in storage or benchmark sources.
-- Confirmed page-validity and B-tree routing controls remain.
-- Compiled DelosJdbcCrossEngineConcurrency and F08BenchmarkContract with source-path dependencies on JDK 21.
-- Exercised six F08 contract validation scenarios successfully.
-- Ran DelosRepositoryIntegrityAudit: parseErrors=0, compilerAuthorityViolations=0, production baselines remain 43/953/442/168/136/410 for duplicate groups/duplicate lines/long methods/complex methods/large classes/generic catches.
-- Full JDK 25 Gradle gates remain user-side authoritative verification.
+- Restored AllocPage, AllocationCache, BaseContainerHandle, and FileContainer exactly to pre-page-validity source revision f76e05c6.
+- Confirmed zero page-validity snapshot source/harness references remain.
+- Confirmed B-tree INSERT root/branch routing controls remain.
+- Compiled DelosJdbcCrossEngineConcurrency with source-path dependencies on JDK 21.
+- Ran DelosRepositoryIntegrityAudit: parseErrors=0, compilerAuthorityViolations=0; production baselines remain 43/953/442/168/136/410 for duplicate groups/duplicate lines/long methods/complex methods/large classes/generic catches.
+- Full JDK 25 Gradle verification remains user-side authoritative.

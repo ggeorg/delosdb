@@ -160,8 +160,7 @@ final class F08BenchmarkContract {
     }
 
     private static void requireNoSharedAuthorityExperiment(Controls controls, String message) {
-        require(!controls.pageValiditySnapshotServer()
-                        && !controls.rootRoutingSnapshotServer()
+        require(!controls.rootRoutingSnapshotServer()
                         && !controls.branchRoutingSnapshotServer(),
                 message);
     }
@@ -222,7 +221,6 @@ final class F08BenchmarkContract {
             boolean mvccGen2BServer,
             boolean mvccTransactionStatusVisibilityServer,
             boolean multiRowInsertControl,
-            boolean pageValiditySnapshotServer,
             boolean rootRoutingSnapshotServer,
             boolean branchRoutingSnapshotServer) {
 
@@ -231,7 +229,6 @@ final class F08BenchmarkContract {
                     || fixedCostClientScaling
                     || contentionScalingSlice
                     || multiRowInsertControl
-                    || pageValiditySnapshotServer
                     || rootRoutingSnapshotServer
                     || branchRoutingSnapshotServer;
         }
