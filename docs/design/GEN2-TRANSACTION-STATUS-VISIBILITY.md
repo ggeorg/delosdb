@@ -51,13 +51,37 @@ the history row. The new CURRENT mutation then follows the existing commit-stamp
 This makes the archived predecessor self-contained. After such a mutation and reopen, visibility of
 that predecessor/current chain does not depend on enabling transaction-status visibility.
 
-## Deferred lifecycle work
+## Lifecycle materialization
 
-This increment does not yet retire durable status rows or bound the in-memory committed-status map.
-A status may still be needed by any untouched CURRENT row created by that transaction. Promotion
-therefore still requires a lifecycle design which can prove when no persistent row references a
-transaction status, then compact or retire that status without violating old snapshots, recovery,
-or table maintenance.
+RawStore MVCC maintenance now owns the first monotonic lifecycle transition for Gen2 inline
+CURRENT rows. While holding the existing table logical exclusion and maintenance boundary, it scans
+CURRENT records whose begin sequence is still `UNCOMMITTED_SEQUENCE`, resolves the creator through
+the durable transaction-status state, and writes the positive commit sequence directly into the
+CURRENT header in the same RawStore maintenance transaction.
+
+The ordering is deliberately one-way:
+
+1. durable transaction status already exists;
+2. maintenance materializes the commit sequence into CURRENT;
+3. RawStore commits that CURRENT rewrite;
+4. only a later reclamation phase may consider retiring the durable status.
+
+A crash or abort before step 3 leaves the original status-backed CURRENT row intact. A committed
+materialization makes that row self-contained and therefore readable after reopen even when
+transaction-status visibility is disabled. Gen1 directory/version vacuum remains unchanged; Gen2
+inline CURRENT materialization uses a separate narrow path rather than forcing inline rows through
+the legacy chain planner.
+
+## Deferred reclamation and cache work
+
+This increment still does not delete durable status rows or bound the in-memory committed-status
+map. A transaction can create CURRENT rows in more than one table, so completing maintenance for
+one table is not database-wide proof that the status is unreachable. Durable deletion therefore
+remains forbidden until a database-wide reachability/horizon proof exists.
+
+Cache eviction is also deferred and remains separate from durable reclamation. The durable status
+store is the correctness authority; future cache work must distinguish an uncached committed status
+from an absent/uncommitted transaction rather than treating a cache miss as a visibility result.
 
 A dedicated status container is also deferred. If the remaining periodic interaction with the
 shared database-metadata allocator proves material, status storage can be separated without

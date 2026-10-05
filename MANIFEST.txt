@@ -1,25 +1,28 @@
-DelosDB Gen2 transaction-status concurrent-commit qualification r1
+DelosDB Gen2 transaction-status CURRENT materialization r2 wiring fix
+Prerequisite: delosdb-gen2-transaction-status-current-materialization-r1-overlay.zip
 
-Purpose:
-- Qualify the concurrency prerequisite created by transaction-status hardening before any full F08 matrix.
-- Measure overlap only after each transaction has successfully staged its durable status row.
-- Require at least two status-backed commits to remain in the RawStore commit pipeline concurrently.
+Purpose
+-------
+Make the r1 Gen2 CURRENT materializer reachable from the existing database-owned
+MVCC maintenance service.
 
-Production behavior:
-- No locking, WAL, recovery, status-persistence, visibility, or publication semantics change.
-- Diagnostic counters are disabled unless delosdb.diagnostic.mvccTransactionStatusCommit=true.
-- Counters begin after status staging and end when RawStore invokes afterCommit/commit failure/abort cleanup.
+Changed files
+-------------
+delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
 
-Verification added:
-- Eight independent PRIMARY KEY INSERT_100 transactions prepare before one commit barrier.
-- Qualification requires entered=8, completed=8, active=0, and maxConcurrent>=2.
-- Final row count verifies all 800 inserted rows committed.
+Root cause
+----------
+The pre-r1 runtime intentionally excluded Gen2 tables from maintenance ownership:
+registerTable() returned immediately after tracking a Gen2 table, and afterUserCommit()
+filtered committed versions to Gen1 only. r1 taught the maintenance service how to
+materialize Gen2 CURRENT rows but did not remove those old routing exclusions, so no
+Gen2 maintenance target was ever registered or commit-triggered.
 
-Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnostics.java
-- delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnosticTestSupport.java
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusConcurrentCommitQualificationTest.java
-- delosdb-tests/build.gradle
-- gradle/testing/delos-test-suite-registry.tsv
-- docs/design/GEN2-TRANSACTION-STATUS-VISIBILITY.md
+Invariants
+----------
+- Gen2 table identity tracking for transaction-id block reservation is preserved.
+- All MVCC tables are now registered with the existing maintenance service.
+- All committed MVCC versions are forwarded to maintenance; the service selects the
+  Gen1 vacuum or Gen2 materialization algorithm from the table descriptor.
+- No visibility, WAL, recovery, status persistence, or reclamation semantics change.
+- No test assertion or threshold is weakened.

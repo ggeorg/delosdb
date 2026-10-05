@@ -192,7 +192,6 @@ final class MvccRawStoreRuntime {
     void registerTable(MvccRawStoreTable.Descriptor table) {
         if (table.gen2A1()) {
             gen2A1Tables.add(table.metadataContainer());
-            return;
         }
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
@@ -212,10 +211,7 @@ final class MvccRawStoreRuntime {
     void afterUserCommit(List<MvccRawStoreTable.PendingVersion> committed) {
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
-            List<MvccRawStoreTable.PendingVersion> gen1 = committed.stream()
-                    .filter(version -> !version.table().gen2A1())
-                    .toList();
-            maintenance.afterCommit(gen1);
+            maintenance.afterCommit(committed);
         }
     }
 

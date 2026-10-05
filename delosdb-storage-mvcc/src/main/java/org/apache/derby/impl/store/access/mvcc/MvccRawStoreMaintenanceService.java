@@ -428,7 +428,7 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
         Transaction transaction = null;
         boolean transactionIdle = false;
         ContainerKey replacement = null;
-        MvccRawStoreVacuum.Result result = null;
+        MaintenanceResult result = null;
         long horizon = 0L;
         try {
             MvccRawStoreTable.Descriptor table = target.descriptor();
@@ -450,17 +450,25 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             try (MvccRawStoreRuntime.TableMaintenanceBoundary ignored =
                          runtime.enterVacuum(table)) {
                 horizon = runtime.vacuumHorizon();
-                result = MvccRawStoreVacuum.vacuum(transaction, table, horizon);
-                if (result.requiresOrderedIndexReplacement()) {
-                    replacement = MvccRawStoreOrderedIndexGeneration.createPrivateGeneration(
-                            transactionManager, table);
-                    MvccRawStoreTable.rebuildOrderedIndexForMaintenance(
-                            transactionManager, table, replacement);
-                    ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
-                            transaction, table, replacement);
-                    if (replaced != null) {
-                        MvccRawStoreOrderedIndexGeneration.dropGeneration(
-                                transactionManager, table, replaced);
+                if (table.gen2A1()) {
+                    result = MaintenanceResult.from(
+                            MvccRawStoreTransactionStatusMaterializer.materialize(
+                                    transaction, table, runtime.transactionStatuses));
+                } else {
+                    MvccRawStoreVacuum.Result vacuum =
+                            MvccRawStoreVacuum.vacuum(transaction, table, horizon);
+                    result = MaintenanceResult.from(vacuum);
+                    if (result.requiresOrderedIndexReplacement()) {
+                        replacement = MvccRawStoreOrderedIndexGeneration.createPrivateGeneration(
+                                transactionManager, table);
+                        MvccRawStoreTable.rebuildOrderedIndexForMaintenance(
+                                transactionManager, table, replacement);
+                        ContainerKey replaced = MvccRawStoreTableMetadata.publishOrderedIndexContainer(
+                                transaction, table, replacement);
+                        if (replaced != null) {
+                            MvccRawStoreOrderedIndexGeneration.dropGeneration(
+                                    transactionManager, table, replaced);
+                        }
                     }
                 }
                 transactionManager.commit();
@@ -495,6 +503,48 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             }
             activeWorkerCount.decrementAndGet();
             target.finishRun();
+        }
+    }
+
+    private record MaintenanceResult(
+            boolean mutated,
+            boolean requiresOrderedIndexReplacement,
+            int removedVersions,
+            int removedLogicalRows,
+            int remainingVersions,
+            int remainingLogicalRows,
+            boolean retryRequired,
+            String mutatedDecision,
+            String idleDecision) {
+        static MaintenanceResult from(MvccRawStoreVacuum.Result result) {
+            boolean retry = result.remainingVersions() > result.remainingLogicalRows();
+            return new MaintenanceResult(
+                    result.mutated(),
+                    result.requiresOrderedIndexReplacement(),
+                    result.removedVersions(),
+                    result.removedLogicalRows(),
+                    result.remainingVersions(),
+                    result.remainingLogicalRows(),
+                    retry,
+                    retry ? "vacuumed-retained-history-remains" : "vacuumed",
+                    retry ? "retained-snapshot-protects-history" : "no-reclaimable-history");
+        }
+
+        static MaintenanceResult from(MvccRawStoreTransactionStatusMaterializer.Result result) {
+            return new MaintenanceResult(
+                    result.mutated(),
+                    false,
+                    0,
+                    0,
+                    result.remainingVersions(),
+                    result.remainingLogicalRows(),
+                    result.retryRequired(),
+                    result.retryRequired()
+                            ? "materialized-status-current-unresolved-remains"
+                            : "materialized-status-current",
+                    result.retryRequired()
+                            ? "status-current-awaits-durable-status"
+                            : "no-status-backed-current");
         }
     }
 
@@ -676,7 +726,7 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
         synchronized void completeSuccess(
                 Trigger trigger,
                 long horizon,
-                MvccRawStoreVacuum.Result result) {
+                MaintenanceResult result) {
             lastTrigger = trigger.name();
             lastVacuumHorizon = horizon;
             lastCompletedAtEpochMillis = System.currentTimeMillis();
@@ -685,16 +735,12 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             remainingVersions = result.remainingVersions();
             remainingLogicalRows = result.remainingLogicalRows();
             committedChangesSinceLastRun = 0L;
-            retryRequired = remainingVersions > remainingLogicalRows;
+            retryRequired = result.retryRequired();
             if (result.mutated()) {
-                lastDecision = retryRequired
-                        ? "vacuumed-retained-history-remains"
-                        : "vacuumed";
+                lastDecision = result.mutatedDecision();
             } else {
                 skipCount++;
-                lastDecision = retryRequired
-                        ? "retained-snapshot-protects-history"
-                        : "no-reclaimable-history";
+                lastDecision = result.idleDecision();
             }
         }
 

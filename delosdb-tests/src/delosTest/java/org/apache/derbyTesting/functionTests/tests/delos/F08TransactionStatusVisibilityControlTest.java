@@ -19,6 +19,8 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+
 /** Semantic and recovery proof for the F08-F durable transaction-status visibility control. */
 public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTestSupport {
     private static final String A1_PROPERTY =
@@ -31,6 +33,12 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             "delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
+    private static final String MAINTENANCE_ENABLED_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.enabled";
+    private static final String MAINTENANCE_PERIOD_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.periodMillis";
+    private static final String MAINTENANCE_THRESHOLD_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold";
     private static final int INSERT_WIDTH = 100;
 
     public void testBareStatusVisibilityHonorsSnapshotRollbackAndReopen() throws Exception {
@@ -203,6 +211,50 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
         }
     }
 
+    public void testMaintenanceMaterializesUntouchedCurrentForStatusIndependentReopen()
+            throws Exception {
+        String database = databaseName("f08-tx-status-maintenance-materialization");
+        try (SystemPropertyScope a1 = setSystemProperty(A1_PROPERTY, "true");
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true");
+             SystemPropertyScope maintenance = setSystemProperty(
+                     MAINTENANCE_ENABLED_PROPERTY, "true");
+             SystemPropertyScope period = setSystemProperty(
+                     MAINTENANCE_PERIOD_PROPERTY, "25");
+             SystemPropertyScope threshold = setSystemProperty(
+                     MAINTENANCE_THRESHOLD_PROPERTY, "1")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table T (id int not null, payload varchar(128) not null) "
+                                + "using delos_mvcc");
+                insertBatch(connection, "T", 1, INSERT_WIDTH);
+                connection.commit();
+                waitUntil("maintenance did not materialize status-backed CURRENT rows", () ->
+                        DelosStorageDiagnosticsRegistry.mvccDatabaseMaintenanceSnapshot(
+                                databasePath(database)).mutatedRunCount() > 0L);
+                assertRows(connection, "select count(*) from T", Integer.toString(INSERT_WIDTH));
+                connection.commit();
+            }
+            shutdownDatabase(database);
+        } finally {
+            shutdownIfBooted(database);
+        }
+
+        try (SystemPropertyScope a1 = setSystemProperty(A1_PROPERTY, "true");
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope status = clearSystemProperty(STATUS_PROPERTY);
+             SystemPropertyScope maintenance = setSystemProperty(
+                     MAINTENANCE_ENABLED_PROPERTY, "false")) {
+            try (Connection reopened = openDatabase(database, false)) {
+                assertRows(reopened, "select count(*) from T", Integer.toString(INSERT_WIDTH));
+                assertRows(reopened, "select payload from T where id = 42", "v42");
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
     public void testCrashBeforeRawCommitRollsBackStatusAndRows() throws Exception {
         runCrashProof("after-stamp-before-raw-commit", 91, 0);
     }
@@ -334,4 +386,29 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             System.exit(93);
         }
     }
+    private static void waitUntil(String failureMessage, Condition condition) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(20L).toNanos();
+        Throwable lastFailure = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                if (condition.evaluate()) {
+                    return;
+                }
+            } catch (Throwable transientFailure) {
+                lastFailure = transientFailure;
+            }
+            Thread.sleep(20L);
+        }
+        AssertionError failure = new AssertionError(failureMessage);
+        if (lastFailure != null) {
+            failure.initCause(lastFailure);
+        }
+        throw failure;
+    }
+
+    @FunctionalInterface
+    private interface Condition {
+        boolean evaluate() throws Exception;
+    }
+
 }

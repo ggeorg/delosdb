@@ -251,6 +251,17 @@ public final class MvccConglomerate
                 xactManager,
                 rawtran);
         context.beforeVacuum(currentTable);
+        if (currentTable.gen2A1()) {
+            MvccRawStoreTransactionStatusMaterializer.Result result =
+                    MvccRawStoreTransactionStatusMaterializer.materialize(
+                            rawtran,
+                            currentTable,
+                            requireRuntime().transactionStatuses);
+            if (result.mutated()) {
+                context.markVacuumMutation();
+            }
+            return;
+        }
         MvccRawStoreVacuum.Result result = MvccRawStoreVacuum.vacuum(
                 rawtran,
                 currentTable,
