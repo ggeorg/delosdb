@@ -1,12 +1,13 @@
-delosdb-gen2-transaction-status-bounded-cache-r9-test-support-exception-fix-overlay
+DelosDB F08 insert-target fanout r2 integrity fix
 
 Purpose:
-Propagate the checked transaction-status durable-lookup exception through the row-bearing B-tree mechanism test helper after the r8 production visibility signature change.
+- Restore the repository-integrity productionClasses1000Plus cap to 136.
+- Correct the earlier transaction-status lifecycle line-span regression in MvccRawStoreTransactionContext.
+- No production behavior changes.
 
 Changed files:
-- delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java
+- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
 
-Behavioral scope:
-- Test support only.
-- No production code changes.
-- No assertion, timeout, visibility, cache, locking, persistence, or reclamation changes.
+Behavior:
+- No MVCC, transaction-status, RawStore, insert-target, WAL, locking, or recovery semantics change.
+- The checked StandardException propagation introduced by bounded durable lookup remains unchanged.

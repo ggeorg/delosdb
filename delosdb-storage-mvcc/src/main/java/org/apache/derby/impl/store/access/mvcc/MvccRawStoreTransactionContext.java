@@ -444,8 +444,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return beginSequence > 0L && beginSequence <= snapshotSequence;
     }
 
-    long committedBeginSequence(long creatorTransactionId, long beginSequence)
-            throws StandardException {
+    long committedBeginSequence(long creatorTransactionId, long beginSequence) throws StandardException {
         if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             return beginSequence;
         }

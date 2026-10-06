@@ -130,6 +130,7 @@ abstract class FileContainer
 	private static final int MIN_PRE_ALLOC_SIZE     = 1;
 	private static final int DEFAULT_PRE_ALLOC_SIZE = 8;
 	private static final int MAX_PRE_ALLOC_SIZE     = 1000;
+	private static final int MULTI_INSERT_PAGE_COUNT = 4;
 
 	/* 
 	** Mutable fields, only valid when the identity is valid.
@@ -164,6 +165,7 @@ abstract class FileContainer
 	 */
 	private long lastInsertedPage[];
 	private int  lastInsertedPage_index;
+	private boolean multiInsertPagePromotionInProgress;
 
 	/** 
 		The last unfilled page found.  Use this for getPageForInsert.
@@ -3022,20 +3024,21 @@ abstract class FileContainer
 
 			if (localLastInsertedPage != ContainerHandle.INVALID_PAGE_NUMBER)
             {
-                // First try getting last allocated page, NOWAIT
-
-				p = getInsertablePage(handle, localLastInsertedPage,
-									  false, /* wait */
-									  false /* no overflow page */);
-
-                if (p == null)
+                // First try the shared target NOWAIT. A null latch here is
+                // the concurrency signal for the inherited multi-page insert
+                // design. Keep page fullness separate: a full page should use
+                // the normal unfilled-page/allocation path instead.
+                p = getUserPage(handle, localLastInsertedPage, false, false);
+                if (p != null && !p.allowInsert())
                 {
-                    // most likely we could not get the latch NOWAIT, try again
-                    // with a new page, and tell the system to switch to 
-                    // multi-page mode.
-
+                    p.unlatch();
+                    p = null;
+                    allocCache.trackUnfilledPage(localLastInsertedPage, false);
+                }
+                else if (p == null)
+                {
+                    switchToMultiInsertPageMode(handle);
                     localLastInsertedPage = getLastInsertedPage();
-
                     p = getInsertablePage(handle, localLastInsertedPage,
                                           true, /* wait */
                                           false /* no overflow page */);
@@ -3430,6 +3433,62 @@ abstract class FileContainer
 		return minimumRecordSize;
 	}
 
+	/**
+	 * Promote a contended single insert target into the inherited four-page
+	 * round-robin mode. Page allocation remains under the existing RawStore
+	 * transaction, WAL, allocation and recovery authorities. The container
+	 * monitor protects only the in-memory hint transition and is not held
+	 * while addPage() performs allocation work.
+	 */
+	private void switchToMultiInsertPageMode(BaseContainerHandle handle)
+		throws StandardException
+	{
+		synchronized (this)
+		{
+			if (lastInsertedPage.length != 1 || multiInsertPagePromotionInProgress)
+			{
+				return;
+			}
+			multiInsertPagePromotionInProgress = true;
+		}
+
+		long[] insertPages = new long[MULTI_INSERT_PAGE_COUNT];
+		boolean promoted = false;
+		try
+		{
+			for (int i = 0; i < insertPages.length; i++)
+			{
+				Page page = addPage(handle, false);
+				try
+				{
+					insertPages[i] = page.getPageNumber();
+				}
+				finally
+				{
+					page.unlatch();
+				}
+			}
+
+			synchronized (this)
+			{
+				lastInsertedPage = insertPages;
+				lastInsertedPage_index = 0;
+				promoted = true;
+			}
+		}
+		finally
+		{
+			synchronized (this)
+			{
+				multiInsertPagePromotionInProgress = false;
+				if (!promoted && lastInsertedPage.length != 1)
+				{
+					initializeLastInsertedPage(1);
+				}
+			}
+		}
+	}
+
 	/*
 	 * Setting and getting lastInserted Page and lastUnfilledPage in a thead
 	 * safe manner. 
@@ -3471,6 +3530,7 @@ abstract class FileContainer
             lastInsertedPage[i] = ContainerHandle.INVALID_PAGE_NUMBER;
 
         lastInsertedPage_index = 0;
+        multiInsertPagePromotionInProgress = false;
 	}
 
 	private synchronized void setLastInsertedPage(long val)
