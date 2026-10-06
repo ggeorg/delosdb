@@ -51,7 +51,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreRuntime.TableMaintenanceBoundary> vacuumBoundaries =
             new LinkedHashMap<>();
-
+    private final Set<Long> reclaimedTransactionStatuses = new HashSet<>();
     private long transactionId;
     private long snapshotSequence = UNCAPTURED_SNAPSHOT;
     private MvccRawStoreRuntime.SnapshotLease snapshotLease;
@@ -182,7 +182,9 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         ContainerKey tableKey = table.metadataContainer();
         vacuumBoundaries.computeIfAbsent(tableKey, ignored -> runtime.enterVacuum(table));
     }
-
+    void recordReclaimedTransactionStatuses(Set<Long> transactionIds) {
+        reclaimedTransactionStatuses.addAll(transactionIds);
+    }
     void lockUniqueKeys(
             MvccRawStoreTable.Descriptor table,
             List<MvccRawStoreTable.UniqueConstraint> constraints,
@@ -481,8 +483,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             transactionStatusCommitStaged = runtime.transactionStatuses.enabled()
                     && MvccRawStoreTable.freshInlineInsertBatch(committableVersions);
             if (transactionStatusCommitStaged) {
-                runtime.transactionStatuses.stage(
-                        rawTransaction, transactionId, reservedCommitSequence);
+                runtime.transactionStatuses.stage(rawTransaction, transactionId, reservedCommitSequence, committableVersions);
                 transactionStatusCommitDiagnosticEntered =
                         MvccTransactionStatusCommitDiagnostics.enter();
             } else {
@@ -558,6 +559,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         }
         reservedCommitSequence = 0L;
         transactionStatusCommitStaged = false;
+        runtime.transactionStatuses.evictReclaimed(reclaimedTransactionStatuses);
         clearLocalState();
         committedCreates.forEach(runtime::registerTable);
         runtime.afterUserCommit(committedVersions);
@@ -863,6 +865,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         orderedIndexGenerationInvalidations.clear();
         createdTables.clear();
         droppedTables.clear();
+        reclaimedTransactionStatuses.clear();
         transactionId = 0L;
         snapshotSequence = UNCAPTURED_SNAPSHOT;
         reservedCommitSequence = 0L;

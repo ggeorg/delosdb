@@ -11,9 +11,13 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.TransactionController;
@@ -51,7 +55,10 @@ final class MvccRawStoreDatabaseMetadata {
     private static final int TRANSACTION_STATUS_MAGIC_FIELD = 0;
     private static final int TRANSACTION_STATUS_TRANSACTION_ID_FIELD = 1;
     private static final int TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD = 2;
-    private static final int TRANSACTION_STATUS_FIELD_COUNT = 3;
+    private static final int TRANSACTION_STATUS_DEPENDENCY_SEGMENT_FIELD = 3;
+    private static final int TRANSACTION_STATUS_DEPENDENCY_CONTAINER_FIELD = 4;
+    private static final int LEGACY_TRANSACTION_STATUS_FIELD_COUNT = 3;
+    private static final int TRANSACTION_STATUS_FIELD_COUNT = 5;
 
     private static final int INSERT_FLAGS = Page.INSERT_UNDO_WITH_PURGE;
     private static final int SEGMENT_ID = 0;
@@ -267,13 +274,21 @@ final class MvccRawStoreDatabaseMetadata {
     void stageCommittedTransactionStatus(
             Transaction parent,
             long transactionId,
-            long commitSequence) throws StandardException {
+            long commitSequence,
+            List<ContainerKey> dependencyTables) throws StandardException {
         if (transactionId <= 0L || commitSequence <= 0L) {
             throw new IllegalArgumentException(
                     "RawStore MVCC committed transaction status requires positive IDs: tx="
                             + transactionId + ", commit=" + commitSequence);
         }
-        // Transaction-status rows are append-only and transaction IDs are unique.
+        if (dependencyTables == null || dependencyTables.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "RawStore MVCC committed transaction status requires dependent tables");
+        }
+        LinkedHashSet<ContainerKey> dependencies = new LinkedHashSet<>(dependencyTables);
+
+        // Transaction-status dependency rows are append-only until maintenance has
+        // durably removed the corresponding table's status-backed CURRENT state.
         // Keep their physical mutation in the parent RawStore transaction, but do
         // not serialize every committing writer behind the database-metadata
         // container's transaction-duration exclusive lock. Record-level RawStore
@@ -286,34 +301,17 @@ final class MvccRawStoreDatabaseMetadata {
         if (container == null) {
             throw missingContainer();
         }
-        Page page = null;
         try {
-            Object[] row = transactionStatusRow(parent, transactionId, commitSequence);
-            page = container.getPageForInsert(0);
-            if (insertTransactionStatus(page, row)) {
-                return;
-            }
-            if (page != null) {
-                page.unlatch();
-                page = null;
-            }
-            page = container.getPageForInsert(ContainerHandle.GET_PAGE_UNFILLED);
-            if (insertTransactionStatus(page, row)) {
-                return;
-            }
-            if (page != null) {
-                page.unlatch();
-                page = null;
-            }
-            page = container.addPage();
-            if (!insertTransactionStatus(page, row)) {
-                throw new IllegalStateException(
-                        "RawStore MVCC transaction-status row did not fit on an empty page");
+            for (ContainerKey dependency : dependencies) {
+                insertTransactionStatus(
+                        container,
+                        transactionStatusRow(
+                                parent,
+                                transactionId,
+                                commitSequence,
+                                dependency));
             }
         } finally {
-            if (page != null) {
-                page.unlatch();
-            }
             container.close();
         }
     }
@@ -347,11 +345,15 @@ final class MvccRawStoreDatabaseMetadata {
                         ? Page.FIRST_SLOT_NUMBER + 1
                         : Page.FIRST_SLOT_NUMBER;
                 for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)
-                            || page.fetchNumFieldsAtSlot(slot) != TRANSACTION_STATUS_FIELD_COUNT) {
+                    if (page.isDeletedAtSlot(slot)) {
                         continue;
                     }
-                    Object[] row = transactionStatusTemplate(transaction);
+                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
+                    if (fieldCount != LEGACY_TRANSACTION_STATUS_FIELD_COUNT
+                            && fieldCount != TRANSACTION_STATUS_FIELD_COUNT) {
+                        continue;
+                    }
+                    Object[] row = transactionStatusTemplate(transaction, fieldCount);
                     page.fetchFromSlot(null, slot, row, null, false);
                     if (MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_MAGIC_FIELD)
                             != TRANSACTION_STATUS_MAGIC) {
@@ -386,7 +388,194 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    private static boolean insertTransactionStatus(Page page, Object[] row)
+    TransactionStatusReclamation reclaimCommittedTransactionStatusDependencies(
+            Transaction transaction,
+            ContainerKey table) throws StandardException {
+        ContainerHandle container = transaction.openContainer(
+                requireContainerKey(),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
+                ContainerHandle.MODE_FORUPDATE);
+        if (container == null) {
+            throw missingContainer();
+        }
+
+        try {
+            PurgedDependencies purged = purgeTransactionStatusDependencies(
+                    transaction, container, table);
+            if (purged.transactionIds().isEmpty()) {
+                return TransactionStatusReclamation.EMPTY;
+            }
+            Set<Long> stillDurable = remainingTransactionStatuses(
+                    transaction, container, purged.transactionIds());
+            Set<Long> fullyReclaimed = new LinkedHashSet<>(purged.transactionIds());
+            fullyReclaimed.removeAll(stillDurable);
+            return new TransactionStatusReclamation(
+                    purged.rowCount(), Set.copyOf(fullyReclaimed));
+        } finally {
+            container.close();
+        }
+    }
+
+    private static PurgedDependencies purgeTransactionStatusDependencies(
+            Transaction transaction,
+            ContainerHandle container,
+            ContainerKey table) throws StandardException {
+        Set<Long> transactionIds = new LinkedHashSet<>();
+        int rowCount = 0;
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            validateControlRow(transaction, page);
+            while (page != null) {
+                int startSlot = firstStatusSlot(page);
+                for (int slot = page.recordCount() - 1; slot >= startSlot; slot--) {
+                    if (!dependencyRowMatches(transaction, page, slot, table)) {
+                        continue;
+                    }
+                    long transactionId = transactionStatusTransactionId(
+                            transaction, page, slot, TRANSACTION_STATUS_FIELD_COUNT);
+                    transactionIds.add(transactionId);
+                    page.purgeAtSlot(slot, 1, true);
+                    rowCount++;
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+            return new PurgedDependencies(rowCount, Set.copyOf(transactionIds));
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+    }
+
+    private static Set<Long> remainingTransactionStatuses(
+            Transaction transaction,
+            ContainerHandle container,
+            Set<Long> candidates) throws StandardException {
+        Set<Long> remaining = new LinkedHashSet<>();
+        Page page = null;
+        try {
+            page = container.getFirstPage();
+            validateControlRow(transaction, page);
+            while (page != null) {
+                int startSlot = firstStatusSlot(page);
+                for (int slot = startSlot; slot < page.recordCount(); slot++) {
+                    int fieldCount = transactionStatusFieldCount(page, slot);
+                    if (fieldCount == 0) {
+                        continue;
+                    }
+                    long transactionId = transactionStatusTransactionId(
+                            transaction, page, slot, fieldCount);
+                    if (candidates.contains(transactionId)) {
+                        remaining.add(transactionId);
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+            return Set.copyOf(remaining);
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+    }
+
+    private static boolean dependencyRowMatches(
+            Transaction transaction,
+            Page page,
+            int slot,
+            ContainerKey table) throws StandardException {
+        if (page.isDeletedAtSlot(slot)
+                || page.fetchNumFieldsAtSlot(slot) != TRANSACTION_STATUS_FIELD_COUNT) {
+            return false;
+        }
+        Object[] row = transactionStatusTemplate(transaction, TRANSACTION_STATUS_FIELD_COUNT);
+        page.fetchFromSlot(null, slot, row, null, false);
+        if (MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_MAGIC_FIELD)
+                != TRANSACTION_STATUS_MAGIC) {
+            return false;
+        }
+        ContainerKey dependency = new ContainerKey(
+                MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_DEPENDENCY_SEGMENT_FIELD),
+                MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_DEPENDENCY_CONTAINER_FIELD));
+        return table.equals(dependency);
+    }
+
+    private static long transactionStatusTransactionId(
+            Transaction transaction,
+            Page page,
+            int slot,
+            int fieldCount) throws StandardException {
+        Object[] row = transactionStatusTemplate(transaction, fieldCount);
+        page.fetchFromSlot(null, slot, row, null, false);
+        if (MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_MAGIC_FIELD)
+                != TRANSACTION_STATUS_MAGIC) {
+            return 0L;
+        }
+        long transactionId = MvccRawStoreFormat.longAt(
+                row, TRANSACTION_STATUS_TRANSACTION_ID_FIELD);
+        if (transactionId <= 0L) {
+            throw new IllegalStateException(
+                    "RawStore MVCC transaction-status row has invalid tx=" + transactionId);
+        }
+        return transactionId;
+    }
+
+    private static int transactionStatusFieldCount(Page page, int slot)
+            throws StandardException {
+        if (page.isDeletedAtSlot(slot)) {
+            return 0;
+        }
+        int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        return fieldCount == LEGACY_TRANSACTION_STATUS_FIELD_COUNT
+                        || fieldCount == TRANSACTION_STATUS_FIELD_COUNT
+                ? fieldCount
+                : 0;
+    }
+
+    private static int firstStatusSlot(Page page) {
+        return page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                ? Page.FIRST_SLOT_NUMBER + 1
+                : Page.FIRST_SLOT_NUMBER;
+    }
+
+    private static void insertTransactionStatus(ContainerHandle container, Object[] row)
+            throws StandardException {
+        Page page = null;
+        try {
+            page = container.getPageForInsert(0);
+            if (insertTransactionStatusOnPage(page, row)) {
+                return;
+            }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+            page = container.getPageForInsert(ContainerHandle.GET_PAGE_UNFILLED);
+            if (insertTransactionStatusOnPage(page, row)) {
+                return;
+            }
+            if (page != null) {
+                page.unlatch();
+                page = null;
+            }
+            page = container.addPage();
+            if (!insertTransactionStatusOnPage(page, row)) {
+                throw new IllegalStateException(
+                        "RawStore MVCC transaction-status row did not fit on an empty page");
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+        }
+    }
+
+    private static boolean insertTransactionStatusOnPage(Page page, Object[] row)
             throws StandardException {
         if (page == null) {
             return false;
@@ -404,24 +593,49 @@ final class MvccRawStoreDatabaseMetadata {
     private static Object[] transactionStatusRow(
             Transaction transaction,
             long transactionId,
-            long commitSequence) throws StandardException {
-        Object[] row = transactionStatusTemplate(transaction);
+            long commitSequence,
+            ContainerKey dependency) throws StandardException {
+        Object[] row = transactionStatusTemplate(transaction, TRANSACTION_STATUS_FIELD_COUNT);
         row[TRANSACTION_STATUS_MAGIC_FIELD] =
                 MvccRawStoreFormat.longValue(transaction, TRANSACTION_STATUS_MAGIC);
         row[TRANSACTION_STATUS_TRANSACTION_ID_FIELD] =
                 MvccRawStoreFormat.longValue(transaction, transactionId);
         row[TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD] =
                 MvccRawStoreFormat.longValue(transaction, commitSequence);
+        row[TRANSACTION_STATUS_DEPENDENCY_SEGMENT_FIELD] =
+                MvccRawStoreFormat.longValue(transaction, dependency.getSegmentId());
+        row[TRANSACTION_STATUS_DEPENDENCY_CONTAINER_FIELD] =
+                MvccRawStoreFormat.longValue(transaction, dependency.getContainerId());
         return row;
     }
 
-    private static Object[] transactionStatusTemplate(Transaction transaction)
+    private static Object[] transactionStatusTemplate(Transaction transaction, int fieldCount)
             throws StandardException {
-        return new Object[] {
-                MvccRawStoreFormat.longValue(transaction, 0L),
-                MvccRawStoreFormat.longValue(transaction, 0L),
-                MvccRawStoreFormat.longValue(transaction, 0L)
-        };
+        List<Object> fields = new ArrayList<>(fieldCount);
+        for (int index = 0; index < fieldCount; index++) {
+            fields.add(MvccRawStoreFormat.longValue(transaction, 0L));
+        }
+        return fields.toArray();
+    }
+
+    private record PurgedDependencies(int rowCount, Set<Long> transactionIds) {
+        PurgedDependencies {
+            transactionIds = Set.copyOf(transactionIds);
+        }
+    }
+
+    record TransactionStatusReclamation(
+            int purgedDependencyRows,
+            Set<Long> fullyReclaimedTransactionIds) {
+        static final TransactionStatusReclamation EMPTY =
+                new TransactionStatusReclamation(0, Set.of());
+
+        TransactionStatusReclamation {
+            if (purgedDependencyRows < 0) {
+                throw new IllegalArgumentException("purgedDependencyRows must be non-negative");
+            }
+            fullyReclaimedTransactionIds = Set.copyOf(fullyReclaimedTransactionIds);
+        }
     }
 
     private static void initialize(Transaction transaction, ContainerKey key)

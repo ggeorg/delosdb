@@ -10,6 +10,8 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.Set;
+
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.Transaction;
@@ -48,73 +50,11 @@ final class MvccRawStoreTransactionStatusMaterializer {
         try {
             page = container.getFirstPage();
             while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
-                    int expected = table.gen2History()
-                            ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
-                            : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
-                    if (fieldCount != expected) {
-                        throw corruption(
-                                "unsupported Gen2 CURRENT field count",
-                                page.getPageNumber() + ":" + slot + " fields=" + fieldCount);
-                    }
-                    if (intField(transaction, page, slot,
-                            MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
-                            != MvccRawStoreFormat.DIRECTORY_KIND) {
-                        throw corruption(
-                                "unexpected record kind in Gen2 CURRENT container",
-                                page.getPageNumber() + ":" + slot);
-                    }
-                    if (intField(transaction, page, slot,
-                            MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
-                            != MvccRawStoreFormat.FORMAT_VERSION) {
-                        throw corruption(
-                                "unsupported Gen2 CURRENT format version",
-                                page.getPageNumber() + ":" + slot);
-                    }
-
-                    currentRows++;
-                    long beginSequence = longField(
-                            transaction, page, slot,
-                            MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
-                    if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-                        if (beginSequence <= 0L) {
-                            throw corruption(
-                                    "invalid Gen2 CURRENT begin sequence",
-                                    page.getPageNumber() + ":" + slot
-                                            + " begin=" + beginSequence);
-                        }
-                        continue;
-                    }
-
-                    long creatorTransactionId = longField(
-                            transaction, page, slot,
-                            MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
-                    if (creatorTransactionId <= 0L) {
-                        throw corruption(
-                                "invalid Gen2 CURRENT creator transaction",
-                                page.getPageNumber() + ":" + slot
-                                        + " tx=" + creatorTransactionId);
-                    }
-                    long committedSequence = statuses.committedSequence(creatorTransactionId);
-                    if (committedSequence <= 0L) {
-                        unresolved++;
-                        continue;
-                    }
-
-                    page.updateFieldAtSlot(
-                            slot,
-                            MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
-                            MvccRawStoreFormat.longValue(transaction, committedSequence),
-                            null);
-                    materialized++;
-                }
+                PageResult pageResult = materializePage(
+                        transaction, table, statuses, page);
+                materialized += pageResult.materializedCurrents();
+                unresolved += pageResult.unresolvedCurrents();
+                currentRows += pageResult.currentRows();
                 long pageNumber = page.getPageNumber();
                 page.unlatch();
                 page = container.getNextPage(pageNumber);
@@ -126,8 +66,112 @@ final class MvccRawStoreTransactionStatusMaterializer {
             container.close();
         }
 
+        MvccRawStoreDatabaseMetadata.TransactionStatusReclamation reclamation =
+                unresolved == 0
+                        ? statuses.reclaimDependencies(transaction, table.metadataContainer())
+                        : MvccRawStoreDatabaseMetadata.TransactionStatusReclamation.EMPTY;
         int historyRows = countHistoryRows(transaction, table);
-        return new Result(materialized, unresolved, currentRows, currentRows + historyRows);
+        return new Result(
+                materialized,
+                unresolved,
+                currentRows,
+                currentRows + historyRows,
+                reclamation.purgedDependencyRows(),
+                reclamation.fullyReclaimedTransactionIds());
+    }
+
+    private static PageResult materializePage(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTransactionStatuses statuses,
+            Page page) throws StandardException {
+        int materialized = 0;
+        int unresolved = 0;
+        int currentRows = 0;
+        int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
+                ? Page.FIRST_SLOT_NUMBER + 2
+                : Page.FIRST_SLOT_NUMBER;
+        for (int slot = startSlot; slot < page.recordCount(); slot++) {
+            if (page.isDeletedAtSlot(slot)) {
+                continue;
+            }
+            currentRows++;
+            MaterializationOutcome outcome = materializeSlot(
+                    transaction, table, statuses, page, slot);
+            if (outcome == MaterializationOutcome.MATERIALIZED) {
+                materialized++;
+            } else if (outcome == MaterializationOutcome.UNRESOLVED) {
+                unresolved++;
+            }
+        }
+        return new PageResult(materialized, unresolved, currentRows);
+    }
+
+    private static MaterializationOutcome materializeSlot(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            MvccRawStoreTransactionStatuses statuses,
+            Page page,
+            int slot) throws StandardException {
+        validateCurrentRecord(transaction, table, page, slot);
+        long beginSequence = longField(
+                transaction, page, slot, MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE);
+        if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
+            if (beginSequence <= 0L) {
+                throw corruption(
+                        "invalid Gen2 CURRENT begin sequence",
+                        page.getPageNumber() + ":" + slot + " begin=" + beginSequence);
+            }
+            return MaterializationOutcome.SELF_CONTAINED;
+        }
+
+        long creatorTransactionId = longField(
+                transaction, page, slot,
+                MvccRawStoreFormat.DIRECTORY_HEAD_CREATOR_TRANSACTION_ID);
+        if (creatorTransactionId <= 0L) {
+            throw corruption(
+                    "invalid Gen2 CURRENT creator transaction",
+                    page.getPageNumber() + ":" + slot + " tx=" + creatorTransactionId);
+        }
+        long committedSequence = statuses.committedSequence(creatorTransactionId);
+        if (committedSequence <= 0L) {
+            return MaterializationOutcome.UNRESOLVED;
+        }
+
+        page.updateFieldAtSlot(
+                slot,
+                MvccRawStoreFormat.DIRECTORY_HEAD_BEGIN_SEQUENCE,
+                MvccRawStoreFormat.longValue(transaction, committedSequence),
+                null);
+        return MaterializationOutcome.MATERIALIZED;
+    }
+
+    private static void validateCurrentRecord(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            Page page,
+            int slot) throws StandardException {
+        int expected = table.gen2History()
+                ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
+                : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
+        int fieldCount = page.fetchNumFieldsAtSlot(slot);
+        if (fieldCount != expected) {
+            throw corruption(
+                    "unsupported Gen2 CURRENT field count",
+                    page.getPageNumber() + ":" + slot + " fields=" + fieldCount);
+        }
+        if (intField(transaction, page, slot, MvccRawStoreFormat.DIRECTORY_KIND_FIELD)
+                != MvccRawStoreFormat.DIRECTORY_KIND) {
+            throw corruption(
+                    "unexpected record kind in Gen2 CURRENT container",
+                    page.getPageNumber() + ":" + slot);
+        }
+        if (intField(transaction, page, slot, MvccRawStoreFormat.DIRECTORY_FORMAT_VERSION)
+                != MvccRawStoreFormat.FORMAT_VERSION) {
+            throw corruption(
+                    "unsupported Gen2 CURRENT format version",
+                    page.getPageNumber() + ":" + slot);
+        }
     }
 
     private static int countHistoryRows(
@@ -193,13 +237,35 @@ final class MvccRawStoreTransactionStatusMaterializer {
                         + reason + " [" + detail + ']');
     }
 
+    private enum MaterializationOutcome {
+        SELF_CONTAINED,
+        MATERIALIZED,
+        UNRESOLVED
+    }
+
+    private record PageResult(
+            int materializedCurrents,
+            int unresolvedCurrents,
+            int currentRows) {
+    }
+
     record Result(
             int materializedCurrents,
             int unresolvedCurrents,
             int remainingLogicalRows,
-            int remainingVersions) {
+            int remainingVersions,
+            int reclaimedStatusDependencies,
+            Set<Long> fullyReclaimedTransactionIds) {
+        Result {
+            if (reclaimedStatusDependencies < 0) {
+                throw new IllegalArgumentException(
+                        "reclaimedStatusDependencies must be non-negative");
+            }
+            fullyReclaimedTransactionIds = Set.copyOf(fullyReclaimedTransactionIds);
+        }
+
         boolean mutated() {
-            return materializedCurrents > 0;
+            return materializedCurrents > 0 || reclaimedStatusDependencies > 0;
         }
 
         boolean retryRequired() {

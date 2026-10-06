@@ -28,7 +28,8 @@ final class MvccRawStoreLogicalLock extends ShExLockable
     enum Kind {
         TABLE_SCHEMA,
         ROW,
-        UNIQUE_KEY
+        UNIQUE_KEY,
+        TRANSACTION_STATUS_RECLAMATION
     }
 
     private final Kind kind;
@@ -54,6 +55,15 @@ final class MvccRawStoreLogicalLock extends ShExLockable
         return new MvccRawStoreLogicalLock(
                 Kind.TABLE_SCHEMA,
                 table.metadataContainer().getContainerId(),
+                0L,
+                -1,
+                List.of());
+    }
+
+    static MvccRawStoreLogicalLock transactionStatusReclamation() {
+        return new MvccRawStoreLogicalLock(
+                Kind.TRANSACTION_STATUS_RECLAMATION,
+                0L,
                 0L,
                 -1,
                 List.of());
@@ -176,6 +186,7 @@ final class MvccRawStoreLogicalLock extends ShExLockable
             case TABLE_SCHEMA -> "DELOS_MVCC_SCHEMA[" + tableId + "]";
             case ROW -> "DELOS_MVCC_ROW[" + tableId + ":" + rowId + "]";
             case UNIQUE_KEY -> "DELOS_MVCC_KEY[" + tableId + ":" + constraintOrdinal + "]";
+            case TRANSACTION_STATUS_RECLAMATION -> "DELOS_MVCC_STATUS_RECLAMATION";
         };
     }
 

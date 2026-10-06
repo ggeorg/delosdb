@@ -1,28 +1,12 @@
-DelosDB Gen2 transaction-status CURRENT materialization r2 wiring fix
-Prerequisite: delosdb-gen2-transaction-status-current-materialization-r1-overlay.zip
+DelosDB Gen2 transaction-status dependency reclamation r6 reopen probe test fix
 
-Purpose
--------
-Make the r1 Gen2 CURRENT materializer reachable from the existing database-owned
-MVCC maintenance service.
+Apply on top of r5 lifecycle work.
 
-Changed files
--------------
-delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
+Changed:
+- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java
 
-Root cause
-----------
-The pre-r1 runtime intentionally excluded Gen2 tables from maintenance ownership:
-registerTable() returned immediately after tracking a Gen2 table, and afterUserCommit()
-filtered committed versions to Gen1 only. r1 taught the maintenance service how to
-materialize Gen2 CURRENT rows but did not remove those old routing exclusions, so no
-Gen2 maintenance target was ever registered or commit-triggered.
-
-Invariants
-----------
-- Gen2 table identity tracking for transaction-id block reservation is preserved.
-- All MVCC tables are now registered with the existing maintenance service.
-- All committed MVCC versions are forwarded to maintenance; the service selects the
-  Gen1 vacuum or Gen2 materialization algorithm from the table descriptor.
-- No visibility, WAL, recovery, status persistence, or reclamation semantics change.
-- No test assertion or threshold is weakened.
+Purpose:
+- keep an empty delos_mvcc probe table outside the tested transaction's dependency set;
+- boot the MVCC runtime through a real persisted conglomerate after database reopen;
+- assert that the reclaimed transaction status does not reload into the cache;
+- make no production, reclamation, locking, or visibility semantic changes.

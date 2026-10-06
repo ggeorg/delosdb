@@ -10,22 +10,31 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.shared.common.error.StandardException;
 
 /** Database-scoped committed-transaction visibility state. */
 final class MvccRawStoreTransactionStatuses {
     private final MvccRawStoreDatabaseMetadata metadata;
+    private final MvccRawStoreRuntime runtime;
     private final Map<Long, Long> committedSequences = new ConcurrentHashMap<>();
     private final boolean enabled;
     private volatile boolean loaded;
 
-    MvccRawStoreTransactionStatuses(MvccRawStoreDatabaseMetadata metadata) {
+    MvccRawStoreTransactionStatuses(
+            MvccRawStoreDatabaseMetadata metadata,
+            MvccRawStoreRuntime runtime) {
         this.metadata = metadata;
+        this.runtime = runtime;
         enabled = Boolean.getBoolean(
                 MvccRawStoreFormat.GEN2_TRANSACTION_STATUS_VISIBILITY_ENABLED_PROPERTY);
     }
@@ -48,10 +57,17 @@ final class MvccRawStoreTransactionStatuses {
         return enabled;
     }
 
-    void stage(Transaction rawTransaction, long transactionId, long commitSequence)
+    void stage(
+            Transaction rawTransaction,
+            long transactionId,
+            long commitSequence,
+            List<MvccRawStoreTable.PendingVersion> pendingVersions)
             throws StandardException {
         metadata.stageCommittedTransactionStatus(
-                rawTransaction, transactionId, commitSequence);
+                rawTransaction,
+                transactionId,
+                commitSequence,
+                dependencyTables(pendingVersions));
     }
 
     void publish(long transactionId, long commitSequence) {
@@ -70,5 +86,36 @@ final class MvccRawStoreTransactionStatuses {
         }
         Long sequence = committedSequences.get(transactionId);
         return sequence == null ? 0L : sequence.longValue();
+    }
+
+    MvccRawStoreDatabaseMetadata.TransactionStatusReclamation reclaimDependencies(
+            Transaction transaction,
+            ContainerKey table) throws StandardException {
+        runtime.lockExclusive(
+                transaction, MvccRawStoreLogicalLock.transactionStatusReclamation());
+        return metadata.reclaimCommittedTransactionStatusDependencies(transaction, table);
+    }
+
+    void evictReclaimed(Set<Long> transactionIds) {
+        for (long transactionId : transactionIds) {
+            committedSequences.remove(transactionId);
+        }
+    }
+
+    int cachedStatusCount() {
+        return committedSequences.size();
+    }
+
+    private static List<ContainerKey> dependencyTables(
+            List<MvccRawStoreTable.PendingVersion> pendingVersions) {
+        Set<ContainerKey> dependencies = new LinkedHashSet<>();
+        for (MvccRawStoreTable.PendingVersion pending : pendingVersions) {
+            dependencies.add(pending.table().metadataContainer());
+        }
+        List<ContainerKey> ordered = new ArrayList<>(dependencies);
+        ordered.sort(java.util.Comparator
+                .comparingLong(ContainerKey::getSegmentId)
+                .thenComparingLong(ContainerKey::getContainerId));
+        return List.copyOf(ordered);
     }
 }

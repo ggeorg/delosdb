@@ -1,1 +1,2 @@
-622d30d48d534e2231d2b0c7c9ae2c4cf871cadca93124c3551e6025a049bcf8  delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
+7166f297e25c3d9ecb3ea73eb4c23b9f010d0bae0a4cd14a15291a8c95775726  ./MANIFEST.txt
+caffec9c72041b50307d97330178d0ecba076e4bce3f08219058d9a1c15f502d  ./delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java

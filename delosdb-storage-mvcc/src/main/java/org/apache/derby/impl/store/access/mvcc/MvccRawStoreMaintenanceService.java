@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -473,6 +474,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                 }
                 transactionManager.commit();
                 transactionIdle = true;
+                runtime.transactionStatuses.evictReclaimed(
+                        result.fullyReclaimedTransactionIds());
             }
             if (replacement != null) {
                 target.descriptor().observeOrderedIndexContainer(replacement);
@@ -515,7 +518,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
             int remainingLogicalRows,
             boolean retryRequired,
             String mutatedDecision,
-            String idleDecision) {
+            String idleDecision,
+            Set<Long> fullyReclaimedTransactionIds) {
         static MaintenanceResult from(MvccRawStoreVacuum.Result result) {
             boolean retry = result.remainingVersions() > result.remainingLogicalRows();
             return new MaintenanceResult(
@@ -527,7 +531,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                     result.remainingLogicalRows(),
                     retry,
                     retry ? "vacuumed-retained-history-remains" : "vacuumed",
-                    retry ? "retained-snapshot-protects-history" : "no-reclaimable-history");
+                    retry ? "retained-snapshot-protects-history" : "no-reclaimable-history",
+                    Set.of());
         }
 
         static MaintenanceResult from(MvccRawStoreTransactionStatusMaterializer.Result result) {
@@ -544,7 +549,8 @@ final class MvccRawStoreMaintenanceService implements AutoCloseable {
                             : "materialized-status-current",
                     result.retryRequired()
                             ? "status-current-awaits-durable-status"
-                            : "no-status-backed-current");
+                            : "no-status-backed-current",
+                    result.fullyReclaimedTransactionIds());
         }
     }
 

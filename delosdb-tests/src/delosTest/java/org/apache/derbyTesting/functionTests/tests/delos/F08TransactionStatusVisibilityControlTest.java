@@ -19,6 +19,7 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.derby.impl.store.access.mvcc.MvccTransactionStatusCommitDiagnosticTestSupport;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /** Semantic and recovery proof for the F08-F durable transaction-status visibility control. */
@@ -233,8 +234,26 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
                 waitUntil("maintenance did not materialize status-backed CURRENT rows", () ->
                         DelosStorageDiagnosticsRegistry.mvccDatabaseMaintenanceSnapshot(
                                 databasePath(database)).mutatedRunCount() > 0L);
+                waitUntil("maintenance did not reclaim the durable transaction status", () ->
+                        MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                                databasePath(database)) == 0);
                 assertRows(connection, "select count(*) from T", Integer.toString(INSERT_WIDTH));
                 connection.commit();
+            }
+            shutdownDatabase(database);
+        } finally {
+            shutdownIfBooted(database);
+        }
+
+        try (SystemPropertyScope a1 = setSystemProperty(A1_PROPERTY, "true");
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true");
+             SystemPropertyScope maintenance = setSystemProperty(
+                     MAINTENANCE_ENABLED_PROPERTY, "false")) {
+            try (Connection reopened = openDatabase(database, false)) {
+                assertEquals(0, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
+                assertRows(reopened, "select count(*) from T", Integer.toString(INSERT_WIDTH));
             }
             shutdownDatabase(database);
         } finally {
@@ -249,6 +268,55 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             try (Connection reopened = openDatabase(database, false)) {
                 assertRows(reopened, "select count(*) from T", Integer.toString(INSERT_WIDTH));
                 assertRows(reopened, "select payload from T where id = 42", "v42");
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testMultiTableStatusReclaimedOnlyAfterLastDependencyDrops() throws Exception {
+        String database = databaseName("f08-tx-status-multi-table-reclamation");
+        try (SystemPropertyScope a1 = setSystemProperty(A1_PROPERTY, "true");
+             SystemPropertyScope b = clearSystemProperty(B_PROPERTY);
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true");
+             SystemPropertyScope maintenance = setSystemProperty(
+                     MAINTENANCE_ENABLED_PROPERTY, "false")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table T1 (id int not null, payload varchar(128) not null) "
+                                + "using delos_mvcc");
+                executeUpdate(connection,
+                        "create table T2 (id int not null, payload varchar(128) not null) "
+                                + "using delos_mvcc");
+                executeUpdate(connection,
+                        "create table T_PROBE (id int not null) using delos_mvcc");
+                connection.commit();
+
+                insertOne(connection, "T1", 1, "one");
+                insertOne(connection, "T2", 2, "two");
+                connection.commit();
+                assertEquals(1, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
+
+                executeUpdate(connection, "drop table T1");
+                connection.commit();
+                assertEquals(1, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
+                assertRows(connection, "select id, payload from T2", "2|two");
+                connection.commit();
+
+                executeUpdate(connection, "drop table T2");
+                connection.commit();
+                assertEquals(0, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
+            }
+            shutdownDatabase(database);
+
+            try (Connection reopened = openDatabase(database, false)) {
+                assertRows(reopened, "select count(*) from T_PROBE", "0");
+                assertEquals(0, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
             }
         } finally {
             shutdownIfBooted(database);

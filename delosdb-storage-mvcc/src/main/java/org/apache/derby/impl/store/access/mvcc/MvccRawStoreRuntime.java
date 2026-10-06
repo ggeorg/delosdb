@@ -75,7 +75,7 @@ final class MvccRawStoreRuntime {
     private final ReentrantLock commitPublicationLock = new ReentrantLock();
     private final Condition commitPublicationAdvanced = commitPublicationLock.newCondition();
     private final MvccRawStoreDatabaseMetadata metadata = new MvccRawStoreDatabaseMetadata();
-    final MvccRawStoreTransactionStatuses transactionStatuses = new MvccRawStoreTransactionStatuses(metadata);
+    final MvccRawStoreTransactionStatuses transactionStatuses;
     private final AtomicLong publishedHighWater = new AtomicLong();
     private final AtomicLong diagnosticCaptureSequence = new AtomicLong();
     private final AtomicLong nextSnapshotLeaseId = new AtomicLong(1L);
@@ -170,6 +170,7 @@ final class MvccRawStoreRuntime {
         for (int index = 0; index < leaseSlots; index++) {
             snapshotLeaseSlots.set(index, FREE_SNAPSHOT_LEASE_SLOT);
         }
+        transactionStatuses = new MvccRawStoreTransactionStatuses(metadata, this);
     }
 
     Object databaseIdentity() {

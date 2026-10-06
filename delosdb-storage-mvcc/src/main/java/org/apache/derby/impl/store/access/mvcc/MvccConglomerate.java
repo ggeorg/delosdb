@@ -104,6 +104,11 @@ public final class MvccConglomerate
                 xactManager,
                 xactManager.getRawStoreXact());
         context.beforeDrop(currentTable);
+        MvccRawStoreDatabaseMetadata.TransactionStatusReclamation reclamation =
+                requireRuntime().transactionStatuses.reclaimDependencies(
+                        xactManager.getRawStoreXact(), currentTable.metadataContainer());
+        context.recordReclaimedTransactionStatuses(
+                reclamation.fullyReclaimedTransactionIds());
         MvccRawStoreTable.drop(xactManager, currentTable);
     }
 
@@ -257,6 +262,8 @@ public final class MvccConglomerate
                             rawtran,
                             currentTable,
                             requireRuntime().transactionStatuses);
+            context.recordReclaimedTransactionStatuses(
+                    result.fullyReclaimedTransactionIds());
             if (result.mutated()) {
                 context.markVacuumMutation();
             }

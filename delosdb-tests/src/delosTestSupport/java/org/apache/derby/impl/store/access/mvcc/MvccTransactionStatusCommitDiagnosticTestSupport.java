@@ -6,6 +6,8 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.nio.file.Path;
+
 /** Test-source-only bridge for transaction-status commit qualification counters. */
 public final class MvccTransactionStatusCommitDiagnosticTestSupport {
     private MvccTransactionStatusCommitDiagnosticTestSupport() {
@@ -21,5 +23,11 @@ public final class MvccTransactionStatusCommitDiagnosticTestSupport {
 
     public static long[] snapshot() {
         return MvccTransactionStatusCommitDiagnostics.snapshotForTesting();
+    }
+
+    public static int cachedStatusCount(Path databaseDirectory) {
+        return MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)
+                .transactionStatuses
+                .cachedStatusCount();
     }
 }
