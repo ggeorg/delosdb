@@ -26,6 +26,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.RowUtil;
+import org.apache.derby.iapi.store.raw.FetchDescriptor;
 
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
@@ -113,6 +114,9 @@ public class SearchParameters
 	**/
 	public OpenBTree btree;
 
+    /** Optional descriptor restricting page materialization to compared keys. */
+    FetchDescriptor compareFetchDescriptor;
+
 	/**
 	The resulting slot from the search.  Updated when the search completes.
 	**/
@@ -158,19 +162,29 @@ public class SearchParameters
     boolean                 searchForOptimizer)
         throws StandardException
 	{
-		this.searchKey              = searchKey;
-		this.partial_key_match_op   = partial_key_match_op;
-		this.template               = template;
-		this.btree                  = btree;
-		this.resultSlot             = 0;
-		this.resultExact            = false;
-		this.searchForOptimizer     = searchForOptimizer;
+        reset(searchKey, partial_key_match_op, template, btree,
+                searchForOptimizer, null);
+	}
 
-        if (this.searchForOptimizer)
-        {
-            this.left_fraction = 0;
-            this.current_fraction = 1;
-        }
+    void reset(
+    StoreDataValue[]        searchKey,
+    int                     partial_key_match_op,
+    StoreDataValue[]        template,
+    OpenBTree               btree,
+    boolean                 searchForOptimizer,
+    FetchDescriptor         compareFetchDescriptor)
+        throws StandardException
+    {
+        this.searchKey              = searchKey;
+        this.partial_key_match_op   = partial_key_match_op;
+        this.template               = template;
+        this.btree                  = btree;
+        this.compareFetchDescriptor = compareFetchDescriptor;
+        this.resultSlot             = 0;
+        this.resultExact            = false;
+        this.searchForOptimizer     = searchForOptimizer;
+        this.left_fraction          = 0;
+        this.current_fraction       = searchForOptimizer ? 1 : 0;
 
         if (SanityManager.DEBUG)
         {
@@ -178,7 +192,7 @@ public class SearchParameters
             SanityManager.ASSERT(partial_key_match_op == -1||
                                  partial_key_match_op == 1);
         }
-	}
+    }
 
     public String toString()
     {

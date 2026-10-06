@@ -1,13 +1,23 @@
-DelosDB F08 insert-target fanout r2 integrity fix
+DelosDB F08 B-tree key-prefix search r1
 
-Purpose:
-- Restore the repository-integrity productionClasses1000Plus cap to 136.
-- Correct the earlier transaction-status lifecycle line-span regression in MvccRawStoreTransactionContext.
-- No production behavior changes.
+Purpose
+-------
+Reduce per-insert B-tree search work for unique indexes without changing
+B-tree ordering, locking, page layout, WAL, recovery, split, or duplicate
+semantics.
 
-Changed files:
-- delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
+Changes
+-------
+- BTreeController reuses controller-local SearchParameters for inserts.
+- BTreeController caches a FetchDescriptor for the unique user-key prefix.
+- ControlRow page-search comparisons use that descriptor when supplied, so
+  RawStore does not deserialize the trailing RowLocation on each binary-search
+  probe for unique indexes.
+- Non-unique indexes and all existing callers without a descriptor retain the
+  inherited full-row fetch path.
 
-Behavior:
-- No MVCC, transaction-status, RawStore, insert-target, WAL, locking, or recovery semantics change.
-- The checked StandardException propagation introduced by bounded durable lookup remains unchanged.
+Files
+-----
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/SearchParameters.java

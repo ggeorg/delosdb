@@ -37,6 +37,7 @@ import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.services.io.FormatableBitSet;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
@@ -76,6 +77,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                     "delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled");
 
     transient StoreDataValue[] scratch_template = null;
+    private transient SearchParameters insertSearchParameters;
+    private transient FetchDescriptor insertSearchFetchDescriptor;
 
     /**
      * Whether to get lock on the row being inserted, usually this lock
@@ -97,6 +100,30 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 	/*
 	** private Methods of BTreeController
 	*/
+
+    private SearchParameters insertSearchParameters(StoreDataValue[] rowToInsert)
+            throws StandardException {
+        if (insertSearchFetchDescriptor == null
+                && getConglomerate().nUniqueColumns < scratch_template.length) {
+            FormatableBitSet keyColumns = new FormatableBitSet(scratch_template.length);
+            for (int column = 0; column < getConglomerate().nUniqueColumns; column++) {
+                keyColumns.set(column);
+            }
+            insertSearchFetchDescriptor = new FetchDescriptor(
+                    scratch_template.length, keyColumns, null);
+        }
+        if (insertSearchParameters == null) {
+            insertSearchParameters = new SearchParameters(
+                    rowToInsert,
+                    SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                    scratch_template, this, false);
+        }
+        insertSearchParameters.reset(
+                rowToInsert,
+                SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
+                scratch_template, this, false, insertSearchFetchDescriptor);
+        return insertSearchParameters;
+    }
 
     /**
      * Attempt to reclaim committed deleted rows from the page.
@@ -715,13 +742,10 @@ public class BTreeController extends OpenBTree implements ConglomerateController
         if (SanityManager.DEBUG)
             this.isIndexableRowConsistent(rowToInsert);
 
-        // Create the objects needed for the insert.
-        // RESOLVE (mikem) - should we cache this in the controller?
-        SearchParameters sp =
-            new SearchParameters(
-                rowToInsert,
-                SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
-                scratch_template, this, false);
+        // Reuse the controller-local search state. Unique indexes compare only
+        // the key prefix, so avoid repeatedly materializing the RowLocation
+        // column while binary-searching branch and leaf pages.
+        SearchParameters sp = insertSearchParameters(rowToInsert);
 
         // RowLocation column is in last column of template.
         FetchDescriptor lock_fetch_desc =
