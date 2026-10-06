@@ -382,7 +382,6 @@ final class MvccRawStoreRuntime {
         if (recoveryPublicationCeiling >= 0L) {
             observeRecoveryPublicationCeiling(recoveryPublicationCeiling);
         }
-        transactionStatuses.ensureLoaded(transactionManager);
     }
 
     void lockShared(Transaction transaction, MvccRawStoreLogicalLock lock)

@@ -433,25 +433,26 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     boolean currentVisibleTo(
             long creatorTransactionId,
             long beginSequence,
-            long snapshotSequence) {
+            long snapshotSequence) throws StandardException {
         if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             if (creatorTransactionId != 0L && creatorTransactionId == transactionId) {
                 return true;
             }
-            long committedSequence = runtime.transactionStatuses.committedSequence(creatorTransactionId);
+            long committedSequence = runtime.transactionStatuses.committedSequence(rawTransaction, creatorTransactionId);
             return committedSequence > 0L && committedSequence <= snapshotSequence;
         }
         return beginSequence > 0L && beginSequence <= snapshotSequence;
     }
 
-    long committedBeginSequence(long creatorTransactionId, long beginSequence) {
+    long committedBeginSequence(long creatorTransactionId, long beginSequence)
+            throws StandardException {
         if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             return beginSequence;
         }
         if (creatorTransactionId <= 0L || creatorTransactionId == transactionId) {
             return MvccRawStoreFormat.UNCOMMITTED_SEQUENCE;
         }
-        return runtime.transactionStatuses.committedSequence(creatorTransactionId);
+        return runtime.transactionStatuses.committedSequence(rawTransaction, creatorTransactionId);
     }
 
     @Override

@@ -686,7 +686,8 @@ public final class MvccRowBearingBTreeMechanismTestSupport {
                             + key + " at snapshot " + snapshotSequence);
         }
 
-        private Decoded newestVisiblePhysical(List<Decoded> versions, long snapshotSequence) {
+        private Decoded newestVisiblePhysical(List<Decoded> versions, long snapshotSequence)
+                throws Exception {
             Decoded chosen = null;
             for (Decoded candidate : versions) {
                 if (candidate.kind() != KIND_ACTIVE) {

@@ -30,4 +30,10 @@ public final class MvccTransactionStatusCommitDiagnosticTestSupport {
                 .transactionStatuses
                 .cachedStatusCount();
     }
+
+    public static int statusCacheCapacity(Path databaseDirectory) {
+        return MvccRawStoreDiagnosticsDirectory.require(databaseDirectory)
+                .transactionStatuses
+                .cacheCapacity();
+    }
 }

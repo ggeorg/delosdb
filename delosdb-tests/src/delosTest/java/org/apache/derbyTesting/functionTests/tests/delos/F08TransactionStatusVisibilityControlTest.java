@@ -32,6 +32,8 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             "delosdb.experimental.mvccGen2C1.history.enabled";
     private static final String STATUS_PROPERTY =
             "delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled";
+    private static final String STATUS_CACHE_SLOTS_PROPERTY =
+            "delosdb.mvcc.transactionStatusCacheSlots";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final String MAINTENANCE_ENABLED_PROPERTY =
@@ -317,6 +319,55 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
                 assertRows(reopened, "select count(*) from T_PROBE", "0");
                 assertEquals(0, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
                         databasePath(database)));
+            }
+        } finally {
+            shutdownIfBooted(database);
+        }
+    }
+
+    public void testBoundedStatusCacheUsesDurableLookupAfterReopen() throws Exception {
+        String database = databaseName("f08-tx-status-bounded-cache");
+        try (SystemPropertyScope a1 = clearSystemProperty(A1_PROPERTY);
+             SystemPropertyScope b = setSystemProperty(B_PROPERTY, "true");
+             SystemPropertyScope status = setSystemProperty(STATUS_PROPERTY, "true");
+             SystemPropertyScope cacheSlots = setSystemProperty(
+                     STATUS_CACHE_SLOTS_PROPERTY, "2");
+             SystemPropertyScope maintenance = setSystemProperty(
+                     MAINTENANCE_ENABLED_PROPERTY, "false")) {
+            try (Connection connection = openDatabase(database, true)) {
+                connection.setAutoCommit(false);
+                executeUpdate(connection,
+                        "create table T (id int not null primary key, "
+                                + "payload varchar(128) not null) using delos_mvcc");
+                connection.commit();
+                for (int id = 1; id <= 4; id++) {
+                    insertOne(connection, "T", id, "v" + id);
+                    connection.commit();
+                }
+                assertEquals(2,
+                        MvccTransactionStatusCommitDiagnosticTestSupport.statusCacheCapacity(
+                                databasePath(database)));
+                assertTrue(MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)) <= 2);
+            }
+            shutdownDatabase(database);
+
+            try (Connection reopened = openDatabase(database, false)) {
+                assertEquals(2,
+                        MvccTransactionStatusCommitDiagnosticTestSupport.statusCacheCapacity(
+                                databasePath(database)));
+                assertEquals(0, MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                        databasePath(database)));
+                for (int id = 1; id <= 4; id++) {
+                    assertRows(reopened,
+                            "select payload from T where id = " + id,
+                            "v" + id);
+                    int cached =
+                            MvccTransactionStatusCommitDiagnosticTestSupport.cachedStatusCount(
+                                    databasePath(database));
+                    assertTrue("transaction-status cache exceeded its configured bound: " + cached,
+                            cached > 0 && cached <= 2);
+                }
             }
         } finally {
             shutdownIfBooted(database);

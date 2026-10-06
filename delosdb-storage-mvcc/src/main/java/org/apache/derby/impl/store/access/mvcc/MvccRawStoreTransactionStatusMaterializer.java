@@ -133,7 +133,7 @@ final class MvccRawStoreTransactionStatusMaterializer {
                     "invalid Gen2 CURRENT creator transaction",
                     page.getPageNumber() + ":" + slot + " tx=" + creatorTransactionId);
         }
-        long committedSequence = statuses.committedSequence(creatorTransactionId);
+        long committedSequence = statuses.committedSequence(transaction, creatorTransactionId);
         if (committedSequence <= 0L) {
             return MaterializationOutcome.UNRESOLVED;
         }

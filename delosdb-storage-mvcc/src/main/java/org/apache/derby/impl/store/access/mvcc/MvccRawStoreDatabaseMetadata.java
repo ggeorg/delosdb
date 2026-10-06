@@ -12,10 +12,8 @@ package org.apache.derby.impl.store.access.mvcc;
 
 import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -316,70 +314,61 @@ final class MvccRawStoreDatabaseMetadata {
         }
     }
 
-    Map<Long, Long> readCommittedTransactionStatuses(TransactionManager parent)
-            throws StandardException {
-        try (ChildTransactionScope child = ChildTransactionScope.open(parent)) {
-            Map<Long, Long> statuses = readCommittedTransactionStatuses(
-                    child.manager().getRawStoreXact());
-            child.commit();
-            return statuses;
+    long readCommittedTransactionStatus(
+            Transaction transaction,
+            long transactionId) throws StandardException {
+        if (transactionId <= 0L) {
+            return 0L;
         }
-    }
-
-    Map<Long, Long> readCommittedTransactionStatuses(Transaction transaction)
-            throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 requireContainerKey(),
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.rowLevel(transaction),
                 ContainerHandle.MODE_READONLY);
         if (container == null) {
             throw missingContainer();
         }
-        Map<Long, Long> statuses = new LinkedHashMap<>();
+        long commitSequence = 0L;
         Page page = null;
         try {
             page = container.getFirstPage();
             validateControlRow(transaction, page);
             while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 1
-                        : Page.FIRST_SLOT_NUMBER;
+                int startSlot = firstStatusSlot(page);
                 for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    int fieldCount = page.fetchNumFieldsAtSlot(slot);
-                    if (fieldCount != LEGACY_TRANSACTION_STATUS_FIELD_COUNT
-                            && fieldCount != TRANSACTION_STATUS_FIELD_COUNT) {
+                    int fieldCount = transactionStatusFieldCount(page, slot);
+                    if (fieldCount == 0) {
                         continue;
                     }
                     Object[] row = transactionStatusTemplate(transaction, fieldCount);
                     page.fetchFromSlot(null, slot, row, null, false);
                     if (MvccRawStoreFormat.longAt(row, TRANSACTION_STATUS_MAGIC_FIELD)
-                            != TRANSACTION_STATUS_MAGIC) {
+                            != TRANSACTION_STATUS_MAGIC
+                            || MvccRawStoreFormat.longAt(
+                                    row, TRANSACTION_STATUS_TRANSACTION_ID_FIELD)
+                                    != transactionId) {
                         continue;
                     }
-                    long transactionId = MvccRawStoreFormat.longAt(
-                            row, TRANSACTION_STATUS_TRANSACTION_ID_FIELD);
-                    long commitSequence = MvccRawStoreFormat.longAt(
+                    long candidate = MvccRawStoreFormat.longAt(
                             row, TRANSACTION_STATUS_COMMIT_SEQUENCE_FIELD);
-                    if (transactionId <= 0L || commitSequence <= 0L) {
+                    if (candidate <= 0L) {
                         throw new IllegalStateException(
-                                "RawStore MVCC transaction-status row is invalid: tx="
-                                        + transactionId + ", commit=" + commitSequence);
+                                "RawStore MVCC transaction-status row has invalid commit: tx="
+                                        + transactionId + ", commit=" + candidate);
                     }
-                    Long previous = statuses.put(transactionId, commitSequence);
-                    if (previous != null && previous.longValue() != commitSequence) {
+                    if (commitSequence != 0L && commitSequence != candidate) {
                         throw new IllegalStateException(
-                                "RawStore MVCC transaction status is duplicated with different commit sequences: tx="
-                                        + transactionId + ", first=" + previous + ", second=" + commitSequence);
+                                "RawStore MVCC transaction status is duplicated with different "
+                                        + "commit sequences: tx=" + transactionId
+                                        + ", first=" + commitSequence
+                                        + ", second=" + candidate);
                     }
+                    commitSequence = candidate;
                 }
                 long pageNumber = page.getPageNumber();
                 page.unlatch();
                 page = container.getNextPage(pageNumber);
             }
-            return Map.copyOf(statuses);
+            return commitSequence;
         } finally {
             if (page != null) {
                 page.unlatch();
@@ -742,46 +731,6 @@ final class MvccRawStoreDatabaseMetadata {
                 MvccRawStoreFormat.longValue(transaction, 0L),
                 MvccRawStoreFormat.longValue(transaction, 0L)
         };
-    }
-
-    private static final class ChildTransactionScope implements AutoCloseable {
-        private final TransactionController child;
-        private boolean committed;
-
-        private ChildTransactionScope(TransactionController child) {
-            this.child = child;
-        }
-
-        static ChildTransactionScope open(TransactionManager parent)
-                throws StandardException {
-            return new ChildTransactionScope(
-                    parent.startNestedUserTransaction(false, true));
-        }
-
-        TransactionManager manager() throws StandardException {
-            if (child instanceof TransactionManager childManager) {
-                return childManager;
-            }
-            throw StandardException.newException(
-                    SQLState.NOT_IMPLEMENTED,
-                    "RawStore MVCC transaction-status reload requires a Derby transaction manager");
-        }
-
-        void commit() throws StandardException {
-            child.commit();
-            committed = true;
-        }
-
-        @Override
-        public void close() throws StandardException {
-            try {
-                if (!committed) {
-                    child.abort();
-                }
-            } finally {
-                child.destroy();
-            }
-        }
     }
 
     private ContainerKey requireContainerKey() {

@@ -1,2 +1,2 @@
-7166f297e25c3d9ecb3ea73eb4c23b9f010d0bae0a4cd14a15291a8c95775726  ./MANIFEST.txt
-caffec9c72041b50307d97330178d0ecba076e4bce3f08219058d9a1c15f502d  ./delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java
+d229aa296c8aa0b2f0e07c4f6b3c61c767d745d5f66a0e13485e787cf82c64bb  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java
+7ccb81f1a0d64d4fd0c2cd7db511c4c40174f0351046b1f4523ab4f7e4a15cdd  MANIFEST.txt

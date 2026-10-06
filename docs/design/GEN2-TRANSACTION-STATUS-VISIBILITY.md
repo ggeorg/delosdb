@@ -16,8 +16,10 @@ considered for promotion.
 - RawStore remains the only WAL, undo, crash-recovery, and physical persistence authority.
 - A transaction-status row is inserted by the same parent RawStore transaction as the user rows it
   makes visible. A status must never commit independently of those rows.
-- The in-memory status map is published only after RawStore commit returns successfully.
-- Recovery reloads only status rows which survived RawStore recovery.
+- The bounded in-memory status cache is populated only after RawStore commit returns successfully
+  or after a cache miss resolves through durable RawStore status state.
+- Recovery starts with an empty cache. Durable status rows which survived RawStore recovery are read
+  lazily on cache miss rather than eagerly loading the complete status history into memory.
 - A snapshot may treat `UNCOMMITTED_SEQUENCE` as committed only when the creator transaction has a
   positive durable status sequence at or below that snapshot.
 
@@ -108,11 +110,25 @@ does not identify its dependent tables, so maintenance never guesses that such a
 This is finite upgrade residue; all newly staged status state uses dependency rows and is
 reclaimable by the lifecycle above.
 
-The cache remains an acceleration structure rather than a persistence authority. This increment
-evicts a cached status only after the final dependency deletion is durably committed. A later cache
-policy may additionally bound entries and perform durable lookup on cache miss; it must still
-distinguish an uncached committed status from an absent/uncommitted transaction rather than treating
-a cache miss as a visibility result.
+## Bounded cache and durable lookup
+
+The cache is an acceleration structure rather than a persistence authority. It is a fixed-size,
+direct-mapped cache whose slot count is configured by `delosdb.mvcc.transactionStatusCacheSlots`
+(default 4096). Publication or a durable cache-miss lookup may replace another slot, so the amount
+of transaction-status state retained in RAM is strictly bounded independently of database age.
+
+A cache miss is never interpreted as a visibility result. If the creator transaction is still active,
+the row remains uncommitted to other transactions and durable status storage is not consulted. Once
+the creator is no longer active, a miss scans the existing RawStore database-metadata status rows for
+that transaction ID. A positive durable commit sequence is optionally cached and then evaluated
+against the reader snapshot exactly like a post-commit cache publication. Missing durable state
+continues to mean that no committed status is available; it is distinct from merely being uncached.
+
+Startup does not preload historical committed statuses. Reopen therefore starts with an empty cache
+and reconstructs only the working set actually encountered by visibility checks. Final dependency
+reclamation still evicts a matching cached entry only after the RawStore transaction which removed
+the last durable dependency has committed. Legacy three-field status rows remain available to the
+same durable lookup path and are still conservatively non-reclaimable.
 
 A dedicated status container is also deferred. If the remaining periodic interaction with the
 shared database-metadata allocator proves material, status storage can be separated without

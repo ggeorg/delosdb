@@ -1,12 +1,12 @@
-DelosDB Gen2 transaction-status dependency reclamation r6 reopen probe test fix
-
-Apply on top of r5 lifecycle work.
-
-Changed:
-- delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/F08TransactionStatusVisibilityControlTest.java
+delosdb-gen2-transaction-status-bounded-cache-r9-test-support-exception-fix-overlay
 
 Purpose:
-- keep an empty delos_mvcc probe table outside the tested transaction's dependency set;
-- boot the MVCC runtime through a real persisted conglomerate after database reopen;
-- assert that the reclaimed transaction status does not reload into the cache;
-- make no production, reclamation, locking, or visibility semantic changes.
+Propagate the checked transaction-status durable-lookup exception through the row-bearing B-tree mechanism test helper after the r8 production visibility signature change.
+
+Changed files:
+- delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRowBearingBTreeMechanismTestSupport.java
+
+Behavioral scope:
+- Test support only.
+- No production code changes.
+- No assertion, timeout, visibility, cache, locking, persistence, or reclamation changes.
