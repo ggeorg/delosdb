@@ -6201,6 +6201,30 @@ public class StoredPage extends CachedPage
             return spaceAvailable;
         }
 
+        if (column instanceof PreparedStoreField preparedField
+                && columnFlag != COLUMN_LONG)
+        {
+            byte[] data = preparedField.data();
+            int pageStatus = StoredFieldHeader.setFixed(preparedField.status(), false);
+            int fieldSizeOnPage =
+                    StoredFieldHeader.size(pageStatus, data.length, slotFieldSize)
+                            + data.length;
+
+            if (fieldSizeOnPage <= spaceAvailable
+                    && !isLong(fieldSizeOnPage, overflowThreshold))
+            {
+                int logStatus = StoredFieldHeader.setFixed(preparedField.status(), true);
+                StoredFieldHeader.write(
+                        logicalDataOut, logStatus, data.length, slotFieldSize);
+                out.write(data);
+                userRowSize += data.length;
+                return spaceAvailable - fieldSizeOnPage;
+            }
+
+            // Preserve the inherited long-column/no-space behavior exactly.
+            column = preparedField.original();
+        }
+
         // If this is a long column, it may fit in this page or it may not.
         boolean longColumnDone = true;
 
@@ -7257,6 +7281,31 @@ public class StoredPage extends CachedPage
             storeRecordForUpdate(slot, in);
     }
 
+    PreparedInsertRecord prepareInsertRecord(ByteArray loggedInsert) throws IOException
+    {
+        return PreparedInsertRecord.fromLoggedInsert(loggedInsert, slotFieldSize);
+    }
+
+    void storePreparedInsert(
+            LogInstant instant, int slot, PreparedInsertRecord prepared)
+            throws StandardException, IOException
+    {
+        logAction(instant);
+
+        StoredRecordHeader recordHeader = prepared.copyRecordHeader();
+        shiftUp(slot);
+        setHeaderAtSlot(slot, recordHeader);
+        bumpRecordCount(1);
+        updateInsertedRecordHeader(recordHeader);
+
+        int recordOffset = firstFreeByte;
+        byte[] record = prepared.pageRecord();
+        System.arraycopy(record, 0, pageData, recordOffset, record.length);
+        freeSpace -= record.length;
+        firstFreeByte += record.length;
+        finishRecordInsert(slot, recordOffset, record.length, prepared.userDataLength());
+    }
+
     private void storeRecordForInsert(int slot, ObjectInput in)
         throws StandardException, IOException
     {
@@ -7272,16 +7321,7 @@ public class StoredPage extends CachedPage
         // recordHeader represents the new version of the record header.
         recordHeader.read(in);
 
-        // the record is already marked delete, we need to bump the deletedRowCount
-        if (recordHeader.isDeleted()) {
-            deletedRowCount++;
-            headerOutOfDate = true;
-        }
-
-        // during a rollforward insert, recordId == nextId
-        // during a rollback of purge, recordId < nextId
-        if (nextId <= recordHeader.getId())
-            nextId = recordHeader.getId()+1;
+        updateInsertedRecordHeader(recordHeader);
 
         int recordOffset = firstFreeByte;
         int offset = recordOffset;
@@ -7315,71 +7355,71 @@ public class StoredPage extends CachedPage
         freeSpace     -= dataWritten;
         firstFreeByte += dataWritten;
 
-        int reservedSpace = 0;
-        if (minimumRecordSize > 0) {
-
-            // make sure we reserve the minimumRecordSize for the user data 
-            // portion of the record excluding the space we took on recordHeader 
-            // and fieldHeaders.
-            if (userData < minimumRecordSize) {
-                reservedSpace =  minimumRecordSize - userData;
-                freeSpace     -= reservedSpace;
-                firstFreeByte += reservedSpace;
-            }
-        }
-
-        if (isOverflowPage())
-        {
-            // The total length of the row including the row header, field
-            // headers, user data, and unused reserve space must be at least
-            // as big as the worst case overflow row pointer.  This is so that
-            // it always possible to do an expanding update on a row piece that
-            // in the worst case results in just using the existing space to
-            // put in an overflow pointer to another row segment on some other
-            // page.
-            int additional_space_needed = 
-                StoredRecordHeader.MAX_OVERFLOW_ONLY_REC_SIZE - 
-                    (dataWritten + reservedSpace);
-
-            if (additional_space_needed > 0)
-            {
-                // need to reserve more space for the row to handle worst case
-                // update of the row to an overflow row piece.
-                freeSpace     -= additional_space_needed;
-                firstFreeByte += additional_space_needed;
-                reservedSpace += additional_space_needed;
-            }
-        }
-
-        // update the slot table
-        addSlotEntry(slot, recordOffset, dataWritten, reservedSpace);
-
-        if (SanityManager.DEBUG)
-        {
-            if ((freeSpace < 0)                         || 
-                (firstFreeByte > getSlotOffset(slotsInUse - 1))   ||
-                ((firstFreeByte + freeSpace) != getSlotOffset(slotsInUse - 1)))
-            {
-                SanityManager.THROWASSERT(
-                        " inconsistency in space management during insert: " +
-                        " slot = "                + slot                     +
-                        " getSlotOffset(slot) = " + getSlotOffset(slot)      + 
-                        " dataWritten = "         + dataWritten              +
-                        " freeSpace = "           + freeSpace                + 
-                        " firstFreeByte = "       + firstFreeByte            + 
-                        " page = "                + this);
-            }
-        }
-
-        if ((firstFreeByte > getSlotOffset(slot)) || (freeSpace < 0))
-        {
-            throw dataFactory.markCorrupt(
-                StandardException.newException(
-                    SQLState.DATA_CORRUPT_PAGE, getPageId()));
-        }
+        finishRecordInsert(slot, recordOffset, dataWritten, userData);
 
     }
 
+
+    private void updateInsertedRecordHeader(StoredRecordHeader recordHeader)
+    {
+        if (recordHeader.isDeleted()) {
+            deletedRowCount++;
+            headerOutOfDate = true;
+        }
+
+        // During rollforward recordId == nextId; during rollback of purge it
+        // may be lower. Preserve the existing next-id rule in both apply paths.
+        if (nextId <= recordHeader.getId()) {
+            nextId = recordHeader.getId() + 1;
+        }
+    }
+
+    private void finishRecordInsert(
+            int slot, int recordOffset, int dataWritten, int userData)
+            throws StandardException, IOException
+    {
+        int reservedSpace = 0;
+        if (minimumRecordSize > 0 && userData < minimumRecordSize) {
+            reservedSpace = minimumRecordSize - userData;
+            freeSpace -= reservedSpace;
+            firstFreeByte += reservedSpace;
+        }
+
+        if (isOverflowPage()) {
+            int additionalSpaceNeeded =
+                    StoredRecordHeader.MAX_OVERFLOW_ONLY_REC_SIZE
+                            - (dataWritten + reservedSpace);
+            if (additionalSpaceNeeded > 0) {
+                freeSpace -= additionalSpaceNeeded;
+                firstFreeByte += additionalSpaceNeeded;
+                reservedSpace += additionalSpaceNeeded;
+            }
+        }
+
+        addSlotEntry(slot, recordOffset, dataWritten, reservedSpace);
+
+        if (SanityManager.DEBUG) {
+            if ((freeSpace < 0)
+                    || (firstFreeByte > getSlotOffset(slotsInUse - 1))
+                    || ((firstFreeByte + freeSpace)
+                            != getSlotOffset(slotsInUse - 1))) {
+                SanityManager.THROWASSERT(
+                        " inconsistency in space management during insert: "
+                                + " slot = " + slot
+                                + " getSlotOffset(slot) = " + getSlotOffset(slot)
+                                + " dataWritten = " + dataWritten
+                                + " freeSpace = " + freeSpace
+                                + " firstFreeByte = " + firstFreeByte
+                                + " page = " + this);
+            }
+        }
+
+        if ((firstFreeByte > getSlotOffset(slot)) || (freeSpace < 0)) {
+            throw dataFactory.markCorrupt(
+                    StandardException.newException(
+                            SQLState.DATA_CORRUPT_PAGE, getPageId()));
+        }
+    }
 
     private void storeRecordForUpdate(int slot, ObjectInput in)
         throws StandardException, IOException

@@ -71,6 +71,8 @@ def rawStoreIoFaultInjectionTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java')
 def rawStoreWalAccountingTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java')
+def rawStorePreparedInsertTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java')
 def archivedUndoTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java')
 def pageLatchDiagnosticTestSupportSource = file(
@@ -368,6 +370,7 @@ sourceSets {
             // inside the named org.apache.derby.tests module.
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
@@ -405,6 +408,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(rawStoreWalAccountingTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(rawStorePreparedInsertTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(archivedUndoTestSupportSource) {
@@ -617,6 +623,15 @@ def registerDelosFocusedTest = { String taskName,
     }
 }
 
+
+registerDelosFocusedTest(
+        'runDelosRawStoreConcurrentMutationPreparedInsert',
+        'Runs the RCM-0/1 prepared-insert equivalence, transaction, and crash-recovery proof.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreConcurrentMutationPreparedInsertTest.class'],
+        [
+                'delosdb.experimental.rawStorePreparedInsert.enabled': 'true',
+                'delosdb.diagnostic.rawStorePreparedInsert': 'true'
+        ])
 
 registerDelosFocusedTest(
         'runDelosIsolationSpecificationTests',

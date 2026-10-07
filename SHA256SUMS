@@ -1,4 +1,13 @@
-87d8dca813dfbc2ca6869caf733118f45b5edbca43d8c8fe246eab96ff4a1ee6  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
-8f21c262a11c578e3b6289df56b304f3020ef8640e3813cb96fda20efe907873  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java
-4e92396dee83fb34d8ea584f5d63457865badec6fcc1029fab67fca30ad91169  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/SearchParameters.java
-719c535cb62898e0f0811e804369736cb3076023e1ad6cf6661e9380d83e7797  MANIFEST.txt
+4b23e3b4dfda0f0262621ca020633571838bcee2f302ef03976ee9ca1d0c970d  MANIFEST.txt
+ef4ee484890542f912f66b08d1c3376f765561547c5e9cb3235aeca9e5af3262  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
+1322e15ec94e78e65363aa9df961c42958cfcef48abb9ef491b7a7f7eda6dc87  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java
+2a3ba862e2f1b0c8843720795d37707d1a2da9f6c2e988dff9b31368350f2d46  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/InsertOperation.java
+c77bca96e94dbed40ce9eb604786df5b573a11144445470d82016e7dd98b42c0  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PreparedInsertRecord.java
+e6b034c2f412cdecb433cd074d911972791dc011e980d3c07e41a70d4563a93f  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PreparedStoreField.java
+7baaf1f5a810f6992abd69e6f8ef178b996b2506c88d54b3a9fa76f8dfdb0c86  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertAccess.java
+95987b36534350ee043433fd8d7f95f2eeaf48ca94ea6b5094b36538d09b9a2f  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedRow.java
+ad4314ab0ed930acf7d70980c820509530a24e55ef4fc01c87e6746611f3f598  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java
+96502a75607cb916726f822fa0129141e66206d4f5d747dadf42e0995cf7fd31  delosdb-tests/build.gradle
+4b5f9d0929bdc95743cc909f686905d1ccb07f2c4aa265bbbc28acbdf929b406  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/RawStoreConcurrentMutationPreparedInsertTest.java
+e1f8db9295026e32e311076e0482e700dbe7f330b5132533ffa2b62453f32af3  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java
+c81691cc3e963b69406d41fa8ee5e1476c578e387040863161281b88f3079c27  docs/design/RAWSTORE-CONCURRENT-MUTATION.md

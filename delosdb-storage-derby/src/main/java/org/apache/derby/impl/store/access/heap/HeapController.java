@@ -50,6 +50,8 @@ import org.apache.derby.impl.store.access.conglomerate.OpenConglomerate;
 import org.apache.derby.impl.store.access.conglomerate.GenericConglomerateController;
 import org.apache.derby.impl.store.access.conglomerate.RowPosition;
 
+import org.apache.derby.impl.store.raw.data.RawStorePreparedRow;
+
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 
 /**
@@ -239,6 +241,8 @@ public class HeapController
             }
         }
 
+        Object[] rowToInsert = RawStorePreparedRow.prepare(row);
+
         // Get the last page that was returned for insert or the last page
         // that was allocated.
         page = open_conglom.getContainer().getPageForInsert(0);
@@ -252,7 +256,7 @@ public class HeapController
 
             // Check to see if there is enough space on the page
             // for the row.
-            rh = page.insert(row, null, insert_mode,
+            rh = page.insert(rowToInsert, null, insert_mode,
 				AccessFactoryGlobals.HEAP_OVERFLOW_THRESHOLD);
             page.unlatch();
             page = null;
@@ -285,7 +289,7 @@ public class HeapController
                 (page.recordCount() == 0) ? 
                     Page.INSERT_OVERFLOW : Page.INSERT_DEFAULT;
             
-            rh = page.insert(row, null, insert_mode,
+            rh = page.insert(rowToInsert, null, insert_mode,
 				AccessFactoryGlobals.HEAP_OVERFLOW_THRESHOLD);
 
             page.unlatch();
@@ -304,7 +308,7 @@ public class HeapController
         // At this point with long rows the raw store will guarantee
         // that any size row will fit on an empty page.
 
-        rh = page.insert(row, null, Page.INSERT_OVERFLOW,
+        rh = page.insert(rowToInsert, null, Page.INSERT_OVERFLOW,
 			AccessFactoryGlobals.HEAP_OVERFLOW_THRESHOLD);
         page.unlatch();
         page = null;

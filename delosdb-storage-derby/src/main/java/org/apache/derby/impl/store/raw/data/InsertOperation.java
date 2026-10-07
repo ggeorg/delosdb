@@ -78,6 +78,9 @@ public final class InsertOperation extends LogicalPageOperation
 
 	transient protected ByteArray preparedLog;
 
+    /** Runtime-only page-native representation; never serialized into WAL. */
+    transient private PreparedInsertRecord preparedInsert;
+
 	// yyz: revisit later, whether we need preparedLog, maybe everything will be prepared...
     InsertOperation(
     RawTransaction              t, 
@@ -105,6 +108,10 @@ public final class InsertOperation extends LogicalPageOperation
 		try {
 			writeOptionalDataToBuffer(t, logBuffer, row, validColumns,
 				isLongColumn, realStartColumn, realSpaceOnPage, overflowThreshold);
+            if (RawStorePreparedInsertAccess.enabled() && page instanceof StoredPage storedPage) {
+                preparedInsert = storedPage.prepareInsertRecord(preparedLog);
+                RawStorePreparedInsertAccess.prepared(preparedInsert.pageRecord().length);
+            }
 		} catch (IOException ioe) {
 			throw StandardException.newException(
                     SQLState.DATA_UNEXPECTED_EXCEPTION, ioe);
@@ -162,6 +169,12 @@ public final class InsertOperation extends LogicalPageOperation
 	public void doMe(Transaction xact, LogInstant instant, LimitObjectInput in)
 		 throws StandardException, IOException 
 	{
+        if (preparedInsert != null && this.page instanceof StoredPage storedPage) {
+            storedPage.storePreparedInsert(instant, doMeSlot, preparedInsert);
+            RawStorePreparedInsertAccess.directApply();
+            return;
+        }
+        RawStorePreparedInsertAccess.legacyApply();
 		this.page.storeRecord(instant, doMeSlot, true, in);
 	}
 

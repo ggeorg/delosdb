@@ -1050,11 +1050,10 @@ public abstract class ControlRow implements AuxObject, TypedFormat
                 compareIndexRowFromPageToKey(
                     this,
                     midslot,
-                    params.template, params.searchKey,
-                    params.btree.getConglomerate().nUniqueColumns,
+                    params.template, params.searchKey, 
+                    params.btree.getConglomerate().nUniqueColumns, 
                     params.partial_key_match_op,
-                    params.btree.getConglomerate().ascDescInfo,
-                    params.compareFetchDescriptor);
+                    params.btree.getConglomerate().ascDescInfo);
 
             if (compare_ret == 0)
             {
@@ -1142,43 +1141,27 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	public static int compareIndexRowFromPageToKey(
     ControlRow              indexpage,
     int                     slot,
-    StoreDataValue[]        indexrow,
-    StoreDataValue[]        key,
-    int                     nCompareCols,
+    StoreDataValue[]        indexrow, 
+    StoreDataValue[]	key,
+    int                     nCompareCols, 
     int                     partialKeyOrder,
     boolean[]               ascOrDesc)
         throws StandardException
 	{
-        return compareIndexRowFromPageToKey(
-                indexpage, slot, indexrow, key, nCompareCols,
-                partialKeyOrder, ascOrDesc, null);
-    }
-
-    private static int compareIndexRowFromPageToKey(
-    ControlRow              indexpage,
-    int                     slot,
-    StoreDataValue[]        indexrow,
-    StoreDataValue[]        key,
-    int                     nCompareCols,
-    int                     partialKeyOrder,
-    boolean[]               ascOrDesc,
-    FetchDescriptor         compareFetchDescriptor)
-        throws StandardException
-    {
         int compare_result;
 
 		// Get the actual number of key columns present
 		// in the partial key.
 		int partialKeyCols = key.length;
 
-        // Insert searches on unique indexes compare only the user-key prefix.
-        // The final RowLocation field is not part of that comparison, so avoid
-        // decoding it on every binary-search probe. The descriptor contains a
-        // contiguous prefix, which RawStore can restore without walking any
-        // fields beyond the last compared key column.
+        // Fetch entire index row from page.
+        // RESOLVE (mikem) - it may be more efficient to fetch just the
+        // columns you need, but there is overhead currently in raw
+        // store, since to get to the n'th column you have to walk 
+        // through the preceding n-1 columns.
         indexpage.page.fetchFromSlot(
-            (RecordHandle) null, slot, indexrow,
-            compareFetchDescriptor,
+            (RecordHandle) null, slot, indexrow, 
+            (FetchDescriptor) null,
             true);
 
 		// Compare corresponding columns in the index row and the key.
