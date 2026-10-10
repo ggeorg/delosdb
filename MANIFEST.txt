@@ -1,8 +1,51 @@
-RCM-0/1 stable-suite registration fix
+DelosDB per-writer heap insert lanes
+====================================
 
-Changed files:
-- gradle/testing/delos-test-suite-registry.tsv
+Purpose
+-------
+Remove the single shared heap insert page as the concurrent-insert bottleneck.
+JFR on embedded BARE INSERT_100 (8 clients) showed writers spending about 61% of
+their time waiting for that one page latch, in both Delos and upstream Derby;
+Derby's 4-page multi-insert mode exists only as a commented-out call.
 
-Purpose:
-- Registers RawStoreConcurrentMutationPreparedInsertTest as a recovery/full stable-suite test.
-- No production code or test behavior changes.
+Behavior
+--------
+- FileContainer starts with one lastInsertedPage slot, exactly as Derby.
+- When a NOWAIT latch on the insert page fails but the WAIT retry succeeds
+  (contention, not a full page), the container switches to insert lanes:
+  a power-of-two slot array (twice the processors, 4..64).
+- Each inserting thread uses the slot of its dense per-thread ordinal and keeps
+  its own target page; the contending thread keeps the contended page.
+- In lane mode the unfilled-page path latches NOWAIT and skips every lane's
+  target page, so a writer takes its own unfilled page or adds a new one.
+- Lanes stay active until the container is reinitialized.
+- A single writer never triggers lanes, so its row placement is unchanged.
+- Gen2 MVCC uses the same getPageForInsert path and benefits as well.
+
+Controls
+--------
+- delosdb.storage.insertLanes.disabled (default false; read once)
+
+Deliberately unchanged
+----------------------
+- On-disk page and container format (Heap remains Derby-compatible)
+- WAL format, logging, recovery and undo
+- Allocation, overflow and compress paths
+
+Qualification
+-------------
+- HeapInsertLaneTest (concurrency/full): 8 writers on BARE and PK tables, every
+  third batch rolled back, reboot through recovery, exact committed contents,
+  SYSCS_CHECK_TABLE, and single-writer insert order.
+- derbyStoreTests (collectAllFailures): 429 tests, the same 6 setup failures
+  ("No current connection") with lanes on and with lanes disabled.
+- delosRecoveryTests: all classes pass.
+- delosConcurrencyTests: DEL-ISO-001, DEL-FK-004 and the F08 transaction-status
+  task-only test fail identically with lanes disabled (pre-existing).
+
+Measured (embedded probe, macOS, rare log switch/checkpoint, rows/s)
+--------------------------------------------------------------------
+- BARE, 8 clients: 339-345k -> 833-881k (upstream Derby ~370k)
+- PK,   8 clients: 263-272k -> 341-357k (upstream Derby 274-316k)
+With default log settings on macOS the F_FULLFSYNC log-switch syncs introduced
+by 6e35fbea still dominate; that is a separate decision.

@@ -62,7 +62,9 @@ import org.apache.derby.iapi.util.ByteArray;
 import java.io.IOException;
 import java.io.DataInput;
 
+import java.util.Arrays;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 
 import org.apache.derby.io.StorageRandomAccessFile;
@@ -161,9 +163,31 @@ abstract class FileContainer
 		memory only.
 		Use Get/Set method to access this field except when we know it is
 		being single thread access.
+
+		The array has one slot until concurrent inserters contend on the
+		shared insert page. It then switches to INSERT_LANES slots, and each
+		inserting thread keeps its own target page in the slot of its lane,
+		so concurrent inserters no longer serialize on one page latch.
 	 */
 	private long lastInsertedPage[];
-	private int  lastInsertedPage_index;
+
+    /**
+     * Disable per-writer insert lanes and keep Derby's single shared insert
+     * page. Read once; insert lanes change only in-memory page choice, never
+     * the on-disk format.
+     */
+    private static final boolean INSERT_LANES_ENABLED =
+            !Boolean.getBoolean("delosdb.storage.insertLanes.disabled");
+
+    /** Power of two, at least 4 and at most 64: twice the processors, rounded up. */
+    private static final int INSERT_LANES = Integer.highestOneBit(
+            Math.min(64, Math.max(4, Runtime.getRuntime().availableProcessors() * 2)) - 1) << 1;
+
+    private static final AtomicInteger INSERT_LANE_SEQUENCE = new AtomicInteger();
+
+    /** Dense per-thread ordinal, so active writers map to distinct lanes. */
+    private static final ThreadLocal<Integer> INSERT_LANE =
+            ThreadLocal.withInitial(INSERT_LANE_SEQUENCE::getAndIncrement);
 
 	/** 
 		The last unfilled page found.  Use this for getPageForInsert.
@@ -3031,14 +3055,19 @@ abstract class FileContainer
                 if (p == null)
                 {
                     // most likely we could not get the latch NOWAIT, try again
-                    // with a new page, and tell the system to switch to 
-                    // multi-page mode.
+                    // with WAIT.
 
                     localLastInsertedPage = getLastInsertedPage();
 
                     p = getInsertablePage(handle, localLastInsertedPage,
                                           true, /* wait */
                                           false /* no overflow page */);
+
+                    // The page still had room, so the NOWAIT failure was
+                    // latch contention, not a full page: switch to
+                    // per-writer insert lanes.  This thread keeps the page.
+                    if (p != null)
+                        switchToInsertLanes(localLastInsertedPage);
                 }
             }
 
@@ -3067,21 +3096,27 @@ abstract class FileContainer
 				localLastUnfilledPage == getLastInsertedPage())
 				localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
 
+			// With insert lanes, never wait for or adopt another lane's
+			// target page; returning null makes the caller add a new page.
+			boolean lanes = insertLanesActive();
+
 			if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER)
 			{
 				// try the last unfilled page we found - this could be
 				// different from lastInserted if the last unfilled one we
 				// found does not have enough space for the insert and the
 				// client wants to get a brand new page.
-				p = getInsertablePage(handle, localLastUnfilledPage, true, false);
+				p = lanes && isInsertLaneTarget(localLastUnfilledPage) ? null
+					: getInsertablePage(handle, localLastUnfilledPage, !lanes, false);
 
 				// try again
 				if (p == null)
 				{
 					localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
-					if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER)
+					if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER &&
+						!(lanes && isInsertLaneTarget(localLastUnfilledPage)))
 					{
-						p = getInsertablePage(handle, localLastUnfilledPage, true,
+						p = getInsertablePage(handle, localLastUnfilledPage, !lanes,
 											  false);
 					}
 				}
@@ -3436,26 +3471,9 @@ abstract class FileContainer
 	 */
 	private synchronized long getLastInsertedPage()
 	{
-        if (lastInsertedPage.length == 1)
-        {
-            if (SanityManager.DEBUG)
-                SanityManager.ASSERT(lastInsertedPage_index == 0);
-
-            // optimize the usual case where no concurrent insert has kicked us
-            // into multi-page mode - ie. only ONE last page.  
-            return(lastInsertedPage[0]);
-        }
-        else
-        {
-            long ret = lastInsertedPage[lastInsertedPage_index++];
-
-            if (lastInsertedPage_index > (lastInsertedPage.length - 1))
-            {
-                lastInsertedPage_index = 0;
-            }
-
-            return(ret);
-        }
+        // the usual case where no concurrent insert has kicked us into
+        // insert-lane mode - ie. only ONE last page.
+        return lastInsertedPage[insertLaneSlot()];
 	}
 
 	private synchronized long getLastUnfilledPage()
@@ -3466,17 +3484,53 @@ abstract class FileContainer
 	private synchronized void initializeLastInsertedPage(int size)
 	{
         lastInsertedPage = new long[size];
-
-        for (int i = lastInsertedPage.length - 1; i >= 0; i--)
-            lastInsertedPage[i] = ContainerHandle.INVALID_PAGE_NUMBER;
-
-        lastInsertedPage_index = 0;
+        Arrays.fill(lastInsertedPage, ContainerHandle.INVALID_PAGE_NUMBER);
 	}
 
 	private synchronized void setLastInsertedPage(long val)
 	{
-		lastInsertedPage[lastInsertedPage_index] = val;
+		lastInsertedPage[insertLaneSlot()] = val;
 	}
+
+    /** The calling thread's slot: 0 until insert lanes are active. */
+    private int insertLaneSlot()
+    {
+        return lastInsertedPage.length == 1
+                ? 0 : INSERT_LANE.get() & (lastInsertedPage.length - 1);
+    }
+
+    private synchronized boolean insertLanesActive()
+    {
+        return lastInsertedPage.length != 1;
+    }
+
+    /** True if pageNumber is any lane's current insert target. */
+    private synchronized boolean isInsertLaneTarget(long pageNumber)
+    {
+        for (long target : lastInsertedPage)
+        {
+            if (target == pageNumber)
+                return true;
+        }
+        return false;
+    }
+
+    /**
+     * Switch from the single shared insert page to per-writer insert lanes,
+     * after inserters contended on that page.  The contending thread keeps
+     * the page; every other lane starts empty, so its writer takes an
+     * unfilled page no other lane targets, or a new page.  Lanes stay active
+     * until the container is reinitialized.
+     */
+    private synchronized void switchToInsertLanes(long contendedPage)
+    {
+        if (!INSERT_LANES_ENABLED || lastInsertedPage.length != 1)
+            return;
+
+        lastInsertedPage = new long[INSERT_LANES];
+        Arrays.fill(lastInsertedPage, ContainerHandle.INVALID_PAGE_NUMBER);
+        lastInsertedPage[insertLaneSlot()] = contendedPage;
+    }
 
 	private synchronized void setLastUnfilledPage(long val)
 	{
