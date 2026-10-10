@@ -1,50 +1,8 @@
-DelosDB RCM-0/1 prepared insert overlay
-=======================================
+RCM-0/1 stable-suite registration fix
 
-Purpose
--------
-Introduce the first qualification-only RawStore Concurrent Mutation prepared-insert path.
+Changed files:
+- gradle/testing/delos-test-suite-registry.tsv
 
-Behavior
---------
-- Snapshot complete non-stream StoreDataValue rows before Heap target-page acquisition.
-- Snapshot normal B-tree insert rows before tree search and reuse them across retries/splits.
-- Reuse prepared field payload bytes when producing the existing durable insert WAL payload.
-- Derive a transient canonical page-native image from those unchanged durable WAL bytes.
-- Apply the transient image directly during normal in-process InsertOperation.doMe().
-- Recovery-created InsertOperation instances retain the inherited StoredPage decoder path.
-- Unsupported/stream-backed rows conservatively fall back to the inherited serializer.
-
-Controls
---------
-- delosdb.experimental.rawStorePreparedInsert.enabled (default OFF)
-- delosdb.diagnostic.rawStorePreparedInsert (default OFF)
-
-Focused qualification
----------------------
-:delosdb-tests:runDelosRawStoreConcurrentMutationPreparedInsert
-
-Deliberately unchanged
-----------------------
-- RawStore WAL format and ordering
-- recovery and logical undo semantics
-- page format and B-tree format
-- page latch model
-- B-tree routing/search model
-- LogToFile and group commit
-- public Derby store APIs
-
-Files
------
-docs/design/RAWSTORE-CONCURRENT-MUTATION.md
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapController.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeController.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/InsertOperation.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PreparedInsertRecord.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/PreparedStoreField.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertAccess.java
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedRow.java
-delosdb-tests/build.gradle
-delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java
-delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/RawStoreConcurrentMutationPreparedInsertTest.java
+Purpose:
+- Registers RawStoreConcurrentMutationPreparedInsertTest as a recovery/full stable-suite test.
+- No production code or test behavior changes.
