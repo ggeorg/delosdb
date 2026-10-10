@@ -73,6 +73,8 @@ def rawStoreWalAccountingTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java')
 def rawStorePreparedInsertTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java')
+def heapInsertLaneTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/HeapInsertLaneTestSupport.java')
 def archivedUndoTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java')
 def pageLatchDiagnosticTestSupportSource = file(
@@ -371,6 +373,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreIoFaultInjectionTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/RawStoreWalAccountingTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/RawStorePreparedInsertTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/data/HeapInsertLaneTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/ArchivedUndoTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/PageLatchDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/HeapPageReadImageDiagnosticTestSupport.java'
@@ -411,6 +414,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(rawStorePreparedInsertTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(heapInsertLaneTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
     }
     from(archivedUndoTestSupportSource) {

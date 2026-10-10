@@ -1,51 +1,36 @@
-DelosDB per-writer heap insert lanes
-====================================
+DelosDB heap insert lanes: qualification follow-up
+==================================================
 
 Purpose
 -------
-Remove the single shared heap insert page as the concurrent-insert bottleneck.
-JFR on embedded BARE INSERT_100 (8 clients) showed writers spending about 61% of
-their time waiting for that one page latch, in both Delos and upstream Derby;
-Derby's 4-page multi-insert mode exists only as a commented-out call.
+Close the evidence gaps in the per-writer heap insert lanes change (edf18924):
+prove lanes actually engage, cover crash recovery, and make the attribution
+probe reproducible from the repository.
 
-Behavior
---------
-- FileContainer starts with one lastInsertedPage slot, exactly as Derby.
-- When a NOWAIT latch on the insert page fails but the WAIT retry succeeds
-  (contention, not a full page), the container switches to insert lanes:
-  a power-of-two slot array (twice the processors, 4..64).
-- Each inserting thread uses the slot of its dense per-thread ordinal and keeps
-  its own target page; the contending thread keeps the contended page.
-- In lane mode the unfilled-page path latches NOWAIT and skips every lane's
-  target page, so a writer takes its own unfilled page or adds a new one.
-- Lanes stay active until the container is reinitialized.
-- A single writer never triggers lanes, so its row placement is unchanged.
-- Gen2 MVCC uses the same getPageForInsert path and benefits as well.
-
-Controls
---------
-- delosdb.storage.insertLanes.disabled (default false; read once)
+Changes
+-------
+- FileContainer counts switches to insert lanes (one LongAdder increment per
+  container switch, never on the per-row path) and exposes the count to tests.
+- HeapInsertLaneTestSupport: test-only bridge compiled into the engine patch.
+- HeapInsertLaneTest:
+  - concurrent BARE/PK cases assert the table switched to insert lanes
+    (both fail when lanes are disabled, so the assertion is meaningful);
+  - the single-writer case asserts no switch happened;
+  - new crash case: a separate JVM runs 8 concurrent writers on a PK table,
+    commits and rolls back batches, leaves one batch per writer in flight and
+    halts without shutdown; reboot must replay committed rows, undo in-flight
+    and rolled-back rows, and pass SYSCS_CHECK_TABLE.
+- tools/diagnostics/insert-probe: embedded F08 INSERT_100 probe, run script
+  (Delos or upstream Derby, optional JFR, optional rare log switch) and a
+  streaming JFR attribution script.
 
 Deliberately unchanged
 ----------------------
-- On-disk page and container format (Heap remains Derby-compatible)
-- WAL format, logging, recovery and undo
-- Allocation, overflow and compress paths
+- Insert-lane behavior, on-disk format, WAL, recovery
 
 Qualification
 -------------
-- HeapInsertLaneTest (concurrency/full): 8 writers on BARE and PK tables, every
-  third batch rolled back, reboot through recovery, exact committed contents,
-  SYSCS_CHECK_TABLE, and single-writer insert order.
-- derbyStoreTests (collectAllFailures): 429 tests, the same 6 setup failures
-  ("No current connection") with lanes on and with lanes disabled.
-- delosRecoveryTests: all classes pass.
-- delosConcurrencyTests: DEL-ISO-001, DEL-FK-004 and the F08 transaction-status
-  task-only test fail identically with lanes disabled (pre-existing).
-
-Measured (embedded probe, macOS, rare log switch/checkpoint, rows/s)
---------------------------------------------------------------------
-- BARE, 8 clients: 339-345k -> 833-881k (upstream Derby ~370k)
-- PK,   8 clients: 263-272k -> 341-357k (upstream Derby 274-316k)
-With default log settings on macOS the F_FULLFSYNC log-switch syncs introduced
-by 6e35fbea still dominate; that is a separate decision.
+- HeapInsertLaneTest: 4/4 pass; with -Ddelosdb.storage.insertLanes.disabled=true
+  the two concurrent cases fail on the lane-switch assertion, as intended.
+- delosStableTestSuiteStaticAnalysis, delosTestProvenanceStaticAnalysis,
+  delosRepositoryIntegrityStaticAnalysis: pass.

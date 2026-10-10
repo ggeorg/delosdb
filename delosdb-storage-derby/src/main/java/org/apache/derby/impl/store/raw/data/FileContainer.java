@@ -65,6 +65,7 @@ import java.io.DataInput;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.zip.CRC32;
 
 import org.apache.derby.io.StorageRandomAccessFile;
@@ -188,6 +189,9 @@ abstract class FileContainer
     /** Dense per-thread ordinal, so active writers map to distinct lanes. */
     private static final ThreadLocal<Integer> INSERT_LANE =
             ThreadLocal.withInitial(INSERT_LANE_SEQUENCE::getAndIncrement);
+
+    /** Containers switched to insert lanes; incremented once per switch. */
+    private static final LongAdder INSERT_LANE_SWITCHES = new LongAdder();
 
 	/** 
 		The last unfilled page found.  Use this for getPageForInsert.
@@ -3530,6 +3534,12 @@ abstract class FileContainer
         lastInsertedPage = new long[INSERT_LANES];
         Arrays.fill(lastInsertedPage, ContainerHandle.INVALID_PAGE_NUMBER);
         lastInsertedPage[insertLaneSlot()] = contendedPage;
+        INSERT_LANE_SWITCHES.increment();
+    }
+
+    static long insertLaneSwitchesForTesting()
+    {
+        return INSERT_LANE_SWITCHES.sum();
     }
 
 	private synchronized void setLastUnfilledPage(long val)
