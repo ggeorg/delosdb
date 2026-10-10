@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the embedded F08 INSERT_100 probe against Delos or upstream Derby.
 #
-# usage: tools/diagnostics/insert-probe/run-insert-probe.sh <delos|derby> <clients> <bare|pk>
+# usage: tools/diagnostics/insert-probe/run-insert-probe.sh <delos|derby> <clients> <bare|pk|indexed>
 #            [--rows N] [--rare-log-switch] [--jfr OUT.jfr] [-- extra JVM args...]
 #
 # Run from the repository root after:
@@ -50,7 +50,7 @@ esac
 
 if [[ -n $jfr ]]; then
     jfr configure --input profile \
-        jdk.JavaMonitorEnter#threshold=10us jdk.JavaMonitorWait#threshold=10us \
+        jdk.JavaMonitorEnter#threshold=10us jdk.JavaMonitorWait#threshold=10us jdk.ThreadPark#threshold=10us \
         jdk.FileWrite#threshold=0ms jdk.FileForce#threshold=0ms \
         jdk.ExecutionSample#period=2ms --output "$work/probe.jfc" >/dev/null
     jvm_args+=("-XX:StartFlightRecording=settings=$work/probe.jfc,filename=$jfr")

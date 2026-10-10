@@ -7,9 +7,9 @@ benchmark harness or on throughput being stable on a laptop.
 
 | File | Purpose |
 |---|---|
-| `F08InsertProbe.java` | N writers, disjoint ascending ids, 128-byte payload, commit every 100 rows; verifies committed contents |
+| `F08InsertProbe.java` | N writers, disjoint ascending ids, 128-byte payload, commit every 100 rows; `bare`, `pk` or `indexed` (the cross-engine FULL_INDEXED shape); verifies committed contents |
 | `run-insert-probe.sh` | Builds the probe and runs it against Delos (`build/libs`) or upstream Derby 10.17.1.0, optionally under JFR |
-| `jfr_insert_attribution.py` | Writer monitor-wait time by monitor and site, and CPU work done while a heap page is latched |
+| `jfr_insert_attribution.py` | Writer monitor-wait time by monitor and site, page-latch waits by structure (heap, B-tree root, coupled B-tree child), and CPU work done while a heap page is latched |
 
 ```bash
 . ~/Development/jdk25-env.sh

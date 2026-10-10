@@ -18,29 +18,40 @@ import java.util.concurrent.CyclicBarrier;
 /**
  * Embedded F08 INSERT_100 probe, independent of the benchmark harness.
  *
- * <p>Usage: {@code F08InsertProbe <jdbc-url> <clients> <rows-per-client> <bare|pk>}.
+ * <p>Usage: {@code F08InsertProbe <jdbc-url> <clients> <rows-per-client> <bare|pk|indexed>}.
  * Each client inserts its own ascending id range (128-byte payload) and commits
  * every 100 rows. Prints throughput, then verifies the committed contents.
+ *
+ * <p>{@code indexed} matches the cross-engine benchmark's FULL_INDEXED INSERT
+ * shape: id primary key, secondary indexes on category and (bucket, quantity),
+ * with category = id % 17, bucket = id % 11 and quantity = (id * 31) mod 10000.
  */
 public final class F08InsertProbe {
     private F08InsertProbe() {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4 || !(args[3].equals("bare") || args[3].equals("pk"))) {
-            System.err.println("usage: F08InsertProbe <jdbc-url> <clients> <rows-per-client> <bare|pk>");
+        String shape = args.length == 4 ? args[3] : "";
+        if (!(shape.equals("bare") || shape.equals("pk") || shape.equals("indexed"))) {
+            System.err.println(
+                    "usage: F08InsertProbe <jdbc-url> <clients> <rows-per-client> <bare|pk|indexed>");
             System.exit(64);
         }
+        boolean indexed = shape.equals("indexed");
         String url = args[0];
         int clients = Integer.parseInt(args[1]);
         int rowsPerClient = Integer.parseInt(args[2]);
-        String idColumn = args[3].equals("pk") ? "id int not null primary key" : "id int not null";
+        String idColumn = shape.equals("bare") ? "id int not null" : "id int not null primary key";
         String payload = "x".repeat(128);
 
         try (Connection connection = DriverManager.getConnection(url + ";create=true");
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("create table t (" + idColumn + ", category int not null,"
                     + " bucket int not null, quantity int not null, payload varchar(4096) not null)");
+            if (indexed) {
+                statement.executeUpdate("create index t_category_idx on t (category)");
+                statement.executeUpdate("create index t_range_idx on t (bucket, quantity)");
+            }
         }
 
         CyclicBarrier start = new CyclicBarrier(clients + 1);
@@ -56,9 +67,9 @@ public final class F08InsertProbe {
                     for (int row = 0; row < rowsPerClient; row++) {
                         int id = base + row;
                         insert.setInt(1, id);
-                        insert.setInt(2, id % 97);
-                        insert.setInt(3, id % 1013);
-                        insert.setInt(4, id % 7);
+                        insert.setInt(2, indexed ? id % 17 : id % 97);
+                        insert.setInt(3, indexed ? id % 11 : id % 1013);
+                        insert.setInt(4, indexed ? Math.floorMod(id * 31, 10_000) : id % 7);
                         insert.setString(5, payload);
                         insert.executeUpdate();
                         if ((row + 1) % 100 == 0) {
