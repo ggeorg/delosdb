@@ -180,6 +180,20 @@ abstract class FileContainer
     private static final boolean INSERT_LANES_ENABLED =
             !Boolean.getBoolean("delosdb.storage.insertLanes.disabled");
 
+    /*
+     * A page already in the page cache skips the allocation-cache check in
+     * getUserPage: deallocation changes the page's own status under its
+     * latch (deallocatePage), so the status check after latching gives the
+     * same answer without the allocCache monitor every page fetch shared.
+     * Page fetches used to revalidate the allocation cache as a side effect,
+     * and AllocationCache.trackUnfilledPage drops updates while it is
+     * invalid, so the thread that allocates or deallocates a page now
+     * revalidates it when done (allocationCompleted, deallocatePagenum);
+     * otherwise inserts lose track of pages with free space.
+     */
+    private static final boolean CACHED_PAGE_VALIDITY_ENABLED =
+            !Boolean.getBoolean("delosdb.storage.cachedPageValidity.disabled");
+
     /** Power of two, at least 4 and at most 64: twice the processors, rounded up. */
     private static final int INSERT_LANES = Integer.highestOneBit(
             Math.min(64, Math.max(4, Runtime.getRuntime().availableProcessors() * 2)) - 1) << 1;
@@ -1311,6 +1325,31 @@ abstract class FileContainer
 		
 	}
 
+	@Override
+	protected void allocationCompleted(BaseContainerHandle handle)
+		throws StandardException
+	{
+		if (CACHED_PAGE_VALIDITY_ENABLED)
+			revalidateAllocCache(handle);
+	}
+
+	/* DelosDB: see CACHED_PAGE_VALIDITY_ENABLED */
+	private void revalidateAllocCache(BaseContainerHandle handle)
+		throws StandardException
+	{
+		synchronized (allocCache)
+		{
+			try
+			{
+				allocCache.validateIfInvalid(handle, firstAllocPageNumber);
+			}
+			catch (InterruptDetectedException e)
+			{
+				// Leave it invalid; the next reader that needs it revalidates.
+			}
+		}
+	}
+
 	/** deallocate the page from the alloc page */
 	private void deallocatePagenum(BaseContainerHandle handle, long pnum)
 		 throws StandardException
@@ -1357,6 +1396,8 @@ abstract class FileContainer
 		{
 			lastAllocatedPage = pnum - 1;
 		}
+		if (CACHED_PAGE_VALIDITY_ENABLED)
+			revalidateAllocCache(handle);
 
 	}
 
@@ -2557,19 +2598,25 @@ abstract class FileContainer
 		if (getCommittedDropState()) // committed and dropped, cannot get a page
 			return null;
 
-		if (!pageValid(handle, pageNumber))
-		{
-			return null;
-		}
-
 		// RESOLVE: no translation!
 
 		PageKey pageSearch = new PageKey(identity, pageNumber);
-		BasePage page = (BasePage)pageCache.find(pageSearch);
+		BasePage page = CACHED_PAGE_VALIDITY_ENABLED
+				? (BasePage) pageCache.findCached(pageSearch) : null;
 
 		if (page == null)
 		{
-			return page;
+			if (!pageValid(handle, pageNumber))
+			{
+				return null;
+			}
+
+			page = (BasePage)pageCache.find(pageSearch);
+
+			if (page == null)
+			{
+				return page;
+			}
 		}
 
         // latch the page

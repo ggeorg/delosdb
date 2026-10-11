@@ -1,55 +1,70 @@
-DelosDB B-tree insert root routing
-==================================
+DelosDB cached page validity
+============================
 
 Purpose
 -------
-Stop every B-tree insert from taking the index root's exclusive latch.
-With insert lanes and the held-intent regrant, PK and INDEXED inserts are
-bound by B-tree page latches, the root first: every insert latched it and
-coupled to the child. Inserts now route through the immutable root routing
-snapshot that keyed reads already use, latch the child while holding
-nothing, and re-check the snapshot (review doc section H, rule 1).
+Stop every page fetch from taking the container's allocation-cache monitor.
+FileContainer.getUserPage checked the page's allocation state under
+synchronized(allocCache) before looking the page up. Every page allocation
+invalidates the allocation cache, and revalidating it latches the
+allocation page that the allocating thread holds, so one reader waited on
+that latch inside the monitor while every other heap and B-tree page fetch
+of the container queued on the monitor. With insert lanes, the held-intent
+regrant and insert root routing in place, this was the largest writer wait
+for PK inserts (7.7 s of 17.2 s writer blocking in a 2M-row, 8-writer JFR
+recording) and the second largest for INDEXED (9.9 s of 34.1 s).
 
 Changes
 -------
-- BTreeController.findInsertLeaf: the root routing snapshot is on by
-  default (-Ddelosdb.btree.insertRootRoutingSnapshot.disabled=true restores
-  the latched-root descent). A missing or changed snapshot falls back to
-  the latched descent, which republishes it. Hit and fallback counters.
-- ControlRow.observe{Root,Branch,Leaf}RoutingSnapshot: a change of snapshot
-  owner invalidates the previous owner's snapshot. One index can have
-  several live BTree instances: each root control row decodes its own, so
-  after the root page is reloaded, logical undo (B2IUndo) and plans
-  compiled after a conglomerate cache miss use a new instance while cached
-  conglomerates and older plans keep the old one. A page change invalidated
-  only the current owner, leaving the other instance routing on stale
-  separators. With inserts routed this way, rows went to leaves that do not
-  cover their keys (index order corruption, or an endless insert/split
-  loop). Keyed reads, which already use the snapshot on main, are exposed to
-  the same mechanism.
-- InsertRootRoutingTestSupport (test bridge) and
-  InsertRootRoutingSnapshotTest: 8 writers inserting shuffled keys into a
-  wide-key index with committed and rolled-back batches, then index order,
-  a point lookup per key and SYSCS_CHECK_TABLE; a second BTree instance
-  forced by page and conglomerate cache pressure, inserting through both
-  plans across splits.
+- FileContainer.getUserPage: a page found in the page cache (findCached)
+  skips pageValid and relies on the existing status check after latching.
+  Deallocation changes the alloc map and the page's own status while the
+  page is latched (deallocatePage), and an allocated page is latched by its
+  allocator until it is initialized, so a reader that gets the latch sees
+  the same answer pageValid would give. A page not in the cache still goes
+  through pageValid before it is read, so pages past the end of the
+  container are never read. In-place compress discards the container's
+  cached pages after truncating.
+- Allocation-cache revalidation moves from readers to the thread that
+  changed it: BaseContainer.addPage calls allocationCompleted after its
+  nested top transaction commits, and FileContainer.deallocatePagenum
+  revalidates after releasing the allocation page
+  (AllocationCache.validateIfInvalid). Page fetches used to revalidate the
+  cache as a side effect, and AllocationCache.trackUnfilledPage drops
+  updates while it is invalid; without the allocator-side revalidation
+  inserts lose track of partly filled pages and allocate new ones
+  (Derby3625Test, longRow). Queuing the dropped updates instead was tried
+  and rejected: a stale "filled" hint applied after a page was reused hid
+  an empty page (Derby3625Test, also when run alone).
+- -Ddelosdb.storage.cachedPageValidity.disabled=true restores the old
+  behaviour.
+- CachedPageValidityTestSupport (raw-store test bridge) and
+  CachedPageValidityTest: a deallocated page that is still cached is not
+  returned by getPage or getPageNoWait, a page past the end is not returned,
+  an allocated cached page is; and concurrent allocation, post-commit
+  deallocation, page reuse and in-place compress against uncommitted-read
+  lookups and scans, with contents, SYSCS_CHECK_TABLE and restart checked.
 
 Deliberately unchanged
 ----------------------
-- Branch routing snapshots (still experimental and off), split and undo
-  paths (canonical latched descent), latch and lock order, on-disk format,
-  WAL, recovery
+- Allocation and deallocation themselves, allocation-cache invalidation
+  points, unfilled-page tracking semantics, page status, the post-latch
+  status and overflow checks, page cache, on-disk format, WAL, recovery
+- The lock-free allocation-cache view (branch page-validity-fast-path)
+  stays parked.
 
 Qualification
 -------------
-- Embedded insert probe, 8 writers, rare log switch, 3 alternating pairs:
-  PK 369k vs 286k rows/s (+29%); INDEXED 169k vs 149k (+13%); BARE (no
-  index) unaffected within noise.
-- InsertRootRoutingSnapshotTest 8/8 repeat runs plus the suite run. Without
-  the owner invalidation the concurrent test fails with a sanity assert
-  (last row on a left leaf greater than the first row on its right sibling)
-  and the second-instance test loops until its timeout.
-- derbyStoreTests 435/435. delosRecoveryTests 57/57.
-- delosConcurrencyTests 58: DEL-ISO-001, DEL-FK-004 and the task-only
-  F08TransactionStatus test fail as on main; DEL-TRAVERSAL-001 and
-  BTreeIndexConcurrencyArchitectureProofTest pass.
+- Embedded insert probe, 8 writers, rare log switch, 2M rows, 4 alternating
+  pairs: PK 346k vs 317k rows/s (+9%, 4 of 4 pairs); INDEXED 161k vs 149k
+  (+8%, 3 of 4); BARE 829k vs 670k (+24%, 4 of 4; one "off" run at 466k).
+  Allocated pages after the probe are equal on and off (heap 12744; index
+  counts within split variation).
+- CachedPageValidityTest passes; without the post-latch status check the
+  deallocated-page test fails (getPage returns the deallocated cached page)
+  and passes again with the skip disabled.
+- derbyStoreTests 435/435, including Derby3625Test and longRow, which caught
+  the two rejected designs.
+- delosRecoveryTests 57/57.
+- delosConcurrencyTests 61: DEL-ISO-001, DEL-FK-004 and the task-only
+  F08TransactionStatus test fail as on main.

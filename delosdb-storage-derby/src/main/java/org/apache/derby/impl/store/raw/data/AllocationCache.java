@@ -124,6 +124,18 @@ class AllocationCache
 	}
 
 	/**
+	  DelosDB: revalidate after this container's own allocation or
+	  deallocation, so the cache is invalid only while one is in progress.
+	 */
+	protected void validateIfInvalid(BaseContainerHandle handle,
+									 long firstAllocPageNumber)
+		 throws StandardException
+	{
+		if (!isValid)
+			validate(handle, firstAllocPageNumber);
+	}
+
+	/**
 	  Set the page number to be unfilled
 	 */
 	protected void trackUnfilledPage(long pagenumber, boolean unfilled)

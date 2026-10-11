@@ -266,6 +266,15 @@ abstract class BaseContainer implements Lockable {
 
 		@exception StandardException Standard Derby error policy
 	*/
+	/**
+		DelosDB: called after addPage's nested top transaction has committed
+		and released the allocation page.
+	*/
+	protected void allocationCompleted(BaseContainerHandle handle)
+		throws StandardException
+	{
+	}
+
 	public Page addPage(BaseContainerHandle handle, boolean isOverflow) throws StandardException {
 		
 		RawTransaction ntt = handle.getTransaction().startNestedTopTransaction();
@@ -330,6 +339,8 @@ abstract class BaseContainer implements Lockable {
             }
 			ntt.close();
 		}
+
+		allocationCompleted(handle);
 
 		if (SanityManager.DEBUG) {
 			SanityManager.ASSERT(newPage.isLatched());
