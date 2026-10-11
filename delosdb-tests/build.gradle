@@ -103,6 +103,8 @@ def insertRootRoutingTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/btree/InsertRootRoutingTestSupport.java')
 def cachedPageValidityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/CachedPageValidityTestSupport.java')
+def logBufferSizeTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/store/raw/log/LogBufferSizeTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def mvccSnapshotLeaseDiagnosticTestSupportSource = file(
@@ -386,6 +388,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/store/access/btree/BTreePointReadDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/btree/InsertRootRoutingTestSupport.java'
             exclude 'org/apache/derby/impl/store/raw/data/CachedPageValidityTestSupport.java'
+            exclude 'org/apache/derby/impl/store/raw/log/LogBufferSizeTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/DeadlockVictimLifecycleTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockEntryDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/LockWaitDiagnosticTestSupport.java'
@@ -469,6 +472,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
     }
     from(cachedPageValidityTestSupportSource) {
         into 'org/apache/derby/impl/store/raw/data'
+    }
+    from(logBufferSizeTestSupportSource) {
+        into 'org/apache/derby/impl/store/raw/log'
     }
     from(mvccVisibilityTestSupportSource) {
         into 'org/apache/derby/impl/store/access/mvcc'

@@ -257,7 +257,12 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	private static final int DEFAULT_CHECKPOINT_INTERVAL = 10*1024*1024;
 
 	//log buffer size values
-	private static final int DEFAULT_LOG_BUFFER_SIZE = 32768; //32K
+	// DelosDB: up to 1M instead of Derby's 32K (see defaultLogBufferSize).
+	// A 32K buffer holds about 40 indexed-table rows, so concurrent writers
+	// switched buffers (checksum and possibly a write, under this monitor)
+	// thousands of times a second.
+	private static final int DEFAULT_LOG_BUFFER_SIZE = 1024*1024; //1M
+	private static final int DERBY_DEFAULT_LOG_BUFFER_SIZE = 32768; //32K
 	private static final int LOG_BUFFER_SIZE_MIN = 8192; //8k
 	private static final int LOG_BUFFER_SIZE_MAX = LOG_SWITCH_INTERVAL_MAX;
 	private int logBufferSize = DEFAULT_LOG_BUFFER_SIZE;
@@ -3208,7 +3213,7 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 		logBufferSize =  PropertyUtil.getSystemInt(org.apache.derby.shared.common.reference.Property.LOG_BUFFER_SIZE, 
 												   LOG_BUFFER_SIZE_MIN, 
 												   LOG_BUFFER_SIZE_MAX, 
-												   DEFAULT_LOG_BUFFER_SIZE);
+												   defaultLogBufferSize());
 		jbmsVersion = getMonitor().getEngineVersion();
 
 		
@@ -5811,6 +5816,19 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
         } catch (Exception pae) {
             return false;
         }
+    }
+
+    /**
+     * DelosDB: the default log buffer size, 1/64 of the maximum heap between
+     * Derby's 32K and 1M. Each database allocates three log buffers, so a
+     * small embedded heap (for example 16M) keeps a small buffer, and any heap
+     * of 64M or more gets 1M.
+     */
+    static int defaultLogBufferSize()
+    {
+        long heapShare = Runtime.getRuntime().maxMemory() / 64;
+        return (int) Math.max(DERBY_DEFAULT_LOG_BUFFER_SIZE,
+                              Math.min(DEFAULT_LOG_BUFFER_SIZE, heapShare));
     }
 
     /** set the endPosition of the log and make sure the new position won't spill off the end of the log */

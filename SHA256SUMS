@@ -1,8 +1,6 @@
-0bce8543fa1d9e15271c48c9e68adf157b65eb3e4f308c7bcf4dd280b6f6b06e  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/AllocationCache.java
-0ce910ed30b7ce928d4e3f9bec38592dc4debf14cf1176ac6789ed83de49bfd6  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseContainer.java
-a5fb45088e08f0a9078c515db56ccfba3e0454eadcde60a8137494195a6110cd  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/FileContainer.java
-47e3f6957ee1ece0407c97dcee17a79495f783cc575a15c1e465d9453674ea40  delosdb-tests/build.gradle
-d4dc5fd67613b5a5bfdcc4316e60ee4332b3c50fc33d8ab40f7a20260174865d  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/CachedPageValidityTest.java
-97d03eb7642a7776369a6750edaa4073ab7b520ff9428c4d95ca4b3528ceed5c  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/raw/data/CachedPageValidityTestSupport.java
-7210480d2e93169d2241d7d0569b26d079b3112000799c216d2e40a661f3be9c  gradle/testing/delos-test-suite-registry.tsv
-301a943a146a5066a3948e099edb40c5ac69e014dcd3fb17e6a73a21d2bb49c6  MANIFEST.txt
+93072d1af67f9bd9b99da6a655dd9d9a40fea2161aa232d8ccd7aff6cb9c5c80  delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
+2b23186270257cd3593c10fdbca4ee64dbfdd9be2a31f308ec679504fcf6292a  delosdb-tests/build.gradle
+923e68578cd2d1cee07d74af175cdee25d1b9f5fecbe877aeff19ec872579a50  delosdb-tests/src/delosTest/java/org/apache/derbyTesting/functionTests/tests/delos/LogBufferSizeDefaultTest.java
+663bac44ab1a22fbbf1564aef3e31a40b107bdb606b6aec86bf5d2ffb21be9e8  delosdb-tests/src/delosTestSupport/java/org/apache/derby/impl/store/raw/log/LogBufferSizeTestSupport.java
+29fe89b1023116d76ef8853fa26f89b43c8687903f8b5d425bdf43b06ba3daae  gradle/testing/delos-test-suite-registry.tsv
+12068ea000f565e7bf3c53baf517b8aa9d560fa2bb4424875e1079f58b65a77e  MANIFEST.txt
