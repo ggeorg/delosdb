@@ -1,36 +1,55 @@
-DelosDB heap insert lanes: qualification follow-up
-==================================================
+DelosDB held-intent regrant
+===========================
 
 Purpose
 -------
-Close the evidence gaps in the per-writer heap insert lanes change (edf18924):
-prove lanes actually engage, cover crash recovery, and make the attribution
-probe reproducible from the repository.
+Stop every row insert and update from taking the lock-table entry that all
+writers of a table share. A transaction re-requests the table's
+intent-exclusive (CIX) container lock on every row (and an index insert
+requests the base table's again, because B2IController reopens the heap), so
+an INDEXED row made 7 such requests, each locking the shared entry's
+ReentrantLock and scanning its granted list. PostgreSQL, InnoDB, H2 and
+Firebird all serve an already held table lock from backend/transaction-local
+state.
 
 Changes
 -------
-- FileContainer counts switches to insert lanes (one LongAdder increment per
-  container switch, never on the per-row path) and exposes the count to tests.
-- HeapInsertLaneTestSupport: test-only bridge compiled into the engine patch.
-- HeapInsertLaneTest:
-  - concurrent BARE/PK cases assert the table switched to insert lanes
-    (both fail when lanes are disabled, so the assertion is meaningful);
-  - the single-writer case asserts no switch happened;
-  - new crash case: a separate JVM runs 8 concurrent writers on a PK table,
-    commits and rolls back batches, leaves one batch per writer in flight and
-    halts without shutdown; reboot must replay committed rows, undo in-flight
-    and rolled-back rows, and pass SYSCS_CHECK_TABLE.
-- tools/diagnostics/insert-probe: embedded F08 INSERT_100 probe, run script
-  (Delos or upstream Derby, optional JFR, optional rare log switch) and a
-  streaming JFR attribution script.
+- AbstractPool.lockObject: a CIX request for a container lock the
+  compatibility space already holds in the same group is granted by
+  LockSpace.regrantHeld, without the lock table.
+  -Ddelosdb.locks.heldIntentRegrant.disabled=true restores the old path.
+- LockSpace: group copies keep a reference to the granted lock-table lock
+  (Lock.grantedLock); regrantHeld increments both counts.
+- Why it is exact: LockControl.addLock always grants a re-request from a space
+  that holds the lock (even with waiters queued) and only counts it, and a
+  granted lock's count is written only by its owner. Counts, group release,
+  partial unlocks, transfers and escalation are unchanged.
+- HeldIntentRegrantTestSupport (engine-patch test bridge) and
+  HeldIntentRegrantTest: N requests need N unlocks; no regrant across groups;
+  regrant after transfer; regrant with a queued CX waiter, which is granted
+  when the group is released; indexed inserts hold IX and release it at
+  commit and rollback; escalation to table X mid-transaction;
+  SYSCS_CHECK_TABLE.
 
 Deliberately unchanged
 ----------------------
-- Insert-lane behavior, on-disk format, WAL, recovery
+- Lock modes, compatibility, lock-table structure, row and previous-key
+  locking, on-disk format, WAL, recovery
 
 Qualification
 -------------
-- HeapInsertLaneTest: 4/4 pass; with -Ddelosdb.storage.insertLanes.disabled=true
-  the two concurrent cases fail on the lane-switch assertion, as intended.
-- delosStableTestSuiteStaticAnalysis, delosTestProvenanceStaticAnalysis,
-  delosRepositoryIntegrityStaticAnalysis: pass.
+- Embedded insert probe, 8 writers, rare log switch, 3 alternating pairs:
+  BARE 923k vs 755k rows/s (+22%); PK 334k vs 337k; INDEXED 162k vs 161k.
+- HeldIntentRegrantTest 4/4; removing the lock-table count increment fails
+  all four. ContainerIntentSharedFastPathTest, RecordReadFastPathTest,
+  HeapInsertLaneTest pass.
+- derbyStoreTests 429: the same 6 setup failures as main (MemoryLeakFixesTest,
+  XAMemTest, st_derby1189, st_b5772). delosRecoveryTests 57/57.
+- delosConcurrencyTests: DEL-ISO-001, DEL-FK-004 and the task-only
+  F08TransactionStatus test fail as on main. DEL-TRAVERSAL-001 (MVCC
+  delete-after-wait, unexpected 40001) failed intermittently in full-class
+  runs (2 of 5 with the regrant, 0 of 4 without); the isolated method passed
+  24/24 repeat runs (12 per mode). Recorded as an intermittent MVCC race to
+  investigate.
+- RecordReadFastPathTest failed once and passed 4/4 reruns (timing-sensitive;
+  record locks are not touched by this change).

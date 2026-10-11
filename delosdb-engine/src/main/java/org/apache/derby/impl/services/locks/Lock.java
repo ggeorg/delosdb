@@ -58,6 +58,15 @@ class Lock implements Latch, Control {
 
 	int count;
 
+	/**
+		DelosDB: in a LockSpace group copy, the granted lock in the lock table
+		that this copy accounts for; null in lock-table locks. Only the
+		compatibility space that owns a granted lock changes its count, so the
+		owner may re-count it without the lock-table entry (see
+		LockSpace#regrantHeld).
+	*/
+	Lock grantedLock;
+
 	protected Lock(CompatibilitySpace space, Lockable ref, Object qualifier) {
 		super();
 		this.space = space;

@@ -97,6 +97,8 @@ def containerIntentSharedFastPathTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java')
 def recordReadFastPathTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java')
+def heldIntentRegrantTestSupportSource = file(
+        'src/delosTestSupport/java/org/apache/derby/impl/services/locks/HeldIntentRegrantTestSupport.java')
 def mvccVisibilityTestSupportSource = file(
         'src/delosTestSupport/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java')
 def mvccSnapshotLeaseDiagnosticTestSupportSource = file(
@@ -385,6 +387,7 @@ sourceSets {
             exclude 'org/apache/derby/impl/services/cache/ContainerCacheFastPinTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/ContainerIntentSharedFastPathTestSupport.java'
             exclude 'org/apache/derby/impl/services/locks/RecordReadFastPathTestSupport.java'
+            exclude 'org/apache/derby/impl/services/locks/HeldIntentRegrantTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccRawStoreVisibilityTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnosticTestSupport.java'
             exclude 'org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnosticTestSupport.java'
@@ -450,6 +453,9 @@ tasks.register('prepareRawStoreInternalTestSupportSources', Sync) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(recordReadFastPathTestSupportSource) {
+        into 'org/apache/derby/impl/services/locks'
+    }
+    from(heldIntentRegrantTestSupportSource) {
         into 'org/apache/derby/impl/services/locks'
     }
     from(mvccVisibilityTestSupportSource) {

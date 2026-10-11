@@ -106,6 +106,7 @@ final class LockSpace implements CompatibilitySpace {
 
 		if (lockInGroup == null) {
 			lockInGroup = lock.copy();
+			lockInGroup.grantedLock = lock;
 			dl.put(lockInGroup, lockInGroup);
 		}
 		lockInGroup.count++;
@@ -287,6 +288,34 @@ final class LockSpace implements CompatibilitySpace {
 		lockInGroup.count--;
 		dl.put(lockInGroup, lockInGroup);
 		return 1;
+	}
+
+	/**
+		DelosDB: grant again a lock this space already holds in the group,
+		without going through the lock table.
+		<P>
+		The lock table always grants a request for a lock the requesting space
+		already holds, even with waiters queued (LockControl.addLock), and
+		only counts the grant. The owner is the only writer of its granted
+		lock's count, so incrementing both counts here leaves the lock table
+		and this group in the same state as a lock-table request, without
+		taking the entry shared with every other holder.
+
+		@return false if the lock is not held in the group; the caller must
+		then request it from the lock table.
+	*/
+	synchronized boolean regrantHeld(Object group, Lockable ref, Object qualifier) {
+		HashMap<Lock, Lock> dl = groups.get(group);
+		if (dl == null)
+			return false;
+
+		Lock lockInGroup = dl.get(new Lock(this, ref, qualifier));
+		if (lockInGroup == null || lockInGroup.grantedLock == null)
+			return false;
+
+		lockInGroup.grantedLock.count++;
+		lockInGroup.count++;
+		return true;
 	}
 
 	/**

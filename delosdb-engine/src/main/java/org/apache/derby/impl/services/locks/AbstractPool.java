@@ -37,10 +37,12 @@ import org.apache.derby.iapi.util.Matchable;
 import org.apache.derby.shared.common.reference.Property;
 
 import java.io.Serializable;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.Map;
 import java.util.Enumeration;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.locks.LockOwner;
+import org.apache.derby.iapi.store.raw.ContainerLock;
 
 /**
  * An abstract implementation of LockFactory that allows different
@@ -65,6 +67,18 @@ abstract class AbstractPool implements LockFactory
 		True if all deadlocks errors should be logged.
 	*/
 	int deadlockMonitor;
+
+	/**
+		DelosDB: grant intent-exclusive container locks that the transaction
+		already holds from its own lock space. Every row insert and update
+		re-requests the table's CIX lock (and an index insert the base table's
+		too), and each request otherwise takes the lock-table entry that all
+		writers of the table share. Read once.
+	*/
+	private static final boolean HELD_INTENT_REGRANT_ENABLED =
+		!Boolean.getBoolean("delosdb.locks.heldIntentRegrant.disabled");
+
+	private static final LongAdder HELD_INTENT_REGRANTS = new LongAdder();
 
 	protected AbstractPool() {
 		lockTable = createLockTable();
@@ -116,6 +130,12 @@ abstract class AbstractPool implements LockFactory
 			}
 		}
 
+		if (HELD_INTENT_REGRANT_ENABLED && qualifier == ContainerLock.CIX
+				&& ((LockSpace) compatibilitySpace).regrantHeld(group, ref, qualifier)) {
+			HELD_INTENT_REGRANTS.increment();
+			return true;
+		}
+
 		Lock lock = 
             lockTable.lockObject(compatibilitySpace, ref, qualifier, timeout);
 
@@ -146,6 +166,10 @@ abstract class AbstractPool implements LockFactory
 		((LockSpace) compatibilitySpace).addLock(group, lock);
 
 		return true;
+	}
+
+	static long heldIntentRegrantsForTesting() {
+		return HELD_INTENT_REGRANTS.sum();
 	}
 
 	/**
