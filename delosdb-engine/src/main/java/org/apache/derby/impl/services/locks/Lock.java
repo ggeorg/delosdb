@@ -29,6 +29,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
 	A Lock represents a granted or waiting lock request.
@@ -56,13 +57,16 @@ class Lock implements Latch, Control {
 	*/
 	private final Object	qualifier;
 
-	int count;
+	volatile int count;
+
+	private static final AtomicIntegerFieldUpdater<Lock> COUNT =
+			AtomicIntegerFieldUpdater.newUpdater(Lock.class, "count");
 
 	/**
 		DelosDB: in a LockSpace group copy, the granted lock in the lock table
-		that this copy accounts for; null in lock-table locks. Only the
-		compatibility space that owns a granted lock changes its count, so the
-		owner may re-count it without the lock-table entry (see
+		that this copy accounts for; null in lock-table locks. The shared grant count
+		is updated atomically, including requests from other threads/groups
+		in the same compatibility space (see
 		LockSpace#regrantHeld).
 	*/
 	Lock grantedLock;
@@ -119,9 +123,13 @@ class Lock implements Latch, Control {
 		return new Lock(space, ref, qualifier);
 	}
 
+	void incrementCount() {
+		COUNT.incrementAndGet(this);
+	}
+
 	void grant() {
 
-		count++;
+		incrementCount();
 
 		// Tell the object it has been locked by this type of qualifier.
 		ref.lockEvent(this);
@@ -129,18 +137,20 @@ class Lock implements Latch, Control {
 
 	int unlock(int unlockCount) {
 
-		if (unlockCount > count)
-			unlockCount = count;
-
-		count -= unlockCount;
-		if (count == 0) {
+		int previous;
+		int released;
+		do {
+			previous = count;
+			released = Math.min(unlockCount, previous);
+		} while (!COUNT.compareAndSet(this, previous, previous - released));
+		if (previous == released) {
 
 			// Inform the object an unlock event occured with this qualifier
 
 			ref.unlockEvent(this);
 		}
 
-		return unlockCount;
+		return released;
 	}
 
 	/*

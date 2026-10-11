@@ -28,6 +28,55 @@ public final class HeldIntentRegrantTestSupport {
         return AbstractPool.heldIntentRegrantsForTesting();
     }
 
+    /** Concurrent groups share a grant count, not a thread-confined count. */
+    public static void verifyConcurrentGroupCounts() throws Exception {
+        for (int round = 0; round < 5; round++) {
+            ConcurrentPool pool = new ConcurrentPool();
+            CompatibilitySpace owner = pool.createCompatibilitySpace(new TestLockOwner());
+            ContainerKey key = new ContainerKey(0, 400 + round);
+            Object retained = new Object();
+            Object transientGroup = new Object();
+            int requests = 200_000;
+            require(pool.lockObject(owner, retained, key, ContainerLock.CIX, 0), "initial grant");
+            CountDownLatch start = new CountDownLatch(1);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread regrant = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < requests; i++) {
+                        require(pool.lockObject(owner, retained, key, ContainerLock.CIX, 0), "regrant");
+                    }
+                } catch (Throwable t) { failure.compareAndSet(null, t); }
+            }, "retained-group");
+            Thread otherGroup = new Thread(() -> {
+                try {
+                    start.await();
+                    for (int i = 0; i < requests; i++) {
+                        require(pool.lockObject(owner, transientGroup, key, ContainerLock.CIX, 0), "other group");
+                        pool.unlockGroup(owner, transientGroup);
+                    }
+                } catch (Throwable t) { failure.compareAndSet(null, t); }
+            }, "transient-group");
+            regrant.setDaemon(true);
+            otherGroup.setDaemon(true);
+            regrant.start(); otherGroup.start(); start.countDown();
+            regrant.join(30_000); otherGroup.join(30_000);
+            check(!regrant.isAlive() && !otherGroup.isAlive(), "concurrent groups did not finish");
+            if (failure.get() != null) throw new AssertionError("group requests failed", failure.get());
+            // A direct table request returns the shared grant and adds one
+            // reference, independently of the group's bookkeeping.
+            Lock counted = pool.lockTable.lockObject(owner, key, ContainerLock.CIX, 0);
+            check(counted.getCount() == requests + 2,
+                    "lost shared references: " + counted.getCount());
+            pool.lockTable.unlock(counted, 1);
+            pool.unlockGroup(owner, retained);
+            CompatibilitySpace waiter = pool.createCompatibilitySpace(new TestLockOwner());
+            Object waiterGroup = new Object();
+            require(pool.lockObject(waiter, waiterGroup, key, ContainerLock.CX, 0), "grant after release");
+            pool.unlockGroup(waiter, waiterGroup);
+        }
+    }
+
     /** Regrants count like lock-table grants: N requests need N unlocks. */
     public static void verifyReferenceCounting() throws Exception {
         ConcurrentPool pool = new ConcurrentPool();

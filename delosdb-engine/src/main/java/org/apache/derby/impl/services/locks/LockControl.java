@@ -355,7 +355,7 @@ final class LockControl implements Control {
 			}
 
 			// we already held a lock of this type, just bump the lock count
-			lockItem.count++;
+			lockItem.incrementCount();
 			return lockItem;
 		}
 

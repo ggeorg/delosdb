@@ -21,6 +21,10 @@ import org.apache.derby.impl.services.locks.HeldIntentRegrantTestSupport;
  */
 public final class HeldIntentRegrantTest extends MvccSqlTestSupport {
 
+    public void testConcurrentGroupsKeepReferenceCounts() throws Exception {
+        HeldIntentRegrantTestSupport.verifyConcurrentGroupCounts();
+    }
+
     public void testRegrantKeepsReferenceCounts() throws Exception {
         HeldIntentRegrantTestSupport.verifyReferenceCounting();
     }

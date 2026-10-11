@@ -3092,51 +3092,57 @@ abstract class FileContainer
 					setLastInsertedPage(ContainerHandle.INVALID_PAGE_NUMBER);
 			}
 		}
-		else					// get a relatively unfilled page that is not
-		{						// the last Inserted page
-			long localLastUnfilledPage = getLastUnfilledPage();
-
-			if (localLastUnfilledPage == ContainerHandle.INVALID_PAGE_NUMBER ||
-				localLastUnfilledPage == getLastInsertedPage())
-				localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
-
-			// With insert lanes, never wait for or adopt another lane's
-			// target page; returning null makes the caller add a new page.
-			boolean lanes = insertLanesActive();
-
-			if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER)
-			{
-				// try the last unfilled page we found - this could be
-				// different from lastInserted if the last unfilled one we
-				// found does not have enough space for the insert and the
-				// client wants to get a brand new page.
-				p = lanes && isInsertLaneTarget(localLastUnfilledPage) ? null
-					: getInsertablePage(handle, localLastUnfilledPage, !lanes, false);
-
-				// try again
-				if (p == null)
-				{
-					localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
-					if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER &&
-						!(lanes && isInsertLaneTarget(localLastUnfilledPage)))
-					{
-						p = getInsertablePage(handle, localLastUnfilledPage, !lanes,
-											  false);
-					}
-				}
-			}
-
-			// return this page for insert
-			if (p != null)
-			{
-				setLastUnfilledPage(localLastUnfilledPage);
-				setLastInsertedPage(localLastUnfilledPage);
-			}
-		}
+        else {
+            p = getUnfilledInsertPage(handle);
+        }
 
 		return p;
 
 	}
+
+    private BasePage getUnfilledInsertPage(BaseContainerHandle handle)
+            throws StandardException {
+        BasePage p = null;
+		long localLastUnfilledPage = getLastUnfilledPage();
+
+		if (localLastUnfilledPage == ContainerHandle.INVALID_PAGE_NUMBER ||
+			localLastUnfilledPage == getLastInsertedPage())
+			localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
+
+		// With insert lanes, never wait for or adopt another lane's
+		// target page; returning null makes the caller add a new page.
+		boolean lanes = insertLanesActive();
+
+		if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER)
+		{
+			// try the last unfilled page we found - this could be
+			// different from lastInserted if the last unfilled one we
+			// found does not have enough space for the insert and the
+			// client wants to get a brand new page.
+			p = lanes && isInsertLaneTarget(localLastUnfilledPage) ? null
+				: getInsertablePage(handle, localLastUnfilledPage, !lanes, false);
+
+			// try again
+			if (p == null)
+			{
+				localLastUnfilledPage = getUnfilledPageNumber(handle, localLastUnfilledPage);
+				if (localLastUnfilledPage != ContainerHandle.INVALID_PAGE_NUMBER &&
+					!(lanes && isInsertLaneTarget(localLastUnfilledPage)))
+				{
+					p = getInsertablePage(handle, localLastUnfilledPage, !lanes,
+										  false);
+				}
+			}
+		}
+
+		// return this page for insert
+		if (p != null)
+		{
+			setLastUnfilledPage(localLastUnfilledPage);
+			setLastInsertedPage(localLastUnfilledPage);
+		}
+        return p;
+    }
 
 
 	/** 

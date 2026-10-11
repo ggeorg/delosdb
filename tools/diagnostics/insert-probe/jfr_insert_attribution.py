@@ -8,8 +8,9 @@ Prints, for threads named writer-*:
      entry and java.util.concurrent parks - by lock and first non-latch call site;
   2. page-latch wait time by structure: heap insert page, B-tree root, or B-tree
      child page latched while holding its parent (latch coupling);
-  3. CPU samples taken while a heap page is latched (BasePage.insert* on the stack),
+  3. CPU samples during BasePage.insert*, separated by heap/B-tree caller,
      split into log-record construction, page apply, record locking and WAL append.
+     Samples missing a recognizable caller remain unclassified.
 
 Streams `jfr print` text output; never expands the recording to JSON (multi-GB).
 """
@@ -107,6 +108,21 @@ def page_latch_waits(recording):
         print("  %8d %8.2f s  %s" % (count, ms / 1000, name))
 
 
+def insert_page_kind(frames):
+    """BasePage insertion is shared by heap and index pages; use its caller."""
+    stack = " ".join(frames)
+    if "BasePage.insert" not in stack:
+        return None
+    # An index insert can be nested under a higher heap caller: prefer the
+    # nearest insert controller, rather than matching any heap frame.
+    for frame in frames:
+        if "BTreeController." in frame:
+            return "B-tree"
+        if "HeapController." in frame or "MvccRawStoreTable." in frame:
+            return "heap"
+    return "unclassified"
+
+
 def latched_work(recording):
     def category(stack):
         if "LogToFile.appendLogRecord" in stack:
@@ -120,21 +136,27 @@ def latched_work(recording):
             return "record lock"
         return "other"
 
-    writer = latched = 0
-    categories = collections.Counter()
+    writer = 0
+    counts = collections.Counter()
+    categories = collections.defaultdict(collections.Counter)
     for event in jfr_events(recording, "jdk.ExecutionSample", 64):
         if not event.get("thread", "").startswith("writer"):
             continue
         writer += 1
         stack = " ".join(event["frames"])
-        if "BasePage.insert" in stack:
-            latched += 1
-            categories[category(stack)] += 1
-    print("CPU samples while a heap page is latched:")
-    print("  writer samples %d, under heap-page latch %d (%.0f%%)"
-          % (writer, latched, 100.0 * latched / max(writer, 1)))
-    for name, count in categories.most_common():
-        print("  %5.1f%%  %s" % (100.0 * count / max(latched, 1), name))
+        kind = insert_page_kind(event["frames"])
+        if kind is not None:
+            counts[kind] += 1
+            categories[kind][category(stack)] += 1
+    print("CPU samples during page insertion (caller-classified):")
+    print("  writer samples %d" % writer)
+    for kind in ("heap", "B-tree", "unclassified"):
+        count = counts[kind]
+        print("  %s page insertion: %d (%.0f%% of writer samples)"
+              % (kind, count, 100.0 * count / max(writer, 1)))
+        for name, samples in categories[kind].most_common():
+            print("    %5.1f%%  %s" % (100.0 * samples / max(count, 1), name))
+
 
 
 if __name__ == "__main__":

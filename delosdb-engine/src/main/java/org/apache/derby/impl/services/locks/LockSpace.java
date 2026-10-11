@@ -296,9 +296,10 @@ final class LockSpace implements CompatibilitySpace {
 		<P>
 		The lock table always grants a request for a lock the requesting space
 		already holds, even with waiters queued (LockControl.addLock), and
-		only counts the grant. The owner is the only writer of its granted
-		lock's count, so incrementing both counts here leaves the lock table
-		and this group in the same state as a lock-table request, without
+		only counts the grant. A compatibility space can have several threads
+		with different groups: the shared grant count is incremented atomically
+		with lock-table grants and releases; the group count stays under this
+		monitor. This leaves both counts consistent without
 		taking the entry shared with every other holder.
 
 		@return false if the lock is not held in the group; the caller must
@@ -313,7 +314,7 @@ final class LockSpace implements CompatibilitySpace {
 		if (lockInGroup == null || lockInGroup.grantedLock == null)
 			return false;
 
-		lockInGroup.grantedLock.count++;
+		lockInGroup.grantedLock.incrementCount();
 		lockInGroup.count++;
 		return true;
 	}
